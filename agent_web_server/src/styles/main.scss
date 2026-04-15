@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary-color: #007857;
+  --primary-dark: #005c43;
+  --primary-soft: rgba(0, 120, 87, 0.08);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, "SF Pro SC", "HanHei SC", "PingFang SC", sans-serif;
+  background-color: #f4f7f6;
+}
+
+/* 侧边栏样式 */
+.sidebar-gradient {
+  background: linear-gradient(180deg, #007857 0%, #004d38 100%);
+}
+
+/* 手风琴菜单 */
+.menu-content {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    max-height 0.28s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.22s ease-out,
+    transform 0.28s ease-out;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.menu-item.open .menu-content {
+  max-height: 500px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.menu-item.open .chevron {
+  transform: rotate(180deg);
+}
+
+/* 子页面切换动画 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.3s ease-out;
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(15px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #007857;
+  border-radius: 10px;
+}
+
+.sub-item.active {
+  background-color: white;
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.glass-card {
+  background: white;
+  border: 1px solid rgba(0, 120, 87, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+/* 按钮悬停效果 */
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  transition: all 0.2s ease;
+
+  &:hover {
+    opacity: 0.9;
+    transform: scale(1.01);
+  }
+}
+
+/* 上传区域 */
+.upload-zone {
+  border: 2px dashed #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--primary-color);
+    background-color: var(--primary-soft);
+  }
+}

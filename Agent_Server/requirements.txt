@@ -1,0 +1,73 @@
+# ====================== Web Framework & Server ======================
+fastapi==0.115.0          # 0.109 与 pydantic 2.11+ 冲突
+uvicorn[standard]==0.32.0
+python-multipart==0.0.9
+
+# ====================== Database & ORM =============================
+sqlalchemy==2.0.25
+pymysql==1.1.0
+
+# ====================== Browser Automation =========================
+browser-use==0.11.1       # 升级到 0.11.1 版本，支持 token 统计和更多功能
+playwright==1.49.1        # Playwright 浏览器自动化
+httpx>=0.28.1             # browser-use 0.11.1 依赖
+anyio>=4.9.0              # browser-use 0.11.1 异步支持
+uuid7>=0.1.0              # browser-use 0.11.1 依赖
+
+# ====================== Web Scraping & MCP =========================
+aiohttp==3.12.15          # 已升级以匹配 browser-use 0.11.1 要求
+requests==2.32.3
+beautifulsoup4==4.12.3
+websockets>=13.0.0       # WebSocket 支持（某些包的依赖）
+
+# ====================== Data Processing ============================
+pandas==2.3.3             # 与 numpy 2.x 官方 wheel 对齐
+openpyxl==3.1.2
+markdown==3.7
+
+# ====================== Document Processing ========================
+PyPDF2==3.0.1             # PDF 文件解析
+python-docx==1.2.0        # DOCX 文件解析
+
+# ====================== Email Service ==============================
+resend==2.6.0             # Resend email service
+# textract==1.6.5         # DOC 文件解析（可选，需要额外系统依赖）
+
+# ====================== Caching & Config ===========================
+redis==5.0.1
+python-dotenv==1.0.1
+APScheduler==3.10.4       # 定时任务调度器
+
+# ====================== Testing ===================================
+pytest==8.0.0
+pytest-asyncio==0.21.0
+# 标准库 logging 已内置，无需安装
+
+# ====================== Image & Vision =============================
+pillow==11.2.1
+opencv-python==4.10.0.84
+
+# ====================== Async & Performance ========================
+aiofiles==24.1.0
+numpy==2.3.3              # 与 pandas 2.3.3 官方 wheel 对齐
+langchain==1.0.0
+langchain-mcp-adapters==0.2.1
+langchain-core<2.0.0,>=1.2.6
+
+# ====================== Pydantic & Validation ======================
+pydantic[email]>=2.0.0    # 包含 email-validator 支持
+
+# ====================== Vector Database ============================
+qdrant-client>=1.7.0       # Qdrant 向量数据库客户端
+
+# ====================== JSON Repair ================================
+json-repair                # 修复 LLM 输出的畸形 JSON
+
+# ====================== Security Testing ===========================
+jinja2>=3.0.0             # 报告模板引擎
+aiohttp>=3.8.0            # HTTP 客户端（已包含但确保版本）
+
+minio==7.2.20
+
+# ====================== Docker & Container =========================
+docker>=7.0.0             # Docker Python SDK（用于容器管理）
