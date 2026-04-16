@@ -22,6 +22,27 @@ export interface HealthResponse {
   status: string;
   name: string;
   environment: string;
+  memory_backend?: string;
+  knowledge_enabled?: boolean;
+  knowledge_target?: string;
+}
+
+export type ServiceCheckStatus = "online" | "degraded" | "offline";
+
+export interface ServiceCheckItem {
+  key: string;
+  label: string;
+  status: ServiceCheckStatus;
+  detail: string;
+  meta?: string;
+}
+
+export interface SystemStatusSummary {
+  label: string;
+  tone: ServiceCheckStatus;
+  checks: ServiceCheckItem[];
+  onlineCount: number;
+  totalCount: number;
 }
 
 export interface ToolDescriptor {

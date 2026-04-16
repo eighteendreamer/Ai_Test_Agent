@@ -12,6 +12,7 @@ const router = useRouter();
 const appStore = useAppStore();
 const sessionStore = useSessionStore();
 const logExpanded = ref(false);
+let healthPollTimer: number | null = null;
 
 const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
@@ -56,10 +57,17 @@ watch(
 );
 
 onMounted(async () => {
-  await Promise.all([appStore.fetchHealth(), sessionStore.bootstrap()]);
+  await Promise.all([appStore.fetchSystemStatus(), sessionStore.bootstrap()]);
+  healthPollTimer = window.setInterval(() => {
+    void appStore.fetchSystemStatus();
+  }, 15000);
 });
 
 onBeforeUnmount(() => {
+  if (healthPollTimer !== null) {
+    window.clearInterval(healthPollTimer);
+    healthPollTimer = null;
+  }
   sessionStore.eventSource?.close();
 });
 </script>
@@ -68,7 +76,7 @@ onBeforeUnmount(() => {
   <div class="prototype-shell">
     <AppSidebar />
     <main class="prototype-main">
-      <AppTopBar :label="pageLabel" :health="appStore.health" @quick-run="handleQuickRun" />
+      <AppTopBar :label="pageLabel" :system-status="appStore.systemStatus" @quick-run="handleQuickRun" />
       <div class="prototype-content">
         <RouterView />
       </div>
