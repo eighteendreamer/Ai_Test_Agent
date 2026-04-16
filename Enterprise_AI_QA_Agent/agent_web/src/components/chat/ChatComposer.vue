@@ -1,22 +1,42 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import type { KeyboardEvent } from "vue";
+import { computed, ref } from "vue";
 
 import { useSessionStore } from "../../stores/session";
 
-defineProps<{
+const props = defineProps<{
   docked?: boolean;
 }>();
 
 const sessionStore = useSessionStore();
 const draft = ref("");
 
+const dockedPlaceholder =
+  "给御策天检发送消息，按 Enter 快速发送，Shift+Enter 换行";
+const heroPlaceholder =
+  "例如：帮我测试后台管理系统的登录功能，需要覆盖各种异常输入边界情况...";
+const busyTitle = "正在处理当前任务";
+const idleTitle = "发送指令";
+const placeholder = computed(() => (props.docked ? dockedPlaceholder : heroPlaceholder));
+const buttonTitle = computed(() => (sessionStore.isBusy ? busyTitle : idleTitle));
+
 async function handleSubmit() {
-  if (!draft.value.trim()) {
+  if (sessionStore.isBusy || !sessionStore.session || !draft.value.trim()) {
     return;
   }
+
   const content = draft.value;
   draft.value = "";
   await sessionStore.sendMessage(content);
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+    return;
+  }
+
+  event.preventDefault();
+  void handleSubmit();
 }
 </script>
 
@@ -25,7 +45,8 @@ async function handleSubmit() {
     <textarea
       v-model="draft"
       class="home-textarea"
-      :placeholder="docked ? '给御策天检发送消息' : '例如：帮我测试后台管理系统的登录功能，需要覆盖各种异常输入边界情况...'"
+      :placeholder="placeholder"
+      @keydown="handleKeydown"
     />
 
     <div class="home-composer-footer">
@@ -43,12 +64,12 @@ async function handleSubmit() {
       <div class="home-send-group">
         <button
           class="home-send-btn"
-          :disabled="sessionStore.isSending || !sessionStore.session"
+          :disabled="sessionStore.isBusy || !sessionStore.session"
           @click="handleSubmit"
-          title="Send instruction"
+          :title="buttonTitle"
           type="button"
         >
-          <i class="fa-solid" :class="sessionStore.isSending ? 'fa-spinner fa-spin' : 'fa-arrow-up'"></i>
+          <i class="fa-solid" :class="sessionStore.isBusy ? 'fa-spinner fa-spin' : 'fa-arrow-up'"></i>
         </button>
       </div>
     </div>

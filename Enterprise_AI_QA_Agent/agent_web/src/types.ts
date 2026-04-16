@@ -159,6 +159,31 @@ export interface ToolApprovalRequest {
   metadata: Record<string, unknown>;
 }
 
+export interface WorkerDispatchRecord {
+  task_id: string;
+  child_session_id?: string;
+  agent_key: string;
+  model_key?: string;
+  description: string;
+  status: string;
+  completed_at?: string;
+}
+
+export interface WorkerFailureReason {
+  agent_key?: string;
+  description?: string;
+  reason?: string;
+  timestamp?: string;
+}
+
+export interface WorkerFailureGuard {
+  turn_id?: string;
+  count?: number;
+  last_error?: string;
+  recent_errors?: WorkerFailureReason[];
+  blocked?: boolean;
+}
+
 export interface SessionSnapshot {
   id: string;
   session_id: string;
@@ -193,6 +218,13 @@ export interface SessionDetail {
   last_snapshot?: SessionSnapshot | null;
   metadata: Record<string, unknown>;
 }
+
+export type SessionWatcherPhase =
+  | "idle"
+  | "running"
+  | "waiting_approval"
+  | "failed"
+  | "completed";
 
 export interface ExecutionEvent {
   type: string;

@@ -24,9 +24,14 @@ class QdrantMemoryStore:
         self._fallback_points: dict[str, tuple[list[float], MemoryPoint]] = {}
 
     async def initialize(self) -> None:
-        if not self._available:
+        await self.refresh_connection_status()
+
+    async def refresh_connection_status(self) -> str:
+        if not self._settings.qdrant_enabled or not self._base_url:
+            self._available = False
             self._backend = "local_memory"
-            return
+            return self._backend
+
         try:
             async with httpx.AsyncClient(timeout=self._settings.llm_request_timeout_seconds) as client:
                 response = await client.get(
@@ -54,9 +59,12 @@ class QdrantMemoryStore:
                     vectors = params.get("vectors") or {}
                     remote_size = int(vectors.get("size") or self._settings.embedding_vector_size)
                     self._vector_size = remote_size
+                self._available = True
+                self._backend = "qdrant"
         except httpx.HTTPError:
             self._available = False
             self._backend = "local_memory"
+        return self._backend
 
     @property
     def backend(self) -> str:
@@ -84,6 +92,8 @@ class QdrantMemoryStore:
             updated_at=now,
             metadata=request.metadata,
         )
+        if not self._available:
+            await self.refresh_connection_status()
         if not self._available:
             self._fallback_points[point.id] = (vector, point)
             return point
@@ -116,6 +126,8 @@ class QdrantMemoryStore:
         request: MemorySearchRequest,
         vector: list[float],
     ) -> list[MemoryPoint]:
+        if not self._available:
+            await self.refresh_connection_status()
         if not self._available:
             return self._search_fallback(request, vector)
 

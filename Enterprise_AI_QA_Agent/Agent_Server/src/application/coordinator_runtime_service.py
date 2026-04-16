@@ -10,6 +10,7 @@ from xml.sax.saxutils import escape
 
 from src.application.session_service import SessionService
 from src.core.config import Settings
+from src.registry.agents import AgentRegistry
 from src.runtime.store import SessionStore
 from src.schemas.session import (
     ChatMessage,
@@ -40,12 +41,15 @@ class CoordinatorRuntimeService:
         settings: Settings,
         store: SessionStore,
         session_service: SessionService,
+        agent_registry: AgentRegistry,
     ) -> None:
         self._settings = settings
         self._store = store
         self._session_service = session_service
+        self._agent_registry = agent_registry
         self._parent_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
+        self._max_consecutive_failures = 3
 
     async def dispatch(
         self,
@@ -62,12 +66,43 @@ class CoordinatorRuntimeService:
         if parent_session is None:
             raise KeyError(f"Parent session not found: {parent_session_id}")
 
+        if self._is_dispatch_blocked(parent_session, parent_turn_id):
+            guard = self._get_failure_guard(parent_session)
+            return {
+                "ok": False,
+                "trace_id": parent_trace_id,
+                "summary": "Automatic worker dispatch is blocked for the current turn after repeated failures.",
+                "workers": [],
+                "artifacts": [],
+                "metrics": {
+                    "worker_count": 0,
+                    "consecutive_failures": int(guard.get("count", 0)),
+                },
+                "error": str(guard.get("last_error") or "dispatch_blocked"),
+            }
+
         workers = self._normalize_workers(payload)
         if not workers:
             raise ValueError("subagent-dispatch requires at least one worker specification.")
 
         launch_records: list[dict[str, Any]] = []
+        immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
+
         for worker in workers[: self._settings.coordinator_max_workers]:
+            if not self._is_agent_available(worker.agent_key):
+                launch_records.append(
+                    {
+                        "task_id": worker.task_id,
+                        "child_session_id": "",
+                        "agent_key": worker.agent_key,
+                        "model_key": worker.model_key or "",
+                        "description": worker.description,
+                        "status": "failed",
+                    }
+                )
+                immediate_failures.append((worker, f"Unknown agent: {worker.agent_key}"))
+                continue
+
             child_session = await self._session_service.create_session(
                 CreateSessionRequest(
                     title=f"Worker: {worker.description}",
@@ -109,16 +144,56 @@ class CoordinatorRuntimeService:
             self._active_tasks[worker.task_id] = task
             task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
 
-        await self._register_worker_dispatches(parent_session_id, launch_records)
+        await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
 
+        for worker, failure_reason in immediate_failures:
+            await self._deliver_notification(
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                child_session_id="",
+                worker=worker,
+                content=self._build_task_notification(
+                    task_id=worker.task_id,
+                    child_session_id="",
+                    agent_key=worker.agent_key,
+                    trace_id=parent_trace_id,
+                    status="failed",
+                    summary=f'Worker "{worker.description}" failed: {failure_reason}',
+                    result=failure_reason,
+                    usage={},
+                ),
+                status="failed",
+                failure_reason=failure_reason,
+            )
+
+        successful_launches = [item for item in launch_records if item.get("status") == "running"]
+        failed_launches = [item for item in launch_records if item.get("status") == "failed"]
+        immediate_failure_errors = [failure_reason for _, failure_reason in immediate_failures]
+        dispatch_status = (
+            "failed"
+            if not successful_launches
+            else "partial"
+            if failed_launches
+            else "completed"
+        )
         return {
-            "ok": True,
+            "ok": bool(successful_launches),
+            "status": dispatch_status,
             "trace_id": parent_trace_id,
-            "summary": f"Launched {len(launch_records)} worker session(s) for coordinator orchestration.",
+            "summary": (
+                f"Launched {len(successful_launches)} worker session(s) for coordinator orchestration."
+                if dispatch_status == "completed"
+                else f"Launched {len(successful_launches)} worker session(s); {len(failed_launches)} worker dispatch(es) failed immediately."
+                if dispatch_status == "partial"
+                else "No worker session was launched successfully."
+            ),
             "workers": launch_records,
             "artifacts": [],
-            "metrics": {"worker_count": len(launch_records)},
-            "error": None,
+            "metrics": {
+                "worker_count": len(successful_launches),
+                "failed_worker_count": len(launch_records) - len(successful_launches),
+            },
+            "error": "; ".join(immediate_failure_errors) or None,
         }
 
     async def _run_child_session(
@@ -162,9 +237,7 @@ class CoordinatorRuntimeService:
             child_session = response.session
             result_text = response.output.content
             notification_status = child_session.status.value
-            summary = (
-                f'Worker "{worker.description}" finished with status {child_session.status.value}.'
-            )
+            summary = f'Worker "{worker.description}" finished with status {child_session.status.value}.'
             usage = {
                 "total_messages": len(child_session.messages),
                 "tool_uses": sum(1 for message in child_session.messages if message.role == MessageRole.tool),
@@ -199,6 +272,7 @@ class CoordinatorRuntimeService:
             worker=worker,
             content=notification_xml,
             status=notification_status,
+            failure_reason=result_text if notification_status == "failed" else "",
         )
 
     async def _deliver_notification(
@@ -209,6 +283,7 @@ class CoordinatorRuntimeService:
         worker: WorkerDispatchSpec,
         content: str,
         status: str,
+        failure_reason: str = "",
     ) -> None:
         async with self._parent_locks[parent_session_id]:
             parent_session = await self._store.get_session(parent_session_id)
@@ -236,8 +311,52 @@ class CoordinatorRuntimeService:
                     },
                 ),
             )
+
             parent_session = await self._store.get_session(parent_session_id)
             if parent_session is None:
+                return
+
+            should_stop, stop_message = self._update_failure_guard(
+                session=parent_session,
+                parent_turn_id=parent_turn_id,
+                status=status,
+                worker=worker,
+                failure_reason=failure_reason or self._extract_failure_reason(content),
+            )
+            await self._store.save_session(parent_session)
+
+            if should_stop:
+                parent_session.messages.append(
+                    ChatMessage(
+                        id=str(uuid4()),
+                        role=MessageRole.assistant,
+                        content=stop_message,
+                        created_at=datetime.utcnow(),
+                        metadata={
+                            "message_kind": "automatic_stop",
+                            "turn_id": parent_turn_id,
+                            "worker_agent_key": worker.agent_key,
+                            "worker_status": status,
+                        },
+                    )
+                )
+                parent_session.status = SessionStatus.failed
+                parent_session.updated_at = datetime.utcnow()
+                await self._store.save_session(parent_session)
+                await self._store.append_event(
+                    parent_session_id,
+                    ExecutionEvent(
+                        type="worker.auto_stopped",
+                        session_id=parent_session_id,
+                        timestamp=datetime.utcnow(),
+                        payload={
+                            "turn_id": parent_turn_id,
+                            "task_id": worker.task_id,
+                            "reason": stop_message,
+                            "worker_agent_key": worker.agent_key,
+                        },
+                    ),
+                )
                 return
 
             auto_resume = (
@@ -294,11 +413,17 @@ class CoordinatorRuntimeService:
     async def _register_worker_dispatches(
         self,
         parent_session_id: str,
+        parent_turn_id: str,
         launch_records: list[dict[str, Any]],
     ) -> None:
         parent_session = await self._store.get_session(parent_session_id)
         if parent_session is None:
             return
+
+        guard = self._get_failure_guard(parent_session)
+        if str(guard.get("turn_id") or "") != parent_turn_id:
+            self._reset_failure_guard(parent_session, parent_turn_id)
+
         worker_dispatches = list(parent_session.metadata.get("worker_dispatches", []))
         worker_dispatches.extend(launch_records)
         parent_session.metadata["worker_dispatches"] = worker_dispatches
@@ -314,6 +439,7 @@ class CoordinatorRuntimeService:
         parent_session = await self._store.get_session(parent_session_id)
         if parent_session is None:
             return
+
         worker_dispatches = []
         for record in parent_session.metadata.get("worker_dispatches", []):
             if not isinstance(record, dict):
@@ -329,6 +455,7 @@ class CoordinatorRuntimeService:
                 )
             else:
                 worker_dispatches.append(record)
+
         parent_session.metadata["worker_dispatches"] = worker_dispatches
         await self._store.save_session(parent_session)
 
@@ -399,3 +526,93 @@ class CoordinatorRuntimeService:
             f"{usage_block}\n"
             "</task-notification>"
         )
+
+    def _is_agent_available(self, agent_key: str) -> bool:
+        try:
+            self._agent_registry.get(agent_key)
+        except KeyError:
+            return False
+        return True
+
+    def _get_failure_guard(self, session) -> dict[str, Any]:
+        guard = session.metadata.get("worker_failure_guard", {})
+        return guard if isinstance(guard, dict) else {}
+
+    def _reset_failure_guard(self, session, turn_id: str = "") -> None:
+        session.metadata["worker_failure_guard"] = {
+            "turn_id": turn_id,
+            "count": 0,
+            "last_error": "",
+            "recent_errors": [],
+            "blocked": False,
+        }
+
+    def _is_dispatch_blocked(self, session, turn_id: str) -> bool:
+        guard = self._get_failure_guard(session)
+        return bool(guard.get("blocked")) and str(guard.get("turn_id") or "") == turn_id
+
+    def _update_failure_guard(
+        self,
+        session,
+        parent_turn_id: str,
+        status: str,
+        worker: WorkerDispatchSpec,
+        failure_reason: str,
+    ) -> tuple[bool, str]:
+        guard = self._get_failure_guard(session)
+        if str(guard.get("turn_id") or "") != parent_turn_id:
+            guard = {
+                "turn_id": parent_turn_id,
+                "count": 0,
+                "last_error": "",
+                "recent_errors": [],
+                "blocked": False,
+            }
+
+        if status == "failed":
+            recent_errors = list(guard.get("recent_errors", []))
+            recent_errors.append(
+                {
+                    "agent_key": worker.agent_key,
+                    "description": worker.description,
+                    "reason": failure_reason or "unknown_failure",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+            guard["count"] = int(guard.get("count", 0)) + 1
+            guard["last_error"] = failure_reason or "unknown_failure"
+            guard["recent_errors"] = recent_errors[-self._max_consecutive_failures :]
+            failure_limit = 2 if (failure_reason or "").startswith("Unknown agent:") else self._max_consecutive_failures
+            if int(guard["count"]) >= failure_limit:
+                guard["blocked"] = True
+                session.metadata["worker_failure_guard"] = guard
+                reasons = [
+                    f"{index}. {item.get('agent_key', 'worker')}: {item.get('reason', 'unknown_failure')}"
+                    for index, item in enumerate(guard["recent_errors"], start=1)
+                ]
+                message = (
+                    "Background execution has been stopped automatically after repeated failures.\n\n"
+                    f"Recent failure count: {guard['count']}\n"
+                    f"Failure limit: {failure_limit}\n"
+                    "Failure reasons:\n"
+                    + "\n".join(reasons)
+                )
+                return True, message
+        else:
+            guard = {
+                "turn_id": parent_turn_id,
+                "count": 0,
+                "last_error": "",
+                "recent_errors": [],
+                "blocked": False,
+            }
+
+        session.metadata["worker_failure_guard"] = guard
+        return False, ""
+
+    def _extract_failure_reason(self, content: str) -> str:
+        start_tag = "<result>"
+        end_tag = "</result>"
+        if start_tag in content and end_tag in content:
+            return content.split(start_tag, 1)[1].split(end_tag, 1)[0].strip()
+        return "unknown_failure"

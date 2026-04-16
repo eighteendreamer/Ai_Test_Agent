@@ -8,6 +8,7 @@ import type {
   ModelConfigPublic,
   ModelConfigUpdateRequest,
   SessionDetail,
+  ToolApprovalRequest,
   ToolDescriptor,
 } from "../types";
 
@@ -70,6 +71,23 @@ export const api = {
   },
   getSession(sessionId: string): Promise<SessionDetail> {
     return request(`/api/v1/sessions/${sessionId}`);
+  },
+  listApprovals(sessionId: string): Promise<ToolApprovalRequest[]> {
+    return request(`/api/v1/sessions/${sessionId}/approvals`);
+  },
+  resolveApproval(
+    sessionId: string,
+    approvalId: string,
+    decision: "approved" | "denied",
+    reason?: string,
+  ): Promise<ToolApprovalRequest> {
+    return request(`/api/v1/sessions/${sessionId}/approvals/${approvalId}`, {
+      method: "POST",
+      body: JSON.stringify({
+        decision,
+        reason: reason || null,
+      }),
+    });
   },
   sendMessage(
     sessionId: string,

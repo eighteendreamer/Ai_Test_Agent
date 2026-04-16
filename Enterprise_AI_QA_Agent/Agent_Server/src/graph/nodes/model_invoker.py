@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.application.model_runtime_service import ModelRuntimeService
 from src.graph.state import AgentGraphState
+from src.registry.agents import AgentRegistry
 from src.registry.tools import ToolRegistry
 from src.runtime.execution_logging import append_graph_event, summarize_messages, truncate_text
 from src.schemas.model_config import ModelInvocationRequest
@@ -10,6 +11,7 @@ from src.schemas.model_config import ModelInvocationRequest
 def build_model_invoker_node(
     model_runtime_service: ModelRuntimeService,
     tool_registry: ToolRegistry,
+    agent_registry: AgentRegistry,
 ):
     async def model_invoker(state: AgentGraphState) -> AgentGraphState:
         append_graph_event(
@@ -25,6 +27,7 @@ def build_model_invoker_node(
         )
 
         if not state["system_prompt"]:
+            available_agent_keys = ", ".join(agent.key for agent in agent_registry.list()) or "none"
             prompt_sections = [
                 (
                     f"You are the '{state['selected_agent_name']}' runtime inside Enterprise AI QA Agent. "
@@ -40,7 +43,13 @@ def build_model_invoker_node(
                     "- Use 'subagent-dispatch' to launch background workers for research, implementation, verification, or reporting.\n"
                     "- Worker results return later as user-role XML messages starting with <task-notification>.\n"
                     "- Do not thank workers or talk to them directly. Synthesize their result for the user and decide the next dispatch.\n"
-                    "- Keep the coordinator focused on orchestration, task breakdown, and result integration."
+                    "- Keep the coordinator focused on orchestration, task breakdown, and result integration.\n"
+                    f"- Valid agent keys for subagent-dispatch are strictly limited to: {available_agent_keys}.\n"
+                    "- Never invent agent keys that are not registered.\n"
+                    "- If dispatch returns 'Unknown agent', treat it as a terminal configuration error for this turn and stop retrying fake alternatives.\n"
+                    "- When the user greets you or asks who you are, start your first sentence exactly with: "
+                    "'你好！我是御策天检 QA Agent，你可以唤我为 小天，是企业级AI质量保障系统的协调器，负责调度和管理测试任务，我可以帮你：' "
+                    "Then keep the rest of the response style and capability explanation consistent with the existing coordinator behavior."
                 )
             if state["skill_prompt_blocks"]:
                 prompt_sections.append("Active skill directives:\n" + "\n".join(state["skill_prompt_blocks"]))
@@ -110,9 +119,8 @@ def build_model_invoker_node(
             response_length=len(invocation_result.text),
             response_preview=truncate_text(invocation_result.text, 180),
             finish_reason=invocation_result.response_summary.get("finish_reason", ""),
-            stop_reason=invocation_result.response_summary.get("stop_reason", ""),
-            usage=invocation_result.response_summary.get("usage", {}),
             tool_call_count=len(invocation_result.tool_calls),
+            loop_iteration=state["loop_iteration"],
         )
 
         return state
@@ -121,4 +129,6 @@ def build_model_invoker_node(
 
 
 def route_after_model_invoker(state: AgentGraphState) -> str:
-    return "tool_executor" if state["model_tool_calls"] else "finalizer"
+    if state["model_tool_calls"]:
+        return "tool_executor"
+    return "finalizer"

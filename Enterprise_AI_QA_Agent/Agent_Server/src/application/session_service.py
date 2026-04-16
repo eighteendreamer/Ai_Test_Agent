@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Awaitable, Callable
 from uuid import uuid4
 
 from src.application.memory_runtime_service import MemoryRuntimeService
@@ -119,9 +120,16 @@ class SessionService:
                 },
             ),
         )
+        assistant_message_id = str(uuid4())
+        stream_chunk_handler = self._build_stream_chunk_handler(
+            session_id=session_id,
+            turn_id=str(session.metadata.get("pending_turn", {}).get("turn_id", "")),
+            assistant_message_id=assistant_message_id,
+        )
         continuation = await self._runtime_service.resume_after_approval(
             session,
             approval.model_dump(mode="python"),
+            on_model_chunk=stream_chunk_handler,
         )
 
         if continuation is not None:
@@ -136,7 +144,7 @@ class SessionService:
 
             if continuation.output_text:
                 assistant_message = ChatMessage(
-                    id=str(uuid4()),
+                    id=assistant_message_id,
                     role=MessageRole.assistant,
                     content=continuation.output_text,
                     created_at=datetime.utcnow(),
@@ -153,9 +161,22 @@ class SessionService:
                     session_id,
                     self._make_event(
                         session_id,
+                        "assistant.stream.completed",
+                        {
+                            "turn_id": continuation.state["turn_id"],
+                            "message_id": assistant_message_id,
+                            "response_length": len(continuation.output_text),
+                        },
+                    ),
+                )
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
                         "assistant.response_generated",
                         {
                             "turn_id": continuation.state["turn_id"],
+                            "message_id": assistant_message_id,
                             "message": "Assistant response has been added after approval resolution.",
                             "agent_key": continuation.state["selected_agent_key"],
                             "model_key": continuation.state["selected_model_key"],
@@ -240,8 +261,18 @@ class SessionService:
             ),
         )
 
+        assistant_message_id = str(uuid4())
+        stream_chunk_handler = self._build_stream_chunk_handler(
+            session_id=session_id,
+            turn_id=execution_request.turn_id,
+            assistant_message_id=assistant_message_id,
+        )
         try:
-            runtime_result = await self._runtime_service.execute_turn(session, execution_request)
+            runtime_result = await self._runtime_service.execute_turn(
+                session,
+                execution_request,
+                on_model_chunk=stream_chunk_handler,
+            )
         except Exception as exc:
             session.status = SessionStatus.failed
             await self._store.save_session(session)
@@ -303,7 +334,7 @@ class SessionService:
         )
 
         assistant_message = ChatMessage(
-            id=str(uuid4()),
+            id=assistant_message_id,
             role=MessageRole.assistant,
             content=runtime_result.output_text,
             created_at=datetime.utcnow(),
@@ -326,9 +357,22 @@ class SessionService:
             session_id,
             self._make_event(
                 session_id,
+                "assistant.stream.completed",
+                {
+                    "turn_id": execution_request.turn_id,
+                    "message_id": assistant_message_id,
+                    "response_length": len(runtime_result.output_text),
+                },
+            ),
+        )
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
                 "assistant.response_generated",
                 {
                     "turn_id": execution_request.turn_id,
+                    "message_id": assistant_message_id,
                     "message": "Assistant response has been added to the transcript.",
                     "agent_key": runtime_result.state["selected_agent_key"],
                     "model_key": runtime_result.state["selected_model_key"],
@@ -441,6 +485,46 @@ class SessionService:
             timestamp=datetime.utcnow(),
             payload=payload,
         )
+
+    def _build_stream_chunk_handler(
+        self,
+        session_id: str,
+        turn_id: str,
+        assistant_message_id: str,
+    ) -> Callable[[str], Awaitable[None]]:
+        started = False
+
+        async def emit_chunk(chunk: str) -> None:
+            nonlocal started
+            if not chunk:
+                return
+            if not started:
+                started = True
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
+                        "assistant.stream.started",
+                        {
+                            "turn_id": turn_id,
+                            "message_id": assistant_message_id,
+                        },
+                    ),
+                )
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "assistant.stream.delta",
+                    {
+                        "turn_id": turn_id,
+                        "message_id": assistant_message_id,
+                        "delta": chunk,
+                    },
+                ),
+            )
+
+        return emit_chunk
 
     async def _persist_turn_memory(
         self,

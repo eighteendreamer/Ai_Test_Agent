@@ -1,9 +1,105 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
 import type { ChatMessage } from "../../types";
 
-defineProps<{
+const props = defineProps<{
   messages: ChatMessage[];
 }>();
+
+const historyRef = ref<HTMLElement | null>(null);
+const scrollContainerRef = ref<HTMLElement | null>(null);
+const autoStickToBottom = ref(true);
+const BOTTOM_OFFSET_THRESHOLD = 120;
+
+const messageRenderSignature = computed(() =>
+  props.messages
+    .map((message) => {
+      const deliveryStatus = String(message.metadata?.delivery_status || "").trim();
+      return `${message.id}:${message.content.length}:${deliveryStatus}`;
+    })
+    .join("|"),
+);
+
+function isNearBottom(container: HTMLElement) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= BOTTOM_OFFSET_THRESHOLD;
+}
+
+function getComposerElement() {
+  return historyRef.value?.closest(".view-home")?.querySelector(".home-composer") as HTMLElement | null;
+}
+
+function getLastMessageElement() {
+  return historyRef.value?.lastElementChild as HTMLElement | null;
+}
+
+function getBoundaryDistance() {
+  const lastMessage = getLastMessageElement();
+  const composer = getComposerElement();
+  if (!lastMessage || !composer) {
+    return null;
+  }
+
+  const composerTop = composer.getBoundingClientRect().top;
+  const lastMessageBottom = lastMessage.getBoundingClientRect().bottom;
+  return lastMessageBottom - (composerTop - 16);
+}
+
+function handleScroll() {
+  const container = scrollContainerRef.value;
+  if (!container) {
+    return;
+  }
+  const boundaryDistance = getBoundaryDistance();
+  autoStickToBottom.value =
+    boundaryDistance !== null
+      ? boundaryDistance <= BOTTOM_OFFSET_THRESHOLD
+      : isNearBottom(container);
+}
+
+async function scrollToBoundary(force = false) {
+  await nextTick();
+  const container = scrollContainerRef.value;
+  if (!container) {
+    return;
+  }
+  if (!force && !autoStickToBottom.value) {
+    return;
+  }
+
+  const boundaryDistance = getBoundaryDistance();
+  if (boundaryDistance === null) {
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "auto",
+    });
+    return;
+  }
+
+  if (!force && boundaryDistance <= 0) {
+    return;
+  }
+
+  container.scrollTo({
+    top: container.scrollTop + Math.max(boundaryDistance, 0),
+    behavior: "auto",
+  });
+}
+
+onMounted(() => {
+  scrollContainerRef.value = historyRef.value?.closest(".prototype-content") as HTMLElement | null;
+  scrollContainerRef.value?.addEventListener("scroll", handleScroll, { passive: true });
+  void scrollToBoundary(true);
+});
+
+onBeforeUnmount(() => {
+  scrollContainerRef.value?.removeEventListener("scroll", handleScroll);
+});
+
+watch(messageRenderSignature, async (_, previousValue) => {
+  const hadPreviousMessages = Boolean(previousValue);
+  await scrollToBoundary(!hadPreviousMessages);
+});
 
 function labelForRole(role: ChatMessage["role"]) {
   if (role === "user") return "User Prompt";
@@ -11,6 +107,18 @@ function labelForRole(role: ChatMessage["role"]) {
   if (role === "tool") return "Tool Output";
   if (role === "system") return "System";
   return "Event";
+}
+
+function deliveryLabel(message: ChatMessage) {
+  const deliveryStatus = String(message.metadata?.delivery_status || "").trim();
+  if (deliveryStatus === "pending") return "发送中...";
+  if (deliveryStatus === "streaming") return "生成中...";
+  if (deliveryStatus === "failed") return "发送失败";
+  return "";
+}
+
+function isStreamingAssistant(message: ChatMessage) {
+  return message.role === "assistant" && String(message.metadata?.delivery_status || "").trim() === "streaming";
 }
 
 function toolSummary(content: string) {
@@ -145,16 +253,21 @@ function escapeHtml(content: string) {
 </script>
 
 <template>
-  <div class="home-history" v-if="messages.length">
+  <div ref="historyRef" class="home-history" v-if="messages.length">
     <article
-      v-for="message in messages"
+      v-for="message in props.messages"
       :key="message.id"
       class="conversation-entry"
       :class="`conversation-entry-${message.role}`"
     >
       <div class="conversation-entry-meta">
         <span>{{ labelForRole(message.role) }}</span>
-        <span>{{ new Date(message.created_at).toLocaleString("zh-CN") }}</span>
+        <span>
+          {{ new Date(message.created_at).toLocaleString("zh-CN") }}
+          <template v-if="deliveryLabel(message)">
+            - {{ deliveryLabel(message) }}
+          </template>
+        </span>
       </div>
       <details v-if="message.role === 'tool'" class="tool-output-details">
         <summary class="tool-output-summary">
@@ -168,7 +281,11 @@ function escapeHtml(content: string) {
       </details>
       <div
         v-else-if="message.role === 'assistant'"
-        class="conversation-entry-content conversation-entry-markdown"
+        :class="[
+          'conversation-entry-content',
+          'conversation-entry-markdown',
+          { 'conversation-entry-streaming': isStreamingAssistant(message) },
+        ]"
         v-html="renderAssistantMarkdown(message.content)"
       />
       <pre v-else class="conversation-entry-content">{{ message.content }}</pre>

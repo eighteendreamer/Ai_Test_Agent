@@ -117,19 +117,48 @@ class ToolRuntimeService:
                 )
 
             result = await handler(call.arguments, job_context)
+            resolved_status = self._resolve_result_status(result)
+            summary = str(result.get("summary", f"Tool '{tool.key}' completed."))
             if job is not None and self._tool_job_service is not None:
-                await self._tool_job_service.mark_completed(
-                    job.id,
-                    summary=str(result.get("summary", f"Tool '{tool.key}' completed.")),
-                    output_payload=result,
-                    artifacts=result.get("artifacts", []) if isinstance(result, dict) else [],
-                )
+                if resolved_status == "failed":
+                    await self._tool_job_service.mark_failed(
+                        job.id,
+                        summary=summary,
+                        error_message=str(result.get("error") or summary),
+                        output_payload=result,
+                    )
+                elif resolved_status == "partial":
+                    await self._tool_job_service.mark_partial(
+                        job.id,
+                        summary=summary,
+                        output_payload=result,
+                        artifacts=result.get("artifacts", []) if isinstance(result, dict) else [],
+                    )
+                elif resolved_status == "waiting_approval":
+                    await self._tool_job_service.mark_waiting_approval(
+                        job.id,
+                        summary=summary,
+                        metadata={"output_payload": result},
+                    )
+                elif resolved_status == "denied":
+                    await self._tool_job_service.mark_denied(
+                        job.id,
+                        summary=summary,
+                        output_payload=result,
+                    )
+                else:
+                    await self._tool_job_service.mark_completed(
+                        job.id,
+                        summary=summary,
+                        output_payload=result,
+                        artifacts=result.get("artifacts", []) if isinstance(result, dict) else [],
+                    )
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
                 tool_name=tool.name,
-                status="completed",
-                summary=str(result.get("summary", f"Tool '{tool.key}' completed.")),
+                status=resolved_status,
+                summary=summary,
                 trace_id=str(result.get("trace_id") or context.trace_id or ""),
                 job_id=job.id if job is not None else None,
                 input=call.arguments,
@@ -158,6 +187,20 @@ class ToolRuntimeService:
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
             )
+
+    def _resolve_result_status(self, result: dict[str, Any]) -> str:
+        explicit_status = str(result.get("status") or "").strip().lower()
+        if explicit_status in {"completed", "partial", "failed", "waiting_approval", "denied"}:
+            return explicit_status
+        if result.get("ok") is False:
+            workers = result.get("workers")
+            if isinstance(workers, list):
+                running_count = sum(1 for item in workers if isinstance(item, dict) and item.get("status") == "running")
+                failed_count = sum(1 for item in workers if isinstance(item, dict) and item.get("status") == "failed")
+                if running_count > 0 and failed_count > 0:
+                    return "partial"
+            return "failed"
+        return "completed"
 
     async def _run_knowledge_rag(
         self,

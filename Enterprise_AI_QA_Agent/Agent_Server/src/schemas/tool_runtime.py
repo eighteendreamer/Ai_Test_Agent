@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-ToolExecutionStatus = Literal["completed", "failed", "waiting_approval", "denied"]
+ToolExecutionStatus = Literal["completed", "partial", "failed", "waiting_approval", "denied"]
 
 
 class ModelToolCall(BaseModel):

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
-from typing import Any
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from src.application.model_runtime_service import ModelRuntimeService
@@ -45,6 +45,7 @@ class RuntimeService:
         self,
         session: SessionRecord,
         request: ExecutionRequest,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         initial_state = {
             "session_id": session.id,
@@ -105,7 +106,8 @@ class RuntimeService:
             user_message_preview=truncate_text(request.user_message, 160),
         )
 
-        result = await self._run_until_settled(initial_state)
+        async with self._model_runtime_service.stream_handler(on_model_chunk):
+            result = await self._run_until_settled(initial_state)
 
         append_graph_event(
             result,
@@ -183,7 +185,8 @@ class RuntimeService:
     async def resume_after_approval(
         self,
         session: SessionRecord,
-            approval: dict,
+        approval: dict,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult | None:
         pending_turn = dict(session.metadata.get("pending_turn") or {})
         if not pending_turn:
@@ -335,7 +338,8 @@ class RuntimeService:
                 "continue_loop": False,
                 "termination_reason": "",
             }
-            final_state = await self._run_until_settled(state)
+            async with self._model_runtime_service.stream_handler(on_model_chunk):
+                final_state = await self._run_until_settled(state)
             output_text = final_state["final_response"]
             events_payload = final_state["event_log"]
             pending_turn = final_state["pending_turn"]

@@ -64,6 +64,7 @@ def build_agent_graph(
         build_model_invoker_node(
             model_runtime_service=model_runtime_service,
             tool_registry=tool_registry,
+            agent_registry=agent_registry,
         ),
     )
     graph.add_node(

@@ -17,25 +17,36 @@ let healthPollTimer: number | null = null;
 const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
 const runtimeLines = computed(() => {
+  const workerDispatches = sessionStore.workerDispatches;
+  const failureGuard = sessionStore.workerFailureGuard;
   if (sessionStore.activity.length > 0) {
-    return sessionStore.activity.map((event) => {
-      const details = Object.entries(event.payload ?? {})
-        .filter(([, value]) => value !== null && value !== undefined && value !== "")
-        .slice(0, 4)
-        .map(([key, value]) => `${key}=${String(value)}`)
-        .join(" ");
+    return [
+      `[watcher] phase=${sessionStore.watcherPhase} sync=${sessionStore.watcherLastSyncLabel} failures=${sessionStore.watcherFailures}`,
+      `[approvals] pending=${sessionStore.pendingApprovals.length} workers=${workerDispatches.length}`,
+      ...(failureGuard?.blocked
+        ? [`[guard] blocked count=${failureGuard.count ?? 0} last_error=${failureGuard.last_error ?? "unknown"}`]
+        : []),
+      ...sessionStore.activity.map((event) => {
+        const details = Object.entries(event.payload ?? {})
+          .filter(([, value]) => value !== null && value !== undefined && value !== "")
+          .slice(0, 4)
+          .map(([key, value]) => `${key}=${String(value)}`)
+          .join(" ");
 
-      return `[${new Date(event.timestamp).toLocaleTimeString("zh-CN", {
-        hour12: false,
-      })}] ${event.type}${details ? ` ${details}` : ""}`;
-    });
+        return `[${new Date(event.timestamp).toLocaleTimeString("zh-CN", {
+          hour12: false,
+        })}] ${event.type}${details ? ` ${details}` : ""}`;
+      }),
+    ];
   }
 
   if (sessionStore.session) {
     return [
       `[session] id=${sessionStore.session.id}`,
       `[status] ${sessionStore.session.status} / ${sessionStore.session.session_mode} / ${sessionStore.session.runtime_mode}`,
+      `[watcher] phase=${sessionStore.watcherPhase} sync=${sessionStore.watcherLastSyncLabel} failures=${sessionStore.watcherFailures}`,
       `[agent] ${sessionStore.session.selected_agent ?? sessionStore.selectedAgentKey}`,
+      `[approvals] pending=${sessionStore.pendingApprovals.length} workers=${workerDispatches.length}`,
       `[messages] total=${sessionStore.messages.length}`,
     ];
   }
@@ -58,6 +69,7 @@ watch(
 
 onMounted(async () => {
   await Promise.all([appStore.fetchSystemStatus(), sessionStore.bootstrap()]);
+  sessionStore.startWatcher();
   healthPollTimer = window.setInterval(() => {
     void appStore.fetchSystemStatus();
   }, 15000);
@@ -68,6 +80,7 @@ onBeforeUnmount(() => {
     window.clearInterval(healthPollTimer);
     healthPollTimer = null;
   }
+  sessionStore.stopWatcher();
   sessionStore.eventSource?.close();
 });
 </script>

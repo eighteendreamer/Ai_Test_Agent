@@ -140,6 +140,7 @@ async def lifespan(app: FastAPI):
         settings=settings,
         store=store,
         session_service=session_service,
+        agent_registry=agent_registry,
     )
     tool_runtime_service.set_coordinator_runtime_service(coordinator_runtime_service)
     app.state.coordinator_runtime_service = coordinator_runtime_service

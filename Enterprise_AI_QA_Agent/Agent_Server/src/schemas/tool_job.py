@@ -14,7 +14,9 @@ class ToolJobStatus(str, Enum):
     resume_requested = "resume_requested"
     retry_requested = "retry_requested"
     completed = "completed"
+    partial = "partial"
     failed = "failed"
+    denied = "denied"
     cancelled = "cancelled"
 
 

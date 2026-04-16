@@ -26,6 +26,9 @@ class MemoryRuntimeService:
     def backend(self) -> str:
         return self._memory_store.backend
 
+    async def refresh_backend_status(self) -> str:
+        return await self._memory_store.refresh_connection_status()
+
     async def retrieve_for_turn(
         self,
         session_id: str,

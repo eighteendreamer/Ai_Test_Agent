@@ -96,6 +96,22 @@ class ToolJobService:
         job.updated_at = job.completed_at
         return await self._store.save_job(job)
 
+    async def mark_partial(
+        self,
+        job_id: str,
+        summary: str,
+        output_payload: dict[str, Any],
+        artifacts: list[dict[str, Any]] | None = None,
+    ) -> ToolJobRecord | None:
+        job = await self._mark(job_id, ToolJobStatus.partial, summary=summary, output_payload=output_payload)
+        if job is None:
+            return None
+        saved_artifacts = await self._save_artifacts(job, artifacts or [])
+        job.artifact_count = len(saved_artifacts)
+        job.completed_at = datetime.utcnow()
+        job.updated_at = job.completed_at
+        return await self._store.save_job(job)
+
     async def mark_failed(
         self,
         job_id: str,
@@ -113,6 +129,14 @@ class ToolJobService:
 
     async def cancel_job(self, job_id: str, reason: str | None = None) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.cancelled, summary=reason or "Cancelled by operator.")
+
+    async def mark_denied(
+        self,
+        job_id: str,
+        summary: str,
+        output_payload: dict[str, Any] | None = None,
+    ) -> ToolJobRecord | None:
+        return await self._mark(job_id, ToolJobStatus.denied, summary=summary, output_payload=output_payload or {})
 
     async def request_resume(self, job_id: str, reason: str | None = None) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.resume_requested, summary=reason or "Resume requested.")
@@ -154,7 +178,13 @@ class ToolJobService:
         job.output_payload = output_payload or job.output_payload
         job.error_message = error_message
         job.updated_at = datetime.utcnow()
-        if status in {ToolJobStatus.completed, ToolJobStatus.failed, ToolJobStatus.cancelled}:
+        if status in {
+            ToolJobStatus.completed,
+            ToolJobStatus.partial,
+            ToolJobStatus.failed,
+            ToolJobStatus.denied,
+            ToolJobStatus.cancelled,
+        }:
             job.completed_at = datetime.utcnow()
         if metadata:
             job.metadata.update(metadata)
