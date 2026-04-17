@@ -8,9 +8,14 @@ const props = defineProps<{
 }>();
 
 const historyRef = ref<HTMLElement | null>(null);
+const endRef = ref<HTMLElement | null>(null);
 const scrollContainerRef = ref<HTMLElement | null>(null);
-const autoStickToBottom = ref(true);
-const BOTTOM_OFFSET_THRESHOLD = 120;
+const COMPOSER_GAP = 50;
+const BOUNDARY_RESUME_THRESHOLD = 80;
+let resizeObserver: ResizeObserver | null = null;
+let suppressScrollSync = false;
+let releaseScrollSyncFrame = 0;
+const userOverrideActive = ref(false);
 
 const messageRenderSignature = computed(() =>
   props.messages
@@ -20,41 +25,72 @@ const messageRenderSignature = computed(() =>
     })
     .join("|"),
 );
+const streamingSignature = computed(() =>
+  props.messages
+    .filter((message) => isStreamingAssistant(message))
+    .map((message) => `${message.id}:${message.content.length}`)
+    .join("|"),
+);
+const hasStreamingAssistantOutput = computed(() => streamingSignature.value.length > 0);
 
-function isNearBottom(container: HTMLElement) {
-  return container.scrollHeight - container.scrollTop - container.clientHeight <= BOTTOM_OFFSET_THRESHOLD;
-}
-
-function getComposerElement() {
-  return historyRef.value?.closest(".view-home")?.querySelector(".home-composer") as HTMLElement | null;
-}
-
-function getLastMessageElement() {
-  return historyRef.value?.lastElementChild as HTMLElement | null;
-}
-
-function getBoundaryDistance() {
-  const lastMessage = getLastMessageElement();
-  const composer = getComposerElement();
-  if (!lastMessage || !composer) {
+function getComposerBoundaryTop() {
+  const composer = document.querySelector(".home-composer") as HTMLElement | null;
+  if (!composer) {
     return null;
   }
+  return composer.getBoundingClientRect().top - COMPOSER_GAP;
+}
 
-  const composerTop = composer.getBoundingClientRect().top;
-  const lastMessageBottom = lastMessage.getBoundingClientRect().bottom;
-  return lastMessageBottom - (composerTop - 16);
+function getTailDistanceToBoundary() {
+  const boundaryTop = getComposerBoundaryTop();
+  const tail = endRef.value;
+  if (boundaryTop === null || !tail) {
+    return null;
+  }
+  return tail.getBoundingClientRect().bottom - boundaryTop;
+}
+
+function isWithinFollowZone() {
+  const distance = getTailDistanceToBoundary();
+  if (distance === null) {
+    return true;
+  }
+  return distance <= BOUNDARY_RESUME_THRESHOLD;
+}
+
+function withProgrammaticScroll(callback: () => void) {
+  suppressScrollSync = true;
+  callback();
+  if (releaseScrollSyncFrame) {
+    cancelAnimationFrame(releaseScrollSyncFrame);
+  }
+  releaseScrollSyncFrame = window.requestAnimationFrame(() => {
+    suppressScrollSync = false;
+    releaseScrollSyncFrame = 0;
+  });
 }
 
 function handleScroll() {
-  const container = scrollContainerRef.value;
-  if (!container) {
+  if (suppressScrollSync) {
     return;
   }
-  const boundaryDistance = getBoundaryDistance();
-  autoStickToBottom.value =
-    boundaryDistance !== null
-      ? boundaryDistance <= BOTTOM_OFFSET_THRESHOLD
-      : isNearBottom(container);
+  if (!hasStreamingAssistantOutput.value) {
+    userOverrideActive.value = false;
+    return;
+  }
+  userOverrideActive.value = !isWithinFollowZone();
+}
+
+function handleWheel(event: WheelEvent) {
+  if (event.deltaY !== 0 && hasStreamingAssistantOutput.value) {
+    userOverrideActive.value = true;
+  }
+}
+
+function handleTouchMove() {
+  if (hasStreamingAssistantOutput.value) {
+    userOverrideActive.value = true;
+  }
 }
 
 async function scrollToBoundary(force = false) {
@@ -63,42 +99,77 @@ async function scrollToBoundary(force = false) {
   if (!container) {
     return;
   }
-  if (!force && !autoStickToBottom.value) {
+  if (!force && !hasStreamingAssistantOutput.value) {
+    return;
+  }
+  if (!force && userOverrideActive.value) {
     return;
   }
 
-  const boundaryDistance = getBoundaryDistance();
-  if (boundaryDistance === null) {
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "auto",
+  const tail = endRef.value;
+  if (!tail) {
+    withProgrammaticScroll(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "auto",
+      });
     });
     return;
   }
-
-  if (!force && boundaryDistance <= 0) {
-    return;
+  const overflow = getTailDistanceToBoundary();
+  if (force || (overflow !== null && overflow > 0)) {
+    withProgrammaticScroll(() => {
+      tail.scrollIntoView({
+        block: "end",
+        inline: "nearest",
+        behavior: "auto",
+      });
+    });
   }
-
-  container.scrollTo({
-    top: container.scrollTop + Math.max(boundaryDistance, 0),
-    behavior: "auto",
-  });
 }
 
 onMounted(() => {
   scrollContainerRef.value = historyRef.value?.closest(".prototype-content") as HTMLElement | null;
   scrollContainerRef.value?.addEventListener("scroll", handleScroll, { passive: true });
+  scrollContainerRef.value?.addEventListener("wheel", handleWheel, { passive: true });
+  scrollContainerRef.value?.addEventListener("touchmove", handleTouchMove, { passive: true });
+  resizeObserver = new ResizeObserver(() => {
+    if (hasStreamingAssistantOutput.value) {
+      void scrollToBoundary();
+    }
+  });
+  if (historyRef.value) {
+    resizeObserver.observe(historyRef.value);
+  }
   void scrollToBoundary(true);
 });
 
 onBeforeUnmount(() => {
   scrollContainerRef.value?.removeEventListener("scroll", handleScroll);
+  scrollContainerRef.value?.removeEventListener("wheel", handleWheel);
+  scrollContainerRef.value?.removeEventListener("touchmove", handleTouchMove);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  if (releaseScrollSyncFrame) {
+    cancelAnimationFrame(releaseScrollSyncFrame);
+    releaseScrollSyncFrame = 0;
+  }
 });
 
-watch(messageRenderSignature, async (_, previousValue) => {
-  const hadPreviousMessages = Boolean(previousValue);
-  await scrollToBoundary(!hadPreviousMessages);
+watch(messageRenderSignature, (_, previousValue) => {
+  const shouldForce = !previousValue;
+  if (shouldForce) {
+    userOverrideActive.value = false;
+    void scrollToBoundary(true);
+  }
+});
+
+watch(streamingSignature, () => {
+  if (!hasStreamingAssistantOutput.value) {
+    userOverrideActive.value = false;
+    return;
+  }
+  void scrollToBoundary();
 });
 
 function labelForRole(role: ChatMessage["role"]) {
@@ -290,5 +361,6 @@ function escapeHtml(content: string) {
       />
       <pre v-else class="conversation-entry-content">{{ message.content }}</pre>
     </article>
+    <div ref="endRef" class="conversation-end-sentinel" aria-hidden="true"></div>
   </div>
 </template>

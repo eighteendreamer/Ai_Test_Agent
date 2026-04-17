@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from collections import defaultdict
 from datetime import datetime
 from typing import Awaitable, Callable
 from uuid import uuid4
@@ -40,6 +42,7 @@ class SessionService:
         self._prompt_service = prompt_service
         self._runtime_service = runtime_service
         self._memory_runtime_service = memory_runtime_service
+        self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def list_sessions(self) -> list[SessionSummary]:
         sessions = await self._store.list_sessions()
@@ -98,74 +101,262 @@ class SessionService:
         approval_id: str,
         payload: ApprovalDecisionRequest,
     ) -> ToolApprovalRequest:
-        if payload.decision not in {ToolApprovalStatus.approved, ToolApprovalStatus.denied}:
-            raise ValueError("Approval decision must be approved or denied.")
+        async with self._session_locks[session_id]:
+            if payload.decision not in {ToolApprovalStatus.approved, ToolApprovalStatus.denied}:
+                raise ValueError("Approval decision must be approved or denied.")
 
-        approval = await self._store.resolve_approval(
-            session_id=session_id,
-            approval_id=approval_id,
-            status=payload.decision,
-            reason=payload.reason,
-        )
-        session = await self._require_session(session_id)
-        await self._store.append_event(
-            session_id,
-            self._make_event(
+            approval = await self._store.resolve_approval(
+                session_id=session_id,
+                approval_id=approval_id,
+                status=payload.decision,
+                reason=payload.reason,
+            )
+            session = await self._require_session(session_id)
+            await self._store.append_event(
                 session_id,
-                "approval.resolved",
-                {
-                    "approval_id": approval.id,
-                    "tool_key": approval.tool_key,
-                    "decision": approval.status.value,
+                self._make_event(
+                    session_id,
+                    "approval.resolved",
+                    {
+                        "approval_id": approval.id,
+                        "tool_key": approval.tool_key,
+                        "decision": approval.status.value,
+                    },
+                ),
+            )
+            assistant_message_id = str(uuid4())
+            stream_chunk_handler = self._build_stream_chunk_handler(
+                session_id=session_id,
+                turn_id=str(session.metadata.get("pending_turn", {}).get("turn_id", "")),
+                assistant_message_id=assistant_message_id,
+            )
+            continuation = await self._runtime_service.resume_after_approval(
+                session,
+                approval.model_dump(mode="python"),
+                on_model_chunk=stream_chunk_handler,
+            )
+
+            if continuation is not None:
+                for event in continuation.events:
+                    await self._store.append_event(session_id, event)
+
+                for tool_message in continuation.tool_messages:
+                    session.messages.append(tool_message)
+
+                await self._store.save_snapshot(session_id, continuation.snapshot)
+                session.metadata["pending_turn"] = continuation.pending_turn
+
+                if continuation.output_text:
+                    assistant_message = ChatMessage(
+                        id=assistant_message_id,
+                        role=MessageRole.assistant,
+                        content=continuation.output_text,
+                        created_at=datetime.utcnow(),
+                        metadata={
+                            "turn_id": continuation.state["turn_id"],
+                            "agent_key": continuation.state["selected_agent_key"],
+                            "agent_name": continuation.state["selected_agent_name"],
+                            "model_key": continuation.state["selected_model_key"],
+                            "model_name": continuation.state["selected_model_name"],
+                        },
+                    )
+                    session.messages.append(assistant_message)
+                    await self._store.append_event(
+                        session_id,
+                        self._make_event(
+                            session_id,
+                            "assistant.stream.completed",
+                            {
+                                "turn_id": continuation.state["turn_id"],
+                                "message_id": assistant_message_id,
+                                "response_length": len(continuation.output_text),
+                            },
+                        ),
+                    )
+                    await self._store.append_event(
+                        session_id,
+                        self._make_event(
+                            session_id,
+                            "assistant.response_generated",
+                            {
+                                "turn_id": continuation.state["turn_id"],
+                                "message_id": assistant_message_id,
+                                "message": "Assistant response has been added after approval resolution.",
+                                "agent_key": continuation.state["selected_agent_key"],
+                                "model_key": continuation.state["selected_model_key"],
+                                "response_preview": truncate_text(continuation.output_text, 180),
+                                "response_length": len(continuation.output_text),
+                            },
+                        ),
+                    )
+                    await self._persist_turn_memory(
+                        session=session,
+                        turn_id=continuation.state["turn_id"],
+                        trace_id=continuation.state["trace_id"],
+                        user_message=str(continuation.state.get("user_message", "")),
+                        assistant_message=continuation.output_text,
+                        tool_results=list(continuation.state.get("tool_results", [])),
+                        context_bundle=dict(continuation.state.get("context_bundle", {})),
+                    )
+
+            pending_approvals = [
+                item for item in await self._store.list_approvals(session_id) if item.status == ToolApprovalStatus.pending
+            ]
+            session.status = SessionStatus.waiting_approval if pending_approvals else SessionStatus.completed
+            await self._store.save_session(session)
+            return approval
+
+    async def send_message(self, session_id: str, payload: SendMessageRequest) -> ConversationResponse:
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.status == SessionStatus.waiting_approval:
+                raise ValueError("Session is waiting for approval. Resolve the pending approval before sending a new message.")
+            if session.status == SessionStatus.running:
+                raise ValueError("Session is still running. Wait for the current turn to finish before sending a new message.")
+
+            execution_request = self._prompt_service.prepare(session, payload)
+            failure_message = "Runtime execution failed before the assistant response was produced."
+
+            session.status = SessionStatus.running
+            if payload.agent_key:
+                session.selected_agent = payload.agent_key
+            if payload.model_key:
+                session.preferred_model = payload.model_key
+
+            user_message = ChatMessage(
+                id=str(uuid4()),
+                role=MessageRole.user,
+                content=payload.content.strip(),
+                created_at=datetime.utcnow(),
+                metadata={
+                    "turn_id": execution_request.turn_id,
+                    "requested_agent": payload.agent_key,
+                    "requested_model": payload.model_key,
+                    **payload.metadata,
                 },
-            ),
-        )
-        assistant_message_id = str(uuid4())
-        stream_chunk_handler = self._build_stream_chunk_handler(
-            session_id=session_id,
-            turn_id=str(session.metadata.get("pending_turn", {}).get("turn_id", "")),
-            assistant_message_id=assistant_message_id,
-        )
-        continuation = await self._runtime_service.resume_after_approval(
-            session,
-            approval.model_dump(mode="python"),
-            on_model_chunk=stream_chunk_handler,
-        )
+            )
+            session.messages.append(user_message)
+            await self._store.save_session(session)
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "turn.started",
+                    {
+                        "turn_id": execution_request.turn_id,
+                        "message": "User turn has been accepted by the backend runtime.",
+                        "content_preview": truncate_text(payload.content, 180),
+                        "normalized_preview": truncate_text(execution_request.normalized_input, 180),
+                        "agent_key": payload.agent_key or "",
+                        "model_key": payload.model_key or "",
+                        "skill_count": len(execution_request.skill_keys),
+                        "context_keys": ",".join(sorted(execution_request.context.keys())) or "none",
+                        "message_kind": str(payload.metadata.get("message_kind", "user_input")),
+                    },
+                ),
+            )
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "message.received",
+                    {
+                        "turn_id": execution_request.turn_id,
+                        "message": "User input has been persisted to the session transcript.",
+                        "role": "user",
+                        "content_preview": truncate_text(payload.content, 180),
+                        "requested_agent": payload.agent_key or session.selected_agent or "auto",
+                        "requested_model": payload.model_key or session.preferred_model or "auto",
+                        "message_kind": str(payload.metadata.get("message_kind", "user_input")),
+                    },
+                ),
+            )
 
-        if continuation is not None:
-            for event in continuation.events:
-                await self._store.append_event(session_id, event)
+            assistant_message_id = str(uuid4())
+            stream_chunk_handler = self._build_stream_chunk_handler(
+                session_id=session_id,
+                turn_id=execution_request.turn_id,
+                assistant_message_id=assistant_message_id,
+            )
+            try:
+                runtime_result = await self._runtime_service.execute_turn(
+                    session,
+                    execution_request,
+                    on_model_chunk=stream_chunk_handler,
+                )
 
-            for tool_message in continuation.tool_messages:
-                session.messages.append(tool_message)
+                for event in runtime_result.events:
+                    await self._store.append_event(session_id, event)
 
-            await self._store.save_snapshot(session_id, continuation.snapshot)
-            session.metadata["pending_turn"] = continuation.pending_turn
+                for tool_message in runtime_result.tool_messages:
+                    session.messages.append(tool_message)
 
-            if continuation.output_text:
+                for approval_data in runtime_result.approvals:
+                    approval = ToolApprovalRequest.model_validate(approval_data)
+                    await self._store.save_approval(session_id, approval)
+                    await self._store.append_event(
+                        session_id,
+                        self._make_event(
+                            session_id,
+                            "approval.created",
+                            {
+                                "turn_id": execution_request.turn_id,
+                                "message": "A tool execution approval request has been created.",
+                                "approval_id": approval.id,
+                                "tool_key": approval.tool_key,
+                                "tool_name": approval.tool_name,
+                                "reason": approval.reason,
+                            },
+                        ),
+                    )
+
+                failure_message = "Runtime execution finished, but saving the session artifacts failed."
+                await self._store.save_snapshot(session_id, runtime_result.snapshot)
+                session.metadata["pending_turn"] = runtime_result.pending_turn
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
+                        "snapshot.saved",
+                        {
+                            "turn_id": execution_request.turn_id,
+                            "message": "Execution snapshot has been saved for replay and resume.",
+                            "snapshot_id": runtime_result.snapshot.id,
+                            "snapshot_version": runtime_result.snapshot.version,
+                            "snapshot_stage": runtime_result.snapshot.stage,
+                        },
+                    ),
+                )
+
                 assistant_message = ChatMessage(
                     id=assistant_message_id,
                     role=MessageRole.assistant,
-                    content=continuation.output_text,
+                    content=runtime_result.output_text,
                     created_at=datetime.utcnow(),
                     metadata={
-                        "turn_id": continuation.state["turn_id"],
-                        "agent_key": continuation.state["selected_agent_key"],
-                        "agent_name": continuation.state["selected_agent_name"],
-                        "model_key": continuation.state["selected_model_key"],
-                        "model_name": continuation.state["selected_model_name"],
+                        "turn_id": execution_request.turn_id,
+                        "agent_key": runtime_result.state["selected_agent_key"],
+                        "agent_name": runtime_result.state["selected_agent_name"],
+                        "model_key": runtime_result.state["selected_model_key"],
+                        "model_name": runtime_result.state["selected_model_name"],
                     },
                 )
                 session.messages.append(assistant_message)
+                session.status = (
+                    SessionStatus.waiting_approval
+                    if runtime_result.approvals
+                    else SessionStatus.completed
+                )
+                await self._store.save_session(session)
                 await self._store.append_event(
                     session_id,
                     self._make_event(
                         session_id,
                         "assistant.stream.completed",
                         {
-                            "turn_id": continuation.state["turn_id"],
+                            "turn_id": execution_request.turn_id,
                             "message_id": assistant_message_id,
-                            "response_length": len(continuation.output_text),
+                            "response_length": len(runtime_result.output_text),
                         },
                     ),
                 )
@@ -175,243 +366,64 @@ class SessionService:
                         session_id,
                         "assistant.response_generated",
                         {
-                            "turn_id": continuation.state["turn_id"],
+                            "turn_id": execution_request.turn_id,
                             "message_id": assistant_message_id,
-                            "message": "Assistant response has been added after approval resolution.",
-                            "agent_key": continuation.state["selected_agent_key"],
-                            "model_key": continuation.state["selected_model_key"],
-                            "response_preview": truncate_text(continuation.output_text, 180),
-                            "response_length": len(continuation.output_text),
+                            "message": "Assistant response has been added to the transcript.",
+                            "agent_key": runtime_result.state["selected_agent_key"],
+                            "model_key": runtime_result.state["selected_model_key"],
+                            "response_preview": truncate_text(runtime_result.output_text, 180),
+                            "response_length": len(runtime_result.output_text),
                         },
                     ),
                 )
                 await self._persist_turn_memory(
                     session=session,
-                    turn_id=continuation.state["turn_id"],
-                    trace_id=continuation.state["trace_id"],
-                    user_message=str(continuation.state.get("user_message", "")),
-                    assistant_message=continuation.output_text,
-                    tool_results=list(continuation.state.get("tool_results", [])),
-                    context_bundle=dict(continuation.state.get("context_bundle", {})),
+                    turn_id=execution_request.turn_id,
+                    trace_id=runtime_result.state["trace_id"],
+                    user_message=payload.content,
+                    assistant_message=runtime_result.output_text,
+                    tool_results=list(runtime_result.state.get("tool_results", [])),
+                    context_bundle=execution_request.context,
+                )
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
+                        "turn.completed",
+                        {
+                            "turn_id": execution_request.turn_id,
+                            "message": "User turn has completed and all runtime artifacts were persisted.",
+                            "session_status": session.status.value,
+                            "event_count": session.event_count,
+                            "snapshot_count": session.snapshot_count,
+                            "approval_count": len(runtime_result.approvals),
+                        },
+                    ),
                 )
 
-        pending_approvals = [
-            item for item in await self._store.list_approvals(session_id) if item.status == ToolApprovalStatus.pending
-        ]
-        session.status = SessionStatus.waiting_approval if pending_approvals else SessionStatus.completed
-        await self._store.save_session(session)
-        return approval
-
-    async def send_message(self, session_id: str, payload: SendMessageRequest) -> ConversationResponse:
-        session = await self._require_session(session_id)
-        execution_request = self._prompt_service.prepare(session, payload)
-
-        session.status = SessionStatus.running
-        if payload.agent_key:
-            session.selected_agent = payload.agent_key
-        if payload.model_key:
-            session.preferred_model = payload.model_key
-
-        user_message = ChatMessage(
-            id=str(uuid4()),
-            role=MessageRole.user,
-            content=payload.content.strip(),
-            created_at=datetime.utcnow(),
-            metadata={
-                "turn_id": execution_request.turn_id,
-                "requested_agent": payload.agent_key,
-                "requested_model": payload.model_key,
-                **payload.metadata,
-            },
-        )
-        session.messages.append(user_message)
-        await self._store.save_session(session)
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "turn.started",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message": "User turn has been accepted by the backend runtime.",
-                    "content_preview": truncate_text(payload.content, 180),
-                    "normalized_preview": truncate_text(execution_request.normalized_input, 180),
-                    "agent_key": payload.agent_key or "",
-                    "model_key": payload.model_key or "",
-                    "skill_count": len(execution_request.skill_keys),
-                    "context_keys": ",".join(sorted(execution_request.context.keys())) or "none",
-                    "message_kind": str(payload.metadata.get("message_kind", "user_input")),
-                },
-            ),
-        )
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "message.received",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message": "User input has been persisted to the session transcript.",
-                    "role": "user",
-                    "content_preview": truncate_text(payload.content, 180),
-                    "requested_agent": payload.agent_key or session.selected_agent or "auto",
-                    "requested_model": payload.model_key or session.preferred_model or "auto",
-                    "message_kind": str(payload.metadata.get("message_kind", "user_input")),
-                },
-            ),
-        )
-
-        assistant_message_id = str(uuid4())
-        stream_chunk_handler = self._build_stream_chunk_handler(
-            session_id=session_id,
-            turn_id=execution_request.turn_id,
-            assistant_message_id=assistant_message_id,
-        )
-        try:
-            runtime_result = await self._runtime_service.execute_turn(
-                session,
-                execution_request,
-                on_model_chunk=stream_chunk_handler,
-            )
-        except Exception as exc:
-            session.status = SessionStatus.failed
-            await self._store.save_session(session)
-            await self._store.append_event(
-                session_id,
-                self._make_event(
+                events = await self._store.list_events(session_id)
+                return ConversationResponse(
+                    session=await self._to_detail(session),
+                    output=assistant_message,
+                    events=events[-10:],
+                )
+            except Exception as exc:
+                session.status = SessionStatus.failed
+                await self._store.save_session(session)
+                await self._store.append_event(
                     session_id,
-                    "turn.failed",
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "message": "Runtime execution failed before the assistant response was produced.",
-                        "error_type": exc.__class__.__name__,
-                        "error": truncate_text(str(exc), 240),
-                    },
-                ),
-            )
-            raise
-
-        for event in runtime_result.events:
-            await self._store.append_event(session_id, event)
-
-        for tool_message in runtime_result.tool_messages:
-            session.messages.append(tool_message)
-
-        for approval_data in runtime_result.approvals:
-            approval = ToolApprovalRequest.model_validate(approval_data)
-            await self._store.save_approval(session_id, approval)
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "approval.created",
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "message": "A tool execution approval request has been created.",
-                        "approval_id": approval.id,
-                        "tool_key": approval.tool_key,
-                        "tool_name": approval.tool_name,
-                        "reason": approval.reason,
-                    },
-                ),
-            )
-
-        await self._store.save_snapshot(session_id, runtime_result.snapshot)
-        session.metadata["pending_turn"] = runtime_result.pending_turn
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "snapshot.saved",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message": "Execution snapshot has been saved for replay and resume.",
-                    "snapshot_id": runtime_result.snapshot.id,
-                    "snapshot_version": runtime_result.snapshot.version,
-                    "snapshot_stage": runtime_result.snapshot.stage,
-                },
-            ),
-        )
-
-        assistant_message = ChatMessage(
-            id=assistant_message_id,
-            role=MessageRole.assistant,
-            content=runtime_result.output_text,
-            created_at=datetime.utcnow(),
-            metadata={
-                "turn_id": execution_request.turn_id,
-                "agent_key": runtime_result.state["selected_agent_key"],
-                "agent_name": runtime_result.state["selected_agent_name"],
-                "model_key": runtime_result.state["selected_model_key"],
-                "model_name": runtime_result.state["selected_model_name"],
-            },
-        )
-        session.messages.append(assistant_message)
-        session.status = (
-            SessionStatus.waiting_approval
-            if runtime_result.approvals
-            else SessionStatus.completed
-        )
-        await self._store.save_session(session)
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "assistant.stream.completed",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message_id": assistant_message_id,
-                    "response_length": len(runtime_result.output_text),
-                },
-            ),
-        )
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "assistant.response_generated",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message_id": assistant_message_id,
-                    "message": "Assistant response has been added to the transcript.",
-                    "agent_key": runtime_result.state["selected_agent_key"],
-                    "model_key": runtime_result.state["selected_model_key"],
-                    "response_preview": truncate_text(runtime_result.output_text, 180),
-                    "response_length": len(runtime_result.output_text),
-                },
-            ),
-        )
-        await self._persist_turn_memory(
-            session=session,
-            turn_id=execution_request.turn_id,
-            trace_id=runtime_result.state["trace_id"],
-            user_message=payload.content,
-            assistant_message=runtime_result.output_text,
-            tool_results=list(runtime_result.state.get("tool_results", [])),
-            context_bundle=execution_request.context,
-        )
-        await self._store.append_event(
-            session_id,
-            self._make_event(
-                session_id,
-                "turn.completed",
-                {
-                    "turn_id": execution_request.turn_id,
-                    "message": "User turn has completed and all runtime artifacts were persisted.",
-                    "session_status": session.status.value,
-                    "event_count": session.event_count,
-                    "snapshot_count": session.snapshot_count,
-                    "approval_count": len(runtime_result.approvals),
-                },
-            ),
-        )
-
-        events = await self._store.list_events(session_id)
-        return ConversationResponse(
-            session=await self._to_detail(session),
-            output=assistant_message,
-            events=events[-10:],
-        )
+                    self._make_event(
+                        session_id,
+                        "turn.failed",
+                        {
+                            "turn_id": execution_request.turn_id,
+                            "message": failure_message,
+                            "error_type": exc.__class__.__name__,
+                            "error": truncate_text(str(exc), 240),
+                        },
+                    ),
+                )
+                raise
 
     async def execute_headless(self, payload: HeadlessExecutionRequest) -> ConversationResponse:
         session = await self.create_session(

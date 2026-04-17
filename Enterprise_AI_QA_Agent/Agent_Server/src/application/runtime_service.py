@@ -47,6 +47,7 @@ class RuntimeService:
         request: ExecutionRequest,
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
+        conversation_messages = self._build_conversation_messages(session)
         initial_state = {
             "session_id": session.id,
             "turn_id": request.turn_id,
@@ -75,7 +76,7 @@ class RuntimeService:
             "pending_approvals": [],
             "plan_steps": [],
             "system_prompt": "",
-            "runtime_messages": [],
+            "runtime_messages": conversation_messages,
             "model_request_payload": {},
             "model_response_text": "",
             "assistant_tool_call_message": {},
@@ -181,6 +182,23 @@ class RuntimeService:
             tool_messages=self._to_chat_messages(request.turn_id, result["tool_results"]),
             pending_turn=result["pending_turn"],
         )
+
+    def _build_conversation_messages(self, session: SessionRecord) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
+        for item in session.messages[-24:]:
+            role = item.role.value
+            if role not in {"user", "assistant", "tool", "system"}:
+                continue
+            content = str(item.content or "").strip()
+            if not content:
+                continue
+            payload: dict[str, Any] = {"role": role, "content": content}
+            if role == "tool":
+                tool_name = str(item.metadata.get("tool_key") or item.metadata.get("tool_name") or "").strip()
+                if tool_name:
+                    payload["name"] = tool_name
+            messages.append(payload)
+        return messages
 
     async def resume_after_approval(
         self,

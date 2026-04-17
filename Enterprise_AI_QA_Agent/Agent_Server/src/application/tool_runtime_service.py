@@ -225,7 +225,7 @@ class ToolRuntimeService:
             )
             memory_matches = [
                 {
-                    "source": item.source or "qdrant",
+                    "source": item.source or "arangodb",
                     "score": item.score or 0.0,
                     "excerpt": item.summary or item.content,
                     "kind": item.kind,

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime, timedelta
 from typing import Protocol
 
-import pymysql
-
 from src.core.config import Settings
+from src.infrastructure.arango_runtime import (
+    ArangoRuntimeProvider,
+    day_bucket,
+    ensure_utc_datetime,
+    make_json_safe,
+    serialize_datetime,
+)
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
 
 
@@ -77,12 +81,13 @@ class InMemoryToolJobStore:
         return updated
 
 
-class MySQLToolJobStore:
+class ArangoToolJobStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        self._provider = ArangoRuntimeProvider(settings)
 
     async def initialize(self) -> None:
-        await asyncio.to_thread(self._initialize_sync)
+        await asyncio.to_thread(self._provider.initialize)
 
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord:
         return await asyncio.to_thread(self._save_job_sync, job)
@@ -106,159 +111,85 @@ class MySQLToolJobStore:
     async def mark_stale_running_jobs(self, timeout_seconds: int) -> list[ToolJobRecord]:
         return await asyncio.to_thread(self._mark_stale_running_jobs_sync, timeout_seconds)
 
-    def _initialize_sync(self) -> None:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS `{self._settings.tool_job_table}` (
-                        `id` VARCHAR(64) NOT NULL PRIMARY KEY,
-                        `session_id` VARCHAR(64) NOT NULL,
-                        `turn_id` VARCHAR(64) NOT NULL,
-                        `trace_id` VARCHAR(64) NOT NULL,
-                        `call_id` VARCHAR(64) NOT NULL,
-                        `tool_key` VARCHAR(128) NOT NULL,
-                        `tool_name` VARCHAR(255) NOT NULL,
-                        `status` VARCHAR(64) NOT NULL,
-                        `attempt` INT NOT NULL DEFAULT 1,
-                        `summary` LONGTEXT NULL,
-                        `error_message` LONGTEXT NULL,
-                        `artifact_count` INT NOT NULL DEFAULT 0,
-                        `input_json` LONGTEXT NULL,
-                        `output_json` LONGTEXT NULL,
-                        `metadata_json` LONGTEXT NULL,
-                        `created_at` DATETIME NOT NULL,
-                        `updated_at` DATETIME NOT NULL,
-                        `heartbeat_at` DATETIME NULL,
-                        `started_at` DATETIME NULL,
-                        `completed_at` DATETIME NULL,
-                        KEY `idx_tool_job_session` (`session_id`, `created_at`),
-                        KEY `idx_tool_job_status` (`status`, `updated_at`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
-                    """
-                )
-                cur.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS `{self._settings.tool_artifact_table}` (
-                        `id` VARCHAR(64) NOT NULL PRIMARY KEY,
-                        `tool_job_id` VARCHAR(64) NOT NULL,
-                        `session_id` VARCHAR(64) NOT NULL,
-                        `turn_id` VARCHAR(64) NOT NULL,
-                        `trace_id` VARCHAR(64) NOT NULL,
-                        `tool_key` VARCHAR(128) NOT NULL,
-                        `artifact_type` VARCHAR(128) NOT NULL,
-                        `label` VARCHAR(255) NULL,
-                        `path` LONGTEXT NOT NULL,
-                        `metadata_json` LONGTEXT NULL,
-                        `created_at` DATETIME NOT NULL,
-                        KEY `idx_artifact_session` (`session_id`, `created_at`),
-                        KEY `idx_artifact_job` (`tool_job_id`, `created_at`)
-                    ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
-                    """
-                )
-            conn.commit()
-
     def _save_job_sync(self, job: ToolJobRecord) -> ToolJobRecord:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO `{self._settings.tool_job_table}`
-                    (`id`, `session_id`, `turn_id`, `trace_id`, `call_id`, `tool_key`, `tool_name`,
-                     `status`, `attempt`, `summary`, `error_message`, `artifact_count`, `input_json`,
-                     `output_json`, `metadata_json`, `created_at`, `updated_at`, `heartbeat_at`,
-                     `started_at`, `completed_at`)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        `status`=VALUES(`status`),
-                        `attempt`=VALUES(`attempt`),
-                        `summary`=VALUES(`summary`),
-                        `error_message`=VALUES(`error_message`),
-                        `artifact_count`=VALUES(`artifact_count`),
-                        `input_json`=VALUES(`input_json`),
-                        `output_json`=VALUES(`output_json`),
-                        `metadata_json`=VALUES(`metadata_json`),
-                        `updated_at`=VALUES(`updated_at`),
-                        `heartbeat_at`=VALUES(`heartbeat_at`),
-                        `started_at`=VALUES(`started_at`),
-                        `completed_at`=VALUES(`completed_at`)
-                    """,
-                    (
-                        job.id,
-                        job.session_id,
-                        job.turn_id,
-                        job.trace_id,
-                        job.call_id,
-                        job.tool_key,
-                        job.tool_name,
-                        job.status.value,
-                        job.attempt,
-                        job.summary,
-                        job.error_message,
-                        job.artifact_count,
-                        _json_dumps(job.input_payload),
-                        _json_dumps(job.output_payload),
-                        _json_dumps(job.metadata),
-                        job.created_at,
-                        job.updated_at,
-                        job.heartbeat_at,
-                        job.started_at,
-                        job.completed_at,
-                    ),
-                )
-            conn.commit()
+        collection = self._provider.collection(self._settings.arango_tool_job_collection)
+        document = {
+            "_key": job.id,
+            "id": job.id,
+            "session_id": job.session_id,
+            "turn_id": job.turn_id,
+            "trace_id": job.trace_id,
+            "call_id": job.call_id,
+            "tool_key": job.tool_key,
+            "tool_name": job.tool_name,
+            "status": job.status.value,
+            "attempt": job.attempt,
+            "summary": job.summary,
+            "error_message": job.error_message,
+            "artifact_count": job.artifact_count,
+            "input_payload": make_json_safe(job.input_payload),
+            "output_payload": make_json_safe(job.output_payload),
+            "metadata": make_json_safe(job.metadata),
+            "created_at": serialize_datetime(job.created_at),
+            "updated_at": serialize_datetime(job.updated_at),
+            "heartbeat_at": serialize_datetime(job.heartbeat_at),
+            "started_at": serialize_datetime(job.started_at),
+            "completed_at": serialize_datetime(job.completed_at),
+            "day_bucket": day_bucket(job.created_at),
+            "day_bucket_tz": self._settings.arango_timezone,
+        }
+        if collection.has(job.id):
+            collection.replace(document)
+        else:
+            collection.insert(document)
         return job
 
     def _get_job_sync(self, job_id: str) -> ToolJobRecord | None:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(f"SELECT * FROM `{self._settings.tool_job_table}` WHERE id=%s", (job_id,))
-                row = cur.fetchone()
-        return self._row_to_job(row) if row else None
+        row = self._provider.collection(self._settings.arango_tool_job_collection).get(job_id)
+        return _document_to_job(row) if row else None
 
     def _list_jobs_sync(self, session_id: str | None = None) -> list[ToolJobRecord]:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                if session_id:
-                    cur.execute(
-                        f"SELECT * FROM `{self._settings.tool_job_table}` WHERE session_id=%s ORDER BY created_at DESC",
-                        (session_id,),
-                    )
-                else:
-                    cur.execute(f"SELECT * FROM `{self._settings.tool_job_table}` ORDER BY created_at DESC")
-                rows = cur.fetchall()
-        return [self._row_to_job(row) for row in rows]
+        bind_vars = {"@collection": self._settings.arango_tool_job_collection}
+        query = """
+        FOR doc IN @@collection
+            SORT doc.created_at DESC
+            RETURN doc
+        """
+        if session_id:
+            bind_vars["session_id"] = session_id
+            query = """
+            FOR doc IN @@collection
+                FILTER doc.session_id == @session_id
+                SORT doc.created_at DESC
+                RETURN doc
+            """
+        rows = self._provider.execute(query, bind_vars)
+        return [_document_to_job(row) for row in rows]
 
     def _save_artifact_sync(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO `{self._settings.tool_artifact_table}`
-                    (`id`, `tool_job_id`, `session_id`, `turn_id`, `trace_id`, `tool_key`, `artifact_type`,
-                     `label`, `path`, `metadata_json`, `created_at`)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        `artifact_type`=VALUES(`artifact_type`),
-                        `label`=VALUES(`label`),
-                        `path`=VALUES(`path`),
-                        `metadata_json`=VALUES(`metadata_json`)
-                    """,
-                    (
-                        artifact.id,
-                        artifact.tool_job_id,
-                        artifact.session_id,
-                        artifact.turn_id,
-                        artifact.trace_id,
-                        artifact.tool_key,
-                        artifact.artifact_type,
-                        artifact.label,
-                        artifact.path,
-                        _json_dumps(artifact.metadata),
-                        artifact.created_at,
-                    ),
-                )
-            conn.commit()
+        collection = self._provider.collection(self._settings.arango_tool_artifact_collection)
+        document = {
+            "_key": artifact.id,
+            "id": artifact.id,
+            "tool_job_id": artifact.tool_job_id,
+            "session_id": artifact.session_id,
+            "turn_id": artifact.turn_id,
+            "trace_id": artifact.trace_id,
+            "tool_key": artifact.tool_key,
+            "artifact_type": artifact.artifact_type,
+            "label": artifact.label,
+            "path": artifact.path,
+            "content_text": str(artifact.metadata.get("__content_text") or ""),
+            "storage_mode": str(artifact.metadata.get("__storage_mode") or "path_only"),
+            "metadata": make_json_safe(_public_metadata(artifact.metadata)),
+            "created_at": serialize_datetime(artifact.created_at),
+            "day_bucket": day_bucket(artifact.created_at),
+            "day_bucket_tz": self._settings.arango_timezone,
+        }
+        if collection.has(artifact.id):
+            collection.replace(document)
+        else:
+            collection.insert(document)
         return artifact
 
     def _list_artifacts_sync(
@@ -266,117 +197,93 @@ class MySQLToolJobStore:
         session_id: str | None = None,
         tool_job_id: str | None = None,
     ) -> list[ToolArtifactRecord]:
-        conditions: list[str] = []
-        values: list[object] = []
+        bind_vars: dict[str, object] = {"@collection": self._settings.arango_tool_artifact_collection}
+        filters: list[str] = []
         if session_id:
-            conditions.append("session_id=%s")
-            values.append(session_id)
+            bind_vars["session_id"] = session_id
+            filters.append("doc.session_id == @session_id")
         if tool_job_id:
-            conditions.append("tool_job_id=%s")
-            values.append(tool_job_id)
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT * FROM `{self._settings.tool_artifact_table}` {where_clause} ORDER BY created_at ASC",
-                    tuple(values),
-                )
-                rows = cur.fetchall()
-        return [self._row_to_artifact(row) for row in rows]
+            bind_vars["tool_job_id"] = tool_job_id
+            filters.append("doc.tool_job_id == @tool_job_id")
+        filter_block = f"FILTER {' AND '.join(filters)}" if filters else ""
+        rows = self._provider.execute(
+            f"""
+            FOR doc IN @@collection
+                {filter_block}
+                SORT doc.created_at ASC
+                RETURN doc
+            """,
+            bind_vars,
+        )
+        return [_document_to_artifact(row) for row in rows]
 
     def _mark_stale_running_jobs_sync(self, timeout_seconds: int) -> list[ToolJobRecord]:
         threshold = datetime.utcnow() - timedelta(seconds=timeout_seconds)
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    UPDATE `{self._settings.tool_job_table}`
-                    SET `status`=%s, `updated_at`=%s
-                    WHERE `status`=%s AND COALESCE(`heartbeat_at`, `updated_at`) < %s
-                    """,
-                    (
-                        ToolJobStatus.resume_requested.value,
-                        datetime.utcnow(),
-                        ToolJobStatus.running.value,
-                        threshold,
-                    ),
-                )
-                cur.execute(
-                    f"SELECT * FROM `{self._settings.tool_job_table}` WHERE `status`=%s ORDER BY updated_at DESC",
-                    (ToolJobStatus.resume_requested.value,),
-                )
-                rows = cur.fetchall()
-            conn.commit()
-        return [self._row_to_job(row) for row in rows]
-
-    def _row_to_job(self, row: dict) -> ToolJobRecord:
-        return ToolJobRecord(
-            id=row["id"],
-            session_id=row["session_id"],
-            turn_id=row["turn_id"],
-            trace_id=row["trace_id"],
-            call_id=row["call_id"],
-            tool_key=row["tool_key"],
-            tool_name=row["tool_name"],
-            status=ToolJobStatus(row["status"]),
-            attempt=int(row["attempt"] or 1),
-            input_payload=_json_loads(row.get("input_json")),
-            output_payload=_json_loads(row.get("output_json")),
-            summary=row.get("summary") or "",
-            error_message=row.get("error_message"),
-            artifact_count=int(row.get("artifact_count") or 0),
-            created_at=_to_datetime(row["created_at"]),
-            updated_at=_to_datetime(row["updated_at"]),
-            heartbeat_at=_to_datetime(row.get("heartbeat_at")),
-            started_at=_to_datetime(row.get("started_at")),
-            completed_at=_to_datetime(row.get("completed_at")),
-            metadata=_json_loads(row.get("metadata_json")),
+        rows = self._provider.execute(
+            """
+            FOR doc IN @@collection
+                FILTER doc.status == @status
+                RETURN doc
+            """,
+            {"@collection": self._settings.arango_tool_job_collection, "status": ToolJobStatus.running.value},
         )
-
-    def _row_to_artifact(self, row: dict) -> ToolArtifactRecord:
-        return ToolArtifactRecord(
-            id=row["id"],
-            tool_job_id=row["tool_job_id"],
-            session_id=row["session_id"],
-            turn_id=row["turn_id"],
-            trace_id=row["trace_id"],
-            tool_key=row["tool_key"],
-            artifact_type=row["artifact_type"],
-            label=row.get("label"),
-            path=row["path"],
-            created_at=_to_datetime(row["created_at"]),
-            metadata=_json_loads(row.get("metadata_json")),
-        )
-
-    def _connect(self):
-        return pymysql.connect(
-            host=self._settings.mysql_host,
-            port=self._settings.mysql_port,
-            user=self._settings.mysql_user,
-            password=self._settings.mysql_password,
-            database=self._settings.mysql_database,
-            charset=self._settings.mysql_charset,
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=False,
-        )
+        collection = self._provider.collection(self._settings.arango_tool_job_collection)
+        updated: list[ToolJobRecord] = []
+        for row in rows:
+            heartbeat = ensure_utc_datetime(row.get("heartbeat_at")) or ensure_utc_datetime(row.get("updated_at")) or datetime.utcnow()
+            if heartbeat >= threshold:
+                continue
+            row["status"] = ToolJobStatus.resume_requested.value
+            row["updated_at"] = serialize_datetime(datetime.utcnow())
+            collection.replace(row)
+            updated.append(_document_to_job(row))
+        updated.sort(key=lambda item: item.updated_at, reverse=True)
+        return updated
 
 
-def _json_dumps(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)
+def _document_to_job(row: dict) -> ToolJobRecord:
+    return ToolJobRecord(
+        id=row["id"],
+        session_id=row["session_id"],
+        turn_id=row["turn_id"],
+        trace_id=row["trace_id"],
+        call_id=row["call_id"],
+        tool_key=row["tool_key"],
+        tool_name=row["tool_name"],
+        status=ToolJobStatus(row["status"]),
+        attempt=int(row.get("attempt") or 1),
+        input_payload=dict(row.get("input_payload") or {}),
+        output_payload=dict(row.get("output_payload") or {}),
+        summary=row.get("summary") or "",
+        error_message=row.get("error_message"),
+        artifact_count=int(row.get("artifact_count") or 0),
+        created_at=ensure_utc_datetime(row["created_at"]) or datetime.utcnow(),
+        updated_at=ensure_utc_datetime(row["updated_at"]) or datetime.utcnow(),
+        heartbeat_at=ensure_utc_datetime(row.get("heartbeat_at")),
+        started_at=ensure_utc_datetime(row.get("started_at")),
+        completed_at=ensure_utc_datetime(row.get("completed_at")),
+        metadata=dict(row.get("metadata") or {}),
+    )
 
 
-def _json_loads(value: str | None) -> dict:
-    if not value:
-        return {}
-    loaded = json.loads(value)
-    if isinstance(loaded, dict):
-        return loaded
-    return {"value": loaded}
+def _document_to_artifact(row: dict) -> ToolArtifactRecord:
+    metadata = dict(row.get("metadata") or {})
+    if row.get("storage_mode"):
+        metadata["storage_mode"] = row["storage_mode"]
+    return ToolArtifactRecord(
+        id=row["id"],
+        tool_job_id=row["tool_job_id"],
+        session_id=row["session_id"],
+        turn_id=row["turn_id"],
+        trace_id=row["trace_id"],
+        tool_key=row["tool_key"],
+        artifact_type=row["artifact_type"],
+        label=row.get("label"),
+        path=row["path"],
+        created_at=ensure_utc_datetime(row["created_at"]) or datetime.utcnow(),
+        metadata=metadata,
+    )
 
 
-def _to_datetime(value) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(str(value))
+def _public_metadata(metadata: dict) -> dict:
+    return {key: value for key, value in (metadata or {}).items() if not str(key).startswith("__")}

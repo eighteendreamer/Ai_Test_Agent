@@ -33,10 +33,12 @@ class MemorySearchRequest(BaseModel):
     session_id: str | None = None
     trace_id: str | None = None
     scope: MemoryScope | None = None
+    scopes: list[MemoryScope] = Field(default_factory=list)
     kinds: list[MemoryKind] = Field(default_factory=list)
     top_k: int = 6
     include_stale: bool = False
     tags: list[str] = Field(default_factory=list)
+    day_window: int = 7
     metadata_filters: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -45,6 +47,9 @@ class MemorySearchResult(BaseModel):
     hits: list[MemoryPoint] = Field(default_factory=list)
     prompt_blocks: list[str] = Field(default_factory=list)
     source_count: int = 0
+    total_session_docs: int = 0
+    total_global_docs: int = 0
+    total_docs: int = 0
     backend: str = ""
 
 

@@ -19,7 +19,6 @@ from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
 from src.api.routes.settings import router as settings_router
 from src.application.coordinator_runtime_service import CoordinatorRuntimeService
-from src.application.embedding_service import EmbeddingService
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.mcp_runtime_service import MCPRuntimeService
 from src.application.model_runtime_service import ModelRuntimeService
@@ -34,22 +33,22 @@ from src.application.tool_job_service import ToolJobService
 from src.application.tool_runtime_service import ToolRuntimeService
 from src.core.config import get_settings
 from src.graph.builder import build_agent_graph
-from src.infrastructure.model_config_store import MySQLModelConfigStore
+from src.infrastructure.arango_memory_store import ArangoDocumentMemoryStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
-from src.infrastructure.qdrant_memory_store import QdrantMemoryStore
+from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.registry.agents import AgentRegistry
 from src.registry.mcp import MCPRegistry
 from src.registry.models import ModelRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
-from src.runtime.store import MySQLSessionStore
-from src.runtime.tool_job_store import MySQLToolJobStore
+from src.runtime.store import ArangoSessionStore
+from src.runtime.tool_job_store import ArangoToolJobStore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    store = MySQLSessionStore(settings)
+    store = ArangoSessionStore(settings)
     await store.initialize()
     agent_registry = AgentRegistry()
     tool_registry = ToolRegistry()
@@ -62,15 +61,13 @@ async def lifespan(app: FastAPI):
     mcp_registry = MCPRegistry()
     skill_runtime_service = SkillRuntimeService(skill_registry=skill_registry)
     mcp_runtime_service = MCPRuntimeService(mcp_registry=mcp_registry, settings=settings)
-    embedding_service = EmbeddingService(settings=settings)
-    memory_store = QdrantMemoryStore(settings=settings)
+    memory_store = ArangoDocumentMemoryStore(settings=settings)
     memory_runtime_service = MemoryRuntimeService(
         memory_store=memory_store,
-        embedding_service=embedding_service,
         top_k=settings.memory_top_k,
     )
     await memory_runtime_service.initialize()
-    tool_job_store = MySQLToolJobStore(settings=settings)
+    tool_job_store = ArangoToolJobStore(settings=settings)
     tool_job_service = ToolJobService(
         store=tool_job_store,
         heartbeat_timeout_seconds=settings.tool_job_heartbeat_timeout_seconds,
@@ -118,7 +115,6 @@ async def lifespan(app: FastAPI):
     app.state.mcp_registry = mcp_registry
     app.state.skill_runtime_service = skill_runtime_service
     app.state.mcp_runtime_service = mcp_runtime_service
-    app.state.embedding_service = embedding_service
     app.state.memory_store = memory_store
     app.state.memory_runtime_service = memory_runtime_service
     app.state.tool_job_store = tool_job_store

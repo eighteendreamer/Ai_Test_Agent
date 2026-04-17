@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from src.runtime.tool_job_store import ToolJobStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus
+
+TEXT_ARTIFACT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".json",
+    ".html",
+    ".xml",
+    ".csv",
+    ".log",
+    ".yml",
+    ".yaml",
+}
+INLINE_TEXT_MAX_BYTES = 1024 * 1024
 
 
 class ToolJobService:
@@ -194,8 +208,22 @@ class ToolJobService:
         saved: list[ToolArtifactRecord] = []
         for item in artifacts:
             path = str(item.get("path") or "").strip()
-            if not path:
+            inline_content = str(item.get("content") or "")
+            if not path and not inline_content:
                 continue
+            metadata = {key: value for key, value in item.items() if key not in {"type", "label", "path", "content"}}
+            storage_mode = "path_only"
+            content_text = ""
+            if inline_content:
+                storage_mode = "inline_text"
+                content_text = inline_content
+            elif path:
+                content_text = self._read_text_artifact(path)
+                if content_text:
+                    storage_mode = "inline_text"
+            metadata["__storage_mode"] = storage_mode
+            if content_text:
+                metadata["__content_text"] = content_text
             artifact = ToolArtifactRecord(
                 id=str(uuid4()),
                 tool_job_id=job.id,
@@ -205,9 +233,22 @@ class ToolJobService:
                 tool_key=job.tool_key,
                 artifact_type=str(item.get("type") or "file"),
                 label=item.get("label"),
-                path=path,
+                path=path or "inline://artifact",
                 created_at=datetime.utcnow(),
-                metadata={key: value for key, value in item.items() if key not in {"type", "label", "path"}},
+                metadata=metadata,
             )
             saved.append(await self._store.save_artifact(artifact))
         return saved
+
+    def _read_text_artifact(self, raw_path: str) -> str:
+        try:
+            path = Path(raw_path)
+            if not path.exists() or not path.is_file():
+                return ""
+            if path.suffix.lower() not in TEXT_ARTIFACT_EXTENSIONS:
+                return ""
+            if path.stat().st_size > INLINE_TEXT_MAX_BYTES:
+                return ""
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return ""

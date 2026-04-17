@@ -18,7 +18,10 @@ async def health(request: Request):
         "name": settings.app_name,
         "environment": settings.app_env,
         "memory_backend": memory_backend,
-        "knowledge_enabled": bool(getattr(settings, "qdrant_enabled", False)),
-        "knowledge_target": getattr(settings, "qdrant_url", ""),
+        "knowledge_enabled": True,
+        "knowledge_target": (
+            f"http://{settings.arango_host}:{settings.arango_port}"
+            f"/_db/{settings.arango_database}"
+        ),
     }
 

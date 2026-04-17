@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
-from src.application.embedding_service import EmbeddingService
-from src.infrastructure.qdrant_memory_store import QdrantMemoryStore
+from src.infrastructure.arango_memory_store import ArangoDocumentMemoryStore
 from src.runtime.execution_logging import truncate_text
 from src.schemas.memory import MemorySearchRequest, MemorySearchResult, MemoryWriteRequest
 
@@ -11,12 +11,10 @@ from src.schemas.memory import MemorySearchRequest, MemorySearchResult, MemoryWr
 class MemoryRuntimeService:
     def __init__(
         self,
-        memory_store: QdrantMemoryStore,
-        embedding_service: EmbeddingService,
+        memory_store: ArangoDocumentMemoryStore,
         top_k: int = 6,
     ) -> None:
         self._memory_store = memory_store
-        self._embedding_service = embedding_service
         self._top_k = top_k
 
     async def initialize(self) -> None:
@@ -39,27 +37,52 @@ class MemoryRuntimeService:
         if not query.strip():
             return MemorySearchResult(query=query, backend=self.backend)
 
-        request = MemorySearchRequest(
+        session_request = MemorySearchRequest(
             query=query,
             session_id=session_id,
             trace_id=trace_id,
-            top_k=self._top_k,
+            scopes=["session", "page", "artifact"],
+            top_k=max(self._top_k, 6),
             tags=self._derive_read_tags(context or {}),
+            day_window=30,
         )
-        vector = await self._embedding_service.embed_text(query)
-        hits = await self._memory_store.search(request, vector)
+        global_request = MemorySearchRequest(
+            query=query,
+            session_id=None,
+            trace_id=trace_id,
+            scopes=["global"],
+            top_k=max(self._top_k, 6),
+            tags=self._derive_read_tags(context or {}),
+            day_window=0,
+        )
+        session_hits = await self._memory_store.search(session_request)
+        global_hits = await self._memory_store.search(global_request)
+        total_session_docs = await self._memory_store.count_documents(session_request)
+        total_global_docs = await self._memory_store.count_documents(global_request)
+        hits = self._merge_ranked_hits(session_hits, global_hits, self._top_k)
         prompt_blocks = [
             (
-                f"- [{hit.kind}] {hit.summary or truncate_text(hit.content, 140)} "
-                f"(source={hit.source or 'memory'}, score={hit.score or 0:.3f}, stale={hit.stale})"
-            )
-            for hit in hits
+                "Memory inventory summary: "
+                f"session/page/artifact docs={total_session_docs}, "
+                f"global long-term docs={total_global_docs}, "
+                f"retrieved_hits={len(hits)}."
+            ),
+            *[
+                (
+                    f"- [{hit.kind}] {hit.summary or truncate_text(hit.content, 140)} "
+                    f"(scope={hit.scope}, source={hit.source or 'memory'}, score={hit.score or 0:.3f}, stale={hit.stale})"
+                )
+                for hit in hits
+            ],
         ]
         return MemorySearchResult(
             query=query,
             hits=hits,
             prompt_blocks=prompt_blocks,
             source_count=len(hits),
+            total_session_docs=total_session_docs,
+            total_global_docs=total_global_docs,
+            total_docs=total_session_docs + total_global_docs,
             backend=self.backend,
         )
 
@@ -84,8 +107,7 @@ class MemoryRuntimeService:
             context_bundle=context_bundle,
         )
         for request in requests:
-            vector = await self._embedding_service.embed_text(request.content)
-            point = await self._memory_store.write(request, vector)
+            point = await self._memory_store.write(request)
             if point is not None:
                 write_ids.append(point.id)
         return write_ids
@@ -110,7 +132,10 @@ class MemoryRuntimeService:
         if selectors:
             content_parts.append("selectors=" + ", ".join(selectors[:12]))
         if assertions:
-            content_parts.append("assertions=" + ", ".join(str(item.get("type", "assert")) for item in assertions[:12]))
+            content_parts.append(
+                "assertions="
+                + ", ".join(str(item.get("type", "assert")) for item in assertions[:12])
+            )
         request = MemoryWriteRequest(
             scope="page",
             kind="page_knowledge",
@@ -128,8 +153,7 @@ class MemoryRuntimeService:
                 "artifact_count": len(artifacts or []),
             },
         )
-        vector = await self._embedding_service.embed_text(request.content)
-        point = await self._memory_store.write(request, vector)
+        point = await self._memory_store.write(request)
         return point.id if point is not None else None
 
     def _build_turn_write_policy(
@@ -165,6 +189,26 @@ class MemoryRuntimeService:
                 turn_id=turn_id,
                 trace_id=trace_id,
                 source="session.assistant",
+            ),
+            MemoryWriteRequest(
+                scope="global",
+                kind="semantic",
+                content=(
+                    f"Conversation turn summary.\n"
+                    f"User message: {user_message.strip()}\n"
+                    f"Assistant response: {assistant_message.strip()}"
+                ),
+                summary=truncate_text(f"{user_message.strip()} -> {assistant_message.strip()}", 180),
+                tags=["long_term", "conversation", "semantic"],
+                session_id=session_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                source="conversation.long_term",
+                metadata={
+                    "memory_id": self._stable_long_term_memory_id(session_id, turn_id, user_message),
+                    "memory_level": "long_term",
+                    "context_keys": sorted(context_bundle.keys()),
+                },
             ),
         ]
         for tool_result in tool_results:
@@ -205,3 +249,31 @@ class MemoryRuntimeService:
         if context.get("verification_mode"):
             tags.append("verification")
         return tags
+
+    def _merge_ranked_hits(
+        self,
+        session_hits: list,
+        global_hits: list,
+        top_k: int,
+    ) -> list:
+        merged: dict[str, Any] = {}
+        for hit in session_hits:
+            merged[hit.id] = hit
+        for hit in global_hits:
+            existing = merged.get(hit.id)
+            if existing is None or (hit.score or 0.0) > (existing.score or 0.0):
+                merged[hit.id] = hit
+        ranked = list(merged.values())
+        ranked.sort(
+            key=lambda item: (
+                1 if item.scope == "session" else 0,
+                item.score or 0.0,
+                item.updated_at,
+            ),
+            reverse=True,
+        )
+        return ranked[:top_k]
+
+    def _stable_long_term_memory_id(self, session_id: str, turn_id: str, user_message: str) -> str:
+        digest = hashlib.sha1(f"{session_id}:{turn_id}:{user_message.strip()}".encode("utf-8")).hexdigest()
+        return f"ltm-{digest[:20]}"

@@ -101,6 +101,26 @@ export const useAppStore = defineStore("app", {
             knowledgeTarget || "Qdrant",
           ),
         );
+      } else if (memoryBackend === "arangodb") {
+        checks.push(
+          buildCheck(
+            "knowledge",
+            "知识库连接",
+            "online",
+            "知识库文档存储已连通",
+            knowledgeTarget || "ArangoDB",
+          ),
+        );
+      } else if (memoryBackend === "arangodb_unavailable") {
+        checks.push(
+          buildCheck(
+            "knowledge",
+            "知识库连接",
+            "offline",
+            "ArangoDB 未连通，请检查数据库地址、账号密码和库名配置",
+            knowledgeTarget || "ArangoDB",
+          ),
+        );
       } else if (memoryBackend === "local_memory") {
         checks.push(
           buildCheck(
