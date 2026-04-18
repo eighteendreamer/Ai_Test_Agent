@@ -42,6 +42,7 @@ from src.registry.models import ModelRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.runtime.store import ArangoSessionStore
+from src.runtime.control import RuntimeControlRegistry
 from src.runtime.tool_job_store import ArangoToolJobStore
 
 
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
     await tool_job_service.initialize()
     permission_service = PermissionService()
     prompt_service = PromptSubmissionService()
+    runtime_control = RuntimeControlRegistry()
     model_runtime_service = ModelRuntimeService(model_registry=model_registry, settings=settings)
     tool_runtime_service = ToolRuntimeService(
         request_timeout_seconds=settings.llm_request_timeout_seconds,
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI):
         mcp_runtime_service=mcp_runtime_service,
         memory_runtime_service=memory_runtime_service,
         tool_job_service=tool_job_service,
+        session_store=store,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,
@@ -101,6 +104,7 @@ async def lifespan(app: FastAPI):
         model_runtime_service=model_runtime_service,
         tool_runtime_service=tool_runtime_service,
         tool_registry=tool_registry,
+        runtime_control=runtime_control,
         max_iterations=settings.runtime_max_iterations,
     )
 
@@ -122,6 +126,7 @@ async def lifespan(app: FastAPI):
     app.state.memory_backend = memory_runtime_service.backend
     app.state.permission_service = permission_service
     app.state.prompt_service = prompt_service
+    app.state.runtime_control = runtime_control
     app.state.graph = graph
     app.state.model_runtime_service = model_runtime_service
     app.state.tool_runtime_service = tool_runtime_service
@@ -139,6 +144,7 @@ async def lifespan(app: FastAPI):
         agent_registry=agent_registry,
     )
     tool_runtime_service.set_coordinator_runtime_service(coordinator_runtime_service)
+    tool_runtime_service.set_session_store(store)
     app.state.coordinator_runtime_service = coordinator_runtime_service
     app.state.session_service = session_service
     app.state.registry_service = RegistryService(

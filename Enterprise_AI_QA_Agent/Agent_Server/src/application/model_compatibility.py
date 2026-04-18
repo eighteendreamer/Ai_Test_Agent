@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,6 +73,7 @@ class ModelCompatibilityLayer:
         self,
         config: ModelConfigRecord,
         request: ModelInvocationRequest,
+        tool_name_map: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         profile = self.resolve_profile(config)
         if profile.protocol == "anthropic_messages":
@@ -99,7 +101,11 @@ class ModelCompatibilityLayer:
 
         payload: dict[str, Any] = {
             "model": config.model_id,
-            "messages": self._build_openai_messages(request.system_prompt, request.messages),
+            "messages": self._build_openai_messages(
+                request.system_prompt,
+                request.messages,
+                tool_name_map=tool_name_map,
+            ),
             "max_tokens": config.max_tokens,
         }
         if config.temperature is not None:
@@ -109,7 +115,7 @@ class ModelCompatibilityLayer:
                 {
                     "type": "function",
                     "function": {
-                        "name": item["name"],
+                        "name": (tool_name_map or {}).get(item["name"], item["name"]),
                         "description": item["description"],
                         "parameters": item["input_schema"],
                     },
@@ -149,6 +155,41 @@ class ModelCompatibilityLayer:
         if profile.protocol == "anthropic_messages":
             return self._parse_anthropic_response(data)
         return self._parse_openai_compatible_response(data)
+
+    def build_tool_name_map(self, tools: list[dict[str, Any]]) -> dict[str, str]:
+        name_map: dict[str, str] = {}
+        used: set[str] = set()
+        for item in tools:
+            original = str(item.get("name") or "").strip()
+            if not original:
+                continue
+            candidate = self._sanitize_tool_name(original)
+            suffix = 2
+            while candidate in used and name_map.get(original) != candidate:
+                candidate = self._sanitize_tool_name(f"{original}_{suffix}")
+                suffix += 1
+            used.add(candidate)
+            name_map[original] = candidate
+        return name_map
+
+    def remap_tool_calls(
+        self,
+        tool_calls: list[ModelToolCall],
+        tool_name_map: dict[str, str] | None,
+    ) -> list[ModelToolCall]:
+        if not tool_name_map:
+            return tool_calls
+        reverse_map = {sanitized: original for original, sanitized in tool_name_map.items()}
+        remapped: list[ModelToolCall] = []
+        for item in tool_calls:
+            remapped.append(
+                ModelToolCall(
+                    id=item.id,
+                    name=reverse_map.get(item.name, item.name),
+                    arguments=item.arguments,
+                )
+            )
+        return remapped
 
     def _parse_openai_compatible_response(self, data: dict[str, Any]) -> dict[str, Any]:
         choices = data.get("choices", []) or []
@@ -249,6 +290,7 @@ class ModelCompatibilityLayer:
         self,
         system_prompt: str,
         messages: list[dict[str, Any]],
+        tool_name_map: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         converted: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         for message in messages:
@@ -260,7 +302,10 @@ class ModelCompatibilityLayer:
                 continue
 
             if role == "assistant":
-                tool_calls = self._normalize_openai_tool_calls(message.get("tool_calls", []))
+                tool_calls = self._normalize_openai_tool_calls(
+                    message.get("tool_calls", []),
+                    tool_name_map=tool_name_map,
+                )
                 assistant_message: dict[str, Any] = {"role": "assistant"}
                 if tool_calls:
                     assistant_message["content"] = str(content) if str(content).strip() else None
@@ -283,7 +328,11 @@ class ModelCompatibilityLayer:
             converted.append({"role": role, "content": str(content)})
         return converted
 
-    def _normalize_openai_tool_calls(self, tool_calls: Any) -> list[dict[str, Any]]:
+    def _normalize_openai_tool_calls(
+        self,
+        tool_calls: Any,
+        tool_name_map: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         if not isinstance(tool_calls, list):
             return normalized
@@ -299,7 +348,10 @@ class ModelCompatibilityLayer:
                         "id": str(tool_call.get("id", "")),
                         "type": "function",
                         "function": {
-                            "name": str(function_block.get("name", "")),
+                            "name": (tool_name_map or {}).get(
+                                str(function_block.get("name", "")),
+                                str(function_block.get("name", "")),
+                            ),
                             "arguments": self._stringify_tool_arguments(function_block.get("arguments")),
                         },
                     }
@@ -311,7 +363,10 @@ class ModelCompatibilityLayer:
                     "id": str(tool_call.get("id", "")),
                     "type": "function",
                     "function": {
-                        "name": str(tool_call.get("name", "")),
+                        "name": (tool_name_map or {}).get(
+                            str(tool_call.get("name", "")),
+                            str(tool_call.get("name", "")),
+                        ),
                         "arguments": self._stringify_tool_arguments(tool_call.get("arguments", {})),
                     },
                 }
@@ -375,3 +430,12 @@ class ModelCompatibilityLayer:
         if lowered == "anthropic":
             return "anthropic"
         return OPENAI_COMPATIBLE_PROVIDER_ALIASES.get(lowered, "openai")
+
+    def _sanitize_tool_name(self, name: str) -> str:
+        sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", name.strip())
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+        if not sanitized:
+            sanitized = "tool"
+        if sanitized[0].isdigit():
+            sanitized = f"tool_{sanitized}"
+        return sanitized[:64]

@@ -52,6 +52,8 @@ class MCPRuntimeService:
                 return self._inspect_page(payload, context)
             if capability == "browser-automation":
                 return self._run_browser_automation(payload, context)
+            if capability == "browser-control":
+                return self._run_browser_control(payload, context)
         if server_key == "filesystem-mcp":
             if capability == "write-artifact":
                 return self._write_artifact(payload, context)
@@ -205,6 +207,99 @@ class MCPRuntimeService:
                 "steps": steps,
                 "artifacts": artifacts,
                 "runtime_backend": f"{self._settings.browser_backend}:{self._settings.browser_default_name}",
+            }
+        finally:
+            driver.quit()
+
+    def _run_browser_control(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        action = str(payload.get("action") or "").strip().lower()
+        if not action:
+            return {
+                "status": "failed",
+                "ok": False,
+                "summary": "Browser Control requires an action.",
+                "error": "missing_action",
+                "artifacts": [],
+            }
+
+        if action in {"inspect", "snapshot", "dom"}:
+            return self._inspect_page(payload, context)
+
+        if action in {"run_actions", "act", "automate"}:
+            return self._run_browser_automation(payload, context)
+
+        target_url = _resolve_target_url(payload, context)
+        if not target_url:
+            return {
+                "status": "failed",
+                "ok": False,
+                "summary": "Browser Control requires a target URL.",
+                "error": "missing_target_url",
+                "artifacts": [],
+            }
+
+        artifact_dir = self._prepare_artifact_dir(context, "browser-control")
+        driver = self._create_driver()
+        try:
+            driver.get(target_url)
+            artifacts: list[dict[str, Any]] = []
+            if action in {"navigate", "open"}:
+                shot_path = artifact_dir / f"{_slug(str(payload.get('label') or 'navigate'))}.png"
+                driver.save_screenshot(str(shot_path))
+                artifacts.append({"type": "screenshot", "label": "navigate", "path": str(shot_path)})
+                return {
+                    "summary": f"Opened {target_url} in the browser.",
+                    "target_url": target_url,
+                    "title": driver.title.strip(),
+                    "current_url": driver.current_url,
+                    "artifacts": artifacts,
+                    "runtime_backend": f"{self._settings.browser_backend}:{self._settings.browser_default_name}",
+                }
+
+            if action == "screenshot":
+                label = _slug(str(payload.get("label") or "screenshot")) or "screenshot"
+                shot_path = artifact_dir / f"{label}.png"
+                driver.save_screenshot(str(shot_path))
+                artifacts.append({"type": "screenshot", "label": label, "path": str(shot_path)})
+                return {
+                    "summary": f"Captured browser screenshot for {target_url}.",
+                    "target_url": target_url,
+                    "title": driver.title.strip(),
+                    "current_url": driver.current_url,
+                    "artifacts": artifacts,
+                    "runtime_backend": f"{self._settings.browser_backend}:{self._settings.browser_default_name}",
+                }
+
+            if action in {"evaluate_js", "eval"}:
+                expression = str(payload.get("javascript") or payload.get("script") or "").strip()
+                if not expression:
+                    return {
+                        "status": "failed",
+                        "ok": False,
+                        "summary": "Browser Control evaluate_js requires a javascript expression.",
+                        "error": "missing_javascript",
+                        "artifacts": [],
+                    }
+                result = driver.execute_script(expression)
+                result_path = artifact_dir / "evaluate_js.json"
+                result_path.write_text(json.dumps({"result": result}, ensure_ascii=False, indent=2), encoding="utf-8")
+                artifacts.append({"type": "evaluation", "path": str(result_path)})
+                return {
+                    "summary": f"Executed JavaScript against {target_url}.",
+                    "target_url": target_url,
+                    "title": driver.title.strip(),
+                    "current_url": driver.current_url,
+                    "result": result,
+                    "artifacts": artifacts,
+                    "runtime_backend": f"{self._settings.browser_backend}:{self._settings.browser_default_name}",
+                }
+
+            return {
+                "status": "failed",
+                "ok": False,
+                "summary": f"Unsupported browser control action '{action}'.",
+                "error": "unsupported_action",
+                "artifacts": [],
             }
         finally:
             driver.quit()

@@ -15,13 +15,15 @@ const phaseLabel = computed(() => {
     case "running":
       return "运行中";
     case "waiting_approval":
-      return "待授权";
+      return "待审批";
+    case "interrupted":
+      return "已中断";
     case "failed":
-      return "已阻塞";
+      return "阻塞中";
     case "completed":
       return "已完成";
     default:
-      return "待机";
+      return "空闲";
   }
 });
 
@@ -31,6 +33,8 @@ const dialValue = computed(() => {
       return "RUN";
     case "waiting_approval":
       return "AUTH";
+    case "interrupted":
+      return "PAUSE";
     case "failed":
       return "STOP";
     case "completed":
@@ -47,6 +51,9 @@ const compactMeta = computed(() => {
   if (pendingApprovalCount.value > 0) {
     return `A${pendingApprovalCount.value}`;
   }
+  if (sessionStore.session?.is_interrupted) {
+    return "INT";
+  }
   if (workerDispatchCount.value > 0) {
     return `W${workerDispatchCount.value}`;
   }
@@ -54,16 +61,35 @@ const compactMeta = computed(() => {
 });
 
 const statRows = computed(() => [
-  { label: "status", value: sessionStatus.value },
-  { label: "sync", value: sessionStore.watcherLastSyncLabel || "--:--:--" },
-  { label: "pending", value: String(pendingApprovalCount.value) },
-  { label: "worker", value: String(workerDispatchCount.value) },
+  { label: "状态", value: sessionStatusLabel(sessionStatus.value) },
+  { label: "同步", value: sessionStore.watcherLastSyncLabel || "--:--:--" },
+  { label: "审批", value: String(pendingApprovalCount.value) },
+  { label: "子任务", value: String(workerDispatchCount.value) },
 ]);
 
 function toneForStatus(status: string) {
   if (status === "completed") return "online";
-  if (status === "running" || status === "waiting_approval" || status === "partial") return "degraded";
+  if (status === "running" || status === "waiting_approval" || status === "interrupted" || status === "partial") {
+    return "degraded";
+  }
   return "offline";
+}
+
+function sessionStatusLabel(status: string) {
+  switch (status) {
+    case "running":
+      return "运行中";
+    case "waiting_approval":
+      return "待审批";
+    case "interrupted":
+      return "已中断";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    default:
+      return "空闲";
+  }
 }
 </script>
 

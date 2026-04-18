@@ -132,7 +132,12 @@ class ModelRuntimeService:
         profile = self._compatibility.resolve_profile(config)
         url = self._compatibility.build_url(config)
         headers = self._compatibility.build_headers(config, api_key)
-        payload = self._compatibility.build_request(config, request)
+        tool_name_map = self._compatibility.build_tool_name_map(request.tools)
+        payload = self._compatibility.build_request(
+            config,
+            request,
+            tool_name_map=tool_name_map,
+        )
 
         try:
             if _stream_handler_var.get() is not None:
@@ -145,6 +150,11 @@ class ModelRuntimeService:
                 parsed = self._compatibility.parse_response(config, data)
         except httpx.HTTPError as exc:
             return self._http_error_result(config, request, exc)
+
+        parsed["tool_calls"] = self._compatibility.remap_tool_calls(
+            parsed["tool_calls"],
+            tool_name_map,
+        )
 
         return ModelInvocationResult(
             text=parsed["text"],
@@ -172,10 +182,19 @@ class ModelRuntimeService:
         request: ModelInvocationRequest,
         exc: httpx.HTTPError,
     ) -> ModelInvocationResult:
+        response_body = ""
+        status_code = None
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+            status_code = exc.response.status_code
+            try:
+                response_body = truncate_text(exc.response.text or "", 400)
+            except Exception:
+                response_body = ""
         return ModelInvocationResult(
             text=(
                 f"Model invocation failed for '{config.name}' via provider '{config.provider}': "
                 f"{truncate_text(str(exc), 180)}"
+                + (f" | response={response_body}" if response_body else "")
             ),
             request_payload=self._summarize_request(config, request),
             response_summary={
@@ -184,9 +203,16 @@ class ModelRuntimeService:
                 "provider_profile": self._compatibility.resolve_profile(config).name,
                 "transport": self._compatibility.resolve_profile(config).protocol,
                 "error_type": exc.__class__.__name__,
+                "status_code": status_code,
                 "error": truncate_text(str(exc), 180),
+                "response_body": response_body,
             },
-            raw_response={"mode": "http_error", "error": str(exc)},
+            raw_response={
+                "mode": "http_error",
+                "error": str(exc),
+                "status_code": status_code,
+                "response_body": response_body,
+            },
         )
 
     def _summarize_request(

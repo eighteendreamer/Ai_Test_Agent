@@ -7,9 +7,10 @@ import type {
   EmailConfigUpdateRequest,
   ModelConfigPublic,
   ModelConfigUpdateRequest,
+  ToolDescriptor,
 } from "../types";
 
-type SettingsTab = "model" | "email";
+type SettingsTab = "model" | "email" | "tool";
 type EmailProvider = "aliyun" | "cybermail";
 
 const activeTab = ref<SettingsTab>("model");
@@ -22,6 +23,7 @@ const success = ref("");
 
 const modelConfigs = ref<ModelConfigPublic[]>([]);
 const emailConfigs = ref<EmailConfigPublic[]>([]);
+const toolConfigs = ref<ToolDescriptor[]>([]);
 
 const modelDraft = reactive<ModelConfigUpdateRequest>({
   model_name: "",
@@ -67,6 +69,20 @@ const currentEmailConfig = computed(() =>
   emailConfigs.value.find((item) => item.provider === activeEmailProvider.value) ?? null,
 );
 
+const groupedTools = computed(() => {
+  const groups = new Map<string, ToolDescriptor[]>();
+  for (const item of toolConfigs.value) {
+    const key = item.category || "other";
+    const bucket = groups.get(key) ?? [];
+    bucket.push(item);
+    groups.set(key, bucket);
+  }
+  return Array.from(groups.entries()).map(([category, items]) => ({
+    category,
+    items: items.slice().sort((left, right) => left.name.localeCompare(right.name)),
+  }));
+});
+
 onMounted(() => {
   void loadSettings();
 });
@@ -75,9 +91,14 @@ async function loadSettings() {
   loading.value = true;
   clearNotice();
   try {
-    const [models, emails] = await Promise.all([api.listModelConfigs(), api.listEmailConfigs()]);
+    const [models, emails, tools] = await Promise.all([
+      api.listModelConfigs(),
+      api.listEmailConfigs(),
+      api.listTools(),
+    ]);
     modelConfigs.value = models;
     emailConfigs.value = emails;
+    toolConfigs.value = tools;
 
     const initialModel = models.find((item) => item.is_active) ?? models[0] ?? null;
     if (initialModel) {
@@ -215,6 +236,7 @@ async function saveEmail(provider: EmailProvider) {
     <div class="settings-tabs">
       <button :class="{ active: activeTab === 'model' }" @click="activeTab = 'model'">Model Config</button>
       <button :class="{ active: activeTab === 'email' }" @click="activeTab = 'email'">Email Delivery</button>
+      <button :class="{ active: activeTab === 'tool' }" @click="activeTab = 'tool'">Tool Registry</button>
     </div>
 
     <p v-if="error" class="error-text">{{ error }}</p>
@@ -293,7 +315,7 @@ async function saveEmail(provider: EmailProvider) {
       </section>
     </div>
 
-    <div v-else class="settings-content-wrap">
+    <div v-else-if="activeTab === 'email'" class="settings-content-wrap">
       <section class="settings-block">
         <div class="settings-block-head">
           <div>
@@ -439,6 +461,53 @@ async function saveEmail(provider: EmailProvider) {
         <div class="settings-actions">
           <button class="primary-btn narrow" :disabled="loading || saving" @click="saveEmail('cybermail')">Save CyberMail</button>
         </div>
+      </section>
+    </div>
+
+    <div v-else class="settings-content-wrap">
+      <section class="settings-block">
+        <div class="settings-block-head">
+          <div>
+            <h3>已注册工具</h3>
+            <p class="settings-muted">这里先直接展示后端工具注册表，后面你可以再重新整理布局。</p>
+          </div>
+          <span class="registry-tag light">{{ toolConfigs.length }} 个工具</span>
+        </div>
+
+        <div v-if="toolConfigs.length" class="settings-tool-groups">
+          <section v-for="group in groupedTools" :key="group.category" class="settings-tool-group">
+            <div class="settings-tool-group__head">
+              <h4>{{ group.category }}</h4>
+              <span class="registry-tag light">{{ group.items.length }} 个</span>
+            </div>
+            <div class="settings-tool-grid">
+              <article v-for="tool in group.items" :key="tool.key" class="settings-tool-card">
+                <div class="settings-tool-card__head">
+                  <div>
+                    <strong>{{ tool.name }}</strong>
+                    <p class="settings-tool-card__key">{{ tool.key }}</p>
+                  </div>
+                  <span class="registry-tag" :class="tool.permission_level === 'safe' ? 'success' : 'light'">
+                    {{ tool.permission_level || "safe" }}
+                  </span>
+                </div>
+                <p class="settings-tool-card__desc">{{ tool.description }}</p>
+                <div class="settings-tool-card__meta">
+                  <span class="registry-tag light">{{ tool.supports_streaming ? "streaming" : "sync" }}</span>
+                  <span class="registry-tag light">{{ tool.enabled_by_default === false ? "disabled by default" : "enabled" }}</span>
+                  <span
+                    v-for="tag in tool.tags ?? []"
+                    :key="`${tool.key}-${tag}`"
+                    class="registry-tag light"
+                  >
+                    {{ tag }}
+                  </span>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+        <div v-else class="settings-empty">当前没有读取到工具注册表，请检查 `/api/v1/registry/tools`。</div>
       </section>
     </div>
   </section>

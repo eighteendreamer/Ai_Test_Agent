@@ -178,10 +178,15 @@ def _match_metadata_filters(metadata: dict, filters: dict) -> bool:
 
 
 def _score_document(document: dict, raw_query: str, tokens: list[str]) -> float:
+    summary_text = str(document.get("summary") or "")
+    content_text = str(document.get("content") or "")
+    if "Model invocation failed for '" in summary_text or "Model invocation failed for '" in content_text:
+        return 0.0
+
     query = raw_query.strip().lower()
     haystacks = [
-        str(document.get("summary") or "").lower(),
-        str(document.get("content") or "").lower(),
+        summary_text.lower(),
+        content_text.lower(),
         str(document.get("source") or "").lower(),
         " ".join(str(item).lower() for item in document.get("tags") or []),
     ]

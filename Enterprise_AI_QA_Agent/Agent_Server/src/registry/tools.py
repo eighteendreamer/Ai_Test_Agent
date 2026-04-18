@@ -92,6 +92,43 @@ class ToolRegistry:
                 ),
                 handler_key="knowledge-rag",
             ),
+            "session-history": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="session-history",
+                    name="Session History",
+                    description="Inspect stored session history, count historical sessions, list prior user questions, and generate a structured session report without relying on model memory reconstruction.",
+                    category="knowledge",
+                    permission_level="safe",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "One of count_sessions, list_questions, session_report, or history_summary.",
+                            },
+                            "scope": {
+                                "type": "string",
+                                "description": "Use current_session or all_sessions.",
+                                "default": "current_session",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of messages, questions, or sessions to include.",
+                                "default": 10,
+                            },
+                            "include_assistant": {
+                                "type": "boolean",
+                                "description": "Whether assistant messages should be included in the returned transcript excerpts.",
+                                "default": False,
+                            },
+                        },
+                        "required": ["action"],
+                    },
+                    output_schema={"report": "object", "questions": "array", "sessions": "array"},
+                    tags=["history", "session", "reporting"],
+                ),
+                handler_key="session-history",
+            ),
             "test-case-generator": ToolModule(
                 descriptor=ToolDescriptor(
                     key="test-case-generator",
@@ -99,9 +136,21 @@ class ToolRegistry:
                     description="Generate structured test scenarios, assertions, and coverage suggestions.",
                     category="qa",
                     permission_level="safe",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "feature": {"type": "string", "description": "Feature or workflow under test."},
+                            "goal": {"type": "string", "description": "Primary QA objective."},
+                            "requirements": {"type": "array", "items": {"type": "string"}},
+                            "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+                            "platforms": {"type": "array", "items": {"type": "string"}},
+                            "risk_focus": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
                     output_schema={"cases": "array"},
                     tags=["planning", "qa"],
                 ),
+                handler_key="test-case-generator",
             ),
             "browser-automation": ToolModule(
                 descriptor=ToolDescriptor(
@@ -140,6 +189,48 @@ class ToolRegistry:
                 ),
                 handler_key="browser-automation",
             ),
+            "browser-control": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="browser-control",
+                    name="Browser Control",
+                    description="Control browser actions explicitly for navigation, screenshot, DOM inspection, JavaScript evaluation, and scripted UI actions.",
+                    category="execution",
+                    permission_level="ask",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "One of navigate, inspect, screenshot, evaluate_js, or run_actions.",
+                            },
+                            "target_url": {"type": "string", "description": "The target page URL."},
+                            "javascript": {"type": "string", "description": "JavaScript expression for evaluate_js."},
+                            "label": {"type": "string", "description": "Optional screenshot or artifact label."},
+                            "actions": {
+                                "type": "array",
+                                "description": "UI actions used when action=run_actions.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"type": "string"},
+                                        "selector": {"type": "string"},
+                                        "value": {"type": "string"},
+                                        "seconds": {"type": "number"},
+                                        "label": {"type": "string"},
+                                        "y": {"type": "number"},
+                                    },
+                                    "required": ["type"],
+                                },
+                            },
+                        },
+                        "required": ["action"],
+                    },
+                    supports_streaming=True,
+                    output_schema={"artifacts": "array", "steps": "array"},
+                    tags=["ui", "browser", "automation"],
+                ),
+                handler_key="browser-control",
+            ),
             "dom-inspector": ToolModule(
                 descriptor=ToolDescriptor(
                     key="dom-inspector",
@@ -166,9 +257,61 @@ class ToolRegistry:
                     description="Call APIs, validate payloads, and capture structured assertions.",
                     category="execution",
                     permission_level="ask",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "endpoint": {"type": "string", "description": "API endpoint or route."},
+                            "method": {"type": "string", "description": "HTTP method."},
+                            "request_body": {"type": "object"},
+                            "response_body": {"type": "object"},
+                            "response_status": {"type": "integer"},
+                            "expected_status": {"type": "integer"},
+                            "expected_fields": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Dot-path fields expected in the response body.",
+                            },
+                            "assertions": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Free-form checks to include in the report.",
+                            },
+                        },
+                    },
                     output_schema={"checks": "array"},
                     tags=["api", "verification"],
                 ),
+                handler_key="api-tester",
+            ),
+            "cli-executor": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="cli-executor",
+                    name="CLI Executor",
+                    description="Run shell or PowerShell commands with captured stdout, stderr, exit code, and transcript artifacts.",
+                    category="execution",
+                    permission_level="ask",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "The command text to execute."},
+                            "shell": {
+                                "type": "string",
+                                "description": "Shell runtime to use, such as powershell or cmd.",
+                                "default": "powershell",
+                            },
+                            "cwd": {"type": "string", "description": "Optional working directory within the workspace."},
+                            "timeout_seconds": {
+                                "type": "number",
+                                "description": "Execution timeout in seconds.",
+                                "default": 20,
+                            },
+                        },
+                        "required": ["command"],
+                    },
+                    output_schema={"exit_code": "integer", "stdout": "string", "stderr": "string"},
+                    tags=["cli", "shell", "terminal"],
+                ),
+                handler_key="cli-executor",
             ),
             "file-artifact-manager": ToolModule(
                 descriptor=ToolDescriptor(
@@ -191,6 +334,37 @@ class ToolRegistry:
                 ),
                 handler_key="file-artifact-manager",
             ),
+            "message-dispatch": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="message-dispatch",
+                    name="Message Dispatch",
+                    description="Send execution notifications as email or persist message payloads as local delivery artifacts.",
+                    category="communication",
+                    permission_level="ask",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "channel": {
+                                "type": "string",
+                                "description": "Delivery channel, such as email or artifact.",
+                                "default": "artifact",
+                            },
+                            "to": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "One or more recipients for external delivery.",
+                            },
+                            "subject": {"type": "string", "description": "Message subject or title."},
+                            "content": {"type": "string", "description": "Plain text message content."},
+                            "content_html": {"type": "string", "description": "Optional HTML content for email delivery."},
+                            "file_name": {"type": "string", "description": "Optional artifact file name for local delivery."},
+                        },
+                    },
+                    output_schema={"delivery": "object", "artifacts": "array"},
+                    tags=["message", "notification", "email"],
+                ),
+                handler_key="message-dispatch",
+            ),
             "report-writer": ToolModule(
                 descriptor=ToolDescriptor(
                     key="report-writer",
@@ -198,9 +372,22 @@ class ToolRegistry:
                     description="Summarize execution evidence into a structured QA report.",
                     category="reporting",
                     permission_level="safe",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "objective": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "findings": {"type": "array", "items": {"type": "object"}},
+                            "evidence": {"type": "array", "items": {"type": "object"}},
+                            "recommendations": {"type": "array", "items": {"type": "string"}},
+                            "status": {"type": "string"},
+                        },
+                    },
                     output_schema={"report_sections": "array"},
                     tags=["reporting"],
                 ),
+                handler_key="report-writer",
             ),
         }
 

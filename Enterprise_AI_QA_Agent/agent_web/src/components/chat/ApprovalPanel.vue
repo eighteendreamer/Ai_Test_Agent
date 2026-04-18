@@ -20,11 +20,19 @@ function approvalArgumentPreview(metadata: Record<string, unknown>) {
   }
 }
 
+function readMetaValue(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  return String(value);
+}
+
 async function handleDecision(approvalId: string, decision: "approved" | "denied") {
   const reason =
     decision === "approved"
-      ? "User approved execution in the web console."
-      : "User denied execution in the web console.";
+      ? "用户在工作台中批准了本次执行。"
+      : "用户在工作台中拒绝了本次执行。";
   await sessionStore.resolveApproval(approvalId, decision, reason);
 }
 </script>
@@ -33,8 +41,8 @@ async function handleDecision(approvalId: string, decision: "approved" | "denied
   <section v-if="pendingApprovals.length" class="approval-panel">
     <div class="approval-panel-head">
       <div>
-        <strong>Approval Required</strong>
-        <p>Protected operations are listed here. Approve to continue, or deny to stop the gated step.</p>
+        <strong>待审批操作</strong>
+        <p>这里列出了受保护的执行步骤。批准后继续执行，拒绝则停止当前受限步骤。</p>
       </div>
       <span class="approval-panel-count">{{ pendingApprovals.length }}</span>
     </div>
@@ -49,16 +57,16 @@ async function handleDecision(approvalId: string, decision: "approved" | "denied
           <h3>{{ approval.tool_name }}</h3>
           <p>{{ approval.reason }}</p>
         </div>
-        <span class="approval-card-status">Pending</span>
+        <span class="approval-card-status">待处理</span>
       </div>
 
       <dl class="approval-card-grid">
         <div>
-          <dt>Tool</dt>
+          <dt>工具</dt>
           <dd>{{ approval.tool_key }}</dd>
         </div>
         <div>
-          <dt>Requested At</dt>
+          <dt>申请时间</dt>
           <dd>{{ new Date(approval.created_at).toLocaleString("zh-CN") }}</dd>
         </div>
         <div v-if="approval.metadata?.selected_agent_key">
@@ -66,10 +74,33 @@ async function handleDecision(approvalId: string, decision: "approved" | "denied
           <dd>{{ String(approval.metadata.selected_agent_key) }}</dd>
         </div>
         <div v-if="approval.metadata?.selected_model_key">
-          <dt>Model</dt>
+          <dt>模型</dt>
           <dd>{{ String(approval.metadata.selected_model_key) }}</dd>
         </div>
+        <div v-if="readMetaValue(approval.metadata, 'permission_behavior')">
+          <dt>权限行为</dt>
+          <dd>{{ readMetaValue(approval.metadata, "permission_behavior") }}</dd>
+        </div>
+        <div v-if="readMetaValue(approval.metadata, 'permission_source')">
+          <dt>策略来源</dt>
+          <dd>{{ readMetaValue(approval.metadata, "permission_source") }}</dd>
+        </div>
+        <div v-if="readMetaValue(approval.metadata, 'permission_level')">
+          <dt>权限级别</dt>
+          <dd>{{ readMetaValue(approval.metadata, "permission_level") }}</dd>
+        </div>
+        <div v-if="readMetaValue(approval.metadata, 'category')">
+          <dt>类别</dt>
+          <dd>{{ readMetaValue(approval.metadata, "category") }}</dd>
+        </div>
       </dl>
+
+      <p
+        v-if="readMetaValue(approval.metadata, 'permission_reason')"
+        class="approval-card-reason"
+      >
+        {{ readMetaValue(approval.metadata, "permission_reason") }}
+      </p>
 
       <pre
         v-if="approvalArgumentPreview(approval.metadata)"
@@ -83,7 +114,7 @@ async function handleDecision(approvalId: string, decision: "approved" | "denied
           :disabled="sessionStore.isResolvingApproval(approval.id)"
           @click="handleDecision(approval.id, 'denied')"
         >
-          Deny
+          拒绝
         </button>
         <button
           class="primary-btn narrow"
@@ -95,7 +126,7 @@ async function handleDecision(approvalId: string, decision: "approved" | "denied
             v-if="sessionStore.isResolvingApproval(approval.id)"
             class="fa-solid fa-spinner fa-spin"
           ></i>
-          Approve And Continue
+          批准并继续
         </button>
       </div>
     </article>

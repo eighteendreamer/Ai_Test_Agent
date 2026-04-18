@@ -20,6 +20,8 @@ def build_permission_gate(
 
         state["allowed_tool_keys"] = evaluation.allowed_tool_keys
         state["approval_required_tool_keys"] = evaluation.approval_required_tool_keys
+        state["denied_tool_keys"] = evaluation.denied_tool_keys
+        state["permission_decisions"] = [item.to_payload() for item in evaluation.decisions]
         state["pending_approvals"] = []
         append_graph_event(
             state,
@@ -29,8 +31,10 @@ def build_permission_gate(
             available_tools=",".join(state["available_tool_keys"]) or "none",
             allowed_tools=",".join(state["allowed_tool_keys"]) or "none",
             approval_required_tools=",".join(state["approval_required_tool_keys"]) or "none",
+            denied_tools=",".join(state["denied_tool_keys"]) or "none",
             allowed_tool_count=len(state["allowed_tool_keys"]),
             approval_required_count=len(state["approval_required_tool_keys"]),
+            denied_tool_count=len(state["denied_tool_keys"]),
         )
         return state
 

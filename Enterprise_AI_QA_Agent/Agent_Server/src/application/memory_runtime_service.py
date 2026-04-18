@@ -37,14 +37,23 @@ class MemoryRuntimeService:
         if not query.strip():
             return MemorySearchResult(query=query, backend=self.backend)
 
-        session_request = MemorySearchRequest(
+        current_session_request = MemorySearchRequest(
             query=query,
             session_id=session_id,
             trace_id=trace_id,
             scopes=["session", "page", "artifact"],
             top_k=max(self._top_k, 6),
             tags=self._derive_read_tags(context or {}),
-            day_window=30,
+            day_window=0,
+        )
+        historical_request = MemorySearchRequest(
+            query=query,
+            session_id=None,
+            trace_id=trace_id,
+            scopes=["session", "page", "artifact"],
+            top_k=max(self._top_k, 8),
+            tags=self._derive_read_tags(context or {}),
+            day_window=0,
         )
         global_request = MemorySearchRequest(
             query=query,
@@ -55,15 +64,23 @@ class MemoryRuntimeService:
             tags=self._derive_read_tags(context or {}),
             day_window=0,
         )
-        session_hits = await self._memory_store.search(session_request)
+        current_session_hits = await self._memory_store.search(current_session_request)
+        historical_hits = await self._memory_store.search(historical_request)
         global_hits = await self._memory_store.search(global_request)
-        total_session_docs = await self._memory_store.count_documents(session_request)
+        total_current_session_docs = await self._memory_store.count_documents(current_session_request)
+        total_historical_docs = await self._memory_store.count_documents(historical_request)
         total_global_docs = await self._memory_store.count_documents(global_request)
-        hits = self._merge_ranked_hits(session_hits, global_hits, self._top_k)
+        hits = self._merge_ranked_hits(
+            current_session_hits,
+            historical_hits,
+            global_hits,
+            self._top_k,
+        )
         prompt_blocks = [
             (
                 "Memory inventory summary: "
-                f"session/page/artifact docs={total_session_docs}, "
+                f"current_session docs={total_current_session_docs}, "
+                f"all_history session/page/artifact docs={total_historical_docs}, "
                 f"global long-term docs={total_global_docs}, "
                 f"retrieved_hits={len(hits)}."
             ),
@@ -80,9 +97,9 @@ class MemoryRuntimeService:
             hits=hits,
             prompt_blocks=prompt_blocks,
             source_count=len(hits),
-            total_session_docs=total_session_docs,
+            total_session_docs=total_historical_docs,
             total_global_docs=total_global_docs,
-            total_docs=total_session_docs + total_global_docs,
+            total_docs=total_historical_docs + total_global_docs,
             backend=self.backend,
         )
 
@@ -252,20 +269,26 @@ class MemoryRuntimeService:
 
     def _merge_ranked_hits(
         self,
-        session_hits: list,
+        current_session_hits: list,
+        historical_hits: list,
         global_hits: list,
         top_k: int,
     ) -> list:
         merged: dict[str, Any] = {}
-        for hit in session_hits:
-            merged[hit.id] = hit
         for hit in global_hits:
+            merged[hit.id] = hit
+        for hit in historical_hits:
             existing = merged.get(hit.id)
             if existing is None or (hit.score or 0.0) > (existing.score or 0.0):
+                merged[hit.id] = hit
+        for hit in current_session_hits:
+            existing = merged.get(hit.id)
+            if existing is None or (hit.score or 0.0) >= (existing.score or 0.0):
                 merged[hit.id] = hit
         ranked = list(merged.values())
         ranked.sort(
             key=lambda item: (
+                1 if item.session_id else 0,
                 1 if item.scope == "session" else 0,
                 item.score or 0.0,
                 item.updated_at,

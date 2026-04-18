@@ -1,21 +1,36 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 
+import EventConsolePanel from "./components/chat/EventConsolePanel.vue";
+import SnapshotTracePanel from "./components/chat/SnapshotTracePanel.vue";
+import ToolActivityPanel from "./components/chat/ToolActivityPanel.vue";
+import ToolJobPanel from "./components/chat/ToolJobPanel.vue";
+import VerificationPanel from "./components/chat/VerificationPanel.vue";
 import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopBar from "./components/layout/AppTopBar.vue";
 import { useAppStore } from "./stores/app";
 import { useSessionStore } from "./stores/session";
 
 const route = useRoute();
-const router = useRouter();
 const appStore = useAppStore();
 const sessionStore = useSessionStore();
 const logExpanded = ref(false);
+const runtimeConsoleTab = ref("logs");
 let healthPollTimer: number | null = null;
 
 const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
+const isHomeRoute = computed(() => route.name === "home");
+const runtimeConsoleTabs = [
+  { key: "logs", label: "运行日志" },
+  { key: "events", label: "事件控制台" },
+  { key: "tools", label: "工具活动" },
+  { key: "snapshot", label: "快照追踪" },
+  { key: "jobs", label: "工具任务" },
+  { key: "verification", label: "验证结果" },
+] as const;
+
 const runtimeLines = computed(() => {
   const workerDispatches = sessionStore.workerDispatches;
   const failureGuard = sessionStore.workerFailureGuard;
@@ -54,16 +69,13 @@ const runtimeLines = computed(() => {
   return ["Waiting for runtime events..."];
 });
 
-function handleQuickRun() {
-  router.push("/home");
-}
-
 watch(
   () => route.fullPath,
   () => {
     if (route.name !== "home") {
       logExpanded.value = false;
     }
+    runtimeConsoleTab.value = "logs";
   },
 );
 
@@ -89,7 +101,7 @@ onBeforeUnmount(() => {
   <div class="prototype-shell">
     <AppSidebar />
     <main class="prototype-main">
-      <AppTopBar :label="pageLabel" :system-status="appStore.systemStatus" @quick-run="handleQuickRun" />
+      <AppTopBar :label="pageLabel" :system-status="appStore.systemStatus" />
       <div class="prototype-content">
         <RouterView />
       </div>
@@ -99,17 +111,58 @@ onBeforeUnmount(() => {
             &gt;_ Runtime Event Console
             <span class="log-badge">{{ runtimeBadge }}</span>
           </div>
+          <div
+            v-if="isHomeRoute && sessionStore.session"
+            class="runtime-console-tabs runtime-console-tabs-inline"
+            @click.stop
+          >
+            <button
+              v-for="tab in runtimeConsoleTabs"
+              :key="tab.key"
+              type="button"
+              class="runtime-console-tab"
+              :class="{ active: runtimeConsoleTab === tab.key }"
+              @click.stop="runtimeConsoleTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
           <i :class="['fa-solid', logExpanded ? 'fa-chevron-down' : 'fa-chevron-up', 'log-panel-toggle']"></i>
         </header>
+
         <div v-if="logExpanded" class="log-panel-body">
-          <div v-for="(line, index) in runtimeLines" :key="`${index}-${line}`">
-            {{ line }}
-          </div>
-          <div class="log-cursor-line">
-            <span class="system-chip">system</span>
-            runtime-console-ready
-            <span class="cursor-blink"></span>
-          </div>
+          <template v-if="isHomeRoute && sessionStore.session">
+            <div class="runtime-console-content">
+              <div v-if="runtimeConsoleTab === 'logs'" class="runtime-console-raw-log">
+                <div v-for="(line, index) in runtimeLines" :key="`${index}-${line}`">
+                  {{ line }}
+                </div>
+                <div class="log-cursor-line">
+                  <span class="system-chip">system</span>
+                  runtime-console-ready
+                  <span class="cursor-blink"></span>
+                </div>
+              </div>
+              <EventConsolePanel v-else-if="runtimeConsoleTab === 'events'" />
+              <ToolActivityPanel v-else-if="runtimeConsoleTab === 'tools'" />
+              <SnapshotTracePanel v-else-if="runtimeConsoleTab === 'snapshot'" />
+              <ToolJobPanel v-else-if="runtimeConsoleTab === 'jobs'" />
+              <VerificationPanel v-else-if="runtimeConsoleTab === 'verification'" />
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="runtime-console-raw-log">
+              <div v-for="(line, index) in runtimeLines" :key="`${index}-${line}`">
+                {{ line }}
+              </div>
+              <div class="log-cursor-line">
+                <span class="system-chip">system</span>
+                runtime-console-ready
+                <span class="cursor-blink"></span>
+              </div>
+            </div>
+          </template>
         </div>
       </section>
     </main>

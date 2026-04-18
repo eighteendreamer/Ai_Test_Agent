@@ -8,8 +8,13 @@ import type {
   ModelConfigPublic,
   ModelConfigUpdateRequest,
   SessionDetail,
+  SessionReplayResponse,
+  ToolArtifactRecord,
   ToolApprovalRequest,
   ToolDescriptor,
+  ToolJobDetail,
+  ToolJobRecord,
+  SessionVerificationResponse,
 } from "../types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -101,6 +106,39 @@ export const api = {
         agent_key: agentKey || null,
       }),
     });
+  },
+  interruptSession(sessionId: string, reason?: string): Promise<SessionDetail> {
+    return request(`/api/v1/sessions/${sessionId}/interrupt`, {
+      method: "POST",
+      body: JSON.stringify({
+        reason: reason || null,
+        source: "web_console",
+      }),
+    });
+  },
+  resumeSession(sessionId: string, reason?: string): Promise<ConversationResponse> {
+    return request(`/api/v1/sessions/${sessionId}/resume`, {
+      method: "POST",
+      body: JSON.stringify({
+        reason: reason || null,
+        source: "web_console",
+      }),
+    });
+  },
+  replaySession(sessionId: string): Promise<SessionReplayResponse> {
+    return request(`/api/v1/sessions/${sessionId}/replay`);
+  },
+  listToolJobs(sessionId: string): Promise<ToolJobRecord[]> {
+    return request(`/api/v1/sessions/${sessionId}/tool-jobs`);
+  },
+  getToolJobDetail(sessionId: string, jobId: string): Promise<ToolJobDetail> {
+    return request(`/api/v1/sessions/${sessionId}/tool-jobs/${jobId}`);
+  },
+  listArtifacts(sessionId: string): Promise<ToolArtifactRecord[]> {
+    return request(`/api/v1/sessions/${sessionId}/artifacts`);
+  },
+  listVerifications(sessionId: string): Promise<SessionVerificationResponse> {
+    return request(`/api/v1/sessions/${sessionId}/verifications`);
   },
   connectEvents(sessionId: string, onEvent: (event: ExecutionEvent) => void): EventSource {
     const source = new EventSource(`/api/v1/sessions/${sessionId}/events`);

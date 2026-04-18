@@ -8,10 +8,6 @@ const props = defineProps<{
   systemStatus: SystemStatusSummary;
 }>();
 
-defineEmits<{
-  (event: "quick-run"): void;
-}>();
-
 const failingChecks = computed(() =>
   props.systemStatus.checks.filter((check) => check.status !== "online"),
 );
@@ -64,11 +60,6 @@ function statusIcon(check: ServiceCheckItem) {
           </div>
         </div>
       </div>
-      <div class="status-divider"></div>
-      <button class="quick-run-btn" @click="$emit('quick-run')">
-        <i class="fa-solid fa-play"></i>
-        一键测试
-      </button>
     </div>
   </header>
 </template>

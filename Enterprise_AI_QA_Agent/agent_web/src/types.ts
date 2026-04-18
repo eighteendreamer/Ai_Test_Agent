@@ -2,6 +2,7 @@ export type SessionStatus =
   | "idle"
   | "running"
   | "waiting_approval"
+  | "interrupted"
   | "completed"
   | "failed";
 
@@ -216,6 +217,11 @@ export interface SessionDetail {
   selected_agent?: string | null;
   pending_approvals: ToolApprovalRequest[];
   last_snapshot?: SessionSnapshot | null;
+  control_state: string;
+  is_resumable: boolean;
+  is_interrupted: boolean;
+  replay_available: boolean;
+  verification_results: VerificationResult[];
   metadata: Record<string, unknown>;
 }
 
@@ -223,6 +229,7 @@ export type SessionWatcherPhase =
   | "idle"
   | "running"
   | "waiting_approval"
+  | "interrupted"
   | "failed"
   | "completed";
 
@@ -237,4 +244,112 @@ export interface ConversationResponse {
   session: SessionDetail;
   output: ChatMessage;
   events: ExecutionEvent[];
+}
+
+export interface SessionReplayResponse {
+  session_id: string;
+  control_state: string;
+  latest_snapshot?: SessionSnapshot | null;
+  events: ExecutionEvent[];
+  metadata: Record<string, unknown>;
+}
+
+export interface ToolExecutionSummary {
+  call_id: string;
+  job_id?: string | null;
+  tool_key: string;
+  tool_name: string;
+  status: string;
+  summary: string;
+  trace_id?: string | null;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  approval_id?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export type ToolJobStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "resume_requested"
+  | "retry_requested"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "denied"
+  | "cancelled";
+
+export interface ToolArtifactRecord {
+  id: string;
+  tool_job_id: string;
+  session_id: string;
+  turn_id: string;
+  trace_id: string;
+  tool_key: string;
+  artifact_type: string;
+  label?: string | null;
+  path: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ToolJobRecord {
+  id: string;
+  session_id: string;
+  turn_id: string;
+  trace_id: string;
+  call_id: string;
+  tool_key: string;
+  tool_name: string;
+  status: ToolJobStatus;
+  attempt: number;
+  input_payload: Record<string, unknown>;
+  output_payload: Record<string, unknown>;
+  summary: string;
+  error_message?: string | null;
+  artifact_count: number;
+  created_at: string;
+  updated_at: string;
+  heartbeat_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ToolJobDetail extends ToolJobRecord {
+  artifacts: ToolArtifactRecord[];
+}
+
+export type VerificationStatus = "passed" | "failed" | "partial" | "not_run";
+
+export interface VerificationEvidence {
+  source_type: string;
+  source_id: string;
+  label: string;
+  detail: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface VerificationResult {
+  id: string;
+  session_id: string;
+  turn_id: string;
+  trace_id: string;
+  verifier: string;
+  status: VerificationStatus;
+  summary: string;
+  assertion_count: number;
+  passed_count: number;
+  failed_count: number;
+  evidence: VerificationEvidence[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SessionVerificationResponse {
+  session_id: string;
+  verification_results: VerificationResult[];
+  metadata: Record<string, unknown>;
 }

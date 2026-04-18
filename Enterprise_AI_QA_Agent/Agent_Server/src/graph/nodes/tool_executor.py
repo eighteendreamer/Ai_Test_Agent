@@ -45,6 +45,16 @@ def build_tool_executor_node(
         )
 
         for raw_tool_call in state["model_tool_calls"]:
+            if state.get("interrupt_requested"):
+                append_graph_event(
+                    state,
+                    "tool.execution_skipped",
+                    "tool_executor",
+                    "Interrupt was requested before the next tool call could start.",
+                    tool_key=str(raw_tool_call.get("name", "")),
+                    interrupt_reason=state.get("interrupt_reason", ""),
+                )
+                break
             tool_call = ModelToolCall.model_validate(raw_tool_call)
             execution_record = await _resolve_tool_call(
                 state=state,
@@ -87,6 +97,8 @@ def build_tool_executor_node(
                 "available_tool_keys": state["available_tool_keys"],
                 "allowed_tool_keys": state["allowed_tool_keys"],
                 "approval_required_tool_keys": state["approval_required_tool_keys"],
+                "denied_tool_keys": state["denied_tool_keys"],
+                "permission_decisions": state["permission_decisions"],
                 "loop_iteration": state["loop_iteration"],
                 "max_iterations": state["max_iterations"],
                 "context_bundle": state["context_bundle"],
@@ -138,6 +150,7 @@ async def _resolve_tool_call(
     tool_job_service: ToolJobService | None,
     tool_context: ToolExecutionContext,
 ) -> dict[str, Any]:
+    permission_decision = _find_permission_decision(state, tool_call.name)
     try:
         tool = tool_registry.get(tool_call.name)
     except KeyError:
@@ -157,6 +170,41 @@ async def _resolve_tool_call(
             f"Model requested unknown tool '{tool_call.name}'.",
             tool_key=tool_call.name,
             status="failed",
+        )
+        return {
+            "tool_result": result.model_dump(mode="python"),
+            "tool_message": build_tool_message(result),
+            "approval": None,
+        }
+
+    if tool.key in state.get("denied_tool_keys", []):
+        denial_reason = str(
+            (permission_decision or {}).get("reason")
+            or f"Tool '{tool.name}' is denied by the current permission policy."
+        )
+        result = ToolExecutionRecord(
+            call_id=tool_call.id,
+            tool_key=tool.key,
+            tool_name=tool.name,
+            status="denied",
+            summary=denial_reason,
+            input=tool_call.arguments,
+            output={
+                "error": "permission_denied",
+                "permission_behavior": "deny",
+                "permission_reason": denial_reason,
+                "permission_source": (permission_decision or {}).get("source", "static_policy"),
+            },
+        )
+        append_graph_event(
+            state,
+            "tool.execution_denied",
+            "tool_executor",
+            denial_reason,
+            tool_key=tool.key,
+            tool_name=tool.name,
+            permission_source=(permission_decision or {}).get("source", "static_policy"),
+            permission_reason=denial_reason,
         )
         return {
             "tool_result": result.model_dump(mode="python"),
@@ -189,10 +237,14 @@ async def _resolve_tool_call(
         }
 
     if tool.key in state["approval_required_tool_keys"]:
-        reason = (
-            f"Tool '{tool.name}' requires explicit approval before execution "
-            f"in {state['session_mode']} mode."
+        reason = str(
+            (permission_decision or {}).get("reason")
+            or (
+                f"Tool '{tool.name}' requires explicit approval before execution "
+                f"in {state['session_mode']} mode."
+            )
         )
+        permission_source = str((permission_decision or {}).get("source") or "static_policy")
         approval_job_id = None
         if tool_job_service is not None:
             approval_job = await tool_job_service.create_job(
@@ -206,6 +258,9 @@ async def _resolve_tool_call(
                     "phase": "approval_pending",
                     "selected_agent_key": state["selected_agent_key"],
                     "selected_model_key": state["selected_model_key"],
+                    "permission_behavior": "ask",
+                    "permission_source": permission_source,
+                    "permission_reason": reason,
                 },
             )
             approval_job_id = approval_job.id
@@ -221,6 +276,9 @@ async def _resolve_tool_call(
                 "selected_agent_key": state["selected_agent_key"],
                 "selected_model_key": state["selected_model_key"],
                 "tool_job_id": approval_job_id,
+                "permission_behavior": "ask",
+                "permission_source": permission_source,
+                "permission_reason": reason,
             },
         )
         result = ToolExecutionRecord(
@@ -243,6 +301,7 @@ async def _resolve_tool_call(
             tool_name=tool.name,
             approval_id=approval.id,
             arguments=tool_call.arguments,
+            permission_source=permission_source,
         )
         return {
             "tool_result": result.model_dump(mode="python"),
@@ -299,3 +358,10 @@ def _collect_worker_dispatches(tool_results: list[dict[str, Any]]) -> list[dict[
             continue
         dispatches.extend(worker for worker in workers if isinstance(worker, dict))
     return dispatches
+
+
+def _find_permission_decision(state: AgentGraphState, tool_key: str) -> dict[str, Any] | None:
+    for item in state.get("permission_decisions", []):
+        if item.get("tool_key") == tool_key:
+            return item
+    return None

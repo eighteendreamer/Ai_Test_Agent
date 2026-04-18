@@ -15,10 +15,19 @@ class MessageRole(str, Enum):
     event = "event"
 
 
+class MessageKind(str, Enum):
+    user_input = "user_input"
+    slash_command = "slash_command"
+    system_command = "system_command"
+    task_notification = "task_notification"
+    coordinator_assignment = "coordinator_assignment"
+
+
 class SessionStatus(str, Enum):
     idle = "idle"
     running = "running"
     waiting_approval = "waiting_approval"
+    interrupted = "interrupted"
     completed = "completed"
     failed = "failed"
 
@@ -82,6 +91,37 @@ class ToolApprovalRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class VerificationStatus(str, Enum):
+    passed = "passed"
+    failed = "failed"
+    partial = "partial"
+    not_run = "not_run"
+
+
+class VerificationEvidence(BaseModel):
+    source_type: str
+    source_id: str
+    label: str
+    detail: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VerificationResult(BaseModel):
+    id: str
+    session_id: str
+    turn_id: str
+    trace_id: str
+    verifier: str
+    status: VerificationStatus
+    summary: str
+    assertion_count: int = 0
+    passed_count: int = 0
+    failed_count: int = 0
+    evidence: list[VerificationEvidence] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str
@@ -100,6 +140,11 @@ class SessionDetail(SessionSummary):
     selected_agent: str | None = None
     pending_approvals: list[ToolApprovalRequest] = Field(default_factory=list)
     last_snapshot: SessionSnapshot | None = None
+    control_state: str = "idle"
+    is_resumable: bool = False
+    is_interrupted: bool = False
+    replay_available: bool = False
+    verification_results: list[VerificationResult] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -112,11 +157,32 @@ class CreateSessionRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class InputAttachment(BaseModel):
+    kind: str = "file"
+    name: str
+    uri: str | None = None
+    content_type: str | None = None
+    text_excerpt: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class InputHookResult(BaseModel):
+    hook_key: str
+    status: str
+    message: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SendMessageRequest(BaseModel):
-    content: str
+    content: str = ""
     agent_key: str | None = None
     model_key: str | None = None
     skill_keys: list[str] = Field(default_factory=list)
+    attachments: list[InputAttachment] = Field(default_factory=list)
+    message_kind: MessageKind = MessageKind.user_input
+    submit_mode: str = "immediate"
+    command_name: str | None = None
+    interrupt_if_busy: bool = False
     context: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -129,12 +195,43 @@ class ExecutionRequest(BaseModel):
     agent_key: str | None = None
     model_key: str | None = None
     skill_keys: list[str] = Field(default_factory=list)
+    attachments: list[InputAttachment] = Field(default_factory=list)
+    message_kind: MessageKind = MessageKind.user_input
+    submit_mode: str = "immediate"
+    command_name: str | None = None
+    input_summary: str = ""
+    hook_results: list[InputHookResult] = Field(default_factory=list)
+    orchestration_meta: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalDecisionRequest(BaseModel):
     decision: ToolApprovalStatus
     reason: str | None = None
+
+
+class InterruptSessionRequest(BaseModel):
+    reason: str | None = None
+    source: str = "user"
+
+
+class ResumeSessionRequest(BaseModel):
+    reason: str | None = None
+    source: str = "user"
+
+
+class SessionReplayResponse(BaseModel):
+    session_id: str
+    control_state: str
+    latest_snapshot: SessionSnapshot | None = None
+    events: list[ExecutionEvent] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionVerificationResponse(BaseModel):
+    session_id: str
+    verification_results: list[VerificationResult] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationResponse(BaseModel):

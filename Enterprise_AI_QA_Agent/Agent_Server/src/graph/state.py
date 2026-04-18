@@ -28,11 +28,14 @@ class AgentGraphState(TypedDict):
     available_tool_keys: list[str]
     allowed_tool_keys: list[str]
     approval_required_tool_keys: list[str]
+    denied_tool_keys: list[str]
+    permission_decisions: list[dict[str, Any]]
     pending_approvals: list[dict[str, Any]]
     plan_steps: list[str]
     system_prompt: str
     runtime_messages: list[dict[str, Any]]
     model_request_payload: dict[str, Any]
+    model_response_summary: dict[str, Any]
     model_response_text: str
     assistant_tool_call_message: dict[str, Any]
     model_tool_calls: list[dict[str, Any]]
@@ -43,6 +46,9 @@ class AgentGraphState(TypedDict):
     event_log: list[dict[str, Any]]
     final_response: str
     pending_turn: dict[str, Any]
+    control_state: str
+    interrupt_requested: bool
+    interrupt_reason: str
     loop_iteration: int
     max_iterations: int
     continue_loop: bool

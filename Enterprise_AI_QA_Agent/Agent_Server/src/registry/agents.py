@@ -24,6 +24,7 @@ class AgentRegistry:
                         "workflow-router",
                         "subagent-dispatch",
                         "knowledge-rag",
+                        "session-history",
                         "test-case-generator",
                         "report-writer",
                     ],
@@ -45,6 +46,7 @@ class AgentRegistry:
                     summary="Break requirements into test coverage, assertions, and risks.",
                     description="Transforms user intent into executable QA plans, test cases, and verification boundaries.",
                     supported_tools=[
+                        "session-history",
                         "knowledge-rag",
                         "test-case-generator",
                         "report-writer",
@@ -99,7 +101,7 @@ class AgentRegistry:
                     role="reporter",
                     summary="Turn runtime evidence into structured QA output.",
                     description="Produces final findings, summaries, and delivery-ready reports.",
-                    supported_tools=["report-writer", "knowledge-rag"],
+                    supported_tools=["report-writer", "knowledge-rag", "session-history"],
                     supported_skills=["report-synthesis"],
                     supported_models=["claude-sonnet-4", "gpt-5.4"],
                     default_model="claude-sonnet-4",
@@ -129,6 +131,21 @@ class AgentRegistry:
             return self.get("api-verifier")
         if any(token in lowered for token in ["page", "browser", "ui", "selenium", "playwright"]):
             return self.get("ui-executor")
+        if any(
+            token in lowered
+            for token in [
+                "history",
+                "session report",
+                "conversation report",
+                "previous questions",
+                "历史",
+                "会话报告",
+                "对话报告",
+                "之前问",
+                "以前问",
+            ]
+        ):
+            return self.get("report-analyst")
         if any(token in lowered for token in ["report", "summary", "analysis", "结论", "报告"]):
             return self.get("report-analyst")
         if any(token in lowered for token in ["case", "plan", "scenario", "用例", "测试点"]):

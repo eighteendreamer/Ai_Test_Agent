@@ -33,7 +33,8 @@ def build_model_invoker_node(
                     f"You are the '{state['selected_agent_name']}' runtime inside Enterprise AI QA Agent. "
                     f"Operate in {state['session_mode']} session mode and {state['runtime_mode']} runtime mode. "
                     "Follow a Claude Code style execution discipline: reason clearly, stay tool-aware, and summarize actionable next steps. "
-                    "When a registered tool can improve the answer, call the tool instead of only describing what it would do."
+                    "When a registered tool can improve the answer, call the tool instead of only describing what it would do. "
+                    "If the user asks about conversation history, prior questions, session counts, or wants a session report, prefer the 'session-history' tool over reconstructing history from memory alone."
                 ),
             ]
             if state["selected_agent_key"] == "coordinator":
@@ -76,6 +77,7 @@ def build_model_invoker_node(
             tools=tool_registry.build_model_tools(state["available_tool_keys"]),
         )
         state["model_request_payload"] = request_payload.model_dump(mode="python")
+        state["model_response_summary"] = {}
         state["model_tool_calls"] = []
         state["assistant_tool_call_message"] = {}
         state["model_response_text"] = ""
@@ -100,6 +102,7 @@ def build_model_invoker_node(
             state["selected_model_key"],
             request_payload,
         )
+        state["model_response_summary"] = invocation_result.response_summary
         state["model_response_text"] = invocation_result.text
         state["model_tool_calls"] = [item.model_dump(mode="python") for item in invocation_result.tool_calls]
         state["assistant_tool_call_message"] = {
