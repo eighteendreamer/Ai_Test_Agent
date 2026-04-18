@@ -20,6 +20,16 @@ function buildCheck(
   return { key, label, status, detail, meta };
 }
 
+type ThemeMode = "light" | "dark";
+
+const THEME_STORAGE_KEY = "enterprise-ai-qa-agent-theme";
+
+function applyThemeToDocument(theme: ThemeMode) {
+  document.documentElement.dataset.theme = theme;
+  document.body.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
+
 export const useAppStore = defineStore("app", {
   state: () => ({
     health: null as HealthResponse | null,
@@ -28,6 +38,7 @@ export const useAppStore = defineStore("app", {
     loading: false,
     error: "",
     lastCheckedAt: "" as string,
+    theme: "light" as ThemeMode,
   }),
   getters: {
     systemStatus(state): SystemStatusSummary {
@@ -161,6 +172,17 @@ export const useAppStore = defineStore("app", {
     },
   },
   actions: {
+    hydrateTheme() {
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+      const nextTheme: ThemeMode = savedTheme === "dark" ? "dark" : "light";
+      this.theme = nextTheme;
+      applyThemeToDocument(nextTheme);
+    },
+    toggleTheme() {
+      this.theme = this.theme === "dark" ? "light" : "dark";
+      window.localStorage.setItem(THEME_STORAGE_KEY, this.theme);
+      applyThemeToDocument(this.theme);
+    },
     async fetchSystemStatus() {
       this.loading = true;
       this.error = "";

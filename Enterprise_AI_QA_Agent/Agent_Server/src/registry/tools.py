@@ -129,6 +129,80 @@ class ToolRegistry:
                 ),
                 handler_key="session-history",
             ),
+            "session-timeline": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="session-timeline",
+                    name="Session Timeline",
+                    description="Build a chronological timeline of session messages, events, snapshots, and observations for the current session.",
+                    category="knowledge",
+                    permission_level="safe",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of timeline entries to include.",
+                                "default": 20,
+                            },
+                            "include_messages": {
+                                "type": "boolean",
+                                "description": "Whether user and assistant messages should be included.",
+                                "default": True,
+                            },
+                            "include_events": {
+                                "type": "boolean",
+                                "description": "Whether execution events should be included.",
+                                "default": True,
+                            },
+                            "include_observations": {
+                                "type": "boolean",
+                                "description": "Whether persisted testing observations should be included.",
+                                "default": True,
+                            },
+                        },
+                    },
+                    output_schema={"timeline": "array", "report": "object"},
+                    tags=["history", "timeline", "session"],
+                ),
+                handler_key="session-timeline",
+            ),
+            "observation-search": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="observation-search",
+                    name="Observation Search",
+                    description="Search persisted testing observations and return structured evidence about prior page states, API assertions, CLI runs, and report artifacts.",
+                    category="knowledge",
+                    permission_level="safe",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query for historical testing observations."},
+                            "scope": {
+                                "type": "string",
+                                "description": "Use current_session or all_sessions.",
+                                "default": "current_session",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of observations to return.",
+                                "default": 8,
+                            },
+                            "category": {
+                                "type": "string",
+                                "description": "Optional observation category filter, such as page_state or api_assertion.",
+                            },
+                            "tool_key": {
+                                "type": "string",
+                                "description": "Optional tool key filter, such as browser-automation or api-tester.",
+                            },
+                        },
+                        "required": ["query"],
+                    },
+                    output_schema={"observations": "array"},
+                    tags=["history", "observation", "retrieval"],
+                ),
+                handler_key="observation-search",
+            ),
             "test-case-generator": ToolModule(
                 descriptor=ToolDescriptor(
                     key="test-case-generator",

@@ -138,6 +138,58 @@ class ArangoDocumentMemoryStore:
         hits.sort(key=lambda item: (item.score or 0.0, item.updated_at), reverse=True)
         return hits[: request.top_k]
 
+    async def list_points(self, request: MemorySearchRequest) -> list[MemoryPoint]:
+        day_buckets = recent_day_buckets(request.day_window) if request.day_window > 0 else []
+        scopes = request.scopes or ([request.scope] if request.scope is not None else [])
+        bind_vars = {
+            "@collection": self._settings.arango_memory_collection,
+            "day_buckets": day_buckets,
+            "session_id": request.session_id,
+            "scope": request.scope,
+            "scopes": scopes,
+            "kinds": request.kinds,
+            "tags": request.tags,
+            "include_stale": request.include_stale,
+            "limit": max(request.top_k, 1),
+        }
+        rows = self._provider.execute(
+            """
+            FOR doc IN @@collection
+                FILTER LENGTH(@day_buckets) == 0 OR doc.day_bucket IN @day_buckets
+                FILTER @session_id == null OR doc.session_id == @session_id
+                FILTER LENGTH(@scopes) == 0 OR doc.scope IN @scopes
+                FILTER @scope == null OR doc.scope == @scope
+                FILTER LENGTH(@kinds) == 0 OR doc.kind IN @kinds
+                FILTER LENGTH(@tags) == 0 OR LENGTH(INTERSECTION(doc.tags, @tags)) > 0
+                FILTER @include_stale == true OR doc.stale != true
+                SORT doc.updated_at DESC
+                LIMIT @limit
+                RETURN doc
+            """,
+            bind_vars=bind_vars,
+        )
+        return [
+            MemoryPoint(
+                id=row["id"],
+                scope=row.get("scope", "session"),
+                kind=row.get("kind", "episodic"),
+                content=row.get("content") or "",
+                summary=row.get("summary") or "",
+                tags=list(row.get("tags") or []),
+                score=None,
+                session_id=row.get("session_id"),
+                turn_id=row.get("turn_id"),
+                trace_id=row.get("trace_id"),
+                source=row.get("source"),
+                stale=bool(row.get("stale")),
+                created_at=ensure_utc_datetime(row["created_at"]) or datetime.utcnow(),
+                updated_at=ensure_utc_datetime(row["updated_at"]) or datetime.utcnow(),
+                metadata=row.get("metadata") or {},
+            )
+            for row in rows
+            if _match_metadata_filters(row.get("metadata") or {}, request.metadata_filters)
+        ]
+
     async def count_documents(self, request: MemorySearchRequest) -> int:
         day_buckets = recent_day_buckets(request.day_window) if request.day_window > 0 else []
         scopes = request.scopes or ([request.scope] if request.scope is not None else [])

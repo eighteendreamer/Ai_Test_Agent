@@ -54,6 +54,11 @@ def build_model_invoker_node(
                 )
             if state["skill_prompt_blocks"]:
                 prompt_sections.append("Active skill directives:\n" + "\n".join(state["skill_prompt_blocks"]))
+            if state["observation_prompt_blocks"]:
+                prompt_sections.append(
+                    "Relevant historical testing observations:\n"
+                    + "\n".join(state["observation_prompt_blocks"])
+                )
             if state["memory_prompt_blocks"]:
                 prompt_sections.append("Relevant persistent memory:\n" + "\n".join(state["memory_prompt_blocks"]))
             if state["mcp_prompt_blocks"]:

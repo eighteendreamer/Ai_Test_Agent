@@ -92,6 +92,8 @@ def build_tool_executor_node(
                 "skill_prompt_blocks": state["skill_prompt_blocks"],
                 "memory_hits": state["memory_hits"],
                 "memory_prompt_blocks": state["memory_prompt_blocks"],
+                "observation_hits": state["observation_hits"],
+                "observation_prompt_blocks": state["observation_prompt_blocks"],
                 "active_mcp_servers": state["active_mcp_servers"],
                 "mcp_prompt_blocks": state["mcp_prompt_blocks"],
                 "available_tool_keys": state["available_tool_keys"],

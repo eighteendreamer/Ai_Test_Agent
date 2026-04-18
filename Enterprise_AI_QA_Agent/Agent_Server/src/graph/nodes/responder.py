@@ -21,19 +21,7 @@ def responder(state: AgentGraphState) -> AgentGraphState:
         else "No pending approvals. The runtime skeleton completed this turn without blocking tools."
     )
 
-    model_text = state["final_response"].strip()
-    state["final_response"] = (
-        f"{model_text}\n\n"
-        f"[Framework]\n"
-        f"Agent: {state['selected_agent_name']}\n"
-        f"Model: {state['selected_model_name']}\n"
-        f"Resolved skills: {skill_text}\n"
-        f"Available tools: {', '.join(state['available_tool_keys']) or 'none'}\n"
-        f"Allowed tools: {', '.join(state['allowed_tool_keys']) or 'none'}\n"
-        f"Execution plan:\n{plan_text}\n\n"
-        f"Tool status:\n{tool_text}\n\n"
-        f"{approval_text}"
-    ).strip()
+    state["final_response"] = state["final_response"].strip()
     append_graph_event(
         state,
         "graph.response_ready",
@@ -41,6 +29,14 @@ def responder(state: AgentGraphState) -> AgentGraphState:
         "Assistant response payload has been finalized for the client.",
         agent_key=state["selected_agent_key"],
         model_key=state["selected_model_key"],
+        agent_name=state["selected_agent_name"],
+        model_name=state["selected_model_name"],
+        resolved_skills=skill_text,
+        available_tools=",".join(state["available_tool_keys"]) or "none",
+        allowed_tools=",".join(state["allowed_tool_keys"]) or "none",
+        execution_plan=plan_text,
+        tool_status=tool_text,
+        approval_status=approval_text,
         pending_approval_count=len(state["pending_approvals"]),
         response_preview=truncate_text(state["final_response"], 180),
     )

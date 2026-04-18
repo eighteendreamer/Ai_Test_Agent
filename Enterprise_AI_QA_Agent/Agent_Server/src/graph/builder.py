@@ -9,7 +9,7 @@ from src.application.permission_service import PermissionService
 from src.application.skill_runtime_service import SkillRuntimeService
 from src.application.tool_job_service import ToolJobService
 from src.application.tool_runtime_service import ToolRuntimeService
-from src.graph.nodes.context_builder import context_builder
+from src.graph.nodes.context_builder import build_context_builder_node
 from src.graph.nodes.finalizer import build_finalizer_node
 from src.graph.nodes.model_invoker import build_model_invoker_node, route_after_model_invoker
 from src.graph.nodes.permission_gate import build_permission_gate
@@ -38,7 +38,10 @@ def build_agent_graph(
     tool_job_service: ToolJobService | None = None,
 ):
     graph = StateGraph(AgentGraphState)
-    graph.add_node("context_builder", context_builder)
+    graph.add_node(
+        "context_builder",
+        build_context_builder_node(memory_runtime_service=memory_runtime_service),
+    )
     graph.add_node(
         "router",
         build_router_node(

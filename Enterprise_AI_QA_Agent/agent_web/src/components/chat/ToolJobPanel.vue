@@ -6,7 +6,12 @@ import { useSessionStore } from "../../stores/session";
 const sessionStore = useSessionStore();
 
 const jobs = computed(() => sessionStore.recentToolJobs);
-const artifacts = computed(() => sessionStore.sessionArtifacts.slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 6));
+const artifacts = computed(() =>
+  sessionStore.sessionArtifacts
+    .slice()
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, 6),
+);
 
 function tone(status: string) {
   if (status === "completed") return "online";
@@ -48,7 +53,7 @@ function statusLabel(status: string) {
 </script>
 
 <template>
-  <section v-if="sessionStore.session" class="observability-panel">
+  <section v-if="sessionStore.session" class="observability-panel tool-job-panel">
     <div class="observability-head">
       <div>
         <strong>工具任务</strong>

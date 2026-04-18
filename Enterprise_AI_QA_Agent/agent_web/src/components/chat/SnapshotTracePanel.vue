@@ -15,8 +15,12 @@ const rows = computed(() => {
     : 0;
   const loopIteration = Number(graphState.value.loop_iteration ?? 0);
   const maxIterations = Number(graphState.value.max_iterations ?? 0);
-  const controlState = typeof graphState.value.control_state === "string" ? graphState.value.control_state : "--";
-  const terminationReason = typeof graphState.value.termination_reason === "string" ? graphState.value.termination_reason : "--";
+  const controlState =
+    typeof graphState.value.control_state === "string" ? graphState.value.control_state : "--";
+  const terminationReason =
+    typeof graphState.value.termination_reason === "string"
+      ? graphState.value.termination_reason
+      : "--";
 
   return [
     { label: "追踪 ID", value: sessionStore.latestTraceId || "--" },
@@ -33,14 +37,18 @@ const rows = computed(() => {
 </script>
 
 <template>
-  <section v-if="sessionStore.session" class="observability-panel">
+  <section v-if="sessionStore.session" class="observability-panel snapshot-trace-panel">
     <div class="observability-head">
       <div>
         <strong>快照追踪</strong>
         <p>展示当前运行态对应的快照、追踪和循环元信息。</p>
       </div>
       <span class="registry-tag light">
-        {{ snapshot?.created_at ? new Date(snapshot.created_at).toLocaleTimeString("zh-CN", { hour12: false }) : "暂无快照" }}
+        {{
+          snapshot?.created_at
+            ? new Date(snapshot.created_at).toLocaleTimeString("zh-CN", { hour12: false })
+            : "暂无快照"
+        }}
       </span>
     </div>
 

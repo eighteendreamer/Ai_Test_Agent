@@ -151,6 +151,14 @@ async def list_verifications(session_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Session not found") from exc
 
 
+@router.get("/{session_id}/observations")
+async def list_observations(session_id: str, request: Request):
+    try:
+        return await request.app.state.session_service.list_observations(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
 @router.post("/{session_id}/approvals/{approval_id}")
 async def resolve_approval(
     session_id: str,

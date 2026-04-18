@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from typing import Any
 
 from src.infrastructure.arango_memory_store import ArangoDocumentMemoryStore
 from src.runtime.execution_logging import truncate_text
+from src.schemas.observation import ObservationRecord
 from src.schemas.memory import MemorySearchRequest, MemorySearchResult, MemoryWriteRequest
 
 
@@ -103,6 +105,67 @@ class MemoryRuntimeService:
             backend=self.backend,
         )
 
+    async def retrieve_observation_context(
+        self,
+        session_id: str | None,
+        trace_id: str,
+        query: str,
+        context: dict[str, Any] | None = None,
+        top_k: int = 5,
+    ) -> MemorySearchResult:
+        if not query.strip():
+            return MemorySearchResult(query=query, backend=self.backend)
+
+        current_session_request = MemorySearchRequest(
+            query=query,
+            session_id=session_id,
+            trace_id=trace_id,
+            scopes=["session", "page", "artifact"],
+            kinds=["observation"],
+            top_k=max(top_k, 4),
+            tags=self._derive_read_tags(context or {}),
+            day_window=0,
+        )
+        historical_request = MemorySearchRequest(
+            query=query,
+            session_id=None,
+            trace_id=trace_id,
+            scopes=["session", "page", "artifact"],
+            kinds=["observation"],
+            top_k=max(top_k, 6),
+            tags=self._derive_read_tags(context or {}),
+            day_window=0,
+        )
+        current_hits = await self._memory_store.search(current_session_request)
+        historical_hits = await self._memory_store.search(historical_request)
+        total_current_docs = await self._memory_store.count_documents(current_session_request)
+        total_historical_docs = await self._memory_store.count_documents(historical_request)
+        hits = self._merge_ranked_hits(current_hits, historical_hits, [], top_k)
+        prompt_blocks = []
+        if hits:
+            prompt_blocks = [
+                (
+                    "Historical testing observations: "
+                    f"current_session={total_current_docs}, "
+                    f"all_history={total_historical_docs}, "
+                    f"retrieved_hits={len(hits)}."
+                ),
+                *[
+                    self._format_observation_prompt_block(hit)
+                    for hit in hits
+                ],
+            ]
+        return MemorySearchResult(
+            query=query,
+            hits=hits,
+            prompt_blocks=prompt_blocks,
+            source_count=len(hits),
+            total_session_docs=total_current_docs,
+            total_global_docs=0,
+            total_docs=total_historical_docs,
+            backend=self.backend,
+        )
+
     async def write_turn_memory(
         self,
         session_id: str,
@@ -172,6 +235,85 @@ class MemoryRuntimeService:
         )
         point = await self._memory_store.write(request)
         return point.id if point is not None else None
+
+    async def write_observations(self, observations: Iterable[ObservationRecord]) -> list[str]:
+        write_ids: list[str] = []
+        for observation in observations:
+            point = await self._memory_store.write(
+                MemoryWriteRequest(
+                    scope=observation.scope,
+                    kind="observation",
+                    content=observation.content,
+                    summary=observation.summary,
+                    tags=observation.tags,
+                    session_id=observation.session_id,
+                    turn_id=observation.turn_id,
+                    trace_id=observation.trace_id,
+                    source=observation.source,
+                    metadata={
+                        "memory_id": observation.id,
+                        "observation_id": observation.id,
+                        "observation_title": observation.title,
+                        "observation_category": observation.category,
+                        "tool_key": observation.tool_key,
+                        "status": observation.status,
+                        **observation.metadata,
+                    },
+                )
+            )
+            if point is not None:
+                write_ids.append(point.id)
+        return write_ids
+
+    async def list_session_observations(
+        self,
+        session_id: str,
+        top_k: int = 100,
+    ) -> list[ObservationRecord]:
+        points = await self._memory_store.list_points(
+            MemorySearchRequest(
+                query="",
+                session_id=session_id,
+                scopes=["session", "page", "artifact"],
+                kinds=["observation"],
+                top_k=top_k,
+                day_window=0,
+            )
+        )
+        observations: list[ObservationRecord] = []
+        for point in points:
+            metadata = point.metadata or {}
+            observations.append(
+                ObservationRecord(
+                    id=str(metadata.get("observation_id") or point.id),
+                    session_id=point.session_id or session_id,
+                    turn_id=point.turn_id or "",
+                    trace_id=point.trace_id or "",
+                    tool_key=str(metadata.get("tool_key") or "tool"),
+                    status=str(metadata.get("status") or "completed"),
+                    scope=point.scope,
+                    category=str(metadata.get("observation_category") or "tool_execution"),
+                    title=str(metadata.get("observation_title") or point.summary or point.source or point.id),
+                    summary=point.summary,
+                    content=point.content,
+                    source=point.source,
+                    tags=point.tags,
+                    metadata=metadata,
+                    created_at=point.created_at,
+                )
+            )
+        return observations
+
+    def _format_observation_prompt_block(self, hit) -> str:
+        metadata = hit.metadata or {}
+        category = str(metadata.get("observation_category") or "tool_execution")
+        tool_key = str(metadata.get("tool_key") or "tool")
+        title = str(metadata.get("observation_title") or hit.summary or hit.source or hit.id)
+        source = hit.source or "memory"
+        return (
+            f"- [{category}] {title} "
+            f"(tool={tool_key}, scope={hit.scope}, source={source}, score={hit.score or 0:.3f})"
+        )
 
     def _build_turn_write_policy(
         self,

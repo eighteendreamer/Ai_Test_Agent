@@ -22,6 +22,7 @@ from src.application.coordinator_runtime_service import CoordinatorRuntimeServic
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.mcp_runtime_service import MCPRuntimeService
 from src.application.model_runtime_service import ModelRuntimeService
+from src.application.observation_runtime_service import ObservationRuntimeService
 from src.application.permission_service import PermissionService
 from src.application.prompt_service import PromptSubmissionService
 from src.application.registry_service import RegistryService
@@ -31,6 +32,7 @@ from src.application.skill_runtime_service import SkillRuntimeService
 from src.application.settings_service import SettingsService
 from src.application.tool_job_service import ToolJobService
 from src.application.tool_runtime_service import ToolRuntimeService
+from src.application.transcript_hygiene_service import TranscriptHygieneService
 from src.core.config import get_settings
 from src.graph.builder import build_agent_graph
 from src.infrastructure.arango_memory_store import ArangoDocumentMemoryStore
@@ -76,6 +78,8 @@ async def lifespan(app: FastAPI):
     await tool_job_service.initialize()
     permission_service = PermissionService()
     prompt_service = PromptSubmissionService()
+    observation_runtime_service = ObservationRuntimeService()
+    transcript_hygiene_service = TranscriptHygieneService()
     runtime_control = RuntimeControlRegistry()
     model_runtime_service = ModelRuntimeService(model_registry=model_registry, settings=settings)
     tool_runtime_service = ToolRuntimeService(
@@ -85,6 +89,7 @@ async def lifespan(app: FastAPI):
         memory_runtime_service=memory_runtime_service,
         tool_job_service=tool_job_service,
         session_store=store,
+        transcript_hygiene_service=transcript_hygiene_service,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,
@@ -105,6 +110,7 @@ async def lifespan(app: FastAPI):
         tool_runtime_service=tool_runtime_service,
         tool_registry=tool_registry,
         runtime_control=runtime_control,
+        transcript_hygiene_service=transcript_hygiene_service,
         max_iterations=settings.runtime_max_iterations,
     )
 
@@ -126,6 +132,8 @@ async def lifespan(app: FastAPI):
     app.state.memory_backend = memory_runtime_service.backend
     app.state.permission_service = permission_service
     app.state.prompt_service = prompt_service
+    app.state.observation_runtime_service = observation_runtime_service
+    app.state.transcript_hygiene_service = transcript_hygiene_service
     app.state.runtime_control = runtime_control
     app.state.graph = graph
     app.state.model_runtime_service = model_runtime_service
@@ -136,6 +144,8 @@ async def lifespan(app: FastAPI):
         prompt_service=prompt_service,
         runtime_service=runtime_service,
         memory_runtime_service=memory_runtime_service,
+        observation_runtime_service=observation_runtime_service,
+        transcript_hygiene_service=transcript_hygiene_service,
     )
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,

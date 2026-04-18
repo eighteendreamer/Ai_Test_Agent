@@ -45,7 +45,7 @@ function statusLabel(status: string) {
 </script>
 
 <template>
-  <section v-if="sessionStore.session" class="observability-panel">
+  <section v-if="sessionStore.session" class="observability-panel tool-activity-panel">
     <div class="observability-head">
       <div>
         <strong>工具活动</strong>

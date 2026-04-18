@@ -7,12 +7,15 @@ from typing import Awaitable, Callable
 from uuid import uuid4
 
 from src.application.memory_runtime_service import MemoryRuntimeService
+from src.application.observation_runtime_service import ObservationRuntimeService
 from src.application.prompt_service import PromptSubmissionService
 from src.application.runtime_service import RuntimeService
+from src.application.transcript_hygiene_service import TranscriptHygieneService
 from src.application.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
 from src.runtime.store import SessionStore
+from src.schemas.observation import SessionObservationResponse
 from src.schemas.session import (
     ApprovalDecisionRequest,
     ChatMessage,
@@ -42,12 +45,16 @@ class SessionService:
         prompt_service: PromptSubmissionService,
         runtime_service: RuntimeService,
         memory_runtime_service: MemoryRuntimeService | None = None,
+        observation_runtime_service: ObservationRuntimeService | None = None,
+        transcript_hygiene_service: TranscriptHygieneService | None = None,
         verification_service: VerificationService | None = None,
     ) -> None:
         self._store = store
         self._prompt_service = prompt_service
         self._runtime_service = runtime_service
         self._memory_runtime_service = memory_runtime_service
+        self._observation_runtime_service = observation_runtime_service
+        self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._verification_service = verification_service or VerificationService()
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -115,6 +122,24 @@ class SessionService:
             ],
             metadata={
                 "verification_count": len(results),
+            },
+        )
+
+    async def list_observations(self, session_id: str) -> SessionObservationResponse:
+        await self._require_session(session_id)
+        if self._memory_runtime_service is None:
+            return SessionObservationResponse(
+                session_id=session_id,
+                observations=[],
+                metadata={"observation_count": 0, "memory_backend": "disabled"},
+            )
+        observations = await self._memory_runtime_service.list_session_observations(session_id=session_id)
+        return SessionObservationResponse(
+            session_id=session_id,
+            observations=observations,
+            metadata={
+                "observation_count": len(observations),
+                "memory_backend": self._memory_runtime_service.backend,
             },
         )
 
@@ -234,6 +259,7 @@ class SessionService:
             metadata={
                 "replay_count": session.metadata.get("replay_requests", 0),
                 "snapshot_stage": latest_snapshot.stage if latest_snapshot else "",
+                "transcript_summary": self._transcript_hygiene_service.summarize_messages(session.messages),
             },
         )
 
@@ -321,17 +347,19 @@ class SessionService:
                 role=MessageRole.user,
                 content=payload.content.strip(),
                 created_at=datetime.utcnow(),
-                metadata={
-                    "turn_id": execution_request.turn_id,
-                    "requested_agent": payload.agent_key,
-                    "requested_model": payload.model_key,
-                    "message_kind": execution_request.message_kind.value,
-                    "submit_mode": execution_request.submit_mode,
-                    "command_name": execution_request.command_name,
-                    "attachment_count": len(execution_request.attachments),
-                    "input_summary": execution_request.input_summary,
-                    **payload.metadata,
-                },
+                metadata=self._transcript_hygiene_service.user_message_metadata(
+                    {
+                        "turn_id": execution_request.turn_id,
+                        "requested_agent": payload.agent_key,
+                        "requested_model": payload.model_key,
+                        "message_kind": execution_request.message_kind.value,
+                        "submit_mode": execution_request.submit_mode,
+                        "command_name": execution_request.command_name,
+                        "attachment_count": len(execution_request.attachments),
+                        "input_summary": execution_request.input_summary,
+                        **payload.metadata,
+                    }
+                ),
             )
             session.messages.append(user_message)
             await self._store.save_session(session)
@@ -552,20 +580,29 @@ class SessionService:
                     },
                 ),
             )
+        await self._persist_tool_observations(
+            session=session,
+            turn_id=str(runtime_result.state["turn_id"]),
+            trace_id=str(runtime_result.state.get("trace_id", "")),
+            tool_results=list(runtime_result.state.get("tool_results", [])),
+            context_bundle=dict(runtime_result.state.get("context_bundle", {})),
+        )
 
         assistant_message = ChatMessage(
             id=assistant_message_id,
             role=MessageRole.assistant,
             content=runtime_result.output_text,
             created_at=datetime.utcnow(),
-            metadata={
-                "turn_id": runtime_result.state["turn_id"],
-                "agent_key": runtime_result.state["selected_agent_key"],
-                "agent_name": runtime_result.state["selected_agent_name"],
-                "model_key": runtime_result.state["selected_model_key"],
-                "model_name": runtime_result.state["selected_model_name"],
-                "response_mode": response_mode,
-            },
+            metadata=self._transcript_hygiene_service.assistant_message_metadata(
+                response_mode=response_mode,
+                metadata={
+                    "turn_id": runtime_result.state["turn_id"],
+                    "agent_key": runtime_result.state["selected_agent_key"],
+                    "agent_name": runtime_result.state["selected_agent_name"],
+                    "model_key": runtime_result.state["selected_model_key"],
+                    "model_name": runtime_result.state["selected_model_name"],
+                },
+            ),
         )
         if runtime_result.output_text:
             session.messages.append(assistant_message)
@@ -769,6 +806,40 @@ class SessionService:
                     "memory_backend": self._memory_runtime_service.backend,
                     "memory_count": len(memory_ids),
                     "memory_ids": memory_ids,
+                },
+            ),
+        )
+
+    async def _persist_tool_observations(
+        self,
+        session: SessionRecord,
+        turn_id: str,
+        trace_id: str,
+        tool_results: list[dict],
+        context_bundle: dict,
+    ) -> None:
+        if self._memory_runtime_service is None or self._observation_runtime_service is None:
+            return
+        observations = self._observation_runtime_service.build_tool_observations(
+            session_id=session.id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            tool_results=tool_results,
+            context_bundle=context_bundle,
+        )
+        if not observations:
+            return
+        observation_ids = await self._memory_runtime_service.write_observations(observations)
+        await self._store.append_event(
+            session.id,
+            self._make_event(
+                session.id,
+                "observations.persisted",
+                {
+                    "turn_id": turn_id,
+                    "trace_id": trace_id,
+                    "observation_count": len(observation_ids),
+                    "observation_ids": observation_ids,
                 },
             ),
         )

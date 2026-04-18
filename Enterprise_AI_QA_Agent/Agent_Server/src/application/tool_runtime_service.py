@@ -13,6 +13,7 @@ from typing import Any
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.mcp_runtime_service import MCPRuntimeService
 from src.application.tool_job_service import ToolJobService
+from src.application.transcript_hygiene_service import TranscriptHygieneService
 from src.core.config import Settings
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.runtime.store import SessionStore
@@ -42,6 +43,7 @@ class ToolRuntimeService:
         memory_runtime_service: MemoryRuntimeService | None = None,
         tool_job_service: ToolJobService | None = None,
         session_store: SessionStore | None = None,
+        transcript_hygiene_service: TranscriptHygieneService | None = None,
         coordinator_runtime_service=None,
     ) -> None:
         self._request_timeout_seconds = request_timeout_seconds
@@ -52,6 +54,7 @@ class ToolRuntimeService:
         self._memory_runtime_service = memory_runtime_service
         self._tool_job_service = tool_job_service
         self._session_store = session_store
+        self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._coordinator_runtime_service = coordinator_runtime_service
         self._email_config_store = MySQLEmailConfigStore(settings) if settings is not None else None
         self._handlers = {
@@ -59,6 +62,8 @@ class ToolRuntimeService:
             "subagent-dispatch": self._run_subagent_dispatch,
             "knowledge-rag": self._run_knowledge_rag,
             "session-history": self._run_session_history,
+            "session-timeline": self._run_session_timeline,
+            "observation-search": self._run_observation_search,
             "test-case-generator": self._run_test_case_generator,
             "dom-inspector": self._run_dom_inspector,
             "browser-automation": self._run_browser_automation,
@@ -480,6 +485,164 @@ class ToolRuntimeService:
             },
         }
 
+    async def _run_session_timeline(
+        self,
+        arguments: dict[str, Any],
+        context: ToolExecutionContext,
+    ) -> dict[str, Any]:
+        store = self._require_session_store()
+        memory_runtime = self._require_memory_runtime()
+        session = await store.get_session(context.session_id)
+        if session is None:
+            return {
+                "status": "failed",
+                "ok": False,
+                "summary": f"Session '{context.session_id}' was not found.",
+                "error": "session_not_found",
+            }
+
+        limit = int(arguments.get("limit") or 20)
+        limit = max(1, min(limit, 100))
+        include_messages = bool(arguments.get("include_messages", True))
+        include_events = bool(arguments.get("include_events", True))
+        include_observations = bool(arguments.get("include_observations", True))
+
+        timeline: list[dict[str, Any]] = []
+        if include_messages:
+            for item in session.messages[-limit:]:
+                message_view = self._transcript_hygiene_service.classify_message(item)
+                role = message_view["role"]
+                content = message_view["content"]
+                if not content:
+                    continue
+                timeline.append(
+                    {
+                        "kind": "message",
+                        "timestamp": item.created_at.isoformat(),
+                        "label": f"{role} message",
+                        "role": role,
+                        "content": content,
+                        "transcript_bucket": message_view["transcript_bucket"],
+                        "context_eligible": message_view["context_eligible"],
+                        "response_mode": message_view["response_mode"],
+                    }
+                )
+        if include_events:
+            events = await store.list_events(session.id)
+            for event in events[-limit:]:
+                timeline.append(
+                    {
+                        "kind": "event",
+                        "timestamp": event.timestamp.isoformat(),
+                        "label": event.type,
+                        "payload": dict(event.payload or {}),
+                    }
+                )
+        if include_observations:
+            observations = await memory_runtime.list_session_observations(session.id, top_k=limit)
+            for observation in observations[-limit:]:
+                timeline.append(
+                    {
+                        "kind": "observation",
+                        "timestamp": observation.created_at.isoformat(),
+                        "label": observation.title,
+                        "category": observation.category,
+                        "tool_key": observation.tool_key,
+                        "summary": observation.summary,
+                        "source": observation.source,
+                    }
+                )
+
+        timeline.sort(key=lambda item: item.get("timestamp", ""))
+        trimmed_timeline = timeline[-limit:]
+        report = {
+            "session": self._session_overview(session),
+            "timeline_count": len(trimmed_timeline),
+            "transcript_summary": self._transcript_hygiene_service.summarize_messages(session.messages),
+            "includes": {
+                "messages": include_messages,
+                "events": include_events,
+                "observations": include_observations,
+            },
+        }
+        return {
+            "summary": f"Built a chronological timeline with {len(trimmed_timeline)} entries for session '{session.id}'.",
+            "timeline": trimmed_timeline,
+            "report": report,
+            "metrics": {
+                "timeline_count": len(trimmed_timeline),
+                "include_messages": int(include_messages),
+                "include_events": int(include_events),
+                "include_observations": int(include_observations),
+            },
+        }
+
+    async def _run_observation_search(
+        self,
+        arguments: dict[str, Any],
+        context: ToolExecutionContext,
+    ) -> dict[str, Any]:
+        memory_runtime = self._require_memory_runtime()
+        query = str(arguments.get("query") or context.normalized_input or context.user_message).strip()
+        if not query:
+            return {
+                "status": "failed",
+                "ok": False,
+                "summary": "No observation query was provided.",
+                "error": "missing_query",
+            }
+
+        scope = str(arguments.get("scope") or "current_session").strip().lower()
+        limit = int(arguments.get("limit") or 8)
+        limit = max(1, min(limit, 20))
+        category_filter = str(arguments.get("category") or "").strip()
+        tool_key_filter = str(arguments.get("tool_key") or "").strip()
+
+        result = await memory_runtime.retrieve_observation_context(
+            session_id=context.session_id if scope != "all_sessions" else None,
+            trace_id=context.trace_id,
+            query=query,
+            context=context.context_bundle,
+            top_k=limit,
+        )
+        observations = []
+        for item in result.hits:
+            metadata = item.metadata or {}
+            category = str(metadata.get("observation_category") or "")
+            tool_key = str(metadata.get("tool_key") or "")
+            if category_filter and category != category_filter:
+                continue
+            if tool_key_filter and tool_key != tool_key_filter:
+                continue
+            observations.append(
+                {
+                    "id": str(metadata.get("observation_id") or item.id),
+                    "title": str(metadata.get("observation_title") or item.summary or item.source or item.id),
+                    "summary": item.summary,
+                    "content": item.content,
+                    "scope": item.scope,
+                    "source": item.source,
+                    "category": category or "tool_execution",
+                    "tool_key": tool_key or "tool",
+                    "score": item.score or 0.0,
+                    "created_at": item.created_at.isoformat(),
+                    "tags": list(item.tags or []),
+                }
+            )
+
+        observations = observations[:limit]
+        return {
+            "summary": f"Retrieved {len(observations)} observation(s) for query '{query}'.",
+            "scope": scope,
+            "query": query,
+            "observations": observations,
+            "metrics": {
+                "observation_count": len(observations),
+                "category_filter": category_filter,
+                "tool_key_filter": tool_key_filter,
+            },
+        }
+
     async def _run_workflow_router(
         self,
         arguments: dict[str, Any],
@@ -880,6 +1043,11 @@ class ToolRuntimeService:
             raise RuntimeError("Session store is not configured.")
         return self._session_store
 
+    def _require_memory_runtime(self) -> MemoryRuntimeService:
+        if self._memory_runtime_service is None:
+            raise RuntimeError("Memory runtime service is not configured.")
+        return self._memory_runtime_service
+
     def _require_coordinator_runtime(self):
         if self._coordinator_runtime_service is None:
             raise RuntimeError("Coordinator runtime service is not configured.")
@@ -1047,22 +1215,17 @@ class ToolRuntimeService:
         events = await store.list_events(session.id)
         snapshots = await store.list_snapshots(session.id)
         approvals = await store.list_approvals(session.id)
+        transcript_summary = self._transcript_hygiene_service.summarize_messages(session.messages)
         user_messages = [item for item in session.messages if getattr(item.role, "value", str(item.role)) == "user"]
         assistant_messages = [item for item in session.messages if getattr(item.role, "value", str(item.role)) == "assistant"]
         tool_messages = [item for item in session.messages if getattr(item.role, "value", str(item.role)) == "tool"]
-
-        transcript_excerpt = []
-        for item in session.messages[-limit:]:
-            role = getattr(item.role, "value", str(item.role))
-            if role == "assistant" and not include_assistant:
-                continue
-            transcript_excerpt.append(
-                {
-                    "role": role,
-                    "content": str(item.content or "").strip(),
-                    "created_at": item.created_at.isoformat(),
-                }
-            )
+        transcript_excerpt = self._transcript_hygiene_service.build_display_transcript(
+            session.messages,
+            limit=limit,
+            include_assistant=include_assistant,
+            include_tools=False,
+            include_errors=False,
+        )
 
         recent_event_types = [event.type for event in events[-limit:]]
         snapshot_stages = [snapshot.stage for snapshot in snapshots[-limit:]]
@@ -1079,6 +1242,7 @@ class ToolRuntimeService:
             "user_message_count": len(user_messages),
             "assistant_message_count": len(assistant_messages),
             "tool_message_count": len(tool_messages),
+            "transcript_summary": transcript_summary,
             "recent_user_questions": [
                 {
                     "content": str(item.content or "").strip(),
@@ -1103,6 +1267,9 @@ class ToolRuntimeService:
             f"- Events: {report['event_count']}",
             f"- Snapshots: {report['snapshot_count']}",
             f"- Approvals: {report['approval_count']}",
+            f"- Context Eligible Messages: {report.get('transcript_summary', {}).get('context_eligible_count', 0)}",
+            f"- Tool Messages: {report.get('transcript_summary', {}).get('tool_count', 0)}",
+            f"- Error Messages: {report.get('transcript_summary', {}).get('error_count', 0)}",
             "",
             "## Recent User Questions",
         ]

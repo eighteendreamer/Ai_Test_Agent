@@ -20,9 +20,87 @@ import type {
 } from "../types";
 
 type SessionLifecycleStatus = SessionDetail["status"] | "";
+type TranscriptBucket = "conversation" | "tool" | "error";
+
+interface TranscriptSummaryView {
+  conversation_count: number;
+  tool_count: number;
+  error_count: number;
+  hidden_count: number;
+  context_eligible_count: number;
+}
+
+interface TranscriptEntryView {
+  id: string;
+  role: ChatMessage["role"];
+  content: string;
+  created_at: string;
+  transcript_bucket: TranscriptBucket;
+  context_eligible: boolean;
+  response_mode: string;
+}
 
 function messageDeliveryStatus(message: ChatMessage | undefined) {
   return String(message?.metadata?.delivery_status || "").trim();
+}
+
+function normalizeTranscriptBucket(value: unknown): TranscriptBucket {
+  const bucket = String(value || "").trim();
+  if (bucket === "tool" || bucket === "error") {
+    return bucket;
+  }
+  return "conversation";
+}
+
+function buildTranscriptSummary(messages: ChatMessage[]): TranscriptSummaryView {
+  const summary: TranscriptSummaryView = {
+    conversation_count: 0,
+    tool_count: 0,
+    error_count: 0,
+    hidden_count: 0,
+    context_eligible_count: 0,
+  };
+
+  for (const message of messages) {
+    const content = String(message.content || "").trim();
+    const bucket = normalizeTranscriptBucket(message.metadata?.transcript_bucket);
+    const contextEligible = message.metadata?.context_eligible !== false && Boolean(content);
+
+    if (!content) {
+      summary.hidden_count += 1;
+      continue;
+    }
+
+    if (bucket === "tool") {
+      summary.tool_count += 1;
+    } else if (bucket === "error") {
+      summary.error_count += 1;
+    } else {
+      summary.conversation_count += 1;
+    }
+
+    if (contextEligible) {
+      summary.context_eligible_count += 1;
+    }
+  }
+
+  return summary;
+}
+
+function buildTranscriptEntries(messages: ChatMessage[], limit = 8): TranscriptEntryView[] {
+  return messages
+    .filter((message) => String(message.content || "").trim())
+    .slice(-limit)
+    .reverse()
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: String(message.content || "").trim(),
+      created_at: message.created_at,
+      transcript_bucket: normalizeTranscriptBucket(message.metadata?.transcript_bucket),
+      context_eligible: message.metadata?.context_eligible !== false,
+      response_mode: String(message.metadata?.response_mode || "ok").trim() || "ok",
+    }));
 }
 
 function createOptimisticAssistantMessage() {
@@ -189,6 +267,22 @@ export const useSessionStore = defineStore("session", {
     },
     recentToolJobs(state): ToolJobRecord[] {
       return state.toolJobs.slice().sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)).slice(0, 8);
+    },
+    transcriptSummary(state): TranscriptSummaryView {
+      const fromReplay = state.replayMeta?.metadata?.transcript_summary;
+      if (fromReplay && typeof fromReplay === "object" && !Array.isArray(fromReplay)) {
+        return {
+          conversation_count: Number((fromReplay as Record<string, unknown>).conversation_count || 0),
+          tool_count: Number((fromReplay as Record<string, unknown>).tool_count || 0),
+          error_count: Number((fromReplay as Record<string, unknown>).error_count || 0),
+          hidden_count: Number((fromReplay as Record<string, unknown>).hidden_count || 0),
+          context_eligible_count: Number((fromReplay as Record<string, unknown>).context_eligible_count || 0),
+        };
+      }
+      return buildTranscriptSummary(state.messages);
+    },
+    recentTranscriptEntries(state): TranscriptEntryView[] {
+      return buildTranscriptEntries(state.messages, 8);
     },
     watcherPhase(): SessionWatcherPhase {
       if (!this.session) return "idle";

@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from src.application.model_runtime_service import ModelRuntimeService
+from src.application.transcript_hygiene_service import TranscriptHygieneService
 from src.application.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.domain.models import SessionRecord
 from src.registry.tools import ToolRegistry
@@ -35,6 +36,7 @@ class RuntimeService:
         tool_runtime_service: ToolRuntimeService,
         tool_registry: ToolRegistry,
         runtime_control: RuntimeControlRegistry,
+        transcript_hygiene_service: TranscriptHygieneService | None = None,
         max_iterations: int = 8,
     ) -> None:
         self._graph = graph
@@ -42,6 +44,7 @@ class RuntimeService:
         self._tool_runtime_service = tool_runtime_service
         self._tool_registry = tool_registry
         self._runtime_control = runtime_control
+        self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._max_iterations = max_iterations
 
     def request_interrupt(self, session_id: str, reason: str = "") -> None:
@@ -294,6 +297,8 @@ class RuntimeService:
             "skill_prompt_blocks": [],
             "memory_hits": [],
             "memory_prompt_blocks": [],
+            "observation_hits": [],
+            "observation_prompt_blocks": [],
             "active_mcp_servers": [],
             "mcp_prompt_blocks": [],
             "available_tool_keys": [],
@@ -327,21 +332,7 @@ class RuntimeService:
         }
 
     def _build_conversation_messages(self, session: SessionRecord) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
-        for item in session.messages[-24:]:
-            role = item.role.value
-            if role not in {"user", "assistant", "system"}:
-                continue
-            content = str(item.content or "").strip()
-            if not content:
-                continue
-            if role == "assistant":
-                response_mode = str(item.metadata.get("response_mode") or "").strip()
-                if response_mode == "http_error" or content.startswith("Model invocation failed for '"):
-                    continue
-            payload: dict[str, Any] = {"role": role, "content": content}
-            messages.append(payload)
-        return messages
+        return self._transcript_hygiene_service.build_runtime_messages(session.messages, limit=24)
 
     def _state_from_pending_turn(self, session: SessionRecord, pending_turn: dict[str, Any]) -> dict[str, Any]:
         graph_state = dict(pending_turn.get("graph_state", {}))
@@ -388,6 +379,8 @@ class RuntimeService:
             "skill_prompt_blocks": list(graph_state.get("skill_prompt_blocks") or fallback_pending_turn.get("skill_prompt_blocks") or []),
             "memory_hits": list(graph_state.get("memory_hits") or fallback_pending_turn.get("memory_hits") or []),
             "memory_prompt_blocks": list(graph_state.get("memory_prompt_blocks") or fallback_pending_turn.get("memory_prompt_blocks") or []),
+            "observation_hits": list(graph_state.get("observation_hits") or fallback_pending_turn.get("observation_hits") or []),
+            "observation_prompt_blocks": list(graph_state.get("observation_prompt_blocks") or fallback_pending_turn.get("observation_prompt_blocks") or []),
             "active_mcp_servers": list(graph_state.get("active_mcp_servers") or fallback_pending_turn.get("active_mcp_servers") or []),
             "mcp_prompt_blocks": list(graph_state.get("mcp_prompt_blocks") or fallback_pending_turn.get("mcp_prompt_blocks") or []),
             "available_tool_keys": list(graph_state.get("available_tool_keys") or fallback_pending_turn.get("available_tool_keys") or []),
@@ -484,6 +477,8 @@ class RuntimeService:
             "skill_prompt_blocks": state["skill_prompt_blocks"],
             "memory_hits": state["memory_hits"],
             "memory_prompt_blocks": state["memory_prompt_blocks"],
+            "observation_hits": state["observation_hits"],
+            "observation_prompt_blocks": state["observation_prompt_blocks"],
             "active_mcp_servers": state["active_mcp_servers"],
             "mcp_prompt_blocks": state["mcp_prompt_blocks"],
             "available_tool_keys": state["available_tool_keys"],
@@ -549,6 +544,8 @@ class RuntimeService:
             "skill_prompt_blocks": state["skill_prompt_blocks"],
             "memory_hits": state["memory_hits"],
             "memory_prompt_blocks": state["memory_prompt_blocks"],
+            "observation_hits": state["observation_hits"],
+            "observation_prompt_blocks": state["observation_prompt_blocks"],
             "active_mcp_servers": state["active_mcp_servers"],
             "mcp_prompt_blocks": state["mcp_prompt_blocks"],
             "available_tool_keys": state["available_tool_keys"],
@@ -588,6 +585,8 @@ class RuntimeService:
                 "skill_prompt_blocks": state["skill_prompt_blocks"],
                 "memory_hits": state["memory_hits"],
                 "memory_prompt_blocks": state["memory_prompt_blocks"],
+                "observation_hits": state["observation_hits"],
+                "observation_prompt_blocks": state["observation_prompt_blocks"],
                 "active_mcp_servers": state["active_mcp_servers"],
                 "mcp_prompt_blocks": state["mcp_prompt_blocks"],
                 "available_tool_keys": state["available_tool_keys"],
@@ -654,7 +653,8 @@ class RuntimeService:
                         "status": item.get("status", ""),
                         "trace_id": item.get("trace_id", ""),
                         "ordinal": index,
-                    },
+                    }
+                    | self._transcript_hygiene_service.tool_message_metadata(),
                 )
             )
         return messages

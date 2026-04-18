@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 MemoryScope = Literal["session", "global", "page", "artifact"]
-MemoryKind = Literal["episodic", "semantic", "page_knowledge", "verification", "artifact"]
+MemoryKind = Literal["episodic", "semantic", "page_knowledge", "verification", "artifact", "observation"]
 
 
 class MemoryPoint(BaseModel):

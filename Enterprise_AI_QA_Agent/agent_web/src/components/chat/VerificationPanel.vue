@@ -36,7 +36,7 @@ function statusLabel(status: string) {
 </script>
 
 <template>
-  <section v-if="sessionStore.session" class="observability-panel">
+  <section v-if="sessionStore.session" class="observability-panel verification-panel">
     <div class="observability-head">
       <div>
         <strong>验证结果</strong>
