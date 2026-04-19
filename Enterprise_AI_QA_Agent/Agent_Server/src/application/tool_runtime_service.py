@@ -654,7 +654,22 @@ class ToolRuntimeService:
         if any(token in query for token in ["browser", "page", "ui", "selenium", "playwright"]):
             route = "ui-executor"
             rationale = "Detected browser or UI execution intent."
-        elif any(token in query for token in ["cli", "terminal", "shell", "powershell", "command"]):
+        elif any(
+            token in query
+            for token in [
+                "cli",
+                "terminal",
+                "shell",
+                "powershell",
+                "command",
+                "cmd",
+                "bash",
+                "终端",
+                "命令行",
+                "控制台",
+                "shell命令",
+            ]
+        ):
             route = "ops-executor"
             rationale = "Detected terminal or command execution intent."
         elif any(token in query for token in ["api", "payload", "response", "request"]):
@@ -1305,6 +1320,10 @@ def _build_excerpt(text: str, tokens: list[str], radius: int = 140) -> str:
     start = max(0, pivot - radius)
     end = min(len(text), pivot + radius)
     return " ".join(text[start:end].split())
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", value).strip("_").lower()
 
 
 def _to_string_list(value: Any) -> list[str]:

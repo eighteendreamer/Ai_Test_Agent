@@ -9,6 +9,7 @@ import { useSessionStore } from "../stores/session";
 
 const sessionStore = useSessionStore();
 const hasConversation = computed(() => sessionStore.messages.length > 0);
+const hasPendingApprovals = computed(() => sessionStore.pendingApprovals.length > 0);
 const heroTitle = "御策天检";
 const heroSubtitle = "输入自然语言指令，AI 将全权进行意图分析、页面探索与用例生成";
 const composerAnchorRef = ref<HTMLElement | null>(null);
@@ -70,14 +71,20 @@ onBeforeUnmount(() => {
         <p v-if="sessionStore.error" class="error-text home-inline-error">{{ sessionStore.error }}</p>
       </div>
 
-      <ApprovalPanel />
-
       <div class="home-composer-dock" :class="{ 'home-composer-dock-active': hasConversation }">
-        <div ref="composerAnchorRef" class="home-composer-anchor" :style="composerAnchorStyle">
+        <div
+          ref="composerAnchorRef"
+          class="home-composer-anchor"
+          :class="{ 'home-composer-anchor-with-approval': hasPendingApprovals }"
+          :style="composerAnchorStyle"
+        >
           <Transition name="runtime-panel-transition">
             <RuntimeStatusPanel v-if="hasConversation" />
           </Transition>
           <ChatComposer :docked="hasConversation" />
+          <Transition name="runtime-panel-transition">
+            <ApprovalPanel v-if="hasConversation && hasPendingApprovals" />
+          </Transition>
         </div>
       </div>
     </div>

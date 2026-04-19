@@ -28,6 +28,7 @@ class AgentRegistry:
                         "session-timeline",
                         "observation-search",
                         "test-case-generator",
+                        "cli-executor",
                         "report-writer",
                     ],
                     supported_skills=[
@@ -59,6 +60,30 @@ class AgentRegistry:
                     supported_models=["claude-sonnet-4", "gpt-5.4", "deepseek-reasoner"],
                     default_model="gpt-5.4",
                     tags=["planning", "qa"],
+                )
+            ),
+            "ops-executor": AgentModule(
+                descriptor=AgentDescriptor(
+                    key="ops-executor",
+                    name="Ops Executor",
+                    role="worker",
+                    summary="Execute terminal commands, environment diagnostics, and workspace-level operational checks.",
+                    description=(
+                        "Runs CLI commands inside the workspace with approval gating, captures terminal evidence, "
+                        "and can package the results as QA-ready artifacts."
+                    ),
+                    supported_tools=[
+                        "cli-executor",
+                        "file-artifact-manager",
+                        "report-writer",
+                        "session-history",
+                        "session-timeline",
+                        "observation-search",
+                    ],
+                    supported_skills=["artifact-collection", "report-synthesis"],
+                    supported_models=["claude-sonnet-4", "gpt-5.4", "qwen-max"],
+                    default_model="claude-sonnet-4",
+                    tags=["ops", "cli", "execution"],
                 )
             ),
             "ui-executor": AgentModule(
@@ -131,6 +156,23 @@ class AgentRegistry:
             return self.get(explicit_key)
 
         lowered = message.lower()
+        if any(
+            token in lowered
+            for token in [
+                "cli",
+                "terminal",
+                "shell",
+                "powershell",
+                "command",
+                "bash",
+                "cmd",
+                "终端",
+                "命令行",
+                "控制台",
+                "shell命令",
+            ]
+        ):
+            return self.get("ops-executor")
         if any(token in lowered for token in ["api", "interface", "payload", "response"]):
             return self.get("api-verifier")
         if any(token in lowered for token in ["page", "browser", "ui", "selenium", "playwright"]):
