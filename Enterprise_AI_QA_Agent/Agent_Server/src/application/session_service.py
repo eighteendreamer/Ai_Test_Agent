@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.observation_runtime_service import ObservationRuntimeService
-from src.application.prompt_service import PromptSubmissionService
+from src.application.input_orchestrator_service import InputOrchestratorService
 from src.application.runtime_service import RuntimeService
 from src.application.transcript_hygiene_service import TranscriptHygieneService
 from src.application.verification_service import VerificationService
@@ -25,6 +25,7 @@ from src.schemas.session import (
     HeadlessExecutionRequest,
     InterruptSessionRequest,
     MessageRole,
+    PendingInputQueueEntry,
     ResumeSessionRequest,
     RuntimeMode,
     SendMessageRequest,
@@ -42,7 +43,7 @@ class SessionService:
     def __init__(
         self,
         store: SessionStore,
-        prompt_service: PromptSubmissionService,
+        input_orchestrator_service: InputOrchestratorService,
         runtime_service: RuntimeService,
         memory_runtime_service: MemoryRuntimeService | None = None,
         observation_runtime_service: ObservationRuntimeService | None = None,
@@ -50,13 +51,14 @@ class SessionService:
         verification_service: VerificationService | None = None,
     ) -> None:
         self._store = store
-        self._prompt_service = prompt_service
+        self._input_orchestrator_service = input_orchestrator_service
         self._runtime_service = runtime_service
         self._memory_runtime_service = memory_runtime_service
         self._observation_runtime_service = observation_runtime_service
         self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._verification_service = verification_service or VerificationService()
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def list_sessions(self) -> list[SessionSummary]:
         sessions = await self._store.list_sessions()
@@ -314,153 +316,34 @@ class SessionService:
             return approval
 
     async def send_message(self, session_id: str, payload: SendMessageRequest) -> ConversationResponse:
-        async with self._session_locks[session_id]:
+        session_lock = self._session_locks[session_id]
+        if session_lock.locked():
             session = await self._require_session(session_id)
-            if session.status == SessionStatus.waiting_approval:
-                raise ValueError("Session is waiting for approval. Resolve the pending approval before sending a new message.")
-            if session.status == SessionStatus.running:
-                raise ValueError("Session is still running. Wait for the current turn to finish before sending a new message.")
-            if session.status == SessionStatus.interrupted:
-                raise ValueError("Session is interrupted. Resume the pending turn before sending a new message.")
+            execution_request = self._input_orchestrator_service.orchestrate(session, payload)
+            busy_response = await self._handle_busy_submission(
+                session=session,
+                payload=payload,
+                execution_request=execution_request,
+            )
+            if busy_response is not None:
+                return busy_response
 
-            execution_request = self._prompt_service.prepare(session, payload)
-            failure_message = "Runtime execution failed before the assistant response was produced."
-
-            session.status = SessionStatus.running
-            control = self._ensure_control_metadata(session)
-            control.update(
-                {
-                    "control_state": "active_turn",
-                    "is_interrupted": False,
-                    "is_resumable": False,
-                    "last_turn_id": execution_request.turn_id,
-                }
+        async with session_lock:
+            session = await self._require_session(session_id)
+            execution_request = self._input_orchestrator_service.orchestrate(session, payload)
+            busy_response = await self._handle_busy_submission(
+                session=session,
+                payload=payload,
+                execution_request=execution_request,
             )
-            session.metadata["control"] = control
-            if payload.agent_key:
-                session.selected_agent = payload.agent_key
-            if payload.model_key:
-                session.preferred_model = payload.model_key
-
-            user_message = ChatMessage(
-                id=str(uuid4()),
-                role=MessageRole.user,
-                content=payload.content.strip(),
-                created_at=datetime.utcnow(),
-                metadata=self._transcript_hygiene_service.user_message_metadata(
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "requested_agent": payload.agent_key,
-                        "requested_model": payload.model_key,
-                        "message_kind": execution_request.message_kind.value,
-                        "submit_mode": execution_request.submit_mode,
-                        "command_name": execution_request.command_name,
-                        "attachment_count": len(execution_request.attachments),
-                        "input_summary": execution_request.input_summary,
-                        **payload.metadata,
-                    }
-                ),
+            if busy_response is not None:
+                return busy_response
+            return await self._run_submission_locked(
+                session=session,
+                payload=payload,
+                execution_request=execution_request,
+                allow_interrupted=session.status == SessionStatus.interrupted,
             )
-            session.messages.append(user_message)
-            await self._store.save_session(session)
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "input.orchestrated",
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "message": "Input orchestrator normalized the submission and produced an execution request.",
-                        "message_kind": execution_request.message_kind.value,
-                        "submit_mode": execution_request.submit_mode,
-                        "command_name": execution_request.command_name or "",
-                        "attachment_count": len(execution_request.attachments),
-                        "hook_count": len(execution_request.hook_results),
-                        "input_summary": execution_request.input_summary,
-                    },
-                ),
-            )
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "turn.started",
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "message": "User turn has been accepted by the backend runtime.",
-                        "content_preview": truncate_text(payload.content, 180),
-                        "normalized_preview": truncate_text(execution_request.normalized_input, 180),
-                        "agent_key": payload.agent_key or "",
-                        "model_key": payload.model_key or "",
-                        "skill_count": len(execution_request.skill_keys),
-                        "context_keys": ",".join(sorted(execution_request.context.keys())) or "none",
-                        "message_kind": execution_request.message_kind.value,
-                        "attachment_count": len(execution_request.attachments),
-                        "command_name": execution_request.command_name or "",
-                    },
-                ),
-            )
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "message.received",
-                    {
-                        "turn_id": execution_request.turn_id,
-                        "message": "User input has been persisted to the session transcript.",
-                        "role": "user",
-                        "content_preview": truncate_text(payload.content, 180),
-                        "requested_agent": payload.agent_key or session.selected_agent or "auto",
-                        "requested_model": payload.model_key or session.preferred_model or "auto",
-                        "message_kind": execution_request.message_kind.value,
-                        "submit_mode": execution_request.submit_mode,
-                        "attachment_count": len(execution_request.attachments),
-                    },
-                ),
-            )
-
-            assistant_message_id = str(uuid4())
-            stream_chunk_handler = self._build_stream_chunk_handler(
-                session_id=session_id,
-                turn_id=execution_request.turn_id,
-                assistant_message_id=assistant_message_id,
-            )
-            try:
-                runtime_result = await self._runtime_service.execute_turn(
-                    session,
-                    execution_request,
-                    on_model_chunk=stream_chunk_handler,
-                )
-                return await self._finalize_runtime_result(
-                    session=session,
-                    runtime_result=runtime_result,
-                    assistant_message_id=assistant_message_id,
-                    user_message_override=payload.content,
-                )
-            except Exception as exc:
-                session.status = SessionStatus.failed
-                self._ensure_control_metadata(session).update(
-                    {
-                        "control_state": "failed",
-                        "is_interrupted": False,
-                        "is_resumable": False,
-                    }
-                )
-                await self._store.save_session(session)
-                await self._store.append_event(
-                    session_id,
-                    self._make_event(
-                        session_id,
-                        "turn.failed",
-                        {
-                            "turn_id": execution_request.turn_id,
-                            "message": failure_message,
-                            "error_type": exc.__class__.__name__,
-                            "error": truncate_text(str(exc), 240),
-                        },
-                    ),
-                )
-                raise
 
     async def execute_headless(self, payload: HeadlessExecutionRequest) -> ConversationResponse:
         session = await self.create_session(
@@ -487,6 +370,452 @@ class SessionService:
 
     def get_event_queue(self, session_id: str):
         return self._store.get_queue(session_id)
+
+    async def _run_submission_locked(
+        self,
+        session: SessionRecord,
+        payload: SendMessageRequest,
+        execution_request,
+        *,
+        allow_interrupted: bool = False,
+    ) -> ConversationResponse:
+        session_id = session.id
+        failure_message = "Runtime execution failed before the assistant response was produced."
+        superseded_turn_id = ""
+
+        if session.status == SessionStatus.interrupted and allow_interrupted:
+            superseded_turn_id = str((session.metadata.get("pending_turn") or {}).get("turn_id") or "")
+            session.metadata["pending_turn"] = {}
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "queue.interrupted_turn_superseded",
+                    {
+                        "message": "A queued input superseded the interrupted turn and started a new turn.",
+                        "superseded_turn_id": superseded_turn_id,
+                        "next_turn_id": execution_request.turn_id,
+                    },
+                ),
+            )
+
+        session.status = SessionStatus.running
+        control = self._ensure_control_metadata(session)
+        queued_entries = self._get_pending_input_queue(session)
+        control.update(
+            {
+                "control_state": "active_turn",
+                "is_interrupted": False,
+                "is_resumable": False,
+                "last_turn_id": execution_request.turn_id,
+                "queued_input_count": len(queued_entries),
+                "last_superseded_turn_id": superseded_turn_id or str(control.get("last_superseded_turn_id") or ""),
+            }
+        )
+        session.metadata["control"] = control
+        session.metadata["pending_turn"] = {}
+        if payload.agent_key:
+            session.selected_agent = payload.agent_key
+        if payload.model_key:
+            session.preferred_model = payload.model_key
+
+        user_message = ChatMessage(
+            id=str(uuid4()),
+            role=MessageRole.user,
+            content=payload.content.strip(),
+            created_at=datetime.utcnow(),
+            metadata=self._transcript_hygiene_service.user_message_metadata(
+                {
+                    "turn_id": execution_request.turn_id,
+                    "requested_agent": payload.agent_key,
+                    "requested_model": payload.model_key,
+                    "message_kind": execution_request.message_kind.value,
+                    "submit_mode": execution_request.submit_mode,
+                    "command_name": execution_request.command_name,
+                    "attachment_count": len(execution_request.attachments),
+                    "execution_lane": (
+                        execution_request.routing_decision.execution_lane
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "queue_behavior": (
+                        execution_request.routing_decision.queue_behavior
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "input_summary": execution_request.input_summary,
+                    **payload.metadata,
+                }
+            ),
+        )
+        session.messages.append(user_message)
+        await self._store.save_session(session)
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
+                "input.orchestrated",
+                {
+                    "turn_id": execution_request.turn_id,
+                    "message": "Input orchestrator normalized the submission and produced an execution request.",
+                    "message_kind": execution_request.message_kind.value,
+                    "submit_mode": execution_request.submit_mode,
+                    "command_name": execution_request.command_name or "",
+                    "attachment_count": len(execution_request.attachments),
+                    "hook_count": len(execution_request.hook_results),
+                    "execution_lane": (
+                        execution_request.routing_decision.execution_lane
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "queue_behavior": (
+                        execution_request.routing_decision.queue_behavior
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "interrupt_policy": (
+                        execution_request.routing_decision.interrupt_policy
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "input_summary": execution_request.input_summary,
+                },
+            ),
+        )
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
+                "turn.started",
+                {
+                    "turn_id": execution_request.turn_id,
+                    "message": "User turn has been accepted by the backend runtime.",
+                    "content_preview": truncate_text(payload.content, 180),
+                    "normalized_preview": truncate_text(execution_request.normalized_input, 180),
+                    "agent_key": payload.agent_key or "",
+                    "model_key": payload.model_key or "",
+                    "skill_count": len(execution_request.skill_keys),
+                    "context_keys": ",".join(sorted(execution_request.context.keys())) or "none",
+                    "message_kind": execution_request.message_kind.value,
+                    "attachment_count": len(execution_request.attachments),
+                    "command_name": execution_request.command_name or "",
+                    "execution_lane": (
+                        execution_request.routing_decision.execution_lane
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                    "queue_behavior": (
+                        execution_request.routing_decision.queue_behavior
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                },
+            ),
+        )
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
+                "message.received",
+                {
+                    "turn_id": execution_request.turn_id,
+                    "message": "User input has been persisted to the session transcript.",
+                    "role": "user",
+                    "content_preview": truncate_text(payload.content, 180),
+                    "requested_agent": payload.agent_key or session.selected_agent or "auto",
+                    "requested_model": payload.model_key or session.preferred_model or "auto",
+                    "message_kind": execution_request.message_kind.value,
+                    "submit_mode": execution_request.submit_mode,
+                    "attachment_count": len(execution_request.attachments),
+                    "execution_lane": (
+                        execution_request.routing_decision.execution_lane
+                        if execution_request.routing_decision
+                        else ""
+                    ),
+                },
+            ),
+        )
+
+        assistant_message_id = str(uuid4())
+        stream_chunk_handler = self._build_stream_chunk_handler(
+            session_id=session_id,
+            turn_id=execution_request.turn_id,
+            assistant_message_id=assistant_message_id,
+        )
+        try:
+            runtime_result = await self._runtime_service.execute_turn(
+                session,
+                execution_request,
+                on_model_chunk=stream_chunk_handler,
+            )
+            return await self._finalize_runtime_result(
+                session=session,
+                runtime_result=runtime_result,
+                assistant_message_id=assistant_message_id,
+                user_message_override=payload.content,
+            )
+        except Exception as exc:
+            session = await self._require_session(session_id)
+            session.status = SessionStatus.failed
+            self._ensure_control_metadata(session).update(
+                {
+                    "control_state": "failed",
+                    "is_interrupted": False,
+                    "is_resumable": False,
+                }
+            )
+            await self._store.save_session(session)
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "turn.failed",
+                    {
+                        "turn_id": execution_request.turn_id,
+                        "message": failure_message,
+                        "error_type": exc.__class__.__name__,
+                        "error": truncate_text(str(exc), 240),
+                    },
+                ),
+            )
+            self._maybe_schedule_pending_input_drain(session_id)
+            raise
+
+    async def _handle_busy_submission(
+        self,
+        session: SessionRecord,
+        payload: SendMessageRequest,
+        execution_request,
+    ) -> ConversationResponse | None:
+        busy_status = session.status
+        if busy_status not in {
+            SessionStatus.running,
+            SessionStatus.waiting_approval,
+            SessionStatus.interrupted,
+        }:
+            return None
+
+        routing = execution_request.routing_decision
+        queue_behavior = routing.queue_behavior if routing else "reject_when_busy"
+        interrupt_policy = routing.interrupt_policy if routing else "wait_for_active_turn"
+        if queue_behavior == "reject_when_busy":
+            if busy_status == SessionStatus.waiting_approval:
+                raise ValueError("Session is waiting for approval. Resolve the pending approval before sending a new message.")
+            if busy_status == SessionStatus.running:
+                raise ValueError("Session is still running. Wait for the current turn to finish before sending a new message.")
+            raise ValueError("Session is interrupted. Resume the pending turn before sending a new message.")
+
+        request_interrupt = (
+            busy_status == SessionStatus.running
+            and queue_behavior == "interrupt_then_retry"
+            and interrupt_policy == "interrupt_active_turn"
+        )
+        return await self._enqueue_pending_input(
+            session=session,
+            payload=payload,
+            execution_request=execution_request,
+            busy_status=busy_status,
+            request_interrupt=request_interrupt,
+        )
+
+    async def _enqueue_pending_input(
+        self,
+        session: SessionRecord,
+        payload: SendMessageRequest,
+        execution_request,
+        *,
+        busy_status: SessionStatus,
+        request_interrupt: bool,
+    ) -> ConversationResponse:
+        session_id = session.id
+        queue_entries = self._get_pending_input_queue(session)
+        queue_entry = PendingInputQueueEntry(
+            id=str(uuid4()),
+            created_at=datetime.utcnow(),
+            busy_status=busy_status.value,
+            queue_behavior=(
+                execution_request.routing_decision.queue_behavior
+                if execution_request.routing_decision
+                else "enqueue_if_busy"
+            ),
+            interrupt_policy=(
+                execution_request.routing_decision.interrupt_policy
+                if execution_request.routing_decision
+                else "wait_for_active_turn"
+            ),
+            reason=(
+                "Current turn is running; the new input was queued and will run after the active turn settles."
+                if busy_status == SessionStatus.running
+                else (
+                    "A pending approval is blocking execution; the new input was queued for later processing."
+                    if busy_status == SessionStatus.waiting_approval
+                    else "The interrupted turn will be superseded and the queued input will run next."
+                )
+            ),
+            payload=payload,
+            metadata={
+                "turn_id": execution_request.turn_id,
+                "message_kind": execution_request.message_kind.value,
+                "submit_mode": execution_request.submit_mode,
+                "command_name": execution_request.command_name,
+                "execution_lane": (
+                    execution_request.routing_decision.execution_lane
+                    if execution_request.routing_decision
+                    else ""
+                ),
+                "interrupt_requested": request_interrupt,
+            },
+        )
+        queue_entries.append(queue_entry)
+        self._set_pending_input_queue(session, queue_entries)
+        control = self._ensure_control_metadata(session)
+        control["queued_input_count"] = len(queue_entries)
+        if request_interrupt:
+            control["control_state"] = "interrupt_requested"
+            control["last_interrupt_reason"] = "Queued retry requested by a follow-up input."
+        session.metadata["control"] = control
+        await self._store.save_session(session)
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
+                "input.queued",
+                {
+                    "queue_entry_id": queue_entry.id,
+                    "busy_status": busy_status.value,
+                    "queue_behavior": queue_entry.queue_behavior,
+                    "interrupt_policy": queue_entry.interrupt_policy,
+                    "queue_depth": len(queue_entries),
+                    "queued_turn_id": execution_request.turn_id,
+                    "message_kind": execution_request.message_kind.value,
+                    "command_name": execution_request.command_name or "",
+                    "interrupt_requested": request_interrupt,
+                    "message": queue_entry.reason,
+                },
+            ),
+        )
+        if request_interrupt:
+            self._runtime_service.request_interrupt(
+                session_id,
+                "Queued retry requested by a follow-up input.",
+            )
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "runtime.interrupt_requested",
+                    {
+                        "message": "Interrupt requested so the queued input can run next.",
+                        "reason": "Queued retry requested by a follow-up input.",
+                        "source": "queued_input",
+                        "queue_entry_id": queue_entry.id,
+                    },
+                ),
+            )
+
+        if busy_status != SessionStatus.running and busy_status != SessionStatus.waiting_approval:
+            self._maybe_schedule_pending_input_drain(session_id)
+        return await self._build_queued_response(session, queue_entry)
+
+    async def _build_queued_response(
+        self,
+        session: SessionRecord,
+        queue_entry: PendingInputQueueEntry,
+    ) -> ConversationResponse:
+        message = ChatMessage(
+            id=str(uuid4()),
+            role=MessageRole.system,
+            content=queue_entry.reason,
+            created_at=datetime.utcnow(),
+            metadata={
+                "persist_transcript": False,
+                "context_eligible": False,
+                "transcript_bucket": "event",
+                "queue_entry_id": queue_entry.id,
+                "queue_behavior": queue_entry.queue_behavior,
+                "busy_status": queue_entry.busy_status,
+            },
+        )
+        events = await self._store.list_events(session.id)
+        refreshed_session = await self._require_session(session.id)
+        return ConversationResponse(
+            session=await self._to_detail(refreshed_session),
+            output=message,
+            events=events[-10:],
+        )
+
+    def _get_pending_input_queue(self, session: SessionRecord) -> list[PendingInputQueueEntry]:
+        raw_items = session.metadata.get("pending_input_queue", [])
+        if not isinstance(raw_items, list):
+            return []
+        items: list[PendingInputQueueEntry] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                items.append(PendingInputQueueEntry.model_validate(item))
+            except Exception:
+                continue
+        return items
+
+    def _set_pending_input_queue(
+        self,
+        session: SessionRecord,
+        queue_entries: list[PendingInputQueueEntry],
+    ) -> None:
+        session.metadata["pending_input_queue"] = [
+            item.model_dump(mode="python") for item in queue_entries
+        ]
+        self._ensure_control_metadata(session)["queued_input_count"] = len(queue_entries)
+
+    def _maybe_schedule_pending_input_drain(self, session_id: str) -> None:
+        existing_task = self._queue_drain_tasks.get(session_id)
+        if existing_task is not None and not existing_task.done():
+            return
+        task = asyncio.create_task(self._drain_pending_inputs(session_id))
+        self._queue_drain_tasks[session_id] = task
+
+        def _cleanup(_: asyncio.Task[None]) -> None:
+            current = self._queue_drain_tasks.get(session_id)
+            if current is task:
+                self._queue_drain_tasks.pop(session_id, None)
+
+        task.add_done_callback(_cleanup)
+
+    async def _drain_pending_inputs(self, session_id: str) -> None:
+        while True:
+            async with self._session_locks[session_id]:
+                session = await self._require_session(session_id)
+                queue_entries = self._get_pending_input_queue(session)
+                if not queue_entries:
+                    self._ensure_control_metadata(session)["queued_input_count"] = 0
+                    await self._store.save_session(session)
+                    return
+                if session.status in {SessionStatus.running, SessionStatus.waiting_approval}:
+                    return
+
+                next_entry = queue_entries.pop(0)
+                self._set_pending_input_queue(session, queue_entries)
+                await self._store.save_session(session)
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
+                        "input.dequeued",
+                        {
+                            "queue_entry_id": next_entry.id,
+                            "remaining_queue_depth": len(queue_entries),
+                            "busy_status": next_entry.busy_status,
+                            "queue_behavior": next_entry.queue_behavior,
+                        },
+                    ),
+                )
+                await self._run_submission_locked(
+                    session=session,
+                    payload=next_entry.payload,
+                    execution_request=self._input_orchestrator_service.orchestrate(session, next_entry.payload),
+                    allow_interrupted=session.status == SessionStatus.interrupted,
+                )
 
     async def _finalize_runtime_result(
         self,
@@ -646,7 +975,17 @@ class SessionService:
                     context_bundle=dict(runtime_result.state.get("context_bundle", {})),
                 )
 
+        latest_session = await self._require_session(session_id)
+        latest_queue_entries = self._get_pending_input_queue(latest_session)
+        latest_control = self._ensure_control_metadata(latest_session)
+        self._set_pending_input_queue(session, latest_queue_entries)
         session.status = self._session_status_from_runtime_result(runtime_result)
+        control = self._ensure_control_metadata(session)
+        if latest_control.get("last_interrupt_reason") and not control.get("last_interrupt_reason"):
+            control["last_interrupt_reason"] = latest_control["last_interrupt_reason"]
+        if latest_control.get("last_control_source") and not control.get("last_control_source"):
+            control["last_control_source"] = latest_control["last_control_source"]
+        session.metadata["control"] = control
         await self._store.save_session(session)
         await self._store.append_event(
             session_id,
@@ -664,9 +1003,15 @@ class SessionService:
             ),
         )
 
+        latest_session = await self._require_session(session_id)
+        if (
+            self._get_pending_input_queue(latest_session)
+            and latest_session.status not in {SessionStatus.running, SessionStatus.waiting_approval}
+        ):
+            self._maybe_schedule_pending_input_drain(session_id)
         events = await self._store.list_events(session_id)
         return ConversationResponse(
-            session=await self._to_detail(session),
+            session=await self._to_detail(latest_session),
             output=assistant_message,
             events=events[-10:],
         )
@@ -852,6 +1197,8 @@ class SessionService:
         control.setdefault("is_resumable", False)
         control.setdefault("is_interrupted", False)
         control.setdefault("replay_available", session.snapshot_count > 0)
+        control.setdefault("queued_input_count", 0)
+        session.metadata["control"] = control
         return control
 
     def _session_status_from_runtime_result(self, runtime_result) -> SessionStatus:

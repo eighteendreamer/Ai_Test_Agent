@@ -5,6 +5,7 @@ import type {
   AgentDescriptor,
   ChatMessage,
   ExecutionEvent,
+  PendingInputQueueEntry,
   SessionDetail,
   SessionReplayResponse,
   SessionVerificationResponse,
@@ -101,6 +102,50 @@ function buildTranscriptEntries(messages: ChatMessage[], limit = 8): TranscriptE
       context_eligible: message.metadata?.context_eligible !== false,
       response_mode: String(message.metadata?.response_mode || "ok").trim() || "ok",
     }));
+}
+
+function normalizePendingInputQueue(value: unknown): PendingInputQueueEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => {
+      const payload =
+        item.payload && typeof item.payload === "object" && !Array.isArray(item.payload)
+          ? (item.payload as Record<string, unknown>)
+          : {};
+      const metadata =
+        item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+          ? (item.metadata as Record<string, unknown>)
+          : {};
+      return {
+        id: String(item.id || ""),
+        created_at: String(item.created_at || ""),
+        busy_status: String(item.busy_status || ""),
+        queue_behavior: String(item.queue_behavior || ""),
+        interrupt_policy: String(item.interrupt_policy || ""),
+        reason: String(item.reason || ""),
+        payload: {
+          content: typeof payload.content === "string" ? payload.content : "",
+          submit_mode: typeof payload.submit_mode === "string" ? payload.submit_mode : "",
+          command_name: typeof payload.command_name === "string" ? payload.command_name : null,
+          message_kind: typeof payload.message_kind === "string" ? payload.message_kind : "",
+        },
+        metadata,
+      };
+    })
+    .filter((item) => Boolean(item.id));
+}
+
+function readQueuedInputCount(metadata: Record<string, unknown> | undefined): number {
+  const control =
+    metadata?.control && typeof metadata.control === "object" && !Array.isArray(metadata.control)
+      ? (metadata.control as Record<string, unknown>)
+      : null;
+  const rawCount = Number(control?.queued_input_count || 0);
+  return Number.isFinite(rawCount) && rawCount > 0 ? rawCount : 0;
 }
 
 function createOptimisticAssistantMessage() {
@@ -284,6 +329,16 @@ export const useSessionStore = defineStore("session", {
     recentTranscriptEntries(state): TranscriptEntryView[] {
       return buildTranscriptEntries(state.messages, 8);
     },
+    pendingInputQueue(state): PendingInputQueueEntry[] {
+      return normalizePendingInputQueue(state.session?.metadata?.pending_input_queue);
+    },
+    queuedTurnCount(state): number {
+      const queueEntries = normalizePendingInputQueue(state.session?.metadata?.pending_input_queue);
+      return Math.max(queueEntries.length, readQueuedInputCount(state.session?.metadata));
+    },
+    nextQueuedTurn(): PendingInputQueueEntry | null {
+      return this.pendingInputQueue[0] ?? null;
+    },
     watcherPhase(): SessionWatcherPhase {
       if (!this.session) return "idle";
       if (this.pendingApprovals.length > 0) return "waiting_approval";
@@ -365,6 +420,9 @@ export const useSessionStore = defineStore("session", {
           event.type === "verification.completed" ||
           event.type === "worker.task_notification_received" ||
           event.type === "worker.auto_stopped" ||
+          event.type === "input.queued" ||
+          event.type === "input.dequeued" ||
+          event.type === "queue.interrupted_turn_superseded" ||
           event.type === "runtime.interrupt_requested" ||
           event.type === "turn.interrupted" ||
           event.type === "turn.resumed" ||

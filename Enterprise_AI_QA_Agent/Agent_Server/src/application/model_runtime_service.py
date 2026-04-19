@@ -232,6 +232,10 @@ class ModelRuntimeService:
             "tool_count": len(request.tools),
             "tool_names": [item.get("name", "") for item in request.tools],
             "system_prompt_preview": truncate_text(request.system_prompt, 180),
+            "system_prompt_section_count": len(request.system_prompt_sections),
+            "system_prompt_section_keys": [item.key for item in request.system_prompt_sections],
+            "runtime_message_section_count": len(request.runtime_message_sections),
+            "runtime_message_section_keys": [item.key for item in request.runtime_message_sections],
             "messages": summarize_messages(request.messages),
         }
 

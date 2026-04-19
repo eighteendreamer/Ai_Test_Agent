@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.schemas.prompting import PromptSection
 from src.schemas.tool_runtime import ModelToolCall
 
 
@@ -57,6 +58,8 @@ class ModelInvocationRequest(BaseModel):
     system_prompt: str
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] = Field(default_factory=list)
+    system_prompt_sections: list[PromptSection] = Field(default_factory=list)
+    runtime_message_sections: list[PromptSection] = Field(default_factory=list)
 
 
 class ModelInvocationResult(BaseModel):

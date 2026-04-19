@@ -33,6 +33,7 @@ def responder(state: AgentGraphState) -> AgentGraphState:
         model_name=state["selected_model_name"],
         resolved_skills=skill_text,
         available_tools=",".join(state["available_tool_keys"]) or "none",
+        model_visible_tools=",".join(state["model_visible_tool_keys"]) or "none",
         allowed_tools=",".join(state["allowed_tool_keys"]) or "none",
         execution_plan=plan_text,
         tool_status=tool_text,

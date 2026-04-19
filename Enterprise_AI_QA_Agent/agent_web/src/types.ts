@@ -225,6 +225,24 @@ export interface SessionDetail {
   metadata: Record<string, unknown>;
 }
 
+export interface PendingInputPayload {
+  content?: string;
+  submit_mode?: string;
+  command_name?: string | null;
+  message_kind?: string;
+}
+
+export interface PendingInputQueueEntry {
+  id: string;
+  created_at: string;
+  busy_status: string;
+  queue_behavior: string;
+  interrupt_policy: string;
+  reason: string;
+  payload: PendingInputPayload;
+  metadata: Record<string, unknown>;
+}
+
 export type SessionWatcherPhase =
   | "idle"
   | "running"

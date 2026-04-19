@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from src.application.model_runtime_service import ModelRuntimeService
 from src.graph.state import AgentGraphState
-from src.registry.agents import AgentRegistry
 from src.registry.tools import ToolRegistry
 from src.runtime.execution_logging import append_graph_event, summarize_messages, truncate_text
 from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.prompting import PromptSection
 
 
 def build_model_invoker_node(
     model_runtime_service: ModelRuntimeService,
     tool_registry: ToolRegistry,
-    agent_registry: AgentRegistry,
 ):
     async def model_invoker(state: AgentGraphState) -> AgentGraphState:
+        model_visible_tool_keys = list(state.get("model_visible_tool_keys") or state["available_tool_keys"])
         append_graph_event(
             state,
             "graph.execution_started",
@@ -21,65 +21,52 @@ def build_model_invoker_node(
             "Runtime is preparing the Claude Code style model call stage.",
             selected_agent=state["selected_agent_key"],
             selected_model=state["selected_model_key"],
+            model_visible_tool_count=len(model_visible_tool_keys),
             allowed_tool_count=len(state["allowed_tool_keys"]),
             approval_required_count=len(state["approval_required_tool_keys"]),
             loop_iteration=state["loop_iteration"],
         )
 
+        system_sections = [
+            PromptSection.model_validate(item)
+            for item in list(state.get("system_prompt_sections") or [])
+        ]
+        runtime_message_sections = [
+            PromptSection.model_validate(item)
+            for item in list(state.get("runtime_message_sections") or [])
+        ]
+
         if not state["system_prompt"]:
-            available_agent_keys = ", ".join(agent.key for agent in agent_registry.list()) or "none"
-            prompt_sections = [
-                (
-                    f"You are the '{state['selected_agent_name']}' runtime inside Enterprise AI QA Agent. "
-                    f"Operate in {state['session_mode']} session mode and {state['runtime_mode']} runtime mode. "
-                    "Follow a Claude Code style execution discipline: reason clearly, stay tool-aware, and summarize actionable next steps. "
-                    "When a registered tool can improve the answer, call the tool instead of only describing what it would do. "
-                    "If the user asks about conversation history, prior questions, session counts, or wants a session report, prefer the 'session-history' tool over reconstructing history from memory alone."
-                ),
-            ]
-            if state["selected_agent_key"] == "coordinator":
-                prompt_sections.append(
-                    "Coordinator mode contract:\n"
-                    "- You are the coordinator, not the worker.\n"
-                    "- Use 'subagent-dispatch' to launch background workers for research, implementation, verification, or reporting.\n"
-                    "- Worker results return later as user-role XML messages starting with <task-notification>.\n"
-                    "- Do not thank workers or talk to them directly. Synthesize their result for the user and decide the next dispatch.\n"
-                    "- Keep the coordinator focused on orchestration, task breakdown, and result integration.\n"
-                    f"- Valid agent keys for subagent-dispatch are strictly limited to: {available_agent_keys}.\n"
-                    "- Never invent agent keys that are not registered.\n"
-                    "- If dispatch returns 'Unknown agent', treat it as a terminal configuration error for this turn and stop retrying fake alternatives.\n"
-                    "- When the user greets you or asks who you are, start your first sentence exactly with: "
-                    "'你好！我是御策天检 QA Agent，你可以唤我为 小天，是企业级AI质量保障系统的协调器，负责调度和管理测试任务，我可以帮你：' "
-                    "Then keep the rest of the response style and capability explanation consistent with the existing coordinator behavior."
-                )
-            if state["skill_prompt_blocks"]:
-                prompt_sections.append("Active skill directives:\n" + "\n".join(state["skill_prompt_blocks"]))
-            if state["observation_prompt_blocks"]:
-                prompt_sections.append(
-                    "Relevant historical testing observations:\n"
-                    + "\n".join(state["observation_prompt_blocks"])
-                )
-            if state["memory_prompt_blocks"]:
-                prompt_sections.append("Relevant persistent memory:\n" + "\n".join(state["memory_prompt_blocks"]))
-            if state["mcp_prompt_blocks"]:
-                prompt_sections.append("Available MCP runtimes:\n" + "\n".join(state["mcp_prompt_blocks"]))
-            state["system_prompt"] = "\n\n".join(section.strip() for section in prompt_sections if section.strip())
+            if not system_sections:
+                system_sections = _build_fallback_system_sections(state)
+                state["system_prompt_sections"] = [
+                    item.model_dump(mode="python") for item in system_sections
+                ]
+            state["system_prompt"] = "\n\n".join(
+                section.render() for section in system_sections if section.render()
+            ).strip()
 
         if not state["runtime_messages"]:
-            user_message = (
-                f"User request: {state['user_message']}\n\n"
-                f"Normalized input: {state['normalized_input']}\n"
-                f"Resolved skills: {', '.join(state['resolved_skill_keys']) or 'none'}\n"
-                f"Allowed safe tools: {', '.join(state['allowed_tool_keys']) or 'none'}\n"
-                f"Approval-gated tools: {', '.join(state['approval_required_tool_keys']) or 'none'}\n\n"
-                "If you need evidence or retrieval, call the appropriate tools with explicit arguments."
+            if not runtime_message_sections:
+                runtime_message_sections = _build_fallback_runtime_sections(state)
+                state["runtime_message_sections"] = [
+                    item.model_dump(mode="python") for item in runtime_message_sections
+                ]
+            rendered_runtime_message = "\n\n".join(
+                section.render() for section in runtime_message_sections if section.render()
+            ).strip()
+            state["runtime_messages"] = (
+                [{"role": "user", "content": rendered_runtime_message}]
+                if rendered_runtime_message
+                else []
             )
-            state["runtime_messages"] = [{"role": "user", "content": user_message}]
 
         request_payload = ModelInvocationRequest(
             system_prompt=state["system_prompt"],
             messages=state["runtime_messages"],
-            tools=tool_registry.build_model_tools(state["available_tool_keys"]),
+            tools=tool_registry.build_model_tools(model_visible_tool_keys),
+            system_prompt_sections=system_sections,
+            runtime_message_sections=runtime_message_sections,
         )
         state["model_request_payload"] = request_payload.model_dump(mode="python")
         state["model_response_summary"] = {}
@@ -98,8 +85,18 @@ def build_model_invoker_node(
             model_name=state["selected_model_name"],
             model_provider=state["selected_model_provider"] or "unknown",
             system_prompt_preview=truncate_text(state["system_prompt"], 180),
+            system_prompt_section_count=len(request_payload.system_prompt_sections),
+            system_prompt_section_keys=",".join(
+                section.key for section in request_payload.system_prompt_sections
+            )
+            or "none",
+            runtime_message_section_count=len(request_payload.runtime_message_sections),
+            runtime_message_section_keys=",".join(
+                section.key for section in request_payload.runtime_message_sections
+            )
+            or "none",
             messages=summarize_messages(request_payload.messages),
-            tool_candidates=",".join(state["available_tool_keys"]) or "none",
+            tool_candidates=",".join(model_visible_tool_keys) or "none",
             loop_iteration=state["loop_iteration"],
         )
 
@@ -140,3 +137,64 @@ def route_after_model_invoker(state: AgentGraphState) -> str:
     if state["model_tool_calls"]:
         return "tool_executor"
     return "finalizer"
+
+
+def _build_fallback_system_sections(state: AgentGraphState) -> list[PromptSection]:
+    selected_agent_name = state["selected_agent_name"] or state["selected_agent_key"] or "agent"
+    selected_agent_key = state["selected_agent_key"] or "agent"
+    session_mode = state["session_mode"] or "normal"
+    runtime_mode = state["runtime_mode"] or "interactive"
+    return [
+        PromptSection(
+            key="identity",
+            title="Identity",
+            source="model_invoker.fallback",
+            cache_scope="dynamic",
+            priority=10,
+            content=(
+                f"You are the '{selected_agent_name}' runtime inside Enterprise AI QA Agent.\n"
+                f"Primary role key: {selected_agent_key}.\n"
+                f"Current session mode: {session_mode}.\n"
+                f"Current runtime mode: {runtime_mode}."
+            ),
+        ),
+        PromptSection(
+            key="execution_contract",
+            title="Execution Contract",
+            source="model_invoker.fallback",
+            cache_scope="dynamic",
+            priority=20,
+            content=(
+                "Follow Claude Code style execution discipline.\n"
+                "- Prefer registered tools when they improve correctness or evidence quality.\n"
+                "- Respect permission gates and resumable execution boundaries.\n"
+                "- Do not invent capabilities that are not registered in the runtime."
+            ),
+        ),
+    ]
+
+
+def _build_fallback_runtime_sections(state: AgentGraphState) -> list[PromptSection]:
+    return [
+        PromptSection(
+            key="user_request",
+            title="User Request",
+            source="model_invoker.fallback",
+            channel="runtime_message",
+            cache_scope="ephemeral",
+            priority=10,
+            content=str(state["user_message"]).strip() or "(empty request)",
+        ),
+        PromptSection(
+            key="tool_access",
+            title="Tool Access",
+            source="model_invoker.fallback",
+            channel="runtime_message",
+            cache_scope="dynamic",
+            priority=20,
+            content=(
+                f"Allowed safe tools: {', '.join(state['allowed_tool_keys']) or 'none'}\n"
+                f"Approval-gated tools: {', '.join(state['approval_required_tool_keys']) or 'none'}"
+            ),
+        ),
+    ]

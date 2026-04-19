@@ -97,6 +97,7 @@ def build_tool_executor_node(
                 "active_mcp_servers": state["active_mcp_servers"],
                 "mcp_prompt_blocks": state["mcp_prompt_blocks"],
                 "available_tool_keys": state["available_tool_keys"],
+                "model_visible_tool_keys": state["model_visible_tool_keys"],
                 "allowed_tool_keys": state["allowed_tool_keys"],
                 "approval_required_tool_keys": state["approval_required_tool_keys"],
                 "denied_tool_keys": state["denied_tool_keys"],
@@ -196,6 +197,9 @@ async def _resolve_tool_call(
                 "permission_behavior": "deny",
                 "permission_reason": denial_reason,
                 "permission_source": (permission_decision or {}).get("source", "static_policy"),
+                "permission_visibility": (permission_decision or {}).get("visibility", "hidden"),
+                "permission_reason_code": (permission_decision or {}).get("reason_code", "restricted_default_deny"),
+                "permission_policy_key": (permission_decision or {}).get("policy_key", "permission_level.restricted"),
             },
         )
         append_graph_event(
@@ -207,6 +211,7 @@ async def _resolve_tool_call(
             tool_name=tool.name,
             permission_source=(permission_decision or {}).get("source", "static_policy"),
             permission_reason=denial_reason,
+            permission_reason_code=(permission_decision or {}).get("reason_code", "restricted_default_deny"),
         )
         return {
             "tool_result": result.model_dump(mode="python"),
@@ -263,6 +268,9 @@ async def _resolve_tool_call(
                     "permission_behavior": "ask",
                     "permission_source": permission_source,
                     "permission_reason": reason,
+                    "permission_visibility": str((permission_decision or {}).get("visibility") or "visible"),
+                    "permission_reason_code": str((permission_decision or {}).get("reason_code") or "approval_required_default"),
+                    "permission_policy_key": str((permission_decision or {}).get("policy_key") or "permission_level.ask"),
                 },
             )
             approval_job_id = approval_job.id
@@ -281,6 +289,9 @@ async def _resolve_tool_call(
                 "permission_behavior": "ask",
                 "permission_source": permission_source,
                 "permission_reason": reason,
+                "permission_visibility": str((permission_decision or {}).get("visibility") or "visible"),
+                "permission_reason_code": str((permission_decision or {}).get("reason_code") or "approval_required_default"),
+                "permission_policy_key": str((permission_decision or {}).get("policy_key") or "permission_level.ask"),
             },
         )
         result = ToolExecutionRecord(
@@ -304,6 +315,7 @@ async def _resolve_tool_call(
             approval_id=approval.id,
             arguments=tool_call.arguments,
             permission_source=permission_source,
+            permission_reason_code=str((permission_decision or {}).get("reason_code") or "approval_required_default"),
         )
         return {
             "tool_result": result.model_dump(mode="python"),

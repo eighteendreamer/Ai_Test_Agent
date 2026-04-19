@@ -183,7 +183,43 @@ class SendMessageRequest(BaseModel):
     submit_mode: str = "immediate"
     command_name: str | None = None
     interrupt_if_busy: bool = False
+    source: str = "session.send_message"
     context: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PendingInputQueueEntry(BaseModel):
+    id: str
+    created_at: datetime
+    busy_status: str
+    queue_behavior: str
+    interrupt_policy: str
+    reason: str = ""
+    payload: SendMessageRequest
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class InputEnvelope(BaseModel):
+    raw_content: str = ""
+    normalized_content: str = ""
+    message_kind: MessageKind = MessageKind.user_input
+    submit_mode: str = "immediate"
+    command_name: str | None = None
+    command_args: str = ""
+    attachment_count: int = 0
+    attachment_names: list[str] = Field(default_factory=list)
+    has_text: bool = False
+    has_attachments: bool = False
+    source: str = "session.send_message"
+
+
+class InputRoutingDecision(BaseModel):
+    execution_lane: str = "conversation_turn"
+    queue_behavior: str = "reject_when_busy"
+    interrupt_policy: str = "wait_for_active_turn"
+    should_persist_user_message: bool = True
+    should_stream_response: bool = True
+    expects_model_turn: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -201,6 +237,8 @@ class ExecutionRequest(BaseModel):
     command_name: str | None = None
     input_summary: str = ""
     hook_results: list[InputHookResult] = Field(default_factory=list)
+    input_envelope: InputEnvelope | None = None
+    routing_decision: InputRoutingDecision | None = None
     orchestration_meta: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
 

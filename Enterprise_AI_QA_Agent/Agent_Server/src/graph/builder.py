@@ -6,6 +6,7 @@ from src.application.mcp_runtime_service import MCPRuntimeService
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.model_runtime_service import ModelRuntimeService
 from src.application.permission_service import PermissionService
+from src.application.prompt_assembly_service import PromptAssemblyService
 from src.application.skill_runtime_service import SkillRuntimeService
 from src.application.tool_job_service import ToolJobService
 from src.application.tool_runtime_service import ToolRuntimeService
@@ -14,6 +15,7 @@ from src.graph.nodes.finalizer import build_finalizer_node
 from src.graph.nodes.model_invoker import build_model_invoker_node, route_after_model_invoker
 from src.graph.nodes.permission_gate import build_permission_gate
 from src.graph.nodes.planner import planner
+from src.graph.nodes.prompt_assembler import build_prompt_assembler_node
 from src.graph.nodes.responder import responder
 from src.graph.nodes.router import build_router_node
 from src.graph.nodes.tool_executor import build_tool_executor_node
@@ -33,6 +35,7 @@ def build_agent_graph(
     mcp_runtime_service: MCPRuntimeService,
     memory_runtime_service: MemoryRuntimeService | None,
     permission_service: PermissionService,
+    prompt_assembly_service: PromptAssemblyService,
     model_runtime_service: ModelRuntimeService,
     tool_runtime_service: ToolRuntimeService,
     tool_job_service: ToolJobService | None = None,
@@ -63,11 +66,17 @@ def build_agent_graph(
         ),
     )
     graph.add_node(
+        "prompt_assembler",
+        build_prompt_assembler_node(
+            prompt_assembly_service=prompt_assembly_service,
+            agent_registry=agent_registry,
+        ),
+    )
+    graph.add_node(
         "model_invoker",
         build_model_invoker_node(
             model_runtime_service=model_runtime_service,
             tool_registry=tool_registry,
-            agent_registry=agent_registry,
         ),
     )
     graph.add_node(
@@ -91,7 +100,8 @@ def build_agent_graph(
     graph.add_edge("context_builder", "router")
     graph.add_edge("router", "planner")
     graph.add_edge("planner", "permission_gate")
-    graph.add_edge("permission_gate", "model_invoker")
+    graph.add_edge("permission_gate", "prompt_assembler")
+    graph.add_edge("prompt_assembler", "model_invoker")
     graph.add_conditional_edges(
         "model_invoker",
         route_after_model_invoker,

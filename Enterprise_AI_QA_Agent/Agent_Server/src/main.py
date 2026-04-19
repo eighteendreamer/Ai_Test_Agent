@@ -19,11 +19,13 @@ from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
 from src.api.routes.settings import router as settings_router
 from src.application.coordinator_runtime_service import CoordinatorRuntimeService
+from src.application.input_orchestrator_service import InputOrchestratorService
 from src.application.memory_runtime_service import MemoryRuntimeService
 from src.application.mcp_runtime_service import MCPRuntimeService
 from src.application.model_runtime_service import ModelRuntimeService
 from src.application.observation_runtime_service import ObservationRuntimeService
 from src.application.permission_service import PermissionService
+from src.application.prompt_assembly_service import PromptAssemblyService
 from src.application.prompt_service import PromptSubmissionService
 from src.application.registry_service import RegistryService
 from src.application.runtime_service import RuntimeService
@@ -77,7 +79,9 @@ async def lifespan(app: FastAPI):
     )
     await tool_job_service.initialize()
     permission_service = PermissionService()
-    prompt_service = PromptSubmissionService()
+    input_orchestrator_service = InputOrchestratorService()
+    prompt_service = PromptSubmissionService(input_orchestrator=input_orchestrator_service)
+    prompt_assembly_service = PromptAssemblyService()
     observation_runtime_service = ObservationRuntimeService()
     transcript_hygiene_service = TranscriptHygieneService()
     runtime_control = RuntimeControlRegistry()
@@ -100,6 +104,7 @@ async def lifespan(app: FastAPI):
         mcp_runtime_service=mcp_runtime_service,
         memory_runtime_service=memory_runtime_service,
         permission_service=permission_service,
+        prompt_assembly_service=prompt_assembly_service,
         model_runtime_service=model_runtime_service,
         tool_runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
@@ -131,7 +136,9 @@ async def lifespan(app: FastAPI):
     app.state.tool_job_service = tool_job_service
     app.state.memory_backend = memory_runtime_service.backend
     app.state.permission_service = permission_service
+    app.state.input_orchestrator_service = input_orchestrator_service
     app.state.prompt_service = prompt_service
+    app.state.prompt_assembly_service = prompt_assembly_service
     app.state.observation_runtime_service = observation_runtime_service
     app.state.transcript_hygiene_service = transcript_hygiene_service
     app.state.runtime_control = runtime_control
@@ -141,7 +148,7 @@ async def lifespan(app: FastAPI):
     app.state.runtime_service = runtime_service
     session_service = SessionService(
         store=store,
-        prompt_service=prompt_service,
+        input_orchestrator_service=input_orchestrator_service,
         runtime_service=runtime_service,
         memory_runtime_service=memory_runtime_service,
         observation_runtime_service=observation_runtime_service,

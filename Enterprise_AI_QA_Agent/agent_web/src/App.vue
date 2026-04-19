@@ -19,6 +19,14 @@ const logExpanded = ref(false);
 const runtimeConsoleTab = ref("logs");
 let healthPollTimer: number | null = null;
 
+function previewText(value: string, limit = 48) {
+  const normalized = String(value || "").trim().replace(/\s+/g, " ");
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, limit - 3))}...`;
+}
+
 const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
 const isHomeRoute = computed(() => route.name === "home");
@@ -34,10 +42,21 @@ const runtimeConsoleTabs = [
 const runtimeLines = computed(() => {
   const workerDispatches = sessionStore.workerDispatches;
   const failureGuard = sessionStore.workerFailureGuard;
+  const queuedCount = sessionStore.queuedTurnCount;
+  const nextQueuedTurn = sessionStore.nextQueuedTurn;
+  const queueLine = `[queue] pending=${queuedCount}${
+    nextQueuedTurn
+      ? ` next=${previewText(
+          String(nextQueuedTurn.payload.content || nextQueuedTurn.payload.command_name || "queued turn"),
+          42,
+        )} mode=${nextQueuedTurn.queue_behavior || "enqueue_if_busy"}`
+      : ""
+  }`;
   if (sessionStore.activity.length > 0) {
     return [
       `[watcher] phase=${sessionStore.watcherPhase} sync=${sessionStore.watcherLastSyncLabel} failures=${sessionStore.watcherFailures}`,
       `[approvals] pending=${sessionStore.pendingApprovals.length} workers=${workerDispatches.length}`,
+      queueLine,
       ...(failureGuard?.blocked
         ? [`[guard] blocked count=${failureGuard.count ?? 0} last_error=${failureGuard.last_error ?? "unknown"}`]
         : []),
@@ -62,6 +81,7 @@ const runtimeLines = computed(() => {
       `[watcher] phase=${sessionStore.watcherPhase} sync=${sessionStore.watcherLastSyncLabel} failures=${sessionStore.watcherFailures}`,
       `[agent] ${sessionStore.session.selected_agent ?? sessionStore.selectedAgentKey}`,
       `[approvals] pending=${sessionStore.pendingApprovals.length} workers=${workerDispatches.length}`,
+      queueLine,
       `[messages] total=${sessionStore.messages.length}`,
     ];
   }
