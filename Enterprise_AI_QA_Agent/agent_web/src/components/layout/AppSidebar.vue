@@ -11,7 +11,6 @@ const navItems = [
   { to: "/knowledge", icon: "fa-database", title: "知识库（RAG）" },
   { to: "/tools", icon: "fa-toolbox", title: "Skills 与工具" },
   { to: "/reports", icon: "fa-file-contract", title: "综合评估报告" },
-  { to: "/settings", icon: "fa-gear", title: "统一系统配置" },
 ];
 
 const themeIcon = computed(() =>
@@ -51,8 +50,13 @@ const themeTitle = computed(() =>
       <i class="fa-solid" :class="themeIcon"></i>
     </button>
 
-    <div class="left-nav-user">
-      <i class="fa-regular fa-user"></i>
-    </div>
+    <RouterLink
+      to="/settings"
+      class="left-nav-user left-nav-user-link"
+      active-class="left-nav-user-active"
+      title="统一系统配置"
+    >
+      <i class="fa-solid fa-gear"></i>
+    </RouterLink>
   </nav>
 </template>

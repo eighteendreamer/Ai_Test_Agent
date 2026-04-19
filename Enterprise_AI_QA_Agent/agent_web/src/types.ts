@@ -86,7 +86,6 @@ export interface ModelConfigPublic {
   name: string;
   provider: string;
   transport: string;
-  model_id: string;
   api_base_url: string;
   description: string;
   supports_tools: boolean;
@@ -107,6 +106,22 @@ export interface ModelConfigUpdateRequest {
   base_url: string;
   api_key?: string | null;
   is_active: boolean;
+}
+
+export interface ModelConfigActionResponse {
+  ok: boolean;
+  message: string;
+  item?: ModelConfigPublic | null;
+}
+
+export interface ModelConfigConnectionTestResponse {
+  ok: boolean;
+  message: string;
+  item: ModelConfigPublic;
+  provider: string;
+  api_base_url: string;
+  latency_ms?: number | null;
+  preview?: string | null;
 }
 
 export interface EmailConfigPublic {

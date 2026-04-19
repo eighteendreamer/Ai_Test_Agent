@@ -14,6 +14,30 @@ class ModelConfigUpdateRequest(BaseModel):
     is_active: bool = False
 
 
+class ModelConfigEditRequest(BaseModel):
+    model_name: str
+    provider: str
+    base_url: str
+    api_key: str | None = None
+    is_active: bool = False
+
+
+class ModelConfigActionResponse(BaseModel):
+    ok: bool = True
+    message: str
+    item: ModelConfigPublic | None = None
+
+
+class ModelConfigConnectionTestResponse(BaseModel):
+    ok: bool
+    message: str
+    item: ModelConfigPublic
+    provider: str
+    api_base_url: str
+    latency_ms: int | None = None
+    preview: str | None = None
+
+
 class ModelConfigListResponse(BaseModel):
     items: list[ModelConfigPublic] = Field(default_factory=list)
 

@@ -172,6 +172,7 @@ async def lifespan(app: FastAPI):
         mcp_registry=mcp_registry,
     )
     app.state.settings_service = SettingsService(
+        settings=settings,
         model_config_store=model_config_store,
         email_config_store=email_config_store,
     )

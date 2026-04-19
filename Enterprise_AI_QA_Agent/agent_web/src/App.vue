@@ -30,6 +30,7 @@ function previewText(value: string, limit = 48) {
 const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
 const isHomeRoute = computed(() => route.name === "home");
+const showRuntimeConsole = computed(() => route.name !== "settings");
 const runtimeConsoleTabs = [
   { key: "logs", label: "运行日志" },
   { key: "events", label: "事件控制台" },
@@ -125,7 +126,7 @@ onBeforeUnmount(() => {
       <div class="prototype-content">
         <RouterView />
       </div>
-      <section :class="['log-panel', { expanded: logExpanded }]">
+      <section v-if="showRuntimeConsole" :class="['log-panel', { expanded: logExpanded }]">
         <header class="log-panel-head" @click="logExpanded = !logExpanded">
           <div class="log-panel-title">
             &gt;_ Runtime Event Console

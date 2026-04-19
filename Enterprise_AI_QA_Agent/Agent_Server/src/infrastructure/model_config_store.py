@@ -89,6 +89,22 @@ class MySQLModelConfigStore:
     def list_active(self) -> list[ModelConfigRecord]:
         return [item for item in self.list_all() if item.is_active]
 
+    def get_by_name(self, model_name: str) -> ModelConfigRecord:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    FROM `{self._settings.llm_model_table}`
+                    WHERE model_name=%s
+                    """,
+                    (model_name,),
+                )
+                row = cur.fetchone()
+        if not row:
+            raise KeyError(model_name)
+        return self._row_to_record(row)
+
     def upsert(self, payload: ModelConfigUpdateRequest) -> ModelConfigPublic:
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -135,6 +151,141 @@ class MySQLModelConfigStore:
                 row = cur.fetchone()
             conn.commit()
         return self.to_public(self._row_to_record(row))
+
+    def update_existing(self, original_model_name: str, payload: ModelConfigUpdateRequest) -> ModelConfigPublic:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    FROM `{self._settings.llm_model_table}`
+                    WHERE model_name=%s
+                    """,
+                    (original_model_name,),
+                )
+                existing_row = cur.fetchone()
+                if not existing_row:
+                    raise KeyError(original_model_name)
+
+                target_model_name = payload.model_name.strip()
+                if target_model_name != original_model_name:
+                    cur.execute(
+                        f"SELECT COUNT(*) AS total FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                        (target_model_name,),
+                    )
+                    duplicate_total = cur.fetchone()["total"]
+                    if duplicate_total:
+                        raise ValueError(f"Model '{target_model_name}' already exists.")
+
+                if payload.is_active:
+                    cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+
+                cur.execute(
+                    f"""
+                    UPDATE `{self._settings.llm_model_table}`
+                    SET `model_name`=%s,
+                        `api_key`=%s,
+                        `base_url`=%s,
+                        `provider`=%s,
+                        `is_active`=%s
+                    WHERE `model_name`=%s
+                    """,
+                    (
+                        target_model_name,
+                        payload.api_key if payload.api_key else (existing_row.get("api_key") or ""),
+                        payload.base_url.rstrip("/"),
+                        payload.provider.strip().lower(),
+                        int(payload.is_active),
+                        original_model_name,
+                    ),
+                )
+                cur.execute(
+                    f"""
+                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    FROM `{self._settings.llm_model_table}`
+                    WHERE model_name=%s
+                    """,
+                    (target_model_name,),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return self.to_public(self._row_to_record(row))
+
+    def activate(self, model_name: str) -> ModelConfigPublic:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(*) AS total FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                    (model_name,),
+                )
+                if not cur.fetchone()["total"]:
+                    raise KeyError(model_name)
+                cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+                cur.execute(
+                    f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
+                    (model_name,),
+                )
+                cur.execute(
+                    f"""
+                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    FROM `{self._settings.llm_model_table}`
+                    WHERE model_name=%s
+                    """,
+                    (model_name,),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return self.to_public(self._row_to_record(row))
+
+    def delete(self, model_name: str) -> tuple[ModelConfigRecord, ModelConfigRecord | None]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    FROM `{self._settings.llm_model_table}`
+                    WHERE model_name=%s
+                    """,
+                    (model_name,),
+                )
+                existing_row = cur.fetchone()
+                if not existing_row:
+                    raise KeyError(model_name)
+
+                deleted_record = self._row_to_record(existing_row)
+                cur.execute(
+                    f"DELETE FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                    (model_name,),
+                )
+
+                replacement_row = None
+                if deleted_record.is_active:
+                    cur.execute(
+                        f"""
+                        SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                        FROM `{self._settings.llm_model_table}`
+                        ORDER BY model_name ASC
+                        LIMIT 1
+                        """
+                    )
+                    replacement_row = cur.fetchone()
+                    if replacement_row:
+                        cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+                        cur.execute(
+                            f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
+                            (replacement_row["model_name"],),
+                        )
+                        cur.execute(
+                            f"""
+                            SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                            FROM `{self._settings.llm_model_table}`
+                            WHERE model_name=%s
+                            """,
+                            (replacement_row["model_name"],),
+                        )
+                        replacement_row = cur.fetchone()
+            conn.commit()
+        return deleted_record, (self._row_to_record(replacement_row) if replacement_row else None)
 
     def get_active(self, key: str) -> ModelConfigRecord:
         for item in self.list_active():

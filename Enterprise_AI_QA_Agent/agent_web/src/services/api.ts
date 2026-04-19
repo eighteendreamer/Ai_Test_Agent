@@ -5,6 +5,8 @@ import type {
   EmailConfigUpdateRequest,
   ExecutionEvent,
   HealthResponse,
+  ModelConfigActionResponse,
+  ModelConfigConnectionTestResponse,
   ModelConfigPublic,
   ModelConfigUpdateRequest,
   SessionDetail,
@@ -51,6 +53,27 @@ export const api = {
     return request("/api/v1/settings/models", {
       method: "PUT",
       body: JSON.stringify(payload),
+    });
+  },
+  editModelConfig(modelName: string, payload: ModelConfigUpdateRequest): Promise<ModelConfigPublic> {
+    return request(`/api/v1/settings/models/${encodeURIComponent(modelName)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+  activateModelConfig(modelName: string): Promise<ModelConfigActionResponse> {
+    return request(`/api/v1/settings/models/${encodeURIComponent(modelName)}/activate`, {
+      method: "POST",
+    });
+  },
+  testModelConfigConnection(modelName: string): Promise<ModelConfigConnectionTestResponse> {
+    return request(`/api/v1/settings/models/${encodeURIComponent(modelName)}/test-connection`, {
+      method: "POST",
+    });
+  },
+  deleteModelConfig(modelName: string): Promise<ModelConfigActionResponse> {
+    return request(`/api/v1/settings/models/${encodeURIComponent(modelName)}`, {
+      method: "DELETE",
     });
   },
   listEmailConfigs(): Promise<EmailConfigPublic[]> {
