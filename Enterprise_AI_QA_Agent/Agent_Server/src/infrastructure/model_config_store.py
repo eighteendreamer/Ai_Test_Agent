@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 
 import pymysql
 
+from src.application.model_adapters.provider_profiles import normalize_provider, resolve_provider_profile
 from src.core.config import Settings
-from src.schemas.model_config import ModelConfigPublic, ModelConfigRecord
+from src.schemas.model_config import (
+    ModelCapabilitiesOverride,
+    ModelConfigPublic,
+    ModelConfigRecord,
+)
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
@@ -19,16 +25,38 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS `{self._settings.llm_model_table}` (
-                        `model_name` VARCHAR(255) NOT NULL PRIMARY KEY,
+                        `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        `model_name` VARCHAR(255) NOT NULL UNIQUE,
                         `api_key` TEXT NULL,
                         `base_url` VARCHAR(1024) NOT NULL,
                         `provider` VARCHAR(64) NOT NULL,
+                        `capability_overrides` JSON NULL,
                         `is_active` TINYINT(1) NOT NULL DEFAULT 0,
                         `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
                     """
                 )
+                cur.execute(
+                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'id'"
+                )
+                if not cur.fetchone():
+                    cur.execute(
+                        f"""
+                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT UNIQUE FIRST
+                        """
+                    )
+                cur.execute(
+                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'capability_overrides'"
+                )
+                if not cur.fetchone():
+                    cur.execute(
+                        f"""
+                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ADD COLUMN `capability_overrides` JSON NULL AFTER `provider`
+                        """
+                    )
                 cur.execute(
                     f"SELECT COUNT(*) AS total FROM `{self._settings.llm_model_table}`"
                 )
@@ -78,9 +106,10 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
-                    ORDER BY model_name ASC
+                    ORDER BY id ASC
                     """
                 )
                 rows = cur.fetchall()
@@ -94,7 +123,8 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -110,7 +140,8 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -124,25 +155,31 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     INSERT INTO `{self._settings.llm_model_table}`
-                    (`model_name`, `api_key`, `base_url`, `provider`, `is_active`)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (`model_name`, `api_key`, `base_url`, `provider`, `capability_overrides`, `is_active`)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         `api_key`=VALUES(`api_key`),
                         `base_url`=VALUES(`base_url`),
                         `provider`=VALUES(`provider`),
+                        `capability_overrides`=VALUES(`capability_overrides`),
                         `is_active`=VALUES(`is_active`)
                     """,
                     (
                         payload.model_name,
                         payload.api_key if payload.api_key else ((existing_row or {}).get("api_key") or ""),
                         payload.base_url.rstrip("/"),
-                        payload.provider.strip().lower(),
+                        normalize_provider(payload.provider),
+                        self._serialize_capability_overrides(
+                            payload,
+                            existing_row=existing_row,
+                        ),
                         int(payload.is_active),
                     ),
                 )
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -157,7 +194,8 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -187,6 +225,7 @@ class MySQLModelConfigStore:
                         `api_key`=%s,
                         `base_url`=%s,
                         `provider`=%s,
+                        `capability_overrides`=%s,
                         `is_active`=%s
                     WHERE `model_name`=%s
                     """,
@@ -194,14 +233,19 @@ class MySQLModelConfigStore:
                         target_model_name,
                         payload.api_key if payload.api_key else (existing_row.get("api_key") or ""),
                         payload.base_url.rstrip("/"),
-                        payload.provider.strip().lower(),
+                        normalize_provider(payload.provider),
+                        self._serialize_capability_overrides(
+                            payload,
+                            existing_row=existing_row,
+                        ),
                         int(payload.is_active),
                         original_model_name,
                     ),
                 )
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -227,7 +271,8 @@ class MySQLModelConfigStore:
                 )
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -242,7 +287,8 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                    , capability_overrides
                     FROM `{self._settings.llm_model_table}`
                     WHERE model_name=%s
                     """,
@@ -262,9 +308,10 @@ class MySQLModelConfigStore:
                 if deleted_record.is_active:
                     cur.execute(
                         f"""
-                        SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                        SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                        , capability_overrides
                         FROM `{self._settings.llm_model_table}`
-                        ORDER BY model_name ASC
+                        ORDER BY id ASC
                         LIMIT 1
                         """
                     )
@@ -277,7 +324,8 @@ class MySQLModelConfigStore:
                         )
                         cur.execute(
                             f"""
-                            SELECT model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                            SELECT id, model_name, api_key, base_url, provider, is_active, created_at, updated_at
+                            , capability_overrides
                             FROM `{self._settings.llm_model_table}`
                             WHERE model_name=%s
                             """,
@@ -301,6 +349,7 @@ class MySQLModelConfigStore:
 
     def to_public(self, record: ModelConfigRecord) -> ModelConfigPublic:
         return ModelConfigPublic(
+            id=record.id,
             key=record.key,
             name=record.name,
             provider=record.provider,
@@ -316,6 +365,8 @@ class MySQLModelConfigStore:
             temperature=record.temperature,
             max_tokens=record.max_tokens,
             has_secret=bool(record.api_key),
+            capabilities=record.capabilities,
+            capability_overrides=record.capability_overrides,
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
@@ -333,21 +384,25 @@ class MySQLModelConfigStore:
         )
 
     def _row_to_record(self, row: dict) -> ModelConfigRecord:
-        provider = (row["provider"] or "").strip().lower()
-        transport = (
-            "anthropic_messages" if provider == "anthropic" else "openai_chat_completions"
-        )
+        provider = normalize_provider(row["provider"] or "")
+        profile = resolve_provider_profile(provider)
+        transport = profile.transport
+        capability_overrides = self._parse_capability_overrides(row.get("capability_overrides"))
+        capabilities = capability_overrides.apply_to(profile.capabilities)
         base_url = (row["base_url"] or "").rstrip("/")
         if transport == "openai_chat_completions" and base_url.endswith("/chat/completions"):
             base_url = base_url[: -len("/chat/completions")]
         if transport == "anthropic_messages" and base_url.endswith("/v1/messages"):
             base_url = base_url[: -len("/v1/messages")]
+        if transport == "google_gemini_generate_content" and ":generateContent" in base_url:
+            base_url = base_url.split("/v1beta/models/", 1)[0]
 
         model_name = row["model_name"]
         canonical_key = self._canonical_model_key(provider, model_name)
         created_at = row.get("created_at")
         updated_at = row.get("updated_at")
         return ModelConfigRecord(
+            id=row.get("id"),
             key=canonical_key,
             name=model_name,
             provider=provider or "openai",
@@ -357,14 +412,16 @@ class MySQLModelConfigStore:
             api_key=row.get("api_key"),
             api_key_env=None,
             description=f"Active model config loaded from MySQL table `{self._settings.llm_model_table}`.",
-            supports_tools=True,
-            supports_vision=provider in {"anthropic", "openai", "qwen"},
-            supports_reasoning=True,
+            supports_tools=capabilities.tool_calling,
+            supports_vision=capabilities.vision,
+            supports_reasoning=capabilities.reasoning,
             is_active=bool(row.get("is_active")),
             is_default=False,
             temperature=None,
             max_tokens=4096,
             extra_headers={},
+            capabilities=capabilities,
+            capability_overrides=capability_overrides,
             created_at=self._normalize_datetime(created_at),
             updated_at=self._normalize_datetime(updated_at),
         )
@@ -392,3 +449,39 @@ class MySQLModelConfigStore:
         if "deepseek-reasoner" in lowered:
             return "deepseek-reasoner"
         return model_name
+
+    def _parse_capability_overrides(self, raw_value) -> ModelCapabilitiesOverride:
+        if raw_value in (None, "", b""):
+            return ModelCapabilitiesOverride()
+        if isinstance(raw_value, (bytes, bytearray)):
+            raw_value = raw_value.decode("utf-8")
+        if isinstance(raw_value, str):
+            try:
+                raw_value = json.loads(raw_value)
+            except json.JSONDecodeError:
+                return ModelCapabilitiesOverride()
+        if isinstance(raw_value, dict):
+            return ModelCapabilitiesOverride.model_validate(raw_value)
+        return ModelCapabilitiesOverride()
+
+    def _serialize_capability_overrides(
+        self,
+        payload: ModelConfigUpdateRequest,
+        *,
+        existing_row: dict | None = None,
+    ) -> str | None:
+        if payload.use_provider_defaults is None:
+            if existing_row is None:
+                return None
+            existing_overrides = self._parse_capability_overrides(existing_row.get("capability_overrides"))
+            return (
+                json.dumps(existing_overrides.model_dump(exclude_none=True))
+                if existing_overrides.has_values()
+                else None
+            )
+        if payload.use_provider_defaults:
+            return None
+        overrides = payload.capability_overrides
+        if not overrides.has_values():
+            return None
+        return json.dumps(overrides.model_dump(exclude_none=True))

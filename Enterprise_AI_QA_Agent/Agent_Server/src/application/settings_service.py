@@ -4,6 +4,7 @@ from time import perf_counter
 
 import httpx
 
+from src.application.model_adapters import AdapterRegistry, build_default_adapter_registry
 from src.application.model_compatibility import ModelCompatibilityLayer
 from src.core.config import Settings
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
@@ -23,11 +24,13 @@ class SettingsService:
         settings: Settings,
         model_config_store: MySQLModelConfigStore,
         email_config_store: MySQLEmailConfigStore,
+        adapter_registry: AdapterRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._model_config_store = model_config_store
         self._email_config_store = email_config_store
-        self._compatibility = ModelCompatibilityLayer()
+        self._adapter_registry = adapter_registry or build_default_adapter_registry()
+        self._compatibility = ModelCompatibilityLayer(adapter_registry=self._adapter_registry)
 
     def list_model_configs(self):
         return [self._model_config_store.to_public(item) for item in self._model_config_store.list_all()]

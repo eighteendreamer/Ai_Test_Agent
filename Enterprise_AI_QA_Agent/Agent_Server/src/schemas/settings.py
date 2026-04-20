@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from src.schemas.email_config import EmailConfigPublic
-from src.schemas.model_config import ModelConfigPublic
+from src.schemas.model_config import ModelCapabilitiesOverride, ModelConfigPublic
 
 
 class ModelConfigUpdateRequest(BaseModel):
@@ -12,6 +12,8 @@ class ModelConfigUpdateRequest(BaseModel):
     base_url: str
     api_key: str | None = None
     is_active: bool = False
+    use_provider_defaults: bool | None = None
+    capability_overrides: ModelCapabilitiesOverride = Field(default_factory=ModelCapabilitiesOverride)
 
 
 class ModelConfigEditRequest(BaseModel):
@@ -20,6 +22,8 @@ class ModelConfigEditRequest(BaseModel):
     base_url: str
     api_key: str | None = None
     is_active: bool = False
+    use_provider_defaults: bool | None = None
+    capability_overrides: ModelCapabilitiesOverride = Field(default_factory=ModelCapabilitiesOverride)
 
 
 class ModelConfigActionResponse(BaseModel):

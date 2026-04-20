@@ -18,6 +18,7 @@ from src.api.routes.health import router as health_router
 from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
 from src.api.routes.settings import router as settings_router
+from src.application.model_adapters import build_default_adapter_registry
 from src.application.coordinator_runtime_service import CoordinatorRuntimeService
 from src.application.input_orchestrator_service import InputOrchestratorService
 from src.application.memory_runtime_service import MemoryRuntimeService
@@ -85,7 +86,12 @@ async def lifespan(app: FastAPI):
     observation_runtime_service = ObservationRuntimeService()
     transcript_hygiene_service = TranscriptHygieneService()
     runtime_control = RuntimeControlRegistry()
-    model_runtime_service = ModelRuntimeService(model_registry=model_registry, settings=settings)
+    adapter_registry = build_default_adapter_registry()
+    model_runtime_service = ModelRuntimeService(
+        model_registry=model_registry,
+        settings=settings,
+        adapter_registry=adapter_registry,
+    )
     tool_runtime_service = ToolRuntimeService(
         request_timeout_seconds=settings.llm_request_timeout_seconds,
         settings=settings,
@@ -144,6 +150,7 @@ async def lifespan(app: FastAPI):
     app.state.runtime_control = runtime_control
     app.state.graph = graph
     app.state.model_runtime_service = model_runtime_service
+    app.state.model_adapter_registry = adapter_registry
     app.state.tool_runtime_service = tool_runtime_service
     app.state.runtime_service = runtime_service
     session_service = SessionService(
@@ -175,6 +182,7 @@ async def lifespan(app: FastAPI):
         settings=settings,
         model_config_store=model_config_store,
         email_config_store=email_config_store,
+        adapter_registry=adapter_registry,
     )
     yield
 

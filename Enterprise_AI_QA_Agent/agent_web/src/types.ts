@@ -82,6 +82,7 @@ export interface ModelDescriptor {
 }
 
 export interface ModelConfigPublic {
+  id?: number | null;
   key: string;
   name: string;
   provider: string;
@@ -96,8 +97,42 @@ export interface ModelConfigPublic {
   temperature?: number | null;
   max_tokens: number;
   has_secret: boolean;
+  capabilities: ModelCapabilities;
+  capability_overrides: ModelCapabilitiesOverride;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface ModelCapabilities {
+  text_input: boolean;
+  text_output: boolean;
+  tool_calling: boolean;
+  vision: boolean;
+  multi_image: boolean;
+  file_input: boolean;
+  pdf_input: boolean;
+  reasoning: boolean;
+  json_mode: boolean;
+  streaming: boolean;
+  parallel_tool_calls: boolean;
+  image_url_input: boolean;
+  image_base64_input: boolean;
+}
+
+export interface ModelCapabilitiesOverride {
+  text_input?: boolean | null;
+  text_output?: boolean | null;
+  tool_calling?: boolean | null;
+  vision?: boolean | null;
+  multi_image?: boolean | null;
+  file_input?: boolean | null;
+  pdf_input?: boolean | null;
+  reasoning?: boolean | null;
+  json_mode?: boolean | null;
+  streaming?: boolean | null;
+  parallel_tool_calls?: boolean | null;
+  image_url_input?: boolean | null;
+  image_base64_input?: boolean | null;
 }
 
 export interface ModelConfigUpdateRequest {
@@ -106,6 +141,8 @@ export interface ModelConfigUpdateRequest {
   base_url: string;
   api_key?: string | null;
   is_active: boolean;
+  use_provider_defaults?: boolean | null;
+  capability_overrides: ModelCapabilitiesOverride;
 }
 
 export interface ModelConfigActionResponse {
