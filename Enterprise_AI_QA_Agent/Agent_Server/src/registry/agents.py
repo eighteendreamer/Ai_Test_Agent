@@ -329,7 +329,7 @@ class AgentRegistry:
                         "file-artifact-manager",
                         "report-writer",
                     ],
-                    supported_skills=["ui-exploration", "playwright-cli", "artifact-collection"],
+                    supported_skills=["playwright-e2e-testing", "playwright-cli"],
                     supported_models=["claude-sonnet-4", "gpt-5.4", "qwen-max"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "ui", "automation"],

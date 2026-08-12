@@ -175,6 +175,23 @@ class SkillRegistry:
                 tags=["api", "planning", "generation"],
                 tool_keys=["api-docs-library", "api-test-runner", "api-tester", "report-writer"],
             ),
+            "playwright-e2e-testing": SkillDescriptor(
+                key="playwright-e2e-testing",
+                name="Playwright E2E Testing",
+                summary="Plan and execute user-centered Web UI exploration, scenarios, assertions, and evidence collection.",
+                description="使用 Playwright 规划和执行基于用户行为的 Web UI 探索、端到端场景、断言与证据采集。",
+                recommended_agents=["ui-automation-agent", "ui-executor"],
+                tags=["ui", "e2e", "playwright", "automation"],
+                tool_keys=[
+                    "ui-automation-runner",
+                    "ui-page-explorer",
+                    "browser-automation",
+                    "browser-control",
+                    "dom-inspector",
+                    "file-artifact-manager",
+                    "report-writer",
+                ],
+            ),
         }
         self._skills: dict[str, SkillDescriptor] = {
             "requirements-analysis": SkillDescriptor(

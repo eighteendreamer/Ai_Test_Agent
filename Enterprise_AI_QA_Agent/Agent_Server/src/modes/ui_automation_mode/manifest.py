@@ -9,7 +9,7 @@ MODE_MANIFEST = {
     "is_test_mode": True,
     "default_agent_key": "ui-automation-agent",
     "allowed_agent_keys": ["ui-automation-agent", "report-analyst"],
-    "default_skill_keys": ["ui-exploration", "playwright-cli", "artifact-collection"],
+    "default_skill_keys": ["playwright-e2e-testing", "playwright-cli"],
     "registered_tool_keys": [
         "ui-automation-runner",
         "ui-page-explorer",
