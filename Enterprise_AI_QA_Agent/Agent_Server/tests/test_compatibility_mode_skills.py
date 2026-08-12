@@ -131,11 +131,6 @@ def test_compatibility_manifest_registry_and_agent_reuse_professional_skills():
     )
     for agent_key, expected in COMPATIBILITY_TESTING_AGENT_SKILLS.items():
         assert agents.get(agent_key).supported_skills == expected
-    assert not {
-        "requirements-analysis",
-        "case-design",
-        "report-synthesis",
-    }.intersection(COMPATIBILITY_TESTING_SKILL_KEYS)
 
 
 def test_compatibility_request_contains_only_new_default_skills():

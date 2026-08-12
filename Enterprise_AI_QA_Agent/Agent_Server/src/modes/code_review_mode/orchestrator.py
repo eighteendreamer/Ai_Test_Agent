@@ -485,7 +485,7 @@ def _build_summary_prompt(
         if delivery_channel != "email" or not email_recipients
         else (
             "- 最终交付：先调用 report-writer，并指定 template_key=code_review_debate，保存 Markdown 和 HTML artifact。\n"
-            "- 然后通过 skill 加载 mail-capability，调用 mail-send 使用全局当前邮箱准备同一份报告邮件。\n"
+            "- 然后通过 skill 加载 agently-mail，调用 mail-send 使用全局当前邮箱准备同一份报告邮件。\n"
             "- 展示确认摘要并停止本轮；用户明确确认后，下一轮调用 mail-confirm。\n"
             f"- 邮件收件人：{', '.join(email_recipients)}\n"
             f"- 邮件主题：{email_subject}\n"

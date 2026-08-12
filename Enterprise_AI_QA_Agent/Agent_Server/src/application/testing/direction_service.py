@@ -75,7 +75,7 @@ class QATaskDirectionService:
             )
 
         reasons.append(f"Detected {best_direction} test direction from user input.")
-        skills = ["playwright-cli", "ui-exploration"] if best_direction == "ui" else []
+        skills = ["playwright-e2e-testing", "playwright-cli"] if best_direction == "ui" else []
         return QATaskState(
             is_test_task=True,
             direction=best_direction,

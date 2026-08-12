@@ -473,8 +473,6 @@ class TestModeIntentService:
         return ""
 
     def _recommended_skills(self, combined: str) -> list[str]:
-        if self._contains_any(combined, self.REPORT_TOKENS):
-            return ["report-synthesis"]
         return []
 
     def _detect_ui_direction(self, combined: str, target_url: str) -> str:
