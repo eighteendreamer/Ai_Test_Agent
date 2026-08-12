@@ -290,8 +290,7 @@ function formatAttachmentSize(value: unknown) {
         >
         <n-dropdown
           trigger="click"
-          placement="bottom-start"
-          :flip="false"
+          :placement="docked ? 'top-start' : 'bottom-start'"
           :options="modeOptions"
           @select="handleModeSelect"
         >
