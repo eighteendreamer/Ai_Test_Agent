@@ -6,10 +6,16 @@ from src.modes.api_testing_mode import MODE_MANIFEST as API_TESTING_MODE_MANIFES
 from src.modes.code_review_mode import MODE_MANIFEST as CODE_REVIEW_MODE_MANIFEST
 from src.modes.compatibility_testing_mode import MODE_MANIFEST as COMPATIBILITY_TESTING_MODE_MANIFEST
 from src.modes.default_mode import MODE_MANIFEST as DEFAULT_MODE_MANIFEST
+from src.modes.accessibility_testing_mode import MODE_MANIFEST as ACCESSIBILITY_TESTING_MODE_MANIFEST
+from src.modes.integration_testing_mode import MODE_MANIFEST as INTEGRATION_TESTING_MODE_MANIFEST
+from src.modes.mobile_testing_mode import MODE_MANIFEST as MOBILE_TESTING_MODE_MANIFEST
 from src.modes.performance_testing_mode import MODE_MANIFEST as PERFORMANCE_TESTING_MODE_MANIFEST
+from src.modes.reliability_testing_mode import MODE_MANIFEST as RELIABILITY_TESTING_MODE_MANIFEST
 from src.modes.security_testing_mode import MODE_MANIFEST as SECURITY_TESTING_MODE_MANIFEST
 from src.modes.smoke_testing_mode import MODE_MANIFEST as SMOKE_TESTING_MODE_MANIFEST
+from src.modes.unit_component_testing_mode import MODE_MANIFEST as UNIT_COMPONENT_TESTING_MODE_MANIFEST
 from src.modes.ui_automation_mode import MODE_MANIFEST as UI_AUTOMATION_MODE_MANIFEST
+from src.modes.visual_regression_testing_mode import MODE_MANIFEST as VISUAL_REGRESSION_TESTING_MODE_MANIFEST
 from src.schemas.mode import ModeDescriptor
 
 
@@ -26,6 +32,12 @@ class ModeRegistry:
             UI_AUTOMATION_MODE_MANIFEST,
             API_TESTING_MODE_MANIFEST,
             COMPATIBILITY_TESTING_MODE_MANIFEST,
+            UNIT_COMPONENT_TESTING_MODE_MANIFEST,
+            ACCESSIBILITY_TESTING_MODE_MANIFEST,
+            VISUAL_REGRESSION_TESTING_MODE_MANIFEST,
+            MOBILE_TESTING_MODE_MANIFEST,
+            RELIABILITY_TESTING_MODE_MANIFEST,
+            INTEGRATION_TESTING_MODE_MANIFEST,
             SECURITY_TESTING_MODE_MANIFEST,
             PERFORMANCE_TESTING_MODE_MANIFEST,
             SMOKE_TESTING_MODE_MANIFEST,
