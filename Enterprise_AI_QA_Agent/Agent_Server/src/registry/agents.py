@@ -680,7 +680,7 @@ class AgentRegistry:
                         "observation-search",
                         "session-history",
                     ],
-                    supported_skills=["requirements-analysis", "report-synthesis"],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4", "deepseek-reasoner"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "orchestration"],
@@ -698,7 +698,7 @@ class AgentRegistry:
                         "data params、correlations 和 assertions。"
                     ),
                     supported_tools=["perf-plan-compiler", "knowledge-rag", "api-docs-library"],
-                    supported_skills=["requirements-analysis"],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "planning"],
@@ -712,7 +712,7 @@ class AgentRegistry:
                     summary="将 PerfPlan 编译为引擎可执行脚本。",
                     description="调用 perf-plan-compiler 工具将计划转为 k6 脚本，处理数据参数和关联提取。",
                     supported_tools=["perf-plan-compiler", "knowledge-rag"],
-                    supported_skills=[],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "script"],
@@ -729,7 +729,7 @@ class AgentRegistry:
                         "不做 pass/fail 判定（判定由独立的 perf-analyst 完成）。"
                     ),
                     supported_tools=["performance-test-runner", "cli-executor"],
-                    supported_skills=[],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "execution"],
@@ -746,7 +746,7 @@ class AgentRegistry:
                         "启动 k6/JMeter Docker 容器、确认状态、测试完成后销毁或清理容器。"
                     ),
                     supported_tools=["perf-container-manager", "cli-executor"],
-                    supported_skills=[],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "container", "docker"],
@@ -764,7 +764,7 @@ class AgentRegistry:
                         "与 runner 分离确保判定独立性。"
                     ),
                     supported_tools=["perf-result-analyzer", "report-writer", "observation-search"],
-                    supported_skills=["report-synthesis"],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4", "deepseek-reasoner"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "analysis"],
@@ -782,7 +782,7 @@ class AgentRegistry:
                         "输出结构化 failure_category/root_cause/retryable/suggested_fix。"
                     ),
                     supported_tools=["knowledge-rag", "observation-search", "session-history"],
-                    supported_skills=["report-synthesis"],
+                    supported_skills=["k6-load-testing", "jmeter-load-testing"],
                     supported_models=["claude-sonnet-4", "gpt-5.4", "deepseek-reasoner"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "performance", "failure-analysis"],

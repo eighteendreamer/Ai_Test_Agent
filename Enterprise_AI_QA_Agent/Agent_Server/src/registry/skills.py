@@ -192,6 +192,24 @@ class SkillRegistry:
                     "report-writer",
                 ],
             ),
+            "k6-load-testing": SkillDescriptor(
+                key="k6-load-testing",
+                name="k6 Load Testing",
+                summary="Plan guarded k6 workloads, thresholds, smoke gates, execution, and metric analysis.",
+                description="使用系统现有 k6 适配器规划负载模型、阈值、冒烟闸门和指标分析。",
+                recommended_agents=["performance-testing-agent", "perf-planner", "perf-runner", "perf-analyst"],
+                tags=["performance", "load", "k6"],
+                tool_keys=["perf-plan-compiler", "perf-engine-select", "performance-test-runner", "performance-engine-runner", "perf-result-analyzer", "perf-container-manager"],
+            ),
+            "jmeter-load-testing": SkillDescriptor(
+                key="jmeter-load-testing",
+                name="JMeter Load Testing",
+                summary="Plan guarded JMeter flows, non-GUI execution, smoke gates, and statistical analysis.",
+                description="使用系统现有 JMeter 适配器规划复杂流程负载、非 GUI 执行和统计分析。",
+                recommended_agents=["performance-testing-agent", "perf-planner", "perf-runner", "perf-analyst"],
+                tags=["performance", "load", "jmeter"],
+                tool_keys=["perf-plan-compiler", "perf-engine-select", "performance-test-runner", "performance-engine-runner", "perf-result-analyzer", "perf-container-manager"],
+            ),
         }
         self._skills: dict[str, SkillDescriptor] = {
             "requirements-analysis": SkillDescriptor(

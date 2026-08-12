@@ -21,7 +21,7 @@ MODE_MANIFEST = {
         "perf-failure-analyst",
         "report-analyst",
     ],
-    "default_skill_keys": [],
+    "default_skill_keys": ["k6-load-testing", "jmeter-load-testing"],
     "registered_tool_keys": [
         "performance-test-runner",
         "perf-container-manager",
