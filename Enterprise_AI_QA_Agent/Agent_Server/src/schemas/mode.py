@@ -15,6 +15,7 @@ class ModeDescriptor(BaseModel):
     default_agent_key: str
     allowed_agent_keys: list[str] = Field(default_factory=list)
     default_skill_keys: list[str] = Field(default_factory=list)
+    on_demand_skill_keys: list[str] = Field(default_factory=list)
     registered_tool_keys: list[str] = Field(default_factory=list)
     harness_key: str = "base_conversation"
     activation_policy: ActivationPolicy = "explicit_only"
