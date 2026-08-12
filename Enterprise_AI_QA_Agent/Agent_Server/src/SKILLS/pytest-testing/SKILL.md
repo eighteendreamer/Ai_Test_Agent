@@ -26,3 +26,15 @@ description: 根据 Python 项目现有 pytest 配置规划、编写或审查 fi
 ## 输出边界
 
 区分已运行、静态审查和仅建议；没有测试输出时不得声称通过。
+
+## 测试设计矩阵
+
+为被测行为建立输入、状态、外部依赖、预期结果和清理列。优先覆盖真实失败、空值、边界、异常、权限、并发、超时和重试耗尽；参数化只表达同一语义的输入域。
+
+## Fixture 与隔离
+
+fixture 必须说明 scope、创建者、依赖层级、yield 后清理和失败恢复。文件使用临时目录，数据库使用事务/专用 schema，时间和随机数可控，网络依赖使用项目既有替身。skip/xfail/marker 要有理由、owner 和期限。
+
+## 执行与参考
+
+先读取项目 pytest 配置和命令，运行最小相关集再扩大范围；保留 stdout、stderr、退出码、seed、环境和失败 artifact。需要 fixtures、参数化、markers、coverage、异步和插件差异时按需读取 `references/source-1.md`。

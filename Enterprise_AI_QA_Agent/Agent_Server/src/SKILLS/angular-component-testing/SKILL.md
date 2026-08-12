@@ -25,3 +25,11 @@ description: 根据 Angular 项目现有 TestBed 和测试栈规划、编写或�
 ## 输出边界
 
 未识别实际 Angular 测试栈时先报告缺失信息，不生成不可运行配置。
+
+## TestBed 与行为矩阵
+
+确认 Angular/CLI、builder、Jasmine/Karma/Jest、zone 配置和现有 spec。以输入、模板语义、用户交互、服务边界和可访问结果建立加载、空、成功、错误、权限和销毁场景；只替换外部或昂贵依赖。
+
+## 异步与参考
+
+明确变化检测、Promise/observable、fakeAsync/tick 或项目既有等待方式；禁止固定延时。检查 provider 替身契约、订阅/timer/fixture 清理。需要 TestBed、DI、异步、模板查询和 runner 差异时读取 `references/source-1.md`。

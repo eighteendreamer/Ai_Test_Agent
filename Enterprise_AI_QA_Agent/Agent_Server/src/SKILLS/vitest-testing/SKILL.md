@@ -26,3 +26,15 @@ description: 根据 Vite 项目实际配置规划、编写或审查 Vitest 单�
 ## 输出边界
 
 未发现 Vitest 依赖或无法运行命令时，只提供迁移/测试建议，不声称已执行。
+
+## 配置和行为矩阵
+
+核对 Vite/Vitest 配置、alias、environment、setup、coverage provider、pool/worker 和 package script。用行为矩阵覆盖正常、边界、异常、网络、时间和状态恢复；只在外部边界 mock，并清理 timer、DOM、模块和网络状态。
+
+## ESM 与异步门禁
+
+检查 ESM 导入、mock 提升、动态导入和生产/测试环境差异。等待可观察完成条件，不用 sleep；watch 模式不得作为 CI 门禁。覆盖率只作为风险证据之一，不能替代分支和错误路径断言。
+
+## 输出与参考
+
+记录实际配置、命令、seed、失败 DOM/栈、退出码和未验证能力。需要 Vitest API、Vite 配置、mock、coverage 和组件环境细节时读取 `references/source-1.md`。

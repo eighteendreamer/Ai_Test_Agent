@@ -26,3 +26,16 @@ description: 根据 OpenAPI、Swagger、JSON Schema 和消费者契约审查 API
 ## 输出
 
 输出接口/字段级矩阵：来源、预期、实际证据、严重度、兼容性影响和建议验证动作。需要执行时使用已注册的 `api-tester` 或 `api-test-runner`，不要直接调用未注册框架。
+
+## 契约解析顺序
+
+选择唯一事实源并记录 OpenAPI 版本、schema 文件、operationId、生成来源和提交。展开 `$ref`、组合 schema、nullable、oneOf/anyOf、默认值和 discriminator；循环引用要显式标记。分别检查请求参数、请求体、响应 headers、content-type、成功响应和每一种错误响应，再与路由/handler、DTO、消费者使用和现有测试逐项对照。
+
+## 验证策略
+
+- 静态验证：列出文档与实现差异及证据位置。
+- 工具验证：通过当前暴露的 `api-tester`/`api-test-runner` 执行已批准请求，保存脱敏请求/响应。
+- 消费者验证：检查提供者是否满足消费者实际字段和错误使用。
+- 版本验证：比较基线与当前 schema，按阻断、需确认和可接受分类。
+
+需要 OpenAPI response、JSON Schema、向后兼容、GraphQL、错误响应和调试细节时读取 `references/source-1.md`。

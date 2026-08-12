@@ -25,3 +25,11 @@ description: 根据 Vue 项目现有 Vue Test Utils 和 runner 规划、编写�
 ## 输出边界
 
 未确认 Vue 与测试工具版本时，不生成版本相关 API 示例。
+
+## 组件契约矩阵
+
+将 props、slots、用户事件、emits、v-model、组合式 API 和渲染结果映射到正常、空、错误、条件渲染、异步更新和卸载场景。复用项目 global plugins、router、store 和 stubs，避免不一致的测试环境。
+
+## 断言、清理与参考
+
+用可见文本、语义状态、事件载荷和外部效果断言，不直接依赖内部 ref；shallow/stub 不得隐藏本应验证的集成行为。等待 Vue 更新周期或业务 Promise，清理订阅、timer、DOM 和 mock。需要挂载、交互、组合式 API、异步和版本差异时读取 `references/source-1.md`。

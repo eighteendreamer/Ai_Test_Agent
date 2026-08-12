@@ -25,3 +25,11 @@ description: 按 React Testing Library 的用户视角规划、编写或审查�
 ## 输出边界
 
 区分组件行为测试、hook 测试和 E2E；不要把 jsdom 结果声称为真实浏览器验证。
+
+## 用户行为矩阵
+
+用 role/name、label、文本和可访问状态表达正常、加载、空、错误、禁用、校验、权限和恢复；仅在语义无法稳定表达时使用 test id。复用 provider/router/store wrapper，网络只在边界模拟，断言结果而非 state/className/内部调用次数。
+
+## 异步与参考
+
+使用真实用户事件和可观察等待，处理 act 警告、清理和跨测试状态。记录 runner、环境、命令、失败 DOM、栈和退出码。需要查询、事件、异步、mock 和 provider 示例时读取 `references/source-1.md`。

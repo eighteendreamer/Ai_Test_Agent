@@ -25,3 +25,11 @@ description: 根据 Node.js 项目现有 Mocha 配置规划、编写或审查 BD
 ## 输出边界
 
 没有运行证据时明确标注为静态审查或测试设计。
+
+## Suite、Hook 与异步契约
+
+用项目已有 BDD/TDD 接口表达公开行为和失败路径。hooks 只负责可见的初始化/清理；数据库、文件、网络、timer 和全局 mock 必须隔离。每个异步用例只采用 callback 或 Promise/async 一种完成协议，确保错误传播到 runner。
+
+## 执行与参考
+
+核对断言库、替身库、timeout、reporter、并行和 Node ESM/CJS 配置，任何调整都说明依据。运行最小相关套件，保存 stdout、stderr、失败栈、资源清理和退出码。需要 hooks、异步、BDD/TDD、并行和 CI 细节时读取 `references/source-1.md`。

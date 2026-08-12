@@ -26,3 +26,11 @@ description: 从 OpenAPI 或接口文档生成可审查的 API 测试场景矩�
 ## 输出
 
 输出可转成 API campaign 的场景矩阵：目标、请求、数据、断言、依赖、风险、证据要求和执行顺序。文档缺失时列出需要补充的信息。
+
+## 生成算法
+
+解析 paths/operations，保留 operationId、参数来源、schema、认证和 tags；为每个 operation 生成最小成功场景，再按参数类型和业务约束生成边界/无效场景。认证至少覆盖未认证、过期、权限不足、跨租户和错误 scope；列表覆盖空集合、单页、page size、末页、游标、过滤和排序；写操作覆盖重复提交、幂等 key、并发冲突、资源不存在和清理。
+
+## 场景对象与质量门禁
+
+每个场景必须包含 `scenario_id`、operationId、前置数据、请求模板、变量来源、断言、风险、写入级别、清理、依赖和证据类型。每个 operation 至少有成功与失败/边界场景；断言必须追溯到 schema、需求或实现。生成结果与执行结果分栏，未经过 Runner 的场景不得标记 passed。需要解析、认证、分页、过滤、限流、上传和 collection 细节时读取 `references/source-1.md`。

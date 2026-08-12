@@ -27,3 +27,11 @@ description: 使用 Playwright 规划和执行基于用户行为的 Web UI 探�
 ## 输出
 
 区分“已探索”“已执行”“仅生成场景”和“运行时暂不支持”。每条结果必须包含目标、步骤、断言、证据和失败原因。
+
+## 场景设计与页面对象
+
+先从 `ui-page-explorer` 的 ARIA snapshot、页面图谱和用户目标建立状态矩阵，再决定页面对象、fixture 或一次性探索。页面对象只封装稳定导航/定位，不隐藏业务断言；每个场景仍写出用户可观察结果。
+
+## 定位、同步与证据
+
+定位优先 role/name、label、text、test id 和稳定属性，最后才是有证据支持的 CSS/XPath。等待优先 URL、响应、可见状态、enabled、ARIA 状态或业务文本；固定 sleep 只能作为临时诊断并记录原因。至少覆盖首次加载、空/加载/错误、认证、权限、表单校验、重复提交、刷新/返回、上传下载、网络失败和清理。保存 URL、动作、断言、ARIA snapshot、截图、console/network 摘要、trace、版本和退出码。需要 Playwright 安装、登录、APIRequestContext、页面对象、网络拦截、视觉和 CI 细节时读取 `references/source-1.md` 或 `source-2.md`。

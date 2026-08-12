@@ -25,3 +25,11 @@ description: 根据项目现有 Storybook 配置规划、编写或审查 stories
 ## 输出边界
 
 未实际运行 Storybook 构建/测试时，不声称 story 可执行或视觉基线通过。
+
+## Story 状态矩阵
+
+为组件枚举默认、边界、加载、空、错误、禁用、权限、主题和响应式状态。args 表达输入契约，decorator 只提供真实上下文；play 执行用户交互并以语义查询和业务结果断言结束。
+
+## 稳定性与参考
+
+固定时间、网络、随机、字体和动画，避免 story 间共享状态。检查 play 的等待、清理和失败证据；无障碍/视觉检查关联到明确状态，不用默认 story 代表全部覆盖。需要 stories、args、decorators、play、交互测试和 CI 细节时读取 `references/source-1.md`。

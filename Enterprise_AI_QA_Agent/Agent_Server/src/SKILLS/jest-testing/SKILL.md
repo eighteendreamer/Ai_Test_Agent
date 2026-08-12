@@ -26,3 +26,15 @@ description: 根据 JavaScript 或 TypeScript 项目现有 Jest 配置规划、�
 ## 输出边界
 
 说明依据的配置和测试命令；未实际运行时标记为静态方案。
+
+## 测试结构与替身
+
+以公开行为组织 suite/test，覆盖正常、边界、错误、状态和副作用。只在外部网络、时间、随机、进程或昂贵依赖边界使用 mock/spy；每个用例恢复 mock、fake timer、模块和环境变量。异步测试必须等待 Promise、事件或可观察状态。
+
+## 快照与配置
+
+快照应小且稳定，关键业务结果仍用显式断言。核对 Jest environment、transform、ESM/CJS、alias、coverage、worker 和 CI 命令，禁止 only、无理由 skip、宽泛快照更新和只为通过而放松断言。
+
+## 执行与参考
+
+保存测试命令、配置、失败栈、DOM/日志、未处理 Promise、资源泄漏和退出码。需要 mock、fake timers、异步、快照、覆盖率和配置示例时读取 `references/source-1.md`。

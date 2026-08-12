@@ -5,7 +5,11 @@ description: 根据真实 Appium 项目、设备 Provider 和应用构建规划 
 
 # Appium 移动端测试
 
-先确认 Appium server、client、driver、平台版本、设备/模拟器、应用包和签名均真实可用；不得从候选资料推断执行环境。
+先确认 Appium server、client、driver、平台版本、设备/模拟器、应用包和签名均真实可用；不得从候选资料推断执行环境。capability 和平台差异按需读取 `references/source-1.md`。
+
+## 输入契约
+
+确认平台/系统/设备矩阵、应用包、签名、启动参数、账号、权限、网络条件、Provider 和数据清理。
 
 ## 工作流程
 
@@ -15,6 +19,17 @@ description: 根据真实 Appium 项目、设备 Provider 和应用构建规划 
 4. 等待可观察状态或 driver 条件，不以固定 sleep 解决同步问题。
 5. 每个用例声明安装/重置策略、数据清理、后台/前台和失败恢复。
 6. 采集设备日志、截图、页面源、视频和构建版本，关联到具体设备与步骤。
+
+## 移动端门禁
+
+1. 优先 accessibility id/原生稳定标识，禁止坐标和易变 XPath。
+2. 等待可观察 UI/driver 状态，显式处理权限、键盘、前后台、旋转、深链和网络切换。
+3. 每个用例声明安装/重置、账号、数据、并行设备和失败恢复策略。
+4. 失败必须绑定设备、OS、Appium/driver、构建、步骤、日志和截图/视频。
+
+## 输出
+
+输出 capability/设备矩阵、场景、同步与状态策略、证据和缺失 Provider；无 Runner 时仅规划。
 
 ## 执行边界
 
