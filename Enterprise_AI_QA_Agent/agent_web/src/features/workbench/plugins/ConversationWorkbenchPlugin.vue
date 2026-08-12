@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
   <section class="view-home view-home-conversation">
     <div class="home-center-wrap home-center-wrap-conversation" :style="layoutStyle">
       <div class="home-thread-shell home-thread-shell-active">
-        <ChatTimeline :messages="sessionStore.messages" />
+        <ChatTimeline :messages="sessionStore.messages" :activity="sessionStore.activity" />
         <p v-if="sessionStore.error" class="error-text home-inline-error">{{ sessionStore.error }}</p>
       </div>
 

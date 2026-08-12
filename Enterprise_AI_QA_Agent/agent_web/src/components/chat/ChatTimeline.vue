@@ -2,18 +2,78 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import AssistantMarkdown from "./AssistantMarkdown.vue";
+import ExecutionTrace from "./ExecutionTrace.vue";
 import { t } from "../../services/i18n";
-import type { ChatMessage, InputAttachment } from "../../types";
+import type { ChatMessage, ExecutionEvent, InputAttachment } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
-import { toolOutputToMarkdown } from "../../utils/toolOutput";
 
 const props = defineProps<{
   messages: ChatMessage[];
+  activity?: ExecutionEvent[];
 }>();
+
+const EXECUTION_EVENT_TYPES = new Set([
+  "runtime.turn_started",
+  "graph.execution_started",
+  "graph.route_selected",
+  "graph.plan_built",
+  "graph.context_built",
+  "graph.prompt_assembled",
+  "model.request_prepared",
+  "model.response_received",
+  "model.tool_calls_received",
+  "tool.execution_started",
+  "tool.execution_blocked",
+  "tool.execution_completed",
+  "tool.execution_failed",
+  "tool.execution_denied",
+  "graph.loop_prepared",
+  "graph.response_ready",
+  "graph.execution_completed",
+  "assistant.stream.started",
+  "assistant.stream.completed",
+  "turn.completed",
+  "turn.interrupted",
+]);
+
+const executionTrace = computed(() => {
+  const source = Array.isArray(props.activity) ? props.activity : [];
+  const seen = new Set<string>();
+  return source
+    .slice()
+    .reverse()
+    .filter((event) => {
+      if (!EXECUTION_EVENT_TYPES.has(event.type)) return false;
+      const turnId = String(event.payload?.turn_id || "").trim();
+      if (!turnId) return false;
+      const key = String(event.id || `${event.type}:${event.timestamp}:${turnId}`);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-24);
+});
+
+const latestUserTurnId = computed(() => {
+  for (let index = visibleMessages.value.length - 1; index >= 0; index -= 1) {
+    const message = visibleMessages.value[index];
+    if (message.role !== "user") continue;
+    return String(message.metadata?.turn_id || "").trim();
+  }
+  return "";
+});
+
+const currentExecutionTrace = computed(() => {
+  const turnId = latestUserTurnId.value;
+  return turnId
+    ? executionTrace.value.filter((event) => String(event.payload?.turn_id || "").trim() === turnId)
+    : [];
+});
 
 const visibleMessages = computed(() =>
   props.messages.filter(
     (message) =>
+      !isTransientToolMessage(message) &&
       !(
         message.role === "assistant" &&
         isStreamingAssistant(message) &&
@@ -22,46 +82,17 @@ const visibleMessages = computed(() =>
   ),
 );
 
-// Kun process rail: everything that is not the final summary (tool runs,
-// system events) folds into one "execution process" group per turn. The
-// group stays open while the turn is working and collapses once the
-// summary lands.
 type TimelineEntry =
-  | { kind: "message"; message: ChatMessage }
-  | { kind: "process"; id: string; messages: ChatMessage[]; running: boolean };
+  | { kind: "message"; message: ChatMessage };
 
 function isProcessMessage(message: ChatMessage) {
   return message.role === "tool" || message.role === "system";
 }
 
-function isRunningProcessMessage(message: ChatMessage) {
-  if (message.role !== "tool") return false;
-  return RUNNING_TOOL_STATUSES.includes(parseToolPayload(message).status);
-}
-
 const timelineEntries = computed<TimelineEntry[]>(() => {
-  const entries: TimelineEntry[] = [];
-  let group: ChatMessage[] = [];
-  const flush = () => {
-    if (!group.length) return;
-    entries.push({
-      kind: "process",
-      id: `process-${group[0].id}`,
-      messages: group,
-      running: group.some((item) => isRunningProcessMessage(item)),
-    });
-    group = [];
-  };
-  for (const message of visibleMessages.value) {
-    if (isProcessMessage(message)) {
-      group.push(message);
-    } else {
-      flush();
-      entries.push({ kind: "message", message });
-    }
-  }
-  flush();
-  return entries;
+  return visibleMessages.value
+    .filter((message) => !isProcessMessage(message))
+    .map((message) => ({ kind: "message", message }));
 });
 
 const historyRef = ref<HTMLElement | null>(null);
@@ -326,7 +357,7 @@ function toolHeadline(message: ChatMessage) {
 </script>
 
 <template>
-  <div ref="historyRef" class="home-history" v-if="visibleMessages.length">
+  <div ref="historyRef" class="home-history" v-if="visibleMessages.length || currentExecutionTrace.length">
     <template
       v-for="entry in timelineEntries"
       :key="entry.kind === 'message' ? entry.message.id : entry.id"
@@ -364,6 +395,12 @@ function toolHeadline(message: ChatMessage) {
         </div>
       </article>
 
+      <ExecutionTrace
+        v-if="entry.kind === 'message' && entry.message.role === 'user' && entry.message.id === lastUserTurnKey && currentExecutionTrace.length"
+        :events="currentExecutionTrace"
+        :turn-id="latestUserTurnId"
+      />
+
       <!-- 执行总结：无卡片直排 markdown（Kun ds-chat-answer） -->
       <article
         v-else-if="entry.kind === 'message' && entry.message.role === 'assistant'"
@@ -387,55 +424,6 @@ function toolHeadline(message: ChatMessage) {
         </div>
       </article>
 
-      <!-- 执行过程：Codex 风格的纯文本折叠行，永远默认收起，无卡片 -->
-      <article v-else-if="entry.kind === 'process'" class="chat-turn chat-process-turn">
-        <details class="chat-process">
-          <summary class="chat-process-head">
-            <span :class="['chat-process-title', { 'is-running': entry.running }]">
-              {{ entry.running ? "正在处理…" : "已处理" }}
-            </span>
-            <span class="chat-process-count">{{ entry.messages.length }} 步</span>
-            <i class="fa-solid fa-chevron-right chat-process-chevron"></i>
-          </summary>
-          <div class="chat-process-body">
-            <template v-for="message in entry.messages" :key="message.id">
-              <!-- 工具执行：纯文本行，可展开看输出 -->
-              <details
-                v-if="message.role === 'tool' && toolHasDetail(message)"
-                :class="['chat-tool-line', toolToneClass(message)]"
-              >
-                <summary class="chat-tool-line-head">
-                  <i class="fa-solid fa-wrench chat-tool-line-icon"></i>
-                  <span class="chat-tool-line-name">{{ toolHeadline(message) }}</span>
-                  <span v-if="toolStatusChip(message)" class="chat-tool-line-status">{{ toolStatusChip(message) }}</span>
-                  <span class="chat-tool-line-summary">{{ toolSummaryLine(message) }}</span>
-                </summary>
-                <div class="chat-tool-line-detail conversation-entry-markdown">
-                  <AssistantMarkdown :content="toolOutputToMarkdown(message.content)" />
-                </div>
-              </details>
-              <div
-                v-else-if="message.role === 'tool'"
-                :class="['chat-tool-line', 'chat-tool-line-static', toolToneClass(message)]"
-              >
-                <div class="chat-tool-line-head">
-                  <i class="fa-solid fa-wrench chat-tool-line-icon"></i>
-                  <span class="chat-tool-line-name">{{ toolHeadline(message) }}</span>
-                  <span v-if="toolStatusChip(message)" class="chat-tool-line-status">{{ toolStatusChip(message) }}</span>
-                  <span class="chat-tool-line-summary">{{ toolSummaryLine(message) }}</span>
-                </div>
-              </div>
-              <!-- 系统 / 其他事件 -->
-              <div v-else class="chat-system-message">
-                <div class="chat-system-label">
-                  {{ labelForMessage(message) }} · {{ formatServerDateTime(message.created_at) }}
-                </div>
-                <pre class="conversation-entry-content">{{ message.content }}</pre>
-              </div>
-            </template>
-          </div>
-        </details>
-      </article>
     </template>
     <div ref="endRef" class="conversation-end-sentinel" aria-hidden="true"></div>
   </div>

@@ -198,12 +198,24 @@ function isActiveSessionStatus(status: SessionLifecycleStatus) {
   return status === "running" || status === "waiting_approval";
 }
 
+function createClientMessageId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function mergeSessionMessages(
   serverMessages: ChatMessage[],
   localMessages: ChatMessage[],
   sessionStatus: SessionLifecycleStatus,
 ) {
   const serverIds = new Set(serverMessages.map((message) => message.id));
+  const serverClientMessageIds = new Set(
+    serverMessages
+      .map((message) => String(message.metadata?.client_message_id || "").trim())
+      .filter((value) => Boolean(value)),
+  );
   const serverToolCallIds = new Set(
     serverMessages
       .map((message) => toolMessageCallId(message))
@@ -221,10 +233,17 @@ function mergeSessionMessages(
       .filter((value) => Boolean(value)),
   );
   const localById = new Map(localMessages.map((message) => [message.id, message]));
+  const localByClientMessageId = new Map(
+    localMessages
+      .map((message) => [String(message.metadata?.client_message_id || "").trim(), message] as const)
+      .filter(([clientMessageId]) => Boolean(clientMessageId)),
+  );
   const allowTransientLocalMessages = isActiveSessionStatus(sessionStatus);
 
   const merged = serverMessages.map((serverMessage) => {
-    const localMessage = localById.get(serverMessage.id);
+    const localMessage =
+      localById.get(serverMessage.id) ||
+      localByClientMessageId.get(String(serverMessage.metadata?.client_message_id || "").trim());
     if (!localMessage) {
       return serverMessage;
     }
@@ -238,23 +257,36 @@ function mergeSessionMessages(
       localMessage.content.length >= serverMessage.content.length &&
       serverStatus !== "completed";
 
-    if (!shouldPreferLocalContent) {
+    if (!shouldPreferLocalContent && serverMessage.role !== "user") {
       return serverMessage;
     }
 
     return {
       ...serverMessage,
-      content: localMessage.content,
+      content: serverMessage.content || localMessage.content,
       metadata: {
-        ...serverMessage.metadata,
         ...localMessage.metadata,
-        delivery_status: localStatus,
+        ...serverMessage.metadata,
+        ...(serverMessage.role === "user" ? { delivery_status: "sent" } : { delivery_status: localStatus }),
       },
     };
   });
 
   const localOnlyMessages = localMessages.filter((message) => {
-    if (!allowTransientLocalMessages || serverIds.has(message.id)) {
+    if (serverIds.has(message.id)) {
+      return false;
+    }
+    const clientMessageId = String(message.metadata?.client_message_id || "").trim();
+    if (clientMessageId && serverClientMessageIds.has(clientMessageId)) {
+      return false;
+    }
+    if (message.role === "user") {
+      // Keep the optimistic user turn visible while the synchronous backend
+      // request is still orchestrating tools/model work. It is replaced by
+      // the server message through client_message_id once persisted.
+      return messageDeliveryStatus(message) !== "failed";
+    }
+    if (!allowTransientLocalMessages) {
       return false;
     }
     if (message.role === "assistant") {
@@ -911,10 +943,13 @@ export const useSessionStore = defineStore("session", {
         created_at: new Date().toISOString(),
         metadata: {
           delivery_status: "pending",
+          client_message_id: createClientMessageId(),
+          is_optimistic: true,
           attachment_count: attachments.length,
           attachments,
         },
       };
+      const clientMessageId = String(optimisticMessage.metadata?.client_message_id || "");
       const optimisticAssistantMessage = createOptimisticAssistantMessage();
 
       this.messages = [...this.messages, optimisticMessage, optimisticAssistantMessage];
@@ -928,7 +963,10 @@ export const useSessionStore = defineStore("session", {
           options.modeKey || this.selectedModeKey,
           attachments,
           options.context,
-          options.metadata,
+          {
+            ...options.metadata,
+            client_message_id: clientMessageId,
+          },
         );
         this.applySession(response.session);
         this.activity = [...response.events.slice().reverse(), ...this.activity].slice(0, 50);
@@ -1073,6 +1111,34 @@ export const useSessionStore = defineStore("session", {
       }
     },
     applyStreamingEvent(event: ExecutionEvent) {
+      const eventTurnId = String(event.payload?.turn_id || "").trim();
+      if (eventTurnId) {
+        let pendingUserIndex = -1;
+        for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+          const message = this.messages[index];
+          if (
+            message.role === "user" &&
+            (messageDeliveryStatus(message) === "pending" || message.metadata?.is_optimistic === true) &&
+            !String(message.metadata?.turn_id || "").trim()
+          ) {
+            pendingUserIndex = index;
+            break;
+          }
+        }
+        if (pendingUserIndex >= 0) {
+          const nextMessages = [...this.messages];
+          nextMessages[pendingUserIndex] = {
+            ...nextMessages[pendingUserIndex],
+            metadata: {
+              ...nextMessages[pendingUserIndex].metadata,
+              turn_id: eventTurnId,
+              is_optimistic: true,
+            },
+          };
+          this.messages = nextMessages;
+        }
+      }
+
       if (
         event.type === "turn.interrupted" ||
         event.type === "runtime.interrupt_requested" ||
@@ -1244,6 +1310,7 @@ export const useSessionStore = defineStore("session", {
             : message,
         );
       }
+
     },
   },
 });

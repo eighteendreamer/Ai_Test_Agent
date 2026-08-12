@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from "vue";
+import { computed, ref } from "vue";
 
 import { renderAssistantMarkdown } from "../../utils/markdown";
-import { useTypewriterText } from "../../utils/useTypewriterText";
 
 const props = defineProps<{
   content: string;
@@ -11,11 +10,8 @@ const props = defineProps<{
 
 const rootRef = ref<HTMLElement | null>(null);
 
-const contentRef = toRef(props, "content");
 const streamingRef = computed(() => Boolean(props.streaming));
-const pacedText = useTypewriterText(contentRef, streamingRef);
-
-const html = computed(() => renderAssistantMarkdown(pacedText.value));
+const html = computed(() => renderAssistantMarkdown(props.content));
 
 // Event delegation for the per-code-block copy button.
 function handleClick(event: MouseEvent) {
