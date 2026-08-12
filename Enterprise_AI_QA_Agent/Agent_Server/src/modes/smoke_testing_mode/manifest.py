@@ -17,7 +17,7 @@ MODE_MANIFEST = {
         "smoke-result-analyst",
         "report-analyst",
     ],
-    "default_skill_keys": [],
+    "default_skill_keys": ["smoke-test-planning"],
     "registered_tool_keys": [
         "smoke-suite-runner",
         "report-writer",

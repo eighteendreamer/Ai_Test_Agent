@@ -226,6 +226,15 @@ class SkillRegistry:
                 tags=["security", "validation", "injection"],
                 tool_keys=["security-scan-runner", "web-scan-runner", "report-writer"],
             ),
+            "smoke-test-planning": SkillDescriptor(
+                key="smoke-test-planning",
+                name="Smoke Test Planning",
+                summary="Plan confirmed, evidence-backed core-path smoke tests with explicit safety and readiness gates.",
+                description="规划和审查核心链路冒烟测试、准入门槛、可逆性、环境护栏、用户确认和证据沉淀。",
+                recommended_agents=["smoke-testing-agent", "smoke-plan-designer", "smoke-plan-reviewer", "smoke-executor", "smoke-result-analyst"],
+                tags=["smoke", "approval", "readiness"],
+                tool_keys=["smoke-suite-runner", "report-writer", "knowledge-rag"],
+            ),
         }
         self._skills: dict[str, SkillDescriptor] = {
             "requirements-analysis": SkillDescriptor(
