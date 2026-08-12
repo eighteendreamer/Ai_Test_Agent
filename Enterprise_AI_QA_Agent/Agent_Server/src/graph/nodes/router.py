@@ -118,7 +118,10 @@ def build_router_node(
         state["selected_model_name"] = selected_model.name
         state["selected_model_provider"] = selected_model.provider
         state["resolved_skill_keys"] = resolved_skills
-        state["skill_prompt_blocks"] = skill_runtime_service.build_prompt_blocks(resolved_skills)
+        state["skill_prompt_blocks"] = skill_runtime_service.build_prompt_blocks(
+            resolved_skills,
+            include_content=True,
+        )
         state["memory_hits"] = []
         state["memory_prompt_blocks"] = []
         if memory_runtime_service is not None:

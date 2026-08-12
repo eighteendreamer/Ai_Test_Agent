@@ -20,7 +20,14 @@ MODE_MANIFEST = {
         "ops-executor",
         "coordinator",
     ],
-    "default_skill_keys": ["report-synthesis", "requirements-analysis"],
+    "default_skill_keys": [
+        "ci-pipeline-review",
+        "test-coverage-review",
+        "flaky-test-analysis",
+        "tdd-review",
+        "test-data-strategy",
+        "owasp-security-testing",
+    ],
     "registered_tool_keys": [
         "code-review-orchestrator",
         "code-governance-runner",

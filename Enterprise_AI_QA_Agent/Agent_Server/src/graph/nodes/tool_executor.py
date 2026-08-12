@@ -693,6 +693,46 @@ def _run_skill_loader(
             },
         )
     catalog = skill_registry.list()
+
+    if action == "read_reference":
+        skill_key = requested_keys[0] if requested_keys else ""
+        reference_path = str(arguments.get("reference_path") or "").strip()
+        if skill_key not in state.get("resolved_skill_keys", []):
+            return ToolExecutionRecord(
+                call_id=tool_call.id,
+                tool_key="skill",
+                tool_name="Skill Loader",
+                status="failed",
+                summary="Load the Skill before reading one of its references.",
+                input=arguments,
+                output={"error": "skill_not_loaded", "skill_key": skill_key},
+            )
+        try:
+            reference_content = skill_runtime_service.read_reference(skill_key, reference_path)
+        except (KeyError, ValueError, FileNotFoundError, OSError) as exc:
+            return ToolExecutionRecord(
+                call_id=tool_call.id,
+                tool_key="skill",
+                tool_name="Skill Loader",
+                status="failed",
+                summary=f"Unable to read Skill reference: {exc}",
+                input=arguments,
+                output={"error": "invalid_skill_reference", "detail": str(exc)},
+            )
+        return ToolExecutionRecord(
+            call_id=tool_call.id,
+            tool_key="skill",
+            tool_name="Skill Loader",
+            status="completed",
+            summary=f"Loaded Skill reference '{reference_path}'.",
+            input=arguments,
+            output={
+                "skill_key": skill_key,
+                "reference_path": reference_path,
+                "reference_content": reference_content,
+            },
+        )
+
     matched = skill_registry.get_many(requested_keys) or _match_skills(catalog, query)
     matched_payload = [
         {
@@ -743,7 +783,10 @@ def _run_skill_loader(
     loaded_skill_keys = [item.key for item in matched]
     state["requested_skill_keys"] = list(dict.fromkeys([*state.get("requested_skill_keys", []), *loaded_skill_keys]))
     state["resolved_skill_keys"] = list(dict.fromkeys([*state.get("resolved_skill_keys", []), *loaded_skill_keys]))
-    instructions = skill_runtime_service.build_prompt_blocks(loaded_skill_keys)
+    instructions = skill_runtime_service.build_prompt_blocks(
+        loaded_skill_keys,
+        include_content=True,
+    )
     state["skill_prompt_blocks"] = list(dict.fromkeys([*state.get("skill_prompt_blocks", []), *instructions]))
 
     return ToolExecutionRecord(

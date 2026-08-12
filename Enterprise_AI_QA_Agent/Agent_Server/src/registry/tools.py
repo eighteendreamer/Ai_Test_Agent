@@ -127,7 +127,7 @@ class ToolRegistry:
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "enum": ["search", "load"],
+                                "enum": ["search", "load", "read_reference"],
                                 "description": "Search the catalog or load matching Skills and their tools.",
                                 "default": "load",
                             },
@@ -140,6 +140,10 @@ class ToolRegistry:
                                 "type": "string",
                                 "description": "Capability description used to find matching Skills and deferred tools.",
                             },
+                            "reference_path": {
+                                "type": "string",
+                                "description": "Relative references/... path to read after its Skill has been loaded.",
+                            },
                         },
                     },
                     output_schema={
@@ -147,6 +151,7 @@ class ToolRegistry:
                         "loaded_skills": "array",
                         "loaded_tools": "array",
                         "instructions": "array",
+                        "reference_content": "string",
                     },
                     tags=["core", "skills", "deferred-tools"],
                 ),

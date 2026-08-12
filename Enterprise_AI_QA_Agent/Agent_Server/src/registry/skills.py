@@ -7,7 +7,8 @@ from src.schemas.agent import SkillDescriptor
 
 
 class SkillRegistry:
-    def __init__(self) -> None:
+    def __init__(self, skills_root: Path | None = None) -> None:
+        self._skills_root = skills_root or (Path(__file__).resolve().parents[1] / "SKILLS")
         self._base_skills: dict[str, SkillDescriptor] = {
             "requirements-analysis": SkillDescriptor(
                 key="requirements-analysis",
@@ -194,8 +195,12 @@ class SkillRegistry:
     def get_many(self, keys: list[str]) -> list[SkillDescriptor]:
         return [self._skills[key] for key in keys if key in self._skills]
 
+    @property
+    def skills_root(self) -> Path:
+        return self._skills_root
+
     def _load_filesystem_skills(self) -> None:
-        skills_root = Path(__file__).resolve().parents[1] / "SKILLS"
+        skills_root = self._skills_root
         if not skills_root.exists():
             return
         for skill_file in sorted(skills_root.glob("*/SKILL.md")):

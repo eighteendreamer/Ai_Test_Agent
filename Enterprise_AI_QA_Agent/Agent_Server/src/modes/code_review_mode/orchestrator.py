@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from src.modes.code_review_mode.models import DebateRound, ProjectSource, ReviewPoint, ReviewReportSkeleton
 from src.modes.code_review_mode.project_source import normalize_project_source, project_source_root
+from src.modes.code_review_mode.skills import CODE_REVIEW_REVIEWER_SKILLS
 from src.modes.code_review_mode.team import REVIEW_TEAM_MEMBERS, SUMMARY_AGENT
 
 if TYPE_CHECKING:
@@ -204,7 +205,7 @@ def _build_independent_worker_spec(
         "prompt": reviewer_prompt,
         "agent_key": member.agent_key,
         "model_key": str(arguments.get("worker_model_key") or "").strip() or None,
-        "skill_keys": ["requirements-analysis", "risk-scoping", "report-synthesis"],
+        "skill_keys": list(CODE_REVIEW_REVIEWER_SKILLS.get(member.key, [])),
         "context": _build_worker_context(
             member=member,
             project_source=project_source,
@@ -245,7 +246,7 @@ def _build_cross_review_worker_spec(
         "prompt": reviewer_prompt,
         "agent_key": member.agent_key,
         "model_key": str(arguments.get("worker_model_key") or "").strip() or None,
-        "skill_keys": ["requirements-analysis", "risk-scoping", "report-synthesis"],
+        "skill_keys": list(CODE_REVIEW_REVIEWER_SKILLS.get(member.key, [])),
         "context": _build_worker_context(
             member=member,
             project_source=project_source,
@@ -344,7 +345,7 @@ def _build_summary_agent_spec(
         ),
         "agent_key": SUMMARY_AGENT.agent_key,
         "model_key": str(arguments.get("summary_model_key") or arguments.get("worker_model_key") or "").strip() or None,
-        "skill_keys": ["report-synthesis", "requirements-analysis"],
+        "skill_keys": [],
         "context": {
             "campaign_kind": "code_review_debate_summary",
             "campaign_project_name": project_source.project_name,
