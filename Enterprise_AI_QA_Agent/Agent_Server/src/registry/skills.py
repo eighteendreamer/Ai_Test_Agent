@@ -210,6 +210,22 @@ class SkillRegistry:
                 tags=["performance", "load", "jmeter"],
                 tool_keys=["perf-plan-compiler", "perf-engine-select", "performance-test-runner", "performance-engine-runner", "perf-result-analyzer", "perf-container-manager"],
             ),
+            "auth-security-testing": SkillDescriptor(
+                key="auth-security-testing", name="Auth Security Testing",
+                summary="Review and test authentication, sessions, tokens, OAuth, and authorization boundaries.",
+                description="审查和规划 JWT、Session、OAuth、对象级授权、权限提升和认证绕过测试。",
+                recommended_agents=["security-testing-agent", "security-auth-worker", "security-api-verifier"],
+                tags=["security", "auth", "authorization"],
+                tool_keys=["security-scan-runner", "credential-attack-runner", "web-scan-runner", "report-writer"],
+            ),
+            "input-validation-security-testing": SkillDescriptor(
+                key="input-validation-security-testing", name="Input Validation Security Testing",
+                summary="Review and test validation, injection, upload, encoding, CSRF, and boundary weaknesses.",
+                description="审查和规划参数、表单、文件上传、编码、边界值、注入与校验绕过测试。",
+                recommended_agents=["security-testing-agent", "security-web-verifier", "security-api-verifier"],
+                tags=["security", "validation", "injection"],
+                tool_keys=["security-scan-runner", "web-scan-runner", "report-writer"],
+            ),
         }
         self._skills: dict[str, SkillDescriptor] = {
             "requirements-analysis": SkillDescriptor(

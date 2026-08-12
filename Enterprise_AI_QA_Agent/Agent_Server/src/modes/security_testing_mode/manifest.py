@@ -25,7 +25,11 @@ MODE_MANIFEST = {
         "security-failure-analyst",
         "report-analyst",
     ],
-    "default_skill_keys": ["vulnerability-analysis", "network-reconnaissance"],
+    "default_skill_keys": [
+        "owasp-security-testing",
+        "auth-security-testing",
+        "input-validation-security-testing",
+    ],
     "registered_tool_keys": [
         "security-scan-runner",
         "network-recon-runner",
