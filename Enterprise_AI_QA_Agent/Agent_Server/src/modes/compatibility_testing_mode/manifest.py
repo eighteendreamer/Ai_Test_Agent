@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.modes.compatibility_testing_mode.skills import COMPATIBILITY_TESTING_SKILL_KEYS
+
 MODE_MANIFEST = {
     "key": "compatibility_testing",
     "name": "兼容性测试模式",
@@ -15,7 +17,7 @@ MODE_MANIFEST = {
         "compatibility-testing-agent",
         "report-analyst",
     ],
-    "default_skill_keys": ["requirements-analysis", "case-design", "report-synthesis"],
+    "default_skill_keys": COMPATIBILITY_TESTING_SKILL_KEYS,
     "registered_tool_keys": [
         "compatibility-test-runner",
         "smoke-suite-runner",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.modes.compatibility_testing_mode.skills import COMPATIBILITY_TESTING_AGENT_SKILLS
 from src.schemas.agent import AgentDescriptor
 
 
@@ -381,7 +382,7 @@ class AgentRegistry:
                         "observation-search",
                         "session-history",
                     ],
-                    supported_skills=["requirements-analysis", "case-design", "report-synthesis"],
+                    supported_skills=COMPATIBILITY_TESTING_AGENT_SKILLS["compatibility-testing-agent"],
                     supported_models=["claude-sonnet-4", "gpt-5.4", "deepseek-reasoner"],
                     default_model="claude-sonnet-4",
                     tags=["testing", "compatibility", "orchestration", "runner"],
