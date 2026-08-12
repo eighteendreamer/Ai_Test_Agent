@@ -18,7 +18,11 @@ MODE_MANIFEST = {
         "api-failure-analyst",
         "report-analyst",
     ],
-    "default_skill_keys": ["api-validation", "assertion-design"],
+    "default_skill_keys": [
+        "api-contract-testing",
+        "api-test-generation",
+        "test-data-strategy",
+    ],
     "registered_tool_keys": [
         "api-test-runner",
         "api-docs-library",
