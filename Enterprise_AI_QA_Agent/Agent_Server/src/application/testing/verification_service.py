@@ -54,8 +54,179 @@ class VerificationService:
                     )
                 )
                 continue
+            if tool_key == "security-scan-runner":
+                results.append(
+                    self._from_security_scan_runner(
+                        session_id,
+                        turn_id,
+                        trace_id,
+                        item,
+                        output,
+                        context_bundle,
+                    )
+                )
+                continue
         return results
 
+    def _from_security_scan_runner(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        tool_result: dict[str, Any],
+        output: dict[str, Any],
+        context_bundle: dict[str, Any],
+    ) -> VerificationResult:
+        """Evaluate only explicit reviewed assertions against Runner evidence."""
+        test_case = (
+            context_bundle.get("test_case")
+            if isinstance(context_bundle.get("test_case"), dict)
+            else {}
+        )
+        assertions = (
+            test_case.get("assertions")
+            if isinstance(test_case.get("assertions"), list)
+            else []
+        )
+        parsed_result = (
+            output.get("parsed_result")
+            if isinstance(output.get("parsed_result"), dict)
+            else {}
+        )
+        findings = output.get("findings") if isinstance(output.get("findings"), list) else []
+        runner_ok = (
+            str(output.get("status") or "").lower() == "completed"
+            and output.get("ok") is True
+            and output.get("semantic_success") is True
+        )
+        assertion_results: list[dict[str, Any]] = []
+        unsupported_kinds: list[str] = []
+        for assertion in assertions:
+            if not isinstance(assertion, dict):
+                unsupported_kinds.append("invalid")
+                continue
+            kind = str(assertion.get("kind") or "").strip().lower()
+            operator = str(assertion.get("operator") or "equals").strip().lower()
+            expected = assertion.get("expected")
+            if kind == "runner_success":
+                actual = runner_ok
+                expected = True if expected is None else expected
+            elif kind == "finding_count":
+                actual = len(findings)
+            elif kind == "parsed_field":
+                actual = self._read_dotted_path(
+                    parsed_result,
+                    str(assertion.get("target") or ""),
+                )
+            else:
+                unsupported_kinds.append(kind or "missing")
+                continue
+            assertion_results.append(
+                {
+                    "kind": kind,
+                    "target": str(assertion.get("target") or ""),
+                    "operator": operator,
+                    "expected": expected,
+                    "actual": actual,
+                    "passed": self._matches_assertion(actual, expected, operator),
+                }
+            )
+        passed_count = sum(1 for item in assertion_results if item["passed"])
+        failed_count = sum(1 for item in assertion_results if not item["passed"])
+        if not runner_ok:
+            status = VerificationStatus.failed
+            passed_count = 0
+            failed_count = max(1, len(assertions))
+        elif failed_count:
+            status = VerificationStatus.failed
+        elif assertions and len(assertion_results) == len(assertions):
+            status = VerificationStatus.passed
+        elif assertion_results:
+            status = VerificationStatus.partial
+        else:
+            status = VerificationStatus.not_run
+        return VerificationResult(
+            id=str(uuid4()),
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            verifier="security-scan-runner",
+            status=status,
+            summary=str(
+                output.get("summary")
+                or tool_result.get("summary")
+                or "Security Runner verification captured."
+            ),
+            assertion_count=len(assertions),
+            passed_count=passed_count,
+            failed_count=failed_count,
+            evidence=[
+                VerificationEvidence(
+                    source_type="tool_job",
+                    source_id=str(
+                        tool_result.get("job_id")
+                        or tool_result.get("call_id")
+                        or uuid4()
+                    ),
+                    label="security_runner_result",
+                    detail=str(output.get("command_profile") or ""),
+                    metadata={
+                        "target": output.get("target"),
+                        "finding_count": len(findings),
+                    },
+                )
+            ],
+            metadata={
+                "tool_key": "security-scan-runner",
+                "command_profile": output.get("command_profile"),
+                "target": output.get("target"),
+                "runner_ok": runner_ok,
+                "finding_count": len(findings),
+                "assertion_results": assertion_results,
+                "unsupported_assertion_kinds": sorted(set(unsupported_kinds)),
+            },
+            created_at=datetime.utcnow(),
+        )
+
+
+    @staticmethod
+    def _read_dotted_path(value: dict[str, Any], path: str) -> Any:
+        current: Any = value
+        for part in (item for item in str(path or "").split(".") if item):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    @staticmethod
+    def _matches_assertion(actual: Any, expected: Any, operator: str) -> bool:
+        if operator == "equals":
+            return actual == expected
+        if operator == "not_equals":
+            return actual != expected
+        if operator == "contains":
+            try:
+                return expected in actual
+            except TypeError:
+                return False
+        if operator == "not_contains":
+            try:
+                return expected not in actual
+            except TypeError:
+                return False
+        if operator in {"lt", "lte", "gt", "gte"}:
+            try:
+                left = float(actual)
+                right = float(expected)
+            except (TypeError, ValueError):
+                return False
+            return {
+                "lt": left < right,
+                "lte": left <= right,
+                "gt": left > right,
+                "gte": left >= right,
+            }[operator]
+        return False
     def _from_performance_test_runner(
         self,
         session_id: str,

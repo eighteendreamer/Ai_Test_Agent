@@ -54,6 +54,25 @@ def _performance_context(*assertions, request=None):
     return context
 
 
+def _security_output(**changes):
+    output = {
+        "status": "completed",
+        "ok": True,
+        "semantic_success": True,
+        "summary": "安全扫描完成",
+        "command_profile": "http_headers_probe",
+        "target": "127.0.0.1",
+        "parsed_result": {"status_code": 200, "headers": {"x-content-type-options": "nosniff"}},
+        "findings": [],
+    }
+    output.update(changes)
+    return output
+
+
+def _security_context(*assertions):
+    return {"test_case": {"case_id": "security-case-1", "assertions": list(assertions)}}
+
+
 def test_api_runner_uses_task_assertions_instead_of_top_level_completed_status():
     result = _verify(
         "api-test-runner",
@@ -73,6 +92,78 @@ def test_api_runner_uses_task_assertions_instead_of_top_level_completed_status()
 
     assert result.status.value == "failed"
     assert result.failed_count == 1
+
+
+def test_security_runner_maps_success_and_parsed_field_evidence_to_passed():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(),
+        context_bundle=_security_context(
+            {"kind": "runner_success"},
+            {"kind": "parsed_field", "target": "status_code", "expected": 200},
+        ),
+    )
+
+    assert result.status.value == "passed"
+    assert result.assertion_count == 2
+    assert result.passed_count == 2
+    assert result.failed_count == 0
+    assert result.metadata["finding_count"] == 0
+    assert result.evidence[0].source_id == "job-1"
+
+
+def test_security_runner_finding_count_threshold_failure_is_failed():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(findings=[{"id": "missing-header"}]),
+        context_bundle=_security_context(
+            {"kind": "finding_count", "operator": "lte", "expected": 0},
+        ),
+    )
+
+    assert result.status.value == "failed"
+    assert result.passed_count == 0
+    assert result.failed_count == 1
+    assert result.metadata["assertion_results"][0]["actual"] == 1
+
+
+def test_security_runner_unknown_assertion_cannot_be_reported_as_passed():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(),
+        context_bundle=_security_context(
+            {"kind": "runner_success"},
+            {"kind": "unsupported_business_rule", "expected": "ok"},
+        ),
+    )
+
+    assert result.status.value == "partial"
+    assert result.passed_count == 1
+    assert result.failed_count == 0
+    assert result.metadata["unsupported_assertion_kinds"] == ["unsupported_business_rule"]
+
+
+def test_security_runner_failure_is_failed_even_when_assertions_are_missing():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(ok=False, semantic_success=False, status="failed"),
+        context_bundle=_security_context({"kind": "runner_success"}),
+    )
+
+    assert result.status.value == "failed"
+    assert result.failed_count == 1
+
+
+def test_security_runner_without_assertions_is_not_run():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(),
+        context_bundle=_security_context(),
+    )
+
+    assert result.status.value == "not_run"
+    assert result.assertion_count == 0
+    assert result.passed_count == 0
 
 
 def test_ui_exploration_success_is_not_reported_as_test_case_passed():
