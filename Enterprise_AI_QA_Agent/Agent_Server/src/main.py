@@ -59,6 +59,7 @@ from src.application.prompting.prompt_assembly_service import PromptAssemblyServ
 from src.application.prompting.prompt_service import PromptSubmissionService
 from src.application.projects.project_service import ProjectService
 from src.application.projects.project_overview_service import ProjectOverviewService
+from src.application.projects.legacy_smoke_history_service import LegacySmokeHistoryService
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.registries.registry_service import RegistryService
 from src.application.report_service import ReportService
@@ -86,6 +87,7 @@ from src.application.test_runs.case_execution import (
     resolve_case_execution_tool as resolve_case_execution_entry,
 )
 from src.application.test_runs.execution_service import TestRunExecutionService
+from src.modes.smoke_testing_mode.catalog_store import SmokeCatalogStore
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -265,6 +267,12 @@ async def lifespan(app: FastAPI):
         lease_reaper_interval_seconds=settings.test_run_lease_reaper_interval_seconds,
     )
     await test_run_service.initialize()
+    legacy_smoke_catalog = SmokeCatalogStore(settings)
+    legacy_smoke_history_service = LegacySmokeHistoryService(
+        project_service=project_service,
+        catalog=legacy_smoke_catalog,
+    )
+    await legacy_smoke_history_service.initialize()
     project_overview_service = ProjectOverviewService(
         project_service=project_service,
         api_doc_store=api_doc_store,
@@ -398,6 +406,7 @@ async def lifespan(app: FastAPI):
     app.state.test_run_service = test_run_service
     app.state.case_execution_adapter = case_execution_adapter
     app.state.test_run_execution_service = test_run_execution_service
+    app.state.legacy_smoke_history_service = legacy_smoke_history_service
     app.state.memory_backend = memory_runtime_service.backend
     app.state.ui_graph_backend = settings.ui_graph_backend
     app.state.permission_service = permission_service

@@ -22,13 +22,15 @@ def test_frontend_regression_api_contract_has_typed_keyset_endpoints():
 def test_projects_view_lazy_loads_filtered_regression_center():
     source = (WEB_ROOT / "views" / "ProjectsView.vue").read_text(encoding="utf-8")
 
-    assert 'type ResourceTab = "cases" | "suites" | "runs" | "regressions"' in source
+    assert 'type ResourceTab = "cases" | "suites" | "runs" | "legacy-smoke" | "regressions"' in source
     assert "resourceTab === 'regressions'" in source
     assert "loadRegressionFailures" in source
     assert "regressionStatus" in source
     assert "regressionMode" in source
     assert "regressionNextCursor" in source
     assert "回归中心" in source
+    assert "旧冒烟历史" in source
+    assert "loadLegacySmokeRuns" in source
 
 
 def test_projects_view_lazily_opens_public_evidence_and_batch_timeline():

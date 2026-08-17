@@ -1115,6 +1115,59 @@ export interface ProjectOverview {
   };
 }
 
+export type LegacySmokeMappedStatus = "passed" | "failed" | "blocked" | "skipped";
+
+export interface LegacySmokeScopeBinding {
+  source_system: "legacy_smoke_catalog";
+  project_id: string;
+  project_scope: string;
+  created_at: string;
+}
+
+export interface LegacySmokeCaseSummary {
+  source_system: "legacy_smoke_catalog";
+  read_only: true;
+  legacy_case_id: string;
+  title: string;
+  case_type: string;
+  legacy_status: string;
+  mapped_status: LegacySmokeMappedStatus;
+  summary: string;
+  assertion_count: number;
+  passed_count: number;
+  failed_count: number;
+  duration_ms: number;
+  evidence_count: number;
+}
+
+export interface LegacySmokeRunSummary {
+  source_system: "legacy_smoke_catalog";
+  read_only: true;
+  legacy_run_id: string;
+  legacy_plan_id: string;
+  legacy_plan_version: number;
+  project_scope: string;
+  legacy_status: string;
+  legacy_verdict: string;
+  total_cases: number;
+  passed_cases: number;
+  failed_cases: number;
+  blocked_cases: number;
+  started_at: string;
+  completed_at?: string | null;
+  summary: string;
+  case_results: LegacySmokeCaseSummary[];
+}
+
+export interface LegacySmokeRunPage {
+  project_id: string;
+  bindings: LegacySmokeScopeBinding[];
+  items: LegacySmokeRunSummary[];
+  limit: number;
+  next_cursor?: string | null;
+  has_more: boolean;
+}
+
 export type TestCaseLifecycleStatus = "draft" | "pending_review" | "active" | "disabled" | "archived";
 export type TestCasePriority = "P0" | "P1" | "P2" | "P3";
 

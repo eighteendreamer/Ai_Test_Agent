@@ -13,6 +13,7 @@ import type {
   RegressionContext,
   RegressionFailureStatus,
   RegressionFailureSummary,
+  LegacySmokeRunSummary,
   TestCaseLifecycleStatus,
   TestCaseRecord,
   TestCaseVersionRecord,
@@ -21,7 +22,7 @@ import type {
   TestRunStatus,
 } from "../types";
 
-type ResourceTab = "cases" | "suites" | "runs" | "regressions";
+type ResourceTab = "cases" | "suites" | "runs" | "legacy-smoke" | "regressions";
 
 const CASE_PAGE_SIZE = 20;
 const SUITE_PAGE_SIZE = 20;
@@ -64,6 +65,14 @@ const runOffset = ref(0);
 const runsHaveMore = ref(false);
 const runStatus = ref<"" | TestRunStatus>("");
 const regressionRunId = ref("");
+
+const legacySmokeRuns = ref<LegacySmokeRunSummary[]>([]);
+const legacySmokeBindings = ref<string[]>([]);
+const legacySmokeLoading = ref(false);
+const legacySmokeCursor = ref<string | undefined>(undefined);
+const legacySmokeNextCursor = ref<string | null>(null);
+const legacySmokeCursorStack = ref<Array<string | undefined>>([]);
+const legacySmokeScopeInput = ref("");
 
 const regressionFailures = ref<RegressionFailureSummary[]>([]);
 const regressionsLoading = ref(false);
@@ -167,6 +176,11 @@ function resetProjectResources() {
   testCases.value = [];
   suites.value = [];
   testRuns.value = [];
+  legacySmokeRuns.value = [];
+  legacySmokeBindings.value = [];
+  legacySmokeCursor.value = undefined;
+  legacySmokeNextCursor.value = null;
+  legacySmokeCursorStack.value = [];
   regressionFailures.value = [];
   regressionCursor.value = undefined;
   regressionNextCursor.value = null;
@@ -189,8 +203,10 @@ async function loadProjectDetail() {
       ? loadTestCases()
       : resourceTab.value === "suites"
         ? loadTestSuites()
-        : resourceTab.value === "runs"
-          ? loadTestRuns()
+      : resourceTab.value === "runs"
+        ? loadTestRuns()
+        : resourceTab.value === "legacy-smoke"
+          ? loadLegacySmokeRuns()
           : loadRegressionFailures(),
   ]);
 }
@@ -277,6 +293,59 @@ async function loadTestRuns() {
   }
 }
 
+async function loadLegacySmokeRuns(cursor = legacySmokeCursor.value) {
+  if (!selectedId.value) return;
+  legacySmokeLoading.value = true;
+  try {
+    const page = await api.listLegacySmokeRuns(selectedId.value, {
+      cursor,
+      limit: RUN_PAGE_SIZE,
+    });
+    legacySmokeRuns.value = page.items;
+    legacySmokeBindings.value = page.bindings.map(item => item.project_scope);
+    legacySmokeCursor.value = cursor;
+    legacySmokeNextCursor.value = page.next_cursor || null;
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "旧冒烟历史加载失败");
+  } finally {
+    legacySmokeLoading.value = false;
+  }
+}
+
+async function bindLegacySmokeScope() {
+  if (!selectedId.value || !legacySmokeScopeInput.value.trim()) return;
+  try {
+    await api.bindLegacySmokeScope(selectedId.value, legacySmokeScopeInput.value.trim());
+    legacySmokeScopeInput.value = "";
+    await loadLegacySmokeRuns(undefined);
+    toast.success("旧冒烟项目 Scope 绑定成功");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "旧冒烟 Scope 绑定失败");
+  }
+}
+
+async function unbindLegacySmokeScope(projectScope: string) {
+  if (!selectedId.value) return;
+  try {
+    await api.unbindLegacySmokeScope(selectedId.value, projectScope);
+    await loadLegacySmokeRuns(undefined);
+    toast.success("旧冒烟 Scope 已解绑");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "旧冒烟 Scope 解绑失败");
+  }
+}
+
+async function changeLegacySmokePage(direction: -1 | 1) {
+  if (direction === 1) {
+    if (!legacySmokeNextCursor.value) return;
+    legacySmokeCursorStack.value.push(legacySmokeCursor.value);
+    await loadLegacySmokeRuns(legacySmokeNextCursor.value);
+    return;
+  }
+  if (!legacySmokeCursorStack.value.length) return;
+  await loadLegacySmokeRuns(legacySmokeCursorStack.value.pop());
+}
+
 async function loadRegressionFailures(cursor = regressionCursor.value) {
   if (!selectedId.value) return;
   regressionsLoading.value = true;
@@ -331,6 +400,11 @@ async function switchResourceTab(tab: ResourceTab) {
   } else if (tab === "runs") {
     runOffset.value = 0;
     await loadTestRuns();
+  } else if (tab === "legacy-smoke") {
+    legacySmokeCursor.value = undefined;
+    legacySmokeNextCursor.value = null;
+    legacySmokeCursorStack.value = [];
+    await loadLegacySmokeRuns(undefined);
   } else {
     await searchRegressionFailures();
   }
@@ -765,6 +839,7 @@ onMounted(() => {
               <button :class="{ active: resourceTab === 'cases' }" @click="switchResourceTab('cases')">测试用例</button>
               <button :class="{ active: resourceTab === 'suites' }" @click="switchResourceTab('suites')">测试套件</button>
               <button :class="{ active: resourceTab === 'runs' }" @click="switchResourceTab('runs')">测试历史</button>
+              <button :class="{ active: resourceTab === 'legacy-smoke' }" @click="switchResourceTab('legacy-smoke')">旧冒烟历史</button>
               <button :class="{ active: resourceTab === 'regressions' }" @click="switchResourceTab('regressions')">回归中心</button>
             </div>
             <div v-if="resourceTab === 'cases'" class="actions">
@@ -777,6 +852,10 @@ onMounted(() => {
                 :disabled="selected.status === 'archived' || !selectedRegressionFailures.length || Boolean(regressionRunId)"
                 @click="createSelectedRegressionRun"
               >所选失败项回归（{{ selectedRegressionFailures.length }}）</button>
+            </div>
+            <div v-else-if="resourceTab === 'legacy-smoke'" class="actions">
+              <input v-model="legacySmokeScopeInput" placeholder="输入人工确认的旧 project_scope" @keyup.enter="bindLegacySmokeScope">
+              <button class="primary" :disabled="selected.status === 'archived' || !legacySmokeScopeInput.trim()" @click="bindLegacySmokeScope">绑定 Scope</button>
             </div>
           </header>
 
@@ -891,6 +970,38 @@ onMounted(() => {
             <footer class="pagination">
               <span>第 {{ Math.floor(runOffset / RUN_PAGE_SIZE) + 1 }} 页</span>
               <div><button :disabled="runOffset === 0 || runsLoading" @click="changeRunPage(-1)">上一页</button><button :disabled="!runsHaveMore || runsLoading" @click="changeRunPage(1)">下一页</button></div>
+            </footer>
+          </template>
+
+          <template v-else-if="resourceTab === 'legacy-smoke'">
+            <div class="case-toolbar">
+              <small>旧 Smoke catalog 仅作为只读历史快照展示，不支持领取、执行或直接回归。</small>
+              <button @click="loadLegacySmokeRuns(undefined)">刷新</button>
+            </div>
+            <div v-if="legacySmokeBindings.length" class="case-toolbar">
+              <small>已绑定 Scope：{{ legacySmokeBindings.join("、") }}</small>
+              <button v-for="scope in legacySmokeBindings" :key="scope" @click="unbindLegacySmokeScope(scope)">解绑 {{ scope }}</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>旧运行</th><th>Scope</th><th>原状态</th><th>统计</th><th>开始时间</th><th>用例摘要</th></tr></thead>
+                <tbody>
+                  <tr v-if="legacySmokeLoading"><td colspan="6" class="empty">正在加载旧冒烟历史…</td></tr>
+                  <tr v-for="run in legacySmokeRuns" v-else :key="run.legacy_run_id">
+                    <td><strong>{{ shortId(run.legacy_run_id) }}</strong><small>计划 {{ shortId(run.legacy_plan_id) }} · v{{ run.legacy_plan_version }}</small></td>
+                    <td>{{ run.project_scope }}</td>
+                    <td><span class="case-status" :class="run.legacy_status">{{ run.legacy_status }} / {{ run.legacy_verdict }}</span></td>
+                    <td><small>总计 {{ run.total_cases }} · 通过 {{ run.passed_cases }} · 失败 {{ run.failed_cases }} · 阻塞 {{ run.blocked_cases }}</small></td>
+                    <td>{{ formatServerDateTime(run.started_at) }}</td>
+                    <td><small v-for="item in run.case_results" :key="item.legacy_case_id">{{ item.title }}：{{ item.legacy_status }} → {{ item.mapped_status }}（证据 {{ item.evidence_count }}）</small></td>
+                  </tr>
+                  <tr v-if="!legacySmokeLoading && !legacySmokeRuns.length"><td colspan="6" class="empty">暂无已绑定的旧冒烟历史；请先输入人工确认的 project_scope。</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <footer class="pagination">
+              <span>第 {{ legacySmokeCursorStack.length + 1 }} 页</span>
+              <div><button :disabled="!legacySmokeCursorStack.length || legacySmokeLoading" @click="changeLegacySmokePage(-1)">上一页</button><button :disabled="!legacySmokeNextCursor || legacySmokeLoading" @click="changeLegacySmokePage(1)">下一页</button></div>
             </footer>
           </template>
 

@@ -14,6 +14,11 @@ from src.schemas.project import (
     ProjectStatus,
     ProjectUpdateRequest,
 )
+from src.schemas.legacy_smoke_history import (
+    LegacySmokeRunPage,
+    LegacySmokeScopeBinding,
+    LegacySmokeScopeBindingRequest,
+)
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -55,6 +60,63 @@ async def get_project(project_id: str, request: Request):
 async def get_project_overview(project_id: str, request: Request):
     try:
         return await request.app.state.project_overview_service.get(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/legacy-smoke-runs", response_model=LegacySmokeRunPage)
+async def list_legacy_smoke_runs(
+    project_id: str,
+    request: Request,
+    cursor: str | None = Query(default=None, max_length=1024),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    try:
+        return await request.app.state.legacy_smoke_history_service.list_runs(
+            project_id,
+            cursor=cursor,
+            limit=limit,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put(
+    "/{project_id}/legacy-smoke-bindings",
+    response_model=LegacySmokeScopeBinding,
+)
+async def bind_legacy_smoke_scope(
+    project_id: str,
+    payload: LegacySmokeScopeBindingRequest,
+    request: Request,
+):
+    try:
+        return await request.app.state.legacy_smoke_history_service.bind_scope(
+            project_id,
+            payload.project_scope,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/{project_id}/legacy-smoke-bindings/{project_scope}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unbind_legacy_smoke_scope(
+    project_id: str,
+    project_scope: str,
+    request: Request,
+):
+    try:
+        await request.app.state.legacy_smoke_history_service.unbind_scope(
+            project_id,
+            project_scope,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -24,6 +24,7 @@ class SmokeCatalogStore:
         self.version_table = "agent_smoke_plan_versions"
         self.run_table = "agent_smoke_run_history"
         self.regression_table = "agent_smoke_regression_candidates"
+        self.binding_table = "agent_smoke_project_scope_bindings"
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -57,6 +58,44 @@ class SmokeCatalogStore:
 
     async def save_regression_candidates(self, items: list[RegressionCandidateCase]) -> None:
         await asyncio.to_thread(self._save_regression_candidates_sync, items)
+
+    async def bind_project_scope(
+        self,
+        *,
+        project_id: str,
+        project_scope: str,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self._bind_project_scope_sync,
+            project_id,
+            project_scope,
+        )
+
+    async def unbind_project_scope(self, *, project_id: str, project_scope: str) -> bool:
+        return await asyncio.to_thread(
+            self._unbind_project_scope_sync,
+            project_id,
+            project_scope,
+        )
+
+    async def list_project_scope_bindings(self, project_id: str) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_project_scope_bindings_sync, project_id)
+
+    async def list_legacy_runs(
+        self,
+        *,
+        project_scopes: list[str],
+        cursor_started_at: datetime | None,
+        cursor_run_id: str | None,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        return await asyncio.to_thread(
+            self._list_legacy_runs_sync,
+            project_scopes,
+            cursor_started_at,
+            cursor_run_id,
+            limit,
+        )
 
     def _initialize_sync(self) -> None:
         with postgres_connect(self._settings) as conn:
@@ -149,8 +188,25 @@ class SmokeCatalogStore:
                     )
                     """
                 )
+                cur.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self.binding_table} (
+                        project_scope TEXT PRIMARY KEY,
+                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        created_at TIMESTAMPTZ NOT NULL
+                    )
+                    """
+                )
                 cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{self.plan_table}_project_updated ON {self.plan_table} (project_scope, updated_at DESC)")
                 cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{self.run_table}_plan_started ON {self.run_table} (plan_id, started_at DESC)")
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.run_table}_project_scope_started "
+                    f"ON {self.run_table} (project_scope, started_at DESC, run_id DESC)"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.binding_table}_project "
+                    f"ON {self.binding_table} (project_id, project_scope)"
+                )
 
     def _save_plan_sync(self, plan: SmokeExecutionPlan) -> None:
         now = datetime.now(timezone.utc)
@@ -378,6 +434,85 @@ class SmokeCatalogStore:
                             _parse_dt(item.updated_at) or datetime.now(timezone.utc),
                         ),
                     )
+
+    def _bind_project_scope_sync(self, project_id: str, project_scope: str) -> dict[str, Any]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT project_id, created_at FROM {self.binding_table} "
+                    "WHERE project_scope = %s FOR UPDATE",
+                    (project_scope,),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    existing_project_id = str(existing["project_id"])
+                    if existing_project_id != project_id:
+                        raise ValueError(
+                            "Legacy Smoke project_scope is already bound to another project: "
+                            f"{project_scope}"
+                        )
+                    return {
+                        "project_id": existing_project_id,
+                        "project_scope": project_scope,
+                        "created_at": existing["created_at"],
+                    }
+                now = datetime.now(timezone.utc)
+                cur.execute(
+                    f"INSERT INTO {self.binding_table} (project_scope, project_id, created_at) "
+                    "VALUES (%s, %s, %s) RETURNING project_id, project_scope, created_at",
+                    (project_scope, project_id, now),
+                )
+                row = cur.fetchone()
+        return dict(row)
+
+    def _unbind_project_scope_sync(self, project_id: str, project_scope: str) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM {self.binding_table} "
+                    "WHERE project_id = %s AND project_scope = %s",
+                    (project_id, project_scope),
+                )
+                return cur.rowcount == 1
+
+    def _list_project_scope_bindings_sync(self, project_id: str) -> list[dict[str, Any]]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT project_id, project_scope, created_at FROM {self.binding_table} "
+                    "WHERE project_id = %s ORDER BY project_scope ASC",
+                    (project_id,),
+                )
+                rows = cur.fetchall() or []
+        return [dict(row) for row in rows]
+
+    def _list_legacy_runs_sync(
+        self,
+        project_scopes: list[str],
+        cursor_started_at: datetime | None,
+        cursor_run_id: str | None,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        if not project_scopes:
+            return [], False
+        clauses = ["project_scope = ANY(%s)"]
+        parameters: list[Any] = [project_scopes]
+        if cursor_started_at is not None and cursor_run_id is not None:
+            clauses.append("(started_at < %s OR (started_at = %s AND run_id < %s))")
+            parameters.extend([cursor_started_at, cursor_started_at, cursor_run_id])
+        parameters.append(limit + 1)
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT run_id, plan_id, plan_version, project_scope, status, verdict, "
+                    f"total_cases, passed_cases, failed_cases, blocked_cases, started_at, "
+                    f"completed_at, metadata FROM {self.run_table} "
+                    f"WHERE {' AND '.join(clauses)} "
+                    "ORDER BY started_at DESC, run_id DESC LIMIT %s",
+                    tuple(parameters),
+                )
+                rows = cur.fetchall() or []
+        return [dict(row) for row in rows[:limit]], len(rows) > limit
 
 
 def _parse_dt(value: str) -> datetime | None:

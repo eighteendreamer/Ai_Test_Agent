@@ -91,6 +91,8 @@ import type {
   ProjectRecord,
   ProjectPage,
   ProjectOverview,
+  LegacySmokeRunPage,
+  LegacySmokeScopeBinding,
   RegressionBatchPage,
   RegressionContext,
   RegressionFailurePage,
@@ -159,6 +161,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(detail || `Request failed: ${response.status}`);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
@@ -192,6 +198,22 @@ export const api = {
   },
   getProjectOverview(projectId: string): Promise<ProjectOverview> {
     return request(`/api/v1/projects/${encodeURIComponent(projectId)}/overview`);
+  },
+  listLegacySmokeRuns(projectId: string, params: { cursor?: string; limit?: number } = {}): Promise<LegacySmokeRunPage> {
+    const query = new URLSearchParams({ limit: String(params.limit ?? 50) });
+    if (params.cursor) query.set("cursor", params.cursor);
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/legacy-smoke-runs?${query.toString()}`);
+  },
+  bindLegacySmokeScope(projectId: string, projectScope: string): Promise<LegacySmokeScopeBinding> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/legacy-smoke-bindings`, {
+      method: "PUT",
+      body: JSON.stringify({ project_scope: projectScope }),
+    });
+  },
+  unbindLegacySmokeScope(projectId: string, projectScope: string): Promise<void> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/legacy-smoke-bindings/${encodeURIComponent(projectScope)}`, {
+      method: "DELETE",
+    });
   },
   listTestCases(projectId: string, params: {
     status?: TestCaseLifecycleStatus;
