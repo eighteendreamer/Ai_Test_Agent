@@ -81,6 +81,8 @@ from src.application.test_suites.suite_service import TestSuiteService
 from src.application.test_suites.suite_store import PostgresTestSuiteStore
 from src.application.test_runs.run_service import TestRunService
 from src.application.test_runs.run_store import PostgresTestRunStore
+from src.application.test_runs.case_execution import CaseExecutionAdapter
+from src.application.test_runs.execution_service import TestRunExecutionService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -291,6 +293,25 @@ async def lifespan(app: FastAPI):
         runtime_control=runtime_control,
         security_bug_service=security_bug_service,
     )
+
+    def resolve_case_execution_tool(mode_key: str):
+        """从模式清单解析专业执行入口，避免在运行服务中复制模式映射。"""
+        mode = mode_registry.get(mode_key)
+        if mode.case_driven_policy != "required" or not mode.public_entry_tool_key:
+            raise ValueError(f"Mode does not provide a required case execution entry: {mode_key}")
+        return tool_registry.get(mode.public_entry_tool_key)
+
+    case_execution_adapter = CaseExecutionAdapter(
+        tool_resolver=resolve_case_execution_tool,
+        runtime_service=tool_runtime_service,
+        tool_job_service=tool_job_service,
+    )
+    test_run_execution_service = TestRunExecutionService(
+        run_service=test_run_service,
+        test_case_service=test_case_service,
+        adapter=case_execution_adapter,
+        session_store=store,
+    )
     graph = build_agent_graph(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
@@ -374,6 +395,8 @@ async def lifespan(app: FastAPI):
     app.state.test_suite_service = test_suite_service
     app.state.test_run_store = test_run_store
     app.state.test_run_service = test_run_service
+    app.state.case_execution_adapter = case_execution_adapter
+    app.state.test_run_execution_service = test_run_execution_service
     app.state.memory_backend = memory_runtime_service.backend
     app.state.ui_graph_backend = settings.ui_graph_backend
     app.state.permission_service = permission_service

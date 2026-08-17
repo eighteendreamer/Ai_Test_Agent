@@ -33,7 +33,188 @@ class VerificationService:
             if tool_key == "smoke-suite-runner":
                 results.append(self._from_smoke_suite_runner(session_id, turn_id, trace_id, item, output))
                 continue
+            if tool_key == "api-test-runner":
+                results.append(self._from_api_test_runner(session_id, turn_id, trace_id, item, output))
+                continue
+            if tool_key == "ui-automation-runner":
+                results.append(self._from_ui_automation_runner(session_id, turn_id, trace_id, item, output))
+                continue
+            if tool_key == "compatibility-test-runner":
+                results.append(self._from_compatibility_test_runner(session_id, turn_id, trace_id, item, output))
+                continue
         return results
+
+    def _from_api_test_runner(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        tool_result: dict[str, Any],
+        output: dict[str, Any],
+    ) -> VerificationResult:
+        """从 API Runner 的真实断言或聚合验证结果投影统一 Verification。"""
+        task_result = output.get("task_result") if isinstance(output.get("task_result"), dict) else {}
+        checks = task_result.get("check_results") if isinstance(task_result.get("check_results"), list) else []
+        if not checks and isinstance(output.get("checks"), list):
+            checks = output["checks"]
+        explicit = output.get("verification_result") if isinstance(output.get("verification_result"), dict) else {}
+        passed_count = sum(
+            1 for check in checks if isinstance(check, dict) and check.get("passed") is True
+        )
+        failed_count = sum(
+            1 for check in checks if isinstance(check, dict) and check.get("passed") is False
+        )
+        if explicit:
+            raw_status = str(explicit.get("status") or explicit.get("verdict") or "").lower()
+            passed_count = int(explicit.get("passed_count") or explicit.get("passed_rules") or passed_count)
+            failed_count = int(explicit.get("failed_count") or explicit.get("failed_rules") or failed_count)
+            if raw_status in {"passed", "pass", "ready", "success"} and failed_count == 0:
+                status = VerificationStatus.passed
+            elif raw_status in {"failed", "fail", "blocked"} or failed_count > 0:
+                status = VerificationStatus.failed
+            elif raw_status in {"partial", "warning"}:
+                status = VerificationStatus.partial
+            else:
+                status = VerificationStatus.not_run
+        elif checks and failed_count == 0 and passed_count == len(checks):
+            status = VerificationStatus.passed
+        elif failed_count > 0 or str(task_result.get("status") or "") == "failed":
+            status = VerificationStatus.failed
+        elif checks:
+            status = VerificationStatus.partial
+        else:
+            status = VerificationStatus.not_run
+        return VerificationResult(
+            id=str(uuid4()),
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            verifier="api-test-runner",
+            status=status,
+            summary=str(
+                explicit.get("summary")
+                or output.get("summary")
+                or tool_result.get("summary")
+                or "API Runner verification captured."
+            ),
+            assertion_count=len(checks) or int(explicit.get("assertion_count") or 0),
+            passed_count=passed_count,
+            failed_count=failed_count,
+            evidence=[
+                VerificationEvidence(
+                    source_type="tool_job",
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    label="api_runner_assertions",
+                    detail=str(output.get("summary") or ""),
+                    metadata={"task_id": task_result.get("task_id")},
+                )
+            ],
+            metadata={"tool_key": "api-test-runner", "task_status": task_result.get("status")},
+            created_at=datetime.utcnow(),
+        )
+
+    def _from_ui_automation_runner(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        tool_result: dict[str, Any],
+        output: dict[str, Any],
+    ) -> VerificationResult:
+        """UI 当前结构探索不等于用例断言通过；缺少执行证据时明确标记 not_run。"""
+        raw = output.get("verification_result") if isinstance(output.get("verification_result"), dict) else {}
+        checks = raw.get("checks") if isinstance(raw.get("checks"), list) else []
+        passed_count = sum(1 for item in checks if isinstance(item, dict) and item.get("passed") is True)
+        failed_count = sum(1 for item in checks if isinstance(item, dict) and item.get("passed") is False)
+        if checks and failed_count == 0 and passed_count == len(checks):
+            status = VerificationStatus.passed
+        elif failed_count > 0:
+            status = VerificationStatus.failed
+        elif checks:
+            status = VerificationStatus.partial
+        else:
+            status = VerificationStatus.not_run
+        artifacts = output.get("artifacts") if isinstance(output.get("artifacts"), list) else []
+        return VerificationResult(
+            id=str(uuid4()),
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            verifier="ui-automation-runner",
+            status=status,
+            summary=str(
+                raw.get("summary")
+                or output.get("summary")
+                or "UI 结构探索已记录，但没有可判定用例通过的断言证据。"
+            ),
+            assertion_count=len(checks),
+            passed_count=passed_count,
+            failed_count=failed_count,
+            evidence=[
+                VerificationEvidence(
+                    source_type="artifact",
+                    source_id=str(item.get("path") or uuid4()),
+                    label=str(item.get("label") or item.get("type") or "ui_artifact"),
+                    detail=str(item.get("path") or ""),
+                    metadata={"tool_key": "ui-automation-runner"},
+                )
+                for item in artifacts
+                if isinstance(item, dict)
+            ],
+            metadata={"tool_key": "ui-automation-runner", "phase": output.get("phase")},
+            created_at=datetime.utcnow(),
+        )
+
+    def _from_compatibility_test_runner(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        tool_result: dict[str, Any],
+        output: dict[str, Any],
+    ) -> VerificationResult:
+        """兼容性入口只派发任务；仅在 Runner 汇总含终态计数时形成通过/失败结论。"""
+        summary = output.get("runner_summary") if isinstance(output.get("runner_summary"), dict) else {}
+        completed_count = int(summary.get("completed") or summary.get("completed_count") or 0)
+        failed_count = int(summary.get("failed") or summary.get("failed_count") or 0)
+        pending_count = int(
+            summary.get("pending")
+            or summary.get("queued_count")
+            or summary.get("running_count")
+            or 0
+        )
+        total = int(summary.get("total") or summary.get("total_count") or 0)
+        if total > 0 and failed_count == 0 and pending_count == 0 and completed_count == total:
+            status = VerificationStatus.passed
+        elif failed_count > 0:
+            status = VerificationStatus.failed
+        elif completed_count > 0:
+            status = VerificationStatus.partial
+        else:
+            status = VerificationStatus.not_run
+        return VerificationResult(
+            id=str(uuid4()),
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            verifier="compatibility-test-runner",
+            status=status,
+            summary=str(output.get("summary") or tool_result.get("summary") or "兼容性任务已派发。"),
+            assertion_count=total,
+            passed_count=completed_count,
+            failed_count=failed_count,
+            evidence=[
+                VerificationEvidence(
+                    source_type="tool_job",
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    label="compatibility_runner_summary",
+                    detail=str(output.get("phase") or ""),
+                    metadata={"runner_summary": summary},
+                )
+            ],
+            metadata={"tool_key": "compatibility-test-runner", "phase": output.get("phase")},
+            created_at=datetime.utcnow(),
+        )
 
     def _from_api_tester(
         self,

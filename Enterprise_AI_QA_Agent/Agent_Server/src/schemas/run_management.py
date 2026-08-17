@@ -181,6 +181,10 @@ class RunItemHeartbeatRequest(RunItemLeaseRequest):
     lease_seconds: int = Field(default=90, ge=15, le=3600)
 
 
+class RunItemExecuteRequest(RunItemLeaseRequest):
+    pass
+
+
 class RunItemCompleteRequest(RunItemLeaseRequest):
     status: TestResultStatus
     summary: str = Field(min_length=1, max_length=4000)

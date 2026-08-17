@@ -855,6 +855,11 @@ class ApiTestingModeRuntime:
                 "content_type": item.get("content_type"),
                 "label": item.get("label"),
             }
+            content = item.get("content")
+            if isinstance(content, bytes):
+                artifact["content"] = content.decode("utf-8", errors="replace")
+            elif content is not None:
+                artifact["content"] = str(content)
             if item.get("task_id"):
                 artifact["task_id"] = item.get("task_id")
             metadata.append(artifact)

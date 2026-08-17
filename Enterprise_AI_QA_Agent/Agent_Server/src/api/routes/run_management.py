@@ -8,6 +8,7 @@ from src.schemas.run_management import (
     RunClaimRequest,
     RunClaimResponse,
     RunItemCompleteRequest,
+    RunItemExecuteRequest,
     RunItemHeartbeatRequest,
     RunItemLeaseRequest,
     TestCaseResultRecord,
@@ -120,6 +121,21 @@ async def complete_test_run_item(
     try:
         return await request.app.state.test_run_service.complete_item(item_id, payload)
     except (KeyError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/run-items/{item_id}/execute", response_model=TestCaseResultRecord)
+async def execute_test_run_item(
+    item_id: str,
+    payload: RunItemExecuteRequest,
+    request: Request,
+):
+    try:
+        return await request.app.state.test_run_execution_service.execute_item(
+            item_id,
+            payload,
+        )
+    except (KeyError, ValueError, RuntimeError) as exc:
         raise _http_error(exc) from exc
 
 

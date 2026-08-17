@@ -151,6 +151,10 @@ class TestRunService:
             raise KeyError(f"Test run not found: {run_id}")
         return detail
 
+    async def get_record(self, run_id: str) -> TestRunRecord:
+        """读取运行头，供 Worker 热路径使用，避免加载完整运行明细。"""
+        return await self._get_run_record(run_id)
+
     async def list(
         self,
         project_id: str,
