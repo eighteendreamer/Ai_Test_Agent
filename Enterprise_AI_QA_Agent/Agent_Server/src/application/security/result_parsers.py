@@ -548,21 +548,59 @@ class SecurityResultParserRegistry:
     """Registry of all security tool output parsers."""
 
     def __init__(self) -> None:
-        self._parsers: dict[str, BaseSecurityParser] = {
-            "nmap": NmapParser(),
-            "httpx": HttpxParser(),
-            "whatweb": WhatwebParser(),
-            "http_headers": HttpHeadersParser(),
-            "ffuf": FfufParser(),
-            "gobuster": FfufParser(),   # similar output format
-            "nikto": NiktoParser(),
-            "nuclei": NucleiParser(),
-            "sqlmap": SqlmapParser(),
-            "hydra": HydraParser(),
-            "sslscan": SslscanParser(),
-            "searchsploit": SearchsploitParser(),
-            "tcpdump": TcpdumpParser(),
+        specs: dict[str, tuple[BaseSecurityParser, tuple[str, ...]]] = {
+            "nmap": (
+                NmapParser(),
+                ("tool", "hosts", "open_ports", "host_count", "open_port_count"),
+            ),
+            "httpx": (HttpxParser(), ("tool", "results", "live_count")),
+            "whatweb": (WhatwebParser(), ("tool", "results")),
+            "http_headers": (
+                HttpHeadersParser(),
+                (
+                    "tool",
+                    "url",
+                    "status_code",
+                    "headers",
+                    "header_count",
+                    "missing_security_headers",
+                    "present_security_headers",
+                ),
+            ),
+            "ffuf": (FfufParser(), ("tool", "findings", "finding_count")),
+            "gobuster": (FfufParser(), ("tool", "findings", "finding_count")),
+            "nikto": (
+                NiktoParser(),
+                ("tool", "target", "findings", "finding_count"),
+            ),
+            "nuclei": (
+                NucleiParser(),
+                (
+                    "tool",
+                    "findings",
+                    "finding_count",
+                    "critical_count",
+                    "high_count",
+                    "medium_count",
+                ),
+            ),
+            "sqlmap": (
+                SqlmapParser(),
+                ("tool", "vulnerable", "dbms", "injections", "injection_count"),
+            ),
+            "hydra": (HydraParser(), ("tool", "credentials_found", "credential_count")),
+            "sslscan": (
+                SslscanParser(),
+                ("tool", "issues", "weak_protocols", "weak_ciphers", "issue_count"),
+            ),
+            "searchsploit": (
+                SearchsploitParser(),
+                ("tool", "exploits", "exploit_count"),
+            ),
+            "tcpdump": (TcpdumpParser(), ("tool", "packet_count", "endpoints", "sample")),
         }
+        self._parsers = {key: spec[0] for key, spec in specs.items()}
+        self._required_fields = {key: spec[1] for key, spec in specs.items()}
 
     def parse(self, parser_key: str, raw_output: str) -> dict[str, Any]:
         """Parse raw tool output using the registered parser."""
@@ -584,6 +622,11 @@ class SecurityResultParserRegistry:
 
     def has_parser(self, parser_key: str) -> bool:
         return parser_key in self._parsers
+
+    def required_fields(self, parser_key: str) -> list[str]:
+        if parser_key not in self._parsers:
+            return []
+        return list(self._required_fields[parser_key])
 
 
 # Module-level singleton

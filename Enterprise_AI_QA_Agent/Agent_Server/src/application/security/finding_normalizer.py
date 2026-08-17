@@ -14,6 +14,15 @@ class FindingNormalizer:
     """Normalize tool parser output into FindingRecord objects."""
 
     _IMPACT_LEVELS = {"none", "low", "medium", "high"}
+    _NORMALIZER_METHODS = {
+        "nmap": "from_nmap",
+        "nuclei": "from_nuclei",
+        "sqlmap": "from_sqlmap",
+        "nikto": "from_nikto",
+        "hydra": "from_hydra",
+        "http_headers": "from_http_headers_result",
+        "data_impact": "from_data_impact_result",
+    }
 
     def from_nmap(self, parsed: dict[str, Any], task_id: str = "") -> list[FindingRecord]:
         findings: list[FindingRecord] = []
@@ -301,19 +310,15 @@ class FindingNormalizer:
         self, parser_key: str, parsed: dict[str, Any], task_id: str = ""
     ) -> list[FindingRecord]:
         """Dispatch to the appropriate normalizer based on parser key."""
-        dispatch = {
-            "nmap": self.from_nmap,
-            "nuclei": self.from_nuclei,
-            "sqlmap": self.from_sqlmap,
-            "nikto": self.from_nikto,
-            "hydra": self.from_hydra,
-            "http_headers": self.from_http_headers_result,
-            "data_impact": self.from_data_impact_result,
-        }
-        fn = dispatch.get(parser_key)
-        if fn is None:
+        method_name = self._NORMALIZER_METHODS.get(parser_key)
+        if method_name is None:
             return []
+        fn = getattr(self, method_name)
         return fn(parsed, task_id=task_id)
+
+    @classmethod
+    def supports_parser(cls, parser_key: str) -> bool:
+        return parser_key in cls._NORMALIZER_METHODS
 
     @staticmethod
     def _string_list(value: Any) -> list[str]:

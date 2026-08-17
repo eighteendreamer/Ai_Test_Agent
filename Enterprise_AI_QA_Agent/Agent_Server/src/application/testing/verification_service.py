@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
+from src.application.security.command_profiles import get_profile_registry
 from src.schemas.session import VerificationEvidence, VerificationResult, VerificationStatus
 
 
@@ -94,6 +95,12 @@ class VerificationService:
             else {}
         )
         findings = output.get("findings") if isinstance(output.get("findings"), list) else []
+        profile_key = str(output.get("command_profile") or "").strip()
+        profile_registry = get_profile_registry()
+        try:
+            profile_registry.verification_capabilities(profile_key)
+        except KeyError:
+            profile_key = ""
         runner_ok = (
             str(output.get("status") or "").lower() == "completed"
             and output.get("ok") is True
@@ -101,6 +108,8 @@ class VerificationService:
         )
         assertion_results: list[dict[str, Any]] = []
         unsupported_kinds: list[str] = []
+        unsupported_operators: list[str] = []
+        unsupported_targets: list[str] = []
         for assertion in assertions:
             if not isinstance(assertion, dict):
                 unsupported_kinds.append("invalid")
@@ -108,19 +117,39 @@ class VerificationService:
             kind = str(assertion.get("kind") or "").strip().lower()
             operator = str(assertion.get("operator") or "equals").strip().lower()
             expected = assertion.get("expected")
+            if profile_key:
+                validation_error = profile_registry.validate_assertion(
+                    profile_key,
+                    kind=kind,
+                    target=str(assertion.get("target") or ""),
+                    operator=operator,
+                )
+            else:
+                validation_error = (
+                    None
+                    if kind == "runner_success" and operator in {"equals", "not_equals"}
+                    else "unsupported_assertion_kind"
+                )
+            if validation_error == "unsupported_assertion_kind":
+                unsupported_kinds.append(kind or "missing")
+                continue
+            if validation_error == "unsupported_assertion_operator":
+                unsupported_operators.append(f"{kind}:{operator}")
+                continue
             if kind == "runner_success":
                 actual = runner_ok
                 expected = True if expected is None else expected
             elif kind == "finding_count":
                 actual = len(findings)
             elif kind == "parsed_field":
+                target = str(assertion.get("target") or "")
+                if validation_error == "unsupported_assertion_target":
+                    unsupported_targets.append(target or "<empty>")
+                    continue
                 actual = self._read_dotted_path(
                     parsed_result,
-                    str(assertion.get("target") or ""),
+                    target,
                 )
-            else:
-                unsupported_kinds.append(kind or "missing")
-                continue
             assertion_results.append(
                 {
                     "kind": kind,
@@ -184,6 +213,8 @@ class VerificationService:
                 "finding_count": len(findings),
                 "assertion_results": assertion_results,
                 "unsupported_assertion_kinds": sorted(set(unsupported_kinds)),
+                "unsupported_assertion_operators": sorted(set(unsupported_operators)),
+                "unsupported_assertion_targets": sorted(set(unsupported_targets)),
             },
             created_at=datetime.utcnow(),
         )

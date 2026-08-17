@@ -8,6 +8,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.application.security.finding_normalizer import FindingNormalizer
+from src.application.security.result_parsers import get_parser_registry
+
+
+RUNNER_SUCCESS_OPERATORS = ["equals", "not_equals"]
+COUNT_ASSERTION_OPERATORS = ["equals", "not_equals", "lt", "lte", "gt", "gte"]
+PARSED_FIELD_OPERATORS = [
+    "equals",
+    "not_equals",
+    "contains",
+    "not_contains",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
+]
+
 
 @dataclass
 class SecurityCommandProfile:
@@ -49,6 +66,46 @@ class SecurityCommandProfileRegistry:
 
     def list_by_surface(self, surface_type: str) -> list[SecurityCommandProfile]:
         return [p for p in self._profiles.values() if surface_type in p.surface_types]
+
+    def verification_capabilities(self, profile_key: str) -> dict[str, Any]:
+        profile = self.get(profile_key)
+        if profile is None:
+            raise KeyError(f"Unknown security command profile: {profile_key}")
+        parser_registry = get_parser_registry()
+        parsed_fields = parser_registry.required_fields(profile.parser_key)
+        assertions: dict[str, list[str]] = {
+            "runner_success": list(RUNNER_SUCCESS_OPERATORS),
+        }
+        if FindingNormalizer.supports_parser(profile.parser_key):
+            assertions["finding_count"] = list(COUNT_ASSERTION_OPERATORS)
+        if parsed_fields:
+            assertions["parsed_field"] = list(PARSED_FIELD_OPERATORS)
+        return {
+            "structured_output": bool(parsed_fields),
+            "parsed_fields": parsed_fields,
+            "assertions": assertions,
+        }
+
+    def validate_assertion(
+        self,
+        profile_key: str,
+        *,
+        kind: str,
+        target: str,
+        operator: str,
+    ) -> str | None:
+        kind = str(kind or "").strip().lower()
+        target = str(target or "").strip()
+        operator = str(operator or "equals").strip().lower()
+        capabilities = self.verification_capabilities(profile_key)
+        operators = capabilities["assertions"].get(kind)
+        if operators is None:
+            return "unsupported_assertion_kind"
+        if operator not in operators:
+            return "unsupported_assertion_operator"
+        if kind == "parsed_field" and target not in capabilities["parsed_fields"]:
+            return "unsupported_assertion_target"
+        return None
 
     def build_command(self, profile_key: str, arguments: dict[str, Any]) -> str | None:
         """Render the command template with provided arguments."""

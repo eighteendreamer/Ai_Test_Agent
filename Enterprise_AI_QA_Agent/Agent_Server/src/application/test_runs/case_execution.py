@@ -9,6 +9,7 @@ from src.application.runtime.tool_runtime_service import (
     ToolRuntimeService,
 )
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.security.command_profiles import get_profile_registry
 from src.application.testing.verification_service import VerificationService
 from src.schemas.agent import ToolDescriptor
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
@@ -411,6 +412,35 @@ class CaseExecutionAdapter:
             raise CaseExecutionBlockedError(
                 f"Security test case requires explicit command_profile: {version.id}"
             )
+        registry = get_profile_registry()
+        profile = registry.get(profile_key)
+        if profile is None:
+            raise CaseExecutionBlockedError(
+                f"Security test case references unknown command_profile {profile_key}: {version.id}"
+            )
+        registry.verification_capabilities(profile_key)
+        for assertion in version.assertions:
+            validation_error = registry.validate_assertion(
+                profile_key,
+                kind=assertion.kind,
+                target=assertion.target,
+                operator=assertion.operator,
+            )
+            if validation_error == "unsupported_assertion_kind":
+                raise CaseExecutionBlockedError(
+                    f"Security profile {profile_key} does not support assertion kind "
+                    f"{assertion.kind}: {version.id}"
+                )
+            if validation_error == "unsupported_assertion_operator":
+                raise CaseExecutionBlockedError(
+                    f"Security profile {profile_key} does not support operator "
+                    f"{assertion.operator} for {assertion.kind}: {version.id}"
+                )
+            if validation_error == "unsupported_assertion_target":
+                raise CaseExecutionBlockedError(
+                    f"Security profile {profile_key} does not expose parsed field "
+                    f"{assertion.target or '<empty>'}: {version.id}"
+                )
         target = resolve_security_case_target(version, arguments)
         if not target:
             raise CaseExecutionBlockedError(

@@ -42,3 +42,18 @@ def test_projects_view_lazily_opens_public_evidence_and_batch_timeline():
     assert "regressionDrawerOpen" in source
     assert "证据与回归时间线" in source
     assert "artifact.content_url" in source
+
+
+def test_security_profile_frontend_contract_consumes_capability_matrix():
+    types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
+    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    view_source = (
+        WEB_ROOT / "features" / "tools" / "plugins" / "ScannersPlugin.vue"
+    ).read_text(encoding="utf-8")
+
+    assert "verification_capabilities" in types_source
+    assert "listSecurityProfiles()" in api_source
+    assert "/api/v1/registry/security-profiles" in api_source
+    assert "Verification Contract" in view_source
+    assert "selectedProfile.verification_capabilities.assertions" in view_source
+    assert "selectedProfile.verification_capabilities.parsed_fields" in view_source

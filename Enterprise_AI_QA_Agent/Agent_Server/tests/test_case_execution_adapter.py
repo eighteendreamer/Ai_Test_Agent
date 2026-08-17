@@ -290,6 +290,10 @@ def test_security_adapter_requires_explicit_profile_and_preserves_trusted_contex
     case, version, run, item = _fixture("security_testing")
     version = version.model_copy(
         update={
+            "assertions": [
+                _CaseAssertion(kind="runner_success", expected=True),
+                _CaseAssertion(kind="parsed_field", target="status_code", expected=200),
+            ],
             "test_data": {
                 "runner_arguments": {
                     "command_profile": "http_headers_probe",
@@ -326,6 +330,97 @@ def test_security_adapter_requires_explicit_profile_and_preserves_trusted_contex
     assert invocation.call.arguments["command_profile"] == "http_headers_probe"
     assert invocation.call.arguments["task"]["target"] == "https://example.test"
     assert invocation.context.context_bundle["trusted_security_authorization"]["status"] == "verified"
+
+
+def test_security_adapter_accepts_assertions_declared_by_selected_profile():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "assertions": [
+                _CaseAssertion(kind="runner_success", expected=True),
+                _CaseAssertion(kind="parsed_field", target="status_code", expected=200),
+            ],
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "http_headers_probe",
+                    "target": "https://example.test",
+                }
+            },
+        }
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    invocation = adapter.build_invocation(case=case, version=version, run=run, item=item)
+
+    assert invocation.call.arguments["command_profile"] == "http_headers_probe"
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "assertion", "message"),
+    [
+        (
+            "whatweb_fingerprint",
+            _CaseAssertion(kind="finding_count", operator="lte", expected=0),
+            "does not support assertion kind",
+        ),
+        (
+            "http_headers_probe",
+            _CaseAssertion(kind="parsed_field", target="unknown_field", expected="value"),
+            "does not expose parsed field",
+        ),
+        (
+            "http_headers_probe",
+            _CaseAssertion(
+                kind="parsed_field",
+                target="headers.x-frame-options",
+                expected="DENY",
+            ),
+            "does not expose parsed field",
+        ),
+        (
+            "http_headers_probe",
+            _CaseAssertion(kind="finding_count", operator="contains", expected=0),
+            "does not support operator",
+        ),
+    ],
+)
+def test_security_adapter_blocks_assertions_outside_selected_profile_capabilities(
+    profile_key,
+    assertion,
+    message,
+):
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "assertions": [assertion],
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": profile_key,
+                    "target": "https://example.test",
+                }
+            },
+        }
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        adapter.build_invocation(case=case, version=version, run=run, item=item)
 
 
 def test_security_adapter_blocks_missing_profile():

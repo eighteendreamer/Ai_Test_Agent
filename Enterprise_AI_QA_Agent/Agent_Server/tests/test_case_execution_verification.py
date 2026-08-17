@@ -166,6 +166,34 @@ def test_security_runner_without_assertions_is_not_run():
     assert result.passed_count == 0
 
 
+def test_security_runner_does_not_pass_finding_count_without_profile_normalizer_support():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(command_profile="whatweb_fingerprint"),
+        context_bundle=_security_context(
+            {"kind": "finding_count", "operator": "equals", "expected": 0},
+        ),
+    )
+
+    assert result.status.value == "not_run"
+    assert result.passed_count == 0
+    assert result.metadata["unsupported_assertion_kinds"] == ["finding_count"]
+
+
+def test_security_runner_does_not_treat_unknown_parsed_field_as_a_failed_supported_check():
+    result = _verify(
+        "security-scan-runner",
+        _security_output(),
+        context_bundle=_security_context(
+            {"kind": "parsed_field", "target": "unknown_field", "expected": "value"},
+        ),
+    )
+
+    assert result.status.value == "not_run"
+    assert result.failed_count == 0
+    assert result.metadata["unsupported_assertion_targets"] == ["unknown_field"]
+
+
 def test_ui_exploration_success_is_not_reported_as_test_case_passed():
     result = _verify(
         "ui-automation-runner",

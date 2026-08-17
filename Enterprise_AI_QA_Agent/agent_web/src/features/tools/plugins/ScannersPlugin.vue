@@ -196,6 +196,53 @@ onMounted(loadProfiles);
               </span>
             </div>
           </div>
+
+          <div class="detail-block">
+            <h5 class="block-title">Verification Contract</h5>
+            <div class="detail-row">
+              <label>Parser</label>
+              <div class="code-box">
+                {{ selectedProfile.parser_key || "Raw evidence only" }}
+              </div>
+            </div>
+            <div class="detail-row">
+              <label>Allowed Arguments</label>
+              <div class="detail-tags">
+                <span v-for="argument in selectedProfile.allowed_arguments" :key="argument" class="surface-tag">
+                  {{ argument }}
+                </span>
+              </div>
+            </div>
+            <div class="detail-row">
+              <label>Assertions</label>
+              <div class="detail-tags">
+                <span
+                  v-for="operators, kind in selectedProfile.verification_capabilities.assertions"
+                  :key="kind"
+                  class="surface-tag"
+                  :title="operators.join(', ')"
+                >
+                  {{ kind }}
+                </span>
+              </div>
+            </div>
+            <div v-if="selectedProfile.verification_capabilities.structured_output" class="detail-row">
+              <label>Parsed Fields</label>
+              <div class="detail-tags">
+                <span
+                  v-for="field in selectedProfile.verification_capabilities.parsed_fields"
+                  :key="field"
+                  class="surface-tag"
+                >
+                  {{ field }}
+                </span>
+              </div>
+            </div>
+            <div class="detail-row">
+              <label>Evidence Policy</label>
+              <div class="code-box">{{ selectedProfile.artifact_policy }}</div>
+            </div>
+          </div>
         </div>
       </div>
     </NDrawer>

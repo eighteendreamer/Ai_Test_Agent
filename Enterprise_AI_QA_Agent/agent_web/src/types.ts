@@ -1756,9 +1756,18 @@ export interface SecurityProfileDescriptor {
   description: string;
   tool_family: string;
   surface_types: string[];
+  allowed_arguments: string[];
   risk_level: string;
   requires_approval: boolean;
   timeout_seconds: number;
+  parser_key: string;
+  artifact_policy: string;
+  notes: string;
+  verification_capabilities: {
+    structured_output: boolean;
+    parsed_fields: string[];
+    assertions: Record<string, string[]>;
+  };
 }
 
 export interface SecurityFamilyGroup {

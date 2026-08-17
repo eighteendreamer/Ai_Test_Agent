@@ -121,9 +121,16 @@ class RegistryService:
                 "description": p.description,
                 "tool_family": p.tool_family,
                 "surface_types": list(p.surface_types),
+                "allowed_arguments": list(p.allowed_arguments),
                 "risk_level": p.risk_level,
                 "requires_approval": p.requires_approval,
                 "timeout_seconds": p.timeout_seconds,
+                "parser_key": p.parser_key,
+                "artifact_policy": p.artifact_policy,
+                "notes": p.notes,
+                "verification_capabilities": registry.verification_capabilities(
+                    p.profile_key
+                ),
             })
         families = [
             {
