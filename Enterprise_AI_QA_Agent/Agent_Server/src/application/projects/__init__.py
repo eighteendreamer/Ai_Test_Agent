@@ -1,0 +1,1 @@
+"""Project aggregate application services."""

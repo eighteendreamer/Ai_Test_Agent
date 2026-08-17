@@ -736,6 +736,7 @@ export interface SessionSummary {
   session_mode: SessionMode;
   runtime_mode: RuntimeMode;
   mode_key: ModeKey | string;
+  project_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1011,6 +1012,8 @@ export interface ApiDocRecord {
   id: string;
   title: string;
   filename: string;
+  project_id?: string | null;
+  legacy_project_name?: string | null;
   project_name?: string | null;
   project_url?: string | null;
   source: string;
@@ -1035,12 +1038,14 @@ export interface ApiDocUploadRequest {
   content_base64: string;
   source?: string;
   title?: string | null;
+  project_id?: string | null;
   project_name?: string | null;
   project_url?: string | null;
 }
 
 export interface ApiDocUpdateRequest {
   title?: string | null;
+  project_id?: string | null;
   project_name?: string | null;
   project_url?: string | null;
 }
@@ -1048,6 +1053,7 @@ export interface ApiDocUpdateRequest {
 export interface ApiDocImportUrlRequest {
   url: string;
   title?: string | null;
+  project_id?: string | null;
   project_name?: string | null;
   project_url?: string | null;
   source?: string;
@@ -1056,6 +1062,7 @@ export interface ApiDocImportUrlRequest {
 export interface ApiDocImportIntegrationRequest {
   integration_id: string;
   title?: string | null;
+  project_id?: string | null;
   project_name?: string | null;
   project_url?: string | null;
   document_url?: string | null;
@@ -1065,6 +1072,44 @@ export interface ApiDocImportIntegrationRequest {
 }
 
 export type IntegrationKind = "mcp" | "api";
+
+export type ProjectStatus = "active" | "archived";
+
+export interface ProjectRecord {
+  id: string;
+  project_key: string;
+  name: string;
+  description?: string | null;
+  base_url?: string | null;
+  graph_scope_key?: string | null;
+  status: ProjectStatus;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+}
+
+export interface ProjectPage {
+  items: ProjectRecord[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface ProjectOverview {
+  project: ProjectRecord;
+  api_doc_count: number;
+  session_count: number;
+  graph: {
+    available: boolean;
+    project_scope?: string | null;
+    page_count: number;
+    element_count: number;
+    entity_count: number;
+    edge_count: number;
+    error?: string | null;
+  };
+}
 export type IntegrationTransport = "stdio" | "http" | "websocket";
 export type IntegrationAuthType = "none" | "bearer" | "api_key" | "basic";
 

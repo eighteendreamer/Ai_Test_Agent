@@ -9,6 +9,8 @@ class ApiDocRecord(BaseModel):
     id: str
     title: str
     filename: str
+    project_id: str | None = None
+    legacy_project_name: str | None = None
     project_name: str | None = None
     project_url: str | None = None
     source: str = "manual_upload"
@@ -33,12 +35,14 @@ class ApiDocUploadRequest(BaseModel):
     content_base64: str
     source: str = "manual_upload"
     title: str | None = None
+    project_id: str | None = None
     project_name: str | None = None
     project_url: str | None = None
 
 
 class ApiDocUpdateRequest(BaseModel):
     title: str | None = None
+    project_id: str | None = None
     project_name: str | None = None
     project_url: str | None = None
 
@@ -46,6 +50,7 @@ class ApiDocUpdateRequest(BaseModel):
 class ApiDocImportUrlRequest(BaseModel):
     url: str
     title: str | None = None
+    project_id: str | None = None
     project_name: str | None = None
     project_url: str | None = None
     source: str = "tools_api_docs_url"
@@ -54,6 +59,7 @@ class ApiDocImportUrlRequest(BaseModel):
 class ApiDocImportIntegrationRequest(BaseModel):
     integration_id: str
     title: str | None = None
+    project_id: str | None = None
     project_name: str | None = None
     project_url: str | None = None
     document_url: str | None = None

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     postgres_tool_artifact_table: str = "agent_tool_artifacts"
     postgres_session_resource_table: str = "agent_session_resources"
     postgres_security_bug_table: str = "agent_security_bugs"
+    postgres_project_table: str = "agent_projects"
+    postgres_api_doc_table: str = "agent_api_docs"
     postgres_mcp_server_table: str = "agent_mcp_servers"
     postgres_vector_dimension: int = 1536
     memgraph_host: str = "127.0.0.1"

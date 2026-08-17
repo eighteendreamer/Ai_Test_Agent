@@ -21,6 +21,7 @@ from src.api.routes.health import router as health_router
 from src.api.routes.integrations import router as integrations_router
 from src.api.routes.knowledge import router as knowledge_router
 from src.api.routes.oauth import router as oauth_router
+from src.api.routes.projects import router as projects_router
 from src.api.routes.reports import router as reports_router
 from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
@@ -33,6 +34,7 @@ from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.compatibility import CompatibilityRunnerService
 from src.application.documents.api_docs_service import ApiDocsService
+from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
 from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
@@ -52,6 +54,9 @@ from src.application.context.observation_runtime_service import ObservationRunti
 from src.application.permissions.permission_service import PermissionService
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.prompting.prompt_service import PromptSubmissionService
+from src.application.projects.project_service import ProjectService
+from src.application.projects.project_overview_service import ProjectOverviewService
+from src.application.projects.project_store import PostgresProjectStore
 from src.application.registries.registry_service import RegistryService
 from src.application.report_service import ReportService
 from src.application.resources.session_resource_service import SessionResourceService
@@ -90,6 +95,9 @@ from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    project_store = PostgresProjectStore(settings)
+    project_service = ProjectService(store=project_store)
+    await project_service.initialize()
     store = PostgresSessionStore(settings)
     await store.initialize()
     task_pool_service = TaskPoolService(store=store)
@@ -129,11 +137,15 @@ async def lifespan(app: FastAPI):
         settings=settings,
         artifact_storage_service=artifact_storage_service,
     )
+    api_doc_store = PostgresApiDocStore(settings)
     api_docs_service = ApiDocsService(
         settings=settings,
         artifact_storage_service=artifact_storage_service,
         upload_security_service=upload_security_service,
+        catalog_store=api_doc_store,
+        project_service=project_service,
     )
+    await api_docs_service.initialize()
     integration_catalog_service = IntegrationCatalogService(
         settings=settings,
     )
@@ -179,6 +191,12 @@ async def lifespan(app: FastAPI):
     )
     await security_bug_service.initialize()
     knowledge_graph_service = KnowledgeGraphService(settings=settings)
+    project_overview_service = ProjectOverviewService(
+        project_service=project_service,
+        api_doc_store=api_doc_store,
+        session_store=store,
+        knowledge_graph_service=knowledge_graph_service,
+    )
     tool_job_service = ToolJobService(
         store=tool_job_store,
         heartbeat_timeout_seconds=settings.tool_job_heartbeat_timeout_seconds,
@@ -276,6 +294,9 @@ async def lifespan(app: FastAPI):
     app.state.artifact_storage_service = artifact_storage_service
     app.state.upload_security_service = upload_security_service
     app.state.api_docs_service = api_docs_service
+    app.state.api_doc_store = api_doc_store
+    app.state.project_store = project_store
+    app.state.project_service = project_service
     app.state.integration_catalog_service = integration_catalog_service
     app.state.mcp_server_store = mcp_server_store
     app.state.mcp_tool_bridge = mcp_tool_bridge
@@ -295,6 +316,7 @@ async def lifespan(app: FastAPI):
     app.state.report_service = report_service
     app.state.tool_job_backend = settings.tool_job_backend
     app.state.knowledge_graph_service = knowledge_graph_service
+    app.state.project_overview_service = project_overview_service
     app.state.memory_backend = memory_runtime_service.backend
     app.state.ui_graph_backend = settings.ui_graph_backend
     app.state.permission_service = permission_service
@@ -326,6 +348,7 @@ async def lifespan(app: FastAPI):
         observation_runtime_service=observation_runtime_service,
         transcript_hygiene_service=transcript_hygiene_service,
         session_resource_service=session_resource_service,
+        project_service=project_service,
     )
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
@@ -385,6 +408,7 @@ app.include_router(knowledge_router, prefix=settings.api_v1_prefix)
 app.include_router(registry_router, prefix=settings.api_v1_prefix)
 app.include_router(attachments_router, prefix=settings.api_v1_prefix)
 app.include_router(api_docs_router, prefix=settings.api_v1_prefix)
+app.include_router(projects_router, prefix=settings.api_v1_prefix)
 app.include_router(compatibility_router, prefix=settings.api_v1_prefix)
 app.include_router(integrations_router, prefix=settings.api_v1_prefix)
 app.include_router(reports_router, prefix=settings.api_v1_prefix)

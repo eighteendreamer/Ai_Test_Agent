@@ -19,6 +19,7 @@ class SessionRecord:
     updated_at: datetime
     preferred_model: str | None = None
     selected_agent: str | None = None
+    project_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[ChatMessage] = field(default_factory=list)
     event_count: int = 0

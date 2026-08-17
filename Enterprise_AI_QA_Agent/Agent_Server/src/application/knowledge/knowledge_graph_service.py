@@ -58,6 +58,45 @@ class KnowledgeGraphService:
             self._last_failure = (time.monotonic(), str(exc))
             raise
 
+    async def get_project_summary(self, project_scope: str) -> KnowledgeProjectSummary:
+        scope = str(project_scope or "").strip()
+        if not scope:
+            raise ValueError("project_scope is required")
+        return await asyncio.to_thread(self._get_project_summary_sync, scope)
+
+    def _get_project_summary_sync(self, project_scope: str) -> KnowledgeProjectSummary:
+        rows = self._provider.execute(
+            """
+            MATCH (n:Page {project_scope: $project_scope})
+            RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'page_count' AS count_field
+            UNION ALL
+            MATCH (n:Element {project_scope: $project_scope})
+            RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'element_count' AS count_field
+            UNION ALL
+            MATCH (n:Entity {project_scope: $project_scope})
+            RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'entity_count' AS count_field
+            UNION ALL
+            MATCH ()-[r]->()
+            WHERE r.project_scope = $project_scope
+            RETURN count(r) AS total, max(r.updated_at) AS latest_updated_at, 'edge_count' AS count_field
+            """,
+            {"project_scope": project_scope},
+        )
+        counts = {"page_count": 0, "element_count": 0, "entity_count": 0, "edge_count": 0}
+        latest = None
+        for row in rows:
+            field = str(row.get("count_field") or "")
+            if field in counts:
+                counts[field] = int(row.get("total") or 0)
+            value = self._parse_datetime(row.get("latest_updated_at"))
+            if value and (latest is None or value > latest):
+                latest = value
+        return KnowledgeProjectSummary(
+            project_scope=project_scope,
+            latest_updated_at=latest,
+            **counts,
+        )
+
     async def delete_project(self, project_scope: str) -> KnowledgeProjectDeleteResponse:
         cached_error = self._cached_failure_message()
         if cached_error is not None:

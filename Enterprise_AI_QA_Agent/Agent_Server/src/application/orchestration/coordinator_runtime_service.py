@@ -172,6 +172,7 @@ class CoordinatorRuntimeService:
                     mode_key=mode_key,
                     preferred_model=worker.model_key,
                     selected_agent=worker.agent_key,
+                    project_id=parent_session.project_id,
                     metadata={
                         "parent_session_id": parent_session_id,
                         "parent_turn_id": parent_turn_id,
@@ -1058,6 +1059,7 @@ class CoordinatorRuntimeService:
                 mode_key=self._resolve_worker_mode_key(worker),
                 preferred_model=worker.model_key,
                 selected_agent=worker.agent_key,
+                project_id=parent_session.project_id,
                 metadata={
                     "parent_session_id": parent_session_id,
                     "parent_turn_id": parent_turn_id,
@@ -1202,6 +1204,7 @@ class CoordinatorRuntimeService:
                     mode_key=self._resolve_worker_mode_key(worker),
                     preferred_model=worker.model_key,
                     selected_agent=worker.agent_key,
+                    project_id=parent_session.project_id,
                     metadata={
                         "parent_session_id": parent_session_id,
                         "parent_turn_id": parent_turn_id,

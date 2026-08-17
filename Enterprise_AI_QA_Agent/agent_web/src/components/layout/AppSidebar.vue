@@ -9,6 +9,7 @@ const appStore = useAppStore();
 const navItems = computed(() => [
   { to: "/home", icon: "fa-house", title: t("nav.home") },
   { to: "/taskpool", icon: "fa-list-check", title: t("nav.taskpool") },
+  { to: "/projects", icon: "fa-diagram-project", title: t("nav.projects") },
   { to: "/knowledge", icon: "fa-database", title: t("nav.knowledge") },
   { to: "/tools", icon: "fa-toolbox", title: t("nav.tools") },
   { to: "/reports", icon: "fa-file-contract", title: t("nav.reports") },

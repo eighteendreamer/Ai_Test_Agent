@@ -131,6 +131,7 @@ class SessionSummary(BaseModel):
     session_mode: SessionMode
     runtime_mode: RuntimeMode
     mode_key: str = "default"
+    project_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -163,6 +164,7 @@ class CreateSessionRequest(BaseModel):
     session_mode: SessionMode = SessionMode.normal
     runtime_mode: RuntimeMode = RuntimeMode.interactive
     mode_key: str = "default"
+    project_id: str | None = None
     preferred_model: str | None = None
     selected_agent: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -170,6 +172,7 @@ class CreateSessionRequest(BaseModel):
 
 class UpdateSessionRequest(BaseModel):
     mode_key: str | None = None
+    project_id: str | None = None
     preferred_model: str | None = None
     selected_agent: str | None = None
     metadata: dict[str, Any] | None = None

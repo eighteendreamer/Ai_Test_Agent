@@ -11,6 +11,7 @@ from src.application.context.observation_runtime_service import ObservationRunti
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.resources.session_resource_service import SessionResourceService
+from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
@@ -75,6 +76,7 @@ class SessionService:
         transcript_hygiene_service: TranscriptHygieneService | None = None,
         verification_service: VerificationService | None = None,
         session_resource_service: SessionResourceService | None = None,
+        project_service: ProjectService | None = None,
     ) -> None:
         self._store = store
         self._input_orchestrator_service = input_orchestrator_service
@@ -85,6 +87,7 @@ class SessionService:
         self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._verification_service = verification_service or VerificationService()
         self._session_resource_service = session_resource_service
+        self._project_service = project_service
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
@@ -118,6 +121,8 @@ class SessionService:
         )
 
     async def create_session(self, payload: CreateSessionRequest) -> SessionDetail:
+        if payload.project_id:
+            await self._require_active_project(payload.project_id)
         now = datetime.utcnow()
         mode = self._mode_registry.resolve(payload.mode_key)
         session = SessionRecord(
@@ -131,6 +136,7 @@ class SessionService:
             updated_at=now,
             preferred_model=payload.preferred_model,
             selected_agent=payload.selected_agent or mode.default_agent_key,
+            project_id=payload.project_id,
             metadata=payload.metadata,
         )
         await self._store.save_session(session)
@@ -144,6 +150,7 @@ class SessionService:
                     "session_mode": session.session_mode.value,
                     "runtime_mode": session.runtime_mode.value,
                     "mode_key": session.mode_key,
+                    "project_id": session.project_id,
                 },
             ),
         )
@@ -159,6 +166,11 @@ class SessionService:
         session = await self._require_session(session_id)
         mode_changed = False
         metadata_changed = False
+
+        if "project_id" in payload.model_fields_set:
+            if payload.project_id:
+                await self._require_active_project(payload.project_id)
+            session.project_id = payload.project_id
 
         if payload.mode_key is not None:
             mode = self._mode_registry.resolve(payload.mode_key)
@@ -1478,6 +1490,11 @@ class SessionService:
             raise KeyError(session_id)
         return session
 
+    async def _require_active_project(self, project_id: str) -> None:
+        if self._project_service is None:
+            raise RuntimeError("Project service is required to bind a session")
+        await self._project_service.require_active(project_id)
+
     async def _to_summary(self, session: SessionRecord) -> SessionSummary:
         return SessionSummary(
             id=session.id,
@@ -1486,6 +1503,7 @@ class SessionService:
             session_mode=session.session_mode,
             runtime_mode=session.runtime_mode,
             mode_key=session.mode_key,
+            project_id=session.project_id,
             created_at=session.created_at,
             updated_at=session.updated_at,
         )
@@ -1507,6 +1525,7 @@ class SessionService:
             session_mode=session.session_mode,
             runtime_mode=session.runtime_mode,
             mode_key=session.mode_key,
+            project_id=session.project_id,
             created_at=session.created_at,
             updated_at=session.updated_at,
             messages=session.messages,

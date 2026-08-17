@@ -2,6 +2,7 @@ export default {
   // Sidebar
   "nav.home": "Home",
   "nav.taskpool": "Task Pool",
+  "nav.projects": "Test Projects",
   "nav.knowledge": "Knowledge Base",
   "nav.tools": "Tool Center",
   "nav.reports": "Report Center",

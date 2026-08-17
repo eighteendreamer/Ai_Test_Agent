@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
+import logging
 import mimetypes
 import re
 from datetime import datetime, timezone
@@ -18,6 +18,11 @@ from src.application.security.upload_security_service import UploadSecurityServi
 from src.core.config import Settings
 from src.schemas.api_docs import ApiDocRecord, UploadedAttachmentRecord
 from src.schemas.integration import IntegrationRecord
+from src.application.documents.api_doc_store import ApiDocStore, JsonApiDocStore
+from src.application.projects.project_service import ProjectService
+
+
+logger = logging.getLogger(__name__)
 
 
 class ApiDocsService:
@@ -27,24 +32,30 @@ class ApiDocsService:
         settings: Settings,
         artifact_storage_service: ArtifactStorageService,
         upload_security_service: UploadSecurityService | None = None,
+        catalog_store: ApiDocStore | None = None,
+        project_service: ProjectService | None = None,
     ) -> None:
         self._settings = settings
         self._artifact_storage_service = artifact_storage_service
         self._upload_security_service = upload_security_service
         self._data_dir = (Path(__file__).resolve().parents[2] / settings.data_dir / "api_docs").resolve()
         self._catalog_path = self._data_dir / "catalog.json"
-        self._lock = asyncio.Lock()
         self._data_dir.mkdir(parents=True, exist_ok=True)
+        self._catalog_store = catalog_store or JsonApiDocStore(self._catalog_path)
+        self._project_service = project_service
+
+    async def initialize(self) -> None:
+        await self._catalog_store.initialize()
 
     async def list_documents(
         self,
         *,
+        project_id: str | None = None,
+        unbound: bool = False,
         project_name: str | None = None,
         project_url: str | None = None,
     ) -> list[ApiDocRecord]:
-        async with self._lock:
-            catalog = self._load_catalog()
-        items = [ApiDocRecord.model_validate(self._normalize_catalog_item(item)) for item in catalog]
+        items = await self._catalog_store.list(project_id=project_id, unbound=unbound)
         normalized_name = self._normalize_optional_text(project_name)
         normalized_url = self._normalize_optional_text(project_url)
         if normalized_name:
@@ -55,17 +66,13 @@ class ApiDocsService:
         return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
     async def get_document(self, doc_id: str) -> ApiDocRecord:
-        async with self._lock:
-            catalog = self._load_catalog()
-            item = self._find_item(catalog, doc_id)
-        return ApiDocRecord.model_validate(self._normalize_catalog_item(item))
+        record = await self._catalog_store.get(doc_id)
+        if record is None:
+            raise ValueError(f"未找到 API 文档：{doc_id}")
+        return record
 
     async def read_document_content(self, doc_id: str, *, max_chars: int | None = None) -> dict[str, Any]:
-        async with self._lock:
-            catalog = self._load_catalog()
-            item = dict(self._find_item(catalog, doc_id))
-
-        record = ApiDocRecord.model_validate(self._normalize_catalog_item(item))
+        record = await self.get_document(doc_id)
         content = record.preview_text or ""
         read_error: str | None = None
         if record.storage_uri:
@@ -272,10 +279,12 @@ class ApiDocsService:
         content_base64: str,
         source: str = "manual_upload",
         title: str | None = None,
+        project_id: str | None = None,
         project_name: str | None = None,
         project_url: str | None = None,
         content_type: str | None = None,
     ) -> ApiDocRecord:
+        await self._require_bindable_project(project_id)
         content = self._decode_base64(content_base64)
         original_filename = filename
         original_size_bytes = len(content)
@@ -320,6 +329,8 @@ class ApiDocsService:
             id=doc_id,
             title=normalized_title.strip(),
             filename=filename,
+            project_id=project_id,
+            legacy_project_name=normalized_project_name,
             project_name=normalized_project_name,
             project_url=normalized_project_url,
             source=source,
@@ -346,53 +357,62 @@ class ApiDocsService:
                 "size_bytes": len(content),
                 "security": storage_result.get("security_report"),
                 "project_name": normalized_project_name,
+                "project_id": project_id,
                 "project_url": normalized_project_url,
                 "converted_to_markdown": converted is not None,
                 "conversion": converted.get("metadata") if converted else None,
             },
         )
 
-        async with self._lock:
-            catalog = self._load_catalog()
-            catalog.append(record.model_dump(mode="json"))
-            self._save_catalog(catalog)
-        return record
+        created = await self._catalog_store.create(record)
+        logger.info(
+            "api_document_created",
+            extra={"api_doc_id": created.id, "project_id": created.project_id, "source": created.source},
+        )
+        return created
 
     async def update_document(
         self,
         doc_id: str,
-        *,
-        title: str | None = None,
-        project_name: str | None = None,
-        project_url: str | None = None,
+        **changes: Any,
     ) -> ApiDocRecord:
-        normalized_title = self._normalize_optional_text(title)
-        normalized_project_name = self._normalize_optional_text(project_name)
-        normalized_project_url = self._normalize_optional_text(project_url)
-
-        async with self._lock:
-            catalog = self._load_catalog()
-            item = self._find_item(catalog, doc_id)
-            item["title"] = normalized_title or str(item.get("title") or Path(str(item.get("filename") or "")).stem or doc_id)
-            item["project_name"] = normalized_project_name
-            item["project_url"] = normalized_project_url
-            item["updated_at"] = datetime.now(timezone.utc).isoformat()
-            metadata = item.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
-                item["metadata"] = metadata
-            metadata["project_name"] = normalized_project_name
-            metadata["project_url"] = normalized_project_url
-            await self._sync_markdown_project_url(item, normalized_project_url)
-            self._save_catalog(catalog)
-
-        return ApiDocRecord.model_validate(self._normalize_catalog_item(item))
+        record = await self.get_document(doc_id)
+        if "project_id" in changes:
+            await self._require_bindable_project(changes["project_id"])
+        item = record.model_dump(mode="python")
+        if "title" in changes:
+            item["title"] = self._normalize_optional_text(changes["title"]) or record.title
+        if "project_id" in changes:
+            item["project_id"] = changes["project_id"]
+        if "project_name" in changes:
+            legacy_name = self._normalize_optional_text(changes["project_name"])
+            item["legacy_project_name"] = legacy_name
+            item["project_name"] = legacy_name
+        if "project_url" in changes:
+            item["project_url"] = self._normalize_optional_text(changes["project_url"])
+        item["updated_at"] = datetime.now(timezone.utc)
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            item["metadata"] = metadata
+        metadata["project_id"] = item.get("project_id")
+        metadata["project_name"] = item.get("legacy_project_name")
+        metadata["project_url"] = item.get("project_url")
+        if "project_url" in changes:
+            await self._sync_markdown_project_url(item, item.get("project_url"))
+        updated = await self._catalog_store.update(ApiDocRecord.model_validate(item))
+        logger.info(
+            "api_document_updated",
+            extra={"api_doc_id": updated.id, "project_id": updated.project_id},
+        )
+        return updated
 
     async def import_document_from_url(
         self,
         *,
         url: str,
         title: str | None = None,
+        project_id: str | None = None,
         project_name: str | None = None,
         project_url: str | None = None,
         source: str = "tools_api_docs_url",
@@ -417,6 +437,7 @@ class ApiDocsService:
             content_base64=base64.b64encode(fetched["content"]).decode("ascii"),
             source=source,
             title=title,
+            project_id=project_id,
             project_name=project_name,
             project_url=self._normalize_optional_text(project_url)
             or self._infer_project_url_from_url(str(fetched.get("final_url") or url))
@@ -430,6 +451,7 @@ class ApiDocsService:
         integration: IntegrationRecord,
         source: str = "tools_api_docs_integration",
         title: str | None = None,
+        project_id: str | None = None,
         project_name: str | None = None,
         project_url: str | None = None,
         document_url: str | None = None,
@@ -446,6 +468,7 @@ class ApiDocsService:
         return await self.import_document_from_url(
             url=document_url or integration.document_url or integration.endpoint_url or integration.base_url or "",
             title=import_title,
+            project_id=project_id,
             project_name=import_project_name,
             project_url=import_project_url,
             source=source,
@@ -494,19 +517,23 @@ class ApiDocsService:
         )
 
     async def delete_document(self, doc_id: str) -> dict[str, Any]:
-        async with self._lock:
-            catalog = self._load_catalog()
-            item = self._find_item(catalog, doc_id)
-            catalog = [entry for entry in catalog if str(entry.get("id") or "") != doc_id]
-            self._save_catalog(catalog)
-
-        uri = str(item.get("storage_uri") or "")
+        item = await self._catalog_store.delete(doc_id)
+        if item is None:
+            raise ValueError(f"未找到 API 文档：{doc_id}")
+        uri = item.storage_uri
         if uri:
             try:
                 await self._artifact_storage_service.delete_object_uri(uri)
             except Exception:
                 pass
         return {"ok": True, "deleted_id": doc_id}
+
+    async def _require_bindable_project(self, project_id: str | None) -> None:
+        if not project_id:
+            return
+        if self._project_service is None:
+            raise RuntimeError("Project service is required to bind an API document")
+        await self._project_service.require_active(project_id)
 
     async def _sync_markdown_project_url(self, item: dict[str, Any], project_url: str | None) -> None:
         filename = str(item.get("filename") or "")
@@ -1767,31 +1794,6 @@ class ApiDocsService:
             return ".md"
         return mimetypes.guess_extension(normalized) or ""
 
-    def _load_catalog(self) -> list[dict[str, Any]]:
-        if not self._catalog_path.exists():
-            return []
-        try:
-            raw = json.loads(self._catalog_path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        return raw if isinstance(raw, list) else []
-
-    def _save_catalog(self, catalog: list[dict[str, Any]]) -> None:
-        self._catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def _normalize_catalog_item(self, item: dict[str, Any]) -> dict[str, Any]:
-        normalized = dict(item)
-        metadata = normalized.get("metadata")
-        metadata_dict = metadata if isinstance(metadata, dict) else {}
-        normalized["metadata"] = metadata_dict
-        normalized["project_name"] = self._normalize_optional_text(
-            normalized.get("project_name") or metadata_dict.get("project_name")
-        )
-        normalized["project_url"] = self._normalize_optional_text(
-            normalized.get("project_url") or metadata_dict.get("project_url")
-        )
-        return normalized
-
     def _normalize_optional_text(self, value: Any) -> str | None:
         if value is None:
             return None
@@ -1804,9 +1806,3 @@ class ApiDocsService:
         except (TypeError, ValueError):
             parsed = default
         return max(minimum, min(maximum, parsed))
-
-    def _find_item(self, catalog: list[dict[str, Any]], doc_id: str) -> dict[str, Any]:
-        for item in catalog:
-            if str(item.get("id") or "") == doc_id:
-                return item
-        raise ValueError(f"未找到 API 文档：{doc_id}")

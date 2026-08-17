@@ -88,6 +88,9 @@ import type {
   SkillUpsertRequest,
   SecurityProfilesResponse,
   SessionVerificationResponse,
+  ProjectRecord,
+  ProjectPage,
+  ProjectOverview,
 } from "../types";
 import type {
   CompatibilityArtifactRecord,
@@ -145,6 +148,36 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listProjects(params: { status?: string; query?: string; limit?: number; offset?: number } = {}): Promise<ProjectPage> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 100),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.status) query.set("status", params.status);
+    if (params.query) query.set("query", params.query);
+    return request(`/api/v1/projects?${query.toString()}`);
+  },
+  createProject(payload: {
+    project_key: string;
+    name: string;
+    description?: string | null;
+    base_url?: string | null;
+    graph_scope_key?: string | null;
+  }): Promise<ProjectRecord> {
+    return request("/api/v1/projects", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateProject(projectId: string, payload: Partial<Pick<ProjectRecord, "name" | "description" | "base_url" | "graph_scope_key">>): Promise<ProjectRecord> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+  archiveProject(projectId: string): Promise<ProjectRecord> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/archive`, { method: "POST" });
+  },
+  getProjectOverview(projectId: string): Promise<ProjectOverview> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/overview`);
+  },
   getHealth(): Promise<HealthResponse> {
     return request("/api/v1/health");
   },
@@ -443,6 +476,7 @@ export const api = {
     sessionId: string,
     payload: {
       mode_key?: string | null;
+      project_id?: string | null;
       preferred_model?: string | null;
       selected_agent?: string | null;
       metadata?: Record<string, unknown> | null;
@@ -489,8 +523,12 @@ export const api = {
       }),
     });
   },
-  listApiDocs(): Promise<ApiDocRecord[]> {
-    return request("/api/v1/registry/api-docs");
+  listApiDocs(filters: { projectId?: string; unbound?: boolean } = {}): Promise<ApiDocRecord[]> {
+    const params = new URLSearchParams();
+    if (filters.projectId) params.set("project_id", filters.projectId);
+    if (filters.unbound) params.set("unbound", "true");
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/v1/registry/api-docs${suffix}`);
   },
   getApiDoc(docId: string): Promise<ApiDocRecord> {
     return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}`);

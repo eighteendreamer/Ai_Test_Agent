@@ -2,6 +2,7 @@ export default {
   // Sidebar
   "nav.home": "首页",
   "nav.taskpool": "任务池",
+  "nav.projects": "测试项目",
   "nav.knowledge": "知识库",
   "nav.tools": "工具中心",
   "nav.reports": "报告中心",

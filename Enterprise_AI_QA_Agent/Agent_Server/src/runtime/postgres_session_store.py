@@ -147,6 +147,7 @@ class PostgresSessionStore:
                         session_mode TEXT NOT NULL,
                         runtime_mode TEXT NOT NULL,
                         mode_key TEXT NOT NULL DEFAULT 'default',
+                        project_id UUID NULL REFERENCES {self._settings.postgres_project_table}(id),
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
                         preferred_model TEXT NULL,
@@ -156,6 +157,10 @@ class PostgresSessionStore:
                         snapshot_count INTEGER NOT NULL DEFAULT 0
                     )
                     """
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._settings.postgres_session_table} "
+                    f"ADD COLUMN IF NOT EXISTS project_id UUID NULL REFERENCES {self._settings.postgres_project_table}(id)"
                 )
                 cur.execute(
                     f"""
@@ -214,6 +219,10 @@ class PostgresSessionStore:
                     f"ON {self._settings.postgres_session_table} (updated_at DESC)"
                 )
                 cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_project_updated "
+                    f"ON {self._settings.postgres_session_table} (project_id, updated_at DESC)"
+                )
+                cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_message_table}_session_created "
                     f"ON {self._settings.postgres_message_table} (session_id, created_at ASC)"
                 )
@@ -254,11 +263,11 @@ class PostgresSessionStore:
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.postgres_session_table} (
-                        id, title, status, session_mode, runtime_mode, mode_key,
+                        id, title, status, session_mode, runtime_mode, mode_key, project_id,
                         created_at, updated_at, preferred_model, selected_agent,
                         metadata, event_count, snapshot_count
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s,
                         %s::jsonb, %s, %s
                     )
@@ -268,6 +277,7 @@ class PostgresSessionStore:
                         session_mode = EXCLUDED.session_mode,
                         runtime_mode = EXCLUDED.runtime_mode,
                         mode_key = EXCLUDED.mode_key,
+                        project_id = EXCLUDED.project_id,
                         updated_at = EXCLUDED.updated_at,
                         preferred_model = EXCLUDED.preferred_model,
                         selected_agent = EXCLUDED.selected_agent,
@@ -283,6 +293,7 @@ class PostgresSessionStore:
                         session.session_mode.value,
                         session.runtime_mode.value,
                         session.mode_key,
+                        session.project_id,
                         session.created_at,
                         now,
                         session.preferred_model,
@@ -396,6 +407,7 @@ class PostgresSessionStore:
                         session_mode,
                         runtime_mode,
                         mode_key,
+                        project_id,
                         created_at,
                         updated_at,
                         selected_agent,
@@ -822,6 +834,18 @@ class PostgresSessionStore:
                     return {row["status"]: int(row["cnt"]) for row in rows}
         return await asyncio.to_thread(_do)
 
+    async def count_project_sessions(self, project_id: str) -> int:
+        def _do() -> int:
+            with postgres_connect(self._settings) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"SELECT COUNT(id) AS cnt FROM {self._settings.postgres_session_table} WHERE project_id = %s",
+                        (project_id,),
+                    )
+                    row = cur.fetchone()
+                    return int(row["cnt"]) if row else 0
+        return await asyncio.to_thread(_do)
+
     async def delete_sessions_before(self, cutoff: datetime | None = None) -> int:
         def _do() -> int:
             with postgres_connect(self._settings) as conn:
@@ -946,6 +970,7 @@ class PostgresSessionStore:
                         "updated_at": _iso(s["updated_at"]),
                         "preferred_model": s.get("preferred_model"),
                         "selected_agent": s.get("selected_agent"),
+                        "project_id": str(s.get("project_id")) if s.get("project_id") else None,
                         "metadata": dict(s.get("metadata") or {}),
                         "event_count": s["event_count"],
                         "snapshot_count": s["snapshot_count"],
@@ -984,6 +1009,7 @@ def _session_from_row(row: dict, messages: list[ChatMessage]) -> SessionRecord:
         session_mode=SessionMode(row["session_mode"]),
         runtime_mode=RuntimeMode(row["runtime_mode"]),
         mode_key=str(row.get("mode_key") or "default"),
+        project_id=str(row.get("project_id")) if row.get("project_id") else None,
         created_at=ensure_utc_datetime(row["created_at"]) or datetime.utcnow(),
         updated_at=ensure_utc_datetime(row["updated_at"]) or datetime.utcnow(),
         preferred_model=row.get("preferred_model"),
@@ -1026,6 +1052,7 @@ def _task_pool_session_from_row(row: dict) -> TaskPoolSessionSummary:
         session_mode=SessionMode(row["session_mode"]),
         runtime_mode=RuntimeMode(row["runtime_mode"]),
         mode_key=str(row.get("mode_key") or "default"),
+        project_id=str(row.get("project_id")) if row.get("project_id") else None,
         created_at=ensure_utc_datetime(row["created_at"]) or datetime.utcnow(),
         updated_at=ensure_utc_datetime(row["updated_at"]) or datetime.utcnow(),
         selected_agent=row.get("selected_agent"),

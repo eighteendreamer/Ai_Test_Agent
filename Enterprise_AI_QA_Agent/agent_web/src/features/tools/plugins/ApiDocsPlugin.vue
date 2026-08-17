@@ -9,6 +9,7 @@ import type {
   IntegrationImportSourceDescriptor,
   IntegrationImportSourcesResponse,
   IntegrationRecord,
+  ProjectRecord,
 } from "../../../types";
 import { formatServerDateTime } from "../../../utils/datetime";
 
@@ -18,6 +19,7 @@ const toast = useMessage();
 
 const docs = ref<ApiDocRecord[]>([]);
 const integrations = ref<IntegrationRecord[]>([]);
+const projects = ref<ProjectRecord[]>([]);
 const loading = ref(false);
 const error = ref("");
 const selectedDoc = ref<ApiDocRecord | null>(null);
@@ -31,7 +33,7 @@ const uploadMode = ref<ImportMode>("local");
 
 const uploadFile = ref<File | null>(null);
 const uploadTitle = ref("");
-const uploadProjectName = ref("");
+const uploadProjectId = ref<string | null>(null);
 const uploadProjectUrl = ref("");
 const remoteUrl = ref("");
 const selectedIntegrationId = ref("");
@@ -42,7 +44,7 @@ const integrationImportCatalog = ref<IntegrationImportSourcesResponse | null>(nu
 const integrationImportLoading = ref(false);
 
 const editTitle = ref("");
-const editProjectName = ref("");
+const editProjectId = ref<string | null>(null);
 const editProjectUrl = ref("");
 
 const hasDocs = computed(() => docs.value.length > 0);
@@ -108,20 +110,15 @@ const canSubmitIntegrationImport = computed(() => {
   }
   return Boolean(selectedImportSourceId.value || integrationDocumentUrl.value.trim() || selectedIntegration.value?.document_url);
 });
-const projectNameSuggestions = computed(() =>
-  Array.from(
-    new Set(
-      [
-        ...docs.value.map((doc) => doc.project_name?.trim()),
-        ...integrations.value.map((integration) => integration.project_name?.trim()),
-      ].filter((value): value is string => Boolean(value)),
-    ),
-  ).sort((a, b) => a.localeCompare(b, "zh-CN")),
-);
+const projectOptions = computed(() => projects.value.map(project => ({
+  label: project.status === "archived" ? `${project.name}（已归档）` : project.name,
+  value: project.id,
+  disabled: project.status === "archived",
+})));
 
-const projectNameOptions = computed(() =>
-  projectNameSuggestions.value.map(name => ({ label: name, value: name }))
-);
+function projectName(projectId?: string | null, legacyName?: string | null) {
+  return projects.value.find(project => project.id === projectId)?.name || legacyName || t("apiDocs.no_project");
+}
 
 function formatBytes(value: number) {
   if (value >= 1024 * 1024) {
@@ -137,7 +134,7 @@ function resetUploadForm() {
   uploadMode.value = "local";
   uploadFile.value = null;
   uploadTitle.value = "";
-  uploadProjectName.value = "";
+  uploadProjectId.value = null;
   uploadProjectUrl.value = "";
   remoteUrl.value = "";
   selectedIntegrationId.value = "";
@@ -149,13 +146,13 @@ function resetUploadForm() {
 
 function resetPreviewForm() {
   editTitle.value = "";
-  editProjectName.value = "";
+  editProjectId.value = null;
   editProjectUrl.value = "";
 }
 
 function syncPreviewForm(doc: ApiDocRecord | null) {
   editTitle.value = doc?.title || "";
-  editProjectName.value = doc?.project_name || "";
+  editProjectId.value = doc?.project_id || null;
   editProjectUrl.value = doc?.project_url || "";
 }
 
@@ -227,6 +224,14 @@ async function loadIntegrations() {
   }
 }
 
+async function loadProjects() {
+  try {
+    projects.value = (await api.listProjects({ limit: 200 })).items;
+  } catch {
+    projects.value = [];
+  }
+}
+
 async function loadIntegrationImportCatalog(integrationId: string, workspaceId?: string | null) {
   integrationImportLoading.value = true;
   if (!workspaceId) {
@@ -274,7 +279,7 @@ async function submitUpload() {
         content_base64: contentBase64,
         source: "tools_api_docs_local",
         title: uploadTitle.value.trim() || null,
-        project_name: uploadProjectName.value.trim() || null,
+        project_id: uploadProjectId.value,
         project_url: uploadProjectUrl.value.trim() || null,
       });
     } else if (uploadMode.value === "url") {
@@ -285,7 +290,7 @@ async function submitUpload() {
       created = await api.importApiDocFromUrl({
         url: remoteUrl.value.trim(),
         title: uploadTitle.value.trim() || null,
-        project_name: uploadProjectName.value.trim() || null,
+        project_id: uploadProjectId.value,
         project_url: uploadProjectUrl.value.trim() || null,
         source: "tools_api_docs_url",
       });
@@ -301,7 +306,7 @@ async function submitUpload() {
       created = await api.importApiDocFromIntegration({
         integration_id: selectedIntegrationId.value,
         title: uploadTitle.value.trim() || null,
-        project_name: uploadProjectName.value.trim() || null,
+        project_id: uploadProjectId.value,
         project_url: uploadProjectUrl.value.trim() || null,
         document_url: integrationDocumentUrl.value.trim() || null,
         workspace_id: selectedWorkspaceId.value || null,
@@ -349,7 +354,7 @@ async function saveDocMetadata() {
   try {
     const updated = await api.updateApiDoc(selectedDoc.value.id, {
       title: editTitle.value.trim() || null,
-      project_name: editProjectName.value.trim() || null,
+      project_id: editProjectId.value,
       project_url: editProjectUrl.value.trim() || null,
     });
     selectedDoc.value = updated;
@@ -427,6 +432,7 @@ watch(uploadMode, (mode) => {
 onMounted(() => {
   void loadDocs();
   void loadIntegrations();
+  void loadProjects();
   window.addEventListener("qa-agent:open-api-doc-upload", handleExternalOpenUpload);
 });
 
@@ -496,7 +502,7 @@ onBeforeUnmount(() => {
           <div class="api-doc-meta">
             <div class="meta-item">
               <i class="fa-solid fa-diagram-project"></i>
-              <span>{{ doc.project_name || t("apiDocs.no_project") }}</span>
+              <span>{{ projectName(doc.project_id, doc.legacy_project_name || doc.project_name) }}</span>
             </div>
             <div class="meta-item">
               <i class="fa-solid fa-globe"></i>
@@ -548,16 +554,13 @@ onBeforeUnmount(() => {
               <label class="field-block">
                 <span>{{ t("apiDocs.form_project") }}</span>
                 <n-select
-                  v-model:value="editProjectName"
+                  v-model:value="editProjectId"
                   filterable
-                  tag
-                  :options="projectNameOptions"
-                  placeholder="e.g. mall-order-service"
+                  clearable
+                  :options="projectOptions"
+                  :placeholder="t('apiDocs.no_project')"
                   class="custom-select"
                 />
-                <small v-if="projectNameSuggestions.length" class="field-hint">
-                  {{ t("apiDocs.hint_project_reuse", { list: projectNameSuggestions.join(" / ") }) }}
-                </small>
               </label>
               <label class="field-block">
                 <span>{{ t("apiDocs.form_project_url") }}</span>
@@ -569,7 +572,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="preview-meta-grid">
-              <div><strong>{{ t("apiDocs.meta_project") }}</strong>{{ selectedDoc.project_name || t("apiDocs.not_set") }}</div>
+              <div><strong>{{ t("apiDocs.meta_project") }}</strong>{{ projectName(selectedDoc.project_id, selectedDoc.legacy_project_name || selectedDoc.project_name) }}</div>
               <div><strong>{{ t("apiDocs.meta_project_url") }}</strong>{{ selectedDoc.project_url || t("apiDocs.not_set") }}</div>
               <div><strong>{{ t("apiDocs.meta_content_type") }}</strong>{{ selectedDoc.content_type }}</div>
               <div><strong>{{ t("apiDocs.meta_source") }}</strong>{{ selectedDoc.source }}</div>
@@ -686,16 +689,16 @@ onBeforeUnmount(() => {
             <label class="field-block modal-field">
               <span>{{ t("apiDocs.form_project_recommended") }}</span>
               <n-select
-                v-model:value="uploadProjectName"
+                v-model:value="uploadProjectId"
                 filterable
-                tag
-                :options="projectNameOptions"
-                placeholder="e.g. mall-order-service"
+                clearable
+                :options="projectOptions"
+                :placeholder="t('apiDocs.no_project')"
                 class="custom-select"
                 :to="false"
               />
               <small class="field-hint">
-                {{ t("apiDocs.hint_project_reuse_short") }}
+                API 文档将通过稳定项目 ID 绑定；已归档项目不可用于新绑定。
               </small>
             </label>
 

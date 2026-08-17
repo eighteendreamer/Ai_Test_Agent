@@ -66,7 +66,12 @@ async def list_sessions(
 
 @router.post("")
 async def create_session(payload: CreateSessionRequest, request: Request):
-    return await request.app.state.session_service.create_session(payload)
+    try:
+        return await request.app.state.session_service.create_session(payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
 
 
 @router.post("/headless/execute")
@@ -89,7 +94,7 @@ async def update_session(session_id: str, payload: UpdateSessionRequest, request
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
 
 
 @router.get("/{session_id}/events/history")
