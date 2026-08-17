@@ -257,7 +257,12 @@ class PostgresProjectStore:
 
     @staticmethod
     def _from_row(row) -> ProjectRecord:
-        return ProjectRecord.model_validate(dict(row))
+        values = dict(row)
+        # psycopg returns PostgreSQL UUID columns as uuid.UUID instances while
+        # the public schema intentionally exposes stable string identifiers.
+        if values.get("id") is not None:
+            values["id"] = str(values["id"])
+        return ProjectRecord.model_validate(values)
 
     @staticmethod
     def _translate_integrity_error(exc: Exception, project: ProjectRecord) -> None:

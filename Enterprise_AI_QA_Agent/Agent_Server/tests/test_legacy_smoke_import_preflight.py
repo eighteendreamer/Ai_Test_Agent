@@ -221,3 +221,38 @@ def test_apply_refuses_unmapped_history_before_writing():
 
     writer = asyncio.run(scenario())
     assert writer.bundles == {}
+
+
+def test_apply_rechecks_already_projected_rows_through_import_ledger():
+    class _AlreadyImportedWriter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def initialize(self) -> None:
+            return None
+
+        async def import_bundle(self, bundle):
+            self.calls += 1
+            return "already_imported", bundle.run.id
+
+    async def scenario():
+        projects, project_id = await _project_service()
+        writer = _AlreadyImportedWriter()
+        service = LegacySmokeImportPreflightService(
+            project_service=projects,
+            catalog=_Catalog([_record("run-importable", datetime(2026, 8, 18, tzinfo=timezone.utc))]),
+            projection_index=_ProjectionIndex({"run-importable"}),
+            writer=writer,
+        )
+        report = await service.apply(
+            scope_to_project_id={"orders-v1": project_id},
+            page_size=10,
+        )
+        return report, writer
+
+    report, writer = asyncio.run(scenario())
+
+    assert report.preflight.already_projected_count == 1
+    assert report.already_imported_count == 1
+    assert report.failed_count == 0
+    assert writer.calls == 1

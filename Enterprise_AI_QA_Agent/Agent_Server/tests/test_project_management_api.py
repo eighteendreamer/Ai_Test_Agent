@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from importlib import import_module
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -59,6 +61,30 @@ def test_create_project_returns_active_project():
     assert payload["name"] == "支付服务"
     assert payload["status"] == "active"
     assert payload["id"]
+
+
+def test_postgres_project_row_normalizes_uuid_to_public_string_id():
+    store_module = import_module("src.application.projects.project_store")
+    project_id = uuid4()
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+
+    record = store_module.PostgresProjectStore._from_row(
+        {
+            "id": project_id,
+            "project_key": "uuid-row",
+            "name": "UUID row",
+            "description": None,
+            "base_url": None,
+            "graph_scope_key": None,
+            "status": "active",
+            "created_by": None,
+            "created_at": now,
+            "updated_at": now,
+            "archived_at": None,
+        }
+    )
+
+    assert record.id == str(project_id)
 
 
 def test_duplicate_project_key_returns_conflict():

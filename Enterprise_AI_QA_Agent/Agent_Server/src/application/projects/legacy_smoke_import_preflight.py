@@ -134,10 +134,10 @@ class LegacySmokeImportPreflightService:
                 f"unmapped={preflight.unmapped_count}, invalid={preflight.invalid_count}"
             )
         await self._writer.initialize()
-        importable_ids = {
+        processable_ids = {
             entry.legacy_run_id
             for entry in preflight.entries
-            if entry.decision == "importable"
+            if entry.decision in {"importable", "already_projected"}
         }
         all_scopes = await self._catalog.list_legacy_project_scopes()
         mapping = {str(scope).strip(): str(project_id).strip() for scope, project_id in scope_to_project_id.items()}
@@ -145,7 +145,7 @@ class LegacySmokeImportPreflightService:
         report = LegacySmokeImportApplyReport(preflight=preflight)
         for record in records:
             legacy_run_id = str(record.get("run_id") or "")
-            if legacy_run_id not in importable_ids:
+            if legacy_run_id not in processable_ids:
                 continue
             try:
                 snapshot = SmokeRunResult.model_validate(_as_mapping(record.get("metadata")))
