@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 import re
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
@@ -15,6 +16,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.security.approval_scope_service import ApprovalScopeService
+from src.application.security.authorization import verified_grant_matches_target
 from src.application.security.execution_safety_policy import ExecutionSafetyPolicy
 from src.domain.models import SessionRecord
 from src.infrastructure.storage_utils import make_json_safe
@@ -24,6 +26,9 @@ from src.runtime.execution_logging import append_graph_event, truncate_text
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.session import ChatMessage, ExecutionEvent, ExecutionRequest, MessageRole, SessionSnapshot
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -595,18 +600,6 @@ class RuntimeService:
 
     def _trusted_security_grant_matches_request(self, request: ExecutionRequest) -> bool:
         grant = request.context.get("trusted_security_authorization")
-        if not isinstance(grant, dict) or str(grant.get("status") or "").lower() != "verified":
-            return False
-        expires_at = str(grant.get("expires_at") or "").strip()
-        if expires_at:
-            try:
-                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                if expiry.tzinfo is None:
-                    return False
-                if expiry <= datetime.now(expiry.tzinfo):
-                    return False
-            except ValueError:
-                return False
         security_request = request.context.get("security_testing_request")
         target_url = str(
             (security_request.get("target_url") if isinstance(security_request, dict) else "")
@@ -616,19 +609,7 @@ class RuntimeService:
         if not target_url:
             match = re.search(r"https?://[^\s,;]+", request.user_message or "", flags=re.IGNORECASE)
             target_url = match.group(0).rstrip(".,;)") if match else ""
-        parsed_target = urlparse(target_url)
-        target_host = (parsed_target.hostname or "").lower()
-        target_port = parsed_target.port
-        if not target_host:
-            return False
-        for allowed in grant.get("targets") or []:
-            allowed_text = str(allowed).strip()
-            parsed_allowed = urlparse(allowed_text)
-            allowed_host = (parsed_allowed.hostname or allowed_text.split(":", 1)[0]).strip("[]").lower()
-            allowed_port = parsed_allowed.port
-            if target_host == allowed_host and (allowed_port is None or allowed_port == target_port):
-                return True
-        return False
+        return verified_grant_matches_target(grant, target_url)
 
     async def _execute_security_mode_turn(
         self,

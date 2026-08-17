@@ -2,7 +2,7 @@ import base64
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from src.application.capabilities.capability_resolver import CapabilityResolver
@@ -14,6 +14,7 @@ from src.application.orchestration.coordinator_runtime_service import Coordinato
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
 from src.application.security.approval_scope_service import ApprovalScopeService
+from src.application.security.authorization import verified_grant_matches_target
 from src.application.security.execution_safety_policy import ExecutionSafetyPolicy
 from src.application.security.output_safety_policy import OutputSafetyPolicy
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
@@ -1250,3 +1251,27 @@ def test_coordinator_cancel_workers_cancels_task_and_marks_child_interrupted():
     assert child.status == SessionStatus.interrupted
     assert child.metadata["control"]["last_interrupt_reason"] == "parent interrupted"
     assert [event.type for event in events] == ["worker.interrupted"]
+
+
+def test_shared_security_grant_matches_url_and_bare_host_targets():
+    grant = {
+        "status": "verified",
+        "targets": ["https://example.test:8443", "10.0.0.15"],
+    }
+
+    assert verified_grant_matches_target(grant, "https://example.test:8443/path") is True
+    assert verified_grant_matches_target(grant, "10.0.0.15") is True
+    assert verified_grant_matches_target(grant, "https://example.test:9443") is False
+
+
+def test_shared_security_grant_rejects_expired_or_malformed_expiry():
+    expired = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+
+    assert verified_grant_matches_target(
+        {"status": "verified", "targets": ["https://example.test"], "expires_at": expired},
+        "https://example.test",
+    ) is False
+    assert verified_grant_matches_target(
+        {"status": "verified", "targets": ["https://example.test"], "expires_at": "invalid"},
+        "https://example.test",
+    ) is False

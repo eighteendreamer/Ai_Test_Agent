@@ -27,9 +27,7 @@ def verified_grant_matches_target(grant: object, target_url: str) -> bool:
                 return False
         except ValueError:
             return False
-    parsed_target = urlparse(target)
-    target_host = (parsed_target.hostname or "").lower()
-    target_port = parsed_target.port
+    target_host, target_port = _target_coordinates(target)
     if not target_host:
         return False
     allowed_targets = [
@@ -38,12 +36,22 @@ def verified_grant_matches_target(grant: object, target_url: str) -> bool:
         if str(item).strip()
     ]
     for allowed in allowed_targets:
-        parsed_allowed = urlparse(allowed)
-        allowed_host = (parsed_allowed.hostname or allowed.split(":", 1)[0]).strip("[]").lower()
-        allowed_port = parsed_allowed.port
+        allowed_host, allowed_port = _target_coordinates(allowed)
         if target_host == allowed_host and (allowed_port is None or allowed_port == target_port):
             return True
     return False
+
+
+def _target_coordinates(value: str) -> tuple[str, int | None]:
+    text = str(value or "").strip()
+    if not text:
+        return "", None
+    candidate = text if "://" in text else f"//{text}"
+    try:
+        parsed = urlparse(candidate)
+        return (parsed.hostname or "").strip("[]").lower(), parsed.port
+    except ValueError:
+        return "", None
 
 
 __all__ = ["verified_grant_matches_target"]

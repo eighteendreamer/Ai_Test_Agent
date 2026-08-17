@@ -9,6 +9,7 @@ from src.application.intent.intent_recognition_service import IntentRecognitionS
 from src.application.intent.mode_selection_policy import ModeSelectionPolicy
 from src.application.intent.safety_intent_service import SafetyIntentService
 from src.application.intent.semantic_intent_service import SemanticIntentService
+from src.application.security.authorization import verified_grant_matches_target
 from src.application.testing.direction_service import QATaskDirectionService
 from src.application.testing.mode_intent_service import TestModeIntentService
 from src.application.testing.router_service import QATaskRouterService
@@ -392,25 +393,7 @@ class InputOrchestratorService:
         )
 
     def _security_grant_matches_target(self, grant: object, target_url: str) -> bool:
-        if not isinstance(grant, dict) or str(grant.get("status") or "").lower() != "verified":
-            return False
-        if not target_url:
-            return False
-        from urllib.parse import urlparse
-
-        parsed_target = urlparse(target_url)
-        target_host = (parsed_target.hostname or "").lower()
-        target_port = parsed_target.port
-        allowed_targets = [str(item).strip() for item in (grant.get("targets") or []) if str(item).strip()]
-        for allowed in allowed_targets:
-            parsed_allowed = urlparse(allowed)
-            allowed_host = (parsed_allowed.hostname or allowed.split(":", 1)[0]).strip("[]").lower()
-            allowed_port = parsed_allowed.port
-            if target_host and target_host == allowed_host and (
-                allowed_port is None or allowed_port == target_port
-            ):
-                return True
-        return False
+        return verified_grant_matches_target(grant, target_url)
 
     def _recognition_context(
         self,

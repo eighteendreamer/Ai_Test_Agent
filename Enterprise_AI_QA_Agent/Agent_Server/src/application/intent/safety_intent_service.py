@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from src.application.security.authorization import verified_grant_matches_target
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
 from src.schemas.intent import EffectLevel, IntentDecision, SafetyAssessment
 
@@ -126,33 +126,7 @@ class SafetyIntentService:
         return "unknown"
 
     def _grant_matches_target(self, grant: dict[str, Any], target_url: str) -> bool:
-        if str(grant.get("status") or "").strip().lower() != "verified":
-            return False
-        expires_at = str(grant.get("expires_at") or "").strip()
-        if expires_at:
-            try:
-                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                if expiry.tzinfo is None:
-                    expiry = expiry.replace(tzinfo=UTC)
-                if expiry <= datetime.now(UTC):
-                    return False
-            except ValueError:
-                return False
-        allowed_targets = [str(item).strip().lower() for item in grant.get("targets", []) if str(item).strip()]
-        if not allowed_targets or not target_url:
-            return False
-        parsed_target = urlparse(target_url)
-        target_host = (parsed_target.hostname or "").lower()
-        target_port = parsed_target.port
-        for allowed in allowed_targets:
-            parsed_allowed = urlparse(allowed)
-            allowed_host = (parsed_allowed.hostname or allowed.split(":", 1)[0]).strip("[]").lower()
-            allowed_port = parsed_allowed.port
-            if target_host and target_host == allowed_host and (
-                allowed_port is None or allowed_port == target_port
-            ):
-                return True
-        return False
+        return verified_grant_matches_target(grant, target_url)
 
     def _decision(
         self,
