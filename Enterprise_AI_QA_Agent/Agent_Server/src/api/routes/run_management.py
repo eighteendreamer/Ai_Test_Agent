@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from src.schemas.run_management import (
     LeaseRecoveryResponse,
+    RegressionRunCreateRequest,
     RunCancelRequest,
     RunClaimRequest,
     RunClaimResponse,
@@ -144,6 +145,22 @@ async def recover_expired_test_run_leases(run_id: str, request: Request):
     try:
         return await request.app.state.test_run_service.recover_expired(run_id)
     except KeyError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/runs/{run_id}/regression",
+    response_model=TestRunDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_regression_test_run(
+    run_id: str,
+    payload: RegressionRunCreateRequest,
+    request: Request,
+):
+    try:
+        return await request.app.state.test_run_service.create_regression(run_id, payload)
+    except (KeyError, ValueError, RuntimeError) as exc:
         raise _http_error(exc) from exc
 
 

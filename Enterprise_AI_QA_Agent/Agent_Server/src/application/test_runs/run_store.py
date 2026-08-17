@@ -274,6 +274,7 @@ class InMemoryTestRunStore:
                 run_item_id=item.id,
                 case_id=item.case_id,
                 case_version_id=item.case_version_id,
+                regression_source_result_id=item.regression_source_result_id,
                 attempt_id=attempt.id,
                 attempt_no=attempt.attempt_no,
                 created_at=now,
@@ -629,6 +630,7 @@ class PostgresTestRunStore:
                         status TEXT NOT NULL,
                         mode_key TEXT NOT NULL,
                         session_id TEXT NULL,
+                        parent_run_id UUID NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
                         record JSONB NOT NULL
@@ -649,6 +651,7 @@ class PostgresTestRunStore:
                         lease_token TEXT NULL,
                         lease_expires_at TIMESTAMPTZ NULL,
                         result_id UUID NULL,
+                        regression_source_result_id UUID NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
                         record JSONB NOT NULL,
                         UNIQUE(run_id, position),
@@ -682,6 +685,7 @@ class PostgresTestRunStore:
                         attempt_id UUID NOT NULL REFERENCES {self._attempt_table}(id),
                         status TEXT NOT NULL,
                         payload_hash TEXT NOT NULL,
+                        regression_source_result_id UUID NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         record JSONB NOT NULL,
                         UNIQUE(run_item_id)
@@ -689,8 +693,24 @@ class PostgresTestRunStore:
                     """
                 )
                 cur.execute(
+                    f"ALTER TABLE {self._run_table} "
+                    "ADD COLUMN IF NOT EXISTS parent_run_id UUID NULL"
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._item_table} "
+                    "ADD COLUMN IF NOT EXISTS regression_source_result_id UUID NULL"
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._result_table} "
+                    "ADD COLUMN IF NOT EXISTS regression_source_result_id UUID NULL"
+                )
+                cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._run_table}_project_created "
                     f"ON {self._run_table} (project_id, created_at DESC)"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._run_table}_parent_run "
+                    f"ON {self._run_table} (parent_run_id) WHERE parent_run_id IS NOT NULL"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_run_status_position "
@@ -702,8 +722,18 @@ class PostgresTestRunStore:
                     "WHERE status IN ('claimed', 'running')"
                 )
                 cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_regression_source "
+                    f"ON {self._item_table} (regression_source_result_id) "
+                    "WHERE regression_source_result_id IS NOT NULL"
+                )
+                cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._attempt_table}_run_item "
                     f"ON {self._attempt_table} (run_id, run_item_id, attempt_no ASC)"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._result_table}_regression_source "
+                    f"ON {self._result_table} (regression_source_result_id) "
+                    "WHERE regression_source_result_id IS NOT NULL"
                 )
 
     def _create_run_sync(
@@ -715,8 +745,9 @@ class PostgresTestRunStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"INSERT INTO {self._run_table} "
-                    "(id, project_id, suite_id, status, mode_key, session_id, created_at, updated_at, record) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+                    "(id, project_id, suite_id, status, mode_key, session_id, parent_run_id, "
+                    "created_at, updated_at, record) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
                     (
                         run.id,
                         run.project_id,
@@ -724,6 +755,7 @@ class PostgresTestRunStore:
                         run.status,
                         run.mode_key,
                         run.session_id,
+                        run.parent_run_id,
                         run.created_at,
                         run.updated_at,
                         self._json(run),
@@ -733,8 +765,10 @@ class PostgresTestRunStore:
                     cur.executemany(
                         f"INSERT INTO {self._item_table} "
                         "(id, run_id, case_id, case_version_id, position, status, attempt_no, "
-                        "lease_owner, lease_token, lease_expires_at, result_id, updated_at, record) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, NULL, %s, %s::jsonb)",
+                        "lease_owner, lease_token, lease_expires_at, result_id, "
+                        "regression_source_result_id, updated_at, record) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, NULL, "
+                        "%s, %s, %s::jsonb)",
                         [
                             (
                                 item.id,
@@ -744,6 +778,7 @@ class PostgresTestRunStore:
                                 item.position,
                                 item.status,
                                 item.attempt_no,
+                                item.regression_source_result_id,
                                 item.updated_at,
                                 self._json(item),
                             )
@@ -953,6 +988,7 @@ class PostgresTestRunStore:
                     run_item_id=item.id,
                     case_id=item.case_id,
                     case_version_id=item.case_version_id,
+                    regression_source_result_id=item.regression_source_result_id,
                     attempt_id=attempt.id,
                     attempt_no=attempt.attempt_no,
                     created_at=now,
@@ -960,15 +996,17 @@ class PostgresTestRunStore:
                 )
                 cur.execute(
                     f"INSERT INTO {self._result_table} "
-                    "(id, run_id, run_item_id, case_id, case_version_id, attempt_id, "
-                    "status, payload_hash, created_at, record) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+                    "(id, run_id, run_item_id, case_id, case_version_id, "
+                    "regression_source_result_id, attempt_id, status, payload_hash, "
+                    "created_at, record) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
                     (
                         result.id,
                         result.run_id,
                         result.run_item_id,
                         result.case_id,
                         result.case_version_id,
+                        result.regression_source_result_id,
                         result.attempt_id,
                         result.status,
                         result.payload_hash,
@@ -1296,16 +1334,23 @@ class PostgresTestRunStore:
 
     def _write_run(self, cur, run: TestRunRecord) -> None:
         cur.execute(
-            f"UPDATE {self._run_table} SET status = %s, updated_at = %s, "
-            "record = %s::jsonb WHERE id = %s",
-            (run.status, run.updated_at, self._json(run), run.id),
+            f"UPDATE {self._run_table} SET status = %s, parent_run_id = %s, "
+            "updated_at = %s, record = %s::jsonb WHERE id = %s",
+            (
+                run.status,
+                run.parent_run_id,
+                run.updated_at,
+                self._json(run),
+                run.id,
+            ),
         )
 
     def _write_item(self, cur, item: TestRunItemRecord) -> None:
         cur.execute(
             f"UPDATE {self._item_table} SET status = %s, attempt_no = %s, "
             "lease_owner = %s, lease_token = %s, lease_expires_at = %s, "
-            "result_id = %s, updated_at = %s, record = %s::jsonb WHERE id = %s",
+            "result_id = %s, regression_source_result_id = %s, updated_at = %s, "
+            "record = %s::jsonb WHERE id = %s",
             (
                 item.status,
                 item.attempt_no,
@@ -1313,6 +1358,7 @@ class PostgresTestRunStore:
                 item.lease_token,
                 item.lease_expires_at,
                 item.result_id,
+                item.regression_source_result_id,
                 item.updated_at,
                 self._json(item),
                 item.id,

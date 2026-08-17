@@ -79,6 +79,7 @@ class TestRunItemRecord(BaseModel):
     lease_expires_at: datetime | None = None
     heartbeat_at: datetime | None = None
     result_id: str | None = None
+    regression_source_result_id: str | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None = None
@@ -115,6 +116,7 @@ class TestCaseResultRecord(BaseModel):
     run_item_id: str
     case_id: str
     case_version_id: str
+    regression_source_result_id: str | None = None
     attempt_id: str
     attempt_no: int = Field(ge=1)
     status: TestResultStatus
@@ -141,6 +143,14 @@ class TestRunCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode_key: str = Field(min_length=1, max_length=80)
+    session_id: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class RegressionRunCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_ids: list[str] = Field(default_factory=list, max_length=1000)
+    version_overrides: dict[str, str] = Field(default_factory=dict, max_length=1000)
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
 
 

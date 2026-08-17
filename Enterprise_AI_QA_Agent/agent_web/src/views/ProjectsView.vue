@@ -57,6 +57,7 @@ const runsLoading = ref(false);
 const runOffset = ref(0);
 const runsHaveMore = ref(false);
 const runStatus = ref<"" | TestRunStatus>("");
+const regressionRunId = ref("");
 
 const generationOpen = ref(false);
 const generating = ref(false);
@@ -96,6 +97,13 @@ function modeLabel(modeKey: string) {
 
 function shortId(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
+function canCreateRegression(run: TestRunRecord) {
+  return (
+    (run.status === "completed" || run.status === "cancelled")
+    && run.stats.failed + run.stats.error + run.stats.blocked > 0
+  );
 }
 
 async function loadModes() {
@@ -504,6 +512,20 @@ async function cancelRun(run: TestRunRecord) {
   }
 }
 
+async function createRegressionRun(run: TestRunRecord) {
+  if (!canCreateRegression(run) || regressionRunId.value) return;
+  regressionRunId.value = run.id;
+  try {
+    const created = await api.createRegressionTestRun(run.id);
+    toast.success(`已创建回归运行 ${shortId(created.run.id)}`);
+    await Promise.all([loadTestRuns(), loadOverview()]);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "回归运行创建失败");
+  } finally {
+    regressionRunId.value = "";
+  }
+}
+
 onMounted(() => {
   void Promise.all([loadModes(), loadProjects()]);
 });
@@ -681,13 +703,17 @@ onMounted(() => {
                 <tbody>
                   <tr v-if="runsLoading"><td colspan="7" class="empty">正在加载测试运行…</td></tr>
                   <tr v-for="run in testRuns" v-else :key="run.id">
-                    <td><strong>{{ shortId(run.id) }}</strong><small>套件 {{ shortId(run.suite_id) }}</small></td>
+                    <td><strong>{{ shortId(run.id) }}</strong><small>{{ run.run_kind === "regression" ? "回归" : "普通" }} · 套件 {{ shortId(run.suite_id) }}</small><small v-if="run.parent_run_id">来源 {{ shortId(run.parent_run_id) }}</small></td>
                     <td><span class="case-status" :class="run.status">{{ run.status }}</span></td>
                     <td>{{ modeLabel(run.mode_key) }}</td>
                     <td>{{ run.stats.passed + run.stats.failed + run.stats.error + run.stats.blocked + run.stats.skipped + run.stats.cancelled }} / {{ run.stats.total }}</td>
                     <td><small>通过 {{ run.stats.passed }} · 失败 {{ run.stats.failed }} · 错误 {{ run.stats.error }} · 阻塞 {{ run.stats.blocked }}</small></td>
                     <td>{{ formatServerDateTime(run.created_at) }}</td>
-                    <td class="row-actions"><button v-if="run.status === 'queued' || run.status === 'running'" @click="cancelRun(run)">取消</button><span v-else>—</span></td>
+                    <td class="row-actions">
+                      <button v-if="run.status === 'queued' || run.status === 'running'" @click="cancelRun(run)">取消</button>
+                      <button v-if="canCreateRegression(run)" :disabled="Boolean(regressionRunId)" @click="createRegressionRun(run)">{{ regressionRunId === run.id ? "创建中…" : "失败项回归" }}</button>
+                      <span v-if="run.status !== 'queued' && run.status !== 'running' && !canCreateRegression(run)">—</span>
+                    </td>
                   </tr>
                   <tr v-if="!runsLoading && !testRuns.length"><td colspan="7" class="empty">暂无测试运行记录</td></tr>
                 </tbody>
@@ -753,7 +779,7 @@ onMounted(() => {
         <header><div><h2>创建测试运行</h2><p>{{ runSuite?.suite.name }} · {{ runSuite?.items.length ?? 0 }} 条固定版本用例</p></div><button @click="runEditorOpen = false">×</button></header>
         <label>测试模式<select v-model="runForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
         <label>关联 Session ID（可选）<input v-model="runForm.session_id" placeholder="仅接受已绑定当前项目的 Session"></label>
-        <div class="selection-summary"><strong>运行不会修改套件或用例版本</strong><small>Worker 将通过原子领取接口分批获取固定版本内容；四种专业 Runner 的自动适配在下一轮完成。</small></div>
+        <div class="selection-summary"><strong>运行不会修改套件或用例版本</strong><small>Worker 将通过原子领取接口分批获取固定版本内容；失败、错误和阻塞结果可创建独立回归运行。</small></div>
         <footer><button @click="runEditorOpen = false">取消</button><button class="primary" :disabled="runSaving" @click="createRun">{{ runSaving ? "创建中…" : "创建运行" }}</button></footer>
       </section>
     </div>

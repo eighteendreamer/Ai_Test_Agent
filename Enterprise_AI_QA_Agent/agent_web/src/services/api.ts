@@ -277,6 +277,16 @@ export const api = {
       body: JSON.stringify({ reason }),
     });
   },
+  createRegressionTestRun(runId: string, payload: {
+    result_ids?: string[];
+    version_overrides?: Record<string, string>;
+    session_id?: string | null;
+  } = {}): Promise<TestRunDetail> {
+    return request(`/api/v1/runs/${encodeURIComponent(runId)}/regression`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   getHealth(): Promise<HealthResponse> {
     return request("/api/v1/health");
   },

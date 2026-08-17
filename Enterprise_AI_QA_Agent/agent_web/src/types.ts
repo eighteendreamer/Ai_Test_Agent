@@ -1275,6 +1275,7 @@ export interface TestRunItemRecord {
   lease_expires_at?: string | null;
   heartbeat_at?: string | null;
   result_id?: string | null;
+  regression_source_result_id?: string | null;
   created_at: string;
   updated_at: string;
   started_at?: string | null;

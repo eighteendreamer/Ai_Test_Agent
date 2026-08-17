@@ -1,10 +1,300 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib import import_module
 
 from src.core.config import Settings
+
+
+def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+
+    class Cursor:
+        def __init__(self):
+            self.statements = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.statements.append(" ".join(statement.split()))
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    store_module.PostgresTestRunStore(Settings())._initialize_sync()
+
+    assert any(
+        "ALTER TABLE agent_test_runs ADD COLUMN IF NOT EXISTS parent_run_id UUID NULL"
+        in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ALTER TABLE agent_test_run_items ADD COLUMN IF NOT EXISTS "
+        "regression_source_result_id UUID NULL" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ALTER TABLE agent_test_case_results ADD COLUMN IF NOT EXISTS "
+        "regression_source_result_id UUID NULL" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_runs (parent_run_id)" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_run_items (regression_source_result_id)" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_case_results (regression_source_result_id)" in statement
+        for statement in cursor.statements
+    )
+
+
+def test_postgres_create_and_update_sync_regression_link_columns(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    parent_run_id = "00000000-0000-0000-0000-000000000010"
+    source_result_id = "00000000-0000-0000-0000-000000000020"
+    run = schemas.TestRunRecord(
+        id="00000000-0000-0000-0000-000000000011",
+        project_id="00000000-0000-0000-0000-000000000012",
+        suite_id="00000000-0000-0000-0000-000000000013",
+        run_kind="regression",
+        mode_key="api_testing",
+        parent_run_id=parent_run_id,
+        stats={"total": 1, "queued": 1},
+        created_at=now,
+        updated_at=now,
+    )
+    item = schemas.TestRunItemRecord(
+        id="00000000-0000-0000-0000-000000000014",
+        run_id=run.id,
+        case_id="00000000-0000-0000-0000-000000000015",
+        case_version_id="00000000-0000-0000-0000-000000000016",
+        position=1,
+        regression_source_result_id=source_result_id,
+        created_at=now,
+        updated_at=now,
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.execute_calls = []
+            self.executemany_calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.execute_calls.append((" ".join(statement.split()), parameters))
+
+        def executemany(self, statement, parameters):
+            self.executemany_calls.append(
+                (" ".join(statement.split()), list(parameters))
+            )
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+    store = store_module.PostgresTestRunStore(Settings())
+
+    store._create_run_sync(run, [item])
+    store._write_run(cursor, run)
+    store._write_item(cursor, item)
+
+    run_insert, run_parameters = next(
+        call for call in cursor.execute_calls if call[0].startswith("INSERT INTO agent_test_runs")
+    )
+    item_insert, item_rows = cursor.executemany_calls[0]
+    run_update, run_update_parameters = next(
+        call for call in cursor.execute_calls if call[0].startswith("UPDATE agent_test_runs")
+    )
+    item_update, item_update_parameters = next(
+        call for call in cursor.execute_calls if call[0].startswith("UPDATE agent_test_run_items")
+    )
+
+    assert "parent_run_id" in run_insert
+    assert parent_run_id in run_parameters
+    assert "regression_source_result_id" in item_insert
+    assert source_result_id in item_rows[0]
+    assert "parent_run_id = %s" in run_update
+    assert parent_run_id in run_update_parameters
+    assert "regression_source_result_id = %s" in item_update
+    assert source_result_id in item_update_parameters
+
+
+def test_postgres_completion_persists_regression_source_result_column(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    lease_token = "lease-token"
+    source_result_id = "00000000-0000-0000-0000-000000000020"
+    run = schemas.TestRunRecord(
+        id="00000000-0000-0000-0000-000000000011",
+        project_id="00000000-0000-0000-0000-000000000012",
+        suite_id="00000000-0000-0000-0000-000000000013",
+        run_kind="regression",
+        mode_key="api_testing",
+        parent_run_id="00000000-0000-0000-0000-000000000010",
+        stats={"total": 1, "running": 1},
+        status="running",
+        created_at=now,
+        updated_at=now,
+    )
+    item = schemas.TestRunItemRecord(
+        id="00000000-0000-0000-0000-000000000014",
+        run_id=run.id,
+        case_id="00000000-0000-0000-0000-000000000015",
+        case_version_id="00000000-0000-0000-0000-000000000016",
+        position=1,
+        status="running",
+        attempt_no=1,
+        lease_owner="worker-1",
+        lease_token=lease_token,
+        lease_expires_at=now + timedelta(minutes=1),
+        regression_source_result_id=source_result_id,
+        created_at=now,
+        updated_at=now,
+    )
+    attempt = schemas.TestRunAttemptRecord(
+        id="00000000-0000-0000-0000-000000000017",
+        run_id=run.id,
+        run_item_id=item.id,
+        attempt_no=1,
+        worker_id="worker-1",
+        lease_token=lease_token,
+        status="running",
+        claimed_at=now,
+        started_at=now,
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.execute_calls = []
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            normalized = " ".join(statement.split())
+            self.execute_calls.append((normalized, parameters))
+            if "FROM agent_test_run_items" in normalized and "WHERE id" in normalized:
+                self.rows = [{"record": item.model_dump(mode="json")}]
+            elif "FROM agent_test_run_attempts" in normalized and "run_item_id" in normalized:
+                self.rows = [{"record": attempt.model_dump(mode="json")}]
+            elif "FROM agent_test_runs" in normalized and "FOR UPDATE" in normalized:
+                self.rows = [{"record": run.model_dump(mode="json")}]
+            elif "GROUP BY status" in normalized:
+                self.rows = [{"status": "passed", "total": 1}]
+            else:
+                self.rows = []
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+    store = store_module.PostgresTestRunStore(Settings())
+
+    result = store._complete_item_sync(
+        item.id,
+        lease_token,
+        schemas.RunItemCompletion(
+            status="passed",
+            summary="regression passed",
+            payload_hash="a" * 64,
+        ),
+        now,
+    )
+
+    result_insert, result_parameters = next(
+        call
+        for call in cursor.execute_calls
+        if call[0].startswith("INSERT INTO agent_test_case_results")
+    )
+    assert result.regression_source_result_id == source_result_id
+    assert "regression_source_result_id" in result_insert
+    assert source_result_id in result_parameters
 
 
 def test_postgres_claim_uses_skip_locked_and_one_transaction_connection(monkeypatch):
