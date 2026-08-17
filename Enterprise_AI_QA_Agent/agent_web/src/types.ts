@@ -1295,6 +1295,109 @@ export interface TestRunPage {
   offset: number;
   has_more: boolean;
 }
+
+export type RegressionFailureStatus = "failed" | "error" | "blocked";
+
+export interface LatestRegressionRecord {
+  run_id: string;
+  run_status: TestRunStatus;
+  run_item_id: string;
+  item_status: RunItemStatus;
+  result_id?: string | null;
+  result_status?: RunItemStatus | null;
+  case_version_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegressionFailureSummary {
+  source_result_id: string;
+  source_run_id: string;
+  source_run_status: TestRunStatus;
+  source_run_created_at: string;
+  case_id: string;
+  case_version_id: string;
+  case_key: string;
+  case_title: string;
+  mode_key: string;
+  failure_status: RegressionFailureStatus;
+  summary: string;
+  error_message?: string | null;
+  failed_at: string;
+  evidence_count: number;
+  artifact_count: number;
+  verification_count: number;
+  has_actual: boolean;
+  regression_batch_count: number;
+  latest_regression?: LatestRegressionRecord | null;
+}
+
+export interface RegressionFailurePage {
+  items: RegressionFailureSummary[];
+  limit: number;
+  next_cursor?: string | null;
+  has_more: boolean;
+}
+
+export interface RegressionEvidenceSummary {
+  evidence_type: string;
+  evidence_id: string;
+  label: string;
+}
+
+export interface RegressionArtifactLink {
+  artifact_id: string;
+  content_url?: string | null;
+}
+
+export interface RegressionVerificationSummary {
+  id: string;
+  verifier: string;
+  status: string;
+  summary: string;
+  assertion_count: number;
+  passed_count: number;
+  failed_count: number;
+  created_at?: string | null;
+}
+
+export interface RegressionContext {
+  source_result_id: string;
+  source_run_id: string;
+  case_id: string;
+  case_version_id: string;
+  mode_key: string;
+  failure_status: RegressionFailureStatus;
+  summary: string;
+  error_message?: string | null;
+  metrics: Record<string, unknown>;
+  evidence: RegressionEvidenceSummary[];
+  artifacts: RegressionArtifactLink[];
+  verifications: RegressionVerificationSummary[];
+  failed_at: string;
+}
+
+export interface RegressionBatchRecord {
+  run_id: string;
+  run_kind: "normal" | "regression";
+  run_status: TestRunStatus;
+  parent_run_id?: string | null;
+  run_item_id: string;
+  item_status: RunItemStatus;
+  result_id?: string | null;
+  result_status?: RunItemStatus | null;
+  case_version_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegressionBatchPage {
+  source_result_id: string;
+  items: RegressionBatchRecord[];
+  limit: number;
+  next_cursor?: string | null;
+  has_more: boolean;
+}
 export type IntegrationTransport = "stdio" | "http" | "websocket";
 export type IntegrationAuthType = "none" | "bearer" | "api_key" | "basic";
 

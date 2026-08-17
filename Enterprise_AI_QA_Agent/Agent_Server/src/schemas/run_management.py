@@ -33,6 +33,7 @@ RunAttemptStatus = Literal[
     "expired",
 ]
 TestResultStatus = Literal["passed", "failed", "error", "blocked", "skipped"]
+RegressionFailureStatus = Literal["failed", "error", "blocked"]
 
 
 class TestRunStats(BaseModel):
@@ -139,6 +140,110 @@ class RegressionSourceRecord(BaseModel):
     case_version_id: str
     status: TestResultStatus
     run_item_position: int | None = Field(default=None, ge=1)
+
+
+class LatestRegressionRecord(BaseModel):
+    run_id: str
+    run_status: TestRunStatus
+    run_item_id: str
+    item_status: RunItemStatus
+    result_id: str | None = None
+    result_status: TestResultStatus | None = None
+    case_version_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegressionFailureRecord(BaseModel):
+    source_result_id: str
+    source_run_id: str
+    source_run_status: TestRunStatus
+    source_run_created_at: datetime
+    case_id: str
+    case_version_id: str
+    mode_key: str
+    failure_status: RegressionFailureStatus
+    summary: str
+    error_message: str | None = None
+    failed_at: datetime
+    evidence_count: int = Field(default=0, ge=0)
+    artifact_count: int = Field(default=0, ge=0)
+    verification_count: int = Field(default=0, ge=0)
+    has_actual: bool = False
+    regression_batch_count: int = Field(default=0, ge=0)
+    latest_regression: LatestRegressionRecord | None = None
+
+
+class RegressionFailureSummary(RegressionFailureRecord):
+    case_key: str
+    case_title: str
+
+
+class RegressionFailurePage(BaseModel):
+    items: list[RegressionFailureSummary] = Field(default_factory=list)
+    limit: int
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class RegressionEvidenceSummary(BaseModel):
+    evidence_type: str
+    evidence_id: str
+    label: str = ""
+
+
+class RegressionArtifactLink(BaseModel):
+    artifact_id: str
+    content_url: str | None = None
+
+
+class RegressionVerificationSummary(BaseModel):
+    id: str
+    verifier: str = ""
+    status: str
+    summary: str = ""
+    assertion_count: int = Field(default=0, ge=0)
+    passed_count: int = Field(default=0, ge=0)
+    failed_count: int = Field(default=0, ge=0)
+    created_at: datetime | None = None
+
+
+class RegressionContext(BaseModel):
+    source_result_id: str
+    source_run_id: str
+    case_id: str
+    case_version_id: str
+    mode_key: str
+    failure_status: RegressionFailureStatus
+    summary: str
+    error_message: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[RegressionEvidenceSummary] = Field(default_factory=list)
+    artifacts: list[RegressionArtifactLink] = Field(default_factory=list)
+    verifications: list[RegressionVerificationSummary] = Field(default_factory=list)
+    failed_at: datetime
+
+
+class RegressionBatchRecord(BaseModel):
+    run_id: str
+    run_kind: TestRunKind
+    run_status: TestRunStatus
+    parent_run_id: str | None = None
+    run_item_id: str
+    item_status: RunItemStatus
+    result_id: str | None = None
+    result_status: TestResultStatus | None = None
+    case_version_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegressionBatchPage(BaseModel):
+    source_result_id: str
+    items: list[RegressionBatchRecord] = Field(default_factory=list)
+    limit: int
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class TestRunDetail(BaseModel):

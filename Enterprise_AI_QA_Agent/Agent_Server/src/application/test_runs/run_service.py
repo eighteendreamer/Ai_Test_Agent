@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
+from urllib.parse import quote
 from uuid import uuid4
 
 from src.application.projects.project_service import ProjectService
@@ -14,7 +18,15 @@ from src.application.test_suites.suite_service import TestSuiteService
 from src.runtime.store import SessionStore
 from src.schemas.run_management import (
     LeaseRecoveryResponse,
+    RegressionArtifactLink,
+    RegressionBatchPage,
+    RegressionContext,
+    RegressionEvidenceSummary,
+    RegressionFailurePage,
+    RegressionFailureStatus,
+    RegressionFailureSummary,
     RegressionRunCreateRequest,
+    RegressionVerificationSummary,
     RunClaimRequest,
     RunClaimResponse,
     RunItemClaim,
@@ -36,6 +48,16 @@ from src.schemas.session import ExecutionEvent
 
 logger = logging.getLogger(__name__)
 REGRESSION_EVENT_SOURCE_ID_LIMIT = 100
+_WINDOWS_PATH_PATTERN = re.compile(r"(?i)(?:^|[\s;,(])(?:[a-z]:[\\/])")
+_INTERNAL_LOCATION_KEYS = {
+    "path",
+    "uri",
+    "local_path",
+    "storage_uri",
+    "object_uri",
+    "minio_uri",
+}
+_REDACTED = object()
 
 
 class TestRunService:
@@ -362,6 +384,171 @@ class TestRunService:
         )
         return TestRunPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
+    async def list_regression_failures(
+        self,
+        project_id: str,
+        *,
+        failure_status: RegressionFailureStatus | None,
+        mode_key: str | None,
+        cursor: str | None,
+        limit: int,
+    ) -> RegressionFailurePage:
+        await self._projects.get(project_id)
+        cursor_created_at, cursor_id = _decode_regression_cursor(cursor)
+        records, has_more = await self._store.list_regression_failures(
+            project_id=project_id,
+            failure_status=failure_status,
+            mode_key=(mode_key or "").strip() or None,
+            cursor_created_at=cursor_created_at,
+            cursor_id=cursor_id,
+            limit=limit,
+        )
+        cases = await self._cases.get_cases([record.case_id for record in records])
+        items = [
+            RegressionFailureSummary(
+                **record.model_dump(mode="python"),
+                case_key=cases[record.case_id].case_key,
+                case_title=cases[record.case_id].title,
+            )
+            for record in records
+        ]
+        next_cursor = (
+            _encode_regression_cursor(records[-1].failed_at, records[-1].source_result_id)
+            if has_more and records
+            else None
+        )
+        return RegressionFailurePage(
+            items=items,
+            limit=limit,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
+
+    async def get_regression_context(self, result_id: str) -> RegressionContext:
+        result = await self._store.get_result(result_id)
+        if result is None:
+            raise KeyError(f"Test result not found: {result_id}")
+        if result.status not in {"failed", "error", "blocked"}:
+            raise ValueError(
+                "Regression context is only available for failed/error/blocked results: "
+                f"{result_id}"
+            )
+        run = await self._get_run_record(result.run_id)
+        verification_ids = set(result.verification_ids)
+        verification_values = result.actual.get("verification_results", [])
+        verifications = []
+        if isinstance(verification_values, list):
+            for value in verification_values:
+                if not isinstance(value, dict):
+                    continue
+                verification_id = str(value.get("id") or "").strip()
+                status = str(value.get("status") or "").strip()
+                if not verification_id or verification_id not in verification_ids or not status:
+                    continue
+                verifications.append(
+                    RegressionVerificationSummary(
+                        id=verification_id,
+                        verifier=_public_text(
+                            value.get("verifier"),
+                            fallback="verification",
+                        ),
+                        status=status,
+                        summary=_public_text(
+                            value.get("summary"),
+                            fallback="Verification details redacted",
+                        ),
+                        assertion_count=_non_negative_int(value.get("assertion_count")),
+                        passed_count=_non_negative_int(value.get("passed_count")),
+                        failed_count=_non_negative_int(value.get("failed_count")),
+                        created_at=_optional_datetime(value.get("created_at")),
+                    )
+                )
+        content_prefix = None
+        if run.session_id:
+            content_prefix = (
+                f"/api/v1/sessions/{quote(run.session_id, safe='')}/artifacts"
+            )
+        return RegressionContext(
+            source_result_id=result.id,
+            source_run_id=result.run_id,
+            case_id=result.case_id,
+            case_version_id=result.case_version_id,
+            mode_key=run.mode_key,
+            failure_status=result.status,
+            summary=_public_text(result.summary, fallback="Failure details redacted"),
+            error_message=(
+                _public_text(
+                    result.error_message,
+                    fallback="Internal location redacted",
+                )
+                if result.error_message
+                else None
+            ),
+            metrics=_public_metrics(result.metrics),
+            evidence=[
+                RegressionEvidenceSummary(
+                    evidence_type=evidence.evidence_type,
+                    evidence_id=evidence.evidence_id,
+                    label=_public_text(
+                        evidence.label,
+                        fallback=evidence.evidence_type,
+                    ),
+                )
+                for evidence in result.evidence_refs
+            ],
+            artifacts=[
+                RegressionArtifactLink(
+                    artifact_id=artifact_id,
+                    content_url=(
+                        f"{content_prefix}/{quote(artifact_id, safe='')}/content"
+                        if content_prefix
+                        else None
+                    ),
+                )
+                for artifact_id in result.artifact_ids
+            ],
+            verifications=verifications,
+            failed_at=result.created_at,
+        )
+
+    async def list_regression_batches(
+        self,
+        result_id: str,
+        *,
+        cursor: str | None,
+        limit: int,
+    ) -> RegressionBatchPage:
+        result = await self._store.get_result(result_id)
+        if result is None:
+            raise KeyError(f"Test result not found: {result_id}")
+        if result.status not in {"failed", "error", "blocked"}:
+            raise ValueError(
+                "Regression batches are only available for failed/error/blocked results: "
+                f"{result_id}"
+            )
+        cursor_created_at, cursor_id = _decode_regression_batch_cursor(cursor)
+        records, has_more = await self._store.list_regression_batches(
+            source_result_id=result_id,
+            cursor_created_at=cursor_created_at,
+            cursor_id=cursor_id,
+            limit=limit,
+        )
+        next_cursor = (
+            _encode_regression_batch_cursor(
+                records[-1].created_at,
+                records[-1].run_item_id,
+            )
+            if has_more and records
+            else None
+        )
+        return RegressionBatchPage(
+            source_result_id=result_id,
+            items=records,
+            limit=limit,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
+
     async def claim(self, run_id: str, payload: RunClaimRequest) -> RunClaimResponse:
         run = await self._get_run_record(run_id)
         leases = await self._store.claim_items(
@@ -539,3 +726,132 @@ class TestRunService:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _non_negative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _optional_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _contains_internal_location(value: str) -> bool:
+    normalized = value.strip().lower()
+    return (
+        "minio://" in normalized
+        or "file://" in normalized
+        or bool(_WINDOWS_PATH_PATTERN.search(value))
+    )
+
+
+def _public_text(value: object, *, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text or _contains_internal_location(text):
+        return fallback
+    return text
+
+
+def _public_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    value = _public_metric_value(metrics)
+    return value if isinstance(value, dict) else {}
+
+
+def _public_metric_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        public = {}
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            normalized_key = key.strip().lower()
+            if (
+                normalized_key in _INTERNAL_LOCATION_KEYS
+                or normalized_key.endswith("_path")
+                or normalized_key.endswith("_uri")
+            ):
+                continue
+            public_child = _public_metric_value(child)
+            if public_child is not _REDACTED:
+                public[key] = public_child
+        return public
+    if isinstance(value, list):
+        public_items = [_public_metric_value(item) for item in value]
+        return [item for item in public_items if item is not _REDACTED]
+    if isinstance(value, str) and _contains_internal_location(value):
+        return _REDACTED
+    return value
+
+
+def _encode_regression_cursor(created_at: datetime, result_id: str) -> str:
+    payload = json.dumps(
+        {"created_at": created_at.isoformat(), "result_id": result_id},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_regression_cursor(cursor: str | None) -> tuple[datetime | None, str | None]:
+    if not cursor:
+        return None, None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode((cursor + padding).encode("ascii")).decode("utf-8")
+        )
+        created_at = datetime.fromisoformat(str(payload["created_at"]))
+        result_id = str(payload["result_id"]).strip()
+        if created_at.tzinfo is None or not result_id:
+            raise ValueError("cursor fields are incomplete")
+        return created_at, result_id
+    except (
+        binascii.Error,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ) as exc:
+        raise ValueError("Invalid regression pagination cursor") from exc
+
+
+def _encode_regression_batch_cursor(created_at: datetime, run_item_id: str) -> str:
+    payload = json.dumps(
+        {"created_at": created_at.isoformat(), "run_item_id": run_item_id},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_regression_batch_cursor(
+    cursor: str | None,
+) -> tuple[datetime | None, str | None]:
+    if not cursor:
+        return None, None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode((cursor + padding).encode("ascii")).decode("utf-8")
+        )
+        created_at = datetime.fromisoformat(str(payload["created_at"]))
+        run_item_id = str(payload["run_item_id"]).strip()
+        if created_at.tzinfo is None or not run_item_id:
+            raise ValueError("cursor fields are incomplete")
+        return created_at, run_item_id
+    except (
+        binascii.Error,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ) as exc:
+        raise ValueError("Invalid regression batch pagination cursor") from exc

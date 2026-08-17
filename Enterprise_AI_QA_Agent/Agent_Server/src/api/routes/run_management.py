@@ -4,6 +4,10 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from src.schemas.run_management import (
     LeaseRecoveryResponse,
+    RegressionBatchPage,
+    RegressionContext,
+    RegressionFailurePage,
+    RegressionFailureStatus,
     RegressionRunCreateRequest,
     RunCancelRequest,
     RunClaimRequest,
@@ -66,6 +70,63 @@ async def list_test_runs(
             offset=offset,
         )
     except KeyError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get(
+    "/projects/{project_id}/regression-failures",
+    response_model=RegressionFailurePage,
+)
+async def list_project_regression_failures(
+    project_id: str,
+    request: Request,
+    failure_status: RegressionFailureStatus | None = Query(default=None),
+    mode_key: str | None = Query(default=None, max_length=80),
+    cursor: str | None = Query(default=None, max_length=1000),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    try:
+        return await request.app.state.test_run_service.list_regression_failures(
+            project_id,
+            failure_status=failure_status,
+            mode_key=mode_key,
+            cursor=cursor,
+            limit=limit,
+        )
+    except (KeyError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get(
+    "/test-results/{result_id}/regression-context",
+    response_model=RegressionContext,
+)
+async def get_test_result_regression_context(result_id: str, request: Request):
+    try:
+        return await request.app.state.test_run_service.get_regression_context(
+            result_id
+        )
+    except (KeyError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get(
+    "/test-results/{result_id}/regression-batches",
+    response_model=RegressionBatchPage,
+)
+async def list_test_result_regression_batches(
+    result_id: str,
+    request: Request,
+    cursor: str | None = Query(default=None, max_length=1000),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    try:
+        return await request.app.state.test_run_service.list_regression_batches(
+            result_id,
+            cursor=cursor,
+            limit=limit,
+        )
+    except (KeyError, ValueError) as exc:
         raise _http_error(exc) from exc
 
 

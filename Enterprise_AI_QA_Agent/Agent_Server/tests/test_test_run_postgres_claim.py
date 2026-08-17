@@ -184,6 +184,258 @@ def test_postgres_explicit_regression_candidates_keep_passed_and_filter_invalid_
     assert [candidate.status for candidate in candidates] == ["passed"]
 
 
+def test_postgres_regression_failure_feed_uses_keyset_and_lateral_summary(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    project_id = "00000000-0000-0000-0000-000000000001"
+    cursor_id = "00000000-0000-0000-0000-000000000099"
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchall(self):
+            rows = []
+            for index in range(2):
+                rows.append(
+                    {
+                        "source_result_id": f"00000000-0000-0000-0000-{index + 10:012d}",
+                        "source_run_id": "00000000-0000-0000-0000-000000000002",
+                        "source_run_status": "completed",
+                        "source_run_created_at": now,
+                        "case_id": f"00000000-0000-0000-0000-{index + 20:012d}",
+                        "case_version_id": f"00000000-0000-0000-0000-{index + 30:012d}",
+                        "mode_key": "api_testing",
+                        "failure_status": "failed",
+                        "summary": "failed",
+                        "error_message": None,
+                        "failed_at": now,
+                        "evidence_count": 1,
+                        "artifact_count": 1,
+                        "verification_count": 1,
+                        "has_actual": True,
+                        "regression_batch_count": 1,
+                        "latest_run_id": "00000000-0000-0000-0000-000000000003",
+                        "latest_run_status": "queued",
+                        "latest_run_item_id": "00000000-0000-0000-0000-000000000004",
+                        "latest_item_status": "queued",
+                        "latest_result_id": None,
+                        "latest_result_status": None,
+                        "latest_case_version_id": f"00000000-0000-0000-0000-{index + 30:012d}",
+                        "latest_run_created_at": now,
+                        "latest_item_updated_at": now,
+                    }
+                )
+            return rows
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    records, has_more = asyncio.run(
+        store_module.PostgresTestRunStore(Settings()).list_regression_failures(
+            project_id=project_id,
+            failure_status="failed",
+            mode_key="api_testing",
+            cursor_created_at=now,
+            cursor_id=cursor_id,
+            limit=1,
+        )
+    )
+
+    statement, parameters = cursor.calls[0]
+    assert "JOIN agent_test_runs AS source_run" in statement
+    assert "LEFT JOIN LATERAL" in statement
+    assert "(result.created_at, result.id) < (%s, %s::uuid)" in statement
+    assert "ORDER BY result.created_at DESC, result.id DESC" in statement
+    assert "LIMIT %s" in statement
+    assert parameters == (project_id, "failed", "api_testing", now, cursor_id, 2)
+    assert len(records) == 1
+    assert records[0].regression_batch_count == 1
+    assert records[0].latest_regression.item_status == "queued"
+    assert has_more is True
+
+
+def test_postgres_regression_batches_use_keyset_timeline(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    source_result_id = "00000000-0000-0000-0000-000000000001"
+    cursor_id = "00000000-0000-0000-0000-000000000099"
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchall(self):
+            return [
+                {
+                    "run_id": f"00000000-0000-0000-0000-{index + 10:012d}",
+                    "run_kind": "regression",
+                    "run_status": "queued",
+                    "parent_run_id": "00000000-0000-0000-0000-000000000002",
+                    "run_item_id": f"00000000-0000-0000-0000-{index + 20:012d}",
+                    "item_status": "queued",
+                    "result_id": None,
+                    "result_status": None,
+                    "case_version_id": f"00000000-0000-0000-0000-{index + 30:012d}",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for index in range(2)
+            ]
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    records, has_more = asyncio.run(
+        store_module.PostgresTestRunStore(Settings()).list_regression_batches(
+            source_result_id=source_result_id,
+            cursor_created_at=now,
+            cursor_id=cursor_id,
+            limit=1,
+        )
+    )
+
+    statement, parameters = cursor.calls[0]
+    assert "WHERE child_item.regression_source_result_id = %s" in statement
+    assert "(child_run.created_at, child_item.id) < (%s, %s::uuid)" in statement
+    assert "ORDER BY child_run.created_at DESC, child_item.id DESC" in statement
+    assert "LIMIT %s" in statement
+    assert parameters == (source_result_id, now, cursor_id, 2)
+    assert len(records) == 1
+    assert records[0].run_kind == "regression"
+    assert records[0].item_status == "queued"
+    assert has_more is True
+
+
+def test_postgres_get_result_reads_one_result_record(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    result_id = "00000000-0000-0000-0000-000000000001"
+    result_record = {
+        "id": result_id,
+        "run_id": "00000000-0000-0000-0000-000000000002",
+        "run_item_id": "00000000-0000-0000-0000-000000000003",
+        "case_id": "00000000-0000-0000-0000-000000000004",
+        "case_version_id": "00000000-0000-0000-0000-000000000005",
+        "attempt_id": "00000000-0000-0000-0000-000000000006",
+        "attempt_no": 1,
+        "status": "failed",
+        "summary": "failed",
+        "payload_hash": "a" * 64,
+        "created_at": now.isoformat(),
+    }
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchone(self):
+            return {"record": result_record}
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    result = asyncio.run(
+        store_module.PostgresTestRunStore(Settings()).get_result(result_id)
+    )
+
+    assert cursor.calls == [
+        ("SELECT record FROM agent_test_case_results WHERE id = %s", (result_id,))
+    ]
+    assert result.id == result_id
+    assert result.status == "failed"
+
+
 def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch):
     store_module = import_module("src.application.test_runs.run_store")
 
@@ -257,6 +509,19 @@ def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch)
         "ON agent_test_case_results (run_id, run_item_id, id) "
         "INCLUDE (status, case_id, case_version_id) "
         "WHERE status IN ('failed', 'error', 'blocked')" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_case_results (run_id, created_at DESC, id DESC) "
+        "INCLUDE (status, case_id, case_version_id, run_item_id) "
+        "WHERE status IN ('failed', 'error', 'blocked')" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_run_items "
+        "(regression_source_result_id, updated_at DESC, id DESC) "
+        "INCLUDE (run_id, status, result_id, case_version_id) "
+        "WHERE regression_source_result_id IS NOT NULL" in statement
         for statement in cursor.statements
     )
 

@@ -529,3 +529,239 @@ async def test_regression_system_api_handles_one_thousand_failed_results():
     assert payload["run"]["stats"]["total"] == 1_000
     assert len(payload["items"]) == 1_000
     assert payload["items"][-1]["regression_source_result_id"] == "bulk-result-999"
+
+
+@pytest.mark.asyncio
+async def test_regression_center_system_api_uses_keyset_pagination():
+    service, _, _ = _components()
+    parent = await service.create_run(
+        "suite-1",
+        _RunCreateRequest(mode_key="api_testing"),
+    )
+    claims = (
+        await service.claim(
+            parent.run.id,
+            RunClaimRequest(worker_id="worker-1", limit=2, lease_seconds=300),
+        )
+    ).claims
+    for claim in claims:
+        await service.start_item(
+            claim.item.id,
+            RunItemLeaseRequest(lease_token=claim.lease_token),
+        )
+        await service.complete_item(
+            claim.item.id,
+            RunItemCompleteRequest(
+                lease_token=claim.lease_token,
+                status="failed",
+                summary=f"failed {claim.item.case_id}",
+                evidence_refs=[
+                    {
+                        "evidence_type": "http_response",
+                        "evidence_id": f"evidence-{claim.item.case_id}",
+                    }
+                ],
+                artifact_ids=[f"artifact-{claim.item.case_id}"],
+                verification_ids=[f"verification-{claim.item.case_id}"],
+            ),
+        )
+    await service.create_regression(parent.run.id, RegressionRunCreateRequest())
+    app = FastAPI()
+    app.include_router(run_router, prefix="/api/v1")
+    app.state.test_run_service = service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.get(
+            "/api/v1/projects/project-1/regression-failures",
+            params={"limit": 1},
+        )
+        assert first.status_code == 200
+        first_payload = first.json()
+        second = await client.get(
+            "/api/v1/projects/project-1/regression-failures",
+            params={"limit": 1, "cursor": first_payload["next_cursor"]},
+        )
+
+    assert second.status_code == 200
+    second_payload = second.json()
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"]
+    assert len(first_payload["items"]) == 1
+    assert len(second_payload["items"]) == 1
+    assert first_payload["items"][0]["source_result_id"] != (
+        second_payload["items"][0]["source_result_id"]
+    )
+    assert first_payload["items"][0]["case_title"].startswith("订单用例")
+    assert first_payload["items"][0]["evidence_count"] == 1
+    assert first_payload["items"][0]["artifact_count"] == 1
+    assert first_payload["items"][0]["verification_count"] == 1
+    assert first_payload["items"][0]["regression_batch_count"] == 1
+    assert first_payload["items"][0]["latest_regression"]["item_status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_regression_context_system_api_exposes_only_public_evidence_links():
+    store = InMemoryTestRunStore()
+    service, _, _ = _components(store=store)
+    parent = await service.create_run(
+        "suite-1",
+        _RunCreateRequest(mode_key="api_testing"),
+    )
+    store._runs[parent.run.id] = parent.run.model_copy(update={"session_id": "session-1"})
+    claim = (
+        await service.claim(
+            parent.run.id,
+            RunClaimRequest(worker_id="worker-1", limit=1, lease_seconds=300),
+        )
+    ).claims[0]
+    await service.start_item(
+        claim.item.id,
+        RunItemLeaseRequest(lease_token=claim.lease_token),
+    )
+    result = await service.complete_item(
+        claim.item.id,
+        RunItemCompleteRequest(
+            lease_token=claim.lease_token,
+            status="failed",
+            summary="status assertion failed",
+            actual={
+                "response_path": "C:/private/results/response.json",
+                "verification_results": [
+                    {
+                        "id": "verification-1",
+                        "session_id": "session-1",
+                        "turn_id": "turn-1",
+                        "trace_id": "trace-1",
+                        "verifier": "http_status",
+                        "status": "failed",
+                        "summary": "expected 200, got 500; dump C:/private/verify.json",
+                        "assertion_count": 1,
+                        "passed_count": 0,
+                        "failed_count": 1,
+                        "evidence": [],
+                        "metadata": {"internal_path": "C:/private/verification.json"},
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                ],
+            },
+            evidence_refs=[
+                {
+                    "evidence_type": "artifact",
+                    "evidence_id": "artifact-1",
+                    "label": "C:/private/results/response.json",
+                    "uri": "minio://private-bucket/internal-key",
+                    "metadata": {"local_path": "C:/private/results/response.json"},
+                }
+            ],
+            artifact_ids=["artifact-1"],
+            verification_ids=["verification-1"],
+            metrics={
+                "duration_ms": 125,
+                "storage_uri": "minio://private-bucket/internal-metrics.json",
+            },
+            error_message="HTTP 500",
+        ),
+    )
+    app = FastAPI()
+    app.include_router(run_router, prefix="/api/v1")
+    app.state.test_run_service = service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/test-results/{result.id}/regression-context"
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_result_id"] == result.id
+    assert payload["summary"] == "status assertion failed"
+    assert payload["metrics"] == {"duration_ms": 125}
+    assert payload["evidence"] == [
+        {
+            "evidence_type": "artifact",
+            "evidence_id": "artifact-1",
+            "label": "artifact",
+        }
+    ]
+    assert payload["artifacts"] == [
+        {
+            "artifact_id": "artifact-1",
+            "content_url": "/api/v1/sessions/session-1/artifacts/artifact-1/content",
+        }
+    ]
+    assert payload["verifications"][0]["id"] == "verification-1"
+    assert payload["verifications"][0]["status"] == "failed"
+    serialized = response.text
+    assert "minio://" not in serialized
+    assert "C:/private" not in serialized
+    assert '"actual"' not in serialized
+
+
+@pytest.mark.asyncio
+async def test_regression_batches_system_api_uses_keyset_timeline():
+    service, _, _ = _components()
+    parent = await service.create_run(
+        "suite-1",
+        _RunCreateRequest(mode_key="api_testing"),
+    )
+    claims = (
+        await service.claim(
+            parent.run.id,
+            RunClaimRequest(worker_id="worker-1", limit=2, lease_seconds=300),
+        )
+    ).claims
+    source_result_id = None
+    for index, claim in enumerate(claims):
+        await service.start_item(
+            claim.item.id,
+            RunItemLeaseRequest(lease_token=claim.lease_token),
+        )
+        result = await service.complete_item(
+            claim.item.id,
+            RunItemCompleteRequest(
+                lease_token=claim.lease_token,
+                status="failed" if index == 0 else "passed",
+                summary="failed" if index == 0 else "passed",
+            ),
+        )
+        if index == 0:
+            source_result_id = result.id
+    assert source_result_id
+    await service.create_regression(
+        parent.run.id,
+        RegressionRunCreateRequest(result_ids=[source_result_id]),
+    )
+    await service.create_regression(
+        parent.run.id,
+        RegressionRunCreateRequest(result_ids=[source_result_id]),
+    )
+    app = FastAPI()
+    app.include_router(run_router, prefix="/api/v1")
+    app.state.test_run_service = service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.get(
+            f"/api/v1/test-results/{source_result_id}/regression-batches",
+            params={"limit": 1},
+        )
+        assert first.status_code == 200
+        first_payload = first.json()
+        second = await client.get(
+            f"/api/v1/test-results/{source_result_id}/regression-batches",
+            params={"limit": 1, "cursor": first_payload["next_cursor"]},
+        )
+
+    assert second.status_code == 200
+    second_payload = second.json()
+    assert first_payload["source_result_id"] == source_result_id
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"]
+    assert len(first_payload["items"]) == 1
+    assert len(second_payload["items"]) == 1
+    assert first_payload["items"][0]["run_id"] != second_payload["items"][0]["run_id"]
+    assert first_payload["items"][0]["run_kind"] == "regression"
+    assert first_payload["items"][0]["parent_run_id"] == parent.run.id
+    assert first_payload["items"][0]["item_status"] == "queued"

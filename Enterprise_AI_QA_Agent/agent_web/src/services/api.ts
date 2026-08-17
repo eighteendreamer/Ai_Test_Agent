@@ -91,6 +91,10 @@ import type {
   ProjectRecord,
   ProjectPage,
   ProjectOverview,
+  RegressionBatchPage,
+  RegressionContext,
+  RegressionFailurePage,
+  RegressionFailureStatus,
   TestCaseGenerationResponse,
   TestCaseLifecycleStatus,
   TestCasePage,
@@ -286,6 +290,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+  listRegressionFailures(projectId: string, params: {
+    failure_status?: RegressionFailureStatus;
+    mode_key?: string;
+    cursor?: string;
+    limit?: number;
+  } = {}): Promise<RegressionFailurePage> {
+    const query = new URLSearchParams({ limit: String(params.limit ?? 50) });
+    if (params.failure_status) query.set("failure_status", params.failure_status);
+    if (params.mode_key) query.set("mode_key", params.mode_key);
+    if (params.cursor) query.set("cursor", params.cursor);
+    return request(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/regression-failures?${query.toString()}`,
+    );
+  },
+  getRegressionContext(resultId: string): Promise<RegressionContext> {
+    return request(
+      `/api/v1/test-results/${encodeURIComponent(resultId)}/regression-context`,
+    );
+  },
+  listRegressionBatches(resultId: string, params: {
+    cursor?: string;
+    limit?: number;
+  } = {}): Promise<RegressionBatchPage> {
+    const query = new URLSearchParams({ limit: String(params.limit ?? 50) });
+    if (params.cursor) query.set("cursor", params.cursor);
+    return request(
+      `/api/v1/test-results/${encodeURIComponent(resultId)}/regression-batches?${query.toString()}`,
+    );
   },
   getHealth(): Promise<HealthResponse> {
     return request("/api/v1/health");

@@ -9,6 +9,10 @@ from uuid import UUID, uuid4
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.run_management import (
+    LatestRegressionRecord,
+    RegressionBatchRecord,
+    RegressionFailureRecord,
+    RegressionFailureStatus,
     RegressionSourceRecord,
     RunItemCompletion,
     TestCaseResultRecord,
@@ -41,12 +45,31 @@ class TestRunStore(Protocol):
     ) -> TestRunDetail: ...
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
+    async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
     async def list_regression_candidates(
         self,
         *,
         run_id: str,
         result_ids: list[str] | None,
     ) -> list[RegressionSourceRecord]: ...
+    async def list_regression_failures(
+        self,
+        *,
+        project_id: str,
+        failure_status: RegressionFailureStatus | None,
+        mode_key: str | None,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionFailureRecord], bool]: ...
+    async def list_regression_batches(
+        self,
+        *,
+        source_result_id: str,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionBatchRecord], bool]: ...
     async def list_runs(
         self,
         *,
@@ -137,6 +160,10 @@ class InMemoryTestRunStore:
         run = self._runs.get(run_id)
         return run.model_copy(deep=True) if run else None
 
+    async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
+        result = self._results.get(result_id)
+        return result.model_copy(deep=True) if result else None
+
     async def list_regression_candidates(
         self,
         *,
@@ -180,6 +207,143 @@ class InMemoryTestRunStore:
                 )
             )
             return candidates
+
+    async def list_regression_failures(
+        self,
+        *,
+        project_id: str,
+        failure_status: RegressionFailureStatus | None,
+        mode_key: str | None,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionFailureRecord], bool]:
+        async with self._lock:
+            child_items_by_source: dict[str, list[TestRunItemRecord]] = {}
+            for item in self._items.values():
+                if item.regression_source_result_id:
+                    child_items_by_source.setdefault(
+                        item.regression_source_result_id,
+                        [],
+                    ).append(item)
+            records = []
+            for result in self._results.values():
+                if result.status not in {"failed", "error", "blocked"}:
+                    continue
+                run = self._runs.get(result.run_id)
+                if run is None or run.project_id != project_id:
+                    continue
+                if failure_status and result.status != failure_status:
+                    continue
+                if mode_key and run.mode_key != mode_key:
+                    continue
+                if cursor_created_at is not None and (
+                    result.created_at,
+                    result.id,
+                ) >= (cursor_created_at, cursor_id or ""):
+                    continue
+                children = child_items_by_source.get(result.id, [])
+                children.sort(
+                    key=lambda item: (
+                        self._runs[item.run_id].created_at,
+                        item.updated_at,
+                        item.id,
+                    ),
+                    reverse=True,
+                )
+                latest = children[0] if children else None
+                latest_run = self._runs.get(latest.run_id) if latest else None
+                latest_result = (
+                    self._results.get(latest.result_id)
+                    if latest and latest.result_id
+                    else None
+                )
+                records.append(
+                    RegressionFailureRecord(
+                        source_result_id=result.id,
+                        source_run_id=run.id,
+                        source_run_status=run.status,
+                        source_run_created_at=run.created_at,
+                        case_id=result.case_id,
+                        case_version_id=result.case_version_id,
+                        mode_key=run.mode_key,
+                        failure_status=result.status,
+                        summary=result.summary,
+                        error_message=result.error_message,
+                        failed_at=result.created_at,
+                        evidence_count=len(result.evidence_refs),
+                        artifact_count=len(result.artifact_ids),
+                        verification_count=len(result.verification_ids),
+                        has_actual=bool(result.actual),
+                        regression_batch_count=len(children),
+                        latest_regression=(
+                            LatestRegressionRecord(
+                                run_id=latest_run.id,
+                                run_status=latest_run.status,
+                                run_item_id=latest.id,
+                                item_status=latest.status,
+                                result_id=latest.result_id,
+                                result_status=(
+                                    latest_result.status if latest_result else None
+                                ),
+                                case_version_id=latest.case_version_id,
+                                created_at=latest_run.created_at,
+                                updated_at=latest.updated_at,
+                            )
+                            if latest and latest_run
+                            else None
+                        ),
+                    )
+                )
+            records.sort(
+                key=lambda record: (record.failed_at, record.source_result_id),
+                reverse=True,
+            )
+            selected = records[: limit + 1]
+            return selected[:limit], len(selected) > limit
+
+    async def list_regression_batches(
+        self,
+        *,
+        source_result_id: str,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionBatchRecord], bool]:
+        records = []
+        for item in self._items.values():
+            if item.regression_source_result_id != source_result_id:
+                continue
+            run = self._runs.get(item.run_id)
+            if run is None:
+                continue
+            if cursor_created_at is not None and (
+                run.created_at,
+                item.id,
+            ) >= (cursor_created_at, cursor_id or ""):
+                continue
+            result = self._results.get(item.result_id) if item.result_id else None
+            records.append(
+                RegressionBatchRecord(
+                    run_id=run.id,
+                    run_kind=run.run_kind,
+                    run_status=run.status,
+                    parent_run_id=run.parent_run_id,
+                    run_item_id=item.id,
+                    item_status=item.status,
+                    result_id=item.result_id,
+                    result_status=result.status if result else None,
+                    case_version_id=item.case_version_id,
+                    created_at=run.created_at,
+                    updated_at=item.updated_at,
+                )
+            )
+        records.sort(
+            key=lambda record: (record.created_at, record.run_item_id),
+            reverse=True,
+        )
+        selected = records[: limit + 1]
+        return selected[:limit], len(selected) > limit
 
     async def list_runs(
         self,
@@ -575,6 +739,9 @@ class PostgresTestRunStore:
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         return await asyncio.to_thread(self._get_run_record_sync, run_id)
 
+    async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
+        return await asyncio.to_thread(self._get_result_sync, result_id)
+
     async def list_regression_candidates(
         self,
         *,
@@ -585,6 +752,42 @@ class PostgresTestRunStore:
             self._list_regression_candidates_sync,
             run_id,
             result_ids,
+        )
+
+    async def list_regression_failures(
+        self,
+        *,
+        project_id: str,
+        failure_status: RegressionFailureStatus | None,
+        mode_key: str | None,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionFailureRecord], bool]:
+        return await asyncio.to_thread(
+            self._list_regression_failures_sync,
+            project_id,
+            failure_status,
+            mode_key,
+            cursor_created_at,
+            cursor_id,
+            limit,
+        )
+
+    async def list_regression_batches(
+        self,
+        *,
+        source_result_id: str,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionBatchRecord], bool]:
+        return await asyncio.to_thread(
+            self._list_regression_batches_sync,
+            source_result_id,
+            cursor_created_at,
+            cursor_id,
+            limit,
         )
 
     async def list_runs(
@@ -805,6 +1008,21 @@ class PostgresTestRunStore:
                     "INCLUDE (status, case_id, case_version_id) "
                     "WHERE status IN ('failed', 'error', 'blocked')"
                 )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS "
+                    f"idx_{self._result_table}_run_failed_created "
+                    f"ON {self._result_table} (run_id, created_at DESC, id DESC) "
+                    "INCLUDE (status, case_id, case_version_id, run_item_id) "
+                    "WHERE status IN ('failed', 'error', 'blocked')"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS "
+                    f"idx_{self._item_table}_regression_source_latest "
+                    f"ON {self._item_table} "
+                    "(regression_source_result_id, updated_at DESC, id DESC) "
+                    "INCLUDE (run_id, status, result_id, case_version_id) "
+                    "WHERE regression_source_result_id IS NOT NULL"
+                )
 
     def _create_run_sync(
         self,
@@ -872,6 +1090,16 @@ class PostgresTestRunStore:
                 row = cur.fetchone()
         return self._run_from_value(row["record"]) if row else None
 
+    def _get_result_sync(self, result_id: str) -> TestCaseResultRecord | None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._result_table} WHERE id = %s",
+                    (result_id,),
+                )
+                row = cur.fetchone()
+        return self._result_from_value(row["record"]) if row else None
+
     def _list_regression_candidates_sync(
         self,
         run_id: str,
@@ -923,6 +1151,197 @@ class PostgresTestRunStore:
             )
             for row in rows
         ]
+
+    def _list_regression_failures_sync(
+        self,
+        project_id: str,
+        failure_status: RegressionFailureStatus | None,
+        mode_key: str | None,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionFailureRecord], bool]:
+        clauses = [
+            "source_run.project_id = %s",
+            "result.status IN ('failed', 'error', 'blocked')",
+        ]
+        params: list[object] = [project_id]
+        if failure_status:
+            clauses.append("result.status = %s")
+            params.append(failure_status)
+        if mode_key:
+            clauses.append("source_run.mode_key = %s")
+            params.append(mode_key)
+        if cursor_created_at is not None and cursor_id is not None:
+            clauses.append("(result.created_at, result.id) < (%s, %s::uuid)")
+            params.extend([cursor_created_at, cursor_id])
+        params.append(limit + 1)
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT result.id AS source_result_id, "
+                    "source_run.id AS source_run_id, "
+                    "source_run.status AS source_run_status, "
+                    "source_run.created_at AS source_run_created_at, "
+                    "result.case_id AS case_id, "
+                    "result.case_version_id AS case_version_id, "
+                    "source_run.mode_key AS mode_key, "
+                    "result.status AS failure_status, "
+                    "COALESCE(result.record->>'summary', '') AS summary, "
+                    "NULLIF(result.record->>'error_message', '') AS error_message, "
+                    "result.created_at AS failed_at, "
+                    "jsonb_array_length(COALESCE(result.record->'evidence_refs', '[]'::jsonb)) "
+                    "AS evidence_count, "
+                    "jsonb_array_length(COALESCE(result.record->'artifact_ids', '[]'::jsonb)) "
+                    "AS artifact_count, "
+                    "jsonb_array_length(COALESCE(result.record->'verification_ids', '[]'::jsonb)) "
+                    "AS verification_count, "
+                    "COALESCE(result.record->'actual', '{}'::jsonb) <> '{}'::jsonb AS has_actual, "
+                    "COALESCE(batch.total, 0) AS regression_batch_count, "
+                    "latest.latest_run_id, latest.latest_run_status, "
+                    "latest.latest_run_item_id, latest.latest_item_status, "
+                    "latest.latest_result_id, latest.latest_result_status, "
+                    "latest.latest_case_version_id, latest.latest_run_created_at, "
+                    "latest.latest_item_updated_at "
+                    f"FROM {self._result_table} AS result "
+                    f"JOIN {self._run_table} AS source_run ON source_run.id = result.run_id "
+                    "LEFT JOIN LATERAL ("
+                    "SELECT COUNT(*) AS total "
+                    f"FROM {self._item_table} AS child_item "
+                    "WHERE child_item.regression_source_result_id = result.id"
+                    ") AS batch ON TRUE "
+                    "LEFT JOIN LATERAL ("
+                    "SELECT child_run.id AS latest_run_id, "
+                    "child_run.status AS latest_run_status, "
+                    "child_item.id AS latest_run_item_id, "
+                    "child_item.status AS latest_item_status, "
+                    "child_result.id AS latest_result_id, "
+                    "child_result.status AS latest_result_status, "
+                    "child_item.case_version_id AS latest_case_version_id, "
+                    "child_run.created_at AS latest_run_created_at, "
+                    "child_item.updated_at AS latest_item_updated_at "
+                    f"FROM {self._item_table} AS child_item "
+                    f"JOIN {self._run_table} AS child_run ON child_run.id = child_item.run_id "
+                    f"LEFT JOIN {self._result_table} AS child_result "
+                    "ON child_result.id = child_item.result_id "
+                    "WHERE child_item.regression_source_result_id = result.id "
+                    "ORDER BY child_run.created_at DESC, child_item.updated_at DESC, "
+                    "child_item.id DESC LIMIT 1"
+                    ") AS latest ON TRUE "
+                    f"WHERE {' AND '.join(clauses)} "
+                    "ORDER BY result.created_at DESC, result.id DESC "
+                    "LIMIT %s",
+                    tuple(params),
+                )
+                rows = cur.fetchall() or []
+        selected = rows[:limit]
+        records = []
+        for row in selected:
+            latest = None
+            if row.get("latest_run_id") is not None:
+                latest = LatestRegressionRecord(
+                    run_id=str(row["latest_run_id"]),
+                    run_status=str(row["latest_run_status"]),
+                    run_item_id=str(row["latest_run_item_id"]),
+                    item_status=str(row["latest_item_status"]),
+                    result_id=(
+                        str(row["latest_result_id"])
+                        if row.get("latest_result_id") is not None
+                        else None
+                    ),
+                    result_status=row.get("latest_result_status"),
+                    case_version_id=str(row["latest_case_version_id"]),
+                    created_at=row["latest_run_created_at"],
+                    updated_at=row["latest_item_updated_at"],
+                )
+            records.append(
+                RegressionFailureRecord(
+                    source_result_id=str(row["source_result_id"]),
+                    source_run_id=str(row["source_run_id"]),
+                    source_run_status=str(row["source_run_status"]),
+                    source_run_created_at=row["source_run_created_at"],
+                    case_id=str(row["case_id"]),
+                    case_version_id=str(row["case_version_id"]),
+                    mode_key=str(row["mode_key"]),
+                    failure_status=str(row["failure_status"]),
+                    summary=str(row["summary"]),
+                    error_message=row.get("error_message"),
+                    failed_at=row["failed_at"],
+                    evidence_count=int(row["evidence_count"]),
+                    artifact_count=int(row["artifact_count"]),
+                    verification_count=int(row["verification_count"]),
+                    has_actual=bool(row["has_actual"]),
+                    regression_batch_count=int(row["regression_batch_count"]),
+                    latest_regression=latest,
+                )
+            )
+        return records, len(rows) > limit
+
+    def _list_regression_batches_sync(
+        self,
+        source_result_id: str,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+        limit: int,
+    ) -> tuple[list[RegressionBatchRecord], bool]:
+        clauses = ["child_item.regression_source_result_id = %s"]
+        params: list[object] = [source_result_id]
+        if cursor_created_at is not None and cursor_id is not None:
+            clauses.append(
+                "(child_run.created_at, child_item.id) < (%s, %s::uuid)"
+            )
+            params.extend([cursor_created_at, cursor_id])
+        params.append(limit + 1)
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT child_run.id AS run_id, "
+                    "COALESCE(child_run.record->>'run_kind', 'normal') AS run_kind, "
+                    "child_run.status AS run_status, "
+                    "child_run.parent_run_id AS parent_run_id, "
+                    "child_item.id AS run_item_id, "
+                    "child_item.status AS item_status, "
+                    "child_result.id AS result_id, "
+                    "child_result.status AS result_status, "
+                    "child_item.case_version_id AS case_version_id, "
+                    "child_run.created_at AS created_at, "
+                    "child_item.updated_at AS updated_at "
+                    f"FROM {self._item_table} AS child_item "
+                    f"JOIN {self._run_table} AS child_run "
+                    "ON child_run.id = child_item.run_id "
+                    f"LEFT JOIN {self._result_table} AS child_result "
+                    "ON child_result.id = child_item.result_id "
+                    f"WHERE {' AND '.join(clauses)} "
+                    "ORDER BY child_run.created_at DESC, child_item.id DESC "
+                    "LIMIT %s",
+                    tuple(params),
+                )
+                rows = cur.fetchall() or []
+        records = [
+            RegressionBatchRecord(
+                run_id=str(row["run_id"]),
+                run_kind=str(row["run_kind"]),
+                run_status=str(row["run_status"]),
+                parent_run_id=(
+                    str(row["parent_run_id"])
+                    if row.get("parent_run_id") is not None
+                    else None
+                ),
+                run_item_id=str(row["run_item_id"]),
+                item_status=str(row["item_status"]),
+                result_id=(
+                    str(row["result_id"])
+                    if row.get("result_id") is not None
+                    else None
+                ),
+                result_status=row.get("result_status"),
+                case_version_id=str(row["case_version_id"]),
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in rows[:limit]
+        ]
+        return records, len(rows) > limit
 
     def _list_runs_sync(
         self,

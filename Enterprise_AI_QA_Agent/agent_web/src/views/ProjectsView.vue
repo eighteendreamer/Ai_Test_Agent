@@ -9,6 +9,10 @@ import type {
   ProjectOverview,
   ProjectRecord,
   ProjectStatus,
+  RegressionBatchRecord,
+  RegressionContext,
+  RegressionFailureStatus,
+  RegressionFailureSummary,
   TestCaseLifecycleStatus,
   TestCaseRecord,
   TestCaseVersionRecord,
@@ -17,11 +21,13 @@ import type {
   TestRunStatus,
 } from "../types";
 
-type ResourceTab = "cases" | "suites" | "runs";
+type ResourceTab = "cases" | "suites" | "runs" | "regressions";
 
 const CASE_PAGE_SIZE = 20;
 const SUITE_PAGE_SIZE = 20;
 const RUN_PAGE_SIZE = 20;
+const REGRESSION_PAGE_SIZE = 20;
+const REGRESSION_BATCH_PAGE_SIZE = 20;
 
 const toast = useMessage();
 const projects = ref<ProjectRecord[]>([]);
@@ -59,6 +65,21 @@ const runsHaveMore = ref(false);
 const runStatus = ref<"" | TestRunStatus>("");
 const regressionRunId = ref("");
 
+const regressionFailures = ref<RegressionFailureSummary[]>([]);
+const regressionsLoading = ref(false);
+const regressionStatus = ref<"" | RegressionFailureStatus>("");
+const regressionMode = ref("");
+const regressionCursor = ref<string | undefined>(undefined);
+const regressionNextCursor = ref<string | null>(null);
+const regressionCursorStack = ref<Array<string | undefined>>([]);
+const selectedRegressionResults = ref<Record<string, RegressionFailureSummary>>({});
+const regressionDrawerOpen = ref(false);
+const regressionDrawerLoading = ref(false);
+const regressionContext = ref<RegressionContext | null>(null);
+const regressionBatches = ref<RegressionBatchRecord[]>([]);
+const regressionBatchNextCursor = ref<string | null>(null);
+const regressionBatchesLoading = ref(false);
+
 const generationOpen = ref(false);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
@@ -82,6 +103,7 @@ const runForm = ref({ mode_key: "", session_id: "" });
 const selected = computed(() => projects.value.find(item => item.id === selectedId.value) ?? null);
 const generationModes = computed(() => modes.value.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt"));
 const selectedActiveCases = computed(() => Object.values(selectedCasesById.value));
+const selectedRegressionFailures = computed(() => Object.values(selectedRegressionResults.value));
 
 const lifecycleLabels: Record<TestCaseLifecycleStatus, string> = {
   draft: "草稿",
@@ -145,6 +167,14 @@ function resetProjectResources() {
   testCases.value = [];
   suites.value = [];
   testRuns.value = [];
+  regressionFailures.value = [];
+  regressionCursor.value = undefined;
+  regressionNextCursor.value = null;
+  regressionCursorStack.value = [];
+  selectedRegressionResults.value = {};
+  regressionDrawerOpen.value = false;
+  regressionContext.value = null;
+  regressionBatches.value = [];
   selectedCasesById.value = {};
 }
 
@@ -159,7 +189,9 @@ async function loadProjectDetail() {
       ? loadTestCases()
       : resourceTab.value === "suites"
         ? loadTestSuites()
-        : loadTestRuns(),
+        : resourceTab.value === "runs"
+          ? loadTestRuns()
+          : loadRegressionFailures(),
   ]);
 }
 
@@ -245,6 +277,49 @@ async function loadTestRuns() {
   }
 }
 
+async function loadRegressionFailures(cursor = regressionCursor.value) {
+  if (!selectedId.value) return;
+  regressionsLoading.value = true;
+  try {
+    const page = await api.listRegressionFailures(selectedId.value, {
+      failure_status: regressionStatus.value || undefined,
+      mode_key: regressionMode.value || undefined,
+      cursor,
+      limit: REGRESSION_PAGE_SIZE,
+    });
+    regressionFailures.value = page.items;
+    regressionCursor.value = cursor;
+    regressionNextCursor.value = page.next_cursor || null;
+    const visibleIds = new Set(page.items.map(item => item.source_result_id));
+    for (const resultId of Object.keys(selectedRegressionResults.value)) {
+      if (!visibleIds.has(resultId)) delete selectedRegressionResults.value[resultId];
+    }
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "回归失败项加载失败");
+  } finally {
+    regressionsLoading.value = false;
+  }
+}
+
+async function searchRegressionFailures() {
+  regressionCursor.value = undefined;
+  regressionNextCursor.value = null;
+  regressionCursorStack.value = [];
+  selectedRegressionResults.value = {};
+  await loadRegressionFailures(undefined);
+}
+
+async function changeRegressionPage(direction: -1 | 1) {
+  if (direction === 1) {
+    if (!regressionNextCursor.value) return;
+    regressionCursorStack.value.push(regressionCursor.value);
+    await loadRegressionFailures(regressionNextCursor.value);
+    return;
+  }
+  if (!regressionCursorStack.value.length) return;
+  await loadRegressionFailures(regressionCursorStack.value.pop());
+}
+
 async function switchResourceTab(tab: ResourceTab) {
   resourceTab.value = tab;
   if (tab === "cases") {
@@ -253,9 +328,11 @@ async function switchResourceTab(tab: ResourceTab) {
   } else if (tab === "suites") {
     suiteOffset.value = 0;
     await loadTestSuites();
-  } else {
+  } else if (tab === "runs") {
     runOffset.value = 0;
     await loadTestRuns();
+  } else {
+    await searchRegressionFailures();
   }
 }
 
@@ -526,6 +603,90 @@ async function createRegressionRun(run: TestRunRecord) {
   }
 }
 
+function toggleRegressionSelection(failure: RegressionFailureSummary, checked: boolean) {
+  if (!checked) {
+    delete selectedRegressionResults.value[failure.source_result_id];
+    return;
+  }
+  const selectedSourceRunId = selectedRegressionFailures.value[0]?.source_run_id;
+  if (selectedSourceRunId && selectedSourceRunId !== failure.source_run_id) {
+    toast.warning("一次回归只能选择同一个原始运行中的失败项");
+    return;
+  }
+  selectedRegressionResults.value[failure.source_result_id] = failure;
+}
+
+function regressionSelectionDisabled(failure: RegressionFailureSummary) {
+  const selectedSourceRunId = selectedRegressionFailures.value[0]?.source_run_id;
+  return Boolean(selectedSourceRunId && selectedSourceRunId !== failure.source_run_id);
+}
+
+async function createSelectedRegressionRun() {
+  const selectedFailures = selectedRegressionFailures.value;
+  const sourceRunId = selectedFailures[0]?.source_run_id;
+  if (!sourceRunId || regressionRunId.value) return;
+  regressionRunId.value = sourceRunId;
+  try {
+    const created = await api.createRegressionTestRun(sourceRunId, {
+      result_ids: selectedFailures.map(item => item.source_result_id),
+    });
+    selectedRegressionResults.value = {};
+    await Promise.all([loadRegressionFailures(), loadOverview()]);
+    toast.success(`已创建 ${selectedFailures.length} 条失败项的回归运行 ${shortId(created.run.id)}`);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "批量回归运行创建失败");
+  } finally {
+    regressionRunId.value = "";
+  }
+}
+
+async function openRegressionEvidence(failure: RegressionFailureSummary) {
+  regressionDrawerOpen.value = true;
+  regressionDrawerLoading.value = true;
+  regressionContext.value = null;
+  regressionBatches.value = [];
+  regressionBatchNextCursor.value = null;
+  try {
+    const [context, batches] = await Promise.all([
+      api.getRegressionContext(failure.source_result_id),
+      api.listRegressionBatches(failure.source_result_id, {
+        limit: REGRESSION_BATCH_PAGE_SIZE,
+      }),
+    ]);
+    regressionContext.value = context;
+    regressionBatches.value = batches.items;
+    regressionBatchNextCursor.value = batches.next_cursor || null;
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "失败证据加载失败");
+  } finally {
+    regressionDrawerLoading.value = false;
+  }
+}
+
+async function loadMoreRegressionBatches() {
+  if (
+    !regressionContext.value
+    || !regressionBatchNextCursor.value
+    || regressionBatchesLoading.value
+  ) return;
+  regressionBatchesLoading.value = true;
+  try {
+    const page = await api.listRegressionBatches(
+      regressionContext.value.source_result_id,
+      {
+        cursor: regressionBatchNextCursor.value,
+        limit: REGRESSION_BATCH_PAGE_SIZE,
+      },
+    );
+    regressionBatches.value.push(...page.items);
+    regressionBatchNextCursor.value = page.next_cursor || null;
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "更多回归批次加载失败");
+  } finally {
+    regressionBatchesLoading.value = false;
+  }
+}
+
 onMounted(() => {
   void Promise.all([loadModes(), loadProjects()]);
 });
@@ -604,10 +765,18 @@ onMounted(() => {
               <button :class="{ active: resourceTab === 'cases' }" @click="switchResourceTab('cases')">测试用例</button>
               <button :class="{ active: resourceTab === 'suites' }" @click="switchResourceTab('suites')">测试套件</button>
               <button :class="{ active: resourceTab === 'runs' }" @click="switchResourceTab('runs')">测试历史</button>
+              <button :class="{ active: resourceTab === 'regressions' }" @click="switchResourceTab('regressions')">回归中心</button>
             </div>
             <div v-if="resourceTab === 'cases'" class="actions">
               <button :disabled="selected.status === 'archived'" @click="openSuiteEditor">创建套件</button>
               <button class="primary" :disabled="selected.status === 'archived'" @click="openGeneration">生成用例</button>
+            </div>
+            <div v-else-if="resourceTab === 'regressions'" class="actions">
+              <button
+                class="primary"
+                :disabled="selected.status === 'archived' || !selectedRegressionFailures.length || Boolean(regressionRunId)"
+                @click="createSelectedRegressionRun"
+              >所选失败项回归（{{ selectedRegressionFailures.length }}）</button>
             </div>
           </header>
 
@@ -685,7 +854,7 @@ onMounted(() => {
             </footer>
           </template>
 
-          <template v-else>
+          <template v-else-if="resourceTab === 'runs'">
             <div class="case-toolbar">
               <select v-model="runStatus" @change="runOffset = 0; loadTestRuns()">
                 <option value="">全部运行状态</option>
@@ -722,6 +891,54 @@ onMounted(() => {
             <footer class="pagination">
               <span>第 {{ Math.floor(runOffset / RUN_PAGE_SIZE) + 1 }} 页</span>
               <div><button :disabled="runOffset === 0 || runsLoading" @click="changeRunPage(-1)">上一页</button><button :disabled="!runsHaveMore || runsLoading" @click="changeRunPage(1)">下一页</button></div>
+            </footer>
+          </template>
+
+          <template v-else>
+            <div class="case-toolbar">
+              <select v-model="regressionStatus" @change="searchRegressionFailures">
+                <option value="">全部失败状态</option>
+                <option value="failed">失败</option>
+                <option value="error">错误</option>
+                <option value="blocked">阻塞</option>
+              </select>
+              <select v-model="regressionMode" @change="searchRegressionFailures">
+                <option value="">全部测试模式</option>
+                <option v-for="mode in modes" :key="mode.key" :value="mode.key">{{ mode.name }}</option>
+              </select>
+              <button @click="searchRegressionFailures">刷新</button>
+              <small>批量回归仅允许选择同一个原始运行；原失败结果和用例版本保持不变。</small>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>选择</th><th>失败用例</th><th>状态</th><th>模式</th><th>证据</th><th>回归批次</th><th>失败时间</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr v-if="regressionsLoading"><td colspan="8" class="empty">正在加载失败用例…</td></tr>
+                  <tr v-for="failure in regressionFailures" v-else :key="failure.source_result_id">
+                    <td>
+                      <input
+                        type="checkbox"
+                        :checked="Boolean(selectedRegressionResults[failure.source_result_id])"
+                        :disabled="regressionSelectionDisabled(failure)"
+                        :aria-label="`选择失败项 ${failure.case_title}`"
+                        @change="toggleRegressionSelection(failure, ($event.target as HTMLInputElement).checked)"
+                      >
+                    </td>
+                    <td><strong>{{ failure.case_title }}</strong><small>{{ failure.case_key }} · Run {{ shortId(failure.source_run_id) }}</small><small>{{ failure.summary }}</small></td>
+                    <td><span class="case-status" :class="failure.failure_status">{{ failure.failure_status }}</span></td>
+                    <td>{{ modeLabel(failure.mode_key) }}</td>
+                    <td><small>Evidence {{ failure.evidence_count }} · Artifact {{ failure.artifact_count }} · Verification {{ failure.verification_count }}</small></td>
+                    <td><strong>{{ failure.regression_batch_count }}</strong><small v-if="failure.latest_regression">最新 {{ failure.latest_regression.item_status }}</small><small v-else>尚未回归</small></td>
+                    <td>{{ formatServerDateTime(failure.failed_at) }}</td>
+                    <td class="row-actions"><button @click="openRegressionEvidence(failure)">证据与时间线</button></td>
+                  </tr>
+                  <tr v-if="!regressionsLoading && !regressionFailures.length"><td colspan="8" class="empty">暂无失败、错误或阻塞结果</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <footer class="pagination">
+              <span>第 {{ regressionCursorStack.length + 1 }} 页</span>
+              <div><button :disabled="!regressionCursorStack.length || regressionsLoading" @click="changeRegressionPage(-1)">上一页</button><button :disabled="!regressionNextCursor || regressionsLoading" @click="changeRegressionPage(1)">下一页</button></div>
             </footer>
           </template>
         </section>
@@ -783,9 +1000,66 @@ onMounted(() => {
         <footer><button @click="runEditorOpen = false">取消</button><button class="primary" :disabled="runSaving" @click="createRun">{{ runSaving ? "创建中…" : "创建运行" }}</button></footer>
       </section>
     </div>
+
+    <div v-if="regressionDrawerOpen" class="modal-backdrop regression-backdrop" @click.self="regressionDrawerOpen = false">
+      <section class="editor regression-drawer">
+        <header><div><h2>证据与回归时间线</h2><p v-if="regressionContext">Result {{ shortId(regressionContext.source_result_id) }}</p></div><button @click="regressionDrawerOpen = false">×</button></header>
+        <div v-if="regressionDrawerLoading" class="empty">正在按需加载失败证据与回归批次…</div>
+        <template v-else-if="regressionContext">
+          <section class="context-summary">
+            <span class="case-status" :class="regressionContext.failure_status">{{ regressionContext.failure_status }}</span>
+            <div><strong>{{ regressionContext.summary }}</strong><small v-if="regressionContext.error_message">{{ regressionContext.error_message }}</small></div>
+          </section>
+          <dl class="facts compact-facts">
+            <div><dt>原始 Run</dt><dd>{{ regressionContext.source_run_id }}</dd></div>
+            <div><dt>用例版本</dt><dd>{{ regressionContext.case_version_id }}</dd></div>
+            <div><dt>失败时间</dt><dd>{{ formatServerDateTime(regressionContext.failed_at) }}</dd></div>
+          </dl>
+
+          <section class="drawer-section">
+            <h3>公开证据</h3>
+            <div v-if="!regressionContext.evidence.length" class="drawer-empty">无结构化 Evidence</div>
+            <article v-for="evidence in regressionContext.evidence" v-else :key="`${evidence.evidence_type}:${evidence.evidence_id}`" class="timeline-card">
+              <strong>{{ evidence.label || evidence.evidence_type }}</strong><small>{{ evidence.evidence_type }} · {{ evidence.evidence_id }}</small>
+            </article>
+            <div class="artifact-links">
+              <a
+                v-for="artifact in regressionContext.artifacts"
+                :key="artifact.artifact_id"
+                :href="artifact.content_url || undefined"
+                :aria-disabled="!artifact.content_url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >Artifact {{ shortId(artifact.artifact_id) }}</a>
+            </div>
+          </section>
+
+          <section class="drawer-section">
+            <h3>Verification</h3>
+            <div v-if="!regressionContext.verifications.length" class="drawer-empty">无 Verification 结论</div>
+            <article v-for="verification in regressionContext.verifications" v-else :key="verification.id" class="timeline-card">
+              <strong>{{ verification.verifier || verification.id }} · {{ verification.status }}</strong>
+              <small>{{ verification.summary }} · {{ verification.passed_count }}/{{ verification.assertion_count }} 通过</small>
+            </article>
+          </section>
+
+          <section class="drawer-section">
+            <h3>回归批次时间线</h3>
+            <div v-if="!regressionBatches.length" class="drawer-empty">尚未创建回归批次</div>
+            <article v-for="batch in regressionBatches" v-else :key="batch.run_item_id" class="timeline-card">
+              <strong>{{ formatServerDateTime(batch.created_at) }} · {{ batch.item_status }}</strong>
+              <small>Run {{ shortId(batch.run_id) }} · 版本 {{ shortId(batch.case_version_id) }}</small>
+              <small v-if="batch.result_status">回归结果：{{ batch.result_status }}</small>
+            </article>
+            <button v-if="regressionBatchNextCursor" :disabled="regressionBatchesLoading" @click="loadMoreRegressionBatches">{{ regressionBatchesLoading ? "加载中…" : "加载更多批次" }}</button>
+          </section>
+        </template>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .projects-page{padding:28px 32px;color:var(--text-primary,#111827);min-height:100%}.page-head,.detail-head,.toolbar,.actions,.editor header,.editor footer,.resource-head,.case-toolbar,.pagination{display:flex;align-items:center;justify-content:space-between;gap:14px}.page-head h1,.detail-head h2,.editor h2{margin:4px 0}.page-head p,.detail-head p,.editor header p{margin:0;color:var(--text-secondary,#6b7280)}.eyebrow{font-size:11px;letter-spacing:.15em;font-weight:700}.primary{background:#111827!important;color:#fff!important}.toolbar{justify-content:flex-start;margin:24px 0}.toolbar input{min-width:280px}.toolbar input,.toolbar select,.toolbar button,.actions button,.editor input,.editor textarea,.editor select,.editor button,.case-toolbar input,.case-toolbar select,.case-toolbar button,.pagination button,.row-actions button{border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:9px 12px}.project-grid{display:grid;grid-template-columns:minmax(300px,32%) 1fr;gap:20px}.project-list,.project-detail{border:1px solid var(--border-color,#e5e7eb);border-radius:14px;background:var(--surface,#fff);overflow:hidden}.project-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;border:0;border-bottom:1px solid var(--border-color,#e5e7eb);background:transparent;padding:15px;color:inherit}.project-row.active{background:rgba(59,130,246,.08)}.project-monogram{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#111827;color:#fff;font-weight:700}.project-copy{display:flex;flex:1;flex-direction:column;gap:4px}.project-copy small,td small,.selection-summary small,.version-option small{display:block;color:#6b7280}.status,.case-status,.priority{font-size:12px;padding:4px 8px;border-radius:99px;white-space:nowrap}.status.active,.case-status.active,.case-status.completed{background:#dcfce7;color:#166534}.status.archived,.case-status.archived,.case-status.disabled,.case-status.cancelled{background:#f3f4f6;color:#6b7280}.case-status.draft,.case-status.queued{background:#e0f2fe;color:#075985}.case-status.pending_review,.case-status.running{background:#fef3c7;color:#92400e}.priority.p0{background:#fee2e2;color:#991b1b}.priority.p1{background:#ffedd5;color:#9a3412}.priority.p2{background:#e0f2fe;color:#075985}.priority.p3{background:#f3f4f6;color:#4b5563}.project-detail{padding:22px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;margin:24px 0}.stats article{padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:12px}.stats span{display:block;color:#6b7280;font-size:12px}.stats strong{font-size:24px}.facts{margin-bottom:22px}.facts div{display:grid;grid-template-columns:120px 1fr;padding:10px 0;border-bottom:1px solid var(--border-color,#e5e7eb)}.facts dt{color:#6b7280}.facts dd{margin:0;word-break:break-all}.danger{color:#b91c1c}.empty{padding:36px;text-align:center;color:#6b7280}.error-banner,.graph-warning{padding:10px 12px;border-radius:8px;background:#fef2f2;color:#b91c1c}.resource-panel{border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px}.resource-head{margin-bottom:14px}.tabs{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.tabs button{border:0;border-radius:7px;background:transparent;color:inherit;padding:8px 14px}.tabs button.active{background:var(--surface,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:700}.case-toolbar{justify-content:flex-start;margin-bottom:12px}.case-toolbar input{min-width:220px}.case-toolbar small{margin-left:auto;color:#6b7280}.table-wrap{overflow-x:auto;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--border-color,#e5e7eb);vertical-align:middle}th{color:#6b7280;background:var(--surface-muted,#f9fafb);font-size:12px;white-space:nowrap}tbody tr:last-child td{border-bottom:0}td strong{display:block}.row-actions button{padding:6px 9px;white-space:nowrap}.pagination{margin-top:12px;color:#6b7280;font-size:12px}.pagination div{display:flex;gap:8px}.pagination button{padding:7px 10px}.suites-table td:nth-child(4){max-width:260px}.modal-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(0,0,0,.45)}.editor{width:min(560px,90vw);max-height:86vh;overflow:auto;padding:22px;border-radius:14px;background:var(--surface,#fff)}.editor label{display:flex;flex-direction:column;gap:6px;margin:14px 0}.editor footer{justify-content:flex-end;margin-top:20px}.version-editor{width:min(680px,90vw)}.version-option{flex-direction:row!important;align-items:flex-start;padding:12px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.version-option input{margin-top:4px}.version-option span{min-width:0}.selection-summary{display:flex;flex-direction:column;gap:5px;padding:12px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}button:disabled{cursor:not-allowed;opacity:.5}@media(max-width:1200px){.stats{grid-template-columns:repeat(3,1fr)}.project-grid{grid-template-columns:minmax(280px,34%) 1fr}}@media(max-width:900px){.projects-page{padding:20px}.project-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.resource-head,.case-toolbar{align-items:stretch;flex-direction:column}.case-toolbar small{margin-left:0}}
+.regression-backdrop{place-items:stretch end}.regression-drawer{width:min(720px,94vw);height:100vh;max-height:none;border-radius:14px 0 0 14px}.context-summary{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.context-summary div{min-width:0}.context-summary small,.timeline-card small{display:block;margin-top:4px;color:#6b7280}.compact-facts{margin:12px 0}.drawer-section{padding:14px 0;border-top:1px solid var(--border-color,#e5e7eb)}.drawer-section h3{margin:0 0 10px}.drawer-empty{padding:12px;color:#6b7280}.timeline-card{margin:8px 0;padding:11px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px}.artifact-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.artifact-links a{padding:7px 10px;border-radius:8px;background:rgba(59,130,246,.1);color:#1d4ed8;text-decoration:none}.artifact-links a[aria-disabled="true"]{pointer-events:none;opacity:.5}.drawer-section>button{margin-top:8px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:8px 11px}
 </style>
