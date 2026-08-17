@@ -90,4 +90,6 @@ class ProjectOverview(BaseModel):
     project: ProjectRecord
     api_doc_count: int = 0
     session_count: int = 0
+    test_case_count: int = 0
+    test_suite_count: int = 0
     graph: ProjectGraphOverview = Field(default_factory=ProjectGraphOverview)

@@ -25,6 +25,8 @@ from src.api.routes.projects import router as projects_router
 from src.api.routes.reports import router as reports_router
 from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
+from src.api.routes.case_management import router as test_cases_router
+from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.security_bugs import router as security_bugs_router
 from src.api.routes.settings import router as settings_router
 from src.api.routes.task_pool import router as task_pool_router
@@ -68,6 +70,14 @@ from src.application.skills.skill_marketplace_service import SkillMarketplaceSer
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.settings.settings_service import SettingsService
 from src.application.task_pool_service import TaskPoolService
+from src.application.test_cases.generation_pipeline import (
+    ModelTestCaseGenerator,
+    ProjectTestCaseContextProvider,
+)
+from src.application.test_cases.case_service import TestCaseService
+from src.application.test_cases.case_store import PostgresTestCaseStore
+from src.application.test_suites.suite_service import TestSuiteService
+from src.application.test_suites.suite_store import PostgresTestSuiteStore
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -191,12 +201,6 @@ async def lifespan(app: FastAPI):
     )
     await security_bug_service.initialize()
     knowledge_graph_service = KnowledgeGraphService(settings=settings)
-    project_overview_service = ProjectOverviewService(
-        project_service=project_service,
-        api_doc_store=api_doc_store,
-        session_store=store,
-        knowledge_graph_service=knowledge_graph_service,
-    )
     tool_job_service = ToolJobService(
         store=tool_job_store,
         heartbeat_timeout_seconds=settings.tool_job_heartbeat_timeout_seconds,
@@ -218,6 +222,38 @@ async def lifespan(app: FastAPI):
         model_registry=model_registry,
         settings=settings,
         oauth_token_service=oauth_token_service,
+    )
+    test_case_store = PostgresTestCaseStore(settings)
+    test_case_context_provider = ProjectTestCaseContextProvider(
+        api_docs_service=api_docs_service,
+        knowledge_graph_service=knowledge_graph_service,
+        session_store=store,
+    )
+    test_case_generator = ModelTestCaseGenerator(
+        model_runtime_service=model_runtime_service,
+        skill_runtime_service=skill_runtime_service,
+    )
+    test_case_service = TestCaseService(
+        store=test_case_store,
+        project_service=project_service,
+        context_provider=test_case_context_provider,
+        generator=test_case_generator,
+    )
+    await test_case_service.initialize()
+    test_suite_store = PostgresTestSuiteStore(settings)
+    test_suite_service = TestSuiteService(
+        store=test_suite_store,
+        project_service=project_service,
+        test_case_service=test_case_service,
+    )
+    await test_suite_service.initialize()
+    project_overview_service = ProjectOverviewService(
+        project_service=project_service,
+        api_doc_store=api_doc_store,
+        session_store=store,
+        knowledge_graph_service=knowledge_graph_service,
+        test_case_store=test_case_store,
+        test_suite_store=test_suite_store,
     )
     input_orchestrator_service.set_semantic_intent_service(
         SemanticIntentService(
@@ -317,6 +353,12 @@ async def lifespan(app: FastAPI):
     app.state.tool_job_backend = settings.tool_job_backend
     app.state.knowledge_graph_service = knowledge_graph_service
     app.state.project_overview_service = project_overview_service
+    app.state.test_case_store = test_case_store
+    app.state.test_case_context_provider = test_case_context_provider
+    app.state.test_case_generator = test_case_generator
+    app.state.test_case_service = test_case_service
+    app.state.test_suite_store = test_suite_store
+    app.state.test_suite_service = test_suite_service
     app.state.memory_backend = memory_runtime_service.backend
     app.state.ui_graph_backend = settings.ui_graph_backend
     app.state.permission_service = permission_service
@@ -414,6 +456,8 @@ app.include_router(integrations_router, prefix=settings.api_v1_prefix)
 app.include_router(reports_router, prefix=settings.api_v1_prefix)
 app.include_router(task_pool_router, prefix=settings.api_v1_prefix)
 app.include_router(sessions_router, prefix=settings.api_v1_prefix)
+app.include_router(test_cases_router, prefix=settings.api_v1_prefix)
+app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)
 app.include_router(settings_router, prefix=settings.api_v1_prefix)
 app.include_router(oauth_router, prefix=settings.api_v1_prefix)

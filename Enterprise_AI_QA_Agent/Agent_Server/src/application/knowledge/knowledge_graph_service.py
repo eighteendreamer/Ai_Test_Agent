@@ -64,6 +64,23 @@ class KnowledgeGraphService:
             raise ValueError("project_scope is required")
         return await asyncio.to_thread(self._get_project_summary_sync, scope)
 
+    async def get_generation_context(
+        self,
+        project_scope: str,
+        *,
+        node_limit: int = 100,
+        edge_limit: int = 150,
+    ) -> dict[str, Any]:
+        scope = str(project_scope or "").strip()
+        if not scope:
+            raise ValueError("project_scope is required")
+        return await asyncio.to_thread(
+            self._get_generation_context_sync,
+            scope,
+            max(1, min(int(node_limit), 500)),
+            max(1, min(int(edge_limit), 1000)),
+        )
+
     def _get_project_summary_sync(self, project_scope: str) -> KnowledgeProjectSummary:
         rows = self._provider.execute(
             """
@@ -96,6 +113,65 @@ class KnowledgeGraphService:
             latest_updated_at=latest,
             **counts,
         )
+
+    def _get_generation_context_sync(
+        self,
+        project_scope: str,
+        node_limit: int,
+        edge_limit: int,
+    ) -> dict[str, Any]:
+        summary = self._get_project_summary_sync(project_scope)
+        per_kind_limit = max(1, node_limit // 3)
+        nodes: list[dict[str, Any]] = []
+        for label, kind in (("Page", "page"), ("Element", "element"), ("Entity", "entity")):
+            rows = self._provider.execute(
+                f"""
+                MATCH (n:{label} {{project_scope: $project_scope}})
+                RETURN n.id AS id, n.label AS label, n.url AS url,
+                       n.role AS role, n.type AS type
+                ORDER BY n.updated_at DESC
+                LIMIT {per_kind_limit}
+                """,
+                {"project_scope": project_scope},
+            )
+            nodes.extend(
+                {
+                    "id": str(row.get("id") or ""),
+                    "kind": kind,
+                    "label": str(row.get("label") or row.get("id") or ""),
+                    "url": str(row.get("url") or ""),
+                    "role": str(row.get("role") or ""),
+                    "type": str(row.get("type") or ""),
+                }
+                for row in rows
+                if row.get("id")
+            )
+        edge_rows = self._provider.execute(
+            f"""
+            MATCH (a)-[r]->(b)
+            WHERE r.project_scope = $project_scope
+            RETURN a.id AS source_id, b.id AS target_id, type(r) AS relation
+            ORDER BY r.updated_at DESC
+            LIMIT {edge_limit}
+            """,
+            {"project_scope": project_scope},
+        )
+        return {
+            "project_scope": project_scope,
+            "summary": summary.model_dump(mode="json"),
+            "nodes": nodes[:node_limit],
+            "edges": [
+                {
+                    "source_id": str(row.get("source_id") or ""),
+                    "target_id": str(row.get("target_id") or ""),
+                    "relation": str(row.get("relation") or ""),
+                }
+                for row in edge_rows
+            ],
+            "latest_updated_at": (
+                summary.latest_updated_at.isoformat() if summary.latest_updated_at else None
+            ),
+        }
 
     async def delete_project(self, project_scope: str) -> KnowledgeProjectDeleteResponse:
         cached_error = self._cached_failure_message()

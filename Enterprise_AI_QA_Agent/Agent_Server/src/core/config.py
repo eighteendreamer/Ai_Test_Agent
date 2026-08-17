@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     postgres_security_bug_table: str = "agent_security_bugs"
     postgres_project_table: str = "agent_projects"
     postgres_api_doc_table: str = "agent_api_docs"
+    postgres_test_case_table: str = "agent_test_cases"
+    postgres_test_case_version_table: str = "agent_test_case_versions"
+    postgres_test_suite_table: str = "agent_test_suites"
+    postgres_test_suite_item_table: str = "agent_test_suite_items"
     postgres_mcp_server_table: str = "agent_mcp_servers"
     postgres_vector_dimension: int = 1536
     memgraph_host: str = "127.0.0.1"

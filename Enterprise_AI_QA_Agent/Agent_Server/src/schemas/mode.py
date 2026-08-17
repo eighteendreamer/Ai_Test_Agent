@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from src.schemas.intent import ActivationPolicy
@@ -12,6 +14,7 @@ class ModeDescriptor(BaseModel):
     description: str
     category: str = "general"
     is_test_mode: bool = False
+    case_driven_policy: Literal["required", "optional", "exempt"] = "optional"
     default_agent_key: str
     allowed_agent_keys: list[str] = Field(default_factory=list)
     default_skill_keys: list[str] = Field(default_factory=list)

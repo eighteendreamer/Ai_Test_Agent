@@ -42,7 +42,7 @@ const casesHaveMore = ref(false);
 const caseQuery = ref("");
 const caseStatus = ref<"" | TestCaseLifecycleStatus>("");
 const actionCaseId = ref("");
-const selectedCaseIds = ref<string[]>([]);
+const selectedCasesById = ref<Record<string, TestCaseRecord>>({});
 
 const suites = ref<TestSuiteBundle[]>([]);
 const suitesLoading = ref(false);
@@ -66,11 +66,7 @@ const suiteForm = ref({ name: "", description: "" });
 
 const selected = computed(() => projects.value.find(item => item.id === selectedId.value) ?? null);
 const generationModes = computed(() => modes.value.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt"));
-const selectedActiveCases = computed(() => testCases.value.filter(item => (
-  item.lifecycle_status === "active"
-  && Boolean(item.active_version_id)
-  && selectedCaseIds.value.includes(item.id)
-)));
+const selectedActiveCases = computed(() => Object.values(selectedCasesById.value));
 
 const lifecycleLabels: Record<TestCaseLifecycleStatus, string> = {
   draft: "草稿",
@@ -125,7 +121,7 @@ function resetProjectResources() {
   suiteOffset.value = 0;
   testCases.value = [];
   suites.value = [];
-  selectedCaseIds.value = [];
+  selectedCasesById.value = {};
 }
 
 async function loadProjectDetail() {
@@ -170,7 +166,15 @@ async function loadTestCases() {
     });
     testCases.value = page.items;
     casesHaveMore.value = page.has_more;
-    selectedCaseIds.value = [];
+    for (const testCase of page.items) {
+      if (selectedCasesById.value[testCase.id]) {
+        if (testCase.lifecycle_status === "active" && testCase.active_version_id) {
+          selectedCasesById.value[testCase.id] = testCase;
+        } else {
+          delete selectedCasesById.value[testCase.id];
+        }
+      }
+    }
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "测试用例加载失败");
   } finally {
@@ -361,15 +365,17 @@ async function activateVersion() {
   }
 }
 
-function toggleCaseSelection(caseId: string, checked: boolean) {
-  selectedCaseIds.value = checked
-    ? [...selectedCaseIds.value, caseId]
-    : selectedCaseIds.value.filter(item => item !== caseId);
+function toggleCaseSelection(testCase: TestCaseRecord, checked: boolean) {
+  if (checked && testCase.lifecycle_status === "active" && testCase.active_version_id) {
+    selectedCasesById.value[testCase.id] = testCase;
+  } else {
+    delete selectedCasesById.value[testCase.id];
+  }
 }
 
 function openSuiteEditor() {
-  if (!testCases.value.some(item => item.lifecycle_status === "active" && item.active_version_id)) {
-    toast.error("当前页没有可加入套件的已启用用例");
+  if (!selectedActiveCases.value.length) {
+    toast.error("请先勾选至少一条已启用用例");
     return;
   }
   suiteForm.value = { name: "", description: "" };
@@ -396,7 +402,7 @@ async function createSuite() {
       })),
     });
     suiteEditorOpen.value = false;
-    selectedCaseIds.value = [];
+    selectedCasesById.value = {};
     resourceTab.value = "suites";
     suiteOffset.value = 0;
     await Promise.all([loadTestSuites(), loadOverview()]);
@@ -510,10 +516,10 @@ onMounted(() => {
                     <td>
                       <input
                         type="checkbox"
-                        :checked="selectedCaseIds.includes(testCase.id)"
+                        :checked="Boolean(selectedCasesById[testCase.id])"
                         :disabled="testCase.lifecycle_status !== 'active' || !testCase.active_version_id"
                         :aria-label="`选择用例 ${testCase.title}`"
-                        @change="toggleCaseSelection(testCase.id, ($event.target as HTMLInputElement).checked)"
+                        @change="toggleCaseSelection(testCase, ($event.target as HTMLInputElement).checked)"
                       >
                     </td>
                     <td><strong>{{ testCase.title }}</strong><small>{{ testCase.case_key }} · {{ testCase.case_type }}</small></td>

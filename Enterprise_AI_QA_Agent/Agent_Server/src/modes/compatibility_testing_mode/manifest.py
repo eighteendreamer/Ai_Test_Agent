@@ -12,6 +12,7 @@ MODE_MANIFEST = {
     ),
     "category": "testing",
     "is_test_mode": True,
+    "case_driven_policy": "required",
     "default_agent_key": "compatibility-testing-agent",
     "allowed_agent_keys": [
         "compatibility-testing-agent",

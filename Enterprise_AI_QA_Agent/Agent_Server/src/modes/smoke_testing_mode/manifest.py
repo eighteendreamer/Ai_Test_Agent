@@ -7,6 +7,7 @@ MODE_MANIFEST = {
     "description": "冒烟测试模式通过多智能体生成可审查测试方案，用户确认所选用例后自动执行，并将方案、证据和回归候选沉淀到 MinIO 与 PostgreSQL catalog。",
     "category": "testing",
     "is_test_mode": True,
+    "case_driven_policy": "required",
     "default_agent_key": "smoke-testing-agent",
     "allowed_agent_keys": [
         "smoke-testing-agent",

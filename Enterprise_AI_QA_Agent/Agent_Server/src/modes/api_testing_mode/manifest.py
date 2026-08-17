@@ -7,6 +7,7 @@ MODE_MANIFEST = {
     "description": "API 接口测试模式提供专属 Agent 和接口测试工具链，统一处理接口验证任务。",
     "category": "testing",
     "is_test_mode": True,
+    "case_driven_policy": "required",
     "default_agent_key": "api-testing-agent",
     "allowed_agent_keys": [
         "api-testing-agent",

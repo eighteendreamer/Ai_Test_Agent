@@ -26,6 +26,14 @@ class _Graph:
         }
 
 
+class _CountStore:
+    def __init__(self, count):
+        self.count = count
+
+    async def count_by_project(self, project_id):
+        return self.count
+
+
 def test_overview_uses_aggregate_sources_and_graph_scope_mapping():
     async def scenario():
         project_service = ProjectService(store=InMemoryProjectStore())
@@ -58,12 +66,16 @@ def test_overview_uses_aggregate_sources_and_graph_scope_mapping():
             api_doc_store=InMemoryApiDocStore(),
             session_store=sessions,
             knowledge_graph_service=graph,
+            test_case_store=_CountStore(7),
+            test_suite_store=_CountStore(3),
         )
 
         result = await overview.get(project.id)
 
         assert result.session_count == 1
         assert result.api_doc_count == 0
+        assert result.test_case_count == 7
+        assert result.test_suite_count == 3
         assert result.graph.page_count == 2
         assert result.graph.edge_count == 5
         assert graph.requested_scope == "legacy-orders-scope"

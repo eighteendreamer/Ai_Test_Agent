@@ -7,6 +7,7 @@ MODE_MANIFEST = {
     "description": "代码审批模式内置代码审批团和总结 Agent，由主持人根据项目规模与模型上下文分配辩论时间预算，聚焦项目范围、差异影响、风险、可行措施与审批结论。",
     "category": "testing",
     "is_test_mode": True,
+    "case_driven_policy": "exempt",
     "default_agent_key": "code-review-agent",
     "allowed_agent_keys": [
         "code-review-agent",

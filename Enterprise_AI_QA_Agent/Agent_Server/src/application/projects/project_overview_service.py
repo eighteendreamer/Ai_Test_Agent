@@ -5,6 +5,8 @@ import asyncio
 from src.application.documents.api_doc_store import ApiDocStore
 from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
 from src.application.projects.project_service import ProjectService
+from src.application.test_cases.case_store import TestCaseStore
+from src.application.test_suites.suite_store import TestSuiteStore
 from src.runtime.store import SessionStore
 from src.schemas.project import ProjectGraphOverview, ProjectOverview
 
@@ -17,17 +19,23 @@ class ProjectOverviewService:
         api_doc_store: ApiDocStore,
         session_store: SessionStore,
         knowledge_graph_service: KnowledgeGraphService,
+        test_case_store: TestCaseStore | None = None,
+        test_suite_store: TestSuiteStore | None = None,
     ) -> None:
         self._projects = project_service
         self._api_docs = api_doc_store
         self._sessions = session_store
         self._knowledge = knowledge_graph_service
+        self._test_cases = test_case_store
+        self._test_suites = test_suite_store
 
     async def get(self, project_id: str) -> ProjectOverview:
         project = await self._projects.get(project_id)
-        api_doc_count, session_count = await asyncio.gather(
+        api_doc_count, session_count, test_case_count, test_suite_count = await asyncio.gather(
             self._api_docs.count_by_project(project_id),
             self._sessions.count_project_sessions(project_id),
+            self._test_cases.count_by_project(project_id) if self._test_cases else _zero(),
+            self._test_suites.count_by_project(project_id) if self._test_suites else _zero(),
         )
         graph = ProjectGraphOverview(project_scope=project.graph_scope_key)
         if project.graph_scope_key:
@@ -51,5 +59,11 @@ class ProjectOverviewService:
             project=project,
             api_doc_count=api_doc_count,
             session_count=session_count,
+            test_case_count=test_case_count,
+            test_suite_count=test_suite_count,
             graph=graph,
         )
+
+
+async def _zero() -> int:
+    return 0

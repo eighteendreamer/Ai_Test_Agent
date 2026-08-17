@@ -846,6 +846,34 @@ class PostgresSessionStore:
                     return int(row["cnt"]) if row else 0
         return await asyncio.to_thread(_do)
 
+    async def list_project_history_context(
+        self,
+        project_id: str,
+        *,
+        limit: int,
+    ) -> list[dict]:
+        return await asyncio.to_thread(
+            self._list_project_history_context_sync,
+            project_id,
+            max(1, min(limit, 50)),
+        )
+
+    def _list_project_history_context_sync(self, project_id: str, limit: int) -> list[dict]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT id, title, mode_key, status, updated_at, metadata
+                    FROM {self._settings.postgres_session_table}
+                    WHERE project_id = %s
+                    ORDER BY updated_at DESC, id ASC
+                    LIMIT %s
+                    """,
+                    (project_id, limit),
+                )
+                rows = cur.fetchall() or []
+        return [_history_context_from_row(row) for row in rows]
+
     async def delete_sessions_before(self, cutoff: datetime | None = None) -> int:
         def _do() -> int:
             with postgres_connect(self._settings) as conn:
@@ -1037,6 +1065,33 @@ def _history_overview_from_row(row: dict) -> dict:
         "snapshot_count": int(row.get("snapshot_count") or 0),
         "selected_agent": row.get("selected_agent"),
         "preferred_model": row.get("preferred_model"),
+    }
+
+
+def _history_context_from_row(row: dict) -> dict:
+    metadata = dict(row.get("metadata") or {})
+    failure_summary = str(
+        metadata.get("last_error")
+        or metadata.get("failure_summary")
+        or metadata.get("report_summary")
+        or ""
+    ).strip()
+    if not failure_summary:
+        for result in metadata.get("verification_results", []):
+            if not isinstance(result, dict):
+                continue
+            if str(result.get("status") or "") in {"failed", "partial"}:
+                failure_summary = str(result.get("summary") or "").strip()
+                if failure_summary:
+                    break
+    updated_at = ensure_utc_datetime(row.get("updated_at")) or datetime.utcnow()
+    return {
+        "session_id": str(row.get("id") or ""),
+        "title": str(row.get("title") or ""),
+        "mode_key": str(row.get("mode_key") or "default"),
+        "status": str(row.get("status") or ""),
+        "updated_at": updated_at.isoformat(),
+        "failure_summary": failure_summary[:500],
     }
 
 

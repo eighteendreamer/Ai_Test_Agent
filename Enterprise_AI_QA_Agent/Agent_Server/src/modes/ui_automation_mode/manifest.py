@@ -7,6 +7,7 @@ MODE_MANIFEST = {
     "description": "UI 自动化模式使用专属 Agent 和工具集执行页面探索、浏览器操作与 UI 证据采集。",
     "category": "testing",
     "is_test_mode": True,
+    "case_driven_policy": "required",
     "default_agent_key": "ui-automation-agent",
     "allowed_agent_keys": ["ui-automation-agent", "report-analyst"],
     "default_skill_keys": ["playwright-e2e-testing", "playwright-cli"],

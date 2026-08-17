@@ -7,6 +7,7 @@ MODE_MANIFEST = {
     "description": "默认模式承接当前系统已支持的综合能力，优先走 Coordinator 与现有通用工具链。",
     "category": "general",
     "is_test_mode": False,
+    "case_driven_policy": "exempt",
     "default_agent_key": "coordinator",
     "allowed_agent_keys": ["coordinator", "ops-executor", "report-analyst", "qa-planner"],
     "default_skill_keys": [],

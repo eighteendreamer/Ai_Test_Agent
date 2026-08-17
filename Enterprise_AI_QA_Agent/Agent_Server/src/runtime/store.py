@@ -74,6 +74,12 @@ class SessionStore(Protocol):
     async def count_sessions(self, before: datetime | None = None, after: datetime | None = None) -> int: ...
     async def count_sessions_by_status(self) -> dict[str, int]: ...
     async def count_project_sessions(self, project_id: str) -> int: ...
+    async def list_project_history_context(
+        self,
+        project_id: str,
+        *,
+        limit: int,
+    ) -> list[dict]: ...
     async def delete_sessions_before(self, cutoff: datetime | None = None) -> int: ...
     async def get_session_date_range(self) -> dict[str, datetime | None]: ...
     async def bulk_export(self, progress_fn: object = None) -> list[dict]: ...
@@ -333,6 +339,19 @@ class InMemorySessionStore:
     async def count_project_sessions(self, project_id: str) -> int:
         return sum(1 for session in self._sessions.values() if session.project_id == project_id)
 
+    async def list_project_history_context(
+        self,
+        project_id: str,
+        *,
+        limit: int,
+    ) -> list[dict]:
+        sessions = sorted(
+            (session for session in self._sessions.values() if session.project_id == project_id),
+            key=lambda session: session.updated_at,
+            reverse=True,
+        )[: max(1, min(limit, 50))]
+        return [_session_history_context(session) for session in sessions]
+
     async def delete_sessions_before(self, cutoff: datetime | None = None) -> int:
         async with self._lock:
             if cutoff is None:
@@ -371,6 +390,7 @@ class InMemorySessionStore:
                 "updated_at": _iso(s.updated_at),
                 "preferred_model": s.preferred_model,
                 "selected_agent": s.selected_agent,
+                "project_id": s.project_id,
                 "metadata": s.metadata,
                 "event_count": s.event_count,
                 "snapshot_count": s.snapshot_count,
@@ -397,3 +417,29 @@ class InMemorySessionStore:
                 ],
             })
         return bundle
+
+
+def _session_history_context(session: SessionRecord) -> dict:
+    metadata = session.metadata if isinstance(session.metadata, dict) else {}
+    failure_summary = str(
+        metadata.get("last_error")
+        or metadata.get("failure_summary")
+        or metadata.get("report_summary")
+        or ""
+    ).strip()
+    if not failure_summary:
+        for result in metadata.get("verification_results", []):
+            if not isinstance(result, dict):
+                continue
+            if str(result.get("status") or "") in {"failed", "partial"}:
+                failure_summary = str(result.get("summary") or "").strip()
+                if failure_summary:
+                    break
+    return {
+        "session_id": session.id,
+        "title": session.title,
+        "mode_key": session.mode_key,
+        "status": session.status.value,
+        "updated_at": session.updated_at.isoformat(),
+        "failure_summary": failure_summary[:500],
+    }
