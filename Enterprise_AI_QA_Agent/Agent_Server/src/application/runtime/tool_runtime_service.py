@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shlex
@@ -57,6 +58,9 @@ from src.schemas.model_config import ModelConfigRecord
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.session_resource import SessionResourceKind
 
+
+logger = logging.getLogger(__name__)
+
 CODE_REVIEW_RESULT_CATEGORY_LABELS = {
     "serious_issue": "严重问题",
     "critical": "严重问题",
@@ -104,6 +108,7 @@ class ToolRuntimeService:
         session_resource_service: SessionResourceService | None = None,
         runtime_control=None,
         security_bug_service=None,
+        tool_job_heartbeat_interval_seconds: float | None = None,
     ) -> None:
         self._request_timeout_seconds = request_timeout_seconds
         self._settings = settings
@@ -112,6 +117,7 @@ class ToolRuntimeService:
         self._mcp_runtime_service = mcp_runtime_service
         self._memory_runtime_service = memory_runtime_service
         self._tool_job_service = tool_job_service
+        self._tool_job_heartbeat_interval_seconds = tool_job_heartbeat_interval_seconds or 30.0
         self._artifact_storage_service = artifact_storage_service
         self._api_docs_service = api_docs_service
         self._session_store = session_store
@@ -353,6 +359,8 @@ class ToolRuntimeService:
     ) -> ToolExecutionRecord:
         started_at = datetime.utcnow()
         job = None
+        job_heartbeat_stop: asyncio.Event | None = None
+        job_heartbeat_task: asyncio.Task | None = None
         handler = self._handlers.get(tool.key)
         if handler is None and is_mcp_tool_key(tool.key):
             handler = self._handlers.get("mcp-bridge")
@@ -403,6 +411,13 @@ class ToolRuntimeService:
                         },
                     )
                 await self._tool_job_service.mark_running(job)
+                job_heartbeat_stop = asyncio.Event()
+                job_heartbeat_task = asyncio.create_task(
+                    self._keep_tool_job_alive(
+                        job_id=job.id,
+                        stop_event=job_heartbeat_stop,
+                    )
+                )
                 job_context = ToolExecutionContext(
                     session_id=context.session_id,
                     turn_id=context.turn_id,
@@ -520,6 +535,42 @@ class ToolRuntimeService:
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
             )
+        finally:
+            if job_heartbeat_stop is not None and job_heartbeat_task is not None:
+                job_heartbeat_stop.set()
+                job_heartbeat_task.cancel()
+                try:
+                    await job_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+    async def _keep_tool_job_alive(
+        self,
+        *,
+        job_id: str,
+        stop_event: asyncio.Event,
+    ) -> None:
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=self._tool_job_heartbeat_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                return
+            try:
+                heartbeat = await self._tool_job_service.heartbeat(job_id)
+                if heartbeat is None:
+                    raise RuntimeError(f"ToolJob disappeared during execution: {job_id}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "tool_job_heartbeat_failed",
+                    extra={"tool_job_id": job_id},
+                )
 
     def _resolve_result_status(self, result: dict[str, Any]) -> str:
         explicit_status = str(result.get("status") or "").strip().lower()
