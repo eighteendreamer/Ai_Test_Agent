@@ -169,6 +169,13 @@ class TestCaseService:
             raise KeyError(f"Test case not found: {case_id}")
         return case
 
+    async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
+        cases = await self._store.get_cases(case_ids)
+        missing = [case_id for case_id in dict.fromkeys(case_ids) if case_id not in cases]
+        if missing:
+            raise KeyError("Test cases not found: " + ", ".join(missing))
+        return cases
+
     async def list_cases(
         self,
         *,
@@ -201,6 +208,20 @@ class TestCaseService:
         if version is None:
             raise KeyError(f"Test case version not found: {version_id}")
         return version
+
+    async def get_versions(
+        self,
+        version_ids: list[str],
+    ) -> dict[str, TestCaseVersionRecord]:
+        versions = await self._store.get_versions(version_ids)
+        missing = [
+            version_id
+            for version_id in dict.fromkeys(version_ids)
+            if version_id not in versions
+        ]
+        if missing:
+            raise KeyError("Test case versions not found: " + ", ".join(missing))
+        return versions
 
     async def create_version(
         self,

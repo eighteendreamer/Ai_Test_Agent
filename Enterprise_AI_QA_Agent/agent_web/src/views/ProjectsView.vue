@@ -13,12 +13,15 @@ import type {
   TestCaseRecord,
   TestCaseVersionRecord,
   TestSuiteBundle,
+  TestRunRecord,
+  TestRunStatus,
 } from "../types";
 
-type ResourceTab = "cases" | "suites";
+type ResourceTab = "cases" | "suites" | "runs";
 
 const CASE_PAGE_SIZE = 20;
 const SUITE_PAGE_SIZE = 20;
+const RUN_PAGE_SIZE = 20;
 
 const toast = useMessage();
 const projects = ref<ProjectRecord[]>([]);
@@ -49,6 +52,12 @@ const suitesLoading = ref(false);
 const suiteOffset = ref(0);
 const suitesHaveMore = ref(false);
 
+const testRuns = ref<TestRunRecord[]>([]);
+const runsLoading = ref(false);
+const runOffset = ref(0);
+const runsHaveMore = ref(false);
+const runStatus = ref<"" | TestRunStatus>("");
+
 const generationOpen = ref(false);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
@@ -63,6 +72,11 @@ const activationVersionId = ref("");
 const suiteEditorOpen = ref(false);
 const suiteSaving = ref(false);
 const suiteForm = ref({ name: "", description: "" });
+
+const runEditorOpen = ref(false);
+const runSaving = ref(false);
+const runSuite = ref<TestSuiteBundle | null>(null);
+const runForm = ref({ mode_key: "", session_id: "" });
 
 const selected = computed(() => projects.value.find(item => item.id === selectedId.value) ?? null);
 const generationModes = computed(() => modes.value.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt"));
@@ -119,8 +133,10 @@ function resetProjectResources() {
   resourceTab.value = "cases";
   caseOffset.value = 0;
   suiteOffset.value = 0;
+  runOffset.value = 0;
   testCases.value = [];
   suites.value = [];
+  testRuns.value = [];
   selectedCasesById.value = {};
 }
 
@@ -131,7 +147,11 @@ async function loadProjectDetail() {
   }
   await Promise.all([
     loadOverview(),
-    resourceTab.value === "cases" ? loadTestCases() : loadTestSuites(),
+    resourceTab.value === "cases"
+      ? loadTestCases()
+      : resourceTab.value === "suites"
+        ? loadTestSuites()
+        : loadTestRuns(),
   ]);
 }
 
@@ -199,14 +219,35 @@ async function loadTestSuites() {
   }
 }
 
+async function loadTestRuns() {
+  if (!selectedId.value) return;
+  runsLoading.value = true;
+  try {
+    const page = await api.listTestRuns(selectedId.value, {
+      status: runStatus.value || undefined,
+      limit: RUN_PAGE_SIZE,
+      offset: runOffset.value,
+    });
+    testRuns.value = page.items;
+    runsHaveMore.value = page.has_more;
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "测试运行加载失败");
+  } finally {
+    runsLoading.value = false;
+  }
+}
+
 async function switchResourceTab(tab: ResourceTab) {
   resourceTab.value = tab;
   if (tab === "cases") {
     caseOffset.value = 0;
     await loadTestCases();
-  } else {
+  } else if (tab === "suites") {
     suiteOffset.value = 0;
     await loadTestSuites();
+  } else {
+    runOffset.value = 0;
+    await loadTestRuns();
   }
 }
 
@@ -223,6 +264,11 @@ async function changeCasePage(direction: -1 | 1) {
 async function changeSuitePage(direction: -1 | 1) {
   suiteOffset.value = Math.max(0, suiteOffset.value + direction * SUITE_PAGE_SIZE);
   await loadTestSuites();
+}
+
+async function changeRunPage(direction: -1 | 1) {
+  runOffset.value = Math.max(0, runOffset.value + direction * RUN_PAGE_SIZE);
+  await loadTestRuns();
 }
 
 function openCreate() {
@@ -414,6 +460,50 @@ async function createSuite() {
   }
 }
 
+function openRunEditor(bundle: TestSuiteBundle) {
+  const availableModes = generationModes.value;
+  if (!availableModes.length) {
+    toast.error("当前没有可执行的用例驱动测试模式");
+    return;
+  }
+  runSuite.value = bundle;
+  runForm.value = { mode_key: availableModes[0].key, session_id: "" };
+  runEditorOpen.value = true;
+}
+
+async function createRun() {
+  if (!runSuite.value || !runForm.value.mode_key) {
+    toast.error("请选择测试模式");
+    return;
+  }
+  runSaving.value = true;
+  try {
+    await api.createTestRun(runSuite.value.suite.id, {
+      mode_key: runForm.value.mode_key,
+      ...(runForm.value.session_id.trim() ? { session_id: runForm.value.session_id.trim() } : {}),
+    });
+    runEditorOpen.value = false;
+    resourceTab.value = "runs";
+    runOffset.value = 0;
+    await Promise.all([loadTestRuns(), loadOverview()]);
+    toast.success("测试运行已创建，等待 Worker 领取固定版本用例");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "创建测试运行失败");
+  } finally {
+    runSaving.value = false;
+  }
+}
+
+async function cancelRun(run: TestRunRecord) {
+  try {
+    await api.cancelTestRun(run.id, "Cancelled from project management");
+    await loadTestRuns();
+    toast.success("测试运行已取消");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "取消测试运行失败");
+  }
+}
+
 onMounted(() => {
   void Promise.all([loadModes(), loadProjects()]);
 });
@@ -474,6 +564,7 @@ onMounted(() => {
           <article><span>API 文档</span><strong>{{ overview?.api_doc_count ?? 0 }}</strong></article>
           <article><span>测试用例</span><strong>{{ overview?.test_case_count ?? 0 }}</strong></article>
           <article><span>测试套件</span><strong>{{ overview?.test_suite_count ?? 0 }}</strong></article>
+          <article><span>测试运行</span><strong>{{ overview?.test_run_count ?? 0 }}</strong></article>
           <article><span>测试会话</span><strong>{{ overview?.session_count ?? 0 }}</strong></article>
           <article><span>图谱节点</span><strong>{{ (overview?.graph.page_count ?? 0) + (overview?.graph.element_count ?? 0) + (overview?.graph.entity_count ?? 0) }}</strong></article>
           <article><span>图谱关系</span><strong>{{ overview?.graph.edge_count ?? 0 }}</strong></article>
@@ -490,6 +581,7 @@ onMounted(() => {
             <div class="tabs" role="tablist" aria-label="项目测试资源">
               <button :class="{ active: resourceTab === 'cases' }" @click="switchResourceTab('cases')">测试用例</button>
               <button :class="{ active: resourceTab === 'suites' }" @click="switchResourceTab('suites')">测试套件</button>
+              <button :class="{ active: resourceTab === 'runs' }" @click="switchResourceTab('runs')">测试历史</button>
             </div>
             <div v-if="resourceTab === 'cases'" class="actions">
               <button :disabled="selected.status === 'archived'" @click="openSuiteEditor">创建套件</button>
@@ -547,26 +639,63 @@ onMounted(() => {
             </footer>
           </template>
 
-          <template v-else>
+          <template v-else-if="resourceTab === 'suites'">
             <div class="table-wrap suites-table">
               <table>
-                <thead><tr><th>套件名称</th><th>状态</th><th>条目数量</th><th>说明</th><th>更新时间</th></tr></thead>
+                <thead><tr><th>套件名称</th><th>状态</th><th>条目数量</th><th>说明</th><th>更新时间</th><th>操作</th></tr></thead>
                 <tbody>
-                  <tr v-if="suitesLoading"><td colspan="5" class="empty">正在加载测试套件…</td></tr>
+                  <tr v-if="suitesLoading"><td colspan="6" class="empty">正在加载测试套件…</td></tr>
                   <tr v-for="bundle in suites" v-else :key="bundle.suite.id">
                     <td><strong>{{ bundle.suite.name }}</strong><small>{{ bundle.suite.id }}</small></td>
                     <td><span class="case-status" :class="bundle.suite.status">{{ bundle.suite.status === "active" ? "启用中" : "已归档" }}</span></td>
                     <td>{{ bundle.items.length }}</td>
                     <td>{{ bundle.suite.description || "—" }}</td>
                     <td>{{ formatServerDateTime(bundle.suite.updated_at) }}</td>
+                    <td class="row-actions"><button :disabled="selected.status === 'archived' || bundle.suite.status !== 'active'" @click="openRunEditor(bundle)">创建运行</button></td>
                   </tr>
-                  <tr v-if="!suitesLoading && !suites.length"><td colspan="5" class="empty">暂无测试套件</td></tr>
+                  <tr v-if="!suitesLoading && !suites.length"><td colspan="6" class="empty">暂无测试套件</td></tr>
                 </tbody>
               </table>
             </div>
             <footer class="pagination">
               <span>第 {{ Math.floor(suiteOffset / SUITE_PAGE_SIZE) + 1 }} 页</span>
               <div><button :disabled="suiteOffset === 0 || suitesLoading" @click="changeSuitePage(-1)">上一页</button><button :disabled="!suitesHaveMore || suitesLoading" @click="changeSuitePage(1)">下一页</button></div>
+            </footer>
+          </template>
+
+          <template v-else>
+            <div class="case-toolbar">
+              <select v-model="runStatus" @change="runOffset = 0; loadTestRuns()">
+                <option value="">全部运行状态</option>
+                <option value="queued">等待执行</option>
+                <option value="running">执行中</option>
+                <option value="completed">已完成</option>
+                <option value="cancelled">已取消</option>
+              </select>
+              <button @click="loadTestRuns">刷新</button>
+              <small>运行只保存调度状态；测试结论以 Runner 结果和证据为准。</small>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>运行</th><th>状态</th><th>模式</th><th>进度</th><th>结果统计</th><th>创建时间</th><th>操作</th></tr></thead>
+                <tbody>
+                  <tr v-if="runsLoading"><td colspan="7" class="empty">正在加载测试运行…</td></tr>
+                  <tr v-for="run in testRuns" v-else :key="run.id">
+                    <td><strong>{{ shortId(run.id) }}</strong><small>套件 {{ shortId(run.suite_id) }}</small></td>
+                    <td><span class="case-status" :class="run.status">{{ run.status }}</span></td>
+                    <td>{{ modeLabel(run.mode_key) }}</td>
+                    <td>{{ run.stats.passed + run.stats.failed + run.stats.error + run.stats.blocked + run.stats.skipped + run.stats.cancelled }} / {{ run.stats.total }}</td>
+                    <td><small>通过 {{ run.stats.passed }} · 失败 {{ run.stats.failed }} · 错误 {{ run.stats.error }} · 阻塞 {{ run.stats.blocked }}</small></td>
+                    <td>{{ formatServerDateTime(run.created_at) }}</td>
+                    <td class="row-actions"><button v-if="run.status === 'queued' || run.status === 'running'" @click="cancelRun(run)">取消</button><span v-else>—</span></td>
+                  </tr>
+                  <tr v-if="!runsLoading && !testRuns.length"><td colspan="7" class="empty">暂无测试运行记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <footer class="pagination">
+              <span>第 {{ Math.floor(runOffset / RUN_PAGE_SIZE) + 1 }} 页</span>
+              <div><button :disabled="runOffset === 0 || runsLoading" @click="changeRunPage(-1)">上一页</button><button :disabled="!runsHaveMore || runsLoading" @click="changeRunPage(1)">下一页</button></div>
             </footer>
           </template>
         </section>
@@ -618,9 +747,19 @@ onMounted(() => {
         <footer><button @click="suiteEditorOpen = false">取消</button><button class="primary" :disabled="suiteSaving" @click="createSuite">{{ suiteSaving ? "创建中…" : "创建套件" }}</button></footer>
       </section>
     </div>
+
+    <div v-if="runEditorOpen" class="modal-backdrop" @click.self="runEditorOpen = false">
+      <section class="editor">
+        <header><div><h2>创建测试运行</h2><p>{{ runSuite?.suite.name }} · {{ runSuite?.items.length ?? 0 }} 条固定版本用例</p></div><button @click="runEditorOpen = false">×</button></header>
+        <label>测试模式<select v-model="runForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
+        <label>关联 Session ID（可选）<input v-model="runForm.session_id" placeholder="仅接受已绑定当前项目的 Session"></label>
+        <div class="selection-summary"><strong>运行不会修改套件或用例版本</strong><small>Worker 将通过原子领取接口分批获取固定版本内容；四种专业 Runner 的自动适配在下一轮完成。</small></div>
+        <footer><button @click="runEditorOpen = false">取消</button><button class="primary" :disabled="runSaving" @click="createRun">{{ runSaving ? "创建中…" : "创建运行" }}</button></footer>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.projects-page{padding:28px 32px;color:var(--text-primary,#111827);min-height:100%}.page-head,.detail-head,.toolbar,.actions,.editor header,.editor footer,.resource-head,.case-toolbar,.pagination{display:flex;align-items:center;justify-content:space-between;gap:14px}.page-head h1,.detail-head h2,.editor h2{margin:4px 0}.page-head p,.detail-head p,.editor header p{margin:0;color:var(--text-secondary,#6b7280)}.eyebrow{font-size:11px;letter-spacing:.15em;font-weight:700}.primary{background:#111827!important;color:#fff!important}.toolbar{justify-content:flex-start;margin:24px 0}.toolbar input{min-width:280px}.toolbar input,.toolbar select,.toolbar button,.actions button,.editor input,.editor textarea,.editor select,.editor button,.case-toolbar input,.case-toolbar select,.case-toolbar button,.pagination button,.row-actions button{border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:9px 12px}.project-grid{display:grid;grid-template-columns:minmax(300px,32%) 1fr;gap:20px}.project-list,.project-detail{border:1px solid var(--border-color,#e5e7eb);border-radius:14px;background:var(--surface,#fff);overflow:hidden}.project-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;border:0;border-bottom:1px solid var(--border-color,#e5e7eb);background:transparent;padding:15px;color:inherit}.project-row.active{background:rgba(59,130,246,.08)}.project-monogram{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#111827;color:#fff;font-weight:700}.project-copy{display:flex;flex:1;flex-direction:column;gap:4px}.project-copy small,td small,.selection-summary small,.version-option small{display:block;color:#6b7280}.status,.case-status,.priority{font-size:12px;padding:4px 8px;border-radius:99px;white-space:nowrap}.status.active,.case-status.active{background:#dcfce7;color:#166534}.status.archived,.case-status.archived,.case-status.disabled{background:#f3f4f6;color:#6b7280}.case-status.draft{background:#e0f2fe;color:#075985}.case-status.pending_review{background:#fef3c7;color:#92400e}.priority.p0{background:#fee2e2;color:#991b1b}.priority.p1{background:#ffedd5;color:#9a3412}.priority.p2{background:#e0f2fe;color:#075985}.priority.p3{background:#f3f4f6;color:#4b5563}.project-detail{padding:22px}.stats{display:grid;grid-template-columns:repeat(6,minmax(88px,1fr));gap:10px;margin:24px 0}.stats article{padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:12px}.stats span{display:block;color:#6b7280;font-size:12px}.stats strong{font-size:24px}.facts{margin-bottom:22px}.facts div{display:grid;grid-template-columns:120px 1fr;padding:10px 0;border-bottom:1px solid var(--border-color,#e5e7eb)}.facts dt{color:#6b7280}.facts dd{margin:0;word-break:break-all}.danger{color:#b91c1c}.empty{padding:36px;text-align:center;color:#6b7280}.error-banner,.graph-warning{padding:10px 12px;border-radius:8px;background:#fef2f2;color:#b91c1c}.resource-panel{border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px}.resource-head{margin-bottom:14px}.tabs{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.tabs button{border:0;border-radius:7px;background:transparent;color:inherit;padding:8px 14px}.tabs button.active{background:var(--surface,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:700}.case-toolbar{justify-content:flex-start;margin-bottom:12px}.case-toolbar input{min-width:220px}.case-toolbar small{margin-left:auto;color:#6b7280}.table-wrap{overflow-x:auto;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--border-color,#e5e7eb);vertical-align:middle}th{color:#6b7280;background:var(--surface-muted,#f9fafb);font-size:12px;white-space:nowrap}tbody tr:last-child td{border-bottom:0}td strong{display:block}.row-actions button{padding:6px 9px;white-space:nowrap}.pagination{margin-top:12px;color:#6b7280;font-size:12px}.pagination div{display:flex;gap:8px}.pagination button{padding:7px 10px}.suites-table td:nth-child(4){max-width:260px}.modal-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(0,0,0,.45)}.editor{width:min(560px,90vw);max-height:86vh;overflow:auto;padding:22px;border-radius:14px;background:var(--surface,#fff)}.editor label{display:flex;flex-direction:column;gap:6px;margin:14px 0}.editor footer{justify-content:flex-end;margin-top:20px}.version-editor{width:min(680px,90vw)}.version-option{flex-direction:row!important;align-items:flex-start;padding:12px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.version-option input{margin-top:4px}.version-option span{min-width:0}.selection-summary{display:flex;flex-direction:column;gap:5px;padding:12px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}button:disabled{cursor:not-allowed;opacity:.5}@media(max-width:1200px){.stats{grid-template-columns:repeat(3,1fr)}.project-grid{grid-template-columns:minmax(280px,34%) 1fr}}@media(max-width:900px){.projects-page{padding:20px}.project-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.resource-head,.case-toolbar{align-items:stretch;flex-direction:column}.case-toolbar small{margin-left:0}}
+.projects-page{padding:28px 32px;color:var(--text-primary,#111827);min-height:100%}.page-head,.detail-head,.toolbar,.actions,.editor header,.editor footer,.resource-head,.case-toolbar,.pagination{display:flex;align-items:center;justify-content:space-between;gap:14px}.page-head h1,.detail-head h2,.editor h2{margin:4px 0}.page-head p,.detail-head p,.editor header p{margin:0;color:var(--text-secondary,#6b7280)}.eyebrow{font-size:11px;letter-spacing:.15em;font-weight:700}.primary{background:#111827!important;color:#fff!important}.toolbar{justify-content:flex-start;margin:24px 0}.toolbar input{min-width:280px}.toolbar input,.toolbar select,.toolbar button,.actions button,.editor input,.editor textarea,.editor select,.editor button,.case-toolbar input,.case-toolbar select,.case-toolbar button,.pagination button,.row-actions button{border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:9px 12px}.project-grid{display:grid;grid-template-columns:minmax(300px,32%) 1fr;gap:20px}.project-list,.project-detail{border:1px solid var(--border-color,#e5e7eb);border-radius:14px;background:var(--surface,#fff);overflow:hidden}.project-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;border:0;border-bottom:1px solid var(--border-color,#e5e7eb);background:transparent;padding:15px;color:inherit}.project-row.active{background:rgba(59,130,246,.08)}.project-monogram{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#111827;color:#fff;font-weight:700}.project-copy{display:flex;flex:1;flex-direction:column;gap:4px}.project-copy small,td small,.selection-summary small,.version-option small{display:block;color:#6b7280}.status,.case-status,.priority{font-size:12px;padding:4px 8px;border-radius:99px;white-space:nowrap}.status.active,.case-status.active,.case-status.completed{background:#dcfce7;color:#166534}.status.archived,.case-status.archived,.case-status.disabled,.case-status.cancelled{background:#f3f4f6;color:#6b7280}.case-status.draft,.case-status.queued{background:#e0f2fe;color:#075985}.case-status.pending_review,.case-status.running{background:#fef3c7;color:#92400e}.priority.p0{background:#fee2e2;color:#991b1b}.priority.p1{background:#ffedd5;color:#9a3412}.priority.p2{background:#e0f2fe;color:#075985}.priority.p3{background:#f3f4f6;color:#4b5563}.project-detail{padding:22px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;margin:24px 0}.stats article{padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:12px}.stats span{display:block;color:#6b7280;font-size:12px}.stats strong{font-size:24px}.facts{margin-bottom:22px}.facts div{display:grid;grid-template-columns:120px 1fr;padding:10px 0;border-bottom:1px solid var(--border-color,#e5e7eb)}.facts dt{color:#6b7280}.facts dd{margin:0;word-break:break-all}.danger{color:#b91c1c}.empty{padding:36px;text-align:center;color:#6b7280}.error-banner,.graph-warning{padding:10px 12px;border-radius:8px;background:#fef2f2;color:#b91c1c}.resource-panel{border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px}.resource-head{margin-bottom:14px}.tabs{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.tabs button{border:0;border-radius:7px;background:transparent;color:inherit;padding:8px 14px}.tabs button.active{background:var(--surface,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:700}.case-toolbar{justify-content:flex-start;margin-bottom:12px}.case-toolbar input{min-width:220px}.case-toolbar small{margin-left:auto;color:#6b7280}.table-wrap{overflow-x:auto;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--border-color,#e5e7eb);vertical-align:middle}th{color:#6b7280;background:var(--surface-muted,#f9fafb);font-size:12px;white-space:nowrap}tbody tr:last-child td{border-bottom:0}td strong{display:block}.row-actions button{padding:6px 9px;white-space:nowrap}.pagination{margin-top:12px;color:#6b7280;font-size:12px}.pagination div{display:flex;gap:8px}.pagination button{padding:7px 10px}.suites-table td:nth-child(4){max-width:260px}.modal-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(0,0,0,.45)}.editor{width:min(560px,90vw);max-height:86vh;overflow:auto;padding:22px;border-radius:14px;background:var(--surface,#fff)}.editor label{display:flex;flex-direction:column;gap:6px;margin:14px 0}.editor footer{justify-content:flex-end;margin-top:20px}.version-editor{width:min(680px,90vw)}.version-option{flex-direction:row!important;align-items:flex-start;padding:12px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.version-option input{margin-top:4px}.version-option span{min-width:0}.selection-summary{display:flex;flex-direction:column;gap:5px;padding:12px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}button:disabled{cursor:not-allowed;opacity:.5}@media(max-width:1200px){.stats{grid-template-columns:repeat(3,1fr)}.project-grid{grid-template-columns:minmax(280px,34%) 1fr}}@media(max-width:900px){.projects-page{padding:20px}.project-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.resource-head,.case-toolbar{align-items:stretch;flex-direction:column}.case-toolbar small{margin-left:0}}
 </style>

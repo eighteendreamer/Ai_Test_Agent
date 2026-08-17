@@ -99,6 +99,9 @@ import type {
   TestCaseVersionRecord,
   TestSuiteBundle,
   TestSuitePage,
+  TestRunDetail,
+  TestRunPage,
+  TestRunStatus,
 } from "../types";
 import type {
   CompatibilityArtifactRecord,
@@ -245,6 +248,33 @@ export const api = {
     return request(`/api/v1/projects/${encodeURIComponent(projectId)}/suites`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+  createTestRun(suiteId: string, payload: {
+    mode_key: string;
+    session_id?: string | null;
+  }): Promise<TestRunDetail> {
+    return request(`/api/v1/suites/${encodeURIComponent(suiteId)}/runs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  listTestRuns(projectId: string, params: {
+    status?: TestRunStatus;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<TestRunPage> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 50),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.status) query.set("status", params.status);
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs?${query.toString()}`);
+  },
+  cancelTestRun(runId: string, reason = "Cancelled by operator"): Promise<TestRunDetail> {
+    return request(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     });
   },
   getHealth(): Promise<HealthResponse> {

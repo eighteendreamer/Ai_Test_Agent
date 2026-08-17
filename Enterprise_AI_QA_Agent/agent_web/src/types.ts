@@ -1103,6 +1103,7 @@ export interface ProjectOverview {
   session_count: number;
   test_case_count: number;
   test_suite_count: number;
+  test_run_count: number;
   graph: {
     available: boolean;
     project_scope?: string | null;
@@ -1222,6 +1223,73 @@ export interface TestSuiteBundle {
 
 export interface TestSuitePage {
   items: TestSuiteBundle[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export type TestRunStatus = "queued" | "running" | "completed" | "cancelled";
+export type RunItemStatus = "queued" | "claimed" | "running" | "passed" | "failed" | "error" | "blocked" | "skipped" | "cancelled";
+
+export interface TestRunStats {
+  total: number;
+  queued: number;
+  claimed: number;
+  running: number;
+  passed: number;
+  failed: number;
+  error: number;
+  blocked: number;
+  skipped: number;
+  cancelled: number;
+}
+
+export interface TestRunRecord {
+  id: string;
+  project_id: string;
+  suite_id: string;
+  run_kind: "normal" | "regression";
+  mode_key: string;
+  session_id?: string | null;
+  parent_run_id?: string | null;
+  status: TestRunStatus;
+  stats: TestRunStats;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  cancel_reason?: string | null;
+}
+
+export interface TestRunItemRecord {
+  id: string;
+  run_id: string;
+  case_id: string;
+  case_version_id: string;
+  position: number;
+  status: RunItemStatus;
+  attempt_no: number;
+  lease_owner?: string | null;
+  lease_token?: string | null;
+  lease_expires_at?: string | null;
+  heartbeat_at?: string | null;
+  result_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface TestRunDetail {
+  run: TestRunRecord;
+  items: TestRunItemRecord[];
+  attempts: Array<Record<string, unknown>>;
+  results: Array<Record<string, unknown>>;
+}
+
+export interface TestRunPage {
+  items: TestRunRecord[];
   limit: number;
   offset: number;
   has_more: boolean;

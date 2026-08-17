@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     postgres_test_case_version_table: str = "agent_test_case_versions"
     postgres_test_suite_table: str = "agent_test_suites"
     postgres_test_suite_item_table: str = "agent_test_suite_items"
+    postgres_test_run_table: str = "agent_test_runs"
+    postgres_test_run_item_table: str = "agent_test_run_items"
+    postgres_test_run_attempt_table: str = "agent_test_run_attempts"
+    postgres_test_case_result_table: str = "agent_test_case_results"
     postgres_mcp_server_table: str = "agent_mcp_servers"
     postgres_vector_dimension: int = 1536
     memgraph_host: str = "127.0.0.1"

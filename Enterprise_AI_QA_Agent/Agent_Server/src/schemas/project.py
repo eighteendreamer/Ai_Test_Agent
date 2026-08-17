@@ -92,4 +92,5 @@ class ProjectOverview(BaseModel):
     session_count: int = 0
     test_case_count: int = 0
     test_suite_count: int = 0
+    test_run_count: int = 0
     graph: ProjectGraphOverview = Field(default_factory=ProjectGraphOverview)

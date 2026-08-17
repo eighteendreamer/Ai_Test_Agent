@@ -30,6 +30,7 @@ class TestCaseStore(Protocol):
         entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]],
     ) -> list[tuple[TestCaseRecord, TestCaseVersionRecord]]: ...
     async def get_case(self, case_id: str) -> TestCaseRecord | None: ...
+    async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]: ...
     async def list_cases(
         self,
         *,
@@ -42,6 +43,10 @@ class TestCaseStore(Protocol):
         offset: int,
     ) -> tuple[list[TestCaseRecord], bool]: ...
     async def get_version(self, version_id: str) -> TestCaseVersionRecord | None: ...
+    async def get_versions(
+        self,
+        version_ids: list[str],
+    ) -> dict[str, TestCaseVersionRecord]: ...
     async def get_active_case_versions(
         self,
         case_ids: list[str],
@@ -111,6 +116,13 @@ class InMemoryTestCaseStore:
         case = self._cases.get(case_id)
         return case.model_copy(deep=True) if case else None
 
+    async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
+        return {
+            case_id: self._cases[case_id].model_copy(deep=True)
+            for case_id in dict.fromkeys(case_ids)
+            if case_id in self._cases
+        }
+
     async def list_cases(
         self,
         *,
@@ -143,6 +155,16 @@ class InMemoryTestCaseStore:
     async def get_version(self, version_id: str) -> TestCaseVersionRecord | None:
         version = self._versions.get(version_id)
         return version.model_copy(deep=True) if version else None
+
+    async def get_versions(
+        self,
+        version_ids: list[str],
+    ) -> dict[str, TestCaseVersionRecord]:
+        return {
+            version_id: self._versions[version_id].model_copy(deep=True)
+            for version_id in dict.fromkeys(version_ids)
+            if version_id in self._versions
+        }
 
     async def get_active_case_versions(
         self,
@@ -246,6 +268,9 @@ class PostgresTestCaseStore:
     async def get_case(self, case_id: str) -> TestCaseRecord | None:
         return await asyncio.to_thread(self._get_case_sync, case_id)
 
+    async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
+        return await asyncio.to_thread(self._get_cases_sync, case_ids)
+
     async def list_cases(
         self,
         *,
@@ -270,6 +295,12 @@ class PostgresTestCaseStore:
 
     async def get_version(self, version_id: str) -> TestCaseVersionRecord | None:
         return await asyncio.to_thread(self._get_version_sync, version_id)
+
+    async def get_versions(
+        self,
+        version_ids: list[str],
+    ) -> dict[str, TestCaseVersionRecord]:
+        return await asyncio.to_thread(self._get_versions_sync, version_ids)
 
     async def get_active_case_versions(
         self,
@@ -409,6 +440,19 @@ class PostgresTestCaseStore:
                 row = cur.fetchone()
         return self._case_from_value(row["record"]) if row else None
 
+    def _get_cases_sync(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
+        if not case_ids:
+            return {}
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._case_table} WHERE id = ANY(%s::uuid[])",
+                    (list(dict.fromkeys(case_ids)),),
+                )
+                rows = cur.fetchall() or []
+        cases = [self._case_from_value(row["record"]) for row in rows]
+        return {case.id: case for case in cases}
+
     def _list_cases_sync(
         self,
         project_id: str,
@@ -451,6 +495,22 @@ class PostgresTestCaseStore:
                 cur.execute(f"SELECT record FROM {self._version_table} WHERE id = %s", (version_id,))
                 row = cur.fetchone()
         return self._version_from_value(row["record"]) if row else None
+
+    def _get_versions_sync(
+        self,
+        version_ids: list[str],
+    ) -> dict[str, TestCaseVersionRecord]:
+        if not version_ids:
+            return {}
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._version_table} WHERE id = ANY(%s::uuid[])",
+                    (list(dict.fromkeys(version_ids)),),
+                )
+                rows = cur.fetchall() or []
+        versions = [self._version_from_value(row["record"]) for row in rows]
+        return {version.id: version for version in versions}
 
     def _get_active_case_versions_sync(
         self,
