@@ -132,6 +132,15 @@ class TestCaseResultRecord(BaseModel):
     created_at: datetime
 
 
+class RegressionSourceRecord(BaseModel):
+    result_id: str
+    run_item_id: str
+    case_id: str
+    case_version_id: str
+    status: TestResultStatus
+    run_item_position: int | None = Field(default=None, ge=1)
+
+
 class TestRunDetail(BaseModel):
     run: TestRunRecord
     items: list[TestRunItemRecord] = Field(default_factory=list)

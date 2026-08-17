@@ -23,7 +23,11 @@ from src.schemas.run_management import (
     RunClaimRequest,
     RunItemCompleteRequest,
     RunItemLeaseRequest,
+    TestCaseResultRecord as _CaseResultRecord,
     TestRunCreateRequest as _RunCreateRequest,
+    TestRunItemRecord as _RunItemRecord,
+    TestRunRecord as _RunRecord,
+    TestRunStats as _RunStats,
 )
 from src.schemas.suite_management import (
     TestSuiteItemRecord as _SuiteItemRecord,
@@ -71,7 +75,7 @@ class _Cases:
         return self.versions[version_id]
 
 
-def _components():
+def _components(*, store=None, session_store=None):
     now = datetime.now(timezone.utc)
     project = ProjectRecord(
         id="project-1",
@@ -143,12 +147,85 @@ def _components():
         items=suite_items,
     )
     service = _RunService(
-        store=InMemoryTestRunStore(),
+        store=store or InMemoryTestRunStore(),
         project_service=_Projects(project),
         suite_service=_Suites(suite),
         test_case_service=_Cases(cases, versions),
+        session_store=session_store,
     )
     return service, cases, versions
+
+
+class _NoDetailRegressionStore(InMemoryTestRunStore):
+    def __init__(self):
+        super().__init__()
+        self.reject_detail_reads = False
+
+    async def get_run(self, run_id):
+        if self.reject_detail_reads:
+            raise AssertionError("Regression creation must not load the full parent run detail")
+        return await super().get_run(run_id)
+
+
+class _EventSessions:
+    def __init__(self):
+        self.events = []
+
+    async def append_event(self, session_id, event):
+        self.events.append((session_id, event))
+
+
+def _seed_failed_parent(store, case_count, *, session_id=None):
+    now = datetime.now(timezone.utc)
+    parent = _RunRecord(
+        id="bulk-parent-run",
+        project_id="project-1",
+        suite_id="suite-1",
+        mode_key="api_testing",
+        session_id=session_id,
+        status="completed",
+        stats=_RunStats(total=case_count, failed=case_count),
+        created_at=now,
+        updated_at=now,
+        completed_at=now,
+    )
+    store._runs[parent.id] = parent
+    store._item_ids_by_run[parent.id] = []
+    store._attempt_ids_by_run[parent.id] = []
+    store._result_ids_by_run[parent.id] = []
+    for index in range(case_count):
+        item_id = f"bulk-item-{index}"
+        result_id = f"bulk-result-{index}"
+        item = _RunItemRecord(
+            id=item_id,
+            run_id=parent.id,
+            case_id=f"bulk-case-{index}",
+            case_version_id=f"bulk-version-{index}",
+            position=index + 1,
+            status="failed",
+            result_id=result_id,
+            created_at=now,
+            updated_at=now,
+            completed_at=now,
+        )
+        result = _CaseResultRecord(
+            id=result_id,
+            run_id=parent.id,
+            run_item_id=item_id,
+            case_id=item.case_id,
+            case_version_id=item.case_version_id,
+            attempt_id=f"bulk-attempt-{index}",
+            attempt_no=1,
+            status="failed",
+            summary="failed",
+            payload_hash=f"{index:064x}"[-64:],
+            created_at=now,
+        )
+        store._items[item_id] = item
+        store._results[result_id] = result
+        store._item_ids_by_run[parent.id].append(item_id)
+        store._result_ids_by_run[parent.id].append(result_id)
+    return parent
 
 
 @pytest.mark.asyncio
@@ -215,6 +292,70 @@ async def test_regression_run_selects_failures_and_freezes_original_versions():
 
 
 @pytest.mark.asyncio
+async def test_regression_creation_does_not_load_full_parent_run_detail():
+    store = _NoDetailRegressionStore()
+    service, _, _ = _components(store=store)
+    parent = await service.create_run(
+        "suite-1",
+        _RunCreateRequest(mode_key="api_testing"),
+    )
+    claims = await service.claim(
+        parent.run.id,
+        RunClaimRequest(worker_id="worker-1", limit=2, lease_seconds=300),
+    )
+    for index, claim in enumerate(claims.claims):
+        await service.start_item(
+            claim.item.id,
+            RunItemLeaseRequest(lease_token=claim.lease_token),
+        )
+        await service.complete_item(
+            claim.item.id,
+            RunItemCompleteRequest(
+                lease_token=claim.lease_token,
+                status="failed" if index == 0 else "passed",
+                summary="completed",
+            ),
+        )
+
+    store.reject_detail_reads = True
+    regression = await service.create_regression(
+        parent.run.id,
+        RegressionRunCreateRequest(),
+    )
+
+    assert len(regression.items) == 1
+    assert regression.items[0].case_id == "case-0"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case_count", [1_000, 10_000])
+async def test_default_regression_capacity_scales_with_selected_failures(case_count):
+    store = _NoDetailRegressionStore()
+    sessions = _EventSessions()
+    service, _, _ = _components(store=store, session_store=sessions)
+    parent = _seed_failed_parent(store, case_count, session_id="bulk-session")
+
+    store.reject_detail_reads = True
+    regression = await service.create_regression(
+        parent.id,
+        RegressionRunCreateRequest(),
+    )
+
+    assert len(regression.items) == case_count
+    assert regression.items[0].regression_source_result_id == "bulk-result-0"
+    assert regression.items[-1].regression_source_result_id == (
+        f"bulk-result-{case_count - 1}"
+    )
+    assert regression.items[-1].position == case_count
+    assert regression.attempts == []
+    assert len(sessions.events) == 1
+    event_payload = sessions.events[0][1].payload
+    assert event_payload["source_result_count"] == case_count
+    assert len(event_payload["source_result_ids"]) == 100
+    assert event_payload["source_result_ids_truncated"] is True
+
+
+@pytest.mark.asyncio
 async def test_regression_rejects_passed_result_and_accepts_explicit_new_version():
     service, cases, versions = _components()
     parent = await service.create_run("suite-1", _RunCreateRequest(mode_key="api_testing"))
@@ -272,8 +413,9 @@ async def test_regression_rejects_passed_result_and_accepts_explicit_new_version
 
 
 @pytest.mark.asyncio
-async def test_regression_reports_missing_source_run_item_before_sorting(monkeypatch):
-    service, _, _ = _components()
+async def test_regression_reports_missing_source_run_item_before_sorting():
+    store = InMemoryTestRunStore()
+    service, _, _ = _components(store=store)
     parent = await service.create_run("suite-1", _RunCreateRequest(mode_key="api_testing"))
     claim = (
         await service.claim(
@@ -311,16 +453,7 @@ async def test_regression_reports_missing_source_run_item_before_sorting(monkeyp
             summary="passed",
         ),
     )
-    damaged = await service.get(parent.run.id)
-    damaged.items = [item for item in damaged.items if item.id != claim.item.id]
-    original_get = service.get
-
-    async def get_with_damaged_parent(run_id):
-        if run_id == parent.run.id:
-            return damaged
-        return await original_get(run_id)
-
-    monkeypatch.setattr(service, "get", get_with_damaged_parent)
+    del store._items[claim.item.id]
 
     with pytest.raises(KeyError, match=f"Regression source run item not found: {claim.item.id}"):
         await service.create_regression(parent.run.id, RegressionRunCreateRequest())
@@ -372,3 +505,27 @@ async def test_regression_system_api_creates_a_new_fixed_version_run():
     assert len(payload["items"]) == 1
     assert payload["items"][0]["case_version_id"] == "version-0"
     assert payload["items"][0]["regression_source_result_id"]
+
+
+@pytest.mark.asyncio
+async def test_regression_system_api_handles_one_thousand_failed_results():
+    store = _NoDetailRegressionStore()
+    service, _, _ = _components(store=store)
+    parent = _seed_failed_parent(store, 1_000)
+    store.reject_detail_reads = True
+    app = FastAPI()
+    app.include_router(run_router, prefix="/api/v1")
+    app.state.test_run_service = service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/v1/runs/{parent.id}/regression",
+            json={},
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["run"]["stats"]["total"] == 1_000
+    assert len(payload["items"]) == 1_000
+    assert payload["items"][-1]["regression_source_result_id"] == "bulk-result-999"

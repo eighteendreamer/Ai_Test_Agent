@@ -35,6 +35,7 @@ from src.schemas.session import ExecutionEvent
 
 
 logger = logging.getLogger(__name__)
+REGRESSION_EVENT_SOURCE_ID_LIMIT = 100
 
 
 class TestRunService:
@@ -160,28 +161,39 @@ class TestRunService:
         created_by: str | None = None,
     ) -> TestRunDetail:
         """从原始失败结果创建新运行，永不修改原 Run/Result。"""
-        parent_detail = await self.get(parent_run_id)
-        parent = parent_detail.run
+        parent = await self._get_run_record(parent_run_id)
         if parent.status not in {"completed", "cancelled"}:
             raise ValueError(
                 f"Only completed or cancelled test runs can create regression: {parent_run_id}"
             )
         await self._projects.require_active(parent.project_id)
 
-        results_by_id = {result.id: result for result in parent_detail.results}
         eligible_statuses = {"failed", "error", "blocked"}
         requested_ids = list(dict.fromkeys(payload.result_ids))
+        candidates = await self._store.list_regression_candidates(
+            run_id=parent_run_id,
+            result_ids=requested_ids or None,
+        )
+        candidates_by_id = {
+            candidate.result_id: candidate for candidate in candidates
+        }
         if requested_ids:
-            missing = [result_id for result_id in requested_ids if result_id not in results_by_id]
+            missing = [
+                result_id
+                for result_id in requested_ids
+                if result_id not in candidates_by_id
+            ]
             if missing:
                 raise KeyError(
                     "Regression result does not belong to parent run: " + ", ".join(missing)
                 )
-            selected_results = [results_by_id[result_id] for result_id in requested_ids]
+            selected_candidates = [
+                candidates_by_id[result_id] for result_id in requested_ids
+            ]
             ineligible = [
-                result.id
-                for result in selected_results
-                if result.status not in eligible_statuses
+                candidate.result_id
+                for candidate in selected_candidates
+                if candidate.status not in eligible_statuses
             ]
             if ineligible:
                 raise ValueError(
@@ -189,18 +201,17 @@ class TestRunService:
                     + ", ".join(ineligible)
                 )
         else:
-            selected_results = [
-                result
-                for result in parent_detail.results
-                if result.status in eligible_statuses
+            selected_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.status in eligible_statuses
             ]
-        if not selected_results:
+        if not selected_candidates:
             raise ValueError(
                 "No failed/error/blocked results available for regression: "
                 f"{parent_run_id}"
             )
 
-        item_by_id = {item.id: item for item in parent_detail.items}
         now = self._clock()
         session_id = payload.session_id or parent.session_id
         if payload.session_id:
@@ -217,7 +228,9 @@ class TestRunService:
         cases: dict[str, object] = {}
         versions: dict[str, object] = {}
         if payload.version_overrides:
-            override_case_ids = {result.case_id for result in selected_results}
+            override_case_ids = {
+                candidate.case_id for candidate in selected_candidates
+            }
             unknown_cases = [
                 case_id
                 for case_id in payload.version_overrides
@@ -249,13 +262,17 @@ class TestRunService:
                         f"{case_id}/{version_id}"
                     )
 
-        for result in selected_results:
-            if result.run_item_id not in item_by_id:
+        for candidate in selected_candidates:
+            if candidate.run_item_position is None:
                 raise KeyError(
-                    f"Regression source run item not found: {result.run_item_id}"
+                    "Regression source run item not found: "
+                    f"{candidate.run_item_id}"
                 )
-        selected_results.sort(
-            key=lambda result: (item_by_id[result.run_item_id].position, result.id)
+        selected_candidates.sort(
+            key=lambda candidate: (
+                candidate.run_item_position,
+                candidate.result_id,
+            )
         )
         run = TestRunRecord(
             id=str(uuid4()),
@@ -265,39 +282,47 @@ class TestRunService:
             mode_key=parent.mode_key,
             session_id=session_id,
             parent_run_id=parent.id,
-            stats=TestRunStats(total=len(selected_results), queued=len(selected_results)),
+            stats=TestRunStats(
+                total=len(selected_candidates),
+                queued=len(selected_candidates),
+            ),
             created_by=created_by,
             created_at=now,
             updated_at=now,
         )
         items = []
-        for position, result in enumerate(selected_results, start=1):
-            source_item = item_by_id.get(result.run_item_id)
-            if source_item is None:
-                raise KeyError(f"Regression source run item not found: {result.run_item_id}")
+        for position, candidate in enumerate(selected_candidates, start=1):
             items.append(
                 TestRunItemRecord(
                     id=str(uuid4()),
                     run_id=run.id,
-                    case_id=result.case_id,
+                    case_id=candidate.case_id,
                     case_version_id=payload.version_overrides.get(
-                        result.case_id,
-                        result.case_version_id,
+                        candidate.case_id,
+                        candidate.case_version_id,
                     ),
                     position=position,
-                    regression_source_result_id=result.id,
+                    regression_source_result_id=candidate.result_id,
                     created_at=now,
                     updated_at=now,
                 )
             )
         stored = await self._store.create_run(run, items)
+        source_result_ids = [
+            candidate.result_id
+            for candidate in selected_candidates[:REGRESSION_EVENT_SOURCE_ID_LIMIT]
+        ]
+        source_result_count = len(selected_candidates)
+        source_result_ids_truncated = source_result_count > len(source_result_ids)
         logger.info(
             "test_regression_run_created",
             extra={
                 "project_id": run.project_id,
                 "run_id": run.id,
                 "parent_run_id": parent.id,
-                "source_result_ids": [result.id for result in selected_results],
+                "source_result_ids": source_result_ids,
+                "source_result_count": source_result_count,
+                "source_result_ids_truncated": source_result_ids_truncated,
                 "version_override_count": len(payload.version_overrides),
                 "item_count": len(items),
             },
@@ -308,7 +333,9 @@ class TestRunService:
             {
                 "run_id": run.id,
                 "parent_run_id": parent.id,
-                "source_result_ids": [result.id for result in selected_results],
+                "source_result_ids": source_result_ids,
+                "source_result_count": source_result_count,
+                "source_result_ids_truncated": source_result_ids_truncated,
                 "item_count": len(items),
             },
         )

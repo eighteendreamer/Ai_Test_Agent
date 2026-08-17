@@ -7,6 +7,183 @@ from importlib import import_module
 from src.core.config import Settings
 
 
+def test_postgres_regression_candidates_query_only_eligible_results(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    run_id = "00000000-0000-0000-0000-000000000011"
+    item = schemas.TestRunItemRecord(
+        id="00000000-0000-0000-0000-000000000014",
+        run_id=run_id,
+        case_id="00000000-0000-0000-0000-000000000015",
+        case_version_id="00000000-0000-0000-0000-000000000016",
+        position=1,
+        status="failed",
+        result_id="00000000-0000-0000-0000-000000000020",
+        created_at=now,
+        updated_at=now,
+    )
+    result = schemas.TestCaseResultRecord(
+        id=item.result_id,
+        run_id=run_id,
+        run_item_id=item.id,
+        case_id=item.case_id,
+        case_version_id=item.case_version_id,
+        attempt_id="00000000-0000-0000-0000-000000000017",
+        attempt_no=1,
+        status="failed",
+        summary="failed",
+        payload_hash="a" * 64,
+        created_at=now,
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            normalized = " ".join(statement.split())
+            self.calls.append((normalized, parameters))
+            self.rows = [
+                {
+                    "result_id": result.id,
+                    "run_item_id": result.run_item_id,
+                    "case_id": result.case_id,
+                    "case_version_id": result.case_version_id,
+                    "status": result.status,
+                    "run_item_position": item.position,
+                }
+            ]
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    candidates = asyncio.run(
+        store_module.PostgresTestRunStore(Settings()).list_regression_candidates(
+            run_id=run_id,
+            result_ids=None,
+        )
+    )
+
+    statement, parameters = cursor.calls[0]
+    assert "FROM agent_test_case_results AS result" in statement
+    assert "LEFT JOIN agent_test_run_items AS item" in statement
+    assert "result.status IN ('failed', 'error', 'blocked')" in statement
+    assert ".record" not in statement
+    assert "agent_test_run_attempts" not in statement
+    assert parameters == (run_id,)
+    assert len(candidates) == 1
+    assert candidates[0].model_dump() == {
+        "result_id": result.id,
+        "run_item_id": result.run_item_id,
+        "case_id": result.case_id,
+        "case_version_id": result.case_version_id,
+        "status": result.status,
+        "run_item_position": item.position,
+    }
+
+
+def test_postgres_explicit_regression_candidates_keep_passed_and_filter_invalid_ids(
+    monkeypatch,
+):
+    store_module = import_module("src.application.test_runs.run_store")
+    run_id = "00000000-0000-0000-0000-000000000011"
+    result_id = "00000000-0000-0000-0000-000000000020"
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchall(self):
+            return [
+                {
+                    "result_id": result_id,
+                    "run_item_id": "00000000-0000-0000-0000-000000000014",
+                    "case_id": "00000000-0000-0000-0000-000000000015",
+                    "case_version_id": "00000000-0000-0000-0000-000000000016",
+                    "status": "passed",
+                    "run_item_position": 1,
+                }
+            ]
+
+    class Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def cursor(self):
+            return self._cursor
+
+    class Context:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self.connection
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    cursor = Cursor()
+    monkeypatch.setattr(
+        store_module,
+        "postgres_connect",
+        lambda settings: Context(Connection(cursor)),
+    )
+
+    candidates = asyncio.run(
+        store_module.PostgresTestRunStore(Settings()).list_regression_candidates(
+            run_id=run_id,
+            result_ids=[result_id, "not-a-uuid"],
+        )
+    )
+
+    statement, parameters = cursor.calls[0]
+    assert "result.id = ANY(%s::uuid[])" in statement
+    assert "result.status IN" not in statement
+    assert parameters == (run_id, [result_id])
+    assert [candidate.status for candidate in candidates] == ["passed"]
+
+
 def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch):
     store_module = import_module("src.application.test_runs.run_store")
 
@@ -74,6 +251,12 @@ def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch)
     )
     assert any(
         "ON agent_test_case_results (regression_source_result_id)" in statement
+        for statement in cursor.statements
+    )
+    assert any(
+        "ON agent_test_case_results (run_id, run_item_id, id) "
+        "INCLUDE (status, case_id, case_version_id) "
+        "WHERE status IN ('failed', 'error', 'blocked')" in statement
         for statement in cursor.statements
     )
 

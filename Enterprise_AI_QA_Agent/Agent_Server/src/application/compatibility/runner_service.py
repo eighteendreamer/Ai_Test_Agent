@@ -1232,9 +1232,10 @@ class CompatibilityRunnerService:
                 "object_name": stored.get("object_name", ""),
             }
 
-        directory = self._local_artifact_root / "compatibility" / self._safe_filename(task.plan_id) / self._safe_filename(task.dispatch_id) / self._safe_filename(task.task_id)
+        storage_key = self._safe_filename(artifact_id)
+        directory = self._local_artifact_root / "compatibility" / storage_key[-2:]
         directory.mkdir(parents=True, exist_ok=True)
-        path = (directory / f"{artifact_id}_{filename}").resolve()
+        path = (directory / storage_key).resolve()
         root = self._local_artifact_root.resolve()
         if root not in path.parents:
             raise ValueError("Artifact path escaped local artifact root.")

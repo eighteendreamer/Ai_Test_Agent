@@ -4,11 +4,12 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.run_management import (
+    RegressionSourceRecord,
     RunItemCompletion,
     TestCaseResultRecord,
     TestRunAttemptRecord,
@@ -40,6 +41,12 @@ class TestRunStore(Protocol):
     ) -> TestRunDetail: ...
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
+    async def list_regression_candidates(
+        self,
+        *,
+        run_id: str,
+        result_ids: list[str] | None,
+    ) -> list[RegressionSourceRecord]: ...
     async def list_runs(
         self,
         *,
@@ -129,6 +136,50 @@ class InMemoryTestRunStore:
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         run = self._runs.get(run_id)
         return run.model_copy(deep=True) if run else None
+
+    async def list_regression_candidates(
+        self,
+        *,
+        run_id: str,
+        result_ids: list[str] | None,
+    ) -> list[RegressionSourceRecord]:
+        async with self._lock:
+            selected_ids = (
+                result_ids
+                if result_ids is not None
+                else self._result_ids_by_run.get(run_id, [])
+            )
+            candidates = []
+            for result_id in selected_ids:
+                result = self._results.get(result_id)
+                if result is None or result.run_id != run_id:
+                    continue
+                if result_ids is None and result.status not in {
+                    "failed",
+                    "error",
+                    "blocked",
+                }:
+                    continue
+                item = self._items.get(result.run_item_id)
+                candidates.append(
+                    RegressionSourceRecord(
+                        result_id=result.id,
+                        run_item_id=result.run_item_id,
+                        case_id=result.case_id,
+                        case_version_id=result.case_version_id,
+                        status=result.status,
+                        run_item_position=item.position if item else None,
+                    )
+                )
+            candidates.sort(
+                key=lambda candidate: (
+                    candidate.run_item_position
+                    if candidate.run_item_position is not None
+                    else float("inf"),
+                    candidate.result_id,
+                )
+            )
+            return candidates
 
     async def list_runs(
         self,
@@ -524,6 +575,18 @@ class PostgresTestRunStore:
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         return await asyncio.to_thread(self._get_run_record_sync, run_id)
 
+    async def list_regression_candidates(
+        self,
+        *,
+        run_id: str,
+        result_ids: list[str] | None,
+    ) -> list[RegressionSourceRecord]:
+        return await asyncio.to_thread(
+            self._list_regression_candidates_sync,
+            run_id,
+            result_ids,
+        )
+
     async def list_runs(
         self,
         *,
@@ -735,6 +798,13 @@ class PostgresTestRunStore:
                     f"ON {self._result_table} (regression_source_result_id) "
                     "WHERE regression_source_result_id IS NOT NULL"
                 )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS "
+                    f"idx_{self._result_table}_run_regression_candidates "
+                    f"ON {self._result_table} (run_id, run_item_id, id) "
+                    "INCLUDE (status, case_id, case_version_id) "
+                    "WHERE status IN ('failed', 'error', 'blocked')"
+                )
 
     def _create_run_sync(
         self,
@@ -801,6 +871,58 @@ class PostgresTestRunStore:
                 )
                 row = cur.fetchone()
         return self._run_from_value(row["record"]) if row else None
+
+    def _list_regression_candidates_sync(
+        self,
+        run_id: str,
+        result_ids: list[str] | None,
+    ) -> list[RegressionSourceRecord]:
+        params: list[object] = [run_id]
+        if result_ids is None:
+            selector = "result.status IN ('failed', 'error', 'blocked')"
+        else:
+            valid_result_ids = []
+            for result_id in result_ids:
+                try:
+                    valid_result_ids.append(str(UUID(result_id)))
+                except (TypeError, ValueError):
+                    continue
+            if not valid_result_ids:
+                return []
+            selector = "result.id = ANY(%s::uuid[])"
+            params.append(valid_result_ids)
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT result.id AS result_id, "
+                    "result.run_item_id AS run_item_id, "
+                    "result.case_id AS case_id, "
+                    "result.case_version_id AS case_version_id, "
+                    "result.status AS status, "
+                    "item.position AS run_item_position "
+                    f"FROM {self._result_table} AS result "
+                    f"LEFT JOIN {self._item_table} AS item "
+                    "ON item.id = result.run_item_id AND item.run_id = result.run_id "
+                    f"WHERE result.run_id = %s AND {selector} "
+                    "ORDER BY item.position ASC NULLS LAST, result.id ASC",
+                    tuple(params),
+                )
+                rows = cur.fetchall() or []
+        return [
+            RegressionSourceRecord(
+                result_id=str(row["result_id"]),
+                run_item_id=str(row["run_item_id"]),
+                case_id=str(row["case_id"]),
+                case_version_id=str(row["case_version_id"]),
+                status=str(row["status"]),
+                run_item_position=(
+                    int(row["run_item_position"])
+                    if row.get("run_item_position") is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ]
 
     def _list_runs_sync(
         self,

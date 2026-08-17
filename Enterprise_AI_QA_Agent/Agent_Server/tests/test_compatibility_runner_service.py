@@ -2018,6 +2018,9 @@ async def _exercise_stale_runner_reregister_recovery(root: Path):
             mime_type="text/plain",
         ),
     )
+    stale_content = await service.read_artifact_content(stale_artifact.artifact_id)
+    assert stale_content["path"].read_bytes() == b"reregister stale artifact"
+    assert len(str(stale_content["path"])) < 260
     running = await service.begin_mode_call_execution("runner-reregister-stale", task_id)
     assert running.metadata["mode_calls_execution_status"] == "running"
 
