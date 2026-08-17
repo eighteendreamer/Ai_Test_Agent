@@ -81,7 +81,10 @@ from src.application.test_suites.suite_service import TestSuiteService
 from src.application.test_suites.suite_store import PostgresTestSuiteStore
 from src.application.test_runs.run_service import TestRunService
 from src.application.test_runs.run_store import PostgresTestRunStore
-from src.application.test_runs.case_execution import CaseExecutionAdapter
+from src.application.test_runs.case_execution import (
+    CaseExecutionAdapter,
+    resolve_case_execution_tool as resolve_case_execution_entry,
+)
 from src.application.test_runs.execution_service import TestRunExecutionService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
@@ -296,10 +299,7 @@ async def lifespan(app: FastAPI):
 
     def resolve_case_execution_tool(mode_key: str):
         """从模式清单解析专业执行入口，避免在运行服务中复制模式映射。"""
-        mode = mode_registry.get(mode_key)
-        if mode.case_driven_policy != "required" or not mode.public_entry_tool_key:
-            raise ValueError(f"Mode does not provide a required case execution entry: {mode_key}")
-        return tool_registry.get(mode.public_entry_tool_key)
+        return resolve_case_execution_entry(mode_registry, tool_registry, mode_key)
 
     case_execution_adapter = CaseExecutionAdapter(
         tool_resolver=resolve_case_execution_tool,

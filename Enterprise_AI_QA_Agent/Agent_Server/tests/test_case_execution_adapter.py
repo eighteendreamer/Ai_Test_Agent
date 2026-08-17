@@ -192,6 +192,132 @@ def test_adapter_translates_generic_http_step_for_non_api_required_modes(
         assert invocation.call.arguments["target_url"] == "https://example.test/orders/42"
 
 
+def test_performance_adapter_derives_target_but_preserves_reviewed_load_and_safety():
+    case, version, run, item = _fixture("performance_testing")
+    version = version.model_copy(
+        update={
+            "test_data": {
+                "runner_arguments": {
+                    "target_rate_rps": 25,
+                    "duration_seconds": 30,
+                    "run_intent": "regression",
+                    "sla_p95_ms": 250,
+                    "sla_error_rate": 0.01,
+                    "confirm_target": True,
+                }
+            }
+        }
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="performance-test-runner",
+            name="Performance Test Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    invocation = adapter.build_invocation(case=case, version=version, run=run, item=item)
+
+    arguments = invocation.call.arguments
+    assert arguments["target_url"] == "https://example.test/orders/42"
+    assert arguments["method"] == "GET"
+    assert arguments["run_intent"] == "regression"
+    assert arguments["target_rate_rps"] == 25
+    assert arguments["duration_seconds"] == 30
+    assert arguments["sla_p95_ms"] == 250
+    assert arguments["confirm_target"] is True
+    assert version.test_data["runner_arguments"].get("target_url") is None
+
+
+@pytest.mark.parametrize(
+    ("runner_arguments", "message"),
+    [
+        (
+            {"target_rate_rps": 25, "run_intent": "regression"},
+            "explicit confirm_target=true",
+        ),
+        (
+            {"run_intent": "regression", "confirm_target": True},
+            "positive target_rate_rps or virtual_users",
+        ),
+        (
+            {"target_rate_rps": 25, "confirm_target": True},
+            "explicit run_intent",
+        ),
+    ],
+)
+def test_performance_adapter_blocks_incomplete_reviewed_execution_contract(
+    runner_arguments,
+    message,
+):
+    case, version, run, item = _fixture("performance_testing")
+    version = version.model_copy(
+        update={"test_data": {"runner_arguments": runner_arguments}}
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="performance-test-runner",
+            name="Performance Test Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    with pytest.raises(ValueError, match=message):
+        adapter.build_invocation(case=case, version=version, run=run, item=item)
+
+
+def test_unadapted_optional_security_mode_is_blocked_before_runtime():
+    case, version, run, item = _fixture("security_testing")
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    with pytest.raises(ValueError, match="does not have a case execution adapter"):
+        adapter.build_invocation(case=case, version=version, run=run, item=item)
+
+
+@pytest.mark.asyncio
+async def test_unadapted_security_case_never_calls_tool_runtime():
+    case, version, run, item = _fixture("security_testing")
+    calls = []
+
+    class FakeRuntime:
+        async def execute(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            raise AssertionError("security runtime must not be called")
+
+    class FakeJobs:
+        async def get_job_detail(self, job_id):
+            raise AssertionError("security ToolJob must not be created")
+
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        ),
+        runtime_service=FakeRuntime(),
+        tool_job_service=FakeJobs(),
+    )
+
+    with pytest.raises(ValueError, match="does not have a case execution adapter"):
+        await adapter.execute(case=case, version=version, run=run, item=item)
+
+    assert calls == []
+
+
 @pytest.mark.asyncio
 async def test_adapter_projects_real_tool_job_and_verification_output():
     case, version, run, item = _fixture()

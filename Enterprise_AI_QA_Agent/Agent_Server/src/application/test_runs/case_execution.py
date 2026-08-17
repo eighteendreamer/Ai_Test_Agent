@@ -41,6 +41,27 @@ class CaseExecutionBlockedError(ValueError):
     """用例定义无法无损编译或 Runner 当前能力尚未就绪。"""
 
 
+CASE_EXECUTION_ADAPTER_MODE_KEYS = frozenset(
+    {
+        "api_testing",
+        "smoke_testing",
+        "compatibility_testing",
+        "ui_automation",
+        "performance_testing",
+    }
+)
+
+
+def resolve_case_execution_tool(mode_registry, tool_registry, mode_key: str):
+    """解析已有用例编译器的 required/optional 执行入口。"""
+    mode = mode_registry.get(mode_key)
+    if mode.case_driven_policy == "exempt" or not mode.public_entry_tool_key:
+        raise ValueError(f"Mode does not provide a case execution entry: {mode_key}")
+    if mode_key not in CASE_EXECUTION_ADAPTER_MODE_KEYS:
+        raise ValueError(f"Mode does not have a case execution adapter: {mode_key}")
+    return tool_registry.get(mode.public_entry_tool_key)
+
+
 class CaseExecutionAdapter:
     """把固定用例版本投影到现有 ToolRuntime，并只依据运行证据生成结果。"""
 
@@ -160,7 +181,11 @@ class CaseExecutionAdapter:
                 str(data.get("endpoint") or data.get("url") or data.get("page_url") or ""),
             )
             return arguments
-        return arguments
+        if case.mode_key == "performance_testing":
+            return self._build_performance_arguments(version, arguments)
+        raise CaseExecutionBlockedError(
+            f"Mode does not have a case execution adapter: {case.mode_key}"
+        )
 
     @staticmethod
     def _build_api_arguments(
@@ -309,6 +334,57 @@ class CaseExecutionAdapter:
             ],
         }
         arguments["selected_case_ids"] = [case.id]
+        return arguments
+
+    @staticmethod
+    def _build_performance_arguments(
+        version: TestCaseVersionRecord,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """只补固定步骤中的目标信息，负载、SLA 与确认必须来自评审版本。"""
+        data = version.steps[0].data
+        target_url = str(
+            arguments.get("target_url")
+            or data.get("endpoint")
+            or data.get("url")
+            or data.get("full_url")
+            or data.get("path")
+            or ""
+        ).strip()
+        if not target_url:
+            raise CaseExecutionBlockedError(
+                f"Performance test case requires target_url or endpoint: {version.id}"
+            )
+        if arguments.get("confirm_target") is not True:
+            raise CaseExecutionBlockedError(
+                f"Performance test case requires explicit confirm_target=true: {version.id}"
+            )
+
+        def is_positive_number(value: Any) -> bool:
+            if isinstance(value, bool) or value is None:
+                return False
+            try:
+                return float(value) > 0
+            except (TypeError, ValueError):
+                return False
+
+        if not any(
+            is_positive_number(arguments.get(key))
+            for key in ("target_rate_rps", "virtual_users")
+        ):
+            raise CaseExecutionBlockedError(
+                "Performance test case requires positive target_rate_rps or "
+                f"virtual_users: {version.id}"
+            )
+        run_intent = str(arguments.get("run_intent") or "").strip().lower()
+        if run_intent not in {"probe", "regression"}:
+            raise CaseExecutionBlockedError(
+                "Performance test case requires explicit run_intent "
+                f"probe/regression: {version.id}"
+            )
+        arguments.setdefault("target_url", target_url)
+        arguments.setdefault("method", str(data.get("method") or "GET").strip().upper())
+        arguments["run_intent"] = run_intent
         return arguments
 
     async def execute(

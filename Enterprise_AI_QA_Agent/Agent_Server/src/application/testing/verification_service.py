@@ -42,7 +42,189 @@ class VerificationService:
             if tool_key == "compatibility-test-runner":
                 results.append(self._from_compatibility_test_runner(session_id, turn_id, trace_id, item, output))
                 continue
+            if tool_key == "performance-test-runner":
+                results.append(
+                    self._from_performance_test_runner(
+                        session_id,
+                        turn_id,
+                        trace_id,
+                        item,
+                        output,
+                        context_bundle,
+                    )
+                )
+                continue
         return results
+
+    def _from_performance_test_runner(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        tool_result: dict[str, Any],
+        output: dict[str, Any],
+        context_bundle: dict[str, Any],
+    ) -> VerificationResult:
+        """性能回归必须同时具备 Runner verdict、SLA 和引擎交叉验证证据。"""
+        test_case = (
+            context_bundle.get("test_case")
+            if isinstance(context_bundle.get("test_case"), dict)
+            else {}
+        )
+        assertions = (
+            test_case.get("assertions")
+            if isinstance(test_case.get("assertions"), list)
+            else []
+        )
+        sla_result = (
+            output.get("sla_result")
+            if isinstance(output.get("sla_result"), dict)
+            else {}
+        )
+        crosscheck = (
+            output.get("engine_threshold_crosscheck")
+            if isinstance(output.get("engine_threshold_crosscheck"), dict)
+            else {}
+        )
+        violations = (
+            sla_result.get("violations")
+            if isinstance(sla_result.get("violations"), list)
+            else []
+        )
+        verdict = str(output.get("verdict") or "").strip().lower()
+        run_intent = str(output.get("run_intent") or "").strip().lower()
+        output_status = str(output.get("status") or "").strip().lower()
+        sla_passed = sla_result.get("passed") is True
+        crosscheck_agrees = crosscheck.get("agree") is True
+        assertion_count = len(assertions)
+        metrics = output.get("metrics") if isinstance(output.get("metrics"), dict) else {}
+        try:
+            sample_count = int(metrics.get("samples") or 0)
+        except (TypeError, ValueError):
+            sample_count = 0
+        performance_assertion_kinds = {
+            "p95_ms",
+            "p99_ms",
+            "error_rate",
+            "throughput_tps",
+            "min_tps",
+        }
+        performance_assertion_count = sum(
+            1
+            for assertion in assertions
+            if isinstance(assertion, dict)
+            and str(assertion.get("kind") or "").strip().lower()
+            in performance_assertion_kinds
+        )
+        has_performance_assertion = performance_assertion_count > 0
+        performance_request = (
+            context_bundle.get("performance_testing_request")
+            if isinstance(context_bundle.get("performance_testing_request"), dict)
+            else {}
+        )
+        has_explicit_sla = has_performance_assertion or any(
+            performance_request.get(key) is not None
+            for key in (
+                "sla_p95_ms",
+                "sla_p99_ms",
+                "sla_error_rate",
+                "sla_min_tps",
+            )
+        )
+        baseline_comparison = (
+            output.get("baseline_comparison")
+            if isinstance(output.get("baseline_comparison"), dict)
+            else None
+        )
+        baseline_regressed = (
+            baseline_comparison is not None
+            and baseline_comparison.get("regressed") is True
+        )
+        has_pass_criterion = has_explicit_sla or baseline_comparison is not None
+
+        if (
+            output_status == "completed"
+            and output.get("ok") is True
+            and run_intent == "regression"
+            and verdict == "pass"
+            and sample_count > 0
+            and has_pass_criterion
+            and sla_passed
+            and crosscheck_agrees
+            and not baseline_regressed
+        ):
+            status = VerificationStatus.passed
+            passed_count = performance_assertion_count
+            failed_count = 0
+        elif verdict == "fail" or sla_result.get("passed") is False or baseline_regressed:
+            status = VerificationStatus.failed
+            failed_count = min(
+                assertion_count,
+                max(1, len(violations)),
+            ) if assertion_count else max(1, len(violations))
+            passed_count = max(0, assertion_count - failed_count)
+        elif run_intent == "probe" and verdict == "baseline":
+            status = VerificationStatus.not_run
+            passed_count = 0
+            failed_count = 0
+        elif output_status in {"error", "failed", "blocked"} or output.get("ok") is False:
+            status = VerificationStatus.failed
+            passed_count = 0
+            failed_count = max(1, assertion_count)
+        elif run_intent == "regression" and verdict == "pass" and not has_pass_criterion:
+            status = VerificationStatus.not_run
+            passed_count = 0
+            failed_count = 0
+        else:
+            status = VerificationStatus.partial if verdict else VerificationStatus.not_run
+            passed_count = 0
+            failed_count = 0
+
+        core_metrics = {
+            key: metrics[key]
+            for key in ("samples", "throughput_tps", "p95_ms", "p99_ms", "error_rate")
+            if key in metrics
+        }
+        return VerificationResult(
+            id=str(uuid4()),
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            verifier="performance-test-runner",
+            status=status,
+            summary=str(
+                output.get("summary")
+                or tool_result.get("summary")
+                or "Performance Runner verification captured."
+            ),
+            assertion_count=assertion_count,
+            passed_count=passed_count,
+            failed_count=failed_count,
+            evidence=[
+                VerificationEvidence(
+                    source_type="tool_job",
+                    source_id=str(
+                        tool_result.get("job_id")
+                        or tool_result.get("call_id")
+                        or uuid4()
+                    ),
+                    label="performance_runner_verdict",
+                    detail=str(output.get("run_id") or ""),
+                    metadata={"metrics": core_metrics},
+                )
+            ],
+            metadata={
+                "tool_key": "performance-test-runner",
+                "run_id": output.get("run_id"),
+                "run_intent": run_intent,
+                "verdict": verdict,
+                "sla_passed": sla_result.get("passed"),
+                "engine_crosscheck_agree": crosscheck.get("agree"),
+                "sample_count": sample_count,
+                "has_pass_criterion": has_pass_criterion,
+            },
+            created_at=datetime.utcnow(),
+        )
 
     def _from_api_test_runner(
         self,

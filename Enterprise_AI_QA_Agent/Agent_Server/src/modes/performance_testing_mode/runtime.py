@@ -6,6 +6,7 @@ intake → plan → script → guard → smoke → execute → analyze → repor
 from __future__ import annotations
 
 import logging
+import json
 import uuid
 from typing import Any
 
@@ -591,6 +592,21 @@ class PerformanceTestingModeRuntime:
 
         state.record_phase_transition(PHASE_REPORT_READY)
 
+        report = state.report
+        metrics_payload = {
+            "run_id": report.run_id,
+            "run_intent": report.run_intent,
+            "verdict": report.verdict,
+            "metrics": report.metrics.model_dump(),
+            "sla_result": report.sla_result.model_dump(),
+            "engine_threshold_crosscheck": report.engine_threshold_crosscheck.model_dump(),
+            "baseline_comparison": (
+                report.baseline_comparison.model_dump()
+                if report.baseline_comparison
+                else None
+            ),
+        }
+
         return {
             "status": "completed",
             "ok": True,
@@ -603,9 +619,36 @@ class PerformanceTestingModeRuntime:
             "sla_result": state.report.sla_result.model_dump(),
             "error_breakdown": state.report.error_breakdown.model_dump(),
             "engine_threshold_crosscheck": state.report.engine_threshold_crosscheck.model_dump(),
+            "baseline_comparison": (
+                state.report.baseline_comparison.model_dump()
+                if state.report.baseline_comparison
+                else None
+            ),
             "load_side_observations": state.report.load_side_observations,
             "report_markdown": state.report.report_markdown,
             "report_html": state.report.report_html,
+            "artifacts": [
+                {
+                    "type": "performance_report_markdown",
+                    "label": "Performance report (Markdown)",
+                    "content": state.report.report_markdown,
+                },
+                {
+                    "type": "performance_report_html",
+                    "label": "Performance report (HTML)",
+                    "content": state.report.report_html,
+                },
+                {
+                    "type": "performance_metrics_json",
+                    "label": "Performance metrics and SLA (JSON)",
+                    "content": json.dumps(
+                        metrics_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    ),
+                },
+            ],
         }
 
     async def _emit_progress(
