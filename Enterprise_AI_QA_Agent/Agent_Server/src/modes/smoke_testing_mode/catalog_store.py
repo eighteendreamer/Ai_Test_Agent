@@ -81,6 +81,9 @@ class SmokeCatalogStore:
     async def list_project_scope_bindings(self, project_id: str) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._list_project_scope_bindings_sync, project_id)
 
+    async def list_legacy_project_scopes(self) -> list[str]:
+        return await asyncio.to_thread(self._list_legacy_project_scopes_sync)
+
     async def list_legacy_runs(
         self,
         *,
@@ -485,6 +488,16 @@ class SmokeCatalogStore:
                 )
                 rows = cur.fetchall() or []
         return [dict(row) for row in rows]
+
+    def _list_legacy_project_scopes_sync(self) -> list[str]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT DISTINCT project_scope FROM {self.run_table} "
+                    "WHERE project_scope <> '' ORDER BY project_scope ASC"
+                )
+                rows = cur.fetchall() or []
+        return [str(row["project_scope"]) for row in rows if str(row["project_scope"]).strip()]
 
     def _list_legacy_runs_sync(
         self,

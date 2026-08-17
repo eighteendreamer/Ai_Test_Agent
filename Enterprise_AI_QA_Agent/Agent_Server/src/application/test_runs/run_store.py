@@ -46,6 +46,7 @@ class TestRunStore(Protocol):
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
+    async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]: ...
     async def list_regression_candidates(
         self,
         *,
@@ -163,6 +164,23 @@ class InMemoryTestRunStore:
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
         result = self._results.get(result_id)
         return result.model_copy(deep=True) if result else None
+
+    async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
+        wanted = {str(run_id).strip() for run_id in run_ids if str(run_id).strip()}
+        if not wanted:
+            return set()
+        projected: set[str] = set()
+        for result in self._results.values():
+            actual = result.actual if isinstance(result.actual, dict) else {}
+            run_result = actual.get("run_result")
+            candidate = (
+                run_result.get("run_id")
+                if isinstance(run_result, dict)
+                else actual.get("legacy_smoke_run_id")
+            )
+            if isinstance(candidate, str) and candidate in wanted:
+                projected.add(candidate)
+        return projected
 
     async def list_regression_candidates(
         self,
@@ -742,6 +760,12 @@ class PostgresTestRunStore:
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
         return await asyncio.to_thread(self._get_result_sync, result_id)
 
+    async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
+        return await asyncio.to_thread(
+            self._find_projected_legacy_smoke_run_ids_sync,
+            run_ids,
+        )
+
     async def list_regression_candidates(
         self,
         *,
@@ -1099,6 +1123,26 @@ class PostgresTestRunStore:
                 )
                 row = cur.fetchone()
         return self._result_from_value(row["record"]) if row else None
+
+    def _find_projected_legacy_smoke_run_ids_sync(self, run_ids: list[str]) -> set[str]:
+        normalized = list(dict.fromkeys(str(run_id).strip() for run_id in run_ids if str(run_id).strip()))
+        if not normalized:
+            return set()
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT DISTINCT COALESCE("
+                    "record #>> '{actual,run_result,run_id}', "
+                    "record #>> '{actual,legacy_smoke_run_id}'"
+                    f") AS legacy_run_id FROM {self._result_table} "
+                    "WHERE COALESCE("
+                    "record #>> '{actual,run_result,run_id}', "
+                    "record #>> '{actual,legacy_smoke_run_id}'"
+                    ") = ANY(%s)",
+                    (normalized,),
+                )
+                rows = cur.fetchall() or []
+        return {str(row["legacy_run_id"]) for row in rows if row.get("legacy_run_id")}
 
     def _list_regression_candidates_sync(
         self,
