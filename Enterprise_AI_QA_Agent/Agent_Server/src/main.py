@@ -262,6 +262,7 @@ async def lifespan(app: FastAPI):
         suite_service=test_suite_service,
         test_case_service=test_case_service,
         session_store=store,
+        lease_reaper_interval_seconds=settings.test_run_lease_reaper_interval_seconds,
     )
     await test_run_service.initialize()
     project_overview_service = ProjectOverviewService(
@@ -461,9 +462,11 @@ async def lifespan(app: FastAPI):
         embedding_runtime_service=embedding_runtime_service,
     )
     await tencent_auth_monitor.startup()
+    await test_run_service.start_lease_reaper()
     try:
         yield
     finally:
+        await test_run_service.stop_lease_reaper()
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()
 

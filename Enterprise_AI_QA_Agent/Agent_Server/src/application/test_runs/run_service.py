@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -70,6 +71,7 @@ class TestRunService:
         test_case_service: TestCaseService,
         session_store: SessionStore | None = None,
         clock: Callable[[], datetime] | None = None,
+        lease_reaper_interval_seconds: float | None = None,
     ) -> None:
         self._store = store
         self._projects = project_service
@@ -77,6 +79,12 @@ class TestRunService:
         self._cases = test_case_service
         self._sessions = session_store
         self._clock = clock or _utc_now
+        self._lease_reaper_interval_seconds = max(
+            0.1,
+            float(lease_reaper_interval_seconds or 30.0),
+        )
+        self._lease_reaper_stop: asyncio.Event | None = None
+        self._lease_reaper_task: asyncio.Task | None = None
 
     async def initialize(self) -> None:
         await self._store.initialize()
@@ -86,6 +94,63 @@ class TestRunService:
                 "test_run_startup_leases_recovered",
                 extra={"recovered_count": recovered},
             )
+
+    async def start_lease_reaper(self) -> None:
+        """Start the process-local lease reaper after store initialization."""
+        if self._lease_reaper_task is not None and not self._lease_reaper_task.done():
+            return
+        self._lease_reaper_stop = asyncio.Event()
+        self._lease_reaper_task = asyncio.create_task(
+            self._lease_reaper_loop(),
+            name="test-run-lease-reaper",
+        )
+        logger.info(
+            "test_run_lease_reaper_started",
+            extra={"interval_seconds": self._lease_reaper_interval_seconds},
+        )
+
+    async def stop_lease_reaper(self) -> None:
+        """Stop the lease reaper without leaving a background task behind."""
+        task = self._lease_reaper_task
+        stop = self._lease_reaper_stop
+        self._lease_reaper_task = None
+        self._lease_reaper_stop = None
+        if task is None:
+            return
+        if stop is not None:
+            stop.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        logger.info("test_run_lease_reaper_stopped")
+
+    async def _lease_reaper_loop(self) -> None:
+        stop = self._lease_reaper_stop
+        if stop is None:
+            return
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=self._lease_reaper_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
+            if stop.is_set():
+                return
+            try:
+                recovered = await self._store.recover_all_expired(self._clock())
+                if recovered:
+                    logger.warning(
+                        "test_run_expired_leases_recovered_online",
+                        extra={"recovered_count": recovered},
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("test_run_lease_reaper_iteration_failed")
 
     async def create_run(
         self,

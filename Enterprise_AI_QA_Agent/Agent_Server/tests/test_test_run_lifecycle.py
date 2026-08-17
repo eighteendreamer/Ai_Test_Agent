@@ -52,6 +52,7 @@ async def _build_components(
     *,
     clock: _Clock | None = None,
     run_store=None,
+    lease_reaper_interval_seconds: float | None = None,
 ):
     router, run_service_type, run_store_type = _components()
     projects = ProjectService(store=InMemoryProjectStore())
@@ -100,6 +101,7 @@ async def _build_components(
         test_case_service=cases,
         session_store=sessions,
         clock=clock,
+        lease_reaper_interval_seconds=lease_reaper_interval_seconds,
     )
     await run_service.initialize()
     app = FastAPI()
@@ -285,6 +287,44 @@ def test_expired_lease_is_requeued_as_a_new_attempt_and_terminal_items_are_not_r
     assert second["lease_token"] != first["lease_token"]
     assert after_terminal.json()["claims"] == []
     assert [attempt["status"] for attempt in detail["attempts"]] == ["expired", "failed"]
+
+
+def test_online_lease_reaper_requeues_expired_items_through_the_api_state():
+    async def scenario():
+        clock = _Clock()
+        app, _, suite, _, run_service = await _build_components(
+            case_count=1,
+            clock=clock,
+            lease_reaper_interval_seconds=0.1,
+        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            created = await client.post(
+                f"/api/v1/suites/{suite.suite.id}/runs",
+                json={"mode_key": "api_testing"},
+            )
+            run_id = created.json()["run"]["id"]
+            claimed = await client.post(
+                f"/api/v1/runs/{run_id}/claim",
+                json={"worker_id": "stale-worker", "limit": 1, "lease_seconds": 15},
+            )
+            assert claimed.status_code == 200
+            item_id = claimed.json()["claims"][0]["item"]["id"]
+            clock.advance(16)
+
+            await run_service.start_lease_reaper()
+            await asyncio.sleep(0.15)
+            await run_service.stop_lease_reaper()
+
+            detail = await client.get(f"/api/v1/runs/{run_id}")
+
+        assert detail.status_code == 200
+        item = next(value for value in detail.json()["items"] if value["id"] == item_id)
+        assert item["status"] == "queued"
+        assert item["lease_token"] is None
+        assert detail.json()["attempts"][0]["status"] == "expired"
+
+    asyncio.run(scenario())
 
 
 def test_cancel_marks_only_non_terminal_items_and_archived_project_rejects_new_run():

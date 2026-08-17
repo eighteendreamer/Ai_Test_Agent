@@ -163,6 +163,7 @@ class Settings(BaseSettings):
     postgres_perf_runs_table: str = "agent_perf_runs"
     memory_top_k: int = 6
     tool_job_heartbeat_timeout_seconds: int = 90
+    test_run_lease_reaper_interval_seconds: float = 30.0
     compatibility_runner_heartbeat_timeout_seconds: int = 120
     mcp_stdio_command_allowlist: list[str] = Field(
         default_factory=lambda: ["npx", "uvx", "node", "python", "python3"]
