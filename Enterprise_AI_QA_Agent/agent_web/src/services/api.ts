@@ -91,6 +91,14 @@ import type {
   ProjectRecord,
   ProjectPage,
   ProjectOverview,
+  TestCaseGenerationResponse,
+  TestCaseLifecycleStatus,
+  TestCasePage,
+  TestCasePriority,
+  TestCaseRecord,
+  TestCaseVersionRecord,
+  TestSuiteBundle,
+  TestSuitePage,
 } from "../types";
 import type {
   CompatibilityArtifactRecord,
@@ -177,6 +185,67 @@ export const api = {
   },
   getProjectOverview(projectId: string): Promise<ProjectOverview> {
     return request(`/api/v1/projects/${encodeURIComponent(projectId)}/overview`);
+  },
+  listTestCases(projectId: string, params: {
+    status?: TestCaseLifecycleStatus;
+    mode_key?: string;
+    priority?: TestCasePriority;
+    query?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<TestCasePage> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 50),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.status) query.set("status", params.status);
+    if (params.mode_key) query.set("mode_key", params.mode_key);
+    if (params.priority) query.set("priority", params.priority);
+    if (params.query) query.set("query", params.query);
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/test-cases?${query.toString()}`);
+  },
+  generateTestCases(projectId: string, payload: {
+    objective: string;
+    mode_key: string;
+    model_key?: string | null;
+    api_doc_ids?: string[];
+    include_knowledge_graph?: boolean;
+    include_history?: boolean;
+    max_cases?: number;
+  }): Promise<TestCaseGenerationResponse> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/test-cases/generate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  submitTestCaseReview(caseId: string): Promise<TestCaseRecord> {
+    return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/submit-review`, { method: "POST" });
+  },
+  activateTestCase(caseId: string, versionId?: string | null): Promise<TestCaseRecord> {
+    return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/activate`, {
+      method: "POST",
+      body: JSON.stringify({ version_id: versionId ?? null }),
+    });
+  },
+  listTestCaseVersions(caseId: string): Promise<TestCaseVersionRecord[]> {
+    return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/versions`);
+  },
+  listTestSuites(projectId: string, params: { limit?: number; offset?: number } = {}): Promise<TestSuitePage> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 50),
+      offset: String(params.offset ?? 0),
+    });
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/suites?${query.toString()}`);
+  },
+  createTestSuite(projectId: string, payload: {
+    name: string;
+    description?: string | null;
+    items: Array<{ case_id: string; case_version_id: string }>;
+  }): Promise<TestSuiteBundle> {
+    return request(`/api/v1/projects/${encodeURIComponent(projectId)}/suites`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
   getHealth(): Promise<HealthResponse> {
     return request("/api/v1/health");

@@ -171,6 +171,7 @@ export interface ModeDescriptor {
   description: string;
   category: string;
   is_test_mode: boolean;
+  case_driven_policy: "required" | "optional" | "exempt";
   default_agent_key: string;
   allowed_agent_keys: string[];
   default_skill_keys: string[];
@@ -1100,6 +1101,8 @@ export interface ProjectOverview {
   project: ProjectRecord;
   api_doc_count: number;
   session_count: number;
+  test_case_count: number;
+  test_suite_count: number;
   graph: {
     available: boolean;
     project_scope?: string | null;
@@ -1109,6 +1112,119 @@ export interface ProjectOverview {
     edge_count: number;
     error?: string | null;
   };
+}
+
+export type TestCaseLifecycleStatus = "draft" | "pending_review" | "active" | "disabled" | "archived";
+export type TestCasePriority = "P0" | "P1" | "P2" | "P3";
+
+export interface TestCaseSourceRef {
+  source_type: string;
+  source_id: string;
+  version?: string | null;
+  label: string;
+  uri?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface TestCaseStep {
+  order: number;
+  action: string;
+  expected?: string | null;
+  kind: string;
+  data: Record<string, unknown>;
+}
+
+export interface TestCaseAssertion {
+  kind: string;
+  target: string;
+  operator: string;
+  expected: unknown;
+  description: string;
+}
+
+export interface TestCaseRecord {
+  id: string;
+  project_id: string;
+  case_key: string;
+  title: string;
+  mode_key: string;
+  case_type: string;
+  priority: TestCasePriority;
+  lifecycle_status: TestCaseLifecycleStatus;
+  active_version_id?: string | null;
+  latest_version: number;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+}
+
+export interface TestCaseVersionRecord {
+  id: string;
+  case_id: string;
+  version: number;
+  preconditions: string[];
+  steps: TestCaseStep[];
+  assertions: TestCaseAssertion[];
+  test_data: Record<string, unknown>;
+  cleanup: string[];
+  content_hash: string;
+  source_refs: TestCaseSourceRef[];
+  model_key: string;
+  prompt_version: string;
+  skill_versions: Record<string, string>;
+  created_at: string;
+}
+
+export interface TestCaseBundle {
+  case: TestCaseRecord;
+  version: TestCaseVersionRecord;
+}
+
+export interface TestCasePage {
+  items: TestCaseRecord[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface TestCaseGenerationResponse {
+  items: TestCaseBundle[];
+  warnings: string[];
+}
+
+export type TestSuiteStatus = "active" | "archived";
+
+export interface TestSuiteRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string | null;
+  status: TestSuiteStatus;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+}
+
+export interface TestSuiteItemRecord {
+  id: string;
+  suite_id: string;
+  case_id: string;
+  case_version_id: string;
+  position: number;
+}
+
+export interface TestSuiteBundle {
+  suite: TestSuiteRecord;
+  items: TestSuiteItemRecord[];
+}
+
+export interface TestSuitePage {
+  items: TestSuiteBundle[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }
 export type IntegrationTransport = "stdio" | "http" | "websocket";
 export type IntegrationAuthType = "none" | "bearer" | "api_key" | "basic";
