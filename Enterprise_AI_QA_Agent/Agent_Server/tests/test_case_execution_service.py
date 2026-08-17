@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -158,6 +159,180 @@ async def test_execution_service_starts_executes_and_completes_with_the_same_lea
     assert result.status == "passed"
     assert runs.completed_payload.lease_token == "lease-1"
     assert runs.completed_payload.tool_job_id == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_security_case_execution_requires_verified_session_grant():
+    now, run, item, case, version = _records()
+    run = run.model_copy(update={"mode_key": "security_testing"})
+    case = case.model_copy(update={"mode_key": "security_testing"})
+    version = version.model_copy(
+        update={
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "http_headers_probe",
+                    "target": "https://example.test",
+                }
+            }
+        }
+    )
+
+    class FakeRuns:
+        def __init__(self):
+            self.completed_payload = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def complete_item(self, item_id, payload):
+            self.completed_payload = payload
+            return _CaseResultRecord(
+                id="result-security-1",
+                run_id=run.id,
+                run_item_id=item.id,
+                case_id=case.id,
+                case_version_id=version.id,
+                attempt_id="attempt-security-1",
+                attempt_no=1,
+                status=payload.status,
+                summary=payload.summary,
+                actual=payload.actual,
+                error_message=payload.error_message,
+                payload_hash="e" * 64,
+                created_at=now,
+            )
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class FakeSessions:
+        async def get_session(self, session_id):
+            return SimpleNamespace(
+                metadata={
+                    "security_authorization": {
+                        "status": "verified",
+                        "targets": ["https://example.test"],
+                    }
+                }
+            )
+
+    class CapturingAdapter:
+        def __init__(self):
+            self.context = None
+
+        async def execute(self, **kwargs):
+            self.context = kwargs["trusted_context_bundle"]
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=kwargs["item"].lease_token,
+                    status="blocked",
+                    summary="安全用例契约执行到 Runner 前完成验证",
+                ),
+                tool_record=None,
+                verification_results=[],
+            )
+
+    runs = FakeRuns()
+    adapter = CapturingAdapter()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=adapter,
+        session_store=FakeSessions(),
+    )
+
+    result = await service.execute_item(item.id, RunItemExecuteRequest(lease_token="lease-1"))
+
+    assert result.status == "blocked"
+    assert adapter.context["trusted_security_authorization"]["status"] == "verified"
+    assert runs.completed_payload.status == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_security_case_execution_blocks_without_matching_grant_before_adapter():
+    now, run, item, case, version = _records()
+    run = run.model_copy(update={"mode_key": "security_testing"})
+    case = case.model_copy(update={"mode_key": "security_testing"})
+    version = version.model_copy(
+        update={
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "http_headers_probe",
+                    "target": "https://other.example.test",
+                }
+            }
+        }
+    )
+
+    class FakeRuns:
+        def __init__(self):
+            self.completed_payload = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def complete_item(self, item_id, payload):
+            self.completed_payload = payload
+            return _CaseResultRecord(
+                id="result-security-blocked",
+                run_id=run.id,
+                run_item_id=item.id,
+                case_id=case.id,
+                case_version_id=version.id,
+                attempt_id="attempt-security-blocked",
+                attempt_no=1,
+                status=payload.status,
+                summary=payload.summary,
+                actual=payload.actual,
+                error_message=payload.error_message,
+                payload_hash="f" * 64,
+                created_at=now,
+            )
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class FakeSessions:
+        async def get_session(self, session_id):
+            return SimpleNamespace(
+                metadata={
+                    "security_authorization": {
+                        "status": "verified",
+                        "targets": ["https://example.test"],
+                    }
+                }
+            )
+
+    class FailingAdapter:
+        async def execute(self, **kwargs):
+            raise AssertionError("security adapter must not run outside grant scope")
+
+    runs = FakeRuns()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=FailingAdapter(),
+        session_store=FakeSessions(),
+    )
+
+    result = await service.execute_item(item.id, RunItemExecuteRequest(lease_token="lease-1"))
+
+    assert result.status == "blocked"
+    assert "outside" in (runs.completed_payload.error_message or "")
 
 
 @pytest.mark.asyncio

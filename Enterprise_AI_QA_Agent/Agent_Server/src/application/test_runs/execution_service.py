@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import logging
 from datetime import datetime, timezone
 
@@ -8,7 +9,9 @@ from src.application.test_cases.case_service import TestCaseService
 from src.application.test_runs.case_execution import (
     CaseExecutionAdapter,
     CaseExecutionBlockedError,
+    resolve_security_case_target,
 )
+from src.application.security.authorization import verified_grant_matches_target
 from src.application.test_runs.run_service import TestRunService
 from src.runtime.store import SessionStore
 from src.schemas.run_management import (
@@ -66,11 +69,16 @@ class TestRunExecutionService:
         )
         try:
             try:
+                trusted_context_bundle = await self._trusted_case_context(
+                    run=run,
+                    version=version,
+                )
                 outcome = await self._adapter.execute(
                     case=case,
                     version=version,
                     run=run,
                     item=item,
+                    trusted_context_bundle=trusted_context_bundle,
                 )
                 completion = outcome.completion.model_copy(
                     update={"lease_token": payload.lease_token}
@@ -203,6 +211,47 @@ class TestRunExecutionService:
                         "lease_token_present": bool(lease_token),
                     },
                 )
+
+    async def _trusted_case_context(self, *, run, version) -> dict:
+        if run.mode_key != "security_testing":
+            return {}
+        if self._sessions is None or not run.session_id:
+            raise CaseExecutionBlockedError(
+                "Security case execution requires a bound session with verified target authorization."
+            )
+        session = await self._sessions.get_session(run.session_id)
+        metadata = session.metadata if session is not None else {}
+        grant = metadata.get("security_authorization") if isinstance(metadata, dict) else None
+        runner_arguments = version.test_data.get("runner_arguments", {})
+        target = resolve_security_case_target(
+            version,
+            runner_arguments if isinstance(runner_arguments, dict) else {},
+        )
+        if not verified_grant_matches_target(grant, target):
+            raise CaseExecutionBlockedError(
+                "Security case target is outside the server-verified authorization scope."
+            )
+        logger.info(
+            "security_case_authorization_verified",
+            extra={
+                "run_id": run.id,
+                "project_id": run.project_id,
+                "session_id": run.session_id,
+                "target": target,
+            },
+        )
+        context = {
+            "trusted_security_authorization": deepcopy(grant),
+            "safety_assessment": {
+                "authorization_status": "verified",
+                "target_scope_status": "in_scope",
+                "decision": "allow",
+            },
+        }
+        environment = str(metadata.get("environment") or "").strip()
+        if environment:
+            context["environment"] = environment
+        return context
 
     async def _persist_verifications(self, *, run, result, verifications) -> None:
         """Verification 同时嵌入 Result，并在真实 Session 存在时写入既有会话存储。"""

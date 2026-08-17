@@ -48,6 +48,7 @@ CASE_EXECUTION_ADAPTER_MODE_KEYS = frozenset(
         "compatibility_testing",
         "ui_automation",
         "performance_testing",
+        "security_testing",
     }
 )
 
@@ -85,6 +86,7 @@ class CaseExecutionAdapter:
         version: TestCaseVersionRecord,
         run: TestRunRecord,
         item: TestRunItemRecord,
+        trusted_context_bundle: dict[str, Any] | None = None,
     ) -> CaseToolInvocation:
         tool = self._tool_resolver(run.mode_key)
         if tool.owner_mode_key and tool.owner_mode_key != run.mode_key:
@@ -139,6 +141,14 @@ class CaseExecutionAdapter:
             "test_case": test_case_envelope,
             f"{run.mode_key}_request": deepcopy(arguments),
         }
+        if trusted_context_bundle:
+            for key in (
+                "trusted_security_authorization",
+                "safety_assessment",
+                "environment",
+            ):
+                if key in trusted_context_bundle:
+                    context_bundle[key] = deepcopy(trusted_context_bundle[key])
         context = ToolExecutionContext(
             session_id=run.session_id,
             turn_id=call_id,
@@ -183,6 +193,8 @@ class CaseExecutionAdapter:
             return arguments
         if case.mode_key == "performance_testing":
             return self._build_performance_arguments(version, arguments)
+        if case.mode_key == "security_testing":
+            return self._build_security_arguments(case, version, arguments)
         raise CaseExecutionBlockedError(
             f"Mode does not have a case execution adapter: {case.mode_key}"
         )
@@ -387,6 +399,45 @@ class CaseExecutionAdapter:
         arguments["run_intent"] = run_intent
         return arguments
 
+    @staticmethod
+    def _build_security_arguments(
+        case: TestCaseRecord,
+        version: TestCaseVersionRecord,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compile a reviewed case into one explicit, profile-bound SecurityTask."""
+        profile_key = str(arguments.get("command_profile") or "").strip()
+        if not profile_key:
+            raise CaseExecutionBlockedError(
+                f"Security test case requires explicit command_profile: {version.id}"
+            )
+        target = resolve_security_case_target(version, arguments)
+        if not target:
+            raise CaseExecutionBlockedError(
+                f"Security test case requires an explicit target: {version.id}"
+            )
+        timeout_seconds = _positive_int(arguments.get("timeout_seconds"), default=300)
+        task = {
+            "task_id": case.id,
+            "name": case.title,
+            "description": case.title,
+            "surface_type": case.case_type,
+            "tool_family": str(arguments.get("tool_family") or "general_scan"),
+            "command_profile": profile_key,
+            "target": target,
+            "target_port": arguments.get("target_port"),
+            "risk_level": str(arguments.get("risk_level") or "low"),
+            "requires_approval": bool(arguments.get("requires_approval", False)),
+            "timeout_seconds": timeout_seconds,
+            "max_retries": 0,
+            "status": "pending",
+        }
+        arguments["worker_action"] = "execute_security_task"
+        arguments["command_profile"] = profile_key
+        arguments["target"] = target
+        arguments["task"] = task
+        return arguments
+
     async def execute(
         self,
         *,
@@ -394,6 +445,7 @@ class CaseExecutionAdapter:
         version: TestCaseVersionRecord,
         run: TestRunRecord,
         item: TestRunItemRecord,
+        trusted_context_bundle: dict[str, Any] | None = None,
     ) -> CaseExecutionOutcome:
         if self._runtime is None or self._jobs is None:
             raise RuntimeError("Case execution runtime dependencies are not configured")
@@ -402,6 +454,7 @@ class CaseExecutionAdapter:
             version=version,
             run=run,
             item=item,
+            trusted_context_bundle=trusted_context_bundle,
         )
         tool_record = await self._runtime.execute(
             invocation.tool,
@@ -518,3 +571,28 @@ class CaseExecutionAdapter:
         if isinstance(task_result, dict) and task_result.get("duration_ms") is not None:
             return {"duration_ms": task_result.get("duration_ms")}
         return {}
+
+
+def resolve_security_case_target(
+    version: TestCaseVersionRecord,
+    runner_arguments: dict[str, Any] | None = None,
+) -> str:
+    arguments = runner_arguments or {}
+    for key in ("target", "target_url", "endpoint", "url", "host"):
+        value = str(arguments.get(key) or "").strip()
+        if value:
+            return value
+    for step in version.steps:
+        for key in ("target", "target_url", "endpoint", "url", "full_url", "host"):
+            value = str(step.data.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default

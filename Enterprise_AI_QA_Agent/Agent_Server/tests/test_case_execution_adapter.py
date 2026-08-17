@@ -270,7 +270,7 @@ def test_performance_adapter_blocks_incomplete_reviewed_execution_contract(
         adapter.build_invocation(case=case, version=version, run=run, item=item)
 
 
-def test_unadapted_optional_security_mode_is_blocked_before_runtime():
+def test_security_mode_without_profile_is_blocked_before_runtime():
     case, version, run, item = _fixture("security_testing")
     adapter = CaseExecutionAdapter(
         tool_resolver=lambda owner_mode_key: ToolDescriptor(
@@ -282,12 +282,71 @@ def test_unadapted_optional_security_mode_is_blocked_before_runtime():
         )
     )
 
-    with pytest.raises(ValueError, match="does not have a case execution adapter"):
+    with pytest.raises(ValueError, match="requires explicit command_profile"):
+        adapter.build_invocation(case=case, version=version, run=run, item=item)
+
+
+def test_security_adapter_requires_explicit_profile_and_preserves_trusted_context():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "http_headers_probe",
+                    "target": "https://example.test",
+                    "risk_level": "low",
+                }
+            }
+        }
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    invocation = adapter.build_invocation(
+        case=case,
+        version=version,
+        run=run,
+        item=item,
+        trusted_context_bundle={
+            "trusted_security_authorization": {
+                "status": "verified",
+                "targets": ["https://example.test"],
+            }
+        },
+    )
+
+    assert invocation.call.arguments["worker_action"] == "execute_security_task"
+    assert invocation.call.arguments["command_profile"] == "http_headers_probe"
+    assert invocation.call.arguments["task"]["target"] == "https://example.test"
+    assert invocation.context.context_bundle["trusted_security_authorization"]["status"] == "verified"
+
+
+def test_security_adapter_blocks_missing_profile():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(update={"test_data": {"runner_arguments": {"target": "https://example.test"}}})
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    with pytest.raises(ValueError, match="requires explicit command_profile"):
         adapter.build_invocation(case=case, version=version, run=run, item=item)
 
 
 @pytest.mark.asyncio
-async def test_unadapted_security_case_never_calls_tool_runtime():
+async def test_security_case_without_profile_never_calls_tool_runtime():
     case, version, run, item = _fixture("security_testing")
     calls = []
 
@@ -312,7 +371,7 @@ async def test_unadapted_security_case_never_calls_tool_runtime():
         tool_job_service=FakeJobs(),
     )
 
-    with pytest.raises(ValueError, match="does not have a case execution adapter"):
+    with pytest.raises(ValueError, match="requires explicit command_profile"):
         await adapter.execute(case=case, version=version, run=run, item=item)
 
     assert calls == []

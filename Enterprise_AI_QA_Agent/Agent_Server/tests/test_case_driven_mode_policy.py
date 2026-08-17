@@ -31,5 +31,6 @@ def test_optional_mode_can_resolve_case_execution_entry_but_exempt_mode_cannot()
     assert tool.owner_mode_key == "performance_testing"
     with pytest.raises(ValueError, match="does not provide a case execution entry"):
         resolver(modes, tools, "default")
-    with pytest.raises(ValueError, match="does not have a case execution adapter"):
-        resolver(modes, tools, "security_testing")
+    security_tool = resolver(modes, tools, "security_testing")
+    assert security_tool.key == "security-scan-runner"
+    assert security_tool.owner_mode_key == "security_testing"
