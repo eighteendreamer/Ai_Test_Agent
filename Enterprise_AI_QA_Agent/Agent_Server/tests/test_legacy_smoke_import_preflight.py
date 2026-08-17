@@ -9,6 +9,9 @@ import pytest
 from src.application.projects.legacy_smoke_import_preflight import (
     LegacySmokeImportPreflightService,
 )
+from src.application.projects.legacy_smoke_import_store import (
+    InMemoryLegacySmokeImportStore,
+)
 from src.application.projects.project_service import ProjectService
 from src.application.projects.project_store import InMemoryProjectStore
 from src.schemas.project import ProjectCreateRequest
@@ -158,3 +161,63 @@ def test_scope_map_loader_requires_json_object(tmp_path):
     assert load_scope_map(valid) == {"orders-v1": "project-id"}
     with pytest.raises(ValueError, match="must be an object"):
         load_scope_map(invalid)
+
+
+def test_apply_materializes_immutable_bundle_and_is_idempotent():
+    async def scenario():
+        projects, project_id = await _project_service()
+        now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+        records = [_record("run-importable", now)]
+        writer = InMemoryLegacySmokeImportStore()
+        service = LegacySmokeImportPreflightService(
+            project_service=projects,
+            catalog=_Catalog(records),
+            projection_index=_ProjectionIndex(set()),
+            writer=writer,
+        )
+        first = await service.apply(
+            scope_to_project_id={"orders-v1": project_id},
+            page_size=1,
+        )
+        second = await service.apply(
+            scope_to_project_id={"orders-v1": project_id},
+            page_size=1,
+        )
+        return first, second, writer
+
+    first, second, writer = asyncio.run(scenario())
+
+    assert first.imported_count == 1
+    assert first.already_imported_count == 0
+    assert first.failed_count == 0
+    assert second.imported_count == 0
+    assert second.already_imported_count == 1
+    bundle = writer.bundles["run-importable"]
+    assert bundle.run.origin == "legacy_smoke_import"
+    assert bundle.run.status == "completed"
+    assert bundle.suite.status == "archived"
+    assert all(case.lifecycle_status == "archived" for case, _ in bundle.cases)
+    assert all(item.lease_token is None for item in bundle.run_items)
+    assert all(result.actual["read_only"] is True for result in bundle.results)
+
+
+def test_apply_refuses_unmapped_history_before_writing():
+    async def scenario():
+        projects, project_id = await _project_service()
+        records = [_record("run-importable", datetime(2026, 8, 18, tzinfo=timezone.utc))]
+        writer = InMemoryLegacySmokeImportStore()
+        service = LegacySmokeImportPreflightService(
+            project_service=projects,
+            catalog=_Catalog([*records, _record("run-unmapped", datetime(2026, 8, 17, tzinfo=timezone.utc), scope="other")]),
+            projection_index=_ProjectionIndex(set()),
+            writer=writer,
+        )
+        with pytest.raises(ValueError, match="zero unmapped and invalid"):
+            await service.apply(
+                scope_to_project_id={"orders-v1": project_id},
+                page_size=10,
+            )
+        return writer
+
+    writer = asyncio.run(scenario())
+    assert writer.bundles == {}

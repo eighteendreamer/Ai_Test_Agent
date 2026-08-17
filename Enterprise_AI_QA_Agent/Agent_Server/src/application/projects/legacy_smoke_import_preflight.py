@@ -6,9 +6,14 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from src.application.projects.project_service import ProjectService
+from src.application.projects.legacy_smoke_import_store import (
+    LegacySmokeImportStore,
+    build_legacy_smoke_import_bundle,
+)
 from src.modes.smoke_testing_mode.contracts import SmokeRunResult
 from src.schemas.legacy_smoke_import import (
     LegacySmokeImportPreflightEntry,
+    LegacySmokeImportApplyReport,
     LegacySmokeImportPreflightReport,
 )
 
@@ -45,10 +50,12 @@ class LegacySmokeImportPreflightService:
         project_service: ProjectService,
         catalog: LegacySmokeImportCatalog,
         projection_index: LegacySmokeProjectionIndex,
+        writer: LegacySmokeImportStore | None = None,
     ) -> None:
         self._projects = project_service
         self._catalog = catalog
         self._projection_index = projection_index
+        self._writer = writer
 
     async def preflight(
         self,
@@ -108,6 +115,87 @@ class LegacySmokeImportPreflightService:
             },
         )
         return report
+
+    async def apply(
+        self,
+        *,
+        scope_to_project_id: dict[str, str],
+        page_size: int = 200,
+    ) -> LegacySmokeImportApplyReport:
+        if self._writer is None:
+            raise RuntimeError("Legacy Smoke import writer is not configured")
+        preflight = await self.preflight(
+            scope_to_project_id=scope_to_project_id,
+            page_size=page_size,
+        )
+        if preflight.unmapped_count or preflight.invalid_count:
+            raise ValueError(
+                "Legacy Smoke apply requires zero unmapped and invalid records: "
+                f"unmapped={preflight.unmapped_count}, invalid={preflight.invalid_count}"
+            )
+        await self._writer.initialize()
+        importable_ids = {
+            entry.legacy_run_id
+            for entry in preflight.entries
+            if entry.decision == "importable"
+        }
+        all_scopes = await self._catalog.list_legacy_project_scopes()
+        mapping = {str(scope).strip(): str(project_id).strip() for scope, project_id in scope_to_project_id.items()}
+        records = await self._collect_records(all_scopes, page_size=page_size)
+        report = LegacySmokeImportApplyReport(preflight=preflight)
+        for record in records:
+            legacy_run_id = str(record.get("run_id") or "")
+            if legacy_run_id not in importable_ids:
+                continue
+            try:
+                snapshot = SmokeRunResult.model_validate(_as_mapping(record.get("metadata")))
+                bundle = build_legacy_smoke_import_bundle(
+                    project_id=mapping[str(record.get("project_scope") or "").strip()],
+                    source_record=record,
+                    snapshot=snapshot,
+                )
+                action, canonical_run_id = await self._writer.import_bundle(bundle)
+                report.canonical_run_ids.append(canonical_run_id)
+                if action == "imported":
+                    report.imported_count += 1
+                else:
+                    report.already_imported_count += 1
+            except Exception as exc:
+                report.failed_count += 1
+                report.errors.append(f"{legacy_run_id}: {exc}")
+                logger.exception(
+                    "legacy_smoke_import_failed",
+                    extra={"legacy_run_id": legacy_run_id},
+                )
+        return report
+
+    async def _collect_records(
+        self,
+        all_scopes: list[str],
+        *,
+        page_size: int,
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        cursor_started_at: datetime | None = None
+        cursor_run_id: str | None = None
+        while all_scopes:
+            page, has_more = await self._catalog.list_legacy_runs(
+                project_scopes=all_scopes,
+                cursor_started_at=cursor_started_at,
+                cursor_run_id=cursor_run_id,
+                limit=max(1, min(page_size, 1000)),
+            )
+            if not page:
+                break
+            records.extend(page)
+            if not has_more:
+                break
+            last = page[-1]
+            cursor_started_at = last.get("started_at")
+            cursor_run_id = str(last.get("run_id") or "")
+            if not isinstance(cursor_started_at, datetime) or not cursor_run_id:
+                raise ValueError("Legacy Smoke catalog returned an invalid pagination record")
+        return records
 
     async def _validated_mapping(self, raw_mapping: dict[str, str]) -> dict[str, str]:
         mapping: dict[str, str] = {}

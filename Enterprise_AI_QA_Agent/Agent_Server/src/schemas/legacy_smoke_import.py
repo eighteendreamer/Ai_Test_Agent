@@ -34,3 +34,14 @@ class LegacySmokeImportPreflightReport(BaseModel):
     invalid_count: int = Field(default=0, ge=0)
     unmapped_scopes: list[str] = Field(default_factory=list)
     entries: list[LegacySmokeImportPreflightEntry] = Field(default_factory=list)
+
+
+class LegacySmokeImportApplyReport(BaseModel):
+    dry_run: Literal[False] = False
+    source_system: Literal["legacy_smoke_catalog"] = "legacy_smoke_catalog"
+    preflight: LegacySmokeImportPreflightReport
+    imported_count: int = Field(default=0, ge=0)
+    already_imported_count: int = Field(default=0, ge=0)
+    failed_count: int = Field(default=0, ge=0)
+    canonical_run_ids: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

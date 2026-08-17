@@ -9,6 +9,7 @@ from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 
 
 TestRunKind = Literal["normal", "regression"]
+TestRunOrigin = Literal["native", "legacy_smoke_import"]
 TestRunStatus = Literal["queued", "running", "completed", "cancelled"]
 RunItemStatus = Literal[
     "queued",
@@ -54,6 +55,7 @@ class TestRunRecord(BaseModel):
     project_id: str
     suite_id: str
     run_kind: TestRunKind = "normal"
+    origin: TestRunOrigin = "native"
     mode_key: str
     session_id: str | None = None
     parent_run_id: str | None = None

@@ -249,6 +249,11 @@ class TestRunService:
     ) -> TestRunDetail:
         """从原始失败结果创建新运行，永不修改原 Run/Result。"""
         parent = await self._get_run_record(parent_run_id)
+        if parent.origin != "native":
+            raise ValueError(
+                "Imported legacy test runs are read-only and cannot create regression runs: "
+                f"{parent_run_id}"
+            )
         if parent.status not in {"completed", "cancelled"}:
             raise ValueError(
                 f"Only completed or cancelled test runs can create regression: {parent_run_id}"
