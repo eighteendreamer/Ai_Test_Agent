@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.test_runs.case_execution import CaseExecutionAdapter
+from src.runtime.tool_job_store import InMemoryToolJobStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.case_management import (
     TestCaseAssertion as _CaseAssertion,
@@ -15,6 +18,8 @@ from src.schemas.case_management import (
     TestCaseVersionRecord as _CaseVersionRecord,
 )
 from src.schemas.run_management import TestRunItemRecord as _RunItemRecord, TestRunRecord as _RunRecord
+from src.schemas.session import VerificationStatus
+from src.schemas.tool_job import ToolJobStatus
 from src.schemas.tool_runtime import ToolExecutionRecord
 
 
@@ -525,6 +530,87 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
     assert len(outcome.verification_results) == 1
     assert outcome.completion.verification_ids == [outcome.verification_results[0].id]
     assert outcome.completion.actual["verification_results"][0]["passed_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_security_case_closes_real_runtime_job_artifact_verification_chain():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "assertions": [_CaseAssertion(kind="runner_success", expected=True)],
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "http_headers_probe",
+                    "target": "https://example.test",
+                }
+            },
+        }
+    )
+    store = InMemoryToolJobStore()
+    jobs = ToolJobService(store)
+    runtime = ToolRuntimeService(tool_job_service=jobs)
+    runner_calls = []
+
+    async def deterministic_security_runner(arguments, context):
+        runner_calls.append((arguments, context))
+        return {
+            "status": "completed",
+            "ok": True,
+            "semantic_success": True,
+            "summary": "安全 Runner 已完成并生成证据",
+            "command_profile": arguments["command_profile"],
+            "target": arguments["target"],
+            "parsed_result": {"status_code": 200},
+            "findings": [],
+            "artifacts": [
+                {
+                    "type": "json",
+                    "label": "security-runner-evidence",
+                    "content": '{"status":"completed","ok":true}',
+                }
+            ],
+        }
+
+    runtime._handlers["security-scan-runner"] = deterministic_security_runner
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        ),
+        runtime_service=runtime,
+        tool_job_service=jobs,
+    )
+
+    outcome = await adapter.execute(
+        case=case,
+        version=version,
+        run=run,
+        item=item,
+        trusted_context_bundle={
+            "trusted_security_authorization": {
+                "status": "verified",
+                "targets": ["https://example.test"],
+            }
+        },
+    )
+
+    job = await jobs.get_job(outcome.completion.tool_job_id)
+    artifacts = await jobs.list_artifacts(tool_job_id=job.id)
+    verification = outcome.verification_results[0]
+    assert len(runner_calls) == 1
+    assert job.status == ToolJobStatus.completed
+    assert len(artifacts) == 1
+    assert artifacts[0].tool_job_id == job.id
+    assert outcome.tool_record.job_id == job.id
+    assert outcome.completion.status == "passed"
+    assert outcome.completion.tool_job_id == job.id
+    assert outcome.completion.artifact_ids == [artifacts[0].id]
+    assert verification.status == VerificationStatus.passed
+    assert verification.evidence[0].source_id == job.id
+    assert outcome.completion.verification_ids == [verification.id]
 
 
 @pytest.mark.asyncio

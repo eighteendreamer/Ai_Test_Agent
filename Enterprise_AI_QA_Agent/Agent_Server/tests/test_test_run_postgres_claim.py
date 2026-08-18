@@ -686,7 +686,10 @@ def test_postgres_completion_persists_regression_source_result_column(monkeypatc
                 self.rows = [{"record": item.model_dump(mode="json")}]
             elif "FROM agent_test_run_attempts" in normalized and "run_item_id" in normalized:
                 self.rows = [{"record": attempt.model_dump(mode="json")}]
-            elif "FROM agent_test_runs" in normalized and "FOR UPDATE" in normalized:
+            elif (
+                "FROM agent_test_runs" in normalized
+                and "FOR NO KEY UPDATE" in normalized
+            ):
                 self.rows = [{"record": run.model_dump(mode="json")}]
             elif "GROUP BY status" in normalized:
                 self.rows = [{"status": "passed", "total": 1}]
@@ -861,6 +864,36 @@ def test_postgres_claim_uses_skip_locked_and_one_transaction_connection(monkeypa
     assert [len(call[1]) for call in cursor.executemany_calls] == [2, 2]
 
 
+def test_postgres_run_refresh_uses_non_key_update_lock():
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    run = schemas.TestRunRecord(
+        id="00000000-0000-0000-0000-000000000021",
+        project_id="00000000-0000-0000-0000-000000000022",
+        suite_id="00000000-0000-0000-0000-000000000023",
+        mode_key="api_testing",
+        created_at=now,
+        updated_at=now,
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.statement = ""
+
+        def execute(self, statement, parameters=None):
+            self.statement = " ".join(statement.split())
+
+        def fetchone(self):
+            return {"record": run.model_dump(mode="json")}
+
+    cursor = Cursor()
+    locked = store_module.PostgresTestRunStore(Settings())._lock_run(cursor, run.id)
+
+    assert locked.id == run.id
+    assert cursor.statement.endswith("FOR NO KEY UPDATE")
+
+
 def test_postgres_expiry_recovery_does_not_lock_run_before_items(monkeypatch):
     store_module = import_module("src.application.test_runs.run_store")
     schemas = import_module("src.schemas.run_management")
@@ -936,7 +969,8 @@ def test_postgres_expiry_recovery_does_not_lock_run_before_items(monkeypatch):
     prior_run_locks = [
         statement
         for statement in cursor.calls[:item_lock_index]
-        if "FROM agent_test_runs" in statement and "FOR UPDATE" in statement
+        if "FROM agent_test_runs" in statement
+        and ("FOR UPDATE" in statement or "FOR NO KEY UPDATE" in statement)
     ]
     assert recovered == 0
     assert prior_run_locks == []
@@ -1023,7 +1057,8 @@ def test_postgres_cancel_uses_the_same_item_then_run_lock_order(monkeypatch):
     prior_run_locks = [
         statement
         for statement in cursor.calls[:item_lock_index]
-        if "FROM agent_test_runs" in statement and "FOR UPDATE" in statement
+        if "FROM agent_test_runs" in statement
+        and ("FOR UPDATE" in statement or "FOR NO KEY UPDATE" in statement)
     ]
     assert prior_run_locks == []
 

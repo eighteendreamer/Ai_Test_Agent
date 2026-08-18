@@ -2289,7 +2289,7 @@ class PostgresTestRunStore:
 
     def _lock_run(self, cur, run_id: str) -> TestRunRecord:
         cur.execute(
-            f"SELECT record FROM {self._run_table} WHERE id = %s FOR UPDATE",
+            f"SELECT record FROM {self._run_table} WHERE id = %s FOR NO KEY UPDATE",
             (run_id,),
         )
         row = cur.fetchone()
