@@ -34,6 +34,7 @@ from src.schemas.suite_management import (
     TestSuiteItemRecord as _SuiteItemRecord,
     TestSuiteRecord as _SuiteRecord,
 )
+from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
 
 
 class _Projects:
@@ -76,7 +77,7 @@ class _Cases:
         return self.versions[version_id]
 
 
-def _components(*, store=None, session_store=None):
+def _components(*, store=None, session_store=None, tool_job_service=None):
     now = datetime.now(timezone.utc)
     project = ProjectRecord(
         id="project-1",
@@ -153,6 +154,7 @@ def _components(*, store=None, session_store=None):
         suite_service=_Suites(suite),
         test_case_service=_Cases(cases, versions),
         session_store=session_store,
+        tool_job_service=tool_job_service,
     )
     return service, cases, versions
 
@@ -174,6 +176,52 @@ class _EventSessions:
 
     async def append_event(self, session_id, event):
         self.events.append((session_id, event))
+
+
+class _ApprovalSessions(_EventSessions):
+    def __init__(self, approval=None):
+        super().__init__()
+        self.approval = approval
+
+    async def get_session(self, session_id):
+        return SimpleNamespace(id=session_id, project_id="project-1")
+
+    async def list_approvals(self, session_id):
+        if self.approval is None or self.approval.session_id != session_id:
+            return []
+        return [self.approval]
+
+    async def resolve_approval(self, session_id, approval_id, status, reason=None):
+        if self.approval is None or self.approval.id != approval_id:
+            raise KeyError(approval_id)
+        if self.approval.status != ToolApprovalStatus.pending:
+            if self.approval.status == status:
+                return self.approval
+            raise ValueError(f"Approval already resolved: {approval_id}")
+        self.approval.status = status
+        self.approval.decision_note = reason
+        self.approval.resolved_at = datetime.now(timezone.utc)
+        return self.approval
+
+
+class _ApprovalJobs:
+    def __init__(self):
+        self.status = "waiting_approval"
+        self.denied = []
+        self.cancelled = []
+
+    async def get_job(self, job_id):
+        return SimpleNamespace(id=job_id, status=self.status)
+
+    async def mark_denied(self, job_id, summary, output_payload=None):
+        self.status = "denied"
+        self.denied.append((job_id, summary, output_payload))
+        return SimpleNamespace(id=job_id, status=self.status)
+
+    async def cancel_job(self, job_id, reason=None):
+        self.status = "cancelled"
+        self.cancelled.append((job_id, reason))
+        return SimpleNamespace(id=job_id, status=self.status)
 
 
 def _seed_failed_parent(store, case_count, *, session_id=None):
@@ -859,3 +907,171 @@ async def test_waiting_approval_pauses_lease_without_result_and_resumes_same_att
     assert restarted.started_at == running.started_at
     assert restarted_detail.attempts[0].started_at == running.started_at
     assert result.status == "passed"
+
+
+async def _seed_waiting_approval(store, *, approval_id="approval-1", job_id="job-1"):
+    now = datetime.now(timezone.utc)
+    run = _RunRecord(
+        id="run-approval-recovery",
+        project_id="project-1",
+        suite_id="suite-1",
+        mode_key="security_testing",
+        session_id="session-approval-recovery",
+        created_at=now,
+        updated_at=now,
+    )
+    item = _RunItemRecord(
+        id="item-approval-recovery",
+        run_id=run.id,
+        case_id="case-1",
+        case_version_id="version-1",
+        position=1,
+        created_at=now,
+        updated_at=now,
+    )
+    await store.create_run(run, [item])
+    claimed, _ = (
+        await store.claim_items(
+            run_id=run.id,
+            worker_id="worker-1",
+            limit=1,
+            lease_seconds=90,
+            now=now,
+        )
+    )[0]
+    running = await store.start_item(claimed.id, claimed.lease_token, now)
+    waiting = await store.mark_waiting_approval(
+        running.id,
+        running.lease_token,
+        approval_id=approval_id,
+        tool_job_id=job_id,
+        now=now,
+    )
+    return run, waiting
+
+
+@pytest.mark.asyncio
+async def test_denied_approval_finalizes_waiting_item_atomically_and_idempotently():
+    store = InMemoryTestRunStore()
+    run, waiting = await _seed_waiting_approval(store)
+    service, _, _ = _components(store=store)
+    payload = SimpleNamespace(
+        approval_id="approval-1",
+        tool_job_id="job-1",
+        summary="operator denied security execution",
+        error_message="operator denied security execution",
+        actual={"approval_status": "denied"},
+    )
+
+    first = await service.finalize_denied_approval(waiting.id, payload)
+    repeated = await service.finalize_denied_approval(waiting.id, payload)
+    detail = await store.get_run(run.id)
+
+    assert first.id == repeated.id
+    assert first.status == "blocked"
+    assert len(detail.results) == 1
+    assert detail.items[0].status == "blocked"
+    assert detail.attempts[0].status == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_initialize_reconciles_denied_approval_after_process_restart():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    approval = ToolApprovalRequest(
+        id="approval-1",
+        session_id=run.session_id,
+        tool_key="security-scan-runner",
+        tool_name="Security Scan Runner",
+        reason="high risk profile",
+        status=ToolApprovalStatus.denied,
+        decision_note="operator denied before restart",
+        created_at=datetime.now(timezone.utc),
+        resolved_at=datetime.now(timezone.utc),
+        metadata={"run_item_id": "item-approval-recovery", "tool_job_id": "job-1"},
+    )
+    sessions = _ApprovalSessions(approval)
+    jobs = _ApprovalJobs()
+    service, _, _ = _components(
+        store=store,
+        session_store=sessions,
+        tool_job_service=jobs,
+    )
+
+    await service.initialize()
+    detail = await store.get_run(run.id)
+
+    assert detail.items[0].status == "blocked"
+    assert len(detail.results) == 1
+    assert detail.results[0].actual["approval_id"] == approval.id
+    assert jobs.denied[0][0] == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_cancel_reconciles_pending_approval_and_tool_job_idempotently():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    approval = ToolApprovalRequest(
+        id="approval-1",
+        session_id=run.session_id,
+        tool_key="security-scan-runner",
+        tool_name="Security Scan Runner",
+        reason="high risk profile",
+        created_at=datetime.now(timezone.utc),
+        metadata={"run_item_id": "item-approval-recovery", "tool_job_id": "job-1"},
+    )
+    sessions = _ApprovalSessions(approval)
+    jobs = _ApprovalJobs()
+    service, _, _ = _components(
+        store=store,
+        session_store=sessions,
+        tool_job_service=jobs,
+    )
+
+    first = await service.cancel(run.id, "operator cancelled run")
+    repeated = await service.cancel(run.id, "operator cancelled run")
+
+    assert first.run.status == "cancelled"
+    assert repeated.run.status == "cancelled"
+    assert first.items[0].status == "cancelled"
+    assert approval.status == ToolApprovalStatus.denied
+    assert jobs.status == "cancelled"
+    assert jobs.cancelled[0][0] == "job-1"
+    assert len(jobs.cancelled) == 1
+    persisted = await store.get_run(run.id)
+    assert persisted.items[0].resource_cleanup_completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_initialize_reconciles_cancelled_resources_after_process_restart():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    approval = ToolApprovalRequest(
+        id="approval-1",
+        session_id=run.session_id,
+        tool_key="security-scan-runner",
+        tool_name="Security Scan Runner",
+        reason="high risk profile",
+        created_at=datetime.now(timezone.utc),
+        metadata={"run_item_id": "item-approval-recovery", "tool_job_id": "job-1"},
+    )
+    await store.cancel_run(
+        run.id,
+        "operator cancelled before external cleanup",
+        datetime.now(timezone.utc),
+    )
+    sessions = _ApprovalSessions(approval)
+    jobs = _ApprovalJobs()
+    service, _, _ = _components(
+        store=store,
+        session_store=sessions,
+        tool_job_service=jobs,
+    )
+
+    await service.initialize()
+
+    assert approval.status == ToolApprovalStatus.denied
+    assert jobs.status == "cancelled"
+    assert jobs.cancelled[0][0] == "job-1"
+    persisted = await store.get_run(run.id)
+    assert persisted.items[0].resource_cleanup_completed_at is not None

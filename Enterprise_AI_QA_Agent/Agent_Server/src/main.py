@@ -264,6 +264,7 @@ async def lifespan(app: FastAPI):
         suite_service=test_suite_service,
         test_case_service=test_case_service,
         session_store=store,
+        tool_job_service=tool_job_service,
         lease_reaper_interval_seconds=settings.test_run_lease_reaper_interval_seconds,
     )
     await test_run_service.initialize()

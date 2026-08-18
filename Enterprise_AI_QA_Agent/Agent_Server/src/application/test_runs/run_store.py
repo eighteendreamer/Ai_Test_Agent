@@ -117,6 +117,20 @@ class TestRunStore(Protocol):
         lease_seconds: int,
         now: datetime,
     ) -> TestRunItemRecord: ...
+    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]: ...
+    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]: ...
+    async def mark_cancelled_resources_reconciled(
+        self,
+        item_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord: ...
+    async def complete_denied_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        completion: RunItemCompletion,
+        now: datetime,
+    ) -> TestCaseResultRecord: ...
     async def complete_item(
         self,
         item_id: str,
@@ -589,6 +603,96 @@ class InMemoryTestRunStore:
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
 
+    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]:
+        async with self._lock:
+            return [
+                item.model_copy(deep=True)
+                for item in self._items.values()
+                if item.status == "waiting_approval"
+                and item.approval_id
+                and item.tool_job_id
+            ]
+
+    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]:
+        async with self._lock:
+            return [
+                item.model_copy(deep=True)
+                for item in self._items.values()
+                if item.status == "cancelled"
+                and (item.approval_id or item.tool_job_id)
+                and item.resource_cleanup_completed_at is None
+            ]
+
+    async def mark_cancelled_resources_reconciled(
+        self,
+        item_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        async with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                raise KeyError(f"Test run item not found: {item_id}")
+            if item.status != "cancelled":
+                raise ValueError(f"Run item is not cancelled: {item_id}")
+            updated = item.model_copy(
+                deep=True,
+                update={"resource_cleanup_completed_at": now, "updated_at": now},
+            )
+            self._items[item_id] = updated
+            return updated.model_copy(deep=True)
+
+    async def complete_denied_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        completion: RunItemCompletion,
+        now: datetime,
+    ) -> TestCaseResultRecord:
+        async with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                raise KeyError(f"Test run item not found: {item_id}")
+            if item.approval_id != approval_id:
+                raise ValueError(f"Run item is not bound to this approval: {item_id}")
+            if item.result_id:
+                return self._results[item.result_id].model_copy(deep=True)
+            if item.status != "waiting_approval":
+                raise ValueError(f"Run item is not waiting for this approval: {item_id}")
+            if completion.status != "blocked":
+                raise ValueError("Denied approval completion status must be blocked.")
+            if not item.lease_token:
+                raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
+            attempt = self._active_attempt(item_id, item.lease_token)
+            result = TestCaseResultRecord(
+                id=str(uuid4()),
+                run_id=item.run_id,
+                run_item_id=item.id,
+                case_id=item.case_id,
+                case_version_id=item.case_version_id,
+                regression_source_result_id=item.regression_source_result_id,
+                attempt_id=attempt.id,
+                attempt_no=attempt.attempt_no,
+                created_at=now,
+                **completion.model_dump(mode="python"),
+            )
+            self._results[result.id] = result
+            self._result_ids_by_run[item.run_id].append(result.id)
+            self._items[item_id] = item.model_copy(
+                deep=True,
+                update={
+                    "status": "blocked",
+                    "result_id": result.id,
+                    "completed_at": now,
+                    "updated_at": now,
+                },
+            )
+            self._attempts[attempt.id] = attempt.model_copy(
+                deep=True,
+                update={"status": "blocked", "completed_at": now},
+            )
+            self._refresh_run(item.run_id, now)
+            return result.model_copy(deep=True)
+
     async def complete_item(
         self,
         item_id: str,
@@ -990,6 +1094,38 @@ class PostgresTestRunStore:
             now,
         )
 
+    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]:
+        return await asyncio.to_thread(self._list_waiting_approval_items_sync)
+
+    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]:
+        return await asyncio.to_thread(self._list_cancelled_resource_items_sync)
+
+    async def mark_cancelled_resources_reconciled(
+        self,
+        item_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        return await asyncio.to_thread(
+            self._mark_cancelled_resources_reconciled_sync,
+            item_id,
+            now,
+        )
+
+    async def complete_denied_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        completion: RunItemCompletion,
+        now: datetime,
+    ) -> TestCaseResultRecord:
+        return await asyncio.to_thread(
+            self._complete_denied_approval_sync,
+            item_id,
+            approval_id,
+            completion,
+            now,
+        )
+
     async def start_item(
         self,
         item_id: str,
@@ -1152,6 +1288,19 @@ class PostgresTestRunStore:
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_lease_expiry "
                     f"ON {self._item_table} (run_id, lease_expires_at) "
                     "WHERE status IN ('claimed', 'running')"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_approval_recovery "
+                    f"ON {self._item_table} (updated_at, id) "
+                    "WHERE status = 'waiting_approval'"
+                )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_cancel_cleanup "
+                    f"ON {self._item_table} (updated_at, id) "
+                    "WHERE status = 'cancelled' "
+                    "AND ((record->>'approval_id') IS NOT NULL "
+                    "OR (record->>'tool_job_id') IS NOT NULL) "
+                    "AND (record->>'resource_cleanup_completed_at') IS NULL"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_regression_source "
@@ -1852,6 +2001,123 @@ class PostgresTestRunStore:
                 self._write_attempt(cur, attempt)
                 self._refresh_run_in_cursor(cur, item.run_id, now)
         return item
+
+    def _list_waiting_approval_items_sync(self) -> list[TestRunItemRecord]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._item_table} "
+                    "WHERE status = 'waiting_approval' "
+                    "ORDER BY updated_at ASC, id ASC"
+                )
+                rows = cur.fetchall() or []
+        return [self._item_from_value(row["record"]) for row in rows]
+
+    def _list_cancelled_resource_items_sync(self) -> list[TestRunItemRecord]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._item_table} "
+                    "WHERE status = 'cancelled' "
+                    "AND ((record->>'approval_id') IS NOT NULL "
+                    "OR (record->>'tool_job_id') IS NOT NULL) "
+                    "AND (record->>'resource_cleanup_completed_at') IS NULL "
+                    "ORDER BY updated_at ASC, id ASC"
+                )
+                rows = cur.fetchall() or []
+        return [self._item_from_value(row["record"]) for row in rows]
+
+    def _mark_cancelled_resources_reconciled_sync(
+        self,
+        item_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                if item.status != "cancelled":
+                    raise ValueError(f"Run item is not cancelled: {item_id}")
+                item = item.model_copy(
+                    update={
+                        "resource_cleanup_completed_at": now,
+                        "updated_at": now,
+                    }
+                )
+                self._write_item(cur, item)
+        return item
+
+    def _complete_denied_approval_sync(
+        self,
+        item_id: str,
+        approval_id: str,
+        completion: RunItemCompletion,
+        now: datetime,
+    ) -> TestCaseResultRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                if item.approval_id != approval_id:
+                    raise ValueError(f"Run item is not bound to this approval: {item_id}")
+                if item.result_id:
+                    return self._get_result_in_cursor(cur, item.result_id)
+                if item.status != "waiting_approval":
+                    raise ValueError(f"Run item is not waiting for this approval: {item_id}")
+                if completion.status != "blocked":
+                    raise ValueError("Denied approval completion status must be blocked.")
+                if not item.lease_token:
+                    raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
+                attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                result = TestCaseResultRecord(
+                    id=str(uuid4()),
+                    run_id=item.run_id,
+                    run_item_id=item.id,
+                    case_id=item.case_id,
+                    case_version_id=item.case_version_id,
+                    regression_source_result_id=item.regression_source_result_id,
+                    attempt_id=attempt.id,
+                    attempt_no=attempt.attempt_no,
+                    created_at=now,
+                    **completion.model_dump(mode="python"),
+                )
+                cur.execute(
+                    f"INSERT INTO {self._result_table} "
+                    "(id, run_id, run_item_id, case_id, case_version_id, "
+                    "regression_source_result_id, attempt_id, status, payload_hash, "
+                    "created_at, record) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+                    (
+                        result.id,
+                        result.run_id,
+                        result.run_item_id,
+                        result.case_id,
+                        result.case_version_id,
+                        result.regression_source_result_id,
+                        result.attempt_id,
+                        result.status,
+                        result.payload_hash,
+                        result.created_at,
+                        self._json(result),
+                    ),
+                )
+                self._write_item(
+                    cur,
+                    item.model_copy(
+                        update={
+                            "status": "blocked",
+                            "result_id": result.id,
+                            "completed_at": now,
+                            "updated_at": now,
+                        }
+                    ),
+                )
+                self._write_attempt(
+                    cur,
+                    attempt.model_copy(
+                        update={"status": "blocked", "completed_at": now}
+                    ),
+                )
+                self._refresh_run_in_cursor(cur, item.run_id, now)
+        return result
 
     def _recover_expired_sync(self, run_id: str, now: datetime) -> int:
         with postgres_connect(self._settings) as conn:

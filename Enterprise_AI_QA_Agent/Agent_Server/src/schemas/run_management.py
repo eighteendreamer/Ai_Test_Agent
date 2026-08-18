@@ -93,6 +93,7 @@ class TestRunItemRecord(BaseModel):
     updated_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    resource_cleanup_completed_at: datetime | None = None
 
 
 class TestRunAttemptRecord(BaseModel):

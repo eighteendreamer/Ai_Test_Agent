@@ -13,6 +13,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from src.application.projects.project_service import ProjectService
+from src.application.runtime.tool_job_service import ToolJobService
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_runs.run_store import TestRunStore
 from src.application.test_suites.suite_service import TestSuiteService
@@ -31,8 +32,8 @@ from src.schemas.run_management import (
     RunClaimRequest,
     RunClaimResponse,
     RunItemClaim,
-    RunItemCompleteRequest,
     RunItemApprovalWaitRequest,
+    RunItemCompleteRequest,
     RunItemCompletion,
     RunItemHeartbeatRequest,
     RunItemLeaseRequest,
@@ -45,7 +46,8 @@ from src.schemas.run_management import (
     TestRunStats,
     TestRunStatus,
 )
-from src.schemas.session import ExecutionEvent
+from src.schemas.session import ExecutionEvent, ToolApprovalStatus
+from src.schemas.tool_job import ToolJobStatus
 
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,7 @@ class TestRunService:
         suite_service: TestSuiteService,
         test_case_service: TestCaseService,
         session_store: SessionStore | None = None,
+        tool_job_service: ToolJobService | None = None,
         clock: Callable[[], datetime] | None = None,
         lease_reaper_interval_seconds: float | None = None,
     ) -> None:
@@ -79,6 +82,7 @@ class TestRunService:
         self._suites = suite_service
         self._cases = test_case_service
         self._sessions = session_store
+        self._jobs = tool_job_service
         self._clock = clock or _utc_now
         self._lease_reaper_interval_seconds = max(
             0.1,
@@ -95,6 +99,8 @@ class TestRunService:
                 "test_run_startup_leases_recovered",
                 extra={"recovered_count": recovered},
             )
+        await self._reconcile_denied_approvals()
+        await self._reconcile_cancelled_runs()
 
     async def start_lease_reaper(self) -> None:
         """Start the process-local lease reaper after store initialization."""
@@ -795,6 +801,85 @@ class TestRunService:
         )
         return result
 
+    async def finalize_denied_approval(
+        self,
+        item_id: str,
+        payload: object,
+    ) -> TestCaseResultRecord:
+        item = await self._store.get_item(item_id)
+        if item is None:
+            raise KeyError(f"Test run item not found: {item_id}")
+        approval_id = str(getattr(payload, "approval_id", "") or item.approval_id or "")
+        if not approval_id:
+            raise ValueError(f"Denied approval completion has no approval id: {item_id}")
+        summary = str(
+            getattr(payload, "summary", "")
+            or "Security test run item approval denied."
+        )
+        actual = getattr(payload, "actual", {})
+        if not isinstance(actual, dict):
+            actual = {}
+        actual = dict(actual)
+        actual.setdefault("approval_id", approval_id)
+        actual.setdefault("approval_status", ToolApprovalStatus.denied.value)
+        tool_job_id = getattr(payload, "tool_job_id", None) or item.tool_job_id
+        if tool_job_id:
+            actual.setdefault("tool_job_id", str(tool_job_id))
+        error_message = getattr(payload, "error_message", None) or "approval_denied"
+        content = {
+            "status": "blocked",
+            "summary": summary,
+            "actual": actual,
+            "evidence_refs": getattr(payload, "evidence_refs", []) or [],
+            "artifact_ids": getattr(payload, "artifact_ids", []) or [],
+            "verification_ids": getattr(payload, "verification_ids", []) or [],
+            "tool_job_id": str(tool_job_id) if tool_job_id else None,
+            "metrics": getattr(payload, "metrics", {}) or {},
+            "error_message": error_message,
+        }
+        normalized_content = RunItemCompletion.model_validate(
+            {**content, "payload_hash": "0" * 64}
+        ).model_dump(mode="json", exclude={"payload_hash"})
+        payload_hash = hashlib.sha256(
+            json.dumps(
+                normalized_content,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        completion = RunItemCompletion(**content, payload_hash=payload_hash)
+        result = await self._store.complete_denied_approval(
+            item_id,
+            approval_id,
+            completion,
+            self._clock(),
+        )
+        logger.info(
+            "test_run_item_denied_approval_finalized",
+            extra={
+                "run_id": result.run_id,
+                "run_item_id": result.run_item_id,
+                "approval_id": approval_id,
+                "tool_job_id": result.tool_job_id,
+                "result_id": result.id,
+                "status": result.status,
+            },
+        )
+        run = await self._get_run_record(result.run_id)
+        await self._emit(
+            run,
+            "test_run.item_approval_denied",
+            {
+                "run_id": result.run_id,
+                "run_item_id": result.run_item_id,
+                "approval_id": approval_id,
+                "result_id": result.id,
+                "status": result.status,
+            },
+        )
+        return result
+
     async def recover_expired(self, run_id: str) -> LeaseRecoveryResponse:
         run = await self._get_run_record(run_id)
         recovered = await self._store.recover_expired(run_id, self._clock())
@@ -812,6 +897,7 @@ class TestRunService:
 
     async def cancel(self, run_id: str, reason: str) -> TestRunDetail:
         detail = await self._store.cancel_run(run_id, reason, self._clock())
+        await self._reconcile_cancelled_resources(detail, reason)
         logger.info(
             "test_run_cancelled",
             extra={"run_id": run_id, "project_id": detail.run.project_id},
@@ -822,6 +908,187 @@ class TestRunService:
             {"run_id": run_id, "reason": reason},
         )
         return detail
+
+    async def _reconcile_denied_approvals(self) -> None:
+        if self._sessions is None:
+            return
+        items = await self._store.list_waiting_approval_items()
+        failures: list[str] = []
+        for item in items:
+            try:
+                run = await self._get_run_record(item.run_id)
+                if not run.session_id:
+                    continue
+                approvals = await self._sessions.list_approvals(run.session_id)
+                approval = next(
+                    (value for value in approvals if value.id == item.approval_id),
+                    None,
+                )
+                if approval is None or approval.status != ToolApprovalStatus.denied:
+                    continue
+                await self._mark_denied_tool_job(
+                    item.tool_job_id,
+                    approval_id=approval.id,
+                    summary=approval.decision_note or "Security test run item approval denied.",
+                )
+                await self.finalize_denied_approval(
+                    item.id,
+                    RunItemCompleteRequest(
+                        lease_token=str(item.lease_token or ""),
+                        status="blocked",
+                        summary=approval.decision_note or "Security test run item approval denied.",
+                        error_message="approval_denied",
+                        actual={
+                            "approval_id": approval.id,
+                            "approval_status": ToolApprovalStatus.denied.value,
+                            "tool_job_id": item.tool_job_id,
+                            "reconciled_after_restart": True,
+                        },
+                        tool_job_id=item.tool_job_id,
+                    ),
+                )
+            except Exception as exc:
+                failures.append(f"{item.id}: {exc}")
+                logger.exception(
+                    "test_run_denied_approval_reconciliation_failed",
+                    extra={"run_item_id": item.id, "approval_id": item.approval_id},
+                )
+        if failures:
+            raise RuntimeError(
+                "Test run denied approval reconciliation failed: " + "; ".join(failures)
+            )
+
+    async def _reconcile_cancelled_runs(self) -> None:
+        items = await self._store.list_cancelled_resource_items()
+        run_ids = list(dict.fromkeys(item.run_id for item in items))
+        failures: list[str] = []
+        for run_id in run_ids:
+            try:
+                detail = await self._store.get_run(run_id)
+                if detail is None:
+                    raise KeyError(f"Test run not found: {run_id}")
+                await self._reconcile_cancelled_resources(
+                    detail,
+                    detail.run.cancel_reason or "Cancelled by operator",
+                )
+            except Exception as exc:
+                failures.append(f"{run_id}: {exc}")
+                logger.exception(
+                    "test_run_cancelled_startup_reconciliation_failed",
+                    extra={"run_id": run_id},
+                )
+        if failures:
+            raise RuntimeError(
+                "Test run cancelled resource reconciliation failed: "
+                + "; ".join(failures)
+            )
+
+    async def _reconcile_cancelled_resources(
+        self,
+        detail: TestRunDetail,
+        reason: str,
+    ) -> None:
+        failures: list[str] = []
+        for item in detail.items:
+            if item.resource_cleanup_completed_at is not None:
+                continue
+            if not item.approval_id and not item.tool_job_id:
+                continue
+            try:
+                if item.approval_id:
+                    if self._sessions is None or not detail.run.session_id:
+                        raise RuntimeError(
+                            f"Approval store unavailable for cancelled run item: {item.id}"
+                        )
+                    approvals = await self._sessions.list_approvals(detail.run.session_id)
+                    approval = next(
+                        (value for value in approvals if value.id == item.approval_id),
+                        None,
+                    )
+                    if approval is None:
+                        raise KeyError(f"Approval not found: {item.approval_id}")
+                    if approval.status == ToolApprovalStatus.pending:
+                        await self._sessions.resolve_approval(
+                            detail.run.session_id,
+                            approval.id,
+                            ToolApprovalStatus.denied,
+                            reason,
+                        )
+                if item.tool_job_id:
+                    await self._cancel_tool_job(item.tool_job_id, reason)
+                await self._store.mark_cancelled_resources_reconciled(
+                    item.id,
+                    self._clock(),
+                )
+            except Exception as exc:
+                failures.append(f"{item.id}: {exc}")
+                logger.exception(
+                    "test_run_cancelled_resource_reconciliation_failed",
+                    extra={
+                        "run_id": detail.run.id,
+                        "run_item_id": item.id,
+                        "approval_id": item.approval_id,
+                        "tool_job_id": item.tool_job_id,
+                    },
+                )
+        if failures:
+            raise RuntimeError(
+                "Test run cancellation compensation failed: " + "; ".join(failures)
+            )
+
+    async def _mark_denied_tool_job(
+        self,
+        job_id: str | None,
+        *,
+        approval_id: str,
+        summary: str,
+    ) -> None:
+        if not job_id:
+            return
+        if self._jobs is None:
+            raise RuntimeError(f"ToolJob service unavailable for denied approval: {job_id}")
+        job = await self._jobs.get_job(job_id)
+        if job is None:
+            raise KeyError(f"Tool job not found: {job_id}")
+        status = _enum_value(getattr(job, "status", ""))
+        if status in {ToolJobStatus.denied.value, ToolJobStatus.cancelled.value}:
+            return
+        if status in {
+            ToolJobStatus.completed.value,
+            ToolJobStatus.partial.value,
+            ToolJobStatus.failed.value,
+        }:
+            logger.warning(
+                "test_run_denied_approval_job_already_terminal",
+                extra={"tool_job_id": job_id, "approval_id": approval_id, "status": status},
+            )
+            return
+        denied = await self._jobs.mark_denied(
+            job_id,
+            summary=summary,
+            output_payload={"status": "denied", "approval_id": approval_id},
+        )
+        if denied is None:
+            raise KeyError(f"Tool job not found while denying: {job_id}")
+
+    async def _cancel_tool_job(self, job_id: str, reason: str) -> None:
+        if self._jobs is None:
+            raise RuntimeError(f"ToolJob service unavailable for cancelled run: {job_id}")
+        job = await self._jobs.get_job(job_id)
+        if job is None:
+            raise KeyError(f"Tool job not found: {job_id}")
+        status = _enum_value(getattr(job, "status", ""))
+        if status in {
+            ToolJobStatus.cancelled.value,
+            ToolJobStatus.denied.value,
+            ToolJobStatus.completed.value,
+            ToolJobStatus.partial.value,
+            ToolJobStatus.failed.value,
+        }:
+            return
+        cancelled = await self._jobs.cancel_job(job_id, reason)
+        if cancelled is None:
+            raise KeyError(f"Tool job not found while cancelling: {job_id}")
 
     async def _emit_for_item(self, item: TestRunItemRecord, event_type: str) -> None:
         run = await self._get_run_record(item.run_id)
@@ -858,6 +1125,10 @@ class TestRunService:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _enum_value(value: object) -> str:
+    return str(getattr(value, "value", value) or "")
 
 
 def _non_negative_int(value: object) -> int:

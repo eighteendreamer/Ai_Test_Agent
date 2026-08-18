@@ -281,21 +281,7 @@ class TestRunExecutionService:
                     f"Run item approval resolved concurrently as {resolved.status.value}: "
                     f"{approval.id}"
                 )
-        resumed = await self._runs.resume_waiting_approval(
-            item.id,
-            approval.id,
-        )
         if resolved.status == ToolApprovalStatus.denied:
-            try:
-                running = await self._runs.start_item(
-                    item.id,
-                    RunItemLeaseRequest(lease_token=str(resumed.lease_token or "")),
-                )
-            except ValueError as exc:
-                latest = await self._runs.get_item(item.id)
-                if latest.result_id:
-                    return await self._runs.get_result(latest.result_id)
-                raise exc
             denied_job = await self._jobs.mark_denied(
                 item.tool_job_id,
                 summary=payload.reason or "Security test run item approval denied.",
@@ -307,10 +293,10 @@ class TestRunExecutionService:
             )
             if denied_job is None:
                 raise RuntimeError(f"Tool job not found for denied approval: {item.tool_job_id}")
-            return await self._runs.complete_item(
+            return await self._runs.finalize_denied_approval(
                 item.id,
                 RunItemCompleteRequest(
-                    lease_token=str(running.lease_token or ""),
+                    lease_token=str(item.lease_token or ""),
                     status="blocked",
                     summary=payload.reason or "Security test run item approval denied.",
                     error_message=payload.reason or "approval_denied",
@@ -322,6 +308,10 @@ class TestRunExecutionService:
                     tool_job_id=item.tool_job_id,
                 ),
             )
+        resumed = await self._runs.resume_waiting_approval(
+            item.id,
+            approval.id,
+        )
         try:
             return await self.execute_item(
                 item.id,

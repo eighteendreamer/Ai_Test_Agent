@@ -912,10 +912,13 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
     class FakeRuns:
         def __init__(self):
             self.current_item = item
-            self.completed = []
+            self.denials = []
             self.result = None
+            self.start_calls = 0
+            self.resume_calls = 0
 
         async def start_item(self, item_id, payload):
+            self.start_calls += 1
             self.current_item = self.current_item.model_copy(update={"status": "running"})
             return self.current_item
 
@@ -937,15 +940,13 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
             return self.current_item
 
         async def resume_waiting_approval(self, item_id, approval_id, lease_seconds=90):
-            self.current_item = self.current_item.model_copy(
-                update={"status": "claimed", "lease_expires_at": now.replace(year=now.year + 1)}
-            )
-            return self.current_item
+            self.resume_calls += 1
+            raise AssertionError("denied approval must not resume the preserved lease")
 
-        async def complete_item(self, item_id, payload):
-            self.completed.append(payload)
+        async def finalize_denied_approval(self, item_id, payload):
+            self.denials.append(payload)
             self.current_item = self.current_item.model_copy(
-                update={"status": payload.status, "result_id": "result-denied-1"}
+                update={"status": "blocked", "result_id": "result-denied-1"}
             )
             self.result = _CaseResultRecord(
                 id="result-denied-1",
@@ -955,7 +956,7 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
                 case_version_id=version.id,
                 attempt_id="attempt-denied-1",
                 attempt_no=1,
-                status=payload.status,
+                status="blocked",
                 summary=payload.summary,
                 actual=payload.actual,
                 error_message=payload.error_message,
@@ -1099,7 +1100,9 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
     assert result.status == "blocked"
     assert adapter.execute_calls == 0
     assert jobs.denied[0][0] == "job-denied-1"
-    assert runs.completed[0].actual["approval_id"] == pending.approval_id
+    assert runs.denials[0].actual["approval_id"] == pending.approval_id
+    assert runs.start_calls == 1
+    assert runs.resume_calls == 0
 
     repeated = await service.resolve_item_approval(
         item.id,
@@ -1110,4 +1113,4 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
         ),
     )
     assert repeated.id == result.id
-    assert len(runs.completed) == 1
+    assert len(runs.denials) == 1
