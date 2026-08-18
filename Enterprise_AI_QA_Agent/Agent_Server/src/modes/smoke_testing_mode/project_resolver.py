@@ -23,14 +23,60 @@ class SmokeProjectResolver:
         *,
         api_docs_service: ApiDocsService | None = None,
         knowledge_graph_service: KnowledgeGraphService | None = None,
+        project_service=None,
     ) -> None:
         self._api_docs_service = api_docs_service
         self._knowledge_graph_service = knowledge_graph_service
+        self._project_service = project_service
 
     async def resolve(self, *, target_url: str, explicit_project_scope: str = "") -> tuple[str, list[SmokeProjectMatch], list[str]]:
         warnings: list[str] = []
         explicit = explicit_project_scope.strip()
         if explicit:
+            if self._project_service is not None:
+                try:
+                    project = await self._project_service.require_active(explicit)
+                    return str(project.graph_scope_key or project.name or explicit), [
+                        SmokeProjectMatch(
+                            project_scope=str(project.graph_scope_key or project.name or explicit),
+                            source="explicit",
+                            score=100.0,
+                            reason="用户显式指定 project_id。",
+                            metadata={"project_id": str(project.id)},
+                        )
+                    ], warnings
+                except (KeyError, ValueError):
+                    page = await self._project_service.list(
+                        status="active",
+                        query=None,
+                        limit=200,
+                        offset=0,
+                    )
+                    normalized = explicit.casefold()
+                    project = next(
+                        (
+                            item
+                            for item in page.items
+                            if normalized
+                            in {
+                                str(item.id or "").casefold(),
+                                str(item.project_key or "").casefold(),
+                                str(item.graph_scope_key or "").casefold(),
+                                str(item.name or "").casefold(),
+                            }
+                        ),
+                        None,
+                    )
+                    if project is not None:
+                        return str(project.graph_scope_key or project.name or explicit), [
+                            SmokeProjectMatch(
+                                project_scope=str(project.graph_scope_key or project.name or explicit),
+                                source="explicit_legacy_alias",
+                                score=100.0,
+                                reason="旧 project_scope 已解析为正式 project_id。",
+                                metadata={"project_id": str(project.id)},
+                            )
+                        ], warnings
             return explicit, [
                 SmokeProjectMatch(
                     project_scope=explicit,
@@ -60,7 +106,12 @@ class SmokeProjectResolver:
                             source="api_doc",
                             score=score,
                             reason=f"API 文档项目地址匹配 {project_url}",
-                            metadata={"doc_id": doc.id, "project_url": project_url, "title": doc.title},
+                            metadata={
+                                "doc_id": doc.id,
+                                "project_id": str(doc.project_id or ""),
+                                "project_url": project_url,
+                                "title": doc.title,
+                            },
                         )
                     )
             except Exception as exc:
@@ -69,7 +120,8 @@ class SmokeProjectResolver:
         if self._knowledge_graph_service is not None:
             try:
                 for project in await self._knowledge_graph_service.list_projects():
-                    graph = await self._knowledge_graph_service.get_graph(project.project_scope)
+                    project_id = str(project.project_id or "").strip()
+                    graph = await self._knowledge_graph_service.get_graph(project_id or project.project_scope)
                     best_url = ""
                     best_score = 0.0
                     for node in graph.nodes:
@@ -85,7 +137,7 @@ class SmokeProjectResolver:
                                 source="ui_graph",
                                 score=best_score,
                                 reason=f"UI 图谱页面 URL 匹配 {best_url}",
-                                metadata={"page_url": best_url},
+                                metadata={"page_url": best_url, "project_id": project_id},
                             )
                         )
             except Exception as exc:

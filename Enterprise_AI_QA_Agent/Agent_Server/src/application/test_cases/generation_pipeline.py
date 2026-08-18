@@ -113,8 +113,13 @@ class ProjectTestCaseContextProvider:
         knowledge_graph: dict[str, Any] = {}
         if request.include_knowledge_graph and project.graph_scope_key:
             try:
+                graph_identity = (
+                    project.id
+                    if getattr(self._knowledge, "_projects", None) is not None
+                    else project.graph_scope_key
+                )
                 knowledge_graph = await self._knowledge.get_generation_context(
-                    project.graph_scope_key,
+                    graph_identity,
                     node_limit=100,
                     edge_limit=150,
                 )

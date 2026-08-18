@@ -41,15 +41,20 @@ class SmokeTestingModeRuntime:
         api_docs_service: ApiDocsService | None = None,
         memory_runtime_service: MemoryRuntimeService | None = None,
         artifact_storage_service: ArtifactStorageService | None = None,
+        project_service=None,
+        knowledge_graph_service: KnowledgeGraphService | None = None,
     ) -> None:
         self._settings = settings
         self._api_docs_service = api_docs_service
         self._memory_runtime_service = memory_runtime_service
-        knowledge = KnowledgeGraphService(settings) if settings is not None else None
+        knowledge = knowledge_graph_service or (KnowledgeGraphService(settings) if settings is not None else None)
+        if knowledge is not None and project_service is not None and getattr(knowledge, "_projects", None) is None:
+            knowledge.set_project_service(project_service)
         catalog = SmokeCatalogStore(settings) if settings is not None else None
         self._project_resolver = SmokeProjectResolver(
             api_docs_service=api_docs_service,
             knowledge_graph_service=knowledge,
+            project_service=project_service,
         )
         self._source_resolver = SmokeSourceResolver(
             api_docs_service=api_docs_service,
@@ -111,6 +116,14 @@ class SmokeTestingModeRuntime:
             target_url=target_url,
             explicit_project_scope=explicit_scope,
         )
+        project_id = next(
+            (
+                str(match.metadata.get("project_id") or "").strip()
+                for match in project_matches
+                if str(match.metadata.get("project_id") or "").strip()
+            ),
+            None,
+        )
         attachments = self._attachments(context)
         attachment_ids = self._string_list(arguments.get("attachment_ids"))
         if attachment_ids:
@@ -122,6 +135,7 @@ class SmokeTestingModeRuntime:
         api_doc_ids = self._string_list(arguments.get("api_doc_ids"))
         source_bundle = await self._source_resolver.resolve(
             project_scope=project_scope,
+            project_id=project_id,
             target_url=target_url,
             session_id=str(getattr(context, "session_id", "") or ""),
             trace_id=str(getattr(context, "trace_id", "") or ""),

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class KnowledgeProjectSummary(BaseModel):
+    project_id: str | None = None
     project_scope: str
     page_count: int = 0
     element_count: int = 0
@@ -16,6 +17,7 @@ class KnowledgeProjectSummary(BaseModel):
 
 
 class KnowledgeGraphSummary(BaseModel):
+    project_id: str | None = None
     project_scope: str
     page_count: int = 0
     element_count: int = 0
@@ -50,6 +52,7 @@ class KnowledgeGraphResponse(BaseModel):
 
 class KnowledgeProjectDeleteResponse(BaseModel):
     ok: bool = True
+    project_id: str | None = None
     project_scope: str
     deleted_counts: dict[str, int] = Field(default_factory=dict)
     message: str = ""

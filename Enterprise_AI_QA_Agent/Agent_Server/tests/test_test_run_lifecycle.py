@@ -152,6 +152,28 @@ def test_create_run_freezes_suite_items_and_lists_project_history():
     assert len(detail.json()["items"]) == 3
 
 
+def test_cancelled_run_exposes_idempotent_resource_reconciliation_endpoint():
+    app, _, suite, _, _ = _run(_build_components(case_count=1))
+    created = _create_run(app, suite.suite.id)
+    run_id = created.json()["run"]["id"]
+
+    cancelled = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/cancel",
+        json={"reason": "operator stop"},
+    )
+    reconciled = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/reconcile-resources",
+    )
+
+    assert cancelled.status_code == 200
+    assert reconciled.status_code == 200
+    assert reconciled.json()["run"]["status"] == "cancelled"
+
+
 def test_claim_start_heartbeat_and_completion_are_lease_guarded_and_idempotent():
     clock = _Clock()
     app, _, suite, _, _ = _run(_build_components(case_count=1, clock=clock))

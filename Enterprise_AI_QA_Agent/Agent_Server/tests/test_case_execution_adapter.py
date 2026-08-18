@@ -613,6 +613,108 @@ async def test_security_case_closes_real_runtime_job_artifact_verification_chain
     assert outcome.completion.verification_ids == [verification.id]
 
 
+@pytest.mark.parametrize(
+    ("mode_key", "tool_key", "runner_output"),
+    [
+        (
+            "ui_automation",
+            "ui-automation-runner",
+            {
+                "status": "completed",
+                "ok": True,
+                "summary": "UI assertions completed",
+                "verification_result": {
+                    "summary": "UI assertion passed",
+                    "checks": [{"name": "order title", "passed": True}],
+                },
+                "artifacts": [
+                    {
+                        "type": "screenshot",
+                        "label": "ui-final-state",
+                        "content": "deterministic-ui-evidence",
+                    }
+                ],
+            },
+        ),
+        (
+            "compatibility_testing",
+            "compatibility-test-runner",
+            {
+                "status": "completed",
+                "ok": True,
+                "summary": "Compatibility matrix completed",
+                "runner_summary": {
+                    "total": 1,
+                    "completed": 1,
+                    "failed": 0,
+                    "pending": 0,
+                },
+                "artifacts": [
+                    {
+                        "type": "json",
+                        "label": "compatibility-matrix",
+                        "content": '{"chrome":"passed"}',
+                    }
+                ],
+            },
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_ui_and_compatibility_close_real_system_evidence_chain(
+    mode_key,
+    tool_key,
+    runner_output,
+):
+    case, version, run, item = _fixture(mode_key)
+    if mode_key == "compatibility_testing":
+        version = version.model_copy(
+            update={
+                "test_data": {
+                    "runner_arguments": {
+                        "objective": "Run one reviewed compatibility case",
+                    }
+                }
+            }
+        )
+    store = InMemoryToolJobStore()
+    jobs = ToolJobService(store)
+    runtime = ToolRuntimeService(tool_job_service=jobs)
+    calls = []
+
+    async def deterministic_runner(arguments, context):
+        calls.append((arguments, context))
+        return runner_output
+
+    runtime._handlers[tool_key] = deterministic_runner
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key=tool_key,
+            name=tool_key,
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        ),
+        runtime_service=runtime,
+        tool_job_service=jobs,
+    )
+
+    outcome = await adapter.execute(case=case, version=version, run=run, item=item)
+
+    job = await jobs.get_job(outcome.completion.tool_job_id)
+    artifacts = await jobs.list_artifacts(tool_job_id=job.id)
+    verification = outcome.verification_results[0]
+    assert len(calls) == 1
+    assert job.status == ToolJobStatus.completed
+    assert len(artifacts) == 1
+    assert artifacts[0].tool_job_id == job.id
+    assert outcome.completion.status == "passed"
+    assert outcome.completion.artifact_ids == [artifacts[0].id]
+    assert verification.status == VerificationStatus.passed
+    assert any(item.source_id == job.id for item in verification.evidence)
+    assert outcome.completion.verification_ids == [verification.id]
+
+
 @pytest.mark.asyncio
 async def test_security_approval_resume_reuses_tool_job_and_injects_server_only_grant():
     case, version, run, item = _fixture("security_testing")

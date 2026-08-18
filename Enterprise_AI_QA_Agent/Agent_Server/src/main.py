@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
     )
     await security_bug_service.initialize()
     knowledge_graph_service = KnowledgeGraphService(settings=settings)
+    knowledge_graph_service.set_project_service(project_service)
     tool_job_service = ToolJobService(
         store=tool_job_store,
         heartbeat_timeout_seconds=settings.tool_job_heartbeat_timeout_seconds,
@@ -300,6 +301,8 @@ async def lifespan(app: FastAPI):
         transcript_hygiene_service=transcript_hygiene_service,
         artifact_storage_service=artifact_storage_service,
         api_docs_service=api_docs_service,
+        project_service=project_service,
+        knowledge_graph_service=knowledge_graph_service,
         mcp_connection_manager=mcp_connection_manager,
         compatibility_runner_service=compatibility_runner_service,
         session_resource_service=session_resource_service,

@@ -76,3 +76,18 @@ def test_frontend_run_item_approval_contract_uses_dedicated_endpoint():
     assert "/run-items/${encodeURIComponent(itemId)}/approval" in api_source
     assert "approval_id: approvalId" in api_source
     assert 'approval?.metadata?.source === "test_run_case_execution"' in store_source
+
+
+def test_projects_view_exposes_terminal_approval_and_cleanup_operations():
+    types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
+    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    view_source = (WEB_ROOT / "views" / "ProjectsView.vue").read_text(encoding="utf-8")
+
+    assert "resource_cleanup_completed_at?: string | null;" in types_source
+    assert "getTestRun(" in api_source
+    assert "reconcileCancelledRunResources(" in api_source
+    assert "openRunDetail" in view_source
+    assert "waiting_approval" in view_source
+    assert "decideRunItemApproval" in view_source
+    assert "重试资源补偿" in view_source
+    assert "失败项回归" in view_source

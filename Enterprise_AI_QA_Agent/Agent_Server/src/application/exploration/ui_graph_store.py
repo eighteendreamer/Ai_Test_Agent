@@ -26,6 +26,7 @@ class UIGraphStore:
         session_id: str,
         turn_id: str,
         trace_id: str,
+        project_id: str | None = None,
         project_scope: str = "default",
     ) -> dict[str, Any]:
         return await asyncio.to_thread(
@@ -35,6 +36,7 @@ class UIGraphStore:
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
+            project_id=project_id,
             project_scope=project_scope,
         )
 
@@ -46,18 +48,22 @@ class UIGraphStore:
         session_id: str,
         turn_id: str,
         trace_id: str,
+        project_id: str | None,
         project_scope: str,
     ) -> dict[str, Any]:
         self._provider.initialize()
         normalized_graph, normalized_app_map, normalization = self._normalize_for_write(graph, app_map)
         now = datetime.utcnow().isoformat()
         common = {
+            "project_id": str(project_id or "").strip() or None,
             "project_scope": project_scope,
             "session_id": session_id,
             "turn_id": turn_id,
             "trace_id": trace_id,
             "updated_at": now,
         }
+        if not common["project_id"]:
+            return {"status": "blocked", "reason": "project_id_required"}
         page_count = self._upsert_nodes("Page", normalized_graph.get("pages") or [], common)
         element_count = self._upsert_nodes("Element", normalized_graph.get("elements") or [], common)
         entity_count = self._upsert_nodes("Entity", normalized_graph.get("entities") or [], common)
@@ -82,6 +88,7 @@ class UIGraphStore:
         return {
             "status": "success",
             "backend": "memgraph",
+            "project_id": project_id,
             "project_scope": project_scope,
             "metrics": {
                 "page_vertices": page_count,
@@ -291,11 +298,11 @@ class UIGraphStore:
             props = self._node_properties(label, row, common)
             self._provider.execute_write(
                 f"""
-                MERGE (n:{label} {{project_scope: $project_scope, id: $id}})
+                MERGE (n:{label} {{project_id: $project_id, id: $id}})
                 SET n += $props
                 """,
                 {
-                    "project_scope": common["project_scope"],
+                    "project_id": common["project_id"],
                     "id": node_id,
                     "props": props,
                 },
@@ -315,17 +322,17 @@ class UIGraphStore:
         target_id = str(edge.get("to") or "").strip()
         if not source_id or not target_id:
             return 0
-        edge_id = self._scoped_key(common["project_scope"], relation, source_id, target_id, edge.get("href") or "")
+        edge_id = self._scoped_key(common["project_id"], relation, source_id, target_id, edge.get("href") or "")
         props = self._edge_properties(edge, common, relation, edge_id)
         self._provider.execute_write(
             f"""
-            MATCH (a:{from_label} {{project_scope: $project_scope, id: $source_id}})
-            MATCH (b:{to_label} {{project_scope: $project_scope, id: $target_id}})
-            MERGE (a)-[r:{relation} {{project_scope: $project_scope, edge_id: $edge_id}}]->(b)
+            MATCH (a:{from_label} {{project_id: $project_id, id: $source_id}})
+            MATCH (b:{to_label} {{project_id: $project_id, id: $target_id}})
+            MERGE (a)-[r:{relation} {{project_id: $project_id, edge_id: $edge_id}}]->(b)
             SET r += $props
             """,
             {
-                "project_scope": common["project_scope"],
+                "project_id": common["project_id"],
                 "source_id": source_id,
                 "target_id": target_id,
                 "edge_id": edge_id,

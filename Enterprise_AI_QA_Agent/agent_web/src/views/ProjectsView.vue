@@ -19,6 +19,7 @@ import type {
   TestCaseVersionRecord,
   TestSuiteBundle,
   TestRunRecord,
+  TestRunDetail,
   TestRunStatus,
 } from "../types";
 
@@ -65,6 +66,9 @@ const runOffset = ref(0);
 const runsHaveMore = ref(false);
 const runStatus = ref<"" | TestRunStatus>("");
 const regressionRunId = ref("");
+const runDetailOpen = ref(false);
+const runDetailLoading = ref(false);
+const runDetail = ref<TestRunDetail | null>(null);
 
 const legacySmokeRuns = ref<LegacySmokeRunSummary[]>([]);
 const legacySmokeBindings = ref<string[]>([]);
@@ -190,6 +194,8 @@ function resetProjectResources() {
   regressionContext.value = null;
   regressionBatches.value = [];
   selectedCasesById.value = {};
+  runDetail.value = null;
+  runDetailOpen.value = false;
 }
 
 async function loadProjectDetail() {
@@ -663,6 +669,41 @@ async function cancelRun(run: TestRunRecord) {
   }
 }
 
+async function openRunDetail(run: TestRunRecord) {
+  runDetailOpen.value = true;
+  runDetailLoading.value = true;
+  try {
+    runDetail.value = await api.getTestRun(run.id);
+  } catch (err) {
+    runDetailOpen.value = false;
+    toast.error(err instanceof Error ? err.message : "测试运行详情加载失败");
+  } finally {
+    runDetailLoading.value = false;
+  }
+}
+
+async function decideRunItemApproval(item: TestRunDetail["items"][number], decision: "approved" | "denied") {
+  if (!item.approval_id) return;
+  try {
+    await api.resolveTestRunItemApproval(item.id, item.approval_id, decision, `Project operator ${decision}`);
+    if (runDetail.value) runDetail.value = await api.getTestRun(runDetail.value.run.id);
+    await loadTestRuns();
+    toast.success(decision === "approved" ? "审批已通过，条目将恢复执行" : "审批已拒绝，条目已记为阻塞");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "审批处理失败");
+  }
+}
+
+async function reconcileRunResources() {
+  if (!runDetail.value) return;
+  try {
+    runDetail.value = await api.reconcileCancelledRunResources(runDetail.value.run.id);
+    toast.success("取消运行的资源补偿已完成");
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "资源补偿失败");
+  }
+}
+
 async function createRegressionRun(run: TestRunRecord) {
   if (!canCreateRegression(run) || regressionRunId.value) return;
   regressionRunId.value = run.id;
@@ -958,6 +999,7 @@ onMounted(() => {
                     <td><small>通过 {{ run.stats.passed }} · 失败 {{ run.stats.failed }} · 错误 {{ run.stats.error }} · 阻塞 {{ run.stats.blocked }}</small></td>
                     <td>{{ formatServerDateTime(run.created_at) }}</td>
                     <td class="row-actions">
+                      <button @click="openRunDetail(run)">详情</button>
                       <button v-if="run.status === 'queued' || run.status === 'running'" @click="cancelRun(run)">取消</button>
                       <button v-if="canCreateRegression(run)" :disabled="Boolean(regressionRunId)" @click="createRegressionRun(run)">{{ regressionRunId === run.id ? "创建中…" : "失败项回归" }}</button>
                       <span v-if="run.status !== 'queued' && run.status !== 'running' && !canCreateRegression(run)">—</span>
@@ -1167,10 +1209,34 @@ onMounted(() => {
         </template>
       </section>
     </div>
+
+    <div v-if="runDetailOpen" class="modal-backdrop" @click.self="runDetailOpen = false">
+      <section class="editor run-detail-editor">
+        <header><div><h2>测试运行详情</h2><p v-if="runDetail">{{ shortId(runDetail.run.id) }} · {{ runDetail.run.status }}</p></div><button @click="runDetailOpen = false">×</button></header>
+        <div v-if="runDetailLoading" class="empty">正在加载运行条目…</div>
+        <template v-else-if="runDetail">
+          <div class="selection-summary"><strong>进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}</strong><small>通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}</small></div>
+          <div class="table-wrap run-items-table">
+            <table><thead><tr><th>位置</th><th>状态</th><th>租约</th><th>审批</th><th>补偿</th><th>结果</th><th>操作</th></tr></thead><tbody>
+              <tr v-for="item in runDetail.items" :key="item.id">
+                <td>{{ item.position }}</td>
+                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small></td>
+                <td><small v-if="item.lease_expires_at">到期 {{ formatServerDateTime(item.lease_expires_at) }}</small><small v-else>—</small></td>
+                <td><small v-if="item.status === 'waiting_approval'">待处理 {{ shortId(item.approval_id || '') }}</small><small v-else>{{ item.approval_id ? shortId(item.approval_id) : '—' }}</small></td>
+                <td><small v-if="item.status === 'cancelled'">{{ item.resource_cleanup_completed_at ? '已完成' : '待补偿' }}</small><small v-else>—</small></td>
+                <td><small v-if="item.result_id">{{ shortId(item.result_id) }}</small><small v-else>—</small></td>
+                <td class="row-actions"><button v-if="item.status === 'waiting_approval'" @click="decideRunItemApproval(item, 'approved')">通过</button><button v-if="item.status === 'waiting_approval'" @click="decideRunItemApproval(item, 'denied')">拒绝</button></td>
+              </tr>
+            </tbody></table>
+          </div>
+          <footer><button v-if="runDetail.run.status === 'cancelled' && runDetail.items.some(item => !item.resource_cleanup_completed_at && (item.approval_id || item.tool_job_id))" @click="reconcileRunResources">重试资源补偿</button><button @click="runDetailOpen = false">关闭</button></footer>
+        </template>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .projects-page{padding:28px 32px;color:var(--text-primary,#111827);min-height:100%}.page-head,.detail-head,.toolbar,.actions,.editor header,.editor footer,.resource-head,.case-toolbar,.pagination{display:flex;align-items:center;justify-content:space-between;gap:14px}.page-head h1,.detail-head h2,.editor h2{margin:4px 0}.page-head p,.detail-head p,.editor header p{margin:0;color:var(--text-secondary,#6b7280)}.eyebrow{font-size:11px;letter-spacing:.15em;font-weight:700}.primary{background:#111827!important;color:#fff!important}.toolbar{justify-content:flex-start;margin:24px 0}.toolbar input{min-width:280px}.toolbar input,.toolbar select,.toolbar button,.actions button,.editor input,.editor textarea,.editor select,.editor button,.case-toolbar input,.case-toolbar select,.case-toolbar button,.pagination button,.row-actions button{border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:9px 12px}.project-grid{display:grid;grid-template-columns:minmax(300px,32%) 1fr;gap:20px}.project-list,.project-detail{border:1px solid var(--border-color,#e5e7eb);border-radius:14px;background:var(--surface,#fff);overflow:hidden}.project-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;border:0;border-bottom:1px solid var(--border-color,#e5e7eb);background:transparent;padding:15px;color:inherit}.project-row.active{background:rgba(59,130,246,.08)}.project-monogram{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#111827;color:#fff;font-weight:700}.project-copy{display:flex;flex:1;flex-direction:column;gap:4px}.project-copy small,td small,.selection-summary small,.version-option small{display:block;color:#6b7280}.status,.case-status,.priority{font-size:12px;padding:4px 8px;border-radius:99px;white-space:nowrap}.status.active,.case-status.active,.case-status.completed{background:#dcfce7;color:#166534}.status.archived,.case-status.archived,.case-status.disabled,.case-status.cancelled{background:#f3f4f6;color:#6b7280}.case-status.draft,.case-status.queued{background:#e0f2fe;color:#075985}.case-status.pending_review,.case-status.running{background:#fef3c7;color:#92400e}.priority.p0{background:#fee2e2;color:#991b1b}.priority.p1{background:#ffedd5;color:#9a3412}.priority.p2{background:#e0f2fe;color:#075985}.priority.p3{background:#f3f4f6;color:#4b5563}.project-detail{padding:22px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;margin:24px 0}.stats article{padding:14px;border:1px solid var(--border-color,#e5e7eb);border-radius:12px}.stats span{display:block;color:#6b7280;font-size:12px}.stats strong{font-size:24px}.facts{margin-bottom:22px}.facts div{display:grid;grid-template-columns:120px 1fr;padding:10px 0;border-bottom:1px solid var(--border-color,#e5e7eb)}.facts dt{color:#6b7280}.facts dd{margin:0;word-break:break-all}.danger{color:#b91c1c}.empty{padding:36px;text-align:center;color:#6b7280}.error-banner,.graph-warning{padding:10px 12px;border-radius:8px;background:#fef2f2;color:#b91c1c}.resource-panel{border-top:1px solid var(--border-color,#e5e7eb);padding-top:20px}.resource-head{margin-bottom:14px}.tabs{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.tabs button{border:0;border-radius:7px;background:transparent;color:inherit;padding:8px 14px}.tabs button.active{background:var(--surface,#fff);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:700}.case-toolbar{justify-content:flex-start;margin-bottom:12px}.case-toolbar input{min-width:220px}.case-toolbar small{margin-left:auto;color:#6b7280}.table-wrap{overflow-x:auto;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--border-color,#e5e7eb);vertical-align:middle}th{color:#6b7280;background:var(--surface-muted,#f9fafb);font-size:12px;white-space:nowrap}tbody tr:last-child td{border-bottom:0}td strong{display:block}.row-actions button{padding:6px 9px;white-space:nowrap}.pagination{margin-top:12px;color:#6b7280;font-size:12px}.pagination div{display:flex;gap:8px}.pagination button{padding:7px 10px}.suites-table td:nth-child(4){max-width:260px}.modal-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(0,0,0,.45)}.editor{width:min(560px,90vw);max-height:86vh;overflow:auto;padding:22px;border-radius:14px;background:var(--surface,#fff)}.editor label{display:flex;flex-direction:column;gap:6px;margin:14px 0}.editor footer{justify-content:flex-end;margin-top:20px}.version-editor{width:min(680px,90vw)}.version-option{flex-direction:row!important;align-items:flex-start;padding:12px;border:1px solid var(--border-color,#e5e7eb);border-radius:10px}.version-option input{margin-top:4px}.version-option span{min-width:0}.selection-summary{display:flex;flex-direction:column;gap:5px;padding:12px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}button:disabled{cursor:not-allowed;opacity:.5}@media(max-width:1200px){.stats{grid-template-columns:repeat(3,1fr)}.project-grid{grid-template-columns:minmax(280px,34%) 1fr}}@media(max-width:900px){.projects-page{padding:20px}.project-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.resource-head,.case-toolbar{align-items:stretch;flex-direction:column}.case-toolbar small{margin-left:0}}
-.regression-backdrop{place-items:stretch end}.regression-drawer{width:min(720px,94vw);height:100vh;max-height:none;border-radius:14px 0 0 14px}.context-summary{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.context-summary div{min-width:0}.context-summary small,.timeline-card small{display:block;margin-top:4px;color:#6b7280}.compact-facts{margin:12px 0}.drawer-section{padding:14px 0;border-top:1px solid var(--border-color,#e5e7eb)}.drawer-section h3{margin:0 0 10px}.drawer-empty{padding:12px;color:#6b7280}.timeline-card{margin:8px 0;padding:11px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px}.artifact-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.artifact-links a{padding:7px 10px;border-radius:8px;background:rgba(59,130,246,.1);color:#1d4ed8;text-decoration:none}.artifact-links a[aria-disabled="true"]{pointer-events:none;opacity:.5}.drawer-section>button{margin-top:8px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:8px 11px}
+.regression-backdrop{place-items:stretch end}.regression-drawer{width:min(720px,94vw);height:100vh;max-height:none;border-radius:14px 0 0 14px}.run-detail-editor{width:min(920px,94vw)}.run-items-table{max-height:55vh;overflow:auto}.context-summary{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:10px;background:var(--surface-muted,#f3f4f6)}.context-summary div{min-width:0}.context-summary small,.timeline-card small{display:block;margin-top:4px;color:#6b7280}.compact-facts{margin:12px 0}.drawer-section{padding:14px 0;border-top:1px solid var(--border-color,#e5e7eb)}.drawer-section h3{margin:0 0 10px}.drawer-empty{padding:12px;color:#6b7280}.timeline-card{margin:8px 0;padding:11px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px}.artifact-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.artifact-links a{padding:7px 10px;border-radius:8px;background:rgba(59,130,246,.1);color:#1d4ed8;text-decoration:none}.artifact-links a[aria-disabled="true"]{pointer-events:none;opacity:.5}.drawer-section>button{margin-top:8px;border:1px solid var(--border-color,#e5e7eb);border-radius:9px;background:var(--surface,#fff);color:inherit;padding:8px 11px}
 </style>

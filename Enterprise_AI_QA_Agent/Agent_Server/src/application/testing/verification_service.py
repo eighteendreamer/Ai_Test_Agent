@@ -536,14 +536,23 @@ class VerificationService:
             failed_count=failed_count,
             evidence=[
                 VerificationEvidence(
-                    source_type="artifact",
-                    source_id=str(item.get("path") or uuid4()),
-                    label=str(item.get("label") or item.get("type") or "ui_artifact"),
-                    detail=str(item.get("path") or ""),
+                    source_type="tool_job",
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    label="ui_runner_assertions",
+                    detail=str(raw.get("summary") or output.get("summary") or ""),
                     metadata={"tool_key": "ui-automation-runner"},
-                )
-                for item in artifacts
-                if isinstance(item, dict)
+                ),
+                *[
+                    VerificationEvidence(
+                        source_type="artifact",
+                        source_id=str(item.get("path") or item.get("label") or uuid4()),
+                        label=str(item.get("label") or item.get("type") or "ui_artifact"),
+                        detail=str(item.get("path") or ""),
+                        metadata={"tool_key": "ui-automation-runner"},
+                    )
+                    for item in artifacts
+                    if isinstance(item, dict)
+                ],
             ],
             metadata={"tool_key": "ui-automation-runner", "phase": output.get("phase")},
             created_at=datetime.utcnow(),

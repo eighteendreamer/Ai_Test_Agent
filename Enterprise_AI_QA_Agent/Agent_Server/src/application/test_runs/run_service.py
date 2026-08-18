@@ -909,6 +909,18 @@ class TestRunService:
         )
         return detail
 
+    async def reconcile_cancelled_resources(self, run_id: str) -> TestRunDetail:
+        detail = await self.get(run_id)
+        if detail.run.status != "cancelled":
+            raise ValueError(f"Only cancelled test runs can reconcile resources: {run_id}")
+        await self._reconcile_cancelled_resources(
+            detail,
+            detail.run.cancel_reason or "Cancelled by operator",
+        )
+        refreshed = await self.get(run_id)
+        logger.info("test_run_cancelled_resources_reconciled", extra={"run_id": run_id})
+        return refreshed
+
     async def _reconcile_denied_approvals(self) -> None:
         if self._sessions is None:
             return

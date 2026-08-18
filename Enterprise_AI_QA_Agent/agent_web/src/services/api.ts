@@ -309,10 +309,18 @@ export const api = {
     if (params.status) query.set("status", params.status);
     return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs?${query.toString()}`);
   },
+  getTestRun(runId: string): Promise<TestRunDetail> {
+    return request(`/api/v1/runs/${encodeURIComponent(runId)}`);
+  },
   cancelTestRun(runId: string, reason = "Cancelled by operator"): Promise<TestRunDetail> {
     return request(`/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {
       method: "POST",
       body: JSON.stringify({ reason }),
+    });
+  },
+  reconcileCancelledRunResources(runId: string): Promise<TestRunDetail> {
+    return request(`/api/v1/runs/${encodeURIComponent(runId)}/reconcile-resources`, {
+      method: "POST",
     });
   },
   createRegressionTestRun(runId: string, payload: {
@@ -360,12 +368,12 @@ export const api = {
   listKnowledgeProjects(): Promise<KnowledgeProjectSummary[]> {
     return request("/api/v1/knowledge/projects");
   },
-  getKnowledgeGraph(projectScope: string): Promise<KnowledgeGraphResponse> {
-    const params = new URLSearchParams({ project_scope: projectScope });
+  getKnowledgeGraph(projectId: string): Promise<KnowledgeGraphResponse> {
+    const params = new URLSearchParams({ project_id: projectId });
     return request(`/api/v1/knowledge/graph?${params.toString()}`);
   },
-  deleteKnowledgeProject(projectScope: string): Promise<KnowledgeProjectDeleteResponse> {
-    const params = new URLSearchParams({ project_scope: projectScope });
+  deleteKnowledgeProject(projectId: string): Promise<KnowledgeProjectDeleteResponse> {
+    const params = new URLSearchParams({ project_id: projectId });
     return request(`/api/v1/knowledge/project?${params.toString()}`, {
       method: "DELETE",
     });

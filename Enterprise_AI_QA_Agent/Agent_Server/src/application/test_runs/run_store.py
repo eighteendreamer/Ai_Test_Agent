@@ -1798,7 +1798,12 @@ class PostgresTestRunStore:
                             for _, attempt in claimed
                         ],
                     )
-                    self._refresh_run_in_cursor(cur, run_id, now)
+                    self._refresh_run_in_cursor(
+                        cur,
+                        run_id,
+                        now,
+                        status_deltas=[("queued", "claimed")] * len(claimed),
+                    )
         return claimed
 
     def _start_item_sync(
@@ -1828,7 +1833,12 @@ class PostgresTestRunStore:
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(cur, item.run_id, now)
+                self._refresh_run_in_cursor(
+                    cur,
+                    item.run_id,
+                    now,
+                    status_deltas=[("claimed", "running")],
+                )
         return item
 
     def _heartbeat_item_sync(
@@ -1921,7 +1931,12 @@ class PostgresTestRunStore:
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(cur, item.run_id, now)
+                self._refresh_run_in_cursor(
+                    cur,
+                    item.run_id,
+                    now,
+                    status_deltas=[("running", completion.status)],
+                )
         return result
 
     def _mark_waiting_approval_sync(
@@ -1957,7 +1972,12 @@ class PostgresTestRunStore:
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(cur, item.run_id, now)
+                self._refresh_run_in_cursor(
+                    cur,
+                    item.run_id,
+                    now,
+                    status_deltas=[("running", "waiting_approval")],
+                )
         return item
 
     def _resume_waiting_approval_sync(
@@ -1999,7 +2019,12 @@ class PostgresTestRunStore:
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(cur, item.run_id, now)
+                self._refresh_run_in_cursor(
+                    cur,
+                    item.run_id,
+                    now,
+                    status_deltas=[("waiting_approval", "claimed")],
+                )
         return item
 
     def _list_waiting_approval_items_sync(self) -> list[TestRunItemRecord]:
@@ -2116,7 +2141,12 @@ class PostgresTestRunStore:
                         update={"status": "blocked", "completed_at": now}
                     ),
                 )
-                self._refresh_run_in_cursor(cur, item.run_id, now)
+                self._refresh_run_in_cursor(
+                    cur,
+                    item.run_id,
+                    now,
+                    status_deltas=[("waiting_approval", "blocked")],
+                )
         return result
 
     def _recover_expired_sync(self, run_id: str, now: datetime) -> int:
@@ -2377,7 +2407,10 @@ class PostgresTestRunStore:
         now: datetime,
         *,
         preserve_cancelled: bool = False,
+        status_deltas: list[tuple[str, str]] | None = None,
     ) -> TestRunRecord:
+        if status_deltas is not None and not preserve_cancelled:
+            return self._refresh_run_delta_in_cursor(cur, run_id, now, status_deltas)
         run = self._lock_run(cur, run_id)
         cur.execute(
             f"SELECT status, count(*) AS total FROM {self._item_table} "
@@ -2420,6 +2453,75 @@ class PostgresTestRunStore:
         )
         self._write_run(cur, updated)
         return updated
+
+    def _refresh_run_delta_in_cursor(
+        self,
+        cur,
+        run_id: str,
+        now: datetime,
+        status_deltas: list[tuple[str, str]],
+    ) -> TestRunRecord:
+        statuses = [status for status in TestRunStats.model_fields if status != "total"]
+        deltas = {status: 0 for status in statuses}
+        for from_status, to_status in status_deltas:
+            if from_status not in deltas or to_status not in deltas:
+                raise ValueError(
+                    f"Unsupported run item status delta: {from_status} -> {to_status}"
+                )
+            if from_status == to_status:
+                continue
+            deltas[from_status] -= 1
+            deltas[to_status] += 1
+
+        def current_count(status: str) -> str:
+            return f"COALESCE((record #>> '{{stats,{status}}}')::int, 0)"
+
+        def next_count(status: str) -> str:
+            delta = deltas[status]
+            return f"({current_count(status)} + {delta})"
+
+        total_expr = current_count("total")
+        queued_expr = next_count("queued")
+        terminal_expr = " + ".join(
+            next_count(status) for status in TERMINAL_ITEM_STATUSES
+        )
+        next_status = (
+            "CASE "
+            "WHEN status = 'cancelled' THEN 'cancelled' "
+            f"WHEN {total_expr} > 0 AND ({terminal_expr}) = {total_expr} "
+            "THEN 'completed' "
+            f"WHEN {total_expr} > {queued_expr} THEN 'running' "
+            "ELSE 'queued' END"
+        )
+        stats_pairs = [f"'total', {total_expr}"] + [
+            f"'{status}', {next_count(status)}" for status in statuses
+        ]
+        stats_expr = f"jsonb_build_object({', '.join(stats_pairs)})"
+        started_expr = (
+            f"CASE WHEN ({next_status}) = 'running' AND record->>'started_at' IS NULL "
+            "THEN to_jsonb(%s::timestamptz) "
+            "ELSE COALESCE(record->'started_at', 'null'::jsonb) END"
+        )
+        completed_expr = (
+            f"CASE WHEN ({next_status}) = 'completed' AND record->>'completed_at' IS NULL "
+            "THEN to_jsonb(%s::timestamptz) "
+            "ELSE COALESCE(record->'completed_at', 'null'::jsonb) END"
+        )
+        cur.execute(
+            f"UPDATE {self._run_table} SET status = ({next_status}), updated_at = %s, "
+            "record = record || jsonb_build_object("
+            f"'status', to_jsonb(({next_status})), "
+            f"'stats', {stats_expr}, "
+            "'updated_at', to_jsonb(%s::timestamptz), "
+            f"'started_at', {started_expr}, "
+            f"'completed_at', {completed_expr}"
+            ") WHERE id = %s RETURNING record",
+            (now, now, now, now, run_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise KeyError(f"Test run not found: {run_id}")
+        return self._run_from_value(row["record"])
 
     def _write_run(self, cur, run: TestRunRecord) -> None:
         cur.execute(

@@ -952,6 +952,7 @@ export interface SessionVerificationResponse {
 }
 
 export interface KnowledgeProjectSummary {
+  project_id?: string | null;
   project_scope: string;
   page_count: number;
   element_count: number;
@@ -961,6 +962,7 @@ export interface KnowledgeProjectSummary {
 }
 
 export interface KnowledgeGraphSummary {
+  project_id?: string | null;
   project_scope: string;
   page_count: number;
   element_count: number;
@@ -995,6 +997,7 @@ export interface KnowledgeGraphResponse {
 
 export interface KnowledgeProjectDeleteResponse {
   ok: boolean;
+  project_id?: string | null;
   project_scope: string;
   deleted_counts: Record<string, number>;
   message: string;
@@ -1336,6 +1339,7 @@ export interface TestRunItemRecord {
   updated_at: string;
   started_at?: string | null;
   completed_at?: string | null;
+  resource_cleanup_completed_at?: string | null;
 }
 
 export interface TestCaseResultRecord {

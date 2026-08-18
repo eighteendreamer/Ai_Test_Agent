@@ -7,6 +7,122 @@ from importlib import import_module
 from src.core.config import Settings
 
 
+def test_postgres_run_refresh_applies_status_delta_without_scanning_items():
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    run = schemas.TestRunRecord(
+        id="00000000-0000-0000-0000-000000000101",
+        project_id="00000000-0000-0000-0000-000000000102",
+        suite_id="00000000-0000-0000-0000-000000000103",
+        mode_key="api_testing",
+        stats={"total": 2, "queued": 1, "claimed": 1},
+        created_at=now,
+        updated_at=now,
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchone(self):
+            return {
+                "record": run.model_copy(
+                    update={
+                        "status": "running",
+                        "stats": schemas.TestRunStats(total=2, claimed=2),
+                        "updated_at": now,
+                        "started_at": now,
+                    }
+                ).model_dump(mode="json")
+            }
+
+    cursor = Cursor()
+    store = store_module.PostgresTestRunStore(Settings())
+
+    refreshed = store._refresh_run_in_cursor(
+        cursor,
+        run.id,
+        now,
+        status_deltas=[("queued", "claimed")],
+    )
+
+    assert refreshed.stats.model_dump() == {
+        "total": 2,
+        "queued": 0,
+        "claimed": 2,
+        "running": 0,
+        "waiting_approval": 0,
+        "passed": 0,
+        "failed": 0,
+        "error": 0,
+        "blocked": 0,
+        "skipped": 0,
+        "cancelled": 0,
+    }
+    assert refreshed.status == "running"
+    assert not any("GROUP BY status" in statement for statement, _ in cursor.calls)
+
+
+def test_postgres_run_delta_refresh_uses_one_atomic_update(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    run = schemas.TestRunRecord(
+        id="00000000-0000-0000-0000-000000000111",
+        project_id="00000000-0000-0000-0000-000000000112",
+        suite_id="00000000-0000-0000-0000-000000000113",
+        mode_key="api_testing",
+        status="running",
+        stats={"total": 1, "running": 1},
+        created_at=now,
+        updated_at=now,
+        started_at=now,
+    )
+    completed = run.model_copy(
+        update={
+            "status": "completed",
+            "stats": schemas.TestRunStats(total=1, passed=1),
+            "updated_at": now,
+            "completed_at": now,
+        }
+    )
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, parameters=None):
+            self.calls.append((" ".join(statement.split()), parameters))
+
+        def fetchone(self):
+            return {"record": completed.model_dump(mode="json")}
+
+    cursor = Cursor()
+    store = store_module.PostgresTestRunStore(Settings())
+
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("delta refresh must not use a separate run read/write")
+
+    monkeypatch.setattr(store, "_lock_run", unexpected_call)
+    monkeypatch.setattr(store, "_write_run", unexpected_call)
+
+    refreshed = store._refresh_run_in_cursor(
+        cursor,
+        run.id,
+        now,
+        status_deltas=[("running", "passed")],
+    )
+
+    assert refreshed == completed
+    assert len(cursor.calls) == 1
+    assert cursor.calls[0][0].startswith("UPDATE agent_test_runs")
+    assert cursor.calls[0][0].endswith("RETURNING record")
+
+
 def test_postgres_regression_candidates_query_only_eligible_results(monkeypatch):
     store_module = import_module("src.application.test_runs.run_store")
     schemas = import_module("src.schemas.run_management")
@@ -691,6 +807,19 @@ def test_postgres_completion_persists_regression_source_result_column(monkeypatc
                 and "FOR NO KEY UPDATE" in normalized
             ):
                 self.rows = [{"record": run.model_dump(mode="json")}]
+            elif normalized.startswith("UPDATE agent_test_runs"):
+                self.rows = [
+                    {
+                        "record": run.model_copy(
+                            update={
+                                "status": "completed",
+                                "stats": schemas.TestRunStats(total=1, passed=1),
+                                "updated_at": now,
+                                "completed_at": now,
+                            }
+                        ).model_dump(mode="json")
+                    }
+                ]
             elif "GROUP BY status" in normalized:
                 self.rows = [{"status": "passed", "total": 1}]
             else:
@@ -792,6 +921,19 @@ def test_postgres_claim_uses_skip_locked_and_one_transaction_connection(monkeypa
             if "FOR UPDATE SKIP LOCKED" in normalized:
                 self._rows = [
                     {"record": item.model_dump(mode="json")} for item in items
+                ]
+            elif normalized.startswith("UPDATE agent_test_runs"):
+                self._rows = [
+                    {
+                        "record": run.model_copy(
+                            update={
+                                "status": "running",
+                                "stats": schemas.TestRunStats(total=2, claimed=2),
+                                "updated_at": now,
+                                "started_at": now,
+                            }
+                        ).model_dump(mode="json")
+                    }
                 ]
             elif "GROUP BY status" in normalized:
                 self._rows = [{"status": "claimed", "total": 2}]
@@ -1134,7 +1276,11 @@ def test_postgres_waiting_approval_resume_reuses_attempt_and_first_start(monkeyp
         "_write_attempt",
         lambda cur, updated: state.__setitem__("attempt", updated),
     )
-    monkeypatch.setattr(store, "_refresh_run_in_cursor", lambda cur, run_id, now: None)
+    monkeypatch.setattr(
+        store,
+        "_refresh_run_in_cursor",
+        lambda cur, run_id, now, **kwargs: None,
+    )
 
     waiting = store._mark_waiting_approval_sync(
         item.id,

@@ -20,6 +20,7 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.documents.api_docs_service import ApiDocsService
+from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
 from src.application.exploration.ui_graph_store import UIGraphStore
 from src.application.mcp.host.connection_manager import McpConnectionManager
 from src.application.mcp.host.namespace import decode as decode_mcp_tool_key
@@ -102,6 +103,8 @@ class ToolRuntimeService:
         transcript_hygiene_service: TranscriptHygieneService | None = None,
         artifact_storage_service: ArtifactStorageService | None = None,
         api_docs_service: ApiDocsService | None = None,
+        project_service=None,
+        knowledge_graph_service: KnowledgeGraphService | None = None,
         coordinator_runtime_service=None,
         mcp_connection_manager: McpConnectionManager | None = None,
         compatibility_runner_service=None,
@@ -177,6 +180,8 @@ class ToolRuntimeService:
                 api_docs_service=api_docs_service,
                 memory_runtime_service=memory_runtime_service,
                 artifact_storage_service=artifact_storage_service,
+                project_service=project_service,
+                knowledge_graph_service=knowledge_graph_service,
             )
         self._security_testing_mode_runtime = SecurityTestingModeRuntime(
             settings=settings,

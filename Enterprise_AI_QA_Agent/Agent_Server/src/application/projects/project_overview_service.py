@@ -44,7 +44,12 @@ class ProjectOverviewService:
         graph = ProjectGraphOverview(project_scope=project.graph_scope_key)
         if project.graph_scope_key:
             try:
-                summary = await self._knowledge.get_project_summary(project.graph_scope_key)
+                graph_identity = (
+                    project.id
+                    if getattr(self._knowledge, "_projects", None) is not None
+                    else project.graph_scope_key
+                )
+                summary = await self._knowledge.get_project_summary(graph_identity)
                 values = summary.model_dump() if hasattr(summary, "model_dump") else dict(summary)
                 graph = ProjectGraphOverview(
                     project_scope=project.graph_scope_key,

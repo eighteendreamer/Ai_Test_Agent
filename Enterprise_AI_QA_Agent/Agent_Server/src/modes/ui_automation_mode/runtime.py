@@ -21,6 +21,7 @@ from src.modes.ui_automation_mode.contracts import (
 class UIAutomationRequestState:
     target_url: str
     objective: str
+    project_id: str
     project_scope: str
     direction: str
     subdirection: str
@@ -145,6 +146,7 @@ class UIAutomationModeRuntime:
         exploration_arguments = {
             "target_url": request.target_url,
             "objective": request.objective,
+            "project_id": request.project_id,
             "project_scope": request.project_scope,
             "max_pages": request.max_pages,
             "max_interactions": request.max_interactions,
@@ -186,6 +188,7 @@ class UIAutomationModeRuntime:
         ui_state["exploration"] = {
             "entry_url": request.target_url,
             "project_scope": request.project_scope,
+            "project_id": request.project_id,
             "exploration_complete": result_status == "completed",
             "remaining_observable_targets": [],
             "graph_write_status": str(graph_storage.get("status") or "unknown"),
@@ -283,6 +286,11 @@ class UIAutomationModeRuntime:
             mode_request.get("project_scope"),
             context.context_bundle.get("project_scope"),
         )
+        project_id = self._first_text(
+            arguments.get("project_id"),
+            mode_request.get("project_id"),
+            context.context_bundle.get("project_id"),
+        )
         if not project_scope:
             project_scope = self._derive_project_scope(
                 target_url=target_url,
@@ -292,6 +300,7 @@ class UIAutomationModeRuntime:
         return UIAutomationRequestState(
             target_url=target_url,
             objective=objective,
+            project_id=project_id,
             project_scope=project_scope,
             direction=direction,
             subdirection=subdirection,
@@ -357,6 +366,7 @@ class UIAutomationModeRuntime:
                 "target_url": request.target_url,
                 "objective": request.objective,
                 "project_scope": request.project_scope,
+                "project_id": request.project_id,
                 "direction": request.direction,
                 "subdirection": request.subdirection,
                 "max_pages": request.max_pages,

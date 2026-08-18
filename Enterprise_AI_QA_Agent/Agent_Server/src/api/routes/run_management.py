@@ -255,3 +255,11 @@ async def cancel_test_run(
         return await request.app.state.test_run_service.cancel(run_id, payload.reason)
     except (KeyError, ValueError) as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/runs/{run_id}/reconcile-resources", response_model=TestRunDetail)
+async def reconcile_cancelled_run_resources(run_id: str, request: Request):
+    try:
+        return await request.app.state.test_run_service.reconcile_cancelled_resources(run_id)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        raise _http_error(exc) from exc

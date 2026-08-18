@@ -139,6 +139,7 @@ class UIExplorationService:
                 session_id=context.session_id,
                 turn_id=context.turn_id,
                 trace_id=context.trace_id,
+                project_id=str(arguments.get("project_id") or context.context_bundle.get("project_id") or "").strip() or None,
                 project_scope=str(arguments.get("project_scope") or context.context_bundle.get("project_scope") or "default"),
             )
         except Exception as exc:

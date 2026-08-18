@@ -19,14 +19,14 @@ async def list_knowledge_projects(request: Request):
 @router.get("/graph", response_model=KnowledgeGraphResponse)
 async def get_knowledge_graph(
     request: Request,
-    project_scope: str = Query(..., min_length=1),
+    project_id: str = Query(..., min_length=1),
 ):
     try:
-        return await request.app.state.knowledge_graph_service.get_graph(project_scope)
+        return await request.app.state.knowledge_graph_service.get_graph(project_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Project graph not found") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Knowledge graph unavailable: {exc}") from exc
 
@@ -34,13 +34,13 @@ async def get_knowledge_graph(
 @router.delete("/project", response_model=KnowledgeProjectDeleteResponse)
 async def delete_knowledge_project(
     request: Request,
-    project_scope: str = Query(..., min_length=1),
+    project_id: str = Query(..., min_length=1),
 ):
     try:
-        return await request.app.state.knowledge_graph_service.delete_project(project_scope)
+        return await request.app.state.knowledge_graph_service.delete_project(project_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Project graph not found") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Knowledge graph unavailable: {exc}") from exc

@@ -28,18 +28,34 @@ class KnowledgeGraphService:
         self._provider = MemgraphRuntimeProvider(settings)
         self._project_cache: tuple[float, list[KnowledgeProjectSummary]] | None = None
         self._last_failure: tuple[float, str] | None = None
+        self._projects = None
+
+    def set_project_service(self, project_service) -> None:  # noqa: ANN001
+        self._projects = project_service
 
     async def list_projects(self) -> list[KnowledgeProjectSummary]:
         cached_error = self._cached_failure_message()
         if cached_error is not None:
             raise RuntimeError(cached_error)
 
-        cached_projects = self._cached_projects()
-        if cached_projects is not None:
-            return cached_projects
+        if getattr(self, "_projects", None) is None:
+            cached_projects = self._cached_projects()
+            if cached_projects is not None:
+                return cached_projects
 
         try:
-            projects = await asyncio.to_thread(self._list_projects_sync)
+            if getattr(self, "_projects", None) is not None:
+                page = await self._projects.list(status="active", query=None, limit=200, offset=0)
+                summaries: list[KnowledgeProjectSummary] = []
+                for project in page.items:
+                    if not project.graph_scope_key:
+                        continue
+                    summary = await self.get_project_summary(project.id)
+                    if summary.page_count + summary.element_count + summary.entity_count + summary.edge_count:
+                        summaries.append(summary)
+                projects = summaries
+            else:
+                projects = await asyncio.to_thread(self._list_projects_sync)
         except Exception as exc:
             self._last_failure = (time.monotonic(), str(exc))
             raise
@@ -48,56 +64,96 @@ class KnowledgeGraphService:
         self._last_failure = None
         return projects
 
-    async def get_graph(self, project_scope: str) -> KnowledgeGraphResponse:
+    async def get_graph(self, project_id: str) -> KnowledgeGraphResponse:
         cached_error = self._cached_failure_message()
         if cached_error is not None:
             raise RuntimeError(cached_error)
         try:
-            return await asyncio.to_thread(self._get_graph_sync, project_scope)
+            identity = await self._resolve_identity(project_id, require_active=True)
+            return await asyncio.to_thread(self._get_graph_sync, identity)
+        except (KeyError, ValueError):
+            raise
         except Exception as exc:
             self._last_failure = (time.monotonic(), str(exc))
             raise
 
-    async def get_project_summary(self, project_scope: str) -> KnowledgeProjectSummary:
-        scope = str(project_scope or "").strip()
-        if not scope:
-            raise ValueError("project_scope is required")
-        return await asyncio.to_thread(self._get_project_summary_sync, scope)
+    async def get_project_summary(self, project_id: str) -> KnowledgeProjectSummary:
+        identity = await self._resolve_identity(project_id, require_active=False)
+        return await asyncio.to_thread(self._get_project_summary_sync, identity)
 
     async def get_generation_context(
         self,
-        project_scope: str,
+        project_id: str,
         *,
         node_limit: int = 100,
         edge_limit: int = 150,
     ) -> dict[str, Any]:
-        scope = str(project_scope or "").strip()
-        if not scope:
-            raise ValueError("project_scope is required")
+        identity = await self._resolve_identity(project_id, require_active=False)
         return await asyncio.to_thread(
             self._get_generation_context_sync,
-            scope,
+            identity,
             max(1, min(int(node_limit), 500)),
             max(1, min(int(edge_limit), 1000)),
         )
 
-    def _get_project_summary_sync(self, project_scope: str) -> KnowledgeProjectSummary:
-        rows = self._provider.execute(
+    async def _resolve_identity(self, project_id: str, *, require_active: bool) -> dict[str, str | None]:
+        value = str(project_id or "").strip()
+        if not value:
+            raise ValueError("project_id is required")
+        if self._projects is None:
+            return {"project_id": None, "project_scope": value}
+        project = (
+            await self._projects.require_active(value)
+            if require_active
+            else await self._projects.get(value)
+        )
+        scope = str(project.graph_scope_key or "").strip()
+        if not scope:
+            raise ValueError(f"Project has no graph_scope_key: {value}")
+        return {"project_id": str(project.id), "project_scope": scope}
+
+    def _migrate_legacy_records(self, identity: dict[str, str | None]) -> None:
+        if not identity.get("project_id"):
+            return
+        self._provider.execute_write(
             """
-            MATCH (n:Page {project_scope: $project_scope})
+            MATCH (n)
+            WHERE n.project_id IS NULL AND n.project_scope = $project_scope
+            SET n.project_id = $project_id
+            """,
+            identity,
+        )
+        self._provider.execute_write(
+            """
+            MATCH ()-[r]->()
+            WHERE r.project_id IS NULL AND r.project_scope = $project_scope
+            SET r.project_id = $project_id
+            """,
+            identity,
+        )
+
+    def _get_project_summary_sync(self, identity: dict[str, str | None]) -> KnowledgeProjectSummary:
+        project_id = identity.get("project_id")
+        project_scope = str(identity.get("project_scope") or "")
+        self._migrate_legacy_records(identity)
+        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
+        parameters = identity
+        rows = self._provider.execute(
+            f"""
+            MATCH (n:Page {{{selector}}})
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'page_count' AS count_field
             UNION ALL
-            MATCH (n:Element {project_scope: $project_scope})
+            MATCH (n:Element {{{selector}}})
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'element_count' AS count_field
             UNION ALL
-            MATCH (n:Entity {project_scope: $project_scope})
+            MATCH (n:Entity {{{selector}}})
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'entity_count' AS count_field
             UNION ALL
             MATCH ()-[r]->()
-            WHERE r.project_scope = $project_scope
+            WHERE r.{('project_id' if project_id else 'project_scope')} = ${('project_id' if project_id else 'project_scope')}
             RETURN count(r) AS total, max(r.updated_at) AS latest_updated_at, 'edge_count' AS count_field
             """,
-            {"project_scope": project_scope},
+            parameters,
         )
         counts = {"page_count": 0, "element_count": 0, "entity_count": 0, "edge_count": 0}
         latest = None
@@ -109,6 +165,7 @@ class KnowledgeGraphService:
             if value and (latest is None or value > latest):
                 latest = value
         return KnowledgeProjectSummary(
+            project_id=project_id,
             project_scope=project_scope,
             latest_updated_at=latest,
             **counts,
@@ -116,23 +173,26 @@ class KnowledgeGraphService:
 
     def _get_generation_context_sync(
         self,
-        project_scope: str,
+        identity: dict[str, str | None],
         node_limit: int,
         edge_limit: int,
     ) -> dict[str, Any]:
-        summary = self._get_project_summary_sync(project_scope)
+        summary = self._get_project_summary_sync(identity)
+        project_id = identity.get("project_id")
+        project_scope = str(identity.get("project_scope") or "")
+        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
         per_kind_limit = max(1, node_limit // 3)
         nodes: list[dict[str, Any]] = []
         for label, kind in (("Page", "page"), ("Element", "element"), ("Entity", "entity")):
             rows = self._provider.execute(
                 f"""
-                MATCH (n:{label} {{project_scope: $project_scope}})
+                MATCH (n:{label} {{{selector}}})
                 RETURN n.id AS id, n.label AS label, n.url AS url,
                        n.role AS role, n.type AS type
                 ORDER BY n.updated_at DESC
                 LIMIT {per_kind_limit}
                 """,
-                {"project_scope": project_scope},
+                identity,
             )
             nodes.extend(
                 {
@@ -149,14 +209,15 @@ class KnowledgeGraphService:
         edge_rows = self._provider.execute(
             f"""
             MATCH (a)-[r]->(b)
-            WHERE r.project_scope = $project_scope
+            WHERE r.{('project_id' if project_id else 'project_scope')} = ${('project_id' if project_id else 'project_scope')}
             RETURN a.id AS source_id, b.id AS target_id, type(r) AS relation
             ORDER BY r.updated_at DESC
             LIMIT {edge_limit}
             """,
-            {"project_scope": project_scope},
+            identity,
         )
         return {
+            "project_id": project_id,
             "project_scope": project_scope,
             "summary": summary.model_dump(mode="json"),
             "nodes": nodes[:node_limit],
@@ -173,12 +234,15 @@ class KnowledgeGraphService:
             ),
         }
 
-    async def delete_project(self, project_scope: str) -> KnowledgeProjectDeleteResponse:
+    async def delete_project(self, project_id: str) -> KnowledgeProjectDeleteResponse:
         cached_error = self._cached_failure_message()
         if cached_error is not None:
             raise RuntimeError(cached_error)
         try:
-            deleted = await asyncio.to_thread(self._delete_project_sync, project_scope)
+            identity = await self._resolve_identity(project_id, require_active=True)
+            deleted = await asyncio.to_thread(self._delete_project_sync, identity)
+        except (KeyError, ValueError):
+            raise
         except Exception as exc:
             self._last_failure = (time.monotonic(), str(exc))
             raise
@@ -243,32 +307,34 @@ class KnowledgeGraphService:
         )
         return items
 
-    def _get_graph_sync(self, project_scope: str) -> KnowledgeGraphResponse:
-        scope = str(project_scope or "").strip()
-        if not scope:
-            raise ValueError("project_scope is required")
+    def _get_graph_sync(self, identity: dict[str, str | None]) -> KnowledgeGraphResponse:
+        project_id = identity.get("project_id")
+        scope = str(identity.get("project_scope") or "")
+        self._migrate_legacy_records(identity)
+        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
+        relation_key = "project_id" if project_id else "project_scope"
         pages = self._provider.execute(
-            "MATCH (n:Page {project_scope: $project_scope}) RETURN n ORDER BY n.updated_at DESC",
-            {"project_scope": scope},
+            f"MATCH (n:Page {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            identity,
         )
         elements = self._provider.execute(
-            "MATCH (n:Element {project_scope: $project_scope}) RETURN n ORDER BY n.updated_at DESC",
-            {"project_scope": scope},
+            f"MATCH (n:Element {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            identity,
         )
         entities = self._provider.execute(
-            "MATCH (n:Entity {project_scope: $project_scope}) RETURN n ORDER BY n.updated_at DESC",
-            {"project_scope": scope},
+            f"MATCH (n:Entity {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            identity,
         )
         if not pages and not elements and not entities:
             raise KeyError(scope)
         edge_rows = self._provider.execute(
-            """
+            f"""
             MATCH (a)-[r]->(b)
-            WHERE r.project_scope = $project_scope
+            WHERE r.{relation_key} = ${relation_key}
             RETURN a.id AS source_id, b.id AS target_id, type(r) AS relation, r
             ORDER BY r.updated_at DESC
             """,
-            {"project_scope": scope},
+            identity,
         )
         nodes = [
             *[self._node_from_record(item["n"], "page") for item in pages],
@@ -281,15 +347,18 @@ class KnowledgeGraphService:
             edge = self._edge_from_record(row)
             edges.append(edge)
             relation_counts[edge.type] = relation_counts.get(edge.type, 0) + 1
-        latest_updated_at = max(
-            [
+        latest_values = [
+            parsed
+            for parsed in (
                 self._parse_datetime(self._record_value(item["n"], "updated_at"))
                 for item in [*pages, *elements, *entities]
-            ],
-            default=None,
-        )
+            )
+            if parsed is not None
+        ]
+        latest_updated_at = max(latest_values, default=None)
         return KnowledgeGraphResponse(
             summary=KnowledgeGraphSummary(
+                project_id=project_id,
                 project_scope=scope,
                 page_count=len(pages),
                 element_count=len(elements),
@@ -302,27 +371,27 @@ class KnowledgeGraphService:
             edges=edges,
         )
 
-    def _delete_project_sync(self, project_scope: str) -> KnowledgeProjectDeleteResponse:
-        scope = str(project_scope or "").strip()
-        if not scope:
-            raise ValueError("project_scope is required")
-        graph = self._get_graph_sync(scope)
+    def _delete_project_sync(self, identity: dict[str, str | None]) -> KnowledgeProjectDeleteResponse:
+        scope = str(identity.get("project_scope") or "")
+        graph = self._get_graph_sync(identity)
         deleted_counts = {
             "pages": graph.summary.page_count,
             "elements": graph.summary.element_count,
             "entities": graph.summary.entity_count,
             "edges": graph.summary.edge_count,
         }
+        relation_key = "project_id" if identity.get("project_id") else "project_scope"
         self._provider.execute_write(
-            """
+            f"""
             MATCH (n)
-            WHERE n.project_scope = $project_scope
+            WHERE n.{relation_key} = ${relation_key}
             DETACH DELETE n
             """,
-            {"project_scope": scope},
+            identity,
         )
         return KnowledgeProjectDeleteResponse(
             ok=True,
+            project_id=identity.get("project_id"),
             project_scope=scope,
             deleted_counts=deleted_counts,
             message=f"Deleted knowledge graph project '{scope}'",

@@ -21,7 +21,7 @@ const loadingProjects = ref(false);
 const loadingGraph = ref(false);
 const errorMessage = ref("");
 const projects = ref<KnowledgeProjectSummary[]>([]);
-const selectedProjectScope = ref("");
+const selectedProjectId = ref("");
 const graph = ref<KnowledgeGraphResponse | null>(null);
 const searchTerm = ref("");
 const activeKind = ref<NodeKindFilter>("all");
@@ -42,7 +42,7 @@ const dragStartPoint = ref({ x: 0, y: 0 });
 const dragStartOffset = ref({ x: 0, y: 0 });
 
 const selectedProject = computed(() =>
-  projects.value.find((item) => item.project_scope === selectedProjectScope.value) ?? null,
+  projects.value.find((item) => item.project_id === selectedProjectId.value) ?? null,
 );
 
 const nodesById = computed(() => {
@@ -127,7 +127,7 @@ const canvasNodes = computed(() => {
     const items = [
       {
         id: '__GLOBAL_PAGES__',
-        label: selectedProjectScope.value || t('knowledge.project_global'),
+        label: selectedProject.value?.project_scope || t('knowledge.project_global'),
         kind: 'project',
         x: 420,
         y: 250,
@@ -326,12 +326,12 @@ watch([filteredNodes, activeKind], ([nodes]) => {
   }
 });
 
-watch(selectedProjectScope, async (scope) => {
-  if (!scope) {
+watch(selectedProjectId, async (projectId) => {
+  if (!projectId) {
     graph.value = null;
     return;
   }
-  await loadGraph(scope);
+  await loadGraph(projectId);
 });
 
 onMounted(async () => {
@@ -349,8 +349,8 @@ async function loadProjects() {
   try {
     const response = await api.listKnowledgeProjects();
     projects.value = response;
-    if (!selectedProjectScope.value && response.length > 0) {
-      selectedProjectScope.value = response[0].project_scope;
+    if (!selectedProjectId.value && response.length > 0) {
+      selectedProjectId.value = response[0].project_id || "";
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to load knowledge projects";
@@ -359,11 +359,11 @@ async function loadProjects() {
   }
 }
 
-async function loadGraph(projectScope: string) {
+async function loadGraph(projectId: string) {
   loadingGraph.value = true;
   errorMessage.value = "";
   try {
-    const response = await api.getKnowledgeGraph(projectScope);
+    const response = await api.getKnowledgeGraph(projectId);
     graph.value = response;
     activeNodeId.value = '__GLOBAL_PAGES__';
     detailDrawerOpen.value = false;
@@ -379,8 +379,8 @@ async function loadGraph(projectScope: string) {
 }
 
 function openDeleteProjectDialog() {
-  const scope = selectedProjectScope.value.trim();
-  if (!scope || deletingProject.value) {
+  const projectId = selectedProjectId.value.trim();
+  if (!projectId || deletingProject.value) {
     return;
   }
   deleteDialogOpen.value = true;
@@ -394,25 +394,24 @@ function cancelDeleteProjectDialog() {
 }
 
 async function confirmDeleteProjectDialog() {
-  const scope = selectedProjectScope.value.trim();
-  if (!scope || deletingProject.value) {
+  const projectId = selectedProjectId.value.trim();
+  if (!projectId || deletingProject.value) {
     return;
   }
 
   deletingProject.value = true;
   errorMessage.value = "";
   try {
-    await api.deleteKnowledgeProject(scope);
-    const nextScope =
-      projects.value.find((item) => item.project_scope !== scope)?.project_scope ?? "";
+    await api.deleteKnowledgeProject(projectId);
+    const nextProjectId = projects.value.find((item) => item.project_id !== projectId)?.project_id ?? "";
     graph.value = null;
     activeNodeId.value = "";
     detailDrawerOpen.value = false;
-    selectedProjectScope.value = "";
+    selectedProjectId.value = "";
     deleteDialogOpen.value = false;
     await loadProjects();
-    if (nextScope) {
-      selectedProjectScope.value = nextScope;
+    if (nextProjectId) {
+      selectedProjectId.value = nextProjectId;
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to delete project graph";
@@ -422,8 +421,8 @@ async function confirmDeleteProjectDialog() {
 }
 
 async function deleteSelectedProject() {
-  const scope = selectedProjectScope.value.trim();
-  if (!scope || deletingProject.value) {
+  const projectId = selectedProjectId.value.trim();
+  if (!projectId || deletingProject.value) {
     return;
   }
   dialog.warning({
@@ -436,16 +435,15 @@ async function deleteSelectedProject() {
       deletingProject.value = true;
       errorMessage.value = "";
       try {
-        await api.deleteKnowledgeProject(scope);
-        const nextScope =
-          projects.value.find((item) => item.project_scope !== scope)?.project_scope ?? "";
+        await api.deleteKnowledgeProject(projectId);
+        const nextProjectId = projects.value.find((item) => item.project_id !== projectId)?.project_id ?? "";
         graph.value = null;
         activeNodeId.value = "";
         detailDrawerOpen.value = false;
-        selectedProjectScope.value = "";
+        selectedProjectId.value = "";
         await loadProjects();
-        if (nextScope) {
-          selectedProjectScope.value = nextScope;
+        if (nextProjectId) {
+          selectedProjectId.value = nextProjectId;
         }
       } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : "Failed to delete project graph";
@@ -466,14 +464,14 @@ async function deleteSelectedProject() {
   try {
     await api.deleteKnowledgeProject(scope);
     const nextScope =
-      projects.value.find((item) => item.project_scope !== scope)?.project_scope ?? "";
+      projects.value.find((item) => item.project_id !== projectId)?.project_id ?? "";
     graph.value = null;
     activeNodeId.value = "";
     detailDrawerOpen.value = false;
-    selectedProjectScope.value = "";
+    selectedProjectId.value = "";
     await loadProjects();
     if (nextScope) {
-      selectedProjectScope.value = nextScope;
+      selectedProjectId.value = nextProjectId;
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "Failed to delete project graph";
@@ -610,9 +608,9 @@ function syncFullscreenState() {
             <span class="sidebar-meta">{{ projects.length }} {{ t("knowledge.projects_count_unit") }}</span>
           </div>
           <div class="project-actions">
-          <select v-model="selectedProjectScope" class="knowledge-select" :disabled="loadingProjects || !projects.length">
+          <select v-model="selectedProjectId" class="knowledge-select" :disabled="loadingProjects || !projects.length">
             <option value="" disabled>{{ t("knowledge.select_project") }}</option>
-            <option v-for="project in projects" :key="project.project_scope" :value="project.project_scope">
+            <option v-for="project in projects" :key="project.project_id || project.project_scope" :value="project.project_id || ''">
               {{ project.project_scope }}
             </option>
           </select>
@@ -620,7 +618,7 @@ function syncFullscreenState() {
               class="icon-btn danger-btn"
               type="button"
               :title="t('knowledge.delete_project')"
-              :disabled="!selectedProjectScope || deletingProject"
+              :disabled="!selectedProjectId || deletingProject"
               @click="openDeleteProjectDialog"
             >
               <i class="fa-solid fa-trash"></i>
@@ -852,7 +850,7 @@ function syncFullscreenState() {
       </div>
       <div class="delete-modal-body">
         <p>
-          {{ t("knowledge.confirm_delete_ask", { scope: selectedProjectScope }) }}
+          {{ t("knowledge.confirm_delete_ask", { scope: selectedProject?.project_scope || selectedProjectId }) }}
         </p>
         <p>{{ t("knowledge.confirm_delete_warning") }}</p>
       </div>

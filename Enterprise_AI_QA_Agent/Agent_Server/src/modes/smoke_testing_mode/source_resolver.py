@@ -33,6 +33,7 @@ class SmokeSourceResolver:
         self,
         *,
         project_scope: str,
+        project_id: str | None = None,
         target_url: str,
         session_id: str = "",
         trace_id: str = "",
@@ -83,7 +84,7 @@ class SmokeSourceResolver:
 
         if self._api_docs_service is not None:
             try:
-                docs = await self._api_docs_service.list_documents()
+                docs = await self._api_docs_service.list_documents(project_id=project_id) if project_id else await self._api_docs_service.list_documents()
                 selected = []
                 requested = set(api_doc_ids)
                 for doc in docs:
@@ -111,14 +112,14 @@ class SmokeSourceResolver:
             except Exception as exc:
                 warnings.append(f"API 文档读取失败：{exc}")
 
-        if self._knowledge_graph_service is not None and project_scope:
+        if self._knowledge_graph_service is not None and (project_id or project_scope):
             try:
-                graph = await self._knowledge_graph_service.get_graph(project_scope)
+                graph = await self._knowledge_graph_service.get_graph(project_id or project_scope)
                 ui_graph = graph.model_dump(mode="json")
                 sources.append(
                     SmokeSource(
                         source_type="ui_graph",
-                        source_id=project_scope,
+                        source_id=project_id or project_scope,
                         title=f"{project_scope} UI 图谱",
                         confidence=0.78,
                         metadata={"page_count": graph.summary.page_count, "element_count": graph.summary.element_count},
