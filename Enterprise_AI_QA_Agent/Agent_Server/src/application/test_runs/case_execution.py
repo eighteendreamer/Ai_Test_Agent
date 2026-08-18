@@ -88,6 +88,8 @@ class CaseExecutionAdapter:
         run: TestRunRecord,
         item: TestRunItemRecord,
         trusted_context_bundle: dict[str, Any] | None = None,
+        tool_job_id: str = "",
+        server_approval_granted: bool = False,
     ) -> CaseToolInvocation:
         tool = self._tool_resolver(run.mode_key)
         if tool.owner_mode_key and tool.owner_mode_key != run.mode_key:
@@ -103,6 +105,10 @@ class CaseExecutionAdapter:
                 f"Case-driven execution requires a bound session: {run.id}"
             )
 
+        sanitized_test_data = deepcopy(version.test_data)
+        envelope_runner_arguments = sanitized_test_data.get("runner_arguments")
+        if isinstance(envelope_runner_arguments, dict):
+            envelope_runner_arguments.pop("_server_approval_granted", None)
         test_case_envelope = {
             "project_id": run.project_id,
             "run_id": run.id,
@@ -117,7 +123,7 @@ class CaseExecutionAdapter:
             "preconditions": list(version.preconditions),
             "steps": [step.model_dump(mode="json") for step in version.steps],
             "assertions": [item.model_dump(mode="json") for item in version.assertions],
-            "test_data": deepcopy(version.test_data),
+            "test_data": sanitized_test_data,
             "cleanup": list(version.cleanup),
             "content_hash": version.content_hash,
         }
@@ -131,6 +137,13 @@ class CaseExecutionAdapter:
             version=version,
             raw_arguments=raw_arguments if isinstance(raw_arguments, dict) else {},
         )
+        arguments.pop("_server_approval_granted", None)
+        if server_approval_granted:
+            if run.mode_key != "security_testing":
+                raise CaseExecutionBlockedError(
+                    "Server approval grants are only valid for security test cases."
+                )
+            arguments["_server_approval_granted"] = True
         arguments["test_case"] = test_case_envelope
 
         call_id = f"test-run-item:{item.id}:attempt:{item.attempt_no}"
@@ -157,6 +170,7 @@ class CaseExecutionAdapter:
             user_message=str(arguments.get("objective") or case.title),
             normalized_input=str(arguments.get("objective") or case.title),
             context_bundle=context_bundle,
+            tool_job_id=tool_job_id,
             tool_key=tool.key,
             call_id=call_id,
         )
@@ -476,6 +490,8 @@ class CaseExecutionAdapter:
         run: TestRunRecord,
         item: TestRunItemRecord,
         trusted_context_bundle: dict[str, Any] | None = None,
+        tool_job_id: str = "",
+        server_approval_granted: bool = False,
     ) -> CaseExecutionOutcome:
         if self._runtime is None or self._jobs is None:
             raise RuntimeError("Case execution runtime dependencies are not configured")
@@ -485,6 +501,8 @@ class CaseExecutionAdapter:
             run=run,
             item=item,
             trusted_context_bundle=trusted_context_bundle,
+            tool_job_id=tool_job_id,
+            server_approval_granted=server_approval_granted,
         )
         tool_record = await self._runtime.execute(
             invocation.tool,

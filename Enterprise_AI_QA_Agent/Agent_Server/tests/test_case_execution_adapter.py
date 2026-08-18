@@ -525,3 +525,118 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
     assert len(outcome.verification_results) == 1
     assert outcome.completion.verification_ids == [outcome.verification_results[0].id]
     assert outcome.completion.actual["verification_results"][0]["passed_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_security_approval_resume_reuses_tool_job_and_injects_server_only_grant():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "assertions": [_CaseAssertion(kind="runner_success", expected=True)],
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "hydra_basic_login",
+                    "target": "https://example.test",
+                }
+            },
+        }
+    )
+    captured = {}
+
+    class FakeRuntime:
+        async def execute(self, tool, call, context):
+            captured["arguments"] = call.arguments
+            captured["tool_job_id"] = context.tool_job_id
+            return ToolExecutionRecord(
+                call_id=call.id,
+                tool_key=tool.key,
+                tool_name=tool.name,
+                status="completed",
+                summary="approved security execution",
+                trace_id=context.trace_id,
+                job_id=context.tool_job_id,
+                input=call.arguments,
+            )
+
+    class FakeJobs:
+        async def get_job_detail(self, job_id):
+            return SimpleNamespace(
+                id=job_id,
+                summary="approved security execution",
+                output_payload={
+                    "status": "completed",
+                    "ok": True,
+                    "semantic_success": True,
+                    "summary": "approved security execution",
+                    "command_profile": "hydra_basic_login",
+                    "parsed_result": {"credential_count": 0},
+                    "findings": [],
+                },
+                artifacts=[],
+            )
+
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        ),
+        runtime_service=FakeRuntime(),
+        tool_job_service=FakeJobs(),
+    )
+
+    outcome = await adapter.execute(
+        case=case,
+        version=version,
+        run=run,
+        item=item,
+        trusted_context_bundle={"trusted_security_authorization": {"status": "verified"}},
+        tool_job_id="job-waiting-1",
+        server_approval_granted=True,
+    )
+
+    assert captured["tool_job_id"] == "job-waiting-1"
+    assert captured["arguments"]["_server_approval_granted"] is True
+    assert outcome.completion.tool_job_id == "job-waiting-1"
+    assert outcome.completion.status == "passed"
+
+
+def test_security_case_cannot_forge_server_only_approval_argument():
+    case, version, run, item = _fixture("security_testing")
+    version = version.model_copy(
+        update={
+            "assertions": [_CaseAssertion(kind="runner_success", expected=True)],
+            "test_data": {
+                "runner_arguments": {
+                    "command_profile": "hydra_basic_login",
+                    "target": "https://example.test",
+                    "_server_approval_granted": True,
+                }
+            },
+        }
+    )
+    adapter = CaseExecutionAdapter(
+        tool_resolver=lambda owner_mode_key: ToolDescriptor(
+            key="security-scan-runner",
+            name="Security Scan Runner",
+            description="test",
+            category="execution",
+            owner_mode_key=owner_mode_key,
+        )
+    )
+
+    invocation = adapter.build_invocation(
+        case=case,
+        version=version,
+        run=run,
+        item=item,
+        trusted_context_bundle={"trusted_security_authorization": {"status": "verified"}},
+    )
+
+    assert "_server_approval_granted" not in invocation.call.arguments
+    assert (
+        "_server_approval_granted"
+        not in invocation.call.arguments["test_case"]["test_data"]["runner_arguments"]
+    )

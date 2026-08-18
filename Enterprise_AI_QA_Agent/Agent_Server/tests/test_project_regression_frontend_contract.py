@@ -57,3 +57,22 @@ def test_security_profile_frontend_contract_consumes_capability_matrix():
     assert "Verification Contract" in view_source
     assert "selectedProfile.verification_capabilities.assertions" in view_source
     assert "selectedProfile.verification_capabilities.parsed_fields" in view_source
+
+
+def test_frontend_run_item_approval_contract_uses_dedicated_endpoint():
+    types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
+    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    store_source = (WEB_ROOT / "stores" / "session.ts").read_text(encoding="utf-8")
+    run_contract = types_source.split("export type RunItemStatus", 1)[1].split(
+        "export interface TestRunDetail",
+        1,
+    )[0]
+
+    assert '"waiting_approval"' in run_contract
+    assert "waiting_approval: number;" in run_contract
+    assert "approval_id?: string | null;" in run_contract
+    assert "tool_job_id?: string | null;" in run_contract
+    assert "resolveTestRunItemApproval(" in api_source
+    assert "/run-items/${encodeURIComponent(itemId)}/approval" in api_source
+    assert "approval_id: approvalId" in api_source
+    assert 'approval?.metadata?.source === "test_run_case_execution"' in store_source

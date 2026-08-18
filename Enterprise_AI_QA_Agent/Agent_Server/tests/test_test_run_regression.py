@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -22,6 +22,7 @@ from src.schemas.run_management import (
     RegressionRunCreateRequest,
     RunClaimRequest,
     RunItemCompleteRequest,
+    RunItemCompletion,
     RunItemLeaseRequest,
     TestCaseResultRecord as _CaseResultRecord,
     TestRunCreateRequest as _RunCreateRequest,
@@ -765,3 +766,96 @@ async def test_regression_batches_system_api_uses_keyset_timeline():
     assert first_payload["items"][0]["run_kind"] == "regression"
     assert first_payload["items"][0]["parent_run_id"] == parent.run.id
     assert first_payload["items"][0]["item_status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_waiting_approval_pauses_lease_without_result_and_resumes_same_attempt():
+    store = InMemoryTestRunStore()
+    now = datetime.now(timezone.utc)
+    run = _RunRecord(
+        id="run-approval",
+        project_id="project-1",
+        suite_id="suite-1",
+        mode_key="security_testing",
+        session_id="session-1",
+        created_at=now,
+        updated_at=now,
+    )
+    item = _RunItemRecord(
+        id="item-approval",
+        run_id=run.id,
+        case_id="case-1",
+        case_version_id="version-1",
+        position=1,
+        created_at=now,
+        updated_at=now,
+    )
+    await store.create_run(run, [item])
+    claimed, attempt = (
+        await store.claim_items(
+            run_id=run.id,
+            worker_id="worker-1",
+            limit=1,
+            lease_seconds=15,
+            now=now,
+        )
+    )[0]
+    running = await store.start_item(claimed.id, claimed.lease_token, now)
+
+    waiting = await store.mark_waiting_approval(
+        running.id,
+        running.lease_token,
+        approval_id="approval-1",
+        tool_job_id="job-1",
+        now=now,
+    )
+    recovered = await store.recover_all_expired(now.replace(year=now.year + 1))
+    waiting_detail = await store.get_run(run.id)
+
+    assert waiting.status == "waiting_approval"
+    assert waiting.lease_expires_at is None
+    assert waiting.approval_id == "approval-1"
+    assert waiting.tool_job_id == "job-1"
+    assert recovered == 0
+    assert waiting_detail.run.status == "running"
+    assert waiting_detail.run.stats.waiting_approval == 1
+    assert waiting_detail.results == []
+    assert waiting_detail.attempts[0].id == attempt.id
+    assert waiting_detail.attempts[0].status == "waiting_approval"
+
+    resumed = await store.resume_waiting_approval(
+        waiting.id,
+        approval_id="approval-1",
+        lease_seconds=90,
+        now=now + timedelta(minutes=5),
+    )
+    replayed_resume = await store.resume_waiting_approval(
+        waiting.id,
+        approval_id="approval-1",
+        lease_seconds=90,
+        now=now + timedelta(minutes=5),
+    )
+    restarted = await store.start_item(
+        resumed.id,
+        resumed.lease_token,
+        now + timedelta(minutes=5),
+    )
+    restarted_detail = await store.get_run(run.id)
+    result = await store.complete_item(
+        restarted.id,
+        restarted.lease_token,
+        RunItemCompletion(
+            status="passed",
+            summary="approved execution passed",
+            payload_hash="a" * 64,
+        ),
+        now + timedelta(minutes=5),
+    )
+
+    assert resumed.attempt_no == attempt.attempt_no
+    assert resumed.lease_token == attempt.lease_token
+    assert replayed_resume.attempt_no == attempt.attempt_no
+    assert replayed_resume.lease_token == attempt.lease_token
+    assert restarted.started_at == running.started_at
+    assert restarted_detail.attempts[0].started_at == running.started_at
+    assert result.status == "passed"

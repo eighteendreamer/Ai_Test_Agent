@@ -164,7 +164,7 @@ class CoordinatorRuntimeService:
             debate_round_index = int(worker.context.get("debate_round_index") or 0)
             dispatch_role = str(worker.context.get("dispatch_role") or "worker").strip() or "worker"
             mode_key = self._resolve_worker_mode_key(worker)
-            child_session = await self._session_service.create_session(
+            child_session = await self._session_service.create_internal_session(
                 CreateSessionRequest(
                     title=f"Worker: {worker.description}",
                     session_mode=SessionMode.background_task,

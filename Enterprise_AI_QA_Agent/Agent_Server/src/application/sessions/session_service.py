@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
@@ -50,6 +50,9 @@ DEFAULT_EVENT_HISTORY_LIMIT = 500
 DEFAULT_REPLAY_EVENT_LIMIT = 500
 DEFAULT_SNAPSHOT_HISTORY_LIMIT = 10
 RECENT_CONVERSATION_EVENT_LIMIT = 10
+SERVER_MANAGED_SESSION_METADATA_KEYS = frozenset(
+    {"environment", "resource_scope", "security_authorization"}
+)
 SNAPSHOT_DETAIL_GRAPH_KEYS = {
     "turn_id",
     "trace_id",
@@ -121,6 +124,14 @@ class SessionService:
         )
 
     async def create_session(self, payload: CreateSessionRequest) -> SessionDetail:
+        self._reject_server_managed_metadata(payload.metadata)
+        return await self._create_session(payload)
+
+    async def create_internal_session(self, payload: CreateSessionRequest) -> SessionDetail:
+        """Create a session from metadata assembled by server-owned orchestration."""
+        return await self._create_session(payload)
+
+    async def _create_session(self, payload: CreateSessionRequest) -> SessionDetail:
         if payload.project_id:
             await self._require_active_project(payload.project_id)
         now = datetime.utcnow()
@@ -187,6 +198,7 @@ class SessionService:
             session.preferred_model = payload.preferred_model
 
         if payload.metadata is not None:
+            self._reject_server_managed_metadata(payload.metadata)
             session.metadata.update(payload.metadata)
             metadata_changed = True
 
@@ -208,6 +220,17 @@ class SessionService:
         )
         refreshed = await self._require_session(session_id)
         return await self._to_detail(refreshed)
+
+    @staticmethod
+    def _reject_server_managed_metadata(metadata: dict[str, Any] | None) -> None:
+        if not isinstance(metadata, dict):
+            return
+        forbidden = sorted(SERVER_MANAGED_SESSION_METADATA_KEYS.intersection(metadata))
+        if forbidden:
+            raise ValueError(
+                "Session metadata keys are server-managed and cannot be set by clients: "
+                + ", ".join(forbidden)
+            )
 
     async def list_events(
         self,
@@ -415,6 +438,10 @@ class SessionService:
             existing_approvals = await self._store.list_approvals(session_id)
             proxy_approval = next((item for item in existing_approvals if item.id == approval_id), None)
             proxy_metadata = proxy_approval.metadata if proxy_approval is not None else {}
+            if proxy_metadata.get("source") == "test_run_case_execution":
+                raise ValueError(
+                    "Use the test run item approval endpoint for test-run approvals."
+                )
             proxy_child_session_id = str(proxy_metadata.get("proxy_child_session_id") or "").strip()
             proxy_child_approval_id = str(proxy_metadata.get("proxy_child_approval_id") or "").strip()
 

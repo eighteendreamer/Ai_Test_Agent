@@ -12,7 +12,9 @@ from src.schemas.run_management import (
     RunCancelRequest,
     RunClaimRequest,
     RunClaimResponse,
+    RunItemApprovalDecisionRequest,
     RunItemCompleteRequest,
+    RunItemApprovalPending,
     RunItemExecuteRequest,
     RunItemHeartbeatRequest,
     RunItemLeaseRequest,
@@ -186,7 +188,10 @@ async def complete_test_run_item(
         raise _http_error(exc) from exc
 
 
-@router.post("/run-items/{item_id}/execute", response_model=TestCaseResultRecord)
+@router.post(
+    "/run-items/{item_id}/execute",
+    response_model=RunItemApprovalPending | TestCaseResultRecord,
+)
 async def execute_test_run_item(
     item_id: str,
     payload: RunItemExecuteRequest,
@@ -194,6 +199,21 @@ async def execute_test_run_item(
 ):
     try:
         return await request.app.state.test_run_execution_service.execute_item(
+            item_id,
+            payload,
+        )
+    except (KeyError, ValueError, RuntimeError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/run-items/{item_id}/approval", response_model=TestCaseResultRecord)
+async def resolve_test_run_item_approval(
+    item_id: str,
+    payload: RunItemApprovalDecisionRequest,
+    request: Request,
+):
+    try:
+        return await request.app.state.test_run_execution_service.resolve_item_approval(
             item_id,
             payload,
         )

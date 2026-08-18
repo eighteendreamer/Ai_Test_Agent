@@ -1026,3 +1026,109 @@ def test_postgres_cancel_uses_the_same_item_then_run_lock_order(monkeypatch):
         if "FROM agent_test_runs" in statement and "FOR UPDATE" in statement
     ]
     assert prior_run_locks == []
+
+
+def test_postgres_waiting_approval_resume_reuses_attempt_and_first_start(monkeypatch):
+    store_module = import_module("src.application.test_runs.run_store")
+    schemas = import_module("src.schemas.run_management")
+    started_at = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    resumed_at = started_at + timedelta(minutes=5)
+    item = schemas.TestRunItemRecord(
+        id="00000000-0000-0000-0000-000000000031",
+        run_id="00000000-0000-0000-0000-000000000032",
+        case_id="00000000-0000-0000-0000-000000000033",
+        case_version_id="00000000-0000-0000-0000-000000000034",
+        position=1,
+        status="running",
+        attempt_no=1,
+        lease_owner="worker-1",
+        lease_token="lease-approval-1",
+        lease_expires_at=resumed_at,
+        heartbeat_at=started_at,
+        created_at=started_at,
+        updated_at=started_at,
+        started_at=started_at,
+    )
+    attempt = schemas.TestRunAttemptRecord(
+        id="00000000-0000-0000-0000-000000000035",
+        run_id=item.run_id,
+        run_item_id=item.id,
+        attempt_no=1,
+        worker_id="worker-1",
+        lease_token=item.lease_token,
+        status="running",
+        claimed_at=started_at,
+        started_at=started_at,
+        heartbeat_at=started_at,
+    )
+    state = {"item": item, "attempt": attempt}
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    class Context:
+        def __enter__(self):
+            return Connection()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(store_module, "postgres_connect", lambda settings: Context())
+    store = store_module.PostgresTestRunStore(Settings())
+    monkeypatch.setattr(store, "_lock_item", lambda cur, item_id: state["item"])
+    monkeypatch.setattr(
+        store,
+        "_lock_attempt",
+        lambda cur, item_id, lease_token: state["attempt"],
+    )
+    monkeypatch.setattr(
+        store,
+        "_write_item",
+        lambda cur, updated: state.__setitem__("item", updated),
+    )
+    monkeypatch.setattr(
+        store,
+        "_write_attempt",
+        lambda cur, updated: state.__setitem__("attempt", updated),
+    )
+    monkeypatch.setattr(store, "_refresh_run_in_cursor", lambda cur, run_id, now: None)
+
+    waiting = store._mark_waiting_approval_sync(
+        item.id,
+        item.lease_token,
+        "approval-1",
+        "job-1",
+        started_at,
+    )
+    resumed = store._resume_waiting_approval_sync(
+        item.id,
+        "approval-1",
+        90,
+        resumed_at,
+    )
+    replayed = store._resume_waiting_approval_sync(
+        item.id,
+        "approval-1",
+        90,
+        resumed_at,
+    )
+    restarted = store._start_item_sync(item.id, item.lease_token, resumed_at)
+
+    assert waiting.status == "waiting_approval"
+    assert waiting.lease_expires_at is None
+    assert waiting.approval_id == "approval-1"
+    assert waiting.tool_job_id == "job-1"
+    assert resumed.status == "claimed"
+    assert replayed.lease_token == item.lease_token
+    assert state["attempt"].id == attempt.id
+    assert state["attempt"].attempt_no == attempt.attempt_no
+    assert restarted.started_at == started_at
+    assert state["attempt"].started_at == started_at

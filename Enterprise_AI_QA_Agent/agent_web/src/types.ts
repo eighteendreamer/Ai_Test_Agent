@@ -1282,13 +1282,14 @@ export interface TestSuitePage {
 }
 
 export type TestRunStatus = "queued" | "running" | "completed" | "cancelled";
-export type RunItemStatus = "queued" | "claimed" | "running" | "passed" | "failed" | "error" | "blocked" | "skipped" | "cancelled";
+export type RunItemStatus = "queued" | "claimed" | "running" | "waiting_approval" | "passed" | "failed" | "error" | "blocked" | "skipped" | "cancelled";
 
 export interface TestRunStats {
   total: number;
   queued: number;
   claimed: number;
   running: number;
+  waiting_approval: number;
   passed: number;
   failed: number;
   error: number;
@@ -1327,12 +1328,36 @@ export interface TestRunItemRecord {
   lease_token?: string | null;
   lease_expires_at?: string | null;
   heartbeat_at?: string | null;
+  approval_id?: string | null;
+  tool_job_id?: string | null;
   result_id?: string | null;
   regression_source_result_id?: string | null;
   created_at: string;
   updated_at: string;
   started_at?: string | null;
   completed_at?: string | null;
+}
+
+export interface TestCaseResultRecord {
+  id: string;
+  run_id: string;
+  run_item_id: string;
+  case_id: string;
+  case_version_id: string;
+  regression_source_result_id?: string | null;
+  attempt_id: string;
+  attempt_no: number;
+  status: "passed" | "failed" | "error" | "blocked" | "skipped";
+  summary: string;
+  actual: Record<string, unknown>;
+  evidence_refs: Array<Record<string, unknown>>;
+  artifact_ids: string[];
+  verification_ids: string[];
+  tool_job_id?: string | null;
+  metrics: Record<string, unknown>;
+  error_message?: string | null;
+  payload_hash: string;
+  created_at: string;
 }
 
 export interface TestRunDetail {

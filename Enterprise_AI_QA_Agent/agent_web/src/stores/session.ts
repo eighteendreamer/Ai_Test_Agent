@@ -1001,7 +1001,16 @@ export const useSessionStore = defineStore("session", {
       this.resolvingApprovalIds = [...this.resolvingApprovalIds, approvalId];
       this.error = "";
       try {
-        await api.resolveApproval(this.session.id, approvalId, decision, reason);
+        const approval = this.session.pending_approvals.find((item) => item.id === approvalId);
+        if (approval?.metadata?.source === "test_run_case_execution") {
+          const runItemId = String(approval.metadata.run_item_id || "").trim();
+          if (!runItemId) {
+            throw new Error("Test run approval is missing run_item_id.");
+          }
+          await api.resolveTestRunItemApproval(runItemId, approvalId, decision, reason);
+        } else {
+          await api.resolveApproval(this.session.id, approvalId, decision, reason);
+        }
         if (this.session) {
           this.session.pending_approvals = this.session.pending_approvals.filter((item) => item.id !== approvalId);
         }

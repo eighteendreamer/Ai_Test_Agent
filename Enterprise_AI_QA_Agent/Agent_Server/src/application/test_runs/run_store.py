@@ -46,6 +46,7 @@ class TestRunStore(Protocol):
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
+    async def get_item(self, item_id: str) -> TestRunItemRecord | None: ...
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]: ...
     async def list_regression_candidates(
         self,
@@ -98,6 +99,21 @@ class TestRunStore(Protocol):
         self,
         item_id: str,
         lease_token: str,
+        lease_seconds: int,
+        now: datetime,
+    ) -> TestRunItemRecord: ...
+    async def mark_waiting_approval(
+        self,
+        item_id: str,
+        lease_token: str,
+        approval_id: str,
+        tool_job_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord: ...
+    async def resume_waiting_approval(
+        self,
+        item_id: str,
+        approval_id: str,
         lease_seconds: int,
         now: datetime,
     ) -> TestRunItemRecord: ...
@@ -164,6 +180,10 @@ class InMemoryTestRunStore:
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
         result = self._results.get(result_id)
         return result.model_copy(deep=True) if result else None
+
+    async def get_item(self, item_id: str) -> TestRunItemRecord | None:
+        item = self._items.get(item_id)
+        return item.model_copy(deep=True) if item else None
 
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
         wanted = {str(run_id).strip() for run_id in run_ids if str(run_id).strip()}
@@ -441,13 +461,21 @@ class InMemoryTestRunStore:
             item = self._require_active_lease(item_id, lease_token, now, {"claimed"})
             updated = item.model_copy(
                 deep=True,
-                update={"status": "running", "started_at": now, "updated_at": now},
+                update={
+                    "status": "running",
+                    "started_at": item.started_at or now,
+                    "updated_at": now,
+                },
             )
             self._items[item_id] = updated
             attempt = self._active_attempt(item_id, lease_token)
             self._attempts[attempt.id] = attempt.model_copy(
                 deep=True,
-                update={"status": "running", "started_at": now, "heartbeat_at": now},
+                update={
+                    "status": "running",
+                    "started_at": attempt.started_at or now,
+                    "heartbeat_at": now,
+                },
             )
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
@@ -480,6 +508,85 @@ class InMemoryTestRunStore:
                 deep=True,
                 update={"heartbeat_at": now},
             )
+            return updated.model_copy(deep=True)
+
+    async def mark_waiting_approval(
+        self,
+        item_id: str,
+        lease_token: str,
+        approval_id: str,
+        tool_job_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        async with self._lock:
+            item = self._require_active_lease(item_id, lease_token, now, {"running"})
+            attempt = self._active_attempt(item_id, lease_token)
+            updated = item.model_copy(
+                deep=True,
+                update={
+                    "status": "waiting_approval",
+                    "lease_expires_at": None,
+                    "heartbeat_at": now,
+                    "approval_id": approval_id,
+                    "tool_job_id": tool_job_id,
+                    "updated_at": now,
+                },
+            )
+            self._items[item_id] = updated
+            self._attempts[attempt.id] = attempt.model_copy(
+                deep=True,
+                update={
+                    "status": "waiting_approval",
+                    "heartbeat_at": now,
+                    "approval_id": approval_id,
+                    "tool_job_id": tool_job_id,
+                },
+            )
+            self._refresh_run(item.run_id, now)
+            return updated.model_copy(deep=True)
+
+    async def resume_waiting_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        lease_seconds: int,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        async with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                raise KeyError(f"Test run item not found: {item_id}")
+            if item.status == "claimed" and item.approval_id == approval_id:
+                if (
+                    not item.lease_token
+                    or item.lease_expires_at is None
+                    or item.lease_expires_at <= now
+                ):
+                    raise ValueError(f"Resumed run item lease is not active: {item_id}")
+                attempt = self._active_attempt(item_id, item.lease_token)
+                if attempt.status != "claimed":
+                    raise ValueError(f"Resumed run item attempt is not claimed: {item_id}")
+                return item.model_copy(deep=True)
+            if item.status != "waiting_approval" or item.approval_id != approval_id:
+                raise ValueError(f"Run item is not waiting for this approval: {item_id}")
+            if not item.lease_token:
+                raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
+            attempt = self._active_attempt(item_id, item.lease_token)
+            updated = item.model_copy(
+                deep=True,
+                update={
+                    "status": "claimed",
+                    "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                    "heartbeat_at": now,
+                    "updated_at": now,
+                },
+            )
+            self._items[item_id] = updated
+            self._attempts[attempt.id] = attempt.model_copy(
+                deep=True,
+                update={"status": "claimed", "heartbeat_at": now},
+            )
+            self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
 
     async def complete_item(
@@ -559,7 +666,7 @@ class InMemoryTestRunStore:
                 item = self._items[item_id]
                 if item.status in TERMINAL_ITEM_STATUSES:
                     continue
-                if item.lease_token and item.status in ACTIVE_ITEM_STATUSES:
+                if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval"}:
                     attempt = self._active_attempt(item_id, item.lease_token)
                     self._attempts[attempt.id] = attempt.model_copy(
                         deep=True,
@@ -760,6 +867,9 @@ class PostgresTestRunStore:
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
         return await asyncio.to_thread(self._get_result_sync, result_id)
 
+    async def get_item(self, item_id: str) -> TestRunItemRecord | None:
+        return await asyncio.to_thread(self._get_item_sync, item_id)
+
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
         return await asyncio.to_thread(
             self._find_projected_legacy_smoke_run_ids_sync,
@@ -844,6 +954,38 @@ class PostgresTestRunStore:
             run_id,
             worker_id,
             limit,
+            lease_seconds,
+            now,
+        )
+
+    async def mark_waiting_approval(
+        self,
+        item_id: str,
+        lease_token: str,
+        approval_id: str,
+        tool_job_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        return await asyncio.to_thread(
+            self._mark_waiting_approval_sync,
+            item_id,
+            lease_token,
+            approval_id,
+            tool_job_id,
+            now,
+        )
+
+    async def resume_waiting_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        lease_seconds: int,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        return await asyncio.to_thread(
+            self._resume_waiting_approval_sync,
+            item_id,
+            approval_id,
             lease_seconds,
             now,
         )
@@ -1123,6 +1265,16 @@ class PostgresTestRunStore:
                 )
                 row = cur.fetchone()
         return self._result_from_value(row["record"]) if row else None
+
+    def _get_item_sync(self, item_id: str) -> TestRunItemRecord | None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._item_table} WHERE id = %s",
+                    (item_id,),
+                )
+                row = cur.fetchone()
+        return self._item_from_value(row["record"]) if row else None
 
     def _find_projected_legacy_smoke_run_ids_sync(self, run_ids: list[str]) -> set[str]:
         normalized = list(dict.fromkeys(str(run_id).strip() for run_id in run_ids if str(run_id).strip()))
@@ -1512,10 +1664,18 @@ class PostgresTestRunStore:
                 self._validate_lease(item, lease_token, now, {"claimed"})
                 attempt = self._lock_attempt(cur, item_id, lease_token)
                 item = item.model_copy(
-                    update={"status": "running", "started_at": now, "updated_at": now}
+                    update={
+                        "status": "running",
+                        "started_at": item.started_at or now,
+                        "updated_at": now,
+                    }
                 )
                 attempt = attempt.model_copy(
-                    update={"status": "running", "started_at": now, "heartbeat_at": now}
+                    update={
+                        "status": "running",
+                        "started_at": attempt.started_at or now,
+                        "heartbeat_at": now,
+                    }
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
@@ -1615,6 +1775,84 @@ class PostgresTestRunStore:
                 self._refresh_run_in_cursor(cur, item.run_id, now)
         return result
 
+    def _mark_waiting_approval_sync(
+        self,
+        item_id: str,
+        lease_token: str,
+        approval_id: str,
+        tool_job_id: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                self._validate_lease(item, lease_token, now, {"running"})
+                attempt = self._lock_attempt(cur, item_id, lease_token)
+                item = item.model_copy(
+                    update={
+                        "status": "waiting_approval",
+                        "lease_expires_at": None,
+                        "heartbeat_at": now,
+                        "approval_id": approval_id,
+                        "tool_job_id": tool_job_id,
+                        "updated_at": now,
+                    }
+                )
+                attempt = attempt.model_copy(
+                    update={
+                        "status": "waiting_approval",
+                        "heartbeat_at": now,
+                        "approval_id": approval_id,
+                        "tool_job_id": tool_job_id,
+                    }
+                )
+                self._write_item(cur, item)
+                self._write_attempt(cur, attempt)
+                self._refresh_run_in_cursor(cur, item.run_id, now)
+        return item
+
+    def _resume_waiting_approval_sync(
+        self,
+        item_id: str,
+        approval_id: str,
+        lease_seconds: int,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                if item.status == "claimed" and item.approval_id == approval_id:
+                    if (
+                        not item.lease_token
+                        or item.lease_expires_at is None
+                        or item.lease_expires_at <= now
+                    ):
+                        raise ValueError(f"Resumed run item lease is not active: {item_id}")
+                    attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                    if attempt.status != "claimed":
+                        raise ValueError(f"Resumed run item attempt is not claimed: {item_id}")
+                    return item
+                if item.status != "waiting_approval" or item.approval_id != approval_id:
+                    raise ValueError(f"Run item is not waiting for this approval: {item_id}")
+                if not item.lease_token:
+                    raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
+                attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                item = item.model_copy(
+                    update={
+                        "status": "claimed",
+                        "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                        "heartbeat_at": now,
+                        "updated_at": now,
+                    }
+                )
+                attempt = attempt.model_copy(
+                    update={"status": "claimed", "heartbeat_at": now}
+                )
+                self._write_item(cur, item)
+                self._write_attempt(cur, attempt)
+                self._refresh_run_in_cursor(cur, item.run_id, now)
+        return item
+
     def _recover_expired_sync(self, run_id: str, now: datetime) -> int:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1707,7 +1945,7 @@ class PostgresTestRunStore:
                         raise KeyError(f"Test run not found: {run_id}")
                     return detail
                 for item in items:
-                    if item.lease_token and item.status in ACTIVE_ITEM_STATUSES:
+                    if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval"}:
                         attempt = self._lock_attempt(cur, item.id, item.lease_token)
                         self._write_attempt(
                             cur,

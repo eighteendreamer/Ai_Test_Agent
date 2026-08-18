@@ -32,6 +32,7 @@ from src.schemas.run_management import (
     RunClaimResponse,
     RunItemClaim,
     RunItemCompleteRequest,
+    RunItemApprovalWaitRequest,
     RunItemCompletion,
     RunItemHeartbeatRequest,
     RunItemLeaseRequest,
@@ -673,6 +674,18 @@ class TestRunService:
         await self._emit_for_item(item, "test_run.item_started")
         return item
 
+    async def get_item(self, item_id: str) -> TestRunItemRecord:
+        item = await self._store.get_item(item_id)
+        if item is None:
+            raise KeyError(f"Test run item not found: {item_id}")
+        return item
+
+    async def get_result(self, result_id: str) -> TestCaseResultRecord:
+        result = await self._store.get_result(result_id)
+        if result is None:
+            raise KeyError(f"Test result not found: {result_id}")
+        return result
+
     async def heartbeat_item(
         self,
         item_id: str,
@@ -684,6 +697,55 @@ class TestRunService:
             payload.lease_seconds,
             self._clock(),
         )
+        return item
+
+    async def mark_waiting_approval(
+        self,
+        item_id: str,
+        payload: RunItemApprovalWaitRequest,
+    ) -> TestRunItemRecord:
+        item = await self._store.mark_waiting_approval(
+            item_id,
+            payload.lease_token,
+            payload.approval_id,
+            payload.tool_job_id,
+            self._clock(),
+        )
+        logger.info(
+            "test_run_item_waiting_approval",
+            extra={
+                "run_id": item.run_id,
+                "run_item_id": item.id,
+                "approval_id": payload.approval_id,
+                "tool_job_id": payload.tool_job_id,
+                "approval_scope_hash": payload.approval_scope_hash,
+            },
+        )
+        await self._emit_for_item(item, "test_run.item_waiting_approval")
+        return item
+
+    async def resume_waiting_approval(
+        self,
+        item_id: str,
+        approval_id: str,
+        *,
+        lease_seconds: int = 90,
+    ) -> TestRunItemRecord:
+        item = await self._store.resume_waiting_approval(
+            item_id,
+            approval_id,
+            lease_seconds,
+            self._clock(),
+        )
+        logger.info(
+            "test_run_item_approval_resume_requested",
+            extra={
+                "run_id": item.run_id,
+                "run_item_id": item.id,
+                "approval_id": approval_id,
+            },
+        )
+        await self._emit_for_item(item, "test_run.item_approval_resume_requested")
         return item
 
     async def complete_item(

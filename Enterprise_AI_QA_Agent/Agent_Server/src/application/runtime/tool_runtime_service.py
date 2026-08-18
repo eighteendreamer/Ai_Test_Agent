@@ -2763,7 +2763,10 @@ class ToolRuntimeService:
                 "error": "profile_runner_mismatch",
             }
 
-        environment = str(arguments.get("environment") or context.context_bundle.get("environment") or "testing").strip().lower()
+        trusted_environment = str(context.context_bundle.get("environment") or "").strip()
+        environment = str(
+            trusted_environment or arguments.get("environment") or "testing"
+        ).strip().lower()
         if not risk_policy.is_allowed_in_environment(profile.profile_key, environment):
             return {
                 "status": "denied",

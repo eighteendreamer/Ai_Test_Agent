@@ -693,6 +693,43 @@ def test_free_command_and_bootstrap_are_server_gated():
     assert disabled["error"] == "free_command_disabled"
 
 
+def test_security_runner_trusted_production_environment_cannot_be_downgraded_by_case():
+    runtime = ToolRuntimeService(
+        settings=Settings(
+            security_runner_backend="docker",
+            security_runner_allow_free_command=False,
+            security_runner_tool_bootstrap=False,
+        )
+    )
+    context = ToolExecutionContext(
+        session_id="session",
+        turn_id="turn",
+        trace_id="trace",
+        user_message="",
+        normalized_input="",
+        context_bundle={"environment": "production"},
+    )
+
+    result = asyncio.run(
+        runtime._execute_security_runner(
+            {
+                "command_profile": "hydra_basic_login",
+                "target": "https://example.test",
+                "environment": "testing",
+                "username": "test-user",
+                "password": "test-password",
+                "_server_approval_granted": True,
+            },
+            context,
+            "security-scan-runner",
+        )
+    )
+
+    assert result["status"] == "denied"
+    assert result["error"] == "profile_blocked_in_environment"
+    assert result["environment"] == "production"
+
+
 def test_execution_policy_rechecks_concrete_arguments():
     tool = ToolRegistry().get("performance-test-runner")
     decision = ExecutionSafetyPolicy().evaluate_tool_call(

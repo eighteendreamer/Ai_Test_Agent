@@ -320,6 +320,9 @@ async def lifespan(app: FastAPI):
         test_case_service=test_case_service,
         adapter=case_execution_adapter,
         session_store=store,
+        permission_service=permission_service,
+        tool_job_service=tool_job_service,
+        security_settings=settings,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,

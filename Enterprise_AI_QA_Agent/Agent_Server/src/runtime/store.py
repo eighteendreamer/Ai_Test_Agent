@@ -297,13 +297,18 @@ class InMemorySessionStore:
         status: ToolApprovalStatus,
         reason: str | None = None,
     ) -> ToolApprovalRequest:
-        if session_id not in self._approvals or approval_id not in self._approvals[session_id]:
-            raise KeyError(approval_id)
-        approval = self._approvals[session_id][approval_id]
-        approval.status = status
-        approval.decision_note = reason
-        approval.resolved_at = datetime.utcnow()
-        return approval
+        async with self._lock:
+            if session_id not in self._approvals or approval_id not in self._approvals[session_id]:
+                raise KeyError(approval_id)
+            approval = self._approvals[session_id][approval_id]
+            if approval.status != ToolApprovalStatus.pending:
+                if approval.status == status:
+                    return approval
+                raise ValueError(f"Approval already resolved: {approval_id}")
+            approval.status = status
+            approval.decision_note = reason
+            approval.resolved_at = datetime.utcnow()
+            return approval
 
     async def delete_session(self, session_id: str) -> bool:
         async with self._lock:

@@ -102,6 +102,7 @@ import type {
   TestCasePage,
   TestCasePriority,
   TestCaseRecord,
+  TestCaseResultRecord,
   TestCaseVersionRecord,
   TestSuiteBundle,
   TestSuitePage,
@@ -283,6 +284,17 @@ export const api = {
     return request(`/api/v1/suites/${encodeURIComponent(suiteId)}/runs`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+  resolveTestRunItemApproval(
+    itemId: string,
+    approvalId: string,
+    decision: "approved" | "denied",
+    reason?: string,
+  ): Promise<TestCaseResultRecord> {
+    return request(`/api/v1/run-items/${encodeURIComponent(itemId)}/approval`, {
+      method: "POST",
+      body: JSON.stringify({ approval_id: approvalId, decision, reason: reason || null }),
     });
   },
   listTestRuns(projectId: string, params: {

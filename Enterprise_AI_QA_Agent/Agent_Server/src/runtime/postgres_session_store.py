@@ -762,14 +762,25 @@ class PostgresSessionStore:
                     SET status = %s,
                         decision_note = %s,
                         resolved_at = %s
-                    WHERE id = %s AND session_id = %s
+                    WHERE id = %s AND session_id = %s AND status = 'pending'
                     RETURNING *
                     """,
                     (status.value, reason, resolved_at, approval_id, session_id),
                 )
                 row = cur.fetchone()
                 if row is None:
-                    raise KeyError(approval_id)
+                    cur.execute(
+                        f"SELECT * FROM {self._settings.postgres_approval_table} "
+                        "WHERE id = %s AND session_id = %s",
+                        (approval_id, session_id),
+                    )
+                    existing = cur.fetchone()
+                    if existing is None:
+                        raise KeyError(approval_id)
+                    approval = _approval_from_row(existing)
+                    if approval.status == status:
+                        return approval
+                    raise ValueError(f"Approval already resolved: {approval_id}")
                 cur.execute(
                     f"UPDATE {self._settings.postgres_session_table} SET updated_at = %s WHERE id = %s",
                     (resolved_at, session_id),

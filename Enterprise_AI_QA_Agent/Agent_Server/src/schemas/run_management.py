@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
+from src.schemas.session import ApprovalDecisionRequest
 
 
 TestRunKind = Literal["normal", "regression"]
@@ -15,6 +16,7 @@ RunItemStatus = Literal[
     "queued",
     "claimed",
     "running",
+    "waiting_approval",
     "passed",
     "failed",
     "error",
@@ -25,6 +27,7 @@ RunItemStatus = Literal[
 RunAttemptStatus = Literal[
     "claimed",
     "running",
+    "waiting_approval",
     "passed",
     "failed",
     "error",
@@ -42,6 +45,7 @@ class TestRunStats(BaseModel):
     queued: int = 0
     claimed: int = 0
     running: int = 0
+    waiting_approval: int = 0
     passed: int = 0
     failed: int = 0
     error: int = 0
@@ -81,6 +85,8 @@ class TestRunItemRecord(BaseModel):
     lease_token: str | None = None
     lease_expires_at: datetime | None = None
     heartbeat_at: datetime | None = None
+    approval_id: str | None = None
+    tool_job_id: str | None = None
     result_id: str | None = None
     regression_source_result_id: str | None = None
     created_at: datetime
@@ -100,6 +106,8 @@ class TestRunAttemptRecord(BaseModel):
     claimed_at: datetime
     started_at: datetime | None = None
     heartbeat_at: datetime | None = None
+    approval_id: str | None = None
+    tool_job_id: str | None = None
     completed_at: datetime | None = None
 
 
@@ -308,7 +316,30 @@ class RunItemHeartbeatRequest(RunItemLeaseRequest):
 
 
 class RunItemExecuteRequest(RunItemLeaseRequest):
-    pass
+    approval_id: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class RunItemApprovalDecisionRequest(ApprovalDecisionRequest):
+    model_config = ConfigDict(extra="forbid")
+
+    approval_id: str = Field(min_length=1, max_length=160)
+
+
+class RunItemApprovalWaitRequest(RunItemLeaseRequest):
+    approval_id: str = Field(min_length=1, max_length=160)
+    tool_job_id: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=4000)
+    approval_scope_hash: str = Field(min_length=64, max_length=64)
+
+
+class RunItemApprovalPending(BaseModel):
+    status: Literal["waiting_approval"] = "waiting_approval"
+    run_id: str
+    run_item_id: str
+    attempt_no: int = Field(ge=1)
+    approval_id: str
+    tool_job_id: str
+    summary: str
 
 
 class RunItemCompleteRequest(RunItemLeaseRequest):
