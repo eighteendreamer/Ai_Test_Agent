@@ -1,0 +1,362 @@
+<script setup lang="ts">
+import { computed, ref, watch } from "vue";
+
+import { t } from "../../services/i18n";
+import type { ExecutionEvent, ToolArtifactRecord, ToolJobRecord } from "../../types";
+import { formatServerDateTime } from "../../utils/datetime";
+import {
+  inspectArtifacts,
+  inspectLogs,
+  inspectOutput,
+  inspectPrompt,
+  inspectSkillBlocks,
+  inspectSkills,
+  inspectTools,
+  type InspectPresence,
+} from "./inspect";
+import { FLOW_STAGE_LABEL_KEYS, FLOW_STATUS_LABEL_KEYS, type FlowNodeStatus, type FlowStageId } from "./stages";
+
+const props = defineProps<{
+  open: boolean;
+  stageId: FlowStageId | "";
+  status: FlowNodeStatus | "";
+  events: ExecutionEvent[];
+  graphState: Record<string, unknown> | null;
+  toolJobs: ToolJobRecord[];
+  artifacts: ToolArtifactRecord[];
+  artifactsLoaded: boolean;
+  turnId: string;
+}>();
+
+const emit = defineEmits<{
+  close: [];
+}>();
+
+type InspectorTab = "logs" | "tools" | "skills" | "prompt" | "output" | "artifacts";
+
+const activeTab = ref<InspectorTab>("logs");
+
+const tabs = computed(() => [
+  { key: "logs" as const, label: t("flow.inspector.tab_logs") },
+  { key: "tools" as const, label: t("flow.inspector.tab_tools") },
+  { key: "skills" as const, label: t("flow.inspector.tab_skills") },
+  { key: "prompt" as const, label: t("flow.inspector.tab_prompt") },
+  { key: "output" as const, label: t("flow.inspector.tab_output") },
+  { key: "artifacts" as const, label: t("flow.inspector.tab_artifacts") },
+]);
+
+const stageTitle = computed(() =>
+  props.stageId ? t(FLOW_STAGE_LABEL_KEYS[props.stageId]) : t("flow.inspector.not_selected"),
+);
+const statusLabel = computed(() =>
+  props.status ? t(FLOW_STATUS_LABEL_KEYS[props.status]) : "",
+);
+
+const logs = computed(() =>
+  props.stageId ? inspectLogs(props.events, props.stageId, props.turnId) : { presence: "empty" as const, value: [] },
+);
+const tools = computed(() =>
+  props.stageId
+    ? inspectTools(props.stageId, props.graphState, props.toolJobs, props.turnId)
+    : { presence: "empty" as const, value: [] },
+);
+const skills = computed(() => inspectSkills(props.graphState));
+const skillBlocks = computed(() => inspectSkillBlocks(props.graphState));
+const prompt = computed(() => inspectPrompt(props.graphState));
+const output = computed(() =>
+  props.stageId ? inspectOutput(props.stageId, props.graphState) : { text: { presence: "missing" as const, value: null } },
+);
+const artifacts = computed(() => inspectArtifacts(props.artifacts, props.turnId, props.artifactsLoaded));
+
+watch(
+  () => props.stageId,
+  () => {
+    activeTab.value = "logs";
+  },
+);
+
+function presenceText(presence: InspectPresence) {
+  if (presence === "missing") {
+    return t("flow.inspector.not_carried");
+  }
+  return t("flow.inspector.empty");
+}
+</script>
+
+<template>
+  <transition name="drawer-fade">
+    <div v-if="open" class="drawer-backdrop" @click="emit('close')"></div>
+  </transition>
+  <transition name="drawer-slide">
+    <aside v-if="open" class="detail-drawer flow-inspector">
+      <div class="detail-drawer-head">
+        <div>
+          <h3>{{ t("flow.inspector.title") }}</h3>
+          <span class="sidebar-meta">{{ stageTitle }}<template v-if="statusLabel"> · {{ statusLabel }}</template></span>
+        </div>
+        <button class="icon-btn" type="button" :aria-label="t('flow.inspector.close')" @click="emit('close')">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div v-if="stageId" class="detail-content">
+        <div class="runtime-console-tabs flow-inspector-tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.key"
+            type="button"
+            class="runtime-console-tab"
+            :class="{ active: activeTab === tab.key }"
+            @click="activeTab = tab.key"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <section v-if="activeTab === 'logs'" class="flow-inspector-section">
+          <div v-if="logs.presence !== 'ok'" class="empty-state small">{{ presenceText(logs.presence) }}</div>
+          <div v-else class="detail-list">
+            <div v-for="item in logs.value" :key="item.id" class="detail-list-item flow-inspector-log">
+              <span class="property-key">{{ item.type }}</span>
+              <span class="property-value">{{ formatServerDateTime(item.timestamp) }}</span>
+              <p v-if="item.message">{{ item.message }}</p>
+              <p v-else class="flow-inspector-missing">{{ t("flow.inspector.not_carried") }}</p>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'tools'" class="flow-inspector-section">
+          <div v-if="tools.presence !== 'ok'" class="empty-state small">{{ presenceText(tools.presence) }}</div>
+          <div v-else class="detail-list">
+            <div v-for="item in tools.value" :key="item.id" class="detail-list-item">
+              <span class="property-key">{{ item.name }}</span>
+              <span class="property-value">{{ item.status || t("flow.inspector.not_carried") }}</span>
+              <p v-if="item.summary">{{ item.summary }}</p>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'skills'" class="flow-inspector-section">
+          <div v-if="skills.presence !== 'ok'" class="empty-state small">{{ presenceText(skills.presence) }}</div>
+          <div v-else class="detail-list">
+            <div v-for="item in skills.value" :key="`${item.source}-${item.key}`" class="detail-list-item">
+              <span class="property-key">{{ item.key }}</span>
+              <span class="property-value">{{
+                item.source === "resolved" ? t("flow.inspector.skill_resolved") : t("flow.inspector.skill_requested")
+              }}</span>
+            </div>
+          </div>
+          <div v-if="skillBlocks.presence === 'ok' && skillBlocks.value?.length" class="flow-inspector-prewrap">
+            <pre v-for="(block, index) in skillBlocks.value" :key="`skill-block-${index}`">{{ block }}</pre>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'prompt'" class="flow-inspector-section">
+          <div v-if="prompt.prompt.presence !== 'ok'" class="empty-state small">
+            {{ presenceText(prompt.prompt.presence) }}
+          </div>
+          <pre v-else class="flow-inspector-pre">{{ prompt.prompt.value }}</pre>
+          <div v-if="prompt.sections.presence === 'ok' && prompt.sections.value?.length" class="flow-inspector-prewrap">
+            <article v-for="(section, index) in prompt.sections.value" :key="`section-${index}`">
+              <strong v-if="section.title">{{ section.title }}</strong>
+              <pre>{{ section.body }}</pre>
+            </article>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'output'" class="flow-inspector-section">
+          <div v-if="output.text.presence !== 'ok'" class="empty-state small">
+            {{ presenceText(output.text.presence) }}
+          </div>
+          <pre v-else class="flow-inspector-pre">{{ output.text.value }}</pre>
+        </section>
+
+        <section v-else class="flow-inspector-section">
+          <div v-if="artifacts.presence !== 'ok'" class="empty-state small">{{ presenceText(artifacts.presence) }}</div>
+          <div v-else class="detail-list">
+            <div v-for="item in artifacts.value" :key="item.id" class="detail-list-item">
+              <span class="property-key">{{ item.label }}</span>
+              <span class="property-value">{{ item.type }}</span>
+              <p>{{ item.path }}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div v-else class="empty-state">{{ t("flow.inspector.select_hint") }}</div>
+    </aside>
+  </transition>
+</template>
+
+<style scoped>
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+  z-index: 40;
+}
+
+.detail-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, calc(100vw - 24px));
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.16);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 16px 16px;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.detail-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-drawer-head h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.sidebar-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.detail-content,
+.detail-drawer > .empty-state {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-list-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.property-key {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.property-value {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  font-size: 12px;
+}
+
+.empty-state {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.empty-state.small {
+  min-height: 72px;
+}
+
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
+  opacity: 0;
+}
+
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: transform 0.24s ease;
+}
+
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(100%);
+}
+
+.flow-inspector-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.flow-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flow-inspector-log {
+  flex-wrap: wrap;
+}
+
+.flow-inspector-log p,
+.detail-list-item p {
+  width: 100%;
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.flow-inspector-missing {
+  color: var(--muted) !important;
+}
+
+.flow-inspector-pre,
+.flow-inspector-prewrap pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.flow-inspector-prewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flow-inspector-prewrap strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+</style>

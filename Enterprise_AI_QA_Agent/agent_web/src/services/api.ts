@@ -69,6 +69,7 @@ import type {
   SessionSummary,
   SessionSummaryPage,
   SessionReplayResponse,
+  SessionSnapshot,
   TaskPoolPage,
   ToolArtifactRecord,
   ToolApprovalRequest,
@@ -655,6 +656,16 @@ export const api = {
   },
   getSession(sessionId: string): Promise<SessionDetail> {
     return request(`/api/v1/sessions/${sessionId}`);
+  },
+  listSessionSnapshots(
+    sessionId: string,
+    params: { limit?: number; includeGraphState?: boolean } = {},
+  ): Promise<SessionSnapshot[]> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 20),
+      include_graph_state: params.includeGraphState === false ? "false" : "true",
+    });
+    return request(`/api/v1/sessions/${sessionId}/snapshots?${query.toString()}`);
   },
   listSessionEvents(
     sessionId: string,
