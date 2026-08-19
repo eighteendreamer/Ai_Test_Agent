@@ -7,7 +7,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
+from src.application.flow.projection_service import FlowProjectionService
 from src.runtime.streaming import format_sse
+from src.schemas.flow import SessionFlowResponse
 from src.schemas.session import (
     ApprovalDecisionRequest,
     CreateSessionRequest,
@@ -83,6 +85,22 @@ async def execute_headless(payload: HeadlessExecutionRequest, request: Request):
 async def get_session(session_id: str, request: Request):
     try:
         return await request.app.state.session_service.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
+@router.get("/{session_id}/flow", response_model=SessionFlowResponse)
+async def get_session_flow(
+    session_id: str,
+    request: Request,
+    turn_id: str | None = None,
+):
+    service = FlowProjectionService(
+        session_service=request.app.state.session_service,
+        tool_job_service=request.app.state.tool_job_service,
+    )
+    try:
+        return await service.get_flow(session_id, turn_id=turn_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
 

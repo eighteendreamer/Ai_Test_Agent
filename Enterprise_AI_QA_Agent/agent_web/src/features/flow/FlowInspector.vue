@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 
 import { t } from "../../services/i18n";
-import type { ExecutionEvent, ToolArtifactRecord, ToolJobRecord } from "../../types";
+import type { ExecutionEvent, ToolArtifactRecord, ToolJobRecord, WorkerDispatchRecord } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
 import {
   inspectArtifacts,
@@ -12,13 +12,17 @@ import {
   inspectSkillBlocks,
   inspectSkills,
   inspectTools,
+  inspectWorkerLogs,
+  inspectWorkerOutput,
   type InspectPresence,
 } from "./inspect";
 import { FLOW_STAGE_LABEL_KEYS, FLOW_STATUS_LABEL_KEYS, type FlowNodeStatus, type FlowStageId } from "./stages";
+import { workerLabel } from "./workers";
 
 const props = defineProps<{
   open: boolean;
   stageId: FlowStageId | "";
+  worker: WorkerDispatchRecord | null;
   status: FlowNodeStatus | "";
   events: ExecutionEvent[];
   graphState: Record<string, unknown> | null;
@@ -30,6 +34,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  drill: [sessionId: string];
 }>();
 
 type InspectorTab = "logs" | "tools" | "skills" | "prompt" | "output" | "artifacts";
@@ -45,16 +50,27 @@ const tabs = computed(() => [
   { key: "artifacts" as const, label: t("flow.inspector.tab_artifacts") },
 ]);
 
-const stageTitle = computed(() =>
-  props.stageId ? t(FLOW_STAGE_LABEL_KEYS[props.stageId]) : t("flow.inspector.not_selected"),
-);
+const isWorker = computed(() => Boolean(props.worker));
+const childSessionId = computed(() => String(props.worker?.child_session_id || "").trim());
+const stageTitle = computed(() => {
+  if (props.worker) {
+    return workerLabel(props.worker) || t("flow.worker.untitled");
+  }
+  return props.stageId ? t(FLOW_STAGE_LABEL_KEYS[props.stageId]) : t("flow.inspector.not_selected");
+});
 const statusLabel = computed(() =>
   props.status ? t(FLOW_STATUS_LABEL_KEYS[props.status]) : "",
 );
-
-const logs = computed(() =>
-  props.stageId ? inspectLogs(props.events, props.stageId, props.turnId) : { presence: "empty" as const, value: [] },
+const inspectorMeta = computed(() =>
+  statusLabel.value ? `${stageTitle.value} · ${statusLabel.value}` : stageTitle.value,
 );
+
+const logs = computed(() => {
+  if (props.worker) {
+    return inspectWorkerLogs(props.events, props.worker, props.turnId);
+  }
+  return props.stageId ? inspectLogs(props.events, props.stageId, props.turnId) : { presence: "empty" as const, value: [] };
+});
 const tools = computed(() =>
   props.stageId
     ? inspectTools(props.stageId, props.graphState, props.toolJobs, props.turnId)
@@ -67,13 +83,20 @@ const output = computed(() =>
   props.stageId ? inspectOutput(props.stageId, props.graphState) : { text: { presence: "missing" as const, value: null } },
 );
 const artifacts = computed(() => inspectArtifacts(props.artifacts, props.turnId, props.artifactsLoaded));
+const workerOutput = computed(() => inspectWorkerOutput(props.worker));
 
 watch(
-  () => props.stageId,
+  () => [props.stageId, props.worker?.task_id] as const,
   () => {
     activeTab.value = "logs";
   },
 );
+
+function drillIntoWorker() {
+  if (childSessionId.value) {
+    emit("drill", childSessionId.value);
+  }
+}
 
 function presenceText(presence: InspectPresence) {
   if (presence === "missing") {
@@ -92,14 +115,35 @@ function presenceText(presence: InspectPresence) {
       <div class="detail-drawer-head">
         <div>
           <h3>{{ t("flow.inspector.title") }}</h3>
-          <span class="sidebar-meta">{{ stageTitle }}<template v-if="statusLabel"> · {{ statusLabel }}</template></span>
+          <span class="sidebar-meta">{{ inspectorMeta }}</span>
         </div>
-        <button class="icon-btn" type="button" :aria-label="t('flow.inspector.close')" @click="emit('close')">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <div class="flow-inspector-head-actions">
+          <button
+            v-if="isWorker && childSessionId"
+            type="button"
+            class="flow-reset-btn"
+            @click="drillIntoWorker"
+          >
+            {{ t("flow.worker.drill") }}
+          </button>
+          <button class="icon-btn" type="button" :aria-label="t('flow.inspector.close')" @click="emit('close')">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
       </div>
 
-      <div v-if="stageId" class="detail-content">
+      <div v-if="isWorker" class="flow-inspector-worker-meta">
+        <div class="detail-list-item">
+          <span class="property-key">{{ t("flow.worker.agent") }}</span>
+          <span class="property-value">{{ worker?.agent_key || t("flow.inspector.not_carried") }}</span>
+        </div>
+        <div class="detail-list-item">
+          <span class="property-key">{{ t("flow.worker.child_session") }}</span>
+          <span class="property-value">{{ childSessionId || t("flow.inspector.not_carried") }}</span>
+        </div>
+      </div>
+
+      <div v-if="stageId || worker" class="detail-content">
         <div class="runtime-console-tabs flow-inspector-tabs">
           <button
             v-for="tab in tabs"
@@ -126,7 +170,8 @@ function presenceText(presence: InspectPresence) {
         </section>
 
         <section v-else-if="activeTab === 'tools'" class="flow-inspector-section">
-          <div v-if="tools.presence !== 'ok'" class="empty-state small">{{ presenceText(tools.presence) }}</div>
+          <div v-if="isWorker" class="empty-state small">{{ t("flow.inspector.not_carried") }}</div>
+          <div v-else-if="tools.presence !== 'ok'" class="empty-state small">{{ presenceText(tools.presence) }}</div>
           <div v-else class="detail-list">
             <div v-for="item in tools.value" :key="item.id" class="detail-list-item">
               <span class="property-key">{{ item.name }}</span>
@@ -137,7 +182,8 @@ function presenceText(presence: InspectPresence) {
         </section>
 
         <section v-else-if="activeTab === 'skills'" class="flow-inspector-section">
-          <div v-if="skills.presence !== 'ok'" class="empty-state small">{{ presenceText(skills.presence) }}</div>
+          <div v-if="isWorker" class="empty-state small">{{ t("flow.inspector.not_carried") }}</div>
+          <div v-else-if="skills.presence !== 'ok'" class="empty-state small">{{ presenceText(skills.presence) }}</div>
           <div v-else class="detail-list">
             <div v-for="item in skills.value" :key="`${item.source}-${item.key}`" class="detail-list-item">
               <span class="property-key">{{ item.key }}</span>
@@ -146,17 +192,24 @@ function presenceText(presence: InspectPresence) {
               }}</span>
             </div>
           </div>
-          <div v-if="skillBlocks.presence === 'ok' && skillBlocks.value?.length" class="flow-inspector-prewrap">
+          <div
+            v-if="!isWorker && skillBlocks.presence === 'ok' && skillBlocks.value?.length"
+            class="flow-inspector-prewrap"
+          >
             <pre v-for="(block, index) in skillBlocks.value" :key="`skill-block-${index}`">{{ block }}</pre>
           </div>
         </section>
 
         <section v-else-if="activeTab === 'prompt'" class="flow-inspector-section">
-          <div v-if="prompt.prompt.presence !== 'ok'" class="empty-state small">
+          <div v-if="isWorker" class="empty-state small">{{ t("flow.inspector.not_carried") }}</div>
+          <div v-else-if="prompt.prompt.presence !== 'ok'" class="empty-state small">
             {{ presenceText(prompt.prompt.presence) }}
           </div>
           <pre v-else class="flow-inspector-pre">{{ prompt.prompt.value }}</pre>
-          <div v-if="prompt.sections.presence === 'ok' && prompt.sections.value?.length" class="flow-inspector-prewrap">
+          <div
+            v-if="!isWorker && prompt.sections.presence === 'ok' && prompt.sections.value?.length"
+            class="flow-inspector-prewrap"
+          >
             <article v-for="(section, index) in prompt.sections.value" :key="`section-${index}`">
               <strong v-if="section.title">{{ section.title }}</strong>
               <pre>{{ section.body }}</pre>
@@ -165,14 +218,26 @@ function presenceText(presence: InspectPresence) {
         </section>
 
         <section v-else-if="activeTab === 'output'" class="flow-inspector-section">
-          <div v-if="output.text.presence !== 'ok'" class="empty-state small">
+          <div v-if="isWorker && workerOutput.presence !== 'ok'" class="empty-state small">
+            {{ presenceText(workerOutput.presence) }}
+          </div>
+          <div v-else-if="isWorker" class="detail-list">
+            <div v-for="item in workerOutput.value" :key="item.key" class="detail-list-item">
+              <span class="property-key">{{ t(item.labelKey) }}</span>
+              <span class="property-value">
+                {{ item.presence === "ok" ? item.value : presenceText(item.presence) }}
+              </span>
+            </div>
+          </div>
+          <div v-else-if="output.text.presence !== 'ok'" class="empty-state small">
             {{ presenceText(output.text.presence) }}
           </div>
           <pre v-else class="flow-inspector-pre">{{ output.text.value }}</pre>
         </section>
 
         <section v-else class="flow-inspector-section">
-          <div v-if="artifacts.presence !== 'ok'" class="empty-state small">{{ presenceText(artifacts.presence) }}</div>
+          <div v-if="isWorker" class="empty-state small">{{ t("flow.inspector.not_carried") }}</div>
+          <div v-else-if="artifacts.presence !== 'ok'" class="empty-state small">{{ presenceText(artifacts.presence) }}</div>
           <div v-else class="detail-list">
             <div v-for="item in artifacts.value" :key="item.id" class="detail-list-item">
               <span class="property-key">{{ item.label }}</span>
@@ -222,6 +287,30 @@ function presenceText(presence: InspectPresence) {
 .detail-drawer-head h3 {
   margin: 0 0 4px;
   font-size: 18px;
+}
+
+.flow-inspector-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flow-reset-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.flow-inspector-worker-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .sidebar-meta {

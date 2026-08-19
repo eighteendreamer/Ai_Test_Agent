@@ -68,6 +68,7 @@ import type {
   UploadedAttachmentRecord,
   SessionSummary,
   SessionSummaryPage,
+  SessionFlowResponse,
   SessionReplayResponse,
   SessionSnapshot,
   TaskPoolPage,
@@ -678,6 +679,18 @@ export const api = {
       query.set("after_event_id", params.afterEventId);
     }
     return request(`/api/v1/sessions/${sessionId}/events/history?${query.toString()}`);
+  },
+  getSessionFlow(
+    sessionId: string,
+    params: { turnId?: string } = {},
+  ): Promise<SessionFlowResponse> {
+    const query = new URLSearchParams();
+    const turnId = String(params.turnId || "").trim();
+    if (turnId) {
+      query.set("turn_id", turnId);
+    }
+    const suffix = query.toString();
+    return request(`/api/v1/sessions/${sessionId}/flow${suffix ? `?${suffix}` : ""}`);
   },
   updateSession(
     sessionId: string,

@@ -663,6 +663,43 @@ export interface WorkerDispatchRecord {
   dispatch_role?: string;
   source_stage?: string;
   source_round_index?: number;
+  parent_turn_id?: string;
+}
+
+export type FlowNodeStatus = "pending" | "running" | "done" | "failed" | "waiting_approval";
+
+export interface SessionFlowStageNode {
+  id: string;
+  kind: "stage";
+  status: FlowNodeStatus;
+}
+
+export interface SessionFlowWorkerNode {
+  id: string;
+  kind: "worker";
+  status: FlowNodeStatus;
+  source_stage: string;
+  worker: WorkerDispatchRecord;
+}
+
+export interface SessionFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: "stage" | "spawn";
+}
+
+export interface SessionFlowResponse {
+  session_id: string;
+  turn_id: string;
+  stages: SessionFlowStageNode[];
+  workers: SessionFlowWorkerNode[];
+  edges: SessionFlowEdge[];
+  events: ExecutionEvent[];
+  graph_state: Record<string, unknown> | null;
+  snapshot_id: string | null;
+  tool_jobs: ToolJobRecord[];
+  artifacts: ToolArtifactRecord[];
 }
 
 export interface CodeReviewReportMeta {

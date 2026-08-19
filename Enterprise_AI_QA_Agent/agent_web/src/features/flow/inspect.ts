@@ -1,4 +1,4 @@
-import type { ExecutionEvent, SessionSnapshot, ToolArtifactRecord, ToolJobRecord } from "../../types";
+import type { ExecutionEvent, SessionSnapshot, ToolArtifactRecord, ToolJobRecord, WorkerDispatchRecord } from "../../types";
 import { compareEvents, payloadText, selectTurnEvents, type FlowStageId } from "./stages";
 
 export type InspectPresence = "missing" | "empty" | "ok";
@@ -105,6 +105,82 @@ export function pickSnapshotForTurn(snapshots: SessionSnapshot[], turnId: string
     return ranked[0] ?? null;
   }
   return ranked.find((snapshot) => asString(snapshot.graph_state?.turn_id) === turnId) ?? null;
+}
+
+export interface InspectWorkerField {
+  key: string;
+  labelKey: string;
+  presence: InspectPresence;
+  value: string;
+}
+
+const WORKER_OUTPUT_FIELDS: Array<{ key: keyof WorkerDispatchRecord; labelKey: string }> = [
+  { key: "description", labelKey: "flow.worker.field.description" },
+  { key: "agent_key", labelKey: "flow.worker.field.agent_key" },
+  { key: "status", labelKey: "flow.worker.field.status" },
+  { key: "task_id", labelKey: "flow.worker.field.task_id" },
+  { key: "child_session_id", labelKey: "flow.worker.field.child_session_id" },
+  { key: "model_key", labelKey: "flow.worker.field.model_key" },
+  { key: "dispatch_role", labelKey: "flow.worker.field.dispatch_role" },
+  { key: "source_stage", labelKey: "flow.worker.field.source_stage" },
+];
+
+export function inspectWorkerOutput(worker: WorkerDispatchRecord | null): InspectValue<InspectWorkerField[]> {
+  if (!worker) {
+    return { presence: "missing", value: null };
+  }
+  const items: InspectWorkerField[] = [];
+  for (const field of WORKER_OUTPUT_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(worker, field.key)) {
+      continue;
+    }
+    const raw = worker[field.key];
+    if (raw == null) {
+      items.push({ key: field.key, labelKey: field.labelKey, presence: "empty", value: "" });
+      continue;
+    }
+    const text = String(raw).trim();
+    items.push({
+      key: field.key,
+      labelKey: field.labelKey,
+      presence: text ? "ok" : "empty",
+      value: text,
+    });
+  }
+  if (items.length === 0) {
+    return { presence: "missing", value: null };
+  }
+  return { presence: "ok", value: items };
+}
+
+export function inspectWorkerLogs(
+  events: ExecutionEvent[],
+  worker: { task_id?: string; child_session_id?: string },
+  turnId: string,
+): InspectValue<InspectLogItem[]> {
+  const taskId = String(worker.task_id || "").trim();
+  const childId = String(worker.child_session_id || "").trim();
+  if (!taskId && !childId) {
+    return { presence: "missing", value: null };
+  }
+  const matched = selectTurnEvents(events, turnId)
+    .filter((event) => {
+      const eventTaskId = payloadText(event, "task_id");
+      const eventChildId = payloadText(event, "child_session_id");
+      return (taskId && eventTaskId === taskId) || (childId && eventChildId === childId);
+    })
+    .slice()
+    .sort(compareEvents)
+    .map((event, index) => ({
+      id: String(event.id || `${event.type}-${index}`),
+      type: event.type,
+      timestamp: event.timestamp,
+      message: payloadText(event, "message"),
+    }));
+  if (matched.length === 0) {
+    return { presence: "empty", value: [] };
+  }
+  return { presence: "ok", value: matched };
 }
 
 export function inspectLogs(events: ExecutionEvent[], stageId: FlowStageId, turnId: string): InspectValue<InspectLogItem[]> {

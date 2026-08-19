@@ -7,6 +7,9 @@ const NODE_WIDTH = 196;
 const GAP_X = 72;
 const MAIN_Y = 168;
 const TOOL_Y = 348;
+const WORKER_X = 40 + 8 * (NODE_WIDTH + GAP_X);
+const WORKER_Y = 80;
+const WORKER_GAP_Y = 120;
 
 export function defaultStagePositions(): Record<FlowStageId, XYPosition> {
   const x = (index: number) => 40 + index * (NODE_WIDTH + GAP_X);
@@ -35,7 +38,7 @@ function isPosition(value: unknown): value is XYPosition {
   return Number.isFinite(Number(record.x)) && Number.isFinite(Number(record.y));
 }
 
-export function loadSavedPositions(sessionId: string, turnId: string): Partial<Record<FlowStageId, XYPosition>> {
+export function loadSavedPositions(sessionId: string, turnId: string): Record<string, XYPosition> {
   if (!sessionId || typeof localStorage === "undefined") {
     return {};
   }
@@ -45,11 +48,10 @@ export function loadSavedPositions(sessionId: string, turnId: string): Partial<R
       return {};
     }
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const next: Partial<Record<FlowStageId, XYPosition>> = {};
-    for (const stage of FLOW_STAGES) {
-      const candidate = parsed[stage];
+    const next: Record<string, XYPosition> = {};
+    for (const [key, candidate] of Object.entries(parsed)) {
       if (isPosition(candidate)) {
-        next[stage] = { x: Number(candidate.x), y: Number(candidate.y) };
+        next[key] = { x: Number(candidate.x), y: Number(candidate.y) };
       }
     }
     return next;
@@ -61,7 +63,7 @@ export function loadSavedPositions(sessionId: string, turnId: string): Partial<R
 export function saveSavedPositions(
   sessionId: string,
   turnId: string,
-  positions: Partial<Record<FlowStageId, XYPosition>>,
+  positions: Record<string, XYPosition>,
 ): void {
   if (!sessionId || typeof localStorage === "undefined") {
     return;
@@ -94,4 +96,18 @@ export function mergeStagePositions(
     }
   }
   return merged;
+}
+
+function overlaps(left: XYPosition, right: XYPosition): boolean {
+  return Math.abs(left.x - right.x) < 80 && Math.abs(left.y - right.y) < 80;
+}
+
+export function nextWorkerPosition(occupied: XYPosition[]): XYPosition {
+  for (let index = 0; index < 48; index += 1) {
+    const candidate = { x: WORKER_X, y: WORKER_Y + index * WORKER_GAP_Y };
+    if (!occupied.some((item) => overlaps(item, candidate))) {
+      return candidate;
+    }
+  }
+  return { x: WORKER_X, y: WORKER_Y + occupied.length * WORKER_GAP_Y };
 }
