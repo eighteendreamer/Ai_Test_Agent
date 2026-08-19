@@ -18,6 +18,11 @@ interface QaAgentDesktopBridge {
   }): Promise<boolean>;
 
   setZoomFactor(factor: number): Promise<number>;
+
+  openFlowWindow(payload?: {
+    sessionId?: string;
+    turnId?: string;
+  }): Promise<boolean>;
 }
 
 interface Window {

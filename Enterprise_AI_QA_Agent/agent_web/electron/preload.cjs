@@ -20,4 +20,7 @@ contextBridge.exposeInMainWorld("qaAgentDesktop", {
     }
     return ipcRenderer.invoke("desktop:set-zoom-factor", normalizedFactor);
   },
+  openFlowWindow(payload) {
+    return ipcRenderer.invoke("desktop:open-flow-window", payload || {});
+  },
 });

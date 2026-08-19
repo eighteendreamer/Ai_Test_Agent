@@ -6,12 +6,38 @@ export default {
   "nav.tools": "工具中心",
   "nav.reports": "報告中心",
   "nav.settings": "系統設定",
+  "nav.flow": "編排軌跡",
 
   // TopBar
   "topbar.system_status": "系統狀態",
+  "topbar.open_flow": "編排軌跡",
   "topbar.online": "線上",
   "topbar.offline": "離線",
   "topbar.degraded": "降級",
+
+  // Flow window
+  "flow.title": "編排軌跡",
+  "flow.ready_hint": "視窗已開啟。階段節點與檢查器將在下一步接入。",
+  "flow.no_session": "目前沒有會話。回到主視窗開始對話後，這裡會跟隨同一條 Session。",
+  "flow.bound_session": "已綁定會話 {session}",
+  "flow.bound_turn": "目前輪次 {turn}",
+  "flow.loading": "正在載入事件…",
+  "flow.live_hint": "已連接目前會話事件流，節點會隨執行點亮。",
+  "flow.reset_layout": "重設佈局",
+  "flow.stage.context_builder": "上下文構建",
+  "flow.stage.router": "路由",
+  "flow.stage.planner": "規劃",
+  "flow.stage.permission_gate": "權限門",
+  "flow.stage.prompt_assembler": "提示詞組裝",
+  "flow.stage.model_invoker": "模型呼叫",
+  "flow.stage.tool_executor": "工具執行",
+  "flow.stage.finalizer": "收尾",
+  "flow.stage.responder": "回應輸出",
+  "flow.status.pending": "未開始",
+  "flow.status.running": "進行中",
+  "flow.status.done": "已完成",
+  "flow.status.failed": "失敗",
+  "flow.status.waiting_approval": "待審批",
 
   // Workbench / Home
   "home.title": "御策天檢",

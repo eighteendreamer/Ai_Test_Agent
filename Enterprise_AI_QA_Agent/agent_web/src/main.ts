@@ -23,6 +23,8 @@ import viVN from "./locales/vi-VN";
 import thTH from "./locales/th-TH";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
+import "@vue-flow/core/dist/style.css";
+import "@vue-flow/core/dist/theme-default.css";
 import "./styles.css";
 
 // Register all locale messages.

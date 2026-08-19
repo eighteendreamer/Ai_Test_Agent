@@ -7,12 +7,38 @@ export default {
   "nav.tools": "工具中心",
   "nav.reports": "报告中心",
   "nav.settings": "系统设置",
+  "nav.flow": "编排轨迹",
 
   // TopBar
   "topbar.system_status": "系统状态",
+  "topbar.open_flow": "编排轨迹",
   "topbar.online": "在线",
   "topbar.offline": "离线",
   "topbar.degraded": "降级",
+
+  // Flow window
+  "flow.title": "编排轨迹",
+  "flow.ready_hint": "窗口已打开。阶段节点与检查器将在下一步接入。",
+  "flow.no_session": "当前没有会话。回到主窗口开始对话后，这里会跟随同一条 Session。",
+  "flow.bound_session": "已绑定会话 {session}",
+  "flow.bound_turn": "当前轮次 {turn}",
+  "flow.loading": "正在加载事件…",
+  "flow.live_hint": "已连接当前会话事件流，节点会随执行点亮。",
+  "flow.reset_layout": "重置布局",
+  "flow.stage.context_builder": "上下文构建",
+  "flow.stage.router": "路由",
+  "flow.stage.planner": "规划",
+  "flow.stage.permission_gate": "权限门",
+  "flow.stage.prompt_assembler": "提示词组装",
+  "flow.stage.model_invoker": "模型调用",
+  "flow.stage.tool_executor": "工具执行",
+  "flow.stage.finalizer": "收尾",
+  "flow.stage.responder": "响应输出",
+  "flow.status.pending": "未开始",
+  "flow.status.running": "进行中",
+  "flow.status.done": "已完成",
+  "flow.status.failed": "失败",
+  "flow.status.waiting_approval": "待审批",
 
   // Workbench / Home
   "home.title": "御策天检",

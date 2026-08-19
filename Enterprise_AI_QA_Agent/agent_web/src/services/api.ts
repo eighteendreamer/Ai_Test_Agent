@@ -656,6 +656,18 @@ export const api = {
   getSession(sessionId: string): Promise<SessionDetail> {
     return request(`/api/v1/sessions/${sessionId}`);
   },
+  listSessionEvents(
+    sessionId: string,
+    params: { limit?: number; afterEventId?: string } = {},
+  ): Promise<ExecutionEvent[]> {
+    const query = new URLSearchParams({
+      limit: String(params.limit ?? 500),
+    });
+    if (params.afterEventId) {
+      query.set("after_event_id", params.afterEventId);
+    }
+    return request(`/api/v1/sessions/${sessionId}/events/history?${query.toString()}`);
+  },
   updateSession(
     sessionId: string,
     payload: {

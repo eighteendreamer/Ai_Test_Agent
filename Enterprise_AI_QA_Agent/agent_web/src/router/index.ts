@@ -14,6 +14,7 @@ const router = createRouter({
     { path: "/tools", name: "tools", component: () => import("../views/ToolsView.vue"), meta: { label: "Tools" } },
     { path: "/reports", name: "reports", component: () => import("../views/ReportsView.vue"), meta: { label: "Reports" } },
     { path: "/settings", name: "settings", component: () => import("../views/SettingsView.vue"), meta: { label: "Settings" } },
+    { path: "/flow", name: "flow", component: () => import("../views/FlowView.vue"), meta: { label: "Orchestration Trace", blankShell: true } },
   ],
 });
 

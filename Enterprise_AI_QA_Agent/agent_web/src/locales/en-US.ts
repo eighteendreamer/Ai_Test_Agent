@@ -7,12 +7,38 @@ export default {
   "nav.tools": "Tool Center",
   "nav.reports": "Report Center",
   "nav.settings": "System Settings",
+  "nav.flow": "Orchestration Trace",
 
   // TopBar
   "topbar.system_status": "System Status",
+  "topbar.open_flow": "Orchestration Trace",
   "topbar.online": "Online",
   "topbar.offline": "Offline",
   "topbar.degraded": "Degraded",
+
+  // Flow window
+  "flow.title": "Orchestration Trace",
+  "flow.ready_hint": "The window is open. Stage nodes and the inspector will land in the next step.",
+  "flow.no_session": "No session is bound yet. Start a conversation in the main window and this view will follow that session.",
+  "flow.bound_session": "Bound session {session}",
+  "flow.bound_turn": "Current turn {turn}",
+  "flow.loading": "Loading events…",
+  "flow.live_hint": "Live session events are connected. Nodes light up as the turn runs.",
+  "flow.reset_layout": "Reset layout",
+  "flow.stage.context_builder": "Context Builder",
+  "flow.stage.router": "Router",
+  "flow.stage.planner": "Planner",
+  "flow.stage.permission_gate": "Permission Gate",
+  "flow.stage.prompt_assembler": "Prompt Assembler",
+  "flow.stage.model_invoker": "Model Invoker",
+  "flow.stage.tool_executor": "Tool Executor",
+  "flow.stage.finalizer": "Finalizer",
+  "flow.stage.responder": "Responder",
+  "flow.status.pending": "Pending",
+  "flow.status.running": "Running",
+  "flow.status.done": "Done",
+  "flow.status.failed": "Failed",
+  "flow.status.waiting_approval": "Waiting approval",
 
   // Workbench / Home
   "home.title": "Yuce Tianjian",

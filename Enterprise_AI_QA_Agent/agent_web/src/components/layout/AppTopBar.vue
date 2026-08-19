@@ -1,13 +1,27 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 
-import type { ServiceCheckItem, SystemStatusSummary } from "../../types";
+import { openAgentFlowWindow } from "../../features/flow/openFlowWindow";
 import { t } from "../../services/i18n";
+import { useSessionStore } from "../../stores/session";
+import type { ServiceCheckItem, SystemStatusSummary } from "../../types";
 
 const props = defineProps<{
   label: string;
   systemStatus: SystemStatusSummary;
 }>();
+
+const route = useRoute();
+const sessionStore = useSessionStore();
+const showFlowButton = computed(() => route.name !== "flow");
+
+function openFlowWindow() {
+  void openAgentFlowWindow({
+    sessionId: sessionStore.session?.id,
+    turnId: sessionStore.latestTurnId,
+  });
+}
 
 const failingChecks = computed(() =>
   props.systemStatus.checks.filter((check) => check.status !== "online"),
@@ -31,6 +45,16 @@ function statusIcon(check: ServiceCheckItem) {
       <span>{{ t("home.title") }} / {{ props.label }}</span>
     </div>
     <div class="top-status-actions">
+      <button
+        v-if="showFlowButton"
+        type="button"
+        class="flow-window-btn"
+        :title="t('topbar.open_flow')"
+        @click="openFlowWindow"
+      >
+        <i class="fa-solid fa-diagram-project"></i>
+        <span>{{ t("topbar.open_flow") }}</span>
+      </button>
       <div class="service-indicator-wrap">
         <span :class="['service-indicator', `is-${props.systemStatus.tone}`]">
           <span class="service-dot"></span>

@@ -6,6 +6,7 @@ import type { GlobalThemeOverrides } from "naive-ui";
 
 import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopBar from "./components/layout/AppTopBar.vue";
+import { publishFlowSession } from "./features/flow/openFlowWindow";
 import { getLocale, t } from "./services/i18n";
 import { useAppStore } from "./stores/app";
 import { useSessionStore } from "./stores/session";
@@ -124,10 +125,16 @@ function previewText(value: string, limit = 48) {
   return `${normalized.slice(0, Math.max(0, limit - 3))}...`;
 }
 
-const pageLabel = computed(() => String(route.meta.label ?? "Session Workspace"));
+const pageLabel = computed(() => {
+  if (route.name === "flow") {
+    return t("nav.flow");
+  }
+  return String(route.meta.label ?? "Session Workspace");
+});
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
 const isHomeRoute = computed(() => route.name === "home");
-const showRuntimeConsole = computed(() => route.name !== "settings");
+const isFlowRoute = computed(() => route.name === "flow");
+const showRuntimeConsole = computed(() => route.name !== "settings" && !isFlowRoute.value);
 const runtimeConsoleTabs = computed(() => [
   { key: "logs", label: t("console.title") },
   { key: "events", label: t("console.events") },
@@ -199,7 +206,26 @@ watch(
   },
 );
 
+watch(
+  () => [route.name, sessionStore.session?.id ?? "", sessionStore.latestTurnId] as const,
+  ([routeName, sessionId, turnId]) => {
+    if (routeName === "flow") {
+      return;
+    }
+    publishFlowSession({ sessionId, turnId });
+  },
+);
+
 onMounted(async () => {
+  healthPollTimer = window.setInterval(() => {
+    void appStore.fetchSystemStatus();
+  }, 15000);
+
+  if (isFlowRoute.value) {
+    await appStore.fetchSystemStatus({ refreshCatalog: false });
+    return;
+  }
+
   const [, catalog] = await Promise.all([
     appStore.fetchSystemStatus({ refreshCatalog: false }),
     sessionStore.bootstrap(),
@@ -208,9 +234,6 @@ onMounted(async () => {
   appStore.tools = catalog.tools;
   appStore.lastCheckedAt = new Date().toISOString();
   sessionStore.startWatcher();
-  healthPollTimer = window.setInterval(() => {
-    void appStore.fetchSystemStatus();
-  }, 15000);
 });
 
 onBeforeUnmount(() => {
@@ -227,8 +250,8 @@ onBeforeUnmount(() => {
   <n-config-provider :theme="activeTheme" :theme-overrides="activeThemeOverrides">
   <n-message-provider>
     <n-dialog-provider>
-      <div class="prototype-shell">
-        <AppSidebar />
+      <div :class="['prototype-shell', { 'is-flow-shell': isFlowRoute }]">
+        <AppSidebar v-if="!isFlowRoute" />
         <main class="prototype-main">
           <AppTopBar :label="pageLabel" :system-status="appStore.systemStatus" />
           <div class="prototype-content">

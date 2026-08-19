@@ -19,6 +19,8 @@ const liveRendererOrigin = (process.env.QA_AGENT_RENDERER_ORIGIN || "").trim().r
 const desktopDebugEnabled = !app.isPackaged || process.env.QA_AGENT_DESKTOP_DEBUG === "1";
 
 let mainWindow = null;
+let flowWindow = null;
+let rendererOrigin = "";
 let staticServer = null;
 
 function ensureWindowsShortcut() {
@@ -195,19 +197,151 @@ function normalizeNotificationPayload(payload) {
   };
 }
 
-function focusMainWindow() {
-  if (!mainWindow) {
+function isUsableWindow(win) {
+  return Boolean(win && !win.isDestroyed());
+}
+
+function focusWindow(win) {
+  if (!isUsableWindow(win)) {
     return;
   }
 
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
+  if (win.isMinimized()) {
+    win.restore();
   }
-  mainWindow.show();
-  mainWindow.focus();
+  win.show();
+  win.focus();
+}
+
+function focusMainWindow() {
+  focusWindow(mainWindow);
+}
+
+function sanitizeFlowId(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text.length > 80) {
+    return "";
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(text)) {
+    return "";
+  }
+  return text;
+}
+
+function buildFlowWindowUrl(payload) {
+  const url = new URL("/flow", rendererOrigin);
+  const sessionId = sanitizeFlowId(payload?.sessionId);
+  const turnId = sanitizeFlowId(payload?.turnId);
+  if (sessionId) {
+    url.searchParams.set("session", sessionId);
+  }
+  if (turnId) {
+    url.searchParams.set("turn", turnId);
+  }
+  return url.toString();
+}
+
+function parseFlowWindowPayload(url) {
+  try {
+    const target = new URL(url);
+    return {
+      sessionId: target.searchParams.get("session") || "",
+      turnId: target.searchParams.get("turn") || "",
+    };
+  } catch {
+    return {};
+  }
+}
+
+function isSameOriginFlowUrl(url) {
+  if (!rendererOrigin) {
+    return false;
+  }
+  try {
+    const target = new URL(url);
+    const origin = new URL(rendererOrigin);
+    return target.origin === origin.origin && target.pathname === "/flow";
+  } catch {
+    return false;
+  }
+}
+
+function createBrowserWindow(options) {
+  const win = new BrowserWindow({
+    title: APP_NAME,
+    icon: existsSync(iconPath) ? iconPath : undefined,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      devTools: true,
+      nodeIntegration: false,
+      preload: join(__dirname, "preload.cjs"),
+      sandbox: true,
+    },
+    ...options,
+  });
+
+  win.setMenuBarVisibility(false);
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSameOriginFlowUrl(url)) {
+      openOrFocusFlowWindow(parseFlowWindowPayload(url));
+      return { action: "deny" };
+    }
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("before-input-event", (event, input) => {
+    const key = input.key.toLowerCase();
+    if (desktopDebugEnabled && (input.key === "F12" || (input.control && input.shift && key === "i"))) {
+      toggleDetachedDevTools(win.webContents);
+      event.preventDefault();
+    }
+  });
+  return win;
+}
+
+function openOrFocusFlowWindow(payload) {
+  if (!rendererOrigin) {
+    console.warn("[Desktop] Cannot open flow window before renderer origin is ready.");
+    return false;
+  }
+
+  const nextUrl = buildFlowWindowUrl(payload);
+  if (isUsableWindow(flowWindow)) {
+    const currentUrl = flowWindow.webContents.getURL();
+    if (currentUrl !== nextUrl) {
+      flowWindow.loadURL(nextUrl);
+    }
+    focusWindow(flowWindow);
+    return true;
+  }
+
+  const mainBounds = isUsableWindow(mainWindow) ? mainWindow.getBounds() : null;
+  flowWindow = createBrowserWindow({
+    width: 1200,
+    height: 860,
+    minWidth: 800,
+    minHeight: 560,
+    ...(mainBounds
+      ? {
+          x: mainBounds.x + 80,
+          y: mainBounds.y + 48,
+        }
+      : {}),
+    title: `${APP_NAME} · 编排轨迹`,
+  });
+  flowWindow.loadURL(nextUrl);
+  flowWindow.on("closed", () => {
+    flowWindow = null;
+  });
+  return true;
 }
 
 function registerDesktopIpc() {
+  ipcMain.removeHandler("desktop:set-zoom-factor");
+  ipcMain.removeHandler("desktop:notify");
+  ipcMain.removeHandler("desktop:open-flow-window");
+
   ipcMain.handle("desktop:set-zoom-factor", (event, factor) => {
     const numericFactor = Number(factor);
     const normalizedFactor = Number.isFinite(numericFactor)
@@ -235,7 +369,13 @@ function registerDesktopIpc() {
     notification.show();
     return true;
   });
+
+  ipcMain.handle("desktop:open-flow-window", (_event, payload) => {
+    return openOrFocusFlowWindow(payload);
+  });
 }
+
+registerDesktopIpc();
 
 async function resolveRendererOrigin() {
   if (liveRendererOrigin) {
@@ -249,43 +389,20 @@ async function resolveRendererOrigin() {
 async function createMainWindow() {
   Menu.setApplicationMenu(null);
 
-  const rendererOrigin = await resolveRendererOrigin();
-  mainWindow = new BrowserWindow({
+  rendererOrigin = await resolveRendererOrigin();
+  mainWindow = createBrowserWindow({
     width: 1440,
     height: 960,
     minWidth: 1100,
     minHeight: 720,
-    title: APP_NAME,
-    icon: existsSync(iconPath) ? iconPath : undefined,
-    autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      devTools: true,
-      nodeIntegration: false,
-      preload: join(__dirname, "preload.cjs"),
-      sandbox: true,
-    },
   });
-
-  mainWindow.setMenuBarVisibility(false);
   mainWindow.loadURL(rendererOrigin);
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-
-  mainWindow.webContents.on("before-input-event", (event, input) => {
-    const key = input.key.toLowerCase();
-    if (desktopDebugEnabled && (input.key === "F12" || (input.control && input.shift && key === "i"))) {
-      toggleDetachedDevTools(mainWindow.webContents);
-      event.preventDefault();
-    }
-  });
 
   if (desktopDebugEnabled) {
     mainWindow.webContents.once("did-finish-load", () => {
-      mainWindow.webContents.openDevTools({ mode: "detach", activate: true });
+      if (isUsableWindow(mainWindow)) {
+        mainWindow.webContents.openDevTools({ mode: "detach", activate: true });
+      }
     });
   }
 
