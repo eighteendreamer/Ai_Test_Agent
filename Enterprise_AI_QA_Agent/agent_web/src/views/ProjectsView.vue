@@ -1247,8 +1247,14 @@ onMounted(() => {
 <style scoped>
 .projects-page {
   padding: 16px 16px;
-  color: var(--text-primary, #111827);
+  color: var(--text);
+  background: var(--bg);
   min-height: 100%;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] .projects-page {
+  color-scheme: dark;
 }
 
 .page-head,
@@ -1276,12 +1282,12 @@ onMounted(() => {
 .detail-head p,
 .editor header p {
   margin: 0;
-  color: var(--text-secondary, #6b7280);
+  color: var(--muted);
 }
 
 .primary {
-  background: #111827 !important;
-  color: #fff !important;
+  background: var(--accent) !important;
+  color: var(--bg) !important;
 }
 
 .toolbar {
@@ -1318,9 +1324,20 @@ onMounted(() => {
   resize: vertical;
 }
 
+.projects-page select {
+  background-color: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.projects-page select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
 .projects-page input::placeholder,
 .projects-page textarea::placeholder {
-  color: var(--muted, #6b7280);
+  color: var(--muted);
 }
 
 .projects-page input:focus-visible,
@@ -1340,8 +1357,8 @@ onMounted(() => {
 
 .projects-page input::selection,
 .projects-page textarea::selection {
-  background: var(--accent, #111827);
-  color: #fff;
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .scope-input {
@@ -1369,7 +1386,7 @@ onMounted(() => {
 
 .project-list,
 .project-detail {
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface, #fff);
   overflow: hidden;
@@ -1382,7 +1399,7 @@ onMounted(() => {
   gap: 12px;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--border);
   background: transparent;
   padding: 15px;
   color: inherit;
@@ -1398,8 +1415,8 @@ onMounted(() => {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: #111827;
-  color: #fff;
+  background: var(--accent);
+  color: var(--bg);
   font-weight: 700;
 }
 
@@ -1415,7 +1432,7 @@ td small,
 .selection-summary small,
 .version-option small {
   display: block;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .status,
@@ -1487,13 +1504,13 @@ td small,
 
 .stats article {
   padding: 14px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 12px;
 }
 
 .stats span {
   display: block;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -1509,11 +1526,11 @@ td small,
   display: grid;
   grid-template-columns: 120px 1fr;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--border);
 }
 
 .facts dt {
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .facts dd {
@@ -1522,25 +1539,25 @@ td small,
 }
 
 .danger {
-  color: #b91c1c;
+  color: var(--red);
 }
 
 .empty {
   padding: 36px;
   text-align: center;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .error-banner,
 .graph-warning {
   padding: 10px 12px;
   border-radius: 8px;
-  background: #fef2f2;
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+  color: var(--red);
 }
 
 .resource-panel {
-  border-top: 1px solid var(--border-color, #e5e7eb);
+  border-top: 1px solid var(--border);
   padding-top: 20px;
 }
 
@@ -1581,12 +1598,12 @@ td small,
 
 .case-toolbar small {
   margin-left: auto;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
@@ -1600,13 +1617,13 @@ th,
 td {
   padding: 11px 10px;
   text-align: left;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
 th {
-  color: #6b7280;
-  background: var(--surface-muted, #f9fafb);
+  color: var(--muted);
+  background: var(--surface-muted);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1626,7 +1643,7 @@ td strong {
 
 .pagination {
   margin-top: 12px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -1658,7 +1675,8 @@ td strong {
   overflow: auto;
   padding: 22px;
   border-radius: 14px;
-  background: var(--surface, #fff);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .editor label {
@@ -1681,7 +1699,7 @@ td strong {
   flex-direction: row !important;
   align-items: flex-start;
   padding: 12px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
@@ -1778,7 +1796,7 @@ button:disabled {
 .timeline-card small {
   display: block;
   margin-top: 4px;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .compact-facts {
@@ -1787,7 +1805,7 @@ button:disabled {
 
 .drawer-section {
   padding: 14px 0;
-  border-top: 1px solid var(--border-color, #e5e7eb);
+  border-top: 1px solid var(--border);
 }
 
 .drawer-section h3 {
@@ -1796,13 +1814,13 @@ button:disabled {
 
 .drawer-empty {
   padding: 12px;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .timeline-card {
   margin: 8px 0;
   padding: 11px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 9px;
 }
 
@@ -1816,8 +1834,8 @@ button:disabled {
 .artifact-links a {
   padding: 7px 10px;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+  color: var(--blue);
   text-decoration: none;
 }
 
@@ -1828,7 +1846,7 @@ button:disabled {
 
 .drawer-section > button {
   margin-top: 8px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface, #fff);
   color: inherit;
