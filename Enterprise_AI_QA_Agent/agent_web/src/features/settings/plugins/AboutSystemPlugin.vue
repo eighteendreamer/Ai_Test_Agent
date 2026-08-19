@@ -1,10 +1,29 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import { NModal } from "naive-ui";
+
 import type { SettingsPluginDefinition } from "../plugins";
 import { t } from "../../../services/i18n";
 
 defineProps<{
   plugin?: SettingsPluginDefinition;
 }>();
+
+const copyrightPreviewOpen = ref(false);
+const copyrightPreviewSrc = "/about/software-copyright.jpg";
+const copyrightPdfSrc = "/about/software-copyright.pdf";
+
+const copyrightFacts = [
+  { labelKey: "about.copyright_field_name", valueKey: "about.copyright_name" },
+  { labelKey: "about.copyright_field_alias", valueKey: "about.copyright_alias" },
+  { labelKey: "about.copyright_field_version", valueKey: "about.copyright_version" },
+  { labelKey: "about.copyright_field_owners", valueKey: "about.copyright_owners" },
+  { labelKey: "about.copyright_field_method", valueKey: "about.copyright_method" },
+  { labelKey: "about.copyright_field_scope", valueKey: "about.copyright_scope" },
+  { labelKey: "about.copyright_field_reg_no", valueKey: "about.copyright_reg_no" },
+  { labelKey: "about.copyright_field_cert_no", valueKey: "about.copyright_cert_no" },
+  { labelKey: "about.copyright_field_date", valueKey: "about.copyright_date" },
+];
 
 const repoUrl = "https://github.com/eighteendreamer/Ai_Test_Agent";
 const issuesUrl = `${repoUrl}/issues`;
@@ -149,6 +168,33 @@ const infoCards = [
       </section>
 
       <section class="about-section">
+        <h2 class="section-title">{{ t("about.section_copyright") }}</h2>
+        <div class="copyright-card">
+          <button type="button" class="copyright-preview" @click="copyrightPreviewOpen = true">
+            <img :src="copyrightPreviewSrc" :alt="t('about.copyright_preview_alt')">
+          </button>
+          <div class="copyright-body">
+            <dl class="copyright-facts">
+              <div v-for="fact in copyrightFacts" :key="fact.labelKey">
+                <dt>{{ t(fact.labelKey) }}</dt>
+                <dd>{{ t(fact.valueKey) }}</dd>
+              </div>
+            </dl>
+            <div class="copyright-actions">
+              <button type="button" class="action-btn primary" @click="copyrightPreviewOpen = true">
+                <i class="fa-solid fa-certificate"></i>
+                <span>{{ t("about.copyright_view") }}</span>
+              </button>
+              <a class="action-btn" :href="copyrightPdfSrc" target="_blank" rel="noreferrer">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>{{ t("about.copyright_open_pdf") }}</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="about-section">
         <h2 class="section-title">{{ t("about.section_feedback") }}</h2>
         <div class="list-container">
           <div class="list-item" v-for="item in infoCards" :key="item.title">
@@ -164,6 +210,22 @@ const infoCards = [
         </div>
       </section>
     </div>
+
+    <NModal v-model:show="copyrightPreviewOpen">
+      <div class="copyright-modal">
+        <header>
+          <h3>{{ t("about.copyright_preview_alt") }}</h3>
+          <button type="button" class="copyright-modal__close" @click="copyrightPreviewOpen = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </header>
+        <img :src="copyrightPreviewSrc" :alt="t('about.copyright_preview_alt')">
+        <a class="action-btn" :href="copyrightPdfSrc" target="_blank" rel="noreferrer">
+          <i class="fa-solid fa-file-pdf"></i>
+          <span>{{ t("about.copyright_open_pdf") }}</span>
+        </a>
+      </div>
+    </NModal>
   </section>
 </template>
 
@@ -475,6 +537,115 @@ const infoCards = [
   color: var(--about-text-secondary);
 }
 
+.copyright-card {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 20px;
+  padding: 16px;
+  border: 1px solid var(--about-border);
+  border-radius: 12px;
+  background: var(--about-bg);
+}
+
+.copyright-preview {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--about-border);
+  border-radius: 8px;
+  background: var(--about-bg-subtle);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.copyright-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.copyright-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.copyright-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.copyright-facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.copyright-facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--about-text-tertiary);
+}
+
+.copyright-facts dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--about-text-primary);
+  word-break: break-word;
+}
+
+.copyright-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.copyright-modal {
+  width: min(720px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--about-bg, #fff);
+}
+
+.copyright-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.copyright-modal h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.copyright-modal__close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--about-border, #e2e8f0);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.copyright-modal img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--about-border, #e2e8f0);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
 @media (max-width: 640px) {
   .about-header__main {
     flex-direction: column;
@@ -485,6 +656,14 @@ const infoCards = [
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .copyright-card {
+    grid-template-columns: 1fr;
+  }
+
+  .copyright-preview {
+    max-width: 220px;
   }
 }
 </style>

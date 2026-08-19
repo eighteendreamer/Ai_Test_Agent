@@ -15,6 +15,7 @@ const APP_NAME = "御策天检";
 // 使用英文 ID 避免中文编码问题；通知显示的中文名由快捷方式 description 提供。
 const APP_USER_MODEL_ID = "御策天检";
 const backendOrigin = process.env.QA_AGENT_API_ORIGIN || "http://127.0.0.1:1032";
+const liveRendererOrigin = (process.env.QA_AGENT_RENDERER_ORIGIN || "").trim().replace(/\/$/, "");
 const desktopDebugEnabled = !app.isPackaged || process.env.QA_AGENT_DESKTOP_DEBUG === "1";
 
 let mainWindow = null;
@@ -236,10 +237,19 @@ function registerDesktopIpc() {
   });
 }
 
+async function resolveRendererOrigin() {
+  if (liveRendererOrigin) {
+    console.log("[Desktop] Using live Vite renderer:", liveRendererOrigin);
+    return liveRendererOrigin;
+  }
+  console.log("[Desktop] Serving static renderer. For HMR use `npm run desktop:dev`.");
+  return startStaticServer();
+}
+
 async function createMainWindow() {
   Menu.setApplicationMenu(null);
 
-  const rendererOrigin = await startStaticServer();
+  const rendererOrigin = await resolveRendererOrigin();
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
