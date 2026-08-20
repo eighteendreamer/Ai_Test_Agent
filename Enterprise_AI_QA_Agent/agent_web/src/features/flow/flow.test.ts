@@ -59,13 +59,19 @@ describe("Flow worker drill-down", () => {
 });
 
 describe("Flow inspector long content", () => {
-  it("keeps prompt content collapsed until the summary is opened", async () => {
+  it("uses one collapsed content viewer with a prompt section dropdown", async () => {
     const prompt = "# Identity\n\n" + "Long prompt content. ".repeat(30);
     const wrapper = mount(FlowInspector, {
       props: {
         ...inspectorProps,
         stageId: "prompt_assembler",
-        graphState: { system_prompt: prompt },
+        graphState: {
+          system_prompt: prompt,
+          system_prompt_sections: [
+            { title: "identity", body: "Identity section body" },
+            { title: "execution_contract", body: "Execution section body" },
+          ],
+        },
       },
     });
 
@@ -74,6 +80,8 @@ describe("Flow inspector long content", () => {
     const disclosure = wrapper.get(".flow-inspector-disclosure");
     expect(disclosure.attributes("open")).toBeUndefined();
     expect(disclosure.get(".flow-inspector-disclosure-preview").text()).toContain("# Identity");
+    expect(wrapper.findAll(".flow-inspector-disclosure")).toHaveLength(1);
+    expect(wrapper.find(".flow-inspector-prompt-select").text()).toContain("flow.inspector.tab_prompt");
 
     await disclosure.get("summary").trigger("click");
 

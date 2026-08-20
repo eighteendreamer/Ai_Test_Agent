@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
+import DropdownSelect from "../../components/common/DropdownSelect.vue";
 import { t } from "../../services/i18n";
 import type { ExecutionEvent, ToolArtifactRecord, ToolJobRecord, WorkerDispatchRecord } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
@@ -40,6 +41,7 @@ const emit = defineEmits<{
 type InspectorTab = "logs" | "tools" | "skills" | "prompt" | "output" | "artifacts";
 
 const activeTab = ref<InspectorTab>("logs");
+const selectedPromptSection = ref<string | number>("full");
 
 const tabs = computed(() => [
   { key: "logs" as const, label: t("flow.inspector.tab_logs") },
@@ -79,6 +81,23 @@ const tools = computed(() =>
 const skills = computed(() => inspectSkills(props.graphState));
 const skillBlocks = computed(() => inspectSkillBlocks(props.graphState));
 const prompt = computed(() => inspectPrompt(props.graphState));
+const promptSectionOptions = computed(() => [
+  { label: t("flow.inspector.tab_prompt"), value: "full" as const },
+  ...(prompt.value.sections.value ?? []).map((section, index) => ({
+    label: section.title || `${t("flow.inspector.tab_prompt")} ${index + 1}`,
+    value: index,
+  })),
+]);
+const selectedPromptSectionTitle = computed(() =>
+  promptSectionOptions.value.find((option) => option.value === selectedPromptSection.value)?.label
+    || t("flow.inspector.tab_prompt"),
+);
+const selectedPromptSectionBody = computed(() => {
+  if (selectedPromptSection.value === "full") {
+    return prompt.value.prompt.value || "";
+  }
+  return prompt.value.sections.value?.[selectedPromptSection.value]?.body || "";
+});
 const output = computed(() =>
   props.stageId ? inspectOutput(props.stageId, props.graphState) : { text: { presence: "missing" as const, value: null } },
 );
@@ -89,7 +108,18 @@ watch(
   () => [props.stageId, props.worker?.task_id] as const,
   () => {
     activeTab.value = "logs";
+    selectedPromptSection.value = "full";
   },
+);
+
+watch(
+  () => promptSectionOptions.value,
+  (options) => {
+    if (!options.some((option) => option.value === selectedPromptSection.value)) {
+      selectedPromptSection.value = "full";
+    }
+  },
+  { deep: true },
 );
 
 function drillIntoWorker() {
@@ -216,26 +246,24 @@ function previewText(value: string | null | undefined, limit = 180) {
 
         <section v-else-if="activeTab === 'prompt'" class="flow-inspector-section">
           <div v-if="isWorker" class="empty-state small">{{ t("flow.inspector.not_carried") }}</div>
-          <div v-else-if="prompt.prompt.presence !== 'ok'" class="empty-state small">
+          <div v-else-if="prompt.prompt.presence !== 'ok' && prompt.sections.presence !== 'ok'" class="empty-state small">
             {{ presenceText(prompt.prompt.presence) }}
           </div>
-          <details v-else class="flow-inspector-disclosure">
-            <summary>
-              <span class="flow-inspector-disclosure-title">{{ t("flow.inspector.tab_prompt") }}</span>
-              <span class="flow-inspector-disclosure-preview">{{ previewText(prompt.prompt.value) }}</span>
-            </summary>
-            <pre>{{ prompt.prompt.value }}</pre>
-          </details>
-          <div
-            v-if="!isWorker && prompt.sections.presence === 'ok' && prompt.sections.value?.length"
-            class="flow-inspector-prewrap"
-          >
-            <details v-for="(section, index) in prompt.sections.value" :key="`section-${index}`" class="flow-inspector-disclosure">
+          <div v-else class="flow-inspector-prompt-view">
+            <div class="flow-inspector-prompt-toolbar">
+              <span class="flow-inspector-control-label">{{ t("flow.inspector.tab_prompt") }}</span>
+              <DropdownSelect
+                v-model="selectedPromptSection"
+                :options="promptSectionOptions"
+                button-class="flow-inspector-prompt-select"
+              />
+            </div>
+            <details class="flow-inspector-disclosure">
               <summary>
-                <span class="flow-inspector-disclosure-title">{{ section.title || `${t("flow.inspector.tab_prompt")} ${index + 1}` }}</span>
-                <span class="flow-inspector-disclosure-preview">{{ previewText(section.body) }}</span>
+                <span class="flow-inspector-disclosure-title">{{ selectedPromptSectionTitle }}</span>
+                <span class="flow-inspector-disclosure-preview">{{ previewText(selectedPromptSectionBody) }}</span>
               </summary>
-              <pre>{{ section.body }}</pre>
+              <pre>{{ selectedPromptSectionBody }}</pre>
             </details>
           </div>
         </section>
@@ -431,6 +459,31 @@ function previewText(value: string | null | undefined, limit = 180) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.flow-inspector-prompt-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flow-inspector-prompt-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.flow-inspector-control-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.flow-inspector-prompt-select {
+  min-height: 34px;
+  font-size: 12px;
 }
 
 .flow-inspector-log {
