@@ -167,13 +167,17 @@ function previewText(value: string | null | undefined, limit = 180) {
 
         <section v-if="activeTab === 'logs'" class="flow-inspector-section">
           <div v-if="logs.presence !== 'ok'" class="empty-state small">{{ presenceText(logs.presence) }}</div>
-          <div v-else class="detail-list">
-            <div v-for="item in logs.value" :key="item.id" class="detail-list-item flow-inspector-log">
-              <span class="property-key">{{ item.type }}</span>
-              <span class="property-value">{{ formatServerDateTime(item.timestamp) }}</span>
-              <p v-if="item.message">{{ item.message }}</p>
-              <p v-else class="flow-inspector-missing">{{ t("flow.inspector.not_carried") }}</p>
-            </div>
+          <div v-else class="flow-inspector-log-list">
+            <article v-for="item in logs.value" :key="item.id" class="flow-inspector-log">
+              <div class="flow-inspector-log-head">
+                <span class="flow-inspector-log-type">{{ item.type }}</span>
+                <time class="flow-inspector-log-time" :datetime="item.timestamp">
+                  {{ formatServerDateTime(item.timestamp) }}
+                </time>
+              </div>
+              <p v-if="item.message" class="flow-inspector-log-message">{{ item.message }}</p>
+              <p v-else class="flow-inspector-log-message flow-inspector-missing">{{ t("flow.inspector.not_carried") }}</p>
+            </article>
           </div>
         </section>
 
@@ -441,11 +445,46 @@ function previewText(value: string | null | undefined, limit = 180) {
   gap: 4px;
 }
 
-.flow-inspector-log {
-  flex-wrap: wrap;
+.flow-inspector-log-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.flow-inspector-log p,
+.flow-inspector-log {
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.flow-inspector-log:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.flow-inspector-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flow-inspector-log-type {
+  min-width: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.flow-inspector-log-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.flow-inspector-log-message,
 .detail-list-item p {
   width: 100%;
   margin: 6px 0 0;
@@ -453,6 +492,7 @@ function previewText(value: string | null | undefined, limit = 180) {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 

@@ -7,6 +7,7 @@ import FlowInspector from "./FlowInspector.vue";
 import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openFlowWindow";
 import { projectFlowNodes } from "./stages";
 import { collectWorkerDispatches, workerFlowStatus, workerNodeId } from "./workers";
+import { t } from "../../services/i18n";
 import type { WorkerDispatchRecord } from "../../types";
 
 function worker(overrides: Partial<WorkerDispatchRecord> = {}): WorkerDispatchRecord {
@@ -59,6 +60,40 @@ describe("Flow worker drill-down", () => {
 });
 
 describe("Flow inspector long content", () => {
+  it("renders log metadata and messages in a complete, separate layout", () => {
+    const longMessage = "Assistant response payload has been finalized for the client.\n" + "x".repeat(220);
+    const wrapper = mount(FlowInspector, {
+      props: {
+        ...inspectorProps,
+        stageId: "responder",
+        events: [
+          {
+            id: "log-1",
+            session_id: "session-1",
+            type: "graph.response_ready",
+            timestamp: "2026-08-20T12:44:05Z",
+            payload: { turn_id: "turn-1", phase: "responder", message: longMessage },
+          },
+          {
+            id: "log-2",
+            session_id: "session-1",
+            type: "runtime.turn_completed",
+            timestamp: "2026-08-20T12:44:06Z",
+            payload: { turn_id: "turn-1", phase: "responder" },
+          },
+        ],
+      },
+    });
+
+    const entries = wrapper.findAll(".flow-inspector-log");
+    expect(entries).toHaveLength(2);
+    expect(entries[0].find(".flow-inspector-log-type").text()).toBe("graph.response_ready");
+    expect(entries[0].find(".flow-inspector-log-time").text()).toContain("2026");
+    expect(entries[0].find(".flow-inspector-log-message").text()).toBe(longMessage);
+    expect(entries[1].find(".flow-inspector-log-message").text()).toBe(t("flow.inspector.not_carried"));
+    expect(wrapper.findAll(".flow-inspector-log-head")).toHaveLength(2);
+  });
+
   it("keeps prompt names and summaries on separate lines without a dropdown", async () => {
     const prompt = "# Identity\n\n" + "Long prompt content. ".repeat(30);
     const wrapper = mount(FlowInspector, {
