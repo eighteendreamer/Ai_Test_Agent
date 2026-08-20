@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import FlowInspector from "./FlowInspector.vue";
 import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openFlowWindow";
+import { projectFlowNodes } from "./stages";
 import { collectWorkerDispatches, workerFlowStatus, workerNodeId } from "./workers";
 import type { WorkerDispatchRecord } from "../../types";
 
@@ -53,6 +54,21 @@ describe("Flow worker drill-down", () => {
     });
 
     expect(wrapper.find(".flow-inspector-head-actions .flow-reset-btn").exists()).toBe(false);
+  });
+});
+
+describe("Dynamic flow projection", () => {
+  it("creates only the phases observed in the selected turn", () => {
+    const stages = projectFlowNodes([
+      { id: "1", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-08-20T00:00:00Z", payload: { turn_id: "turn-1" } },
+      { id: "2", session_id: "session-1", type: "graph.context_built", timestamp: "2026-08-20T00:00:01Z", payload: { turn_id: "turn-1", phase: "context_builder" } },
+      { id: "3", session_id: "session-1", type: "graph.execution_started", timestamp: "2026-08-20T00:00:02Z", payload: { turn_id: "turn-1", phase: "router" } },
+    ], "turn-1");
+
+    expect(stages.stages.map((stage) => stage.phase)).toEqual(["context_builder", "router"]);
+    expect(stages.edges).toEqual([
+      { id: "e-context_builder-router", source: "context_builder", target: "router", kind: "stage" },
+    ]);
   });
 });
 

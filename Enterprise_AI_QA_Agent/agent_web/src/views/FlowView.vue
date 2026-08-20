@@ -6,9 +6,9 @@ import FlowCanvas from "../features/flow/FlowCanvas.vue";
 import FlowInspector from "../features/flow/FlowInspector.vue";
 import { subscribeFlowSession } from "../features/flow/openFlowWindow";
 import { useFlowSession } from "../features/flow/useFlowSession";
+import { flowStageNodeId } from "../features/flow/stages";
 import { workerFlowStatus, workerLabel, workerNodeId } from "../features/flow/workers";
 import { t } from "../services/i18n";
-import type { FlowStageId } from "../features/flow/stages";
 
 interface FlowCrumb {
   sessionId: string;
@@ -35,23 +35,24 @@ const {
   loading,
   error,
   resolvedTurnId,
-  statuses,
+  stages,
+  stageEdges,
   graphState,
 } = useFlowSession(viewingSessionId, viewingTurnId);
 
-const selectedStageId = ref<FlowStageId | "">("");
+const selectedStageId = ref("");
 const selectedWorkerId = ref("");
 const inspectorOpen = ref(false);
 
 const selectedWorker = computed(
   () => workers.value.find((worker, index) => workerNodeId(worker, index) === selectedWorkerId.value) ?? null,
 );
-const selectedNodeId = computed(() => selectedWorkerId.value || selectedStageId.value);
+const selectedNodeId = computed(() => selectedWorkerId.value || (selectedStageId.value ? flowStageNodeId(selectedStageId.value) : ""));
 const selectedStatus = computed(() => {
   if (selectedWorker.value) {
     return workerFlowStatus(selectedWorker.value.status);
   }
-  return selectedStageId.value ? statuses.value[selectedStageId.value] : "";
+  return stages.value.find((stage) => stage.phase === selectedStageId.value)?.status || "";
 });
 const isChildView = computed(() => crumbs.value.length > 0);
 
@@ -121,7 +122,7 @@ function goToCrumb(index: number) {
   resetSelection();
 }
 
-function openStageInspector(stageId: FlowStageId) {
+function openStageInspector(stageId: string) {
   selectedStageId.value = stageId;
   selectedWorkerId.value = "";
   inspectorOpen.value = true;
@@ -198,7 +199,8 @@ watch(
         <FlowCanvas
           :session-id="viewingSessionId"
           :turn-id="resolvedTurnId"
-          :statuses="statuses"
+          :stages="stages"
+          :stage-edges="stageEdges"
           :workers="workers"
           :selected-node-id="selectedNodeId"
           @select-stage="openStageInspector"

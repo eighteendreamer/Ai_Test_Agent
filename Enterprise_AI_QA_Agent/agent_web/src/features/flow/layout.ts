@@ -1,29 +1,21 @@
 import type { XYPosition } from "@vue-flow/core";
 
-import { FLOW_STAGES, type FlowStageId } from "./stages";
+import { FLOW_STAGES } from "./stages";
 
 const STORAGE_PREFIX = "qa-agent-flow-layout:";
 const NODE_WIDTH = 196;
 const GAP_X = 72;
 const MAIN_Y = 168;
 const TOOL_Y = 348;
-const WORKER_X = 40 + 8 * (NODE_WIDTH + GAP_X);
 const WORKER_Y = 80;
 const WORKER_GAP_Y = 120;
 
-export function defaultStagePositions(): Record<FlowStageId, XYPosition> {
+export function defaultStagePositions(stageIds: string[] = [...FLOW_STAGES]): Record<string, XYPosition> {
   const x = (index: number) => 40 + index * (NODE_WIDTH + GAP_X);
-  return {
-    context_builder: { x: x(0), y: MAIN_Y },
-    router: { x: x(1), y: MAIN_Y },
-    planner: { x: x(2), y: MAIN_Y },
-    permission_gate: { x: x(3), y: MAIN_Y },
-    prompt_assembler: { x: x(4), y: MAIN_Y },
-    model_invoker: { x: x(5), y: MAIN_Y },
-    tool_executor: { x: x(5), y: TOOL_Y },
-    finalizer: { x: x(6), y: MAIN_Y },
-    responder: { x: x(7), y: MAIN_Y },
-  };
+  return Object.fromEntries(stageIds.map((stageId, index) => [
+    stageId,
+    { x: x(index), y: stageId === "tool_executor" ? TOOL_Y : MAIN_Y },
+  ]));
 }
 
 export function layoutStorageKey(sessionId: string, turnId: string): string {
@@ -85,11 +77,12 @@ export function clearSavedPositions(sessionId: string, turnId: string): void {
 export function mergeStagePositions(
   sessionId: string,
   turnId: string,
-): Record<FlowStageId, XYPosition> {
-  const defaults = defaultStagePositions();
+  stageIds: string[] = [...FLOW_STAGES],
+): Record<string, XYPosition> {
+  const defaults = defaultStagePositions(stageIds);
   const saved = loadSavedPositions(sessionId, turnId);
   const merged = { ...defaults };
-  for (const stage of FLOW_STAGES) {
+  for (const stage of stageIds) {
     const position = saved[stage];
     if (position) {
       merged[stage] = position;
@@ -102,12 +95,13 @@ function overlaps(left: XYPosition, right: XYPosition): boolean {
   return Math.abs(left.x - right.x) < 80 && Math.abs(left.y - right.y) < 80;
 }
 
-export function nextWorkerPosition(occupied: XYPosition[]): XYPosition {
+export function nextWorkerPosition(occupied: XYPosition[], stageCount = 1): XYPosition {
+  const workerX = 40 + Math.max(stageCount, 1) * (NODE_WIDTH + GAP_X);
   for (let index = 0; index < 48; index += 1) {
-    const candidate = { x: WORKER_X, y: WORKER_Y + index * WORKER_GAP_Y };
+    const candidate = { x: workerX, y: WORKER_Y + index * WORKER_GAP_Y };
     if (!occupied.some((item) => overlaps(item, candidate))) {
       return candidate;
     }
   }
-  return { x: WORKER_X, y: WORKER_Y + occupied.length * WORKER_GAP_Y };
+  return { x: workerX, y: WORKER_Y + occupied.length * WORKER_GAP_Y };
 }

@@ -2,10 +2,10 @@
 import type { NodeProps } from "@vue-flow/core";
 import { Handle, Position } from "@vue-flow/core";
 
-import type { FlowNodeStatus, FlowStageId } from "./stages";
+import type { FlowNodeStatus } from "./stages";
 
 export interface StageNodeData {
-  stageId: FlowStageId;
+  stageId: string;
   title: string;
   status: FlowNodeStatus;
   statusLabel: string;

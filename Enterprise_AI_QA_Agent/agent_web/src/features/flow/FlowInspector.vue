@@ -16,12 +16,12 @@ import {
   inspectWorkerOutput,
   type InspectPresence,
 } from "./inspect";
-import { FLOW_STAGE_LABEL_KEYS, FLOW_STATUS_LABEL_KEYS, type FlowNodeStatus, type FlowStageId } from "./stages";
+import { FLOW_STATUS_LABEL_KEYS, flowStageTitle, type FlowNodeStatus } from "./stages";
 import { workerLabel } from "./workers";
 
 const props = defineProps<{
   open: boolean;
-  stageId: FlowStageId | "";
+  stageId: string;
   worker: WorkerDispatchRecord | null;
   status: FlowNodeStatus | "";
   events: ExecutionEvent[];
@@ -56,7 +56,7 @@ const stageTitle = computed(() => {
   if (props.worker) {
     return workerLabel(props.worker) || t("flow.worker.untitled");
   }
-  return props.stageId ? t(FLOW_STAGE_LABEL_KEYS[props.stageId]) : t("flow.inspector.not_selected");
+  return props.stageId ? t(flowStageTitle(props.stageId)) : t("flow.inspector.not_selected");
 });
 const statusLabel = computed(() =>
   props.status ? t(FLOW_STATUS_LABEL_KEYS[props.status]) : "",

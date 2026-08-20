@@ -21,6 +21,7 @@ class FlowStageNode(BaseModel):
     id: str
     kind: Literal["stage"] = "stage"
     status: FlowNodeStatus
+    phase: str
 
 
 class FlowWorkerNode(BaseModel):

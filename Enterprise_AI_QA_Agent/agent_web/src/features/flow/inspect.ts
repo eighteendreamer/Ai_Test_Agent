@@ -1,5 +1,5 @@
 import type { ExecutionEvent, SessionSnapshot, ToolArtifactRecord, ToolJobRecord, WorkerDispatchRecord } from "../../types";
-import { compareEvents, payloadText, selectTurnEvents, type FlowStageId } from "./stages";
+import { compareEvents, payloadText, selectTurnEvents } from "./stages";
 
 export type InspectPresence = "missing" | "empty" | "ok";
 
@@ -183,7 +183,7 @@ export function inspectWorkerLogs(
   return { presence: "ok", value: matched };
 }
 
-export function inspectLogs(events: ExecutionEvent[], stageId: FlowStageId, turnId: string): InspectValue<InspectLogItem[]> {
+export function inspectLogs(events: ExecutionEvent[], stageId: string, turnId: string): InspectValue<InspectLogItem[]> {
   const matched = selectTurnEvents(events, turnId)
     .filter((event) => payloadText(event, "phase") === stageId)
     .slice()
@@ -201,7 +201,7 @@ export function inspectLogs(events: ExecutionEvent[], stageId: FlowStageId, turn
 }
 
 export function inspectTools(
-  stageId: FlowStageId,
+  stageId: string,
   graphState: Record<string, unknown> | null,
   jobs: ToolJobRecord[],
   turnId: string,
@@ -293,7 +293,7 @@ export function inspectPrompt(graphState: Record<string, unknown> | null): Inspe
   };
 }
 
-const OUTPUT_FIELD_BY_STAGE: Partial<Record<FlowStageId, string>> = {
+const OUTPUT_FIELD_BY_STAGE: Record<string, string> = {
   context_builder: "context_bundle",
   router: "selected_agent_key",
   planner: "plan_steps",
@@ -305,7 +305,7 @@ const OUTPUT_FIELD_BY_STAGE: Partial<Record<FlowStageId, string>> = {
   responder: "final_response",
 };
 
-export function inspectOutput(stageId: FlowStageId, graphState: Record<string, unknown> | null): InspectOutputView {
+export function inspectOutput(stageId: string, graphState: Record<string, unknown> | null): InspectOutputView {
   const field = OUTPUT_FIELD_BY_STAGE[stageId];
   if (!field) {
     return { text: { presence: "missing", value: null } };

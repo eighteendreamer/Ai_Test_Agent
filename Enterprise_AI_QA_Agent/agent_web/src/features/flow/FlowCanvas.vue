@@ -18,25 +18,26 @@ import type { StageNodeData } from "./StageNode.vue";
 import WorkerNode from "./WorkerNode.vue";
 import type { WorkerNodeData } from "./WorkerNode.vue";
 import {
-  FLOW_STAGE_EDGES,
-  FLOW_STAGE_LABEL_KEYS,
-  FLOW_STAGES,
   FLOW_STATUS_LABEL_KEYS,
+  flowStageNodeId,
+  flowStageTitle,
+  type FlowStageEdge,
+  type FlowStageRecord,
   type FlowNodeStatus,
-  type FlowStageId,
 } from "./stages";
 import { isWorkerNodeId, workerFlowStatus, workerLabel, workerNodeId, workerSourceStage } from "./workers";
 
 const props = defineProps<{
   sessionId: string;
   turnId: string;
-  statuses: Record<FlowStageId, FlowNodeStatus>;
+  stages: FlowStageRecord[];
+  stageEdges: FlowStageEdge[];
   workers: WorkerDispatchRecord[];
   selectedNodeId?: string;
 }>();
 
 const emit = defineEmits<{
-  selectStage: [stageId: FlowStageId];
+  selectStage: [stageId: string];
   selectWorker: [workerId: string];
   drillWorker: [workerId: string];
 }>();
@@ -63,19 +64,19 @@ function collectPositions(current: FlowGraphNode[]): Record<string, { x: number;
   return positions;
 }
 
-function buildStageNodes(positions: Record<FlowStageId, { x: number; y: number }>): FlowGraphNode[] {
-  return FLOW_STAGES.map((stageId) => ({
-    id: stageId,
+function buildStageNodes(stages: FlowStageRecord[], positions: Record<string, { x: number; y: number }>): FlowGraphNode[] {
+  return stages.map((stage) => ({
+    id: stage.id,
     type: "stage",
-    position: positions[stageId],
+    position: positions[stage.id],
     draggable: true,
     connectable: false,
-    selected: props.selectedNodeId === stageId,
+    selected: props.selectedNodeId === stage.id,
     data: {
-      stageId,
-      title: t(FLOW_STAGE_LABEL_KEYS[stageId]),
-      status: props.statuses[stageId],
-      statusLabel: statusLabel(props.statuses[stageId]),
+      stageId: stage.phase,
+      title: t(flowStageTitle(stage.phase)),
+      status: stage.status,
+      statusLabel: statusLabel(stage.status),
     },
   }));
 }
@@ -106,11 +107,12 @@ function buildWorkerNode(
 }
 
 function buildStageEdges(): Edge[] {
-  return FLOW_STAGE_EDGES.map((edge) => ({
+  const statuses = new Map(props.stages.map((stage) => [stage.id, stage.status]));
+  return props.stageEdges.map((edge) => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    animated: props.statuses[edge.target] === "running" || props.statuses[edge.target] === "waiting_approval",
+    animated: statuses.get(edge.target) === "running" || statuses.get(edge.target) === "waiting_approval",
     style: {
       stroke: "var(--border)",
     },
@@ -120,7 +122,7 @@ function buildStageEdges(): Edge[] {
 function buildWorkerEdges(workers: WorkerDispatchRecord[]): Edge[] {
   return workers.map((worker, index) => {
     const target = workerNodeId(worker, index);
-    const source = workerSourceStage(worker);
+    const source = flowStageNodeId(workerSourceStage(worker));
     const status = workerFlowStatus(worker.status);
     return {
       id: `e-${source}-${target}`,
@@ -151,8 +153,11 @@ function syncWorkerNodes(resetPositions: boolean) {
     const existing = existingWorkers.get(id);
     const savedPosition = saved[id];
     const position = resetPositions
-      ? nextWorkerPosition([...occupied, ...nextWorkers.map((node) => node.position)])
-      : existing?.position ?? savedPosition ?? nextWorkerPosition([...occupied, ...nextWorkers.map((node) => node.position)]);
+      ? nextWorkerPosition([...occupied, ...nextWorkers.map((node) => node.position)], stageNodes.length)
+      : existing?.position ?? savedPosition ?? nextWorkerPosition(
+        [...occupied, ...nextWorkers.map((node) => node.position)],
+        stageNodes.length,
+      );
     const node = buildWorkerNode(worker, index, position);
     nextWorkers.push(node);
     occupied.push(position);
@@ -164,9 +169,9 @@ function syncWorkerNodes(resetPositions: boolean) {
 
 function applyGraph(resetPositions: boolean) {
   const positions = resetPositions
-    ? defaultStagePositions()
-    : mergeStagePositions(props.sessionId, props.turnId);
-  nodes.value = buildStageNodes(positions);
+    ? defaultStagePositions(props.stages.map((stage) => stage.id))
+    : mergeStagePositions(props.sessionId, props.turnId, props.stages.map((stage) => stage.id));
+  nodes.value = buildStageNodes(props.stages, positions);
   syncWorkerNodes(resetPositions);
 }
 
@@ -178,8 +183,11 @@ function persistCurrentPositions() {
 }
 
 function onNodeClick(event: NodeMouseEvent) {
-  if (FLOW_STAGES.includes(event.node.id as FlowStageId)) {
-    emit("selectStage", event.node.id as FlowStageId);
+  if (!isWorkerNodeId(event.node.id)) {
+    const stageId = String((event.node.data as { stageId?: unknown })?.stageId || "").trim();
+    if (stageId) {
+      emit("selectStage", stageId);
+    }
     return;
   }
   if (isWorkerNodeId(event.node.id)) {
@@ -238,6 +246,14 @@ watch(
 );
 
 watch(
+  () => props.stages,
+  () => {
+    applyGraph(false);
+  },
+  { deep: true },
+);
+
+watch(
   () => props.selectedNodeId,
   (selectedNodeId) => {
     nodes.value = nodes.value.map((node) => ({
@@ -247,41 +263,6 @@ watch(
   },
 );
 
-watch(
-  () => props.statuses,
-  (nextStatuses) => {
-    nodes.value = nodes.value.map((node) => {
-      if (isWorkerNodeId(node.id)) {
-        return {
-          ...node,
-          selected: props.selectedNodeId === node.id,
-        };
-      }
-      const status = nextStatuses[node.id as FlowStageId];
-      return {
-        ...node,
-        selected: props.selectedNodeId === node.id,
-        data: {
-          ...node.data,
-          title: t(FLOW_STAGE_LABEL_KEYS[node.id as FlowStageId]),
-          status,
-          statusLabel: statusLabel(status),
-        },
-      };
-    });
-    edges.value = edges.value.map((edge) => {
-      if (isWorkerNodeId(edge.target)) {
-        return edge;
-      }
-      return {
-        ...edge,
-        animated: nextStatuses[edge.target as FlowStageId] === "running"
-          || nextStatuses[edge.target as FlowStageId] === "waiting_approval",
-      };
-    });
-  },
-  { deep: true },
-);
 </script>
 
 <template>

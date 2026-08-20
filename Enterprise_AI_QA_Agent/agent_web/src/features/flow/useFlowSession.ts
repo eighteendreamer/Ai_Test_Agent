@@ -11,7 +11,7 @@ import type {
   WorkerDispatchRecord,
 } from "../../types";
 import { pickSnapshotForTurn } from "./inspect";
-import { projectStageStatuses, resolveLatestTurnId } from "./stages";
+import { projectFlowNodes, projectStageStatuses, resolveLatestTurnId } from "./stages";
 import { collectWorkerDispatches } from "./workers";
 
 const SIDE_DATA_REFRESH_TYPES = new Set([
@@ -58,6 +58,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
       resolvedTurnId.value,
     ),
   );
+  const flowNodes = computed(() => projectFlowNodes(events.value, resolvedTurnId.value, workers.value));
 
   function disconnect() {
     eventSource?.close();
@@ -236,6 +237,8 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     error,
     resolvedTurnId,
     statuses,
+    stages: computed(() => flowNodes.value.stages),
+    stageEdges: computed(() => flowNodes.value.edges),
     activeSnapshot,
     graphState,
     reload: load,

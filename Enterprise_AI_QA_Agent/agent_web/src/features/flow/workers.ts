@@ -1,5 +1,5 @@
 import type { WorkerDispatchRecord } from "../../types";
-import { isFlowStageId, type FlowNodeStatus, type FlowStageId } from "./stages";
+import { type FlowNodeStatus } from "./stages";
 
 export const WORKER_NODE_PREFIX = "worker:";
 
@@ -83,9 +83,9 @@ export function workerFlowStatus(status: string): FlowNodeStatus {
   return "pending";
 }
 
-export function workerSourceStage(worker: WorkerDispatchRecord): FlowStageId {
+export function workerSourceStage(worker: WorkerDispatchRecord): string {
   const source = String(worker.source_stage || "").trim();
-  return isFlowStageId(source) ? source : "tool_executor";
+  return source || "tool_executor";
 }
 
 export function workerLabel(worker: WorkerDispatchRecord): string {

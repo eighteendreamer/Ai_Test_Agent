@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
 from src.application.runtime.tool_job_service import ToolJobService
@@ -30,6 +31,7 @@ FLOW_STAGES = (
 OPTIONAL_STAGES = frozenset({"tool_executor"})
 STAGE_SET = frozenset(FLOW_STAGES)
 WORKER_NODE_PREFIX = "worker:"
+STAGE_NODE_PREFIX = "stage:"
 
 RUNNING_TYPES = frozenset(
     {
@@ -68,19 +70,6 @@ DONE_TYPES = frozenset(
         "turn.completed",
     }
 )
-STAGE_EDGES = (
-    ("e-context-router", "context_builder", "router"),
-    ("e-router-planner", "router", "planner"),
-    ("e-planner-permission", "planner", "permission_gate"),
-    ("e-permission-prompt", "permission_gate", "prompt_assembler"),
-    ("e-prompt-model", "prompt_assembler", "model_invoker"),
-    ("e-model-tool", "model_invoker", "tool_executor"),
-    ("e-model-finalizer", "model_invoker", "finalizer"),
-    ("e-tool-finalizer", "tool_executor", "finalizer"),
-    ("e-finalizer-responder", "finalizer", "responder"),
-)
-
-
 def _payload_text(event: ExecutionEvent, key: str) -> str:
     value = (event.payload or {}).get(key)
     return "" if value is None else str(value).strip()
@@ -131,6 +120,82 @@ def status_from_event_type(event_type: str) -> FlowNodeStatus | None:
     if event_type in DONE_TYPES:
         return FlowNodeStatus.done
     return None
+
+
+def flow_stage_node_id(phase: str) -> str:
+    normalized = str(phase or "").strip()
+    if normalized in STAGE_SET:
+        return normalized
+    safe = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", normalized).strip("-") or "unknown"
+    return f"{STAGE_NODE_PREFIX}{safe}"
+
+
+def _event_phase(event: ExecutionEvent) -> str:
+    phase = _payload_text(event, "phase")
+    if phase:
+        return phase
+    if event.type == "runtime.turn_started":
+        return "context_builder"
+    return ""
+
+
+def project_flow_nodes(
+    events: list[ExecutionEvent],
+    turn_id: str = "",
+    workers: list[dict[str, Any]] | None = None,
+) -> tuple[list[FlowStageNode], list[FlowEdge]]:
+    """Project only stages observed in a turn, preserving their runtime order."""
+    nodes: list[FlowStageNode] = []
+    by_id: dict[str, FlowStageNode] = {}
+    edges: list[FlowEdge] = []
+    edge_ids: set[str] = set()
+    previous_id = ""
+    ordered = sorted(
+        select_turn_events(events, turn_id),
+        key=lambda item: (_event_timestamp(item), _event_step(item)),
+    )
+
+    def ensure_node(phase: str) -> FlowStageNode:
+        node_id = flow_stage_node_id(phase)
+        current = by_id.get(node_id)
+        if current is None:
+            current = FlowStageNode(id=node_id, phase=phase, status=FlowNodeStatus.pending)
+            by_id[node_id] = current
+            nodes.append(current)
+        return current
+
+    def add_edge(source: str, target: str) -> None:
+        if not source or source == target:
+            return
+        edge_id = f"e-{source}-{target}"
+        if edge_id in edge_ids:
+            return
+        edge_ids.add(edge_id)
+        edges.append(FlowEdge(id=edge_id, source=source, target=target, kind="stage"))
+
+    for event in ordered:
+        phase = _event_phase(event)
+        if phase:
+            node = ensure_node(phase)
+            status = status_from_event_type(event.type) or FlowNodeStatus.running
+            node.status = status
+            add_edge(previous_id, node.id)
+            previous_id = node.id
+
+        if event.type in {"runtime.turn_completed", "turn.completed"}:
+            for node in nodes:
+                if node.status in {FlowNodeStatus.running, FlowNodeStatus.waiting_approval}:
+                    node.status = FlowNodeStatus.done
+        elif event.type == "turn.failed":
+            for node in nodes:
+                if node.status in {FlowNodeStatus.running, FlowNodeStatus.waiting_approval}:
+                    node.status = FlowNodeStatus.failed
+
+    for worker in workers or []:
+        source_phase = worker_source_stage(worker)
+        ensure_node(source_phase)
+
+    return nodes, edges
 
 
 def _empty_statuses() -> dict[str, FlowNodeStatus]:
@@ -207,7 +272,7 @@ def worker_flow_status(status: Any) -> FlowNodeStatus:
 
 def worker_source_stage(worker: dict[str, Any]) -> str:
     source = str(worker.get("source_stage") or "").strip()
-    return source if source in STAGE_SET else "tool_executor"
+    return source or "tool_executor"
 
 
 def _as_record_array(value: Any) -> list[dict[str, Any]]:
@@ -294,12 +359,7 @@ class FlowProjectionService:
         graph_state = snapshot.graph_state if snapshot and isinstance(snapshot.graph_state, dict) else None
         metadata = detail.metadata if isinstance(getattr(detail, "metadata", None), dict) else {}
         workers = collect_worker_dispatches(metadata, graph_state, resolved_turn)
-        statuses = project_stage_statuses(events, resolved_turn)
-
-        stage_nodes = [
-            FlowStageNode(id=stage, status=statuses[stage])
-            for stage in FLOW_STAGES
-        ]
+        stage_nodes, edges = project_flow_nodes(events, resolved_turn, workers)
         worker_nodes = [
             FlowWorkerNode(
                 id=worker_node_id(worker, index),
@@ -309,14 +369,10 @@ class FlowProjectionService:
             )
             for index, worker in enumerate(workers)
         ]
-        edges = [
-            FlowEdge(id=edge_id, source=source, target=target, kind="stage")
-            for edge_id, source, target in STAGE_EDGES
-        ]
         edges.extend(
             FlowEdge(
-                id=f"e-{node.source_stage}-{node.id}",
-                source=node.source_stage,
+                id=f"e-{flow_stage_node_id(node.source_stage)}-{node.id}",
+                source=flow_stage_node_id(node.source_stage),
                 target=node.id,
                 kind="spawn",
             )

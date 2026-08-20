@@ -672,6 +672,7 @@ export interface SessionFlowStageNode {
   id: string;
   kind: "stage";
   status: FlowNodeStatus;
+  phase: string;
 }
 
 export interface SessionFlowWorkerNode {

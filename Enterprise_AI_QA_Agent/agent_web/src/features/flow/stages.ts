@@ -16,6 +16,19 @@ export type FlowStageId = (typeof FLOW_STAGES)[number];
 
 export type FlowNodeStatus = "pending" | "running" | "done" | "failed" | "waiting_approval";
 
+export interface FlowStageRecord {
+  id: string;
+  phase: string;
+  status: FlowNodeStatus;
+}
+
+export interface FlowStageEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: "stage";
+}
+
 export const FLOW_STAGE_LABEL_KEYS: Record<FlowStageId, string> = {
   context_builder: "flow.stage.context_builder",
   router: "flow.stage.router",
@@ -35,6 +48,28 @@ export const FLOW_STATUS_LABEL_KEYS: Record<FlowNodeStatus, string> = {
   failed: "flow.status.failed",
   waiting_approval: "flow.status.waiting_approval",
 };
+
+const FLOW_STAGE_NODE_PREFIX = "stage:";
+
+export function flowStageNodeId(phase: string): string {
+  const normalized = String(phase || "").trim();
+  if (isFlowStageId(normalized)) {
+    return normalized;
+  }
+  const safe = normalized.replace(/[^a-zA-Z0-9_.:-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+  return `${FLOW_STAGE_NODE_PREFIX}${safe}`;
+}
+
+export function flowStageTitle(phase: string): string {
+  const normalized = String(phase || "").trim();
+  const labelKey = FLOW_STAGE_LABEL_KEYS[normalized as FlowStageId];
+  if (labelKey) {
+    return labelKey;
+  }
+  return normalized
+    .replace(/[_.:-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase()) || "Unknown stage";
+}
 
 const OPTIONAL_STAGES = new Set<FlowStageId>(["tool_executor"]);
 
@@ -140,6 +175,82 @@ export function statusFromEventType(eventType: string): FlowNodeStatus | null {
   return null;
 }
 
+function eventPhase(event: ExecutionEvent): string {
+  const phase = payloadText(event, "phase");
+  if (phase) {
+    return phase;
+  }
+  return event.type === "runtime.turn_started" ? "context_builder" : "";
+}
+
+export function projectFlowNodes(
+  events: ExecutionEvent[],
+  turnId = "",
+  workers: Array<{ source_stage?: string }> = [],
+): { stages: FlowStageRecord[]; edges: FlowStageEdge[] } {
+  const stages: FlowStageRecord[] = [];
+  const byId = new Map<string, FlowStageRecord>();
+  const edges: FlowStageEdge[] = [];
+  const edgeIds = new Set<string>();
+  let previousId = "";
+
+  const ensureStage = (phase: string): FlowStageRecord => {
+    const id = flowStageNodeId(phase);
+    const existing = byId.get(id);
+    if (existing) {
+      return existing;
+    }
+    const next = { id, phase, status: "pending" as FlowNodeStatus };
+    byId.set(id, next);
+    stages.push(next);
+    return next;
+  };
+
+  const addEdge = (source: string, target: string) => {
+    if (!source || source === target) {
+      return;
+    }
+    const id = `e-${source}-${target}`;
+    if (edgeIds.has(id)) {
+      return;
+    }
+    edgeIds.add(id);
+    edges.push({ id, source, target, kind: "stage" });
+  };
+
+  const ordered = selectTurnEvents(events, turnId).slice().sort(compareEvents);
+  for (const event of ordered) {
+    const phase = eventPhase(event);
+    if (phase) {
+      const stage = ensureStage(phase);
+      stage.status = statusFromEventType(event.type) || "running";
+      addEdge(previousId, stage.id);
+      previousId = stage.id;
+    }
+
+    if (event.type === "runtime.turn_completed" || event.type === "turn.completed") {
+      for (const stage of stages) {
+        if (stage.status === "running" || stage.status === "waiting_approval") {
+          stage.status = "done";
+        }
+      }
+    } else if (event.type === "turn.failed") {
+      for (const stage of stages) {
+        if (stage.status === "running" || stage.status === "waiting_approval") {
+          stage.status = "failed";
+        }
+      }
+    }
+  }
+
+  for (const worker of workers) {
+    const source = String(worker.source_stage || "").trim() || "tool_executor";
+    ensureStage(source);
+  }
+
+  return { stages, edges };
+}
+
 function emptyStatuses(): Record<FlowStageId, FlowNodeStatus> {
   return {
     context_builder: "pending",
@@ -214,15 +325,3 @@ export function projectStageStatuses(
 
   return statuses;
 }
-
-export const FLOW_STAGE_EDGES: Array<{ id: string; source: FlowStageId; target: FlowStageId }> = [
-  { id: "e-context-router", source: "context_builder", target: "router" },
-  { id: "e-router-planner", source: "router", target: "planner" },
-  { id: "e-planner-permission", source: "planner", target: "permission_gate" },
-  { id: "e-permission-prompt", source: "permission_gate", target: "prompt_assembler" },
-  { id: "e-prompt-model", source: "prompt_assembler", target: "model_invoker" },
-  { id: "e-model-tool", source: "model_invoker", target: "tool_executor" },
-  { id: "e-model-finalizer", source: "model_invoker", target: "finalizer" },
-  { id: "e-tool-finalizer", source: "tool_executor", target: "finalizer" },
-  { id: "e-finalizer-responder", source: "finalizer", target: "responder" },
-];
