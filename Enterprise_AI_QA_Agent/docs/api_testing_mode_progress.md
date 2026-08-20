@@ -95,4 +95,5 @@ python -m pip install -e .[dev]
 | 2026-08-20 | 后端 `dev` extra 补充 `pytest-asyncio>=1.4.0`，并在指定 Python 3.11 环境完成 editable 安装核验。 |
 | 2026-08-20 | 性能协调器测试移除 `event_loop` fixture 依赖，改用 pytest-asyncio 1.4.0 支持的异步测试写法。 |
 | 2026-08-20 | 前端接入 Vitest 测试命令，新增 Flow/Worker 下钻与窗口联动专门测试。 |
+| 2026-08-20 | Flow 轨迹改为按 turn 事件动态投影：只生成实际观测到的阶段和阶段边，保留未知 phase，并让 Worker 来源节点随实际数据生成。 |
 | 2026-08-20 | 重写本进度文档，按当前代码、测试和实际限制更新状态，删除已完成能力的陈旧待办。 |
