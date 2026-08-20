@@ -1,5 +1,7 @@
 # API Testing Mode 开发进度
 
+> 工程状态补充（2026-08-20）：后端项目的测试 extra 已声明 `pytest-asyncio>=1.4.0`，并在指定 Python 3.11 环境以 `pip install -e .[dev]` 完成安装核验。生产运行依赖仍以 `Agent_Server/pyproject.toml` 为准。
+
 > 最后更新：2026-05-11  
 > 参考文档：[api_testing_mode_development_plan.md](./api_testing_mode_development_plan.md)
 
