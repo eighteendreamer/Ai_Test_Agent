@@ -104,6 +104,14 @@ function presenceText(presence: InspectPresence) {
   }
   return t("flow.inspector.empty");
 }
+
+function previewText(value: string | null | undefined, limit = 180) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, limit)}…`;
+}
 </script>
 
 <template>
@@ -196,7 +204,13 @@ function presenceText(presence: InspectPresence) {
             v-if="!isWorker && skillBlocks.presence === 'ok' && skillBlocks.value?.length"
             class="flow-inspector-prewrap"
           >
-            <pre v-for="(block, index) in skillBlocks.value" :key="`skill-block-${index}`">{{ block }}</pre>
+            <details v-for="(block, index) in skillBlocks.value" :key="`skill-block-${index}`" class="flow-inspector-disclosure">
+              <summary>
+                <span class="flow-inspector-disclosure-title">{{ t("flow.inspector.tab_skills") }} {{ index + 1 }}</span>
+                <span class="flow-inspector-disclosure-preview">{{ previewText(block) }}</span>
+              </summary>
+              <pre>{{ block }}</pre>
+            </details>
           </div>
         </section>
 
@@ -205,15 +219,24 @@ function presenceText(presence: InspectPresence) {
           <div v-else-if="prompt.prompt.presence !== 'ok'" class="empty-state small">
             {{ presenceText(prompt.prompt.presence) }}
           </div>
-          <pre v-else class="flow-inspector-pre">{{ prompt.prompt.value }}</pre>
+          <details v-else class="flow-inspector-disclosure">
+            <summary>
+              <span class="flow-inspector-disclosure-title">{{ t("flow.inspector.tab_prompt") }}</span>
+              <span class="flow-inspector-disclosure-preview">{{ previewText(prompt.prompt.value) }}</span>
+            </summary>
+            <pre>{{ prompt.prompt.value }}</pre>
+          </details>
           <div
             v-if="!isWorker && prompt.sections.presence === 'ok' && prompt.sections.value?.length"
             class="flow-inspector-prewrap"
           >
-            <article v-for="(section, index) in prompt.sections.value" :key="`section-${index}`">
-              <strong v-if="section.title">{{ section.title }}</strong>
+            <details v-for="(section, index) in prompt.sections.value" :key="`section-${index}`" class="flow-inspector-disclosure">
+              <summary>
+                <span class="flow-inspector-disclosure-title">{{ section.title || `${t("flow.inspector.tab_prompt")} ${index + 1}` }}</span>
+                <span class="flow-inspector-disclosure-preview">{{ previewText(section.body) }}</span>
+              </summary>
               <pre>{{ section.body }}</pre>
-            </article>
+            </details>
           </div>
         </section>
 
@@ -232,7 +255,13 @@ function presenceText(presence: InspectPresence) {
           <div v-else-if="output.text.presence !== 'ok'" class="empty-state small">
             {{ presenceText(output.text.presence) }}
           </div>
-          <pre v-else class="flow-inspector-pre">{{ output.text.value }}</pre>
+          <details v-else class="flow-inspector-disclosure">
+            <summary>
+              <span class="flow-inspector-disclosure-title">{{ t("flow.inspector.tab_output") }}</span>
+              <span class="flow-inspector-disclosure-preview">{{ previewText(output.text.value) }}</span>
+            </summary>
+            <pre>{{ output.text.value }}</pre>
+          </details>
         </section>
 
         <section v-else class="flow-inspector-section">
@@ -435,6 +464,56 @@ function presenceText(presence: InspectPresence) {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.flow-inspector-disclosure {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.flow-inspector-disclosure summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  color: var(--text);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.flow-inspector-disclosure summary::marker {
+  color: var(--muted);
+}
+
+.flow-inspector-disclosure summary:hover {
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--surface));
+}
+
+.flow-inspector-disclosure-title {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.flow-inspector-disclosure-preview {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  word-break: break-word;
+}
+
+.flow-inspector-disclosure > pre {
+  margin: 0 12px 12px;
+  max-height: 420px;
+  overflow: auto;
 }
 
 .flow-inspector-prewrap {

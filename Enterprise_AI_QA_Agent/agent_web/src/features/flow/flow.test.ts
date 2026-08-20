@@ -22,6 +22,7 @@ function worker(overrides: Partial<WorkerDispatchRecord> = {}): WorkerDispatchRe
 const inspectorProps = {
   open: true,
   stageId: "" as const,
+  worker: null,
   status: "running" as const,
   events: [],
   graphState: null,
@@ -54,6 +55,30 @@ describe("Flow worker drill-down", () => {
     });
 
     expect(wrapper.find(".flow-inspector-head-actions .flow-reset-btn").exists()).toBe(false);
+  });
+});
+
+describe("Flow inspector long content", () => {
+  it("keeps prompt content collapsed until the summary is opened", async () => {
+    const prompt = "# Identity\n\n" + "Long prompt content. ".repeat(30);
+    const wrapper = mount(FlowInspector, {
+      props: {
+        ...inspectorProps,
+        stageId: "prompt_assembler",
+        graphState: { system_prompt: prompt },
+      },
+    });
+
+    await wrapper.get(".runtime-console-tab:nth-child(4)").trigger("click");
+
+    const disclosure = wrapper.get(".flow-inspector-disclosure");
+    expect(disclosure.attributes("open")).toBeUndefined();
+    expect(disclosure.get(".flow-inspector-disclosure-preview").text()).toContain("# Identity");
+
+    await disclosure.get("summary").trigger("click");
+
+    expect(disclosure.attributes("open")).toBeDefined();
+    expect(disclosure.get("pre").text()).toContain(prompt.slice(-40).trim());
   });
 });
 
