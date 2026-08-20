@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
-import DropdownSelect from "../../components/common/DropdownSelect.vue";
 import { t } from "../../services/i18n";
 import type { ExecutionEvent, ToolArtifactRecord, ToolJobRecord, WorkerDispatchRecord } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
@@ -41,7 +40,6 @@ const emit = defineEmits<{
 type InspectorTab = "logs" | "tools" | "skills" | "prompt" | "output" | "artifacts";
 
 const activeTab = ref<InspectorTab>("logs");
-const selectedPromptSection = ref<string | number>("full");
 
 const tabs = computed(() => [
   { key: "logs" as const, label: t("flow.inspector.tab_logs") },
@@ -81,23 +79,6 @@ const tools = computed(() =>
 const skills = computed(() => inspectSkills(props.graphState));
 const skillBlocks = computed(() => inspectSkillBlocks(props.graphState));
 const prompt = computed(() => inspectPrompt(props.graphState));
-const promptSectionOptions = computed(() => [
-  { label: t("flow.inspector.tab_prompt"), value: "full" as const },
-  ...(prompt.value.sections.value ?? []).map((section, index) => ({
-    label: section.title || `${t("flow.inspector.tab_prompt")} ${index + 1}`,
-    value: index,
-  })),
-]);
-const selectedPromptSectionTitle = computed(() =>
-  promptSectionOptions.value.find((option) => option.value === selectedPromptSection.value)?.label
-    || t("flow.inspector.tab_prompt"),
-);
-const selectedPromptSectionBody = computed(() => {
-  if (selectedPromptSection.value === "full") {
-    return prompt.value.prompt.value || "";
-  }
-  return prompt.value.sections.value?.[selectedPromptSection.value]?.body || "";
-});
 const output = computed(() =>
   props.stageId ? inspectOutput(props.stageId, props.graphState) : { text: { presence: "missing" as const, value: null } },
 );
@@ -108,18 +89,7 @@ watch(
   () => [props.stageId, props.worker?.task_id] as const,
   () => {
     activeTab.value = "logs";
-    selectedPromptSection.value = "full";
   },
-);
-
-watch(
-  () => promptSectionOptions.value,
-  (options) => {
-    if (!options.some((option) => option.value === selectedPromptSection.value)) {
-      selectedPromptSection.value = "full";
-    }
-  },
-  { deep: true },
 );
 
 function drillIntoWorker() {
@@ -250,21 +220,25 @@ function previewText(value: string | null | undefined, limit = 180) {
             {{ presenceText(prompt.prompt.presence) }}
           </div>
           <div v-else class="flow-inspector-prompt-view">
-            <div class="flow-inspector-prompt-toolbar">
-              <span class="flow-inspector-control-label">{{ t("flow.inspector.tab_prompt") }}</span>
-              <DropdownSelect
-                v-model="selectedPromptSection"
-                :options="promptSectionOptions"
-                button-class="flow-inspector-prompt-select"
-              />
-            </div>
-            <details class="flow-inspector-disclosure">
+            <details v-if="prompt.prompt.presence === 'ok'" class="flow-inspector-disclosure">
               <summary>
-                <span class="flow-inspector-disclosure-title">{{ selectedPromptSectionTitle }}</span>
-                <span class="flow-inspector-disclosure-preview">{{ previewText(selectedPromptSectionBody) }}</span>
+                <span class="flow-inspector-disclosure-title">{{ t("flow.inspector.tab_prompt") }}</span>
+                <span class="flow-inspector-disclosure-preview">{{ previewText(prompt.prompt.value) }}</span>
               </summary>
-              <pre>{{ selectedPromptSectionBody }}</pre>
+              <pre>{{ prompt.prompt.value }}</pre>
             </details>
+            <div
+              v-if="prompt.sections.presence === 'ok' && prompt.sections.value?.length"
+              class="flow-inspector-prewrap"
+            >
+              <details v-for="(section, index) in prompt.sections.value" :key="`section-${index}`" class="flow-inspector-disclosure">
+                <summary>
+                  <span class="flow-inspector-disclosure-title">{{ section.title || `${t("flow.inspector.tab_prompt")} ${index + 1}` }}</span>
+                  <span class="flow-inspector-disclosure-preview">{{ previewText(section.body) }}</span>
+                </summary>
+                <pre>{{ section.body }}</pre>
+              </details>
+            </div>
           </div>
         </section>
 
@@ -464,26 +438,7 @@ function previewText(value: string | null | undefined, limit = 180) {
 .flow-inspector-prompt-view {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.flow-inspector-prompt-toolbar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-}
-
-.flow-inspector-control-label {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.flow-inspector-prompt-select {
-  min-height: 34px;
-  font-size: 12px;
+  gap: 4px;
 }
 
 .flow-inspector-log {
@@ -520,18 +475,20 @@ function previewText(value: string | null | undefined, limit = 180) {
 }
 
 .flow-inspector-disclosure {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-soft);
+  border-top: 1px solid var(--border);
+  background: transparent;
   overflow: hidden;
 }
 
+.flow-inspector-disclosure:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
 .flow-inspector-disclosure summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 4px;
   color: var(--text);
   cursor: pointer;
   list-style-position: inside;
@@ -542,7 +499,7 @@ function previewText(value: string | null | undefined, limit = 180) {
 }
 
 .flow-inspector-disclosure summary:hover {
-  background: color-mix(in srgb, var(--surface-soft) 72%, var(--surface));
+  background: var(--surface-soft);
 }
 
 .flow-inspector-disclosure-title {
@@ -554,7 +511,8 @@ function previewText(value: string | null | undefined, limit = 180) {
 .flow-inspector-disclosure-preview {
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  padding-left: 17px;
+  font-size: 12px;
   line-height: 1.45;
   overflow: hidden;
   display: -webkit-box;
@@ -564,7 +522,7 @@ function previewText(value: string | null | undefined, limit = 180) {
 }
 
 .flow-inspector-disclosure > pre {
-  margin: 0 12px 12px;
+  margin: 0 4px 12px 21px;
   max-height: 420px;
   overflow: auto;
 }

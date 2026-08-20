@@ -59,7 +59,7 @@ describe("Flow worker drill-down", () => {
 });
 
 describe("Flow inspector long content", () => {
-  it("uses one collapsed content viewer with a prompt section dropdown", async () => {
+  it("keeps prompt names and summaries on separate lines without a dropdown", async () => {
     const prompt = "# Identity\n\n" + "Long prompt content. ".repeat(30);
     const wrapper = mount(FlowInspector, {
       props: {
@@ -80,8 +80,10 @@ describe("Flow inspector long content", () => {
     const disclosure = wrapper.get(".flow-inspector-disclosure");
     expect(disclosure.attributes("open")).toBeUndefined();
     expect(disclosure.get(".flow-inspector-disclosure-preview").text()).toContain("# Identity");
-    expect(wrapper.findAll(".flow-inspector-disclosure")).toHaveLength(1);
-    expect(wrapper.find(".flow-inspector-prompt-select").text()).toContain("flow.inspector.tab_prompt");
+    expect(wrapper.findAll(".flow-inspector-disclosure")).toHaveLength(3);
+    expect(wrapper.find(".flow-inspector-prompt-select").exists()).toBe(false);
+    expect(wrapper.find(".flow-inspector-disclosure-title").element.tagName).toBe("SPAN");
+    expect(wrapper.find(".flow-inspector-disclosure-preview").element.tagName).toBe("SPAN");
 
     await disclosure.get("summary").trigger("click");
 
