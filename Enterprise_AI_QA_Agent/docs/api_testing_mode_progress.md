@@ -1,6 +1,6 @@
 # API Testing Mode 开发进度
 
-> 最后更新：2026-08-20  
+> 最后更新：2026-08-20
 > 参考方案：[api_testing_mode_test_plan.md](./api_testing_mode_test_plan.md)
 
 ## 一、当前结论
