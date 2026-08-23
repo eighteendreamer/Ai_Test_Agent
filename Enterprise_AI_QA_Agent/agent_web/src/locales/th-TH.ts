@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "ออฟไลน์",
   "topbar.degraded": "ลดประสิทธิภาพ",
 
+  // Sponsors
+  "sponsors.title": "ผู้สนับสนุน",
+  "sponsors.visit": "เยี่ยมชมเว็บไซต์",
+
   // Workbench / Home
   "home.title": "ยูเซอ เทียน เจี่ยน",
   "home.subtitle": "ป้อนคำสั่งภาษาธรรมชาติ AI จะวิเคราะห์ความตั้งใจ สำรวจหน้าเว็บ และสร้างเคสทดสอบให้โดยอัตโนมัติ",

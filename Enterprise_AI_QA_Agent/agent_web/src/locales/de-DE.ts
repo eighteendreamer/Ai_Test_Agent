@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "Offline",
   "topbar.degraded": "Eingeschränkt",
 
+  // Sponsors
+  "sponsors.title": "Sponsoren",
+  "sponsors.visit": "Website besuchen",
+
   // Workbench / Home
   "home.title": "Yuce Tianjian",
   "home.subtitle": "Geben Sie natürliche Sprachbefehle ein, die KI führt dann eigenständig Intentionsanalyse, Seitenerkundung und Testfallgenerierung durch.",

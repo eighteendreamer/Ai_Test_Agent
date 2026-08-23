@@ -28,6 +28,15 @@ export type ModeKey =
 
 export type MessageRole = "system" | "user" | "assistant" | "tool" | "event";
 
+export interface SponsorRecord {
+  id: number;
+  name: string;
+  logo_url: string;
+  website_url: string;
+  sponsor_type?: string;
+  description?: string | null;
+}
+
 export interface HealthResponse {
   status: string;
   name: string;

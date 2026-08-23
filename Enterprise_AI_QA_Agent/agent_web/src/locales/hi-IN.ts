@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "ऑफलाइन",
   "topbar.degraded": "निम्नीकृत",
 
+  // Sponsors
+  "sponsors.title": "प्रायोजक",
+  "sponsors.visit": "वेबसाइट देखें",
+
   // Workbench / Home
   "home.title": "युसे टियांजियान",
   "home.subtitle": "प्राकृतिक भाषा निर्देश दर्ज करें, AI विश्लेषण, पेज अन्वेषण और टेस्ट केस जनरेशन करेगा",

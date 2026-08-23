@@ -47,6 +47,7 @@ import type {
   ReportListPage,
   SessionDetail,
   InputAttachment,
+  SponsorRecord,
   IntegrationCreateRequest,
   IntegrationImportSourcesResponse,
   IntegrationRecord,
@@ -366,6 +367,9 @@ export const api = {
   },
   getHealth(): Promise<HealthResponse> {
     return request("/api/v1/health");
+  },
+  listSponsors(): Promise<SponsorRecord[]> {
+    return request("/api/v1/sponsors");
   },
   listKnowledgeProjects(): Promise<KnowledgeProjectSummary[]> {
     return request("/api/v1/knowledge/projects");

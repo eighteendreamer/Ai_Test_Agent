@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "Ngoại tuyến",
   "topbar.degraded": "Suy giảm",
 
+  // Sponsors
+  "sponsors.title": "Nhà tài trợ",
+  "sponsors.visit": "Truy cập trang web",
+
   // Workbench / Home
   "home.title": "Ngự Sách Thiên Kiểm",
   "home.subtitle": "Nhập lệnh ngôn ngữ tự nhiên, AI sẽ phân tích ý đồ, khám phá trang và tạo ca kiểm thử",

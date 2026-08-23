@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "غير متصل",
   "topbar.degraded": "منخفض",
 
+  // Sponsors
+  "sponsors.title": "الرعاة",
+  "sponsors.visit": "زيارة الموقع",
+
   // Workbench / Home
   "home.title": "يو تسي تيان جيان",
   "home.subtitle": "أدخل أوامر اللغة الطبيعية، وسيقوم الذكاء الاصطناعي بتحليل النية واستكشاف الصفحات وإنشاء حالات الاختبار بالكامل",

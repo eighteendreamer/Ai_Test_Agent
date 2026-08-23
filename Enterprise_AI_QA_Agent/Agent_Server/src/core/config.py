@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     llm_model_table: str = "llm_model_config"
     email_config_table: str = "system_email_config"
     channel_config_table: str = "system_channel_config"
+    sponsor_config_table: str = "system_sponsor_config"
     channel_credential_encryption_key: str = ""
     channel_pairing_public_base_url: str = ""
     redis_url: str

@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "Desconectado",
   "topbar.degraded": "Degradado",
 
+  // Sponsors
+  "sponsors.title": "Patrocinadores",
+  "sponsors.visit": "Visitar sitio web",
+
   // Workbench / Home
   "home.title": "Yuce Tianjian",
   "home.subtitle": "Introduzca comandos en lenguaje natural; la IA se encargará del análisis de intención, exploración de páginas y generación de casos de prueba.",

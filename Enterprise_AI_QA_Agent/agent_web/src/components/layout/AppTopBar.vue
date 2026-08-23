@@ -5,6 +5,7 @@ import { useRoute } from "vue-router";
 import { openAgentFlowWindow } from "../../features/flow/openFlowWindow";
 import { t } from "../../services/i18n";
 import { useSessionStore } from "../../stores/session";
+import SponsorEntry from "./SponsorEntry.vue";
 import type { ServiceCheckItem, SystemStatusSummary } from "../../types";
 
 const props = defineProps<{
@@ -45,6 +46,7 @@ function statusIcon(check: ServiceCheckItem) {
       <span>{{ t("home.title") }} / {{ props.label }}</span>
     </div>
     <div class="top-status-actions">
+      <SponsorEntry />
       <button
         v-if="showFlowButton"
         type="button"

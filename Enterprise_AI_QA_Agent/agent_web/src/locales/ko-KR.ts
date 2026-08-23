@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "오프라인",
   "topbar.degraded": "성능 저하됨",
 
+  // Sponsors
+  "sponsors.title": "스폰서",
+  "sponsors.visit": "공식 사이트 방문",
+
   // Workbench / Home
   "home.title": "어책천검",
   "home.subtitle": "자연어 명령어를 입력하면 AI가 의도 분석, 페이지 탐색 및 테스트 케이스 생성을 전담합니다.",

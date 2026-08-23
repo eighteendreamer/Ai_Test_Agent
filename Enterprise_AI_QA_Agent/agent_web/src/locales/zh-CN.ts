@@ -16,6 +16,10 @@ export default {
   "topbar.offline": "离线",
   "topbar.degraded": "降级",
 
+  // Sponsors
+  "sponsors.title": "赞助商",
+  "sponsors.visit": "访问官网",
+
   // Flow window
   "flow.title": "编排轨迹",
   "flow.ready_hint": "窗口已打开。阶段节点与检查器将在下一步接入。",

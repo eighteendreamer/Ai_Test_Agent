@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "Не в сети",
   "topbar.degraded": "Деградировано",
 
+  // Sponsors
+  "sponsors.title": "Спонсоры",
+  "sponsors.visit": "Перейти на сайт",
+
   // Workbench / Home
   "home.title": "Юй Цэ Тянь Цзянь",
   "home.subtitle": "Введите команду на естественном языке, ИИ проведёт анализ намерений, исследование страниц и генерацию тестов",

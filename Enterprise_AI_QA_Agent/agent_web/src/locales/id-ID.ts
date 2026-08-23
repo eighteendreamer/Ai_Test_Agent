@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "Luring",
   "topbar.degraded": "Terdegradasi",
 
+  // Sponsors
+  "sponsors.title": "Sponsor",
+  "sponsors.visit": "Kunjungi situs",
+
   // Workbench / Home
   "home.title": "Yu Ce Tian Jian",
   "home.subtitle": "Masukkan perintah bahasa alami, AI akan sepenuhnya melakukan analisis niat, eksplorasi halaman, dan pembuatan kasus uji",

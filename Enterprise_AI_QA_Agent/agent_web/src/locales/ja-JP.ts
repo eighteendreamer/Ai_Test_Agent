@@ -13,6 +13,10 @@ export default {
   "topbar.offline": "オフライン",
   "topbar.degraded": "機能制限中",
 
+  // Sponsors
+  "sponsors.title": "スポンサー",
+  "sponsors.visit": "公式サイトを見る",
+
   // Workbench / Home
   "home.title": "御策天检",
   "home.subtitle": "自然言語の指示を入力すると、AIが意図分析、ページ探索、テストケース生成をすべて実行します",

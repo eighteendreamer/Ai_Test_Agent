@@ -16,6 +16,10 @@ export default {
   "topbar.offline": "Offline",
   "topbar.degraded": "Degraded",
 
+  // Sponsors
+  "sponsors.title": "Sponsors",
+  "sponsors.visit": "Visit website",
+
   // Flow window
   "flow.title": "Orchestration Trace",
   "flow.ready_hint": "The window is open. Stage nodes and the inspector will land in the next step.",

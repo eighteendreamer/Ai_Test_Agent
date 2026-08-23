@@ -15,6 +15,10 @@ export default {
   "topbar.offline": "離線",
   "topbar.degraded": "降級",
 
+  // Sponsors
+  "sponsors.title": "贊助商",
+  "sponsors.visit": "訪問官網",
+
   // Flow window
   "flow.title": "編排軌跡",
   "flow.ready_hint": "視窗已開啟。階段節點與檢查器將在下一步接入。",

@@ -30,6 +30,7 @@ from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
 from src.api.routes.security_bugs import router as security_bugs_router
 from src.api.routes.settings import router as settings_router
+from src.api.routes.sponsors import router as sponsors_router
 from src.api.routes.task_pool import router as task_pool_router
 from src.api.routes.mail import router as mail_router
 from src.application.mail.auth_monitor import TencentAuthMonitor
@@ -98,6 +99,7 @@ from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+from src.infrastructure.sponsor_config_store import MySQLSponsorConfigStore
 from src.modes.security_testing_mode.security_bug_service import SecurityBugService
 from src.modes.security_testing_mode.security_bug_store import PostgresSecurityBugStore
 from src.registry.agents import AgentRegistry
@@ -138,6 +140,8 @@ async def lifespan(app: FastAPI):
     email_config_store.initialize()
     channel_config_store = MySQLChannelConfigStore(settings)
     channel_config_store.initialize()
+    sponsor_config_store = MySQLSponsorConfigStore(settings)
+    sponsor_config_store.initialize()
     model_registry = ModelRegistry(model_config_store)
     skill_registry = SkillRegistry()
     mcp_registry = MCPRegistry()
@@ -369,6 +373,7 @@ async def lifespan(app: FastAPI):
     app.state.model_config_store = model_config_store
     app.state.email_config_store = email_config_store
     app.state.channel_config_store = channel_config_store
+    app.state.sponsor_config_store = sponsor_config_store
     app.state.model_registry = model_registry
     app.state.skill_registry = skill_registry
     app.state.skill_management_service = skill_management_service
@@ -518,6 +523,7 @@ app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)
 app.include_router(settings_router, prefix=settings.api_v1_prefix)
+app.include_router(sponsors_router, prefix=settings.api_v1_prefix)
 app.include_router(oauth_router, prefix=settings.api_v1_prefix)
 app.include_router(mail_router, prefix=settings.api_v1_prefix)
 app.include_router(docker_router, prefix=settings.api_v1_prefix)
