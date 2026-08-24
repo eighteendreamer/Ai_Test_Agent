@@ -38,6 +38,13 @@ class BrowserDriver(ABC):
         """注入 recorder.js 并建立事件回传 binding。"""
         raise NotImplementedError
 
+    async def wait_ready(self, timeout: float = 30.0) -> bool:
+        """等待驱动就绪（embedded = Electron 登记；同步就绪的驱动用默认实现）。
+
+        返回 False 表示 timeout 内未就绪（launch 侧据此标记 failed）。
+        """
+        return True
+
     @abstractmethod
     async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
         """返回录制事件异步迭代器（驱动侧 → 消费方，如 RecorderSessionService）。"""

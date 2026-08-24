@@ -183,9 +183,7 @@ def test_finalize_sync_writes_subgraph_shapes() -> None:
     provider = _FakeProvider()
     store = _store(provider)
     events = [_event(i) for i in range(3)]
-    result = asyncio.get_event_loop().run_until_complete(
-        store.finalize(_session(step_count=3), events)
-    )
+    result = asyncio.run(store.finalize(_session(step_count=3), events))
 
     assert result["status"] == "success"
     assert result["integrity"]["degraded"] is False
@@ -226,7 +224,7 @@ def test_finalize_sync_masks_password_value_defensively() -> None:
         },
         value="secret123",
     )
-    result = asyncio.get_event_loop().run_until_complete(store.finalize(_session(), [event]))
+    result = asyncio.run(store.finalize(_session(), [event]))
     assert result["status"] == "success"
 
     action_writes = [params for query, params in provider.queries if "MERGE (n:Action" in query]
@@ -241,7 +239,7 @@ def test_finalize_sync_marks_degraded_when_locators_empty() -> None:
     provider = _FakeProvider()
     store = _store(provider)
     event = _event(0, target={"tag": "DIV", "role": "", "locators": {}, "attributes": {}})
-    result = asyncio.get_event_loop().run_until_complete(store.finalize(_session(), [event]))
+    result = asyncio.run(store.finalize(_session(), [event]))
     assert result["integrity"]["degraded"] is True
     assert result["integrity"]["degraded_resolution_actions"] == 1
     action_writes = [params for query, params in provider.queries if "MERGE (n:Action" in query]
@@ -251,9 +249,7 @@ def test_finalize_sync_marks_degraded_when_locators_empty() -> None:
 def test_finalize_sync_blocked_without_project_id() -> None:
     provider = _FakeProvider()
     store = _store(provider)
-    result = asyncio.get_event_loop().run_until_complete(
-        store.finalize(_session(project_id="  "), [_event(0)])
-    )
+    result = asyncio.run(store.finalize(_session(project_id="  "), [_event(0)]))
     assert result == {"status": "blocked", "reason": "project_id_required"}
     assert provider.queries == []
 
@@ -268,9 +264,7 @@ def test_delete_recording_scopes_to_recording_subgraph() -> None:
 
     provider = _CountingProvider()
     store = _store(provider)
-    result = asyncio.get_event_loop().run_until_complete(
-        store.delete_recording("rec-1", project_id="proj-1")
-    )
+    result = asyncio.run(store.delete_recording("rec-1", project_id="proj-1"))
     assert result["status"] == "success"
     assert result["deleted_action_vertices"] == 4
     delete_queries = [query for query, _ in provider.queries if "DETACH DELETE" in query]
@@ -311,7 +305,7 @@ def test_live_finalize_converges_element_and_keeps_action_stream() -> None:
         )
     ]
     try:
-        result = asyncio.get_event_loop().run_until_complete(store.finalize(session, events))
+        result = asyncio.run(store.finalize(session, events))
         assert result["status"] == "success"
         metrics = result["metrics"]
         assert metrics["element_vertices"] == 1
@@ -320,7 +314,7 @@ def test_live_finalize_converges_element_and_keeps_action_stream() -> None:
         assert result["integrity"]["reconciled"] is True
 
         # 幂等：重复 finalize 不产生重复节点/边
-        result_again = asyncio.get_event_loop().run_until_complete(store.finalize(session, events))
+        result_again = asyncio.run(store.finalize(session, events))
         assert result_again["metrics"] == metrics
 
         def count(cypher: str) -> int:
@@ -331,9 +325,7 @@ def test_live_finalize_converges_element_and_keeps_action_stream() -> None:
         assert count("MATCH (e:Element {project_id: $project_id}) RETURN count(e) AS cnt") == 1
         assert count("MATCH (r:Recording {project_id: $project_id, id: $recording_id}) RETURN count(r) AS cnt") == 1
 
-        delete_result = asyncio.get_event_loop().run_until_complete(
-            store.delete_recording(session.id, project_id=project_id)
-        )
+        delete_result = asyncio.run(store.delete_recording(session.id, project_id=project_id))
         assert delete_result["deleted_action_vertices"] == 11
         assert count("MATCH (a:Action {project_id: $project_id}) RETURN count(a) AS cnt") == 0
         assert count("MATCH (r:Recording {project_id: $project_id}) RETURN count(r) AS cnt") == 0
