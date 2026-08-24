@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 from contextlib import asynccontextmanager
@@ -22,6 +22,7 @@ from src.api.routes.integrations import router as integrations_router
 from src.api.routes.knowledge import router as knowledge_router
 from src.api.routes.oauth import router as oauth_router
 from src.api.routes.projects import router as projects_router
+from src.api.routes.recordings import router as recordings_router
 from src.api.routes.reports import router as reports_router
 from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
@@ -93,12 +94,16 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.context.context_compaction_service import ContextCompactionService
+from src.application.exploration.recording_graph_store import RecordingGraphStore
+from src.application.recorder.drivers import EmbeddedBridge
+from src.application.recorder.recorder_session_service import RecorderSessionService
 from src.core.config import get_settings
 from src.graph.builder import build_agent_graph
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+from src.infrastructure.recording_store import PostgresRecordingStore
 from src.infrastructure.sponsor_config_store import MySQLSponsorConfigStore
 from src.modes.security_testing_mode.security_bug_service import SecurityBugService
 from src.modes.security_testing_mode.security_bug_store import PostgresSecurityBugStore
@@ -484,6 +489,23 @@ async def lifespan(app: FastAPI):
     )
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
+
+    # UI 录制域（方案第 8 章）：PG 事件流 + Memgraph 固化 + embedded 桥 + 会话编排
+    recording_store = PostgresRecordingStore(settings)
+    await recording_store.initialize()
+    recording_graph_store = RecordingGraphStore(settings)
+    embedded_bridge = EmbeddedBridge()
+    recorder_service = RecorderSessionService(
+        settings=settings,
+        store=recording_store,
+        graph_store=recording_graph_store,
+        bridge=embedded_bridge,
+    )
+    app.state.recording_store = recording_store
+    app.state.recording_graph_store = recording_graph_store
+    app.state.embedded_bridge = embedded_bridge
+    app.state.recorder_service = recorder_service
+
     try:
         yield
     finally:
@@ -527,6 +549,7 @@ app.include_router(sponsors_router, prefix=settings.api_v1_prefix)
 app.include_router(oauth_router, prefix=settings.api_v1_prefix)
 app.include_router(mail_router, prefix=settings.api_v1_prefix)
 app.include_router(docker_router, prefix=settings.api_v1_prefix)
+app.include_router(recordings_router, prefix=settings.api_v1_prefix)
 
 
 if __name__ == "__main__":

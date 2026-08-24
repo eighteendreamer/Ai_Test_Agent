@@ -88,6 +88,9 @@ class PostgresRecordingStore:
     async def discard_session(self, recording_id: str) -> RecordingSession | None:
         return await asyncio.to_thread(self._discard_session_sync, recording_id)
 
+    async def delete_session(self, recording_id: str) -> bool:
+        return await asyncio.to_thread(self._delete_session_sync, recording_id)
+
     # ------------------------------------------------------------------
     # sync 实现
     # ------------------------------------------------------------------
@@ -358,6 +361,26 @@ class PostgresRecordingStore:
             ended_at=datetime.now(timezone.utc),
             finalize_metrics=None,
         )
+
+    def _delete_session_sync(self, recording_id: str) -> bool:
+        """物理删除：会话行 + 事件流水（先删子表防孤儿行）。返回是否存在。"""
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM {self._event_table} WHERE recording_id = %s",
+                    (recording_id,),
+                )
+                cur.execute(
+                    f"DELETE FROM {self._session_table} WHERE id = %s",
+                    (recording_id,),
+                )
+                deleted = int(cur.rowcount or 0)
+        logger.info(
+            "recording session deleted: recording_id=%s session_rows=%s",
+            recording_id,
+            deleted,
+        )
+        return deleted > 0
 
     # ------------------------------------------------------------------
     # 行映射

@@ -18,7 +18,7 @@ import asyncio
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -48,6 +48,107 @@ class RecordingGraphStore:
         """删除录制的 Recording/HAS_STEP/Action 子图；Page/Element 保留（方案第 8 章 DELETE）。"""
         return await asyncio.to_thread(self._delete_recording_sync, recording_id, project_id)
 
+    async def get_recording_subgraph(self, recording_id: str, *, project_id: str) -> dict[str, Any]:
+        """读取录制在 Memgraph 中的子图投影（GET /recordings/{id}/graph）。
+
+        返回扁平 nodes/edges（前端可视化友好）；只读，不触碰写入路径。
+        """
+        return await asyncio.to_thread(self._get_recording_subgraph_sync, recording_id, project_id)
+
+    def _get_recording_subgraph_sync(self, recording_id: str, project_id: str) -> dict[str, Any]:
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return {"status": "blocked", "reason": "project_id_required"}
+        self._provider.initialize()
+        rows = self._provider.execute(
+            """
+            MATCH (r:Recording {project_id: $project_id, id: $recording_id})
+            OPTIONAL MATCH (r)-[hs:HAS_STEP]->(a:Action {project_id: $project_id})
+            OPTIONAL MATCH (a)-[t:TARGETS]->(el:Element {project_id: $project_id})
+            OPTIONAL MATCH (a)-[op:ON_PAGE]->(p:Page {project_id: $project_id})
+            WITH r, a, el, p, hs ORDER BY a.seq
+            RETURN r.id AS recording_id, r.name AS recording_name,
+                   a.id AS action_id, a.seq AS seq, a.action_type AS action_type,
+                   a.resolution_status AS resolution_status, a.occurred_at AS occurred_at,
+                   el.id AS element_id, el.name AS element_name,
+                   p.id AS page_id, p.url AS page_url, p.title AS page_title
+            """,
+            {"project_id": project_id, "recording_id": recording_id},
+        )
+        if not rows:
+            return {"status": "not_found", "recording_id": recording_id}
+
+        first = rows[0]
+        nodes: dict[str, dict[str, Any]] = {
+            f"recording:{recording_id}": {
+                "id": recording_id,
+                "label": "recording",
+                "kind": "recording",
+                "name": first.get("recording_name") or "",
+            }
+        }
+        edges: list[dict[str, Any]] = []
+        seen_edges: set[tuple[str, str, str]] = set()
+        for row in rows:
+            action_id = row.get("action_id")
+            if action_id:
+                key = f"action:{action_id}"
+                if key not in nodes:
+                    nodes[key] = {
+                        "id": str(action_id),
+                        "label": f"{row.get('action_type') or ''} #{row.get('seq')}",
+                        "kind": "action",
+                        "seq": row.get("seq"),
+                        "action_type": row.get("action_type"),
+                        "resolution_status": row.get("resolution_status"),
+                        "occurred_at": row.get("occurred_at"),
+                    }
+                    edge = ("recording", recording_id, str(action_id))
+                    if edge not in seen_edges:
+                        seen_edges.add(edge)
+                        edges.append(
+                            {"source": recording_id, "target": str(action_id), "type": "HAS_STEP"}
+                        )
+            element_id = row.get("element_id")
+            if element_id:
+                key = f"element:{element_id}"
+                if key not in nodes:
+                    nodes[key] = {
+                        "id": str(element_id),
+                        "label": str(row.get("element_name") or ""),
+                        "kind": "element",
+                    }
+                if action_id:
+                    edge = ("targets", str(action_id), str(element_id))
+                    if edge not in seen_edges:
+                        seen_edges.add(edge)
+                        edges.append(
+                            {"source": str(action_id), "target": str(element_id), "type": "TARGETS"}
+                        )
+            page_id = row.get("page_id")
+            if page_id:
+                key = f"page:{page_id}"
+                if key not in nodes:
+                    nodes[key] = {
+                        "id": str(page_id),
+                        "label": str(row.get("page_title") or row.get("page_url") or ""),
+                        "kind": "page",
+                        "url": row.get("page_url"),
+                    }
+                if action_id:
+                    edge = ("on_page", str(action_id), str(page_id))
+                    if edge not in seen_edges:
+                        seen_edges.add(edge)
+                        edges.append(
+                            {"source": str(action_id), "target": str(page_id), "type": "ON_PAGE"}
+                        )
+        return {
+            "status": "success",
+            "recording_id": recording_id,
+            "nodes": list(nodes.values()),
+            "edges": edges,
+        }
+
     # ------------------------------------------------------------- finalize
 
     def _finalize_sync(self, session: RecordingSession, events: list[RecorderEvent]) -> dict[str, Any]:
@@ -59,7 +160,7 @@ class RecordingGraphStore:
         prepared = self._prepare_graph(session, events)
         integrity = self._check_integrity(session, events, prepared)
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         common = {
             "project_id": project_id,
             "project_scope": "default",
