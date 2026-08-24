@@ -339,6 +339,101 @@ describe("seq 连续性", () => {
   });
 });
 
+describe("iframe 事件桥（P1-3：同源/跨域统一经 postMessage 汇聚 top）", () => {
+  /**
+   * 造一个「子 frame」realm。jsdom 的 window.top 不可重定义，故用
+   * new Function('window', CODE) 参数遮蔽：Proxy 只拦截 top/parent（跨域
+   * proxy 语义），其余全部转发真实 realm——document/sessionStorage/
+   * MutationObserver 等裸标识符仍解析到子 realm，recorder.js 产品代码零改动
+   * 即可在子 frame 视角执行。
+   *
+   * postMessage 投递模拟：child 的 window.parent.postMessage 实际取的是
+   * topWin.postMessage（jsdom 原生），故在 topWin 上替换为同步投递 mock——
+   * 记录 targetOrigin（断言 '*'）并立即向 topWin 派发 message 事件
+   * （真实浏览器为异步派发；同步化只为让假定时器环境断言确定）。
+   */
+  function createChildFrame(topWin) {
+    const dom = new JSDOM(`<!doctype html><html><body></body></html>`, {
+      url: "http://child.example/",
+      pretendToBeVisual: true,
+      runScripts: "outside-only",
+    });
+    const win = dom.window;
+    win.setTimeout = globalThis.setTimeout;
+    win.clearTimeout = globalThis.clearTimeout;
+    win.setInterval = globalThis.setInterval;
+    win.clearInterval = globalThis.clearInterval;
+    win.Date = globalThis.Date;
+    topWin.postMessage = (msg, targetOrigin) => {
+      topWin.__lastPostTargetOrigin = targetOrigin;
+      topWin.dispatchEvent(new topWin.MessageEvent("message", { data: msg }));
+    };
+    const fakeWindow = new Proxy(win, {
+      get(target, prop) {
+        if (prop === "top" || prop === "parent") return topWin; // 跨域：引用可见但 !== 子 frame
+        const value = Reflect.get(target, prop);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+      set(target, prop, value) {
+        target[prop] = value;
+        return true;
+      },
+    });
+    const install = new win.Function("window", RECORDER_CODE);
+    install(fakeWindow);
+    win.__qaRecorderSetEnabled(true);
+    vi.advanceTimersByTime(600); // 冲掉启用时副作用
+    return { dom, win, doc: win.document };
+  }
+
+  it("跨域子 frame 事件经桥送达 top：targetOrigin='*'（修复前传自身 origin 会被静默丢弃）", () => {
+    const topCtx = enabledWindow();
+    const childCtx = createChildFrame(topCtx.win);
+    const btn = childCtx.doc.createElement("button");
+    btn.textContent = "跨域按钮";
+    childCtx.doc.body.appendChild(btn);
+    events.length = 0;
+
+    click(childCtx.win, btn);
+
+    expect(events.length).toBe(1);
+    expect(topCtx.win.__lastPostTargetOrigin).toBe("*");
+    expect(events[0].type).toBe("click");
+    expect(events[0].target.in_iframe).toBe(true);
+  });
+
+  it("子 frame 与 top 自身事件由 top 统一分配连续 seq", () => {
+    const topCtx = enabledWindow();
+    const childCtx = createChildFrame(topCtx.win);
+    const topBtn = topCtx.doc.createElement("button");
+    topBtn.textContent = "顶部按钮";
+    topCtx.doc.body.appendChild(topBtn);
+    const childBtn = childCtx.doc.createElement("button");
+    childBtn.textContent = "子帧按钮";
+    childCtx.doc.body.appendChild(childBtn);
+    events.length = 0;
+
+    click(childCtx.win, childBtn);
+    click(topCtx.win, topBtn);
+
+    expect(events.map((e) => e.type)).toEqual(["click", "click"]);
+    // seq 由 top 统一分配：连续递增、无跨 frame 冲突（不假定起点——
+    // top realm 此前可能已消耗 seq，如启用时的 page_scan）
+    expect(events[1].seq).toBe(events[0].seq + 1);
+    expect(events[0].target.in_iframe).toBe(true);
+    expect(events[1].target.in_iframe).not.toBe(true);
+  });
+
+  it("非协议消息（无 __qaRecorderBridge 标记）被 top 忽略", () => {
+    const topCtx = enabledWindow();
+    events.length = 0;
+    topCtx.win.dispatchEvent(
+      new topCtx.win.MessageEvent("message", { data: { evil: "ping", event: { type: "click" } } }),
+    );
+    expect(events.length).toBe(0);
+  });
+});
+
 describe("DOM 指纹与页面扫描", () => {
   it("sha1 实现与 Node crypto 一致（含中文/emoji UTF-8）", () => {
     const { win } = enabledWindow();

@@ -62,7 +62,7 @@
     try {
       return window.top === window;
     } catch (e) {
-      return false; // 跨域 iframe：无法访问 top，P0 不采集
+      return false; // 跨域子 frame：访问 top 抛错 → 走 postMessage 桥（P1-3）
     }
   })();
 
@@ -146,15 +146,20 @@
   function bridgeToTop(rawEvent) {
     try {
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ __qaRecorderBridge: 1, event: rawEvent }, window.location.origin);
+        // targetOrigin 用 '*'：top 与子 frame 跨域时，传 sender 自身 origin 会被
+        // 浏览器按 targetOrigin 不匹配静默丢弃（P1-3 修复）。负载已脱敏；
+        // 页面脚本本可 dispatchEvent 伪造真实事件，宽松送达不新增伪造面。
+        window.parent.postMessage({ __qaRecorderBridge: 1, event: rawEvent }, '*');
       }
     } catch (e) {
-      /* 同源受限：丢弃（宁可漏过，不可误杀宿主页面） */
+      /* 桥接受限：丢弃（宁可漏过，不可误杀宿主页面） */
     }
   }
 
   if (isTop) {
     window.addEventListener('message', function (e) {
+      // 跨域 iframe 是合法来源（同源/跨域统一经 __qaRecorderBridge 协议标记），
+      // seq 由 top 统一分配，多 frame 汇聚不冲突。
       if (!e.data || e.data.__qaRecorderBridge !== 1 || !e.data.event) return;
       var raw = e.data.event;
       if (raw.target) raw.target.in_iframe = true;
