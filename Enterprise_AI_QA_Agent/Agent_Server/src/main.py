@@ -98,6 +98,7 @@ from src.application.context.context_compaction_service import ContextCompaction
 from src.application.exploration.recording_graph_store import RecordingGraphStore
 from src.application.recorder.drivers import EmbeddedBridge, build_default_registry
 from src.application.recorder.recorder_session_service import RecorderSessionService
+from src.application.recorder.recording_case_draft_service import RecordingCaseDraftService
 from src.application.recorder.recording_approval_service import RecordingApprovalService
 from src.application.recorder.ui_resource_assessor import UIResourceAssessor
 from src.core.config import get_settings
@@ -510,6 +511,12 @@ async def lifespan(app: FastAPI):
     app.state.recording_graph_store = recording_graph_store
     app.state.embedded_bridge = embedded_bridge
     app.state.recorder_service = recorder_service
+    # P2-2：录制 → 用例草稿（进既有评审 → 固定版本 → 套件冻结链路）
+    recording_case_draft_service = RecordingCaseDraftService(
+        recorder_service=recorder_service,
+        test_case_service=test_case_service,
+    )
+    app.state.recording_case_draft_service = recording_case_draft_service
 
     # UI 录制编排接线（方案第 4 章 / P0-8）：
     # 三源资源检索（图谱/用例/记忆）→ 录制审批 → 审批通过自动 launch
