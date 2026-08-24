@@ -12,7 +12,7 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
 
 | 阶段 | 目标 | 状态 |
 |---|---|---|
-| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（7/11） |
+| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（8/11） |
 | P1 外部浏览器 | cdp-attach（Chrome/Edge）+ playwright-managed + iframe 补齐 | ⬜ 未开始 |
 | P2 回放与用例 | 录制回放执行器 + 录制转用例草稿 | ⬜ 未开始 |
 | P3 ego-lite 接入 | 驱动注册表接入 ego lite（依赖其 Windows 版或 macOS 环境） | ⛔ 阻塞于 ego lite 平台支持 |
@@ -101,12 +101,19 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
 - 幂等边界：events:batch 活跃 embedded 会话走 bridge 预收敛（批内去重+seen_seqs 幂等，回执 accepted/duplicates_in_batch/duplicates_retry 可见）；未知会话（服务重启、Electron 缓冲补投）直落 PG（ON CONFLICT 兜底，回执 sink=store）；已关会话 409。DELETE 先 Memgraph 删 Recording/Action 子图（失败 PG 保留可重试）再删 PG 行。control 的 ValueError 按语义映射 404（runtime not available）/409（illegal transition）/400。
 - 测试：`tests/test_recording_routes.py` 25 个契约测试（Fake service/store/graph/artifact + 真实 EmbeddedBridge 验证桥接通道语义：登记握手/事件幂等收敛三态/指令下发/截图落盘+最近帧缓存；覆盖 200/201/400/404/409/413/415/422/503 全错误码、DELETE 图先库后顺序断言）全部通过；录制域 6 文件组合 65 测试全绿。顺手修复 `recording_graph_store.py` `datetime.utcnow()` 废弃告警 → `datetime.now(timezone.utc)`。
 
-### P0-8 UIAutomationModeRuntime 编排改造 ⬜
+### P0-8 UIAutomationModeRuntime 编排改造 ✅
 
 **开发目标**：harness 全流程接通（方案第 4 章状态机）。
 
 - 做什么：改 `src/modes/ui_automation_mode/runtime.py`：① project_id 缺失 → `awaiting_project_selection` + 候选项目列表（复用 knowledge projects 查询）；② `_assess_knowledge` → 三源检索（Memgraph 覆盖 + 用例库 + Memory），返回各源命中计数与判定理由；③ 缺口分支改为 `awaiting_recording_approval`，创建 `approval_type="ui_recording"` 审批（复用 `agent_session_approvals`）；④ 审批通过回调 → `RecorderSessionService.launch`；⑤ 固化完成 → `task_generation_ready`。
 - 验收：编排单测覆盖全流程分支（有资源/无资源/审批通过/审批拒绝/项目反问）；既有 UI 探索链路测试全绿（不破坏旧能力）。
+- 完成说明（2026-08-24）：
+  - 三源检索 `application/recorder/ui_resource_assessor.py`：图谱源（Memgraph Page/Element/Action 计数，Pages≥3 且 Elements≥30 判充分）/ 用例库源（活跃用例数>0 判充分）/ Memory 源（复用既有语义检索，命中数/总分/最高分审计）；任一源充分即 `task_generation_ready`（理由按 图谱>用例>记忆 优先级），全不足 `need_recording` 并携带三源审计明细；单源故障降级（计数 0 + degraded 标记，不阻断主链路）。
+  - 审批服务 `application/recorder/recording_approval_service.py`：`create_approval` 生成 `approval_type="ui_recording"` 审批（metadata 含 recording_request 载荷 + knowledge_gate 审计快照，approval.created 事件）；`apply_decision` approved → `RecorderSessionService.launch` + recorder.launch_requested 事件，denied → recorder.approval_declined 降级事件（可回退 AI 探索）。
+  - 编排改造 `modes/ui_automation_mode/runtime.py`：`set_recording_orchestration` 注入三依赖（assessor/approval_service/project_catalog_provider）；handle 新增环节② 项目反问（project_id 缺失 → awaiting_project_selection + 候选项目列表）与环节③→④ 审批分支（三源不足且用户未显式选 AI 探索方向 → awaiting_recording_approval）；审批服务未注入时降级走既有 AI 探索链路（不阻断）。
+  - SessionService 委托 `sessions/session_service.py`：`resolve_approval` 识别 `approval_type="ui_recording"` 走录制启动分支（session 回 idle + control 更新 + 委托 apply_decision），服务未注入发 recorder.approval_unavailable 事件；非 ui_recording 审批保持既有 graph resume 链路不变。
+  - 接线 `main.py`：lifespan 创建 RecordingApprovalService/UIResourceAssessor 并注入 session_service 与 ui_automation_mode_runtime；`_project_catalog` 提供候选项目（project_service.list 前 50）。
+  - 测试：新增 3 文件 22 用例全过（`test_ui_resource_assessor.py` 三源判定/降级/缺依赖、`test_recording_approval_service.py` 审批结构/approved→launch/denied→降级/非 UI 审批拒绝 + SessionService 委托三分支、`test_ui_automation_recording_orchestration.py` 项目反问/三源充分/审批分支/服务缺失降级/显式方向跳过）；录制域 9 文件组合 98 测试全绿；既有 `test_ui_mode_skills.py`/`test_session_flow_projection.py` 13 测试无回归。修复测试文件错误导入路径（`src.infrastructure.project_store` → `src.application.projects.project_store`）。
 
 ### P0-9 Electron 录制窗口 + 控制条 ⬜
 

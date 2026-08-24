@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -97,10 +98,13 @@ from src.application.context.context_compaction_service import ContextCompaction
 from src.application.exploration.recording_graph_store import RecordingGraphStore
 from src.application.recorder.drivers import EmbeddedBridge
 from src.application.recorder.recorder_session_service import RecorderSessionService
+from src.application.recorder.recording_approval_service import RecordingApprovalService
+from src.application.recorder.ui_resource_assessor import UIResourceAssessor
 from src.core.config import get_settings
 from src.graph.builder import build_agent_graph
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
+from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
 from src.infrastructure.recording_store import PostgresRecordingStore
@@ -505,6 +509,33 @@ async def lifespan(app: FastAPI):
     app.state.recording_graph_store = recording_graph_store
     app.state.embedded_bridge = embedded_bridge
     app.state.recorder_service = recorder_service
+
+    # UI 录制编排接线（方案第 4 章 / P0-8）：
+    # 三源资源检索（图谱/用例/记忆）→ 录制审批 → 审批通过自动 launch
+    recording_approval_service = RecordingApprovalService(
+        recorder_service=recorder_service,
+        session_store=store,
+    )
+    session_service.set_recording_approval_service(recording_approval_service)
+    ui_resource_assessor = UIResourceAssessor(
+        settings=settings,
+        test_case_service=test_case_service,
+        memory_runtime_service=memory_runtime_service,
+        memgraph_provider=MemgraphRuntimeProvider(settings),
+    )
+
+    async def _project_catalog() -> list[dict[str, Any]]:
+        page = await project_service.list(status=None, query=None, limit=50, offset=0)
+        return [
+            {"project_id": item.id, "name": getattr(item, "name", "")}
+            for item in page.items
+        ]
+
+    tool_runtime_service.ui_automation_mode_runtime.set_recording_orchestration(
+        resource_assessor=ui_resource_assessor,
+        recording_approval_service=recording_approval_service,
+        project_catalog_provider=_project_catalog,
+    )
 
     try:
         yield

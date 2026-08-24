@@ -39,17 +39,52 @@ class UIAutomationModeRuntime:
         *,
         memory_runtime_service: MemoryRuntimeService | None = None,
         ui_exploration_service: UIExplorationService | None = None,
+        resource_assessor: Any | None = None,
+        recording_approval_service: Any | None = None,
+        project_catalog_provider: Any | None = None,
     ) -> None:
         self._memory_runtime_service = memory_runtime_service
         self._ui_exploration_service = ui_exploration_service
+        # UI 录制编排（方案第 4 章 / P0-8）：三源检索 + 录制审批分支
+        self._resource_assessor = resource_assessor
+        self._recording_approval_service = recording_approval_service
+        self._project_catalog_provider = project_catalog_provider
 
     def set_memory_runtime_service(self, memory_runtime_service: MemoryRuntimeService | None) -> None:
         self._memory_runtime_service = memory_runtime_service
 
+    def set_recording_orchestration(
+        self,
+        *,
+        resource_assessor: Any | None = None,
+        recording_approval_service: Any | None = None,
+        project_catalog_provider: Any | None = None,
+    ) -> None:
+        """注入 UI 录制编排依赖（main.py 在 recorder 域初始化后调用）。"""
+        if resource_assessor is not None:
+            self._resource_assessor = resource_assessor
+        if recording_approval_service is not None:
+            self._recording_approval_service = recording_approval_service
+        if project_catalog_provider is not None:
+            self._project_catalog_provider = project_catalog_provider
+
     async def handle(self, arguments: dict[str, Any], context) -> dict[str, Any]:
         request = self._resolve_request(arguments, context)
-        knowledge_gate = await self._assess_knowledge(request=request, context=context)
         hierarchy = self._hierarchy_snapshot(request)
+
+        # 环节② 项目确认（方案 4.2）：project_id 缺失时反问——
+        # 派生 scope 不能冒充正式 project_id（AGENTS.md 禁止自由文本项目名替代）。
+        if not request.project_id:
+            return self._build_result(
+                status="partial",
+                summary="请先选择要测试的项目：录制、资源检索与图谱写入都需要正式项目。",
+                phase="awaiting_project_selection",
+                request=request,
+                hierarchy=hierarchy,
+                knowledge_gate={"decision": "missing_project", "reason": "project_id_required"},
+                next_actions=["从候选项目中选择", "输入正式 project_id"],
+                extras={"project_candidates": await self._project_candidates()},
+            )
 
         if not request.target_url and len(request.objective) < 6:
             return self._build_result(
@@ -58,14 +93,49 @@ class UIAutomationModeRuntime:
                 phase="awaiting_input",
                 request=request,
                 hierarchy=hierarchy,
-                knowledge_gate={**knowledge_gate, "decision": "missing_target_info", "reason": "missing_target_info"},
+                knowledge_gate={**await self._assess_knowledge(request=request, context=context), "decision": "missing_target_info", "reason": "missing_target_info"},
                 next_actions=["补充目标地址", "补充更明确的探索需求"],
             )
 
-        if knowledge_gate["decision"] == "need_exploration" and (not request.direction or not request.subdirection):
+        knowledge_gate = await self._assess_resources(request=request, context=context)
+
+        # 环节③→④（方案 4.1）：三源不足且用户未显式选择 AI 探索 → 发起录制审批
+        if (
+            knowledge_gate.get("decision") == "need_recording"
+            and not (request.direction and request.subdirection)
+            and self._recording_approval_service is not None
+        ):
+            approval = await self._recording_approval_service.create_approval(
+                session_id=context.session_id,
+                turn_id=context.turn_id,
+                request=request,
+                knowledge_gate=knowledge_gate,
+            )
             return self._build_result(
                 status="partial",
-                summary="当前知识库不足以直接生成测试任务，需要先选择方向和子方向执行页面信息探索。",
+                summary=(
+                    "当前项目缺少可复用的 UI 测试资源，已发起浏览器录制审批；"
+                    "审批通过后将自动打开录制窗口。"
+                ),
+                phase="awaiting_recording_approval",
+                request=request,
+                hierarchy=hierarchy,
+                knowledge_gate=knowledge_gate,
+                next_actions=["在审批面板处理录制审批", "或改选 AI 页面探索（方向/子方向）"],
+                extras={
+                    "approval_id": approval.id,
+                    "approval_type": "ui_recording",
+                    "recording_request": approval.metadata.get("recording_request"),
+                },
+            )
+
+        if knowledge_gate["decision"] in {"need_exploration", "need_recording"} and (not request.direction or not request.subdirection):
+            return self._build_result(
+                status="partial",
+                summary=(
+                    "当前知识库不足以直接生成测试任务，需要先选择方向和子方向执行页面信息探索"
+                    + ("（录制审批服务未启用，走 AI 探索降级链路）。" if knowledge_gate["decision"] == "need_recording" else "。")
+                ),
                 phase="awaiting_exploration_selection",
                 request=request,
                 hierarchy=hierarchy,
@@ -87,7 +157,12 @@ class UIAutomationModeRuntime:
             phase="task_generation_ready",
             request=request,
             hierarchy=hierarchy,
-            knowledge_gate={**knowledge_gate, "decision": "task_generation_ready", "reason": "knowledge_sufficient"},
+            knowledge_gate={
+                **knowledge_gate,
+                "decision": "task_generation_ready",
+                # 三源检索时保留 assessor 的判定理由（审计可见），memory-only 时维持既有文案
+                "reason": knowledge_gate.get("reason") or "knowledge_sufficient",
+            },
             next_actions=["生成测试任务", "接入任务池与多 Agent 执行"],
         )
 
@@ -219,6 +294,34 @@ class UIAutomationModeRuntime:
             "next_actions": ["查看探索摘要和图谱写入结果", "后续将任务生成接入任务池"],
         }
 
+    async def _assess_resources(self, *, request: UIAutomationRequestState, context) -> dict[str, Any]:
+        """环节③ 三源检索（方案 4.2）：assessor 可用走图谱/用例/记忆三源，
+        否则退回既有 memory-only 评估（不破坏旧链路）。"""
+        if self._resource_assessor is None:
+            return await self._assess_knowledge(request=request, context=context)
+        return await self._resource_assessor.assess(
+            project_id=request.project_id,
+            target_url=request.target_url,
+            objective=request.objective,
+            project_scope=request.project_scope,
+            context=context,
+        )
+
+    async def _project_candidates(self) -> list[dict[str, Any]]:
+        """候选项目列表（反问时一次给全，方案 11 风险对策）。不可用时返回空列表。"""
+        if self._project_catalog_provider is None:
+            return []
+        try:
+            candidates = await self._project_catalog_provider()
+            if isinstance(candidates, list):
+                return [
+                    item if isinstance(item, dict) else {"project_id": str(item)}
+                    for item in candidates
+                ]
+        except Exception:
+            return []
+        return []
+
     async def _assess_knowledge(self, *, request: UIAutomationRequestState, context) -> dict[str, Any]:
         query_parts = [request.target_url, request.objective, request.project_scope]
         query = " ".join(part for part in query_parts if part).strip()
@@ -325,6 +428,7 @@ class UIAutomationModeRuntime:
         hierarchy: dict[str, Any],
         knowledge_gate: dict[str, Any],
         next_actions: list[str],
+        extras: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "status": status,
@@ -348,6 +452,7 @@ class UIAutomationModeRuntime:
                     "brain": "legacy_ui_explorer",
                 },
                 "next_actions": next_actions,
+                **(extras or {}),
             },
             "next_actions": next_actions,
         }

@@ -91,10 +91,16 @@ class SessionService:
         self._verification_service = verification_service or VerificationService()
         self._session_resource_service = session_resource_service
         self._project_service = project_service
+        # UI 录制审批回调（方案 4.2 环节④/⑤，P0-8）：main.py 在 recorder 域初始化后注入
+        self._recording_approval_service = None
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_resume_tasks: dict[str, asyncio.Task[None]] = {}
+
+    def set_recording_approval_service(self, recording_approval_service) -> None:
+        """注入 UI 录制审批服务（审批通过 → RecorderSessionService.launch）。"""
+        self._recording_approval_service = recording_approval_service
 
     async def list_sessions(self) -> list[SessionSummary]:
         sessions = await self._store.list_sessions(limit=200)
@@ -489,6 +495,41 @@ class SessionService:
                     lambda _finished, proxy_id=approval_id: self._approval_forward_tasks.pop(proxy_id, None)
                 )
                 return approval
+
+            # UI 录制审批（方案 4.2 环节④/⑤，P0-8）：不走 graph 工具重执行链路——
+            # approved → RecorderSessionService.launch；denied → 降级事件。
+            if approval.metadata.get("approval_type") == "ui_recording":
+                session.status = SessionStatus.idle
+                control = self._ensure_control_metadata(session)
+                control.update(
+                    {
+                        "control_state": "idle",
+                        "is_interrupted": False,
+                        "last_approval_id": approval.id,
+                    }
+                )
+                session.metadata["control"] = control
+                await self._store.save_session(session)
+                if self._recording_approval_service is None:
+                    await self._store.append_event(
+                        session_id,
+                        self._make_event(
+                            session_id,
+                            "recorder.approval_unavailable",
+                            {
+                                "approval_id": approval.id,
+                                "message": "录制服务未初始化，审批决策无法触发录制启动。",
+                            },
+                        ),
+                    )
+                    return approval
+                await self._recording_approval_service.apply_decision(
+                    approval,
+                    decision=payload.decision,
+                    reason=payload.reason,
+                )
+                return approval
+
             session.status = SessionStatus.running
             control = self._ensure_control_metadata(session)
             control.update(

@@ -2440,6 +2440,11 @@ class ToolRuntimeService:
     ) -> dict[str, Any]:
         return await self._ui_automation_mode_runtime.handle(arguments, context)
 
+    @property
+    def ui_automation_mode_runtime(self) -> UIAutomationModeRuntime:
+        """UI 自动化模式运行时引用（main.py 注入录制编排依赖用，P0-8）。"""
+        return self._ui_automation_mode_runtime
+
     async def _run_api_test_runner(
         self,
         arguments: dict[str, Any],
