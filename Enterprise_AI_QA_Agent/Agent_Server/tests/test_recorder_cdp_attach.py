@@ -23,9 +23,9 @@ from src.application.recorder.drivers import (
 from src.application.recorder.drivers.base import EventChannel
 from src.application.recorder.drivers.cdp_attach import (
     CdpAttachDriver,
-    _load_recorder_script,
     cdp_attach_factory,
 )
+from src.application.recorder.drivers.playwright_common import _load_recorder_script
 from src.schemas.recording import RecordingDriverConfig, RecordingDriverKind
 
 

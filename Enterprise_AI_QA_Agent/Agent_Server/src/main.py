@@ -96,7 +96,7 @@ from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.exploration.recording_graph_store import RecordingGraphStore
-from src.application.recorder.drivers import EmbeddedBridge
+from src.application.recorder.drivers import EmbeddedBridge, build_default_registry
 from src.application.recorder.recorder_session_service import RecorderSessionService
 from src.application.recorder.recording_approval_service import RecordingApprovalService
 from src.application.recorder.ui_resource_assessor import UIResourceAssessor
@@ -504,6 +504,7 @@ async def lifespan(app: FastAPI):
         store=recording_store,
         graph_store=recording_graph_store,
         bridge=embedded_bridge,
+        registry=build_default_registry(embedded_bridge, settings=settings),
     )
     app.state.recording_store = recording_store
     app.state.recording_graph_store = recording_graph_store
