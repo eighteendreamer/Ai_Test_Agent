@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import ApprovalPanel from "../../../components/chat/ApprovalPanel.vue";
 import ChatComposer from "../../../components/chat/ChatComposer.vue";
 import ChatTimeline from "../../../components/chat/ChatTimeline.vue";
+import RecordingTimelinePanel from "../../../components/chat/RecordingTimelinePanel.vue";
 import RuntimeStatusPanel from "../../../components/chat/RuntimeStatusPanel.vue";
 import { useSessionStore } from "../../../stores/session";
 
@@ -67,6 +68,7 @@ onBeforeUnmount(() => {
           <Transition name="runtime-panel-transition">
             <ApprovalPanel v-if="hasPendingApprovals" />
           </Transition>
+          <RecordingTimelinePanel />
         </div>
       </div>
     </div>

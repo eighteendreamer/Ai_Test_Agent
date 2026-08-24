@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
 import { api } from "../services/api";
+import { handleRecorderSseEvent } from "../features/recorder/recorderBridge";
 import { serverDateTimestamp } from "../utils/datetime";
 import type {
   AgentDescriptor,
@@ -715,6 +716,10 @@ export const useSessionStore = defineStore("session", {
         }
         this.activity = [event, ...this.activity].slice(0, 50);
         this.applyStreamingEvent(event);
+        // UI 录制编排事件（P0-10）：审批通过后自动弹桌面录制窗口。
+        if (event.type?.startsWith("recorder.")) {
+          void handleRecorderSseEvent(event);
+        }
         // Debug: log all SSE events for notification troubleshooting
         if (event.type?.startsWith("turn.") || event.type?.startsWith("approval.")) {
           console.log("[SSE Event]", event.type, event.session_id);

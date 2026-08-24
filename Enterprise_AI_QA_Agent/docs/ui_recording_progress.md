@@ -133,12 +133,19 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
   - i18n：zh-CN + en-US 24 个 `recorder.*` key（其余 13 语言 P0-10 统一补，fallback en-US→zh-CN）。
   - 验证：`node --check` 三 electron 文件通过；`npm run build` 通过；vitest 29 测试全绿。Electron 运行时链路（弹窗/注入/截图落盘）留待 P0-11 端到端验收。
 
-### P0-10 前端审批卡片与录制时间线 ⬜
+### P0-10 前端审批卡片与录制时间线 ✅
 
 **开发目标**：主界面侧的录制可见性。
 
 - 做什么：审批卡片扩展 `ui_recording` 类型（显示项目/目标 URL/三源缺口原因/驱动选择，复用 ApprovalPanel）；会话面板追加录制实时步骤时间线（动作类型 + 元素名 + 缩略截图，轮询或事件增量）；录制结束后的步骤清单（删误操作/补备注/确认固化）入口；15 个语言文件补 i18n key。
 - 验收：前端 `npm run build` 通过；时间线组件测试；i18n fallback 验证。
+- 完成说明（2026-08-24）：
+  - 审批卡片特化 `components/chat/ApprovalPanel.vue`：`isUiRecordingApproval`（approval_type=ui_recording）→ 展示项目/入口 URL/驱动 + 三源缺口明细（元素图谱/用例库/语义记忆各自命中计数与不足理由，来自 knowledge_gate 审计快照）；批准按钮特化文案"批准并开始录制"，提示条说明批准弹窗/拒绝降级 AI 探索；非 ui_recording 审批卡片零改动。
+  - 录制时间线 `components/chat/RecordingTimelinePanel.vue`：3s 轮询 `GET /api/v1/recordings` 按当前 agent session 过滤最新录制 → 详情渲染步骤流（动作类型徽标 + 元素语义名 + 截图缩略图，最近 30 条倒序）；终态（completed/failed/discarded）footer 展示固化指标（写入动作/页面/元素数 + 对账一致）与图谱入口（completed）；终态后停拉详情只刷元数据；会话关闭保留已取终态；后端不可达保留已有内容下轮重试。
+  - 工作台挂载 `features/workbench/plugins/ConversationWorkbenchPlugin.vue`：时间线面板挂会话工作台（与 RuntimeStatusPanel 同布局区）。
+  - i18n：15 语言 × 41 key 全量补齐（`recorder.*` 24 + `approvalPanel.recording_*`/`recordingPanel.*` 17；zh-CN/zh-TW/en-US/ja-JP/ko-KR 人工翻译，其余 10 语言复用 en-US 文案显式写入保证 key 齐全），一次性脚本执行后已删除。
+  - 范围说明：终态步骤清单以只读 + 固化指标 + 图谱入口交付（P0 终态即固化完成，事件级"删误操作/补备注"编辑依赖后端事件编辑 API，属后续迭代）。
+  - 验证：`npm run test` 29 测试全绿；`npm run build` 通过（RecorderWindowView 产物正常）；`node --check electron/recorder-window.mjs` 通过；i18n key 抽查（zh-CN/th-TH）追加正确。
 
 ### P0-11 P0 端到端验收 ⬜
 
