@@ -62,12 +62,12 @@ class CdpAttachDriver(PlaywrightBindingDriverBase):
         browser.on("disconnected", lambda _b: asyncio.create_task(pw.stop()))
         return browser
 
-    def _pick_context_and_page(self, browser: Any) -> tuple[Any, Any]:
+    async def _pick_context_and_page(self, browser: Any) -> tuple[Any, Any]:
         """复用既有 context 与 page（登录态在用户浏览器里，绝不新建 profile）。"""
         contexts = list(getattr(browser, "contexts", None) or [])
-        context = contexts[0] if contexts else browser.new_context()
+        context = contexts[0] if contexts else await browser.new_context()
         pages = list(getattr(context, "pages", None) or [])
-        page = pages[0] if pages else context.new_page()
+        page = pages[0] if pages else await context.new_page()
         return context, page
 
     # ------------------------------------------------------------ BrowserDriver 契约
@@ -80,7 +80,7 @@ class CdpAttachDriver(PlaywrightBindingDriverBase):
         if self._closed:
             raise RuntimeError(f"cdp-attach driver already closed: {self._recording_id}")
         self._browser = await self._connect()
-        self._context, self._page = self._pick_context_and_page(self._browser)
+        self._context, self._page = await self._pick_context_and_page(self._browser)
         await self._page.goto(url, wait_until="domcontentloaded")
         logger.info(
             "cdp-attach opened: recording_id=%s endpoint=%s url=%s",

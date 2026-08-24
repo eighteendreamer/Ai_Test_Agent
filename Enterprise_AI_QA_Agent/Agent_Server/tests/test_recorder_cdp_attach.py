@@ -205,6 +205,24 @@ def test_binding_events_flow_into_channel() -> None:
     asyncio.run(scenario())
 
 
+def test_string_json_binding_payload_is_parsed() -> None:
+    """recorder.js 协议传 JSON 字符串（Electron 链路同款），handler 必须 parse。"""
+    async def scenario() -> None:
+        browser, context, _ = _browser_with_page()
+        driver = _driver(browser)
+        await driver.open("https://app.example.com", viewport=(1440, 960))
+        await driver.inject_recorder()
+
+        handler = context.bindings["__qaRecordEmit"]
+        await handler({}, '{"seq": 7, "type": "click"}')
+
+        stream = await driver.on_recorder_event()
+        event = await asyncio.wait_for(stream.__anext__(), timeout=1.0)
+        assert event == {"seq": 7, "type": "click"}
+
+    asyncio.run(scenario())
+
+
 def test_non_dict_binding_payload_is_dropped_not_raised() -> None:
     async def scenario() -> None:
         browser, context, _ = _browser_with_page()
@@ -213,7 +231,8 @@ def test_non_dict_binding_payload_is_dropped_not_raised() -> None:
         await driver.inject_recorder()
 
         handler = context.bindings["__qaRecordEmit"]
-        await handler({}, "malformed-string")  # 不抛错即可（防御分支）
+        await handler({}, "malformed-string")  # 非法 JSON：丢弃不抛错（防御分支）
+        await handler({}, 12345)  # 非对象：丢弃
         await handler({}, {"seq": 5, "type": "click"})
 
         stream = await driver.on_recorder_event()

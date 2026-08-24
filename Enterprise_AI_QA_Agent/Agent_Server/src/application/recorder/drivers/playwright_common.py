@@ -9,6 +9,7 @@ cdp-attach 与 playwright-managed 共用同一注入协议与事件通道
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -51,14 +52,29 @@ class PlaywrightBindingDriverBase(BrowserDriver):
     # ------------------------------------------------------------ 内部
 
     async def _binding_handler(self, source: dict[str, Any], payload: Any) -> None:
-        """expose_binding 回调（context 级，所有 frame 的事件汇入同一通道）。"""
+        """expose_binding 回调（context 级，所有 frame 的事件汇入同一通道）。
+
+        recorder.js 按协议传 JSON 字符串（Electron CDP addBinding 链路同款，
+        见 P0-9 recorder-window.mjs 的 JSON.parse）；兼容 dict（测试/未来
+        序列化变更）。解析失败丢弃计数，不阻塞采集通道。
+        """
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "playwright binding payload is not valid JSON, dropped: "
+                    "recording_id=%s head=%s",
+                    self._recording_id,
+                    payload[:80],
+                )
+                return
         if isinstance(payload, dict):
             self._channel.publish(payload)
-        else:  # 防御：非对象载荷丢弃并计数（不阻塞采集通道）
+        else:
             logger.warning(
-                "playwright binding payload is not a dict, dropped: recording_id=%s seq=%s",
+                "playwright binding payload is not an object, dropped: recording_id=%s",
                 self._recording_id,
-                payload.get("seq") if isinstance(payload, dict) else None,
             )
 
     async def _inject_into_current_pages(self, script: str) -> None:
