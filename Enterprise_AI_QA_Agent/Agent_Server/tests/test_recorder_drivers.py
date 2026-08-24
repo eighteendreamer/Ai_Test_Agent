@@ -74,7 +74,8 @@ def test_abstract_driver_cannot_be_instantiated() -> None:
 def test_registry_register_and_create() -> None:
     bridge = EmbeddedBridge()
     registry = build_default_registry(bridge)
-    assert registry.kinds() == ["embedded"]
+    # P1-1 起 cdp-attach 一并注册（playwright-managed 于 P1-2 加入）
+    assert registry.kinds() == ["cdp-attach", "embedded"]
 
     driver = registry.create(
         RecordingDriverConfig(kind=RecordingDriverKind.embedded),
@@ -263,4 +264,4 @@ def test_poll_commands_long_poll_waits_for_command() -> None:
 def test_default_registry_embedded_kind_available() -> None:
     registry = build_default_registry()
     assert registry.is_registered("embedded") is True
-    assert registry.is_registered("cdp-attach") is False
+    assert registry.is_registered("cdp-attach") is True

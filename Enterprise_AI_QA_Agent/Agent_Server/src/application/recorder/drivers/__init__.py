@@ -1,4 +1,4 @@
-"""录制驱动注册表（方案 5.3）：P0 内置 embedded，P1/P3 扩展位就绪。"""
+"""录制驱动注册表（方案 5.3）：embedded + cdp-attach；playwright-managed 于 P1-2 注册。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,10 @@ from src.application.recorder.drivers.base import (
     BrowserDriver,
     DriverRegistry,
     EventChannel,
+)
+from src.application.recorder.drivers.cdp_attach import (
+    CdpAttachDriver,
+    cdp_attach_factory,
 )
 from src.application.recorder.drivers.embedded_bridge import (
     CMD_CLOSE,
@@ -23,6 +27,8 @@ __all__ = [
     "EmbeddedBridge",
     "EmbeddedDriver",
     "IngestResult",
+    "CdpAttachDriver",
+    "cdp_attach_factory",
     "CMD_NAVIGATE",
     "CMD_SET_CAPTURE",
     "CMD_CLOSE",
@@ -31,7 +37,7 @@ __all__ = [
 
 
 def build_default_registry(bridge: EmbeddedBridge | None = None) -> DriverRegistry:
-    """默认注册表：embedded 可用；cdp-attach / playwright-managed 于 P1 注册。"""
+    """默认注册表：embedded（桌面端）+ cdp-attach（外部浏览器，P1-1）。"""
 
     registry = DriverRegistry()
     owned_bridge = bridge or EmbeddedBridge()
@@ -40,4 +46,5 @@ def build_default_registry(bridge: EmbeddedBridge | None = None) -> DriverRegist
         return owned_bridge.attach(recording_id)
 
     registry.register("embedded", _embedded_factory)
+    registry.register("cdp-attach", cdp_attach_factory)
     return registry
