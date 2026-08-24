@@ -12,7 +12,7 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
 
 | 阶段 | 目标 | 状态 |
 |---|---|---|
-| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（8/11） |
+| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（9/11） |
 | P1 外部浏览器 | cdp-attach（Chrome/Edge）+ playwright-managed + iframe 补齐 | ⬜ 未开始 |
 | P2 回放与用例 | 录制回放执行器 + 录制转用例草稿 | ⬜ 未开始 |
 | P3 ego-lite 接入 | 驱动注册表接入 ego lite（依赖其 Windows 版或 macOS 环境） | ⛔ 阻塞于 ego lite 平台支持 |
@@ -115,12 +115,23 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
   - 接线 `main.py`：lifespan 创建 RecordingApprovalService/UIResourceAssessor 并注入 session_service 与 ui_automation_mode_runtime；`_project_catalog` 提供候选项目（project_service.list 前 50）。
   - 测试：新增 3 文件 22 用例全过（`test_ui_resource_assessor.py` 三源判定/降级/缺依赖、`test_recording_approval_service.py` 审批结构/approved→launch/denied→降级/非 UI 审批拒绝 + SessionService 委托三分支、`test_ui_automation_recording_orchestration.py` 项目反问/三源充分/审批分支/服务缺失降级/显式方向跳过）；录制域 9 文件组合 98 测试全绿；既有 `test_ui_mode_skills.py`/`test_session_flow_projection.py` 13 测试无回归。修复测试文件错误导入路径（`src.infrastructure.project_store` → `src.application.projects.project_store`）。
 
-### P0-9 Electron 录制窗口 + 控制条 ⬜
+### P0-9 Electron 录制窗口 + 控制条 ✅
 
 **开发目标**：桌面端自动弹出录制窗口，用户零手动启动。
 
 - 做什么：`electron/main.js` 新增 `recorder:create-window`（BrowserWindow 控制条 + WebContentsView，`partition: "persist:recorder"`）/ `recorder:attach-debugger`（attach 1.3 → addScriptToEvaluateOnNewDocument 注入 → addBinding 收事件 → 转发）/ `recorder:navigate` / `recorder:set-capture` / `recorder:close`；`preload.cjs` 扩展 `qaAgentDesktop.recorder.*`；控制条页面四按钮（开始/暂停·继续/结束/销毁）+ 状态徽标（状态/步数/当前 URL），销毁二次确认。
 - 验收：审批通过后窗口自动弹出且已注入；四按钮驱动后端状态机；截图回传落产物目录。
+- 完成说明（2026-08-24）：
+  - 窗口管理 `electron/recorder-window.mjs`（独立模块，main.js 只做 IPC 转发）：BrowserWindow 加载控制条路由 `/recorder-window`（顶部 56px CONTROL_BAR_HEIGHT）+ `contentView.addChildView(WebContentsView)` 加载目标产品 URL（`partition: "persist:recorder"` 持久登录态，与主窗口隔离）；resize/maximize/unmaximize 同步 bounds；多会话 Map 支持并发录制，同 recording_id 重建幂等（复用聚焦）。
+  - 注入链路：`webContents.debugger.attach("1.3")` → `Runtime.addBinding("__qaRecordEmit")`（先注册 binding 防丢事件）→ `Page.addScriptToEvaluateOnNewDocument`（recorder.js 唯一源从后端 `GET /api/v1/recordings/recorder.js` 拉取并进程缓存，含 `__qaRecorderInstalled` 完整性校验）→ loadURL（新文档自动注入，导航续注）→ `did-finish-load` 后 `attach-registry` 登记（launching→ready 握手）。
+  - 事件转发：`debugger.on("message")` 过滤 `Runtime.bindingCalled` → JSON.parse 防御（malformed 丢弃计数）→ 缓冲攒批（20 条/2s）→ POST `events:batch`（15s 超时；失败 unshift 回缓冲头部保序，硬上限 2000 丢最旧）。
+  - 指令 long-poll：GET `commands?wait_seconds=25` 循环 → navigate（loadURL）/ set_capture_enabled（`Runtime.evaluate __qaRecorderSetEnabled`）/ close（标记 closedByCommand → 冲刷缓冲 → detach → 关窗，不再补发 stop）；404 会话未知自动停止轮询。
+  - 关窗语义：用户直接关窗 = 自动补发 `control stop`（固化已录数据，保守不丢）；后端 stop/destroy 下发的 close 指令关窗不补发（避免重复控制）。
+  - 截图：`Page.captureScreenshot` → multipart POST `screenshots`（FormData+Blob），IPC `recorder:capture` 手动触发。
+  - IPC 七通道：create-window / navigate / attach-debugger（恢复查询入口）/ set-capture / capture / close / get-state（控制条徽标取 currentUrl/buffered/forwarded/dropped 计数）；`preload.cjs` 扩展 `qaAgentDesktop.recorder.*`（contextBridge 惯例），`vite-env.d.ts` 同步类型。
+  - 控制条页面 `views/RecorderWindowView.vue`（路由 `/recorder-window` blankShell，App.vue bare shell：无侧栏/顶栏/控制台）：四按钮按后端状态驱动可用态（ready→开始；active→暂停/结束/销毁；paused→继续/结束/销毁；finalizing 全禁用；终态出关窗按钮），2s 轮询详情刷新状态/步数，销毁内联二次确认（3s 自动复位），错误条显示控制失败详情。
+  - i18n：zh-CN + en-US 24 个 `recorder.*` key（其余 13 语言 P0-10 统一补，fallback en-US→zh-CN）。
+  - 验证：`node --check` 三 electron 文件通过；`npm run build` 通过；vitest 29 测试全绿。Electron 运行时链路（弹窗/注入/截图落盘）留待 P0-11 端到端验收。
 
 ### P0-10 前端审批卡片与录制时间线 ⬜
 

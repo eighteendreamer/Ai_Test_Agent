@@ -129,12 +129,17 @@ const pageLabel = computed(() => {
   if (route.name === "flow") {
     return t("nav.flow");
   }
+  if (route.name === "recorder-window") {
+    return t("recorder.window_title");
+  }
   return String(route.meta.label ?? "Session Workspace");
 });
 const runtimeBadge = computed(() => sessionStore.session?.status ?? "idle");
 const isHomeRoute = computed(() => route.name === "home");
 const isFlowRoute = computed(() => route.name === "flow");
-const showRuntimeConsole = computed(() => route.name !== "settings" && !isFlowRoute.value);
+const isRecorderRoute = computed(() => route.name === "recorder-window");
+const isBareShell = computed(() => isFlowRoute.value || isRecorderRoute.value);
+const showRuntimeConsole = computed(() => route.name !== "settings" && !isBareShell.value);
 const runtimeConsoleTabs = computed(() => [
   { key: "logs", label: t("console.title") },
   { key: "events", label: t("console.events") },
@@ -209,7 +214,7 @@ watch(
 watch(
   () => [route.name, sessionStore.session?.id ?? "", sessionStore.latestTurnId] as const,
   ([routeName, sessionId, turnId]) => {
-    if (routeName === "flow") {
+    if (routeName === "flow" || routeName === "recorder-window") {
       return;
     }
     publishFlowSession({ sessionId, turnId });
@@ -221,7 +226,7 @@ onMounted(async () => {
     void appStore.fetchSystemStatus();
   }, 15000);
 
-  if (isFlowRoute.value) {
+  if (isBareShell.value) {
     await appStore.fetchSystemStatus({ refreshCatalog: false });
     return;
   }
@@ -250,10 +255,10 @@ onBeforeUnmount(() => {
   <n-config-provider :theme="activeTheme" :theme-overrides="activeThemeOverrides">
   <n-message-provider>
     <n-dialog-provider>
-      <div :class="['prototype-shell', { 'is-flow-shell': isFlowRoute }]">
-        <AppSidebar v-if="!isFlowRoute" />
+      <div :class="['prototype-shell', { 'is-flow-shell': isFlowRoute, 'is-recorder-shell': isRecorderRoute }]">
+        <AppSidebar v-if="!isBareShell" />
         <main class="prototype-main">
-          <AppTopBar :label="pageLabel" :system-status="appStore.systemStatus" />
+          <AppTopBar v-if="!isRecorderRoute" :label="pageLabel" :system-status="appStore.systemStatus" />
           <div class="prototype-content">
             <RouterView v-slot="{ Component, route: viewRoute }">
               <Transition name="route-page" mode="out-in">

@@ -15,6 +15,7 @@ const router = createRouter({
     { path: "/reports", name: "reports", component: () => import("../views/ReportsView.vue"), meta: { label: "Reports" } },
     { path: "/settings", name: "settings", component: () => import("../views/SettingsView.vue"), meta: { label: "Settings" } },
     { path: "/flow", name: "flow", component: () => import("../views/FlowView.vue"), meta: { label: "Orchestration Trace", blankShell: true } },
+    { path: "/recorder-window", name: "recorder-window", component: () => import("../views/RecorderWindowView.vue"), meta: { label: "UI Recorder", blankShell: true } },
   ],
 });
 

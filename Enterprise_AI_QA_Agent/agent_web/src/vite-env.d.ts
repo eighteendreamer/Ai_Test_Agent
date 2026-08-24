@@ -23,6 +23,33 @@ interface QaAgentDesktopBridge {
     sessionId?: string;
     turnId?: string;
   }): Promise<boolean>;
+
+  recorder: {
+    createWindow(payload: {
+      recordingId: string;
+      entryUrl: string;
+      name?: string;
+    }): Promise<{ recordingId: string; reused: boolean }>;
+
+    navigate(recordingId: string, url: string): Promise<boolean>;
+
+    attachDebugger(recordingId: string): Promise<boolean>;
+
+    setCapture(recordingId: string, enabled: boolean): Promise<boolean>;
+
+    captureScreenshot(recordingId: string): Promise<string | null>;
+
+    close(recordingId: string): Promise<boolean>;
+
+    getState(recordingId: string): Promise<{
+      recordingId: string;
+      attached: boolean;
+      currentUrl: string;
+      bufferedEvents: number;
+      forwardedEvents: number;
+      droppedMalformed: number;
+    } | null>;
+  };
 }
 
 interface Window {

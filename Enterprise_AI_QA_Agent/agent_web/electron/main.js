@@ -5,6 +5,15 @@ import { request as httpsRequest } from "node:https";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import removeMarkdown from "remove-markdown";
+import {
+  captureRecorderScreenshot,
+  closeRecorderSession,
+  configureRecorderBridge,
+  createRecorderWindow,
+  getRecorderWindowState,
+  navigateRecorder,
+  setRecorderCapture,
+} from "./recorder-window.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const appRoot = resolve(__dirname, "..");
@@ -341,6 +350,17 @@ function registerDesktopIpc() {
   ipcMain.removeHandler("desktop:set-zoom-factor");
   ipcMain.removeHandler("desktop:notify");
   ipcMain.removeHandler("desktop:open-flow-window");
+  for (const channel of [
+    "recorder:create-window",
+    "recorder:navigate",
+    "recorder:attach-debugger",
+    "recorder:set-capture",
+    "recorder:capture",
+    "recorder:close",
+    "recorder:get-state",
+  ]) {
+    ipcMain.removeHandler(channel);
+  }
 
   ipcMain.handle("desktop:set-zoom-factor", (event, factor) => {
     const numericFactor = Number(factor);
@@ -373,6 +393,37 @@ function registerDesktopIpc() {
   ipcMain.handle("desktop:open-flow-window", (_event, payload) => {
     return openOrFocusFlowWindow(payload);
   });
+
+  // ------------------------------------------------------------ 录制窗口（P0-9）
+  ipcMain.handle("recorder:create-window", (_event, payload) => {
+    return createRecorderWindow(payload || {});
+  });
+
+  ipcMain.handle("recorder:navigate", (_event, payload) => {
+    return navigateRecorder(String(payload?.recordingId || ""), String(payload?.url || ""));
+  });
+
+  // 显式重挂 debugger + 重注入（窗口创建时已自动执行，此为恢复入口）。
+  ipcMain.handle("recorder:attach-debugger", async (_event, payload) => {
+    const state = getRecorderWindowState(String(payload?.recordingId || ""));
+    return Boolean(state?.attached);
+  });
+
+  ipcMain.handle("recorder:set-capture", (_event, payload) => {
+    return setRecorderCapture(String(payload?.recordingId || ""), payload?.enabled === true);
+  });
+
+  ipcMain.handle("recorder:capture", (_event, payload) => {
+    return captureRecorderScreenshot(String(payload?.recordingId || ""));
+  });
+
+  ipcMain.handle("recorder:close", (_event, payload) => {
+    return closeRecorderSession(String(payload?.recordingId || ""));
+  });
+
+  ipcMain.handle("recorder:get-state", (_event, payload) => {
+    return getRecorderWindowState(String(payload?.recordingId || ""));
+  });
 }
 
 registerDesktopIpc();
@@ -390,6 +441,7 @@ async function createMainWindow() {
   Menu.setApplicationMenu(null);
 
   rendererOrigin = await resolveRendererOrigin();
+  configureRecorderBridge({ backendOrigin, rendererOrigin });
   mainWindow = createBrowserWindow({
     width: 1440,
     height: 960,
