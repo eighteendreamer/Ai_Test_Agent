@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     postgres_test_run_attempt_table: str = "agent_test_run_attempts"
     postgres_test_case_result_table: str = "agent_test_case_results"
     postgres_mcp_server_table: str = "agent_mcp_servers"
+    postgres_recording_table: str = "ui_recording"
+    postgres_recording_event_table: str = "ui_recording_event"
     postgres_vector_dimension: int = 1536
     memgraph_host: str = "127.0.0.1"
     memgraph_port: int = 7687

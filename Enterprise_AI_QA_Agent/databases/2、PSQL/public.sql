@@ -893,3 +893,43 @@ CREATE INDEX "idx_agent_tool_jobs_status_updated" ON "public"."agent_tool_jobs" 
 -- Primary Key structure for table agent_tool_jobs
 -- ----------------------------
 ALTER TABLE "public"."agent_tool_jobs" ADD CONSTRAINT "agent_tool_jobs_pkey" PRIMARY KEY ("id");
+
+
+-- ----------------------------
+-- UI 操作录制（方案 ui_recording_development_plan.md v2.1 第 7 章）
+-- 幂等段落：约束内联，整段可重复执行；运行时由 recording_store 以 IF NOT EXISTS 兜底
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS "public"."ui_recording" (
+  "id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "project_id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "name" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT ''::text,
+  "entry_url" text COLLATE "pg_catalog"."default" NOT NULL,
+  "driver_kind" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'embedded'::text,
+  "status" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'launching'::text,
+  "session_id" text COLLATE "pg_catalog"."default",
+  "approval_id" text COLLATE "pg_catalog"."default",
+  "step_count" int4 NOT NULL DEFAULT 0,
+  "created_at" timestamptz(6) NOT NULL,
+  "updated_at" timestamptz(6) NOT NULL,
+  "started_at" timestamptz(6),
+  "ended_at" timestamptz(6),
+  "finalize_metrics" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "metadata" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT "ui_recording_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "idx_ui_recording_project_updated" ON "public"."ui_recording" USING btree ("project_id", "updated_at" DESC);
+CREATE INDEX IF NOT EXISTS "idx_ui_recording_status" ON "public"."ui_recording" USING btree ("status");
+
+-- 事件流水：追加写、不可变；关键幂等约束 (recording_id, seq) 唯一——
+-- 网络重试 / 重复批次不产生重复事件（方案 7.2 关口②）
+CREATE TABLE IF NOT EXISTS "public"."ui_recording_event" (
+  "id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "recording_id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "seq" int4 NOT NULL,
+  "type" text COLLATE "pg_catalog"."default" NOT NULL,
+  "timestamp" timestamptz(6) NOT NULL,
+  "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "screenshot_ref" text COLLATE "pg_catalog"."default",
+  CONSTRAINT "ui_recording_event_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ui_recording_event_recording_id_seq_key" UNIQUE ("recording_id", "seq")
+);
