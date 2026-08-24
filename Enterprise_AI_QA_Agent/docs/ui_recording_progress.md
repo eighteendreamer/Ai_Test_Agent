@@ -6,13 +6,13 @@
 
 ## 一、当前结论
 
-P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingStore PG 事件流存储）、P0-3（RecordingGraphStore Memgraph 固化）、P0-4（recorder.js 注入脚本）完成。P0-2 落地 `infrastructure/recording_store.py`（create_session / append_events 批量幂等 / update_status / get_session / list_sessions / get_events / discard_session；事件流水只 INSERT 不 UPDATE，(recording_id, seq) ON CONFLICT DO NOTHING），`tests/test_recording_store.py` 8 个不连库单测 + 1 个连库集成（RUN_LIVE_RECORDING_PG=1，本机 PG 实测重复批次重试 0 新增、11 重复、step_count 对账一致）全部通过。P0-3 落地 `application/exploration/recording_graph_store.py`（finalize 固化 + delete_recording；严格仿 `ui_graph_store.py` 的 MERGE 键/payload_json/scoped_key 惯例；Recording/Action 节点 + HAS_STEP/TARGETS/ON_PAGE/NAVIGATED_TO 边 + 复用 CONTAINS；Element 指纹与 `_element_dedupe_key` 同构且内容寻址 id（跨录制收敛）；7.2 完整性校验：seq 连续性缺口、PG 事件数 vs Action 数对账、locators 全空标 resolution_status=degraded、raw-vs-dedup 指标；密码字段防御性脱敏兜底），`tests/test_recording_graph_store.py` 11 个不连库单测 + 1 个连库集成（RUN_LIVE_RECORDING_MEMGRAPH=1，本机 Docker Memgraph 实测：10 次点击同一按钮收敛 1 个 Element 节点、11 条 Action 流水不去重、finalize 重复执行幂等、delete 只删 Recording/Action 保留 Page/Element）全部通过。P0-4 落地 `Agent_Server/src/application/recorder/assets/recorder.js`（单文件无依赖、三端共用：click/dblclick/fill(input 500ms debounce 合并+敏感脱敏)/file_change/功能键与组合键/submit/scroll(300ms 节流)/navigate(pushState+replaceState+popstate+hashchange+pageshow)/page_scan 六类采集；`composedPath()[0]` 穿透 shadow DOM；locator 链 id→testid→role+name→css(唯一 id 短路+nth-of-type)→xpath(全序号)→text；像素三件套 viewport_point/bbox/rel_offset；可交互元素轻量扫描+纯 JS SHA-1 dom_hash；MutationObserver 计数随事件携带并重置；top frame 统一分配 seq，sessionStorage 跨整页导航续号；binding 缺失入缓冲 2s 重试；同源 iframe postMessage 桥接；控制协议 SetEnabled/GetState/Scan/Flush；密码字段 value 与 accessible name 双重脱敏），`agent_web/tests/recorder/recorder.test.mjs` 20 个用例（每用例独立 JSDOM realm + vitest 假定时器；runScripts:"outside-only" 使 eval 注入生效）全部通过，agent_web 全量 29 测试无回归。
+P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingStore PG 事件流存储）、P0-3（RecordingGraphStore Memgraph 固化）、P0-4（recorder.js 注入脚本）、P0-5（BrowserDriver 抽象 + embedded 驱动）完成。P0-2 落地 `infrastructure/recording_store.py`（create_session / append_events 批量幂等 / update_status / get_session / list_sessions / get_events / discard_session；事件流水只 INSERT 不 UPDATE，(recording_id, seq) ON CONFLICT DO NOTHING），`tests/test_recording_store.py` 8 个不连库单测 + 1 个连库集成（RUN_LIVE_RECORDING_PG=1，本机 PG 实测重复批次重试 0 新增、11 重复、step_count 对账一致）全部通过。P0-3 落地 `application/exploration/recording_graph_store.py`（finalize 固化 + delete_recording；严格仿 `ui_graph_store.py` 的 MERGE 键/payload_json/scoped_key 惯例；Recording/Action 节点 + HAS_STEP/TARGETS/ON_PAGE/NAVIGATED_TO 边 + 复用 CONTAINS；Element 指纹与 `_element_dedupe_key` 同构且内容寻址 id（跨录制收敛）；7.2 完整性校验：seq 连续性缺口、PG 事件数 vs Action 数对账、locators 全空标 resolution_status=degraded、raw-vs-dedup 指标；密码字段防御性脱敏兜底），`tests/test_recording_graph_store.py` 11 个不连库单测 + 1 个连库集成（RUN_LIVE_RECORDING_MEMGRAPH=1，本机 Docker Memgraph 实测：10 次点击同一按钮收敛 1 个 Element 节点、11 条 Action 流水不去重、finalize 重复执行幂等、delete 只删 Recording/Action 保留 Page/Element）全部通过。P0-4 落地 `Agent_Server/src/application/recorder/assets/recorder.js`（单文件无依赖、三端共用：click/dblclick/fill(input 500ms debounce 合并+敏感脱敏)/file_change/功能键与组合键/submit/scroll(300ms 节流)/navigate(pushState+replaceState+popstate+hashchange+pageshow)/page_scan 六类采集；`composedPath()[0]` 穿透 shadow DOM；locator 链 id→testid→role+name→css(唯一 id 短路+nth-of-type)→xpath(全序号)→text；像素三件套 viewport_point/bbox/rel_offset；可交互元素轻量扫描+纯 JS SHA-1 dom_hash；MutationObserver 计数随事件携带并重置；top frame 统一分配 seq，sessionStorage 跨整页导航续号；binding 缺失入缓冲 2s 重试；同源 iframe postMessage 桥接；控制协议 SetEnabled/GetState/Scan/Flush；密码字段 value 与 accessible name 双重脱敏），`agent_web/tests/recorder/recorder.test.mjs` 20 个用例（每用例独立 JSDOM realm + vitest 假定时器；runScripts:"outside-only" 使 eval 注入生效）全部通过，agent_web 全量 29 测试无回归。P0-5 落地 `application/recorder/drivers/`（base.py：BrowserDriver ABC（方案 5.1 七方法契约）+ DriverRegistry（kind→factory，create(config, **context)，重复/空白/未知 kind 防御）+ EventChannel（容量 10000 防爆、满时丢弃计数不阻塞采集）；embedded_bridge.py：EmbeddedBridge（attach 登记/register_session 握手/ingest_events 事件转发（批内去重+seen_seqs 幂等预收敛，DB 唯一约束为最终防线）/enqueue+poll_commands 下行指令（long-poll 语义）/report_screenshot 最近帧缓存/close_session 标记保留-detach 终态清理两段式，close 后 Electron 仍可拉取 close 指令、未 detach 禁止重建防指令丢失）+ EmbeddedDriver（open→navigate 指令、inject_recorder 记录 binding（实际注入在 Electron）、on_recorder_event 异步流、current_page_info 取最近事件 page、set_capture_enabled→指令、capture_screenshot 取最近帧、close→指令+回收）），`tests/test_recorder_drivers.py` 10 个纯单测（契约齐全性/抽象不可实例化/注册表语义/完整生命周期/幂等重试/未知会话拒绝/long-poll）全部通过，既有录制域 30 测试无回归。
 
 ## 二、阶段状态总览
 
 | 阶段 | 目标 | 状态 |
 |---|---|---|
-| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（4/11） |
+| P0 harness 主链路 | 桌面端全自动录制主链路端到端可用 | 🔵 进行中（5/11） |
 | P1 外部浏览器 | cdp-attach（Chrome/Edge）+ playwright-managed + iframe 补齐 | ⬜ 未开始 |
 | P2 回放与用例 | 录制回放执行器 + 录制转用例草稿 | ⬜ 未开始 |
 | P3 ego-lite 接入 | 驱动注册表接入 ego lite（依赖其 Windows 版或 macOS 环境） | ⛔ 阻塞于 ego lite 平台支持 |
@@ -67,12 +67,17 @@ P0 进行中：P0-1（录制数据契约与 PG 表结构）、P0-2（RecordingSt
   - 可靠性：seq 由 top frame 统一分配、sessionStorage 跨整页导航续号；binding 缺失时入本地缓冲每 2s 重试补投；同源 iframe postMessage 桥接（跨域 P0 不采集）；dom_hash 用内置纯 JS SHA-1（非安全上下文无 crypto.subtle 也可用）。
   - 测试：`agent_web/tests/recorder/recorder.test.mjs` 20 用例全过（JSDOM `runScripts:"outside-only"` + 每用例独立 realm + 假定时器），sha1 与 Node crypto 对账、指纹稳定性、脱敏、debounce/节流、seq 连续性/续号、MutationObserver 计数重置均覆盖；agent_web 全量 29 测试无回归。
 
-### P0-5 BrowserDriver 抽象 + embedded 驱动 ⬜
+### P0-5 BrowserDriver 抽象 + embedded 驱动 ✅
 
 **开发目标**：驱动接口契约落地，桌面端内嵌驱动可用。
 
 - 做什么：新建 `src/application/recorder/drivers/base.py`（方案 5.1 接口）；`embedded_bridge.py`：登记 Electron 侧会话、接收事件转发、下发 `set_capture_enabled` 控制；驱动注册表（kind → 实现），为 P1/P3 预留。
 - 验收：接口契约测试；embedded 驱动与 Electron 侧的联调在 P0-9 完成后做端到端验证。
+- 完成说明（2026-08-24）：
+  - `base.py`：`BrowserDriver` ABC 落地方案 5.1 七方法契约（open/inject_recorder/on_recorder_event/capture_screenshot/current_page_info/set_capture_enabled/close）；`DriverRegistry` kind→factory，`create(config, **context)` 透传会话上下文（recording_id），重复注册/空白 kind/未知 kind 均防御性拒绝；`EventChannel` 容量 10000，满时丢弃并 error 计数（不阻塞采集通道）。
+  - `embedded_bridge.py`：embedded 架构是"后端代理 + Electron 实驱"三通道——上行 `ingest_events`（批内去重 + seen_seqs 幂等预收敛，与 PG (recording_id, seq) 唯一约束同键，DB 为最终防线）；下行 `poll_commands` long-poll（navigate/set_capture_enabled/close 指令）；握手 `register_session`（launching→ready 判定）+ `wait_ready`。
+  - 生命周期两段式：`close_session` 只标记（事件/指令入口立即拒绝，state 保留供 Electron 拉取 close 指令关窗），`detach` 终态清理；closed 未 detach 期间禁止重建（防 close 指令随覆盖丢失）——测试抓出"close 后 poll 不到指令"缺陷后修正。
+  - 测试：`tests/test_recorder_drivers.py` 10 用例全过（单事件循环包裹，对齐 FastAPI 运行形态；asyncio.Queue 绑定首个消费循环不可跨 run）；既有录制域 30 测试无回归。
 
 ### P0-6 RecorderSessionService（会话编排 + 控制状态机）⬜
 
