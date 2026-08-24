@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.application.recorder.assertion_suggester import suggest_assertions
 from src.application.recorder.replay_executor import _is_masked_value
 from src.schemas.case_management import (
     TestCaseAssertion,
@@ -156,7 +157,8 @@ def build_recording_draft_payload(
         priority="P1",
         preconditions=[f"入口地址 {session.entry_url}", "目标系统可访问且登录态可用"],
         steps=steps,
-        assertions=[_baseline_assertion(events)],
+        # 断言 = 基线（必选，三级退化）+ 规则建议（P2-3，带 confidence 供评审筛选）
+        assertions=[_baseline_assertion(events), *suggest_assertions(events)],
         test_data={"recording_id": session.id, "driver_kind": str(session.driver_kind)},
         cleanup=[],
         source_refs=[
