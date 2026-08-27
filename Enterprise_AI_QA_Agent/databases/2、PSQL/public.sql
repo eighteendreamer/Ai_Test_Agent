@@ -3,20 +3,35 @@
 
  Source Server         : Docker_PSQL
  Source Server Type    : PostgreSQL
- Source Server Version : 150002 (150002)
+ Source Server Version : 160011 (160011)
  Source Host           : localhost:5432
- Source Catalog        : QA-Agent
+ Source Catalog        : QA_Agent
  Source Schema         : public
 
  Target Server Type    : PostgreSQL
- Target Server Version : 150002 (150002)
+ Target Server Version : 160011 (160011)
  File Encoding         : 65001
 
- Date: 26/07/2026 21:07:45
+ Date: 27/08/2026 11:27:30
 */
 
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
+-- ----------------------------
+-- Type structure for vector
+-- ----------------------------
+DROP TYPE IF EXISTS "public"."vector";
+CREATE TYPE "public"."vector" (
+  INPUT = "public"."vector_in",
+  OUTPUT = "public"."vector_out",
+  RECEIVE = "public"."vector_recv",
+  SEND = "public"."vector_send",
+  TYPMOD_IN = "public"."vector_typmod_in",
+  INTERNALLENGTH = VARIABLE,
+  STORAGE = external,
+  CATEGORY = U,
+  DELIMITER = ','
+);
+ALTER TYPE "public"."vector" OWNER TO "postgres";
 
 -- ----------------------------
 -- Table structure for agent_mcp_servers
@@ -322,6 +337,360 @@ CREATE TABLE "public"."agent_tool_jobs" (
 )
 ;
 
+-- ----------------------------
+-- Table structure for ui_recording
+-- ----------------------------
+DROP TABLE IF EXISTS "public"."ui_recording";
+CREATE TABLE "public"."ui_recording" (
+  "id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "project_id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "name" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT ''::text,
+  "entry_url" text COLLATE "pg_catalog"."default" NOT NULL,
+  "driver_kind" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'embedded'::text,
+  "status" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'launching'::text,
+  "session_id" text COLLATE "pg_catalog"."default",
+  "approval_id" text COLLATE "pg_catalog"."default",
+  "step_count" int4 NOT NULL DEFAULT 0,
+  "created_at" timestamptz(6) NOT NULL,
+  "updated_at" timestamptz(6) NOT NULL,
+  "started_at" timestamptz(6),
+  "ended_at" timestamptz(6),
+  "finalize_metrics" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "metadata" jsonb NOT NULL DEFAULT '{}'::jsonb
+)
+;
+
+-- ----------------------------
+-- Table structure for ui_recording_event
+-- ----------------------------
+DROP TABLE IF EXISTS "public"."ui_recording_event";
+CREATE TABLE "public"."ui_recording_event" (
+  "id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "recording_id" text COLLATE "pg_catalog"."default" NOT NULL,
+  "seq" int4 NOT NULL,
+  "type" text COLLATE "pg_catalog"."default" NOT NULL,
+  "timestamp" timestamptz(6) NOT NULL,
+  "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "screenshot_ref" text COLLATE "pg_catalog"."default"
+)
+;
+
+-- ----------------------------
+-- Function structure for array_to_vector
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."array_to_vector"(_float4, int4, bool);
+CREATE OR REPLACE FUNCTION "public"."array_to_vector"(_float4, int4, bool)
+  RETURNS "public"."vector" AS '$libdir/vector', 'array_to_vector'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for array_to_vector
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."array_to_vector"(_numeric, int4, bool);
+CREATE OR REPLACE FUNCTION "public"."array_to_vector"(_numeric, int4, bool)
+  RETURNS "public"."vector" AS '$libdir/vector', 'array_to_vector'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for array_to_vector
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."array_to_vector"(_float8, int4, bool);
+CREATE OR REPLACE FUNCTION "public"."array_to_vector"(_float8, int4, bool)
+  RETURNS "public"."vector" AS '$libdir/vector', 'array_to_vector'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for array_to_vector
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."array_to_vector"(_int4, int4, bool);
+CREATE OR REPLACE FUNCTION "public"."array_to_vector"(_int4, int4, bool)
+  RETURNS "public"."vector" AS '$libdir/vector', 'array_to_vector'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for cosine_distance
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."cosine_distance"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."cosine_distance"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'cosine_distance'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for hnswhandler
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."hnswhandler"(internal);
+CREATE OR REPLACE FUNCTION "public"."hnswhandler"(internal)
+  RETURNS "pg_catalog"."index_am_handler" AS '$libdir/vector', 'hnswhandler'
+  LANGUAGE c VOLATILE
+  COST 1;
+
+-- ----------------------------
+-- Function structure for inner_product
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."inner_product"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."inner_product"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'inner_product'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for ivfflathandler
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."ivfflathandler"(internal);
+CREATE OR REPLACE FUNCTION "public"."ivfflathandler"(internal)
+  RETURNS "pg_catalog"."index_am_handler" AS '$libdir/vector', 'ivfflathandler'
+  LANGUAGE c VOLATILE
+  COST 1;
+
+-- ----------------------------
+-- Function structure for l1_distance
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."l1_distance"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."l1_distance"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'l1_distance'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for l2_distance
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."l2_distance"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."l2_distance"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'l2_distance'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector"("public"."vector", int4, bool);
+CREATE OR REPLACE FUNCTION "public"."vector"("public"."vector", int4, bool)
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_accum
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_accum"(_float8, "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_accum"(_float8, "public"."vector")
+  RETURNS "pg_catalog"."_float8" AS '$libdir/vector', 'vector_accum'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_add
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_add"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_add"("public"."vector", "public"."vector")
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_add'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_avg
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_avg"(_float8);
+CREATE OR REPLACE FUNCTION "public"."vector_avg"(_float8)
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_avg'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_cmp
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_cmp"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_cmp"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."int4" AS '$libdir/vector', 'vector_cmp'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_combine
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_combine"(_float8, _float8);
+CREATE OR REPLACE FUNCTION "public"."vector_combine"(_float8, _float8)
+  RETURNS "pg_catalog"."_float8" AS '$libdir/vector', 'vector_combine'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_dims
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_dims"("public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_dims"("public"."vector")
+  RETURNS "pg_catalog"."int4" AS '$libdir/vector', 'vector_dims'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_eq
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_eq"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_eq"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_eq'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_ge
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_ge"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_ge"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_ge'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_gt
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_gt"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_gt"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_gt'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_in
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_in"(cstring, oid, int4);
+CREATE OR REPLACE FUNCTION "public"."vector_in"(cstring, oid, int4)
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_in'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_l2_squared_distance
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_l2_squared_distance"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_l2_squared_distance"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'vector_l2_squared_distance'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_le
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_le"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_le"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_le'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_lt
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_lt"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_lt"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_lt'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_mul
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_mul"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_mul"("public"."vector", "public"."vector")
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_mul'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_ne
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_ne"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_ne"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."bool" AS '$libdir/vector', 'vector_ne'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_negative_inner_product
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_negative_inner_product"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_negative_inner_product"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'vector_negative_inner_product'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_norm
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_norm"("public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_norm"("public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'vector_norm'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_out
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_out"("public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_out"("public"."vector")
+  RETURNS "pg_catalog"."cstring" AS '$libdir/vector', 'vector_out'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_recv
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_recv"(internal, oid, int4);
+CREATE OR REPLACE FUNCTION "public"."vector_recv"(internal, oid, int4)
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_recv'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_send
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_send"("public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_send"("public"."vector")
+  RETURNS "pg_catalog"."bytea" AS '$libdir/vector', 'vector_send'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_spherical_distance
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_spherical_distance"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_spherical_distance"("public"."vector", "public"."vector")
+  RETURNS "pg_catalog"."float8" AS '$libdir/vector', 'vector_spherical_distance'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_sub
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_sub"("public"."vector", "public"."vector");
+CREATE OR REPLACE FUNCTION "public"."vector_sub"("public"."vector", "public"."vector")
+  RETURNS "public"."vector" AS '$libdir/vector', 'vector_sub'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_to_float4
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_to_float4"("public"."vector", int4, bool);
+CREATE OR REPLACE FUNCTION "public"."vector_to_float4"("public"."vector", int4, bool)
+  RETURNS "pg_catalog"."_float4" AS '$libdir/vector', 'vector_to_float4'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
+-- Function structure for vector_typmod_in
+-- ----------------------------
+DROP FUNCTION IF EXISTS "public"."vector_typmod_in"(_cstring);
+CREATE OR REPLACE FUNCTION "public"."vector_typmod_in"(_cstring)
+  RETURNS "pg_catalog"."int4" AS '$libdir/vector', 'vector_typmod_in'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+
+-- ----------------------------
 -- Indexes structure for table agent_mcp_servers
 -- ----------------------------
 CREATE INDEX "idx_agent_mcp_servers_enabled" ON "public"."agent_mcp_servers" USING btree (
@@ -341,6 +710,9 @@ ALTER TABLE "public"."agent_mcp_servers" ADD CONSTRAINT "agent_mcp_servers_pkey"
 -- ----------------------------
 CREATE INDEX "idx_agent_memories_created" ON "public"."agent_memories" USING btree (
   "created_at" "pg_catalog"."timestamptz_ops" DESC NULLS FIRST
+);
+CREATE INDEX "idx_agent_memories_embedding" ON "public"."agent_memories" (
+  "embedding" "public"."vector_cosine_ops" ASC NULLS LAST
 );
 CREATE INDEX "idx_agent_memories_kind" ON "public"."agent_memories" USING btree (
   "kind" COLLATE "pg_catalog"."default" "pg_catalog"."text_ops" ASC NULLS LAST
@@ -560,42 +932,28 @@ CREATE INDEX "idx_agent_tool_jobs_status_updated" ON "public"."agent_tool_jobs" 
 -- ----------------------------
 ALTER TABLE "public"."agent_tool_jobs" ADD CONSTRAINT "agent_tool_jobs_pkey" PRIMARY KEY ("id");
 
+-- ----------------------------
+-- Indexes structure for table ui_recording
+-- ----------------------------
+CREATE INDEX "idx_ui_recording_project_updated" ON "public"."ui_recording" USING btree (
+  "project_id" COLLATE "pg_catalog"."default" "pg_catalog"."text_ops" ASC NULLS LAST,
+  "updated_at" "pg_catalog"."timestamptz_ops" DESC NULLS FIRST
+);
+CREATE INDEX "idx_ui_recording_status" ON "public"."ui_recording" USING btree (
+  "status" COLLATE "pg_catalog"."default" "pg_catalog"."text_ops" ASC NULLS LAST
+);
 
 -- ----------------------------
--- UI 鎿嶄綔褰曞埗锛堟柟妗? ui_recording_development_plan.md v2.1 绗? 7 绔狅級
--- 骞傜瓑娈佃惤锛氱害鏉熷唴鑱旓紝鏁存鍙噸澶嶆墽琛岋紱杩愯鏃剁敱 recording_store 浠? IF NOT EXISTS 鍏滃簳
+-- Primary Key structure for table ui_recording
 -- ----------------------------
-CREATE TABLE IF NOT EXISTS "public"."ui_recording" (
-  "id" text COLLATE "pg_catalog"."default" NOT NULL,
-  "project_id" text COLLATE "pg_catalog"."default" NOT NULL,
-  "name" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT ''::text,
-  "entry_url" text COLLATE "pg_catalog"."default" NOT NULL,
-  "driver_kind" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'embedded'::text,
-  "status" text COLLATE "pg_catalog"."default" NOT NULL DEFAULT 'launching'::text,
-  "session_id" text COLLATE "pg_catalog"."default",
-  "approval_id" text COLLATE "pg_catalog"."default",
-  "step_count" int4 NOT NULL DEFAULT 0,
-  "created_at" timestamptz(6) NOT NULL,
-  "updated_at" timestamptz(6) NOT NULL,
-  "started_at" timestamptz(6),
-  "ended_at" timestamptz(6),
-  "finalize_metrics" jsonb NOT NULL DEFAULT '{}'::jsonb,
-  "metadata" jsonb NOT NULL DEFAULT '{}'::jsonb,
-  CONSTRAINT "ui_recording_pkey" PRIMARY KEY ("id")
-);
-CREATE INDEX IF NOT EXISTS "idx_ui_recording_project_updated" ON "public"."ui_recording" USING btree ("project_id", "updated_at" DESC);
-CREATE INDEX IF NOT EXISTS "idx_ui_recording_status" ON "public"."ui_recording" USING btree ("status");
+ALTER TABLE "public"."ui_recording" ADD CONSTRAINT "ui_recording_pkey" PRIMARY KEY ("id");
 
--- 浜嬩欢娴佹按锛氳拷鍔犲啓銆佷笉鍙彉锛涘叧閿箓绛夌害鏉? (recording_id, seq) 鍞竴鈥斺??
--- 缃戠粶閲嶈瘯 / 閲嶅鎵规涓嶄骇鐢熼噸澶嶄簨浠讹紙鏂规 7.2 鍏冲彛鈶★級
-CREATE TABLE IF NOT EXISTS "public"."ui_recording_event" (
-  "id" text COLLATE "pg_catalog"."default" NOT NULL,
-  "recording_id" text COLLATE "pg_catalog"."default" NOT NULL,
-  "seq" int4 NOT NULL,
-  "type" text COLLATE "pg_catalog"."default" NOT NULL,
-  "timestamp" timestamptz(6) NOT NULL,
-  "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
-  "screenshot_ref" text COLLATE "pg_catalog"."default",
-  CONSTRAINT "ui_recording_event_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "ui_recording_event_recording_id_seq_key" UNIQUE ("recording_id", "seq")
-);
+-- ----------------------------
+-- Uniques structure for table ui_recording_event
+-- ----------------------------
+ALTER TABLE "public"."ui_recording_event" ADD CONSTRAINT "ui_recording_event_recording_id_seq_key" UNIQUE ("recording_id", "seq");
+
+-- ----------------------------
+-- Primary Key structure for table ui_recording_event
+-- ----------------------------
+ALTER TABLE "public"."ui_recording_event" ADD CONSTRAINT "ui_recording_event_pkey" PRIMARY KEY ("id");
