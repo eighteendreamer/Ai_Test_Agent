@@ -114,7 +114,7 @@ class SmokeExecutionPlan(BaseModel):
     risk_summary: dict[str, int] = Field(default_factory=dict)
     review_notes: list[str] = Field(default_factory=list)
     revisions: list[SmokePlanRevision] = Field(default_factory=list)
-    minio_uris: dict[str, str] = Field(default_factory=dict)
+    rustfs_uris: dict[str, str] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
 
@@ -149,7 +149,7 @@ class SmokeRunResult(BaseModel):
     case_results: list[SmokeCaseResult] = Field(default_factory=list)
     started_at: str = Field(default_factory=utc_now)
     completed_at: str = ""
-    minio_uris: dict[str, str] = Field(default_factory=dict)
+    rustfs_uris: dict[str, str] = Field(default_factory=dict)
     summary: str = ""
 
 

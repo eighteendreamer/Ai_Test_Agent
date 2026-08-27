@@ -25,7 +25,7 @@ Enterprise_AI_QA_Agent/
 │  │  ├─ registry/        # Agent / Tool / Model / Skill / MCP / Mode 注册中心
 │  │  ├─ graph/           # LangGraph 编排链路
 │  │  ├─ runtime/         # 运行时状态、事件、快照
-│  │  ├─ infrastructure/  # Postgres / MySQL / Memgraph / Redis / MinIO 适配
+│  │  ├─ infrastructure/  # Postgres / MySQL / Memgraph / Redis / RustFS 适配
 │  │  ├─ domain/          # 领域模型
 │  │  └─ schemas/         # Pydantic 契约
 │  ├─ tests/              # pytest 单元与集成测试
@@ -63,12 +63,12 @@ Enterprise_AI_QA_Agent/
 - LangGraph 编排链路，支持 interrupt / resume 审批中断与恢复
 - SSE 事件流输出与事件历史回放（replay）
 - Coordinator / Worker 子代理调度
-- 工具作业（tool jobs）、产物（artifacts）管理与 MinIO 对象存储
+- 工具作业（tool jobs）、产物（artifacts）管理与 RustFS 对象存储
 - MCP 连接管理与工具桥接（stdio 命令白名单）
 - 向量记忆（pgvector）与 Memgraph 知识图谱 / UI 图谱
 - 模型多 Provider 适配（OpenAI / Anthropic / Gemini 等）与 OAuth 授权
 - 邮件能力（agently-mail，含腾讯邮箱认证监控）
-- Docker 容器管理（Redis / MinIO / MySQL / Postgres / Memgraph / 测试引擎）
+- Docker 容器管理（Redis / RustFS / MySQL / Postgres / Memgraph / 测试引擎）
 
 ### 前端
 
@@ -140,7 +140,7 @@ flowchart TD
 
 ### 后端（Python >= 3.11）
 
-FastAPI、Uvicorn、LangGraph、Pydantic v2、SQLAlchemy、psycopg（PostgreSQL）、PyMySQL、neo4j 驱动（Memgraph）、Redis、MinIO、MCP SDK、cryptography。详见 `Agent_Server/pyproject.toml`。
+FastAPI、Uvicorn、LangGraph、Pydantic v2、SQLAlchemy、psycopg（PostgreSQL）、PyMySQL、neo4j 驱动（Memgraph）、Redis、RustFS（通过 boto3 S3 客户端）、MCP SDK、cryptography。详见 `Agent_Server/pyproject.toml`。
 
 ### 前端
 
@@ -154,7 +154,7 @@ Vue 3、Vite 6、Naive UI、Pinia、Vue Router、TypeScript、Electron 31、Vite
 | MySQL | 配置数据：`llm_model_config`、`system_email_config`、`system_channel_config` |
 | Memgraph | 知识图谱与项目级 UI 图谱 |
 | Redis | 分布式锁（如邮箱认证锁） |
-| MinIO | 产物对象存储与上传安全扫描桶（temp / safe / quarantine） |
+| RustFS | 产物对象存储与上传安全扫描桶（temp / safe / quarantine） |
 
 初始化脚本位于 `databases/` 目录。
 
@@ -162,7 +162,7 @@ Vue 3、Vite 6、Naive UI、Pinia、Vue Router、TypeScript、Electron 31、Vite
 
 ### 0. 准备环境
 
-复制 `Agent_Server/.env.example` 为 `Agent_Server/.env`，按需配置 MySQL / PostgreSQL / Memgraph / Redis / MinIO 连接信息。基础设施容器也可通过设置页的 Docker 管理面板一键拉起。
+复制 `Agent_Server/.env.example` 为 `Agent_Server/.env`，按需配置 MySQL / PostgreSQL / Memgraph / Redis / RustFS 连接信息。基础设施容器也可通过设置页的 Docker 管理面板一键拉起。
 
 ### 1. 启动后端
 

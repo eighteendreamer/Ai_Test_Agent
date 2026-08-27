@@ -366,7 +366,7 @@ class ToolRegistry:
                             },
                             "uri": {
                                 "type": "string",
-                                "description": "Optional object storage URI such as minio://bucket/object.",
+                                "description": "Optional object storage URI such as rustfs://bucket/object.",
                             },
                             "name": {
                                 "type": "string",
@@ -385,7 +385,7 @@ class ToolRegistry:
                         },
                     },
                     output_schema={"attachment": "object", "content": "string"},
-                    tags=["attachment", "file", "minio", "retrieval"],
+                    tags=["attachment", "file", "rustfs", "retrieval"],
                 ),
                 handler_key="attachment-reader",
             ),
@@ -1848,7 +1848,7 @@ class ToolRegistry:
                 descriptor=ToolDescriptor(
                     key="smoke-suite-runner",
                     name="Smoke Suite Runner",
-                    description="Generate, revise, persist, and execute user-approved smoke testing plans with MinIO/PostgreSQL asset tracking.",
+                    description="Generate, revise, persist, and execute user-approved smoke testing plans with RustFS/PostgreSQL asset tracking.",
                     category="execution",
                     permission_level="ask",
                     input_schema={

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from io import BytesIO
+import asyncio
+import logging
 import mimetypes
 from copy import deepcopy
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from src.core.config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactStorageService:
@@ -18,7 +22,7 @@ class ArtifactStorageService:
 
     @property
     def enabled(self) -> bool:
-        return self._settings.artifact_storage_backend.lower() == "minio"
+        return self._settings.artifact_storage_backend.lower() == "rustfs"
 
     async def store_output_artifacts(
         self,
@@ -32,7 +36,8 @@ class ArtifactStorageService:
             return output
         cache: dict[str, dict[str, Any]] = {}
         normalized = deepcopy(output)
-        return self._rewrite_artifact_paths(
+        return await asyncio.to_thread(
+            self._rewrite_artifact_paths,
             normalized,
             session_id=session_id,
             turn_id=turn_id,
@@ -53,28 +58,25 @@ class ArtifactStorageService:
         if not self.enabled:
             raise RuntimeError("Artifact storage backend is not enabled.")
 
-        target_bucket = bucket_name or self._settings.minio_bucket
+        target_bucket = bucket_name or self._settings.rustfs_bucket
         resolved_object_name = (
             self._safe_object_name(object_name)
             if object_name
             else self._build_uploaded_object_name(object_prefix=object_prefix, filename=filename)
         )
         resolved_content_type = content_type or self._content_type(Path(filename))
-        client = self._minio_client()
-        self._ensure_bucket(client, target_bucket)
-        buffer = BytesIO(content)
-        client.put_object(
-            target_bucket,
-            resolved_object_name,
-            buffer,
-            length=len(content),
+        await asyncio.to_thread(
+            self._put_object,
+            bucket_name=target_bucket,
+            object_name=resolved_object_name,
+            content=content,
             content_type=resolved_content_type,
         )
-        minio_uri = f"minio://{target_bucket}/{resolved_object_name}"
+        rustfs_uri = f"rustfs://{target_bucket}/{resolved_object_name}"
         return {
-            "path": minio_uri,
-            "uri": minio_uri,
-            "storage_backend": "minio",
+            "path": rustfs_uri,
+            "uri": rustfs_uri,
+            "storage_backend": "rustfs",
             "bucket": target_bucket,
             "object_name": resolved_object_name,
             "content_type": resolved_content_type,
@@ -83,39 +85,21 @@ class ArtifactStorageService:
         }
 
     async def delete_object_uri(self, uri: str) -> None:
-        if not self.enabled or not uri.startswith("minio://"):
+        if not self.enabled:
             return
-        bucket, object_name = self._parse_minio_uri(uri)
-        client = self._minio_client()
-        if not client.bucket_exists(bucket):
-            return
-        client.remove_object(bucket, object_name)
+        if not uri.startswith("rustfs://"):
+            raise ValueError(f"Unsupported artifact URI: {uri}")
+        bucket, object_name = self._parse_rustfs_uri(uri)
+        await asyncio.to_thread(self._delete_object, bucket, object_name)
 
     async def read_object_uri(self, uri: str) -> dict[str, Any]:
         if not self.enabled:
             raise RuntimeError("Artifact storage backend is not enabled.")
-        if not uri.startswith("minio://"):
+        if not uri.startswith("rustfs://"):
             raise ValueError(f"Unsupported artifact URI: {uri}")
 
-        bucket, object_name = self._parse_minio_uri(uri)
-        client = self._minio_client()
-        response = client.get_object(bucket, object_name)
-        try:
-            content = response.read()
-            stat = client.stat_object(bucket, object_name)
-        finally:
-            response.close()
-            response.release_conn()
-
-        return {
-            "uri": uri,
-            "bucket": bucket,
-            "object_name": object_name,
-            "content": content,
-            "content_type": getattr(stat, "content_type", None) or self._content_type(Path(object_name)),
-            "size_bytes": getattr(stat, "size", len(content)),
-            "etag": getattr(stat, "etag", ""),
-        }
+        bucket, object_name = self._parse_rustfs_uri(uri)
+        return await asyncio.to_thread(self._read_object, uri, bucket, object_name)
 
     async def copy_object_uri(
         self,
@@ -237,21 +221,39 @@ class ArtifactStorageService:
             tool_key=tool_key,
         )
         content_type = self._content_type(local_path)
-        client = self._minio_client()
-        self._ensure_bucket(client, self._settings.minio_bucket)
-        client.fput_object(
-            self._settings.minio_bucket,
+        client = self._rustfs_client()
+        self._ensure_bucket(client, self._settings.rustfs_bucket)
+        try:
+            client.upload_file(
+                str(local_path),
+                self._settings.rustfs_bucket,
+                object_name,
+                ExtraArgs={"ContentType": content_type},
+            )
+        except Exception as exc:
+            logger.exception(
+                "rustfs_file_store_failed bucket=%s object_name=%s local_path=%s",
+                self._settings.rustfs_bucket,
+                object_name,
+                local_path,
+            )
+            raise RuntimeError(
+                f"Failed to store file '{local_path}' as RustFS object "
+                f"'{self._settings.rustfs_bucket}/{object_name}': {exc}"
+            ) from exc
+        logger.info(
+            "rustfs_file_stored bucket=%s object_name=%s local_path=%s",
+            self._settings.rustfs_bucket,
             object_name,
-            str(local_path),
-            content_type=content_type,
+            local_path,
         )
 
-        minio_uri = f"minio://{self._settings.minio_bucket}/{object_name}"
+        rustfs_uri = f"rustfs://{self._settings.rustfs_bucket}/{object_name}"
         stored = {
-            "path": minio_uri,
-            "uri": minio_uri,
-            "storage_backend": "minio",
-            "bucket": self._settings.minio_bucket,
+            "path": rustfs_uri,
+            "uri": rustfs_uri,
+            "storage_backend": "rustfs",
+            "bucket": self._settings.rustfs_bucket,
             "object_name": object_name,
             "content_type": content_type,
             "original_local_path": str(local_path),
@@ -296,22 +298,124 @@ class ArtifactStorageService:
         guessed, _ = mimetypes.guess_type(str(path))
         return guessed or "application/octet-stream"
 
-    def _minio_client(self):
+    def _rustfs_client(self):
         try:
-            from minio import Minio
+            import boto3
+            from botocore.config import Config
         except ImportError as exc:
-            raise RuntimeError("MinIO artifact storage requires the 'minio' Python package.") from exc
-        return Minio(
-            self._settings.minio_endpoint,
-            access_key=self._settings.minio_access_key,
-            secret_key=self._settings.minio_secret_key,
-            secure=self._settings.minio_secure,
+            raise RuntimeError("RustFS artifact storage requires the 'boto3' Python package.") from exc
+        scheme = "https" if self._settings.rustfs_secure else "http"
+        return boto3.client(
+            "s3",
+            endpoint_url=f"{scheme}://{self._settings.rustfs_endpoint}",
+            aws_access_key_id=self._settings.rustfs_access_key,
+            aws_secret_access_key=self._settings.rustfs_secret_key,
+            region_name="us-east-1",
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                retries={"mode": "standard", "max_attempts": 3},
+            ),
         )
 
     def _ensure_bucket(self, client: Any, bucket_name: str) -> None:
-        if client.bucket_exists(bucket_name):
+        try:
+            client.head_bucket(Bucket=bucket_name)
             return
-        client.make_bucket(bucket_name)
+        except client.exceptions.ClientError as exc:
+            status_code = int(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0))
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            if status_code not in {404} and error_code not in {"404", "NoSuchBucket", "NotFound"}:
+                raise RuntimeError(f"Failed to inspect RustFS bucket '{bucket_name}': {exc}") from exc
+        client.create_bucket(Bucket=bucket_name)
+        logger.info("rustfs_bucket_created bucket=%s", bucket_name)
+
+    def _put_object(
+        self,
+        *,
+        bucket_name: str,
+        object_name: str,
+        content: bytes,
+        content_type: str,
+    ) -> None:
+        client = self._rustfs_client()
+        self._ensure_bucket(client, bucket_name)
+        try:
+            client.put_object(
+                Bucket=bucket_name,
+                Key=object_name,
+                Body=content,
+                ContentType=content_type,
+            )
+        except Exception as exc:
+            logger.exception(
+                "rustfs_object_store_failed bucket=%s object_name=%s size_bytes=%s",
+                bucket_name,
+                object_name,
+                len(content),
+            )
+            raise RuntimeError(
+                f"Failed to store RustFS object '{bucket_name}/{object_name}': {exc}"
+            ) from exc
+        logger.info(
+            "rustfs_object_stored bucket=%s object_name=%s size_bytes=%s",
+            bucket_name,
+            object_name,
+            len(content),
+        )
+
+    def _read_object(self, uri: str, bucket: str, object_name: str) -> dict[str, Any]:
+        client = self._rustfs_client()
+        try:
+            response = client.get_object(Bucket=bucket, Key=object_name)
+        except Exception as exc:
+            logger.exception(
+                "rustfs_object_read_failed bucket=%s object_name=%s",
+                bucket,
+                object_name,
+            )
+            raise RuntimeError(f"Failed to read RustFS object '{bucket}/{object_name}': {exc}") from exc
+        body = response["Body"]
+        try:
+            content = body.read()
+        finally:
+            body.close()
+        result = {
+            "uri": uri,
+            "bucket": bucket,
+            "object_name": object_name,
+            "content": content,
+            "content_type": response.get("ContentType") or self._content_type(Path(object_name)),
+            "size_bytes": response.get("ContentLength", len(content)),
+            "etag": str(response.get("ETag") or "").strip('"'),
+        }
+        logger.info(
+            "rustfs_object_read bucket=%s object_name=%s size_bytes=%s",
+            bucket,
+            object_name,
+            len(content),
+        )
+        return result
+
+    def _delete_object(self, bucket: str, object_name: str) -> None:
+        client = self._rustfs_client()
+        try:
+            client.head_bucket(Bucket=bucket)
+        except client.exceptions.ClientError as exc:
+            status_code = int(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0))
+            if status_code == 404:
+                return
+            raise RuntimeError(f"Failed to inspect RustFS bucket '{bucket}': {exc}") from exc
+        try:
+            client.delete_object(Bucket=bucket, Key=object_name)
+        except Exception as exc:
+            logger.exception(
+                "rustfs_object_delete_failed bucket=%s object_name=%s",
+                bucket,
+                object_name,
+            )
+            raise RuntimeError(f"Failed to delete RustFS object '{bucket}/{object_name}': {exc}") from exc
+        logger.info("rustfs_object_deleted bucket=%s object_name=%s", bucket, object_name)
 
     def _remove_local_file(self, path: Path) -> None:
         try:
@@ -319,9 +423,9 @@ class ArtifactStorageService:
         except OSError:
             return
 
-    def _parse_minio_uri(self, uri: str) -> tuple[str, str]:
-        raw = uri.removeprefix("minio://")
+    def _parse_rustfs_uri(self, uri: str) -> tuple[str, str]:
+        raw = uri.removeprefix("rustfs://")
         bucket, _, object_name = raw.partition("/")
         if not bucket or not object_name:
-            raise ValueError(f"Invalid MinIO URI: {uri}")
+            raise ValueError(f"Invalid RustFS URI: {uri}")
         return bucket, object_name

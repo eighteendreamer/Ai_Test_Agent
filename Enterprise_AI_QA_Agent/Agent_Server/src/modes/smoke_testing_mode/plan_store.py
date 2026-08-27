@@ -14,7 +14,7 @@ from src.modes.smoke_testing_mode.contracts import (
 
 
 class SmokePlanStore:
-    """Versioned MinIO storage plus PostgreSQL catalog for smoke test assets."""
+    """Versioned RustFS storage plus PostgreSQL catalog for smoke test assets."""
 
     def __init__(
         self,
@@ -44,12 +44,12 @@ class SmokePlanStore:
         try:
             json_uri = await self._store_json(plan, json_name, plan.model_dump(mode="json"))
             md_uri = await self._store_text(plan, md_name, self.plan_markdown(plan), "text/markdown")
-            plan.minio_uris[json_name] = json_uri
-            plan.minio_uris[md_name] = md_uri
-            plan.minio_uris["plan_uri"] = json_uri
-            plan.minio_uris["plan_md_uri"] = md_uri
+            plan.rustfs_uris[json_name] = json_uri
+            plan.rustfs_uris[md_name] = md_uri
+            plan.rustfs_uris["plan_uri"] = json_uri
+            plan.rustfs_uris["plan_md_uri"] = md_uri
         except Exception as exc:
-            warnings.append(f"MinIO 保存方案版本失败：{exc}")
+            warnings.append(f"RustFS 保存方案版本失败：{exc}")
 
         if self._catalog_store is not None:
             try:
@@ -73,18 +73,18 @@ class SmokePlanStore:
                 case.selected = case.case_id in selected
         plan.status = "approved_for_execution"
         try:
-            plan.minio_uris["approved_plan_uri"] = await self._store_json(
+            plan.rustfs_uris["approved_plan_uri"] = await self._store_json(
                 plan,
                 "approved-plan.json",
                 plan.model_dump(mode="json"),
             )
-            plan.minio_uris["selected_cases_uri"] = await self._store_json(
+            plan.rustfs_uris["selected_cases_uri"] = await self._store_json(
                 plan,
                 "selected-cases.json",
                 [case.model_dump(mode="json") for case in plan.cases if case.selected],
             )
         except Exception as exc:
-            warnings.append(f"MinIO 保存冻结方案失败：{exc}")
+            warnings.append(f"RustFS 保存冻结方案失败：{exc}")
         if self._catalog_store is not None:
             try:
                 await self._catalog_store.save_plan(plan)
@@ -107,16 +107,16 @@ class SmokePlanStore:
             "case_results": [item.model_dump(mode="json") for item in result.case_results],
         }
         try:
-            result.minio_uris["run_result_uri"] = await self._store_json(plan, "run-result.json", result.model_dump(mode="json"))
-            result.minio_uris["report_uri"] = await self._store_text(plan, "run-report.md", report_markdown, "text/markdown")
-            result.minio_uris["evidence_manifest_uri"] = await self._store_json(plan, "evidence/evidence-manifest.json", evidence_manifest)
-            result.minio_uris["regression_candidates_uri"] = await self._store_json(
+            result.rustfs_uris["run_result_uri"] = await self._store_json(plan, "run-result.json", result.model_dump(mode="json"))
+            result.rustfs_uris["report_uri"] = await self._store_text(plan, "run-report.md", report_markdown, "text/markdown")
+            result.rustfs_uris["evidence_manifest_uri"] = await self._store_json(plan, "evidence/evidence-manifest.json", evidence_manifest)
+            result.rustfs_uris["regression_candidates_uri"] = await self._store_json(
                 plan,
                 "regression-candidates.json",
                 [item.model_dump(mode="json") for item in regression_candidates],
             )
         except Exception as exc:
-            warnings.append(f"MinIO 保存执行结果失败：{exc}")
+            warnings.append(f"RustFS 保存执行结果失败：{exc}")
         if self._catalog_store is not None:
             try:
                 await self._catalog_store.save_run(result)
@@ -148,14 +148,14 @@ class SmokePlanStore:
             warnings.append("catalog 中没有可读取的方案 URI。")
             return None, warnings
         if self._artifact_storage_service is None:
-            warnings.append("ArtifactStorageService 未配置，无法读取 MinIO 方案。")
+            warnings.append("ArtifactStorageService 未配置，无法读取 RustFS 方案。")
             return None, warnings
         try:
             stored = await self._artifact_storage_service.read_object_uri(uri)
             payload = json.loads(stored.get("content", b"{}").decode("utf-8"))
             return SmokeExecutionPlan.model_validate(payload), warnings
         except Exception as exc:
-            warnings.append(f"MinIO 读取方案失败：{exc}")
+            warnings.append(f"RustFS 读取方案失败：{exc}")
             return None, warnings
 
     def plan_markdown(self, plan: SmokeExecutionPlan) -> str:

@@ -699,7 +699,7 @@ async def test_regression_context_system_api_exposes_only_public_evidence_links(
                     "evidence_type": "artifact",
                     "evidence_id": "artifact-1",
                     "label": "C:/private/results/response.json",
-                    "uri": "minio://private-bucket/internal-key",
+                    "uri": "rustfs://private-bucket/internal-key",
                     "metadata": {"local_path": "C:/private/results/response.json"},
                 }
             ],
@@ -707,7 +707,7 @@ async def test_regression_context_system_api_exposes_only_public_evidence_links(
             verification_ids=["verification-1"],
             metrics={
                 "duration_ms": 125,
-                "storage_uri": "minio://private-bucket/internal-metrics.json",
+                "storage_uri": "rustfs://private-bucket/internal-metrics.json",
             },
             error_message="HTTP 500",
         ),
@@ -743,7 +743,7 @@ async def test_regression_context_system_api_exposes_only_public_evidence_links(
     assert payload["verifications"][0]["id"] == "verification-1"
     assert payload["verifications"][0]["status"] == "failed"
     serialized = response.text
-    assert "minio://" not in serialized
+    assert "rustfs://" not in serialized
     assert "C:/private" not in serialized
     assert '"actual"' not in serialized
 

@@ -125,7 +125,7 @@ async function confirmSelected(planId: string) {
     <div class="observability-head">
       <div>
         <strong>冒烟测试结果</strong>
-        <p>展示冒烟方案、所选用例执行情况、准入结论和 MinIO 资产链接。</p>
+        <p>展示冒烟方案、所选用例执行情况、准入结论和 RustFS 资产链接。</p>
       </div>
       <span class="registry-tag light">{{ results.length }} 条结果</span>
     </div>

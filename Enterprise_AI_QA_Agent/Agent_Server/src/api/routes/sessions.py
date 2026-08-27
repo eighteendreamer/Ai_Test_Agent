@@ -250,7 +250,7 @@ async def get_session_artifact_content(session_id: str, artifact_id: str, reques
         or artifact.id
     )
     raw_path = str(artifact.path or "").strip()
-    if raw_path.startswith("minio://"):
+    if raw_path.startswith("rustfs://"):
         try:
             stored = await request.app.state.artifact_storage_service.read_object_uri(raw_path)
         except Exception as exc:

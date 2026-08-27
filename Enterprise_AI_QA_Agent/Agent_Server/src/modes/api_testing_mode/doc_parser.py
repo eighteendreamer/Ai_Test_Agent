@@ -1,6 +1,6 @@
 """Parse API documents into a normalized endpoint index.
 
-The heavy lifting (MinIO fetch + markdown endpoint extraction) already lives
+The heavy lifting (RustFS fetch + markdown endpoint extraction) already lives
 in :class:`ApiDocsService`. This module builds on top of it by:
 
 - Generating a stable ``endpoint_id`` per endpoint

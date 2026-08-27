@@ -3878,7 +3878,7 @@ class SecurityTestingModeRuntime:
 
         The shared ToolRuntimeService already sends file-backed artifacts
         through ArtifactStorageService, which uploads them to the configured
-        backend such as MinIO.  Security mode therefore only materializes its
+        backend such as RustFS.  Security mode therefore only materializes its
         report content to the ordinary artifact directory and keeps storage
         concerns in the shared artifact layer.
         """

@@ -353,7 +353,7 @@ class ApiDocsService:
                 "original_content_type": original_content_type,
                 "stored_content_type": content_type,
                 "original_size_bytes": original_size_bytes,
-                "storage_backend": storage_result.get("storage_backend", "minio"),
+                "storage_backend": storage_result.get("storage_backend", "rustfs"),
                 "size_bytes": len(content),
                 "security": storage_result.get("security_report"),
                 "project_name": normalized_project_name,
@@ -509,7 +509,7 @@ class ApiDocsService:
             uploaded_at=now,
             metadata={
                 "source": source,
-                "storage_backend": storage_result.get("storage_backend", "minio"),
+                "storage_backend": storage_result.get("storage_backend", "rustfs"),
                 "bucket": storage_result.get("bucket", ""),
                 "object_name": storage_result.get("object_name", ""),
                 "security": storage_result.get("security_report"),

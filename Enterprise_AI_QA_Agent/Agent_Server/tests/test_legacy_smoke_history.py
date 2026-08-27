@@ -96,7 +96,7 @@ def _record(run_id: str, started_at: datetime, *, scope: str = "orders-v1") -> d
                     "passed_count": 1,
                     "failed_count": 0,
                     "duration_ms": 32,
-                    "evidence": [{"uri": "minio://must-not-be-exposed"}],
+                    "evidence": [{"uri": "rustfs://must-not-be-exposed"}],
                 },
                 {
                     "case_id": "legacy-case-not-run",
@@ -182,7 +182,7 @@ def test_legacy_smoke_history_requires_explicit_scope_binding_and_is_read_only()
     assert item["case_results"][0]["mapped_status"] == "blocked"
     assert item["case_results"][1]["legacy_status"] == "not_run"
     assert item["case_results"][1]["mapped_status"] == "skipped"
-    assert "minio://must-not-be-exposed" not in str(payload)
+    assert "rustfs://must-not-be-exposed" not in str(payload)
 
     next_page = _request(
         app,

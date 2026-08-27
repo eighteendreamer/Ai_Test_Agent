@@ -419,7 +419,7 @@ class DockerManagementService:
     def _template_specs(self) -> dict[str, dict[str, Any]]:
         prefix = self._settings.docker_managed_container_prefix
         redis_port = urlparse(self._settings.redis_url).port or 6379
-        minio_port = self._endpoint_port(self._settings.minio_endpoint, 9000)
+        rustfs_port = self._endpoint_port(self._settings.rustfs_endpoint, 9000)
         mysql_environment = {
             "MYSQL_DATABASE": self._settings.mysql_database,
             "MYSQL_USER": self._settings.mysql_user,
@@ -444,21 +444,25 @@ class DockerManagementService:
                 "environment": {},
                 "command": ["redis-server", "--appendonly", "yes"],
             },
-            "minio": {
-                "image": self._settings.docker_minio_image,
+            "rustfs": {
+                "image": self._settings.docker_rustfs_image,
                 "category": "infrastructure",
                 "purpose": "Artifact, attachment, and report object storage.",
-                "default_name": f"{prefix}-minio",
+                "default_name": f"{prefix}-rustfs",
                 "ports": [
-                    {"host_port": minio_port, "container_port": 9000},
-                    {"host_port": minio_port + 1, "container_port": 9001},
+                    {"host_port": rustfs_port, "container_port": 9000},
+                    {"host_port": rustfs_port + 1, "container_port": 9001},
                 ],
-                "volumes": [{"source": f"{prefix}-minio-data", "target": "/data"}],
+                "volumes": [{"source": f"{prefix}-rustfs-data", "target": "/data"}],
                 "environment": {
-                    "MINIO_ROOT_USER": self._settings.minio_access_key,
-                    "MINIO_ROOT_PASSWORD": self._settings.minio_secret_key,
+                    "RUSTFS_VOLUMES": "/data",
+                    "RUSTFS_ADDRESS": "0.0.0.0:9000",
+                    "RUSTFS_CONSOLE_ADDRESS": "0.0.0.0:9001",
+                    "RUSTFS_CONSOLE_ENABLE": "true",
+                    "RUSTFS_ACCESS_KEY": self._settings.rustfs_access_key,
+                    "RUSTFS_SECRET_KEY": self._settings.rustfs_secret_key,
                 },
-                "command": ["server", "/data", "--console-address", ":9001"],
+                "command": [],
             },
             "mysql": {
                 "image": self._settings.docker_mysql_image,

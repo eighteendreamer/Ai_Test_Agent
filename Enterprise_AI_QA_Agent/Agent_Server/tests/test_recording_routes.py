@@ -1,6 +1,6 @@
 """recordings API 路由契约测试（方案第 8 章 / P0-7）。
 
-不连 PG / Memgraph / MinIO：recorder_service / recording_store /
+不连 PG / Memgraph / RustFS：recorder_service / recording_store /
 recording_graph_store / artifact_storage_service 均为 Fake；embedded_bridge
 用真实 EmbeddedBridge（纯内存，验证桥接通道语义：登记 / 事件幂等收敛 /
 指令 long-poll / 会话关闭拒绝）。

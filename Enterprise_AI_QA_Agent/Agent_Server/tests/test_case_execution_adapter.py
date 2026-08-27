@@ -507,7 +507,7 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
                     "summary": "真实 API 断言通过",
                     "checks": [{"passed": True, "name": "status", "actual": 200}],
                 },
-                artifacts=[SimpleNamespace(id="artifact-1", label="响应证据", path="minio://bucket/a")],
+                artifacts=[SimpleNamespace(id="artifact-1", label="响应证据", path="rustfs://bucket/a")],
             )
 
     adapter = CaseExecutionAdapter(

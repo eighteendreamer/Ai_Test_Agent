@@ -144,7 +144,7 @@ class UploadSecurityService:
             filename=filename,
             object_prefix=f"{object_prefix}/temp",
             content_type=detected_content_type,
-            bucket_name=self._settings.minio_upload_temp_bucket,
+            bucket_name=self._settings.rustfs_upload_temp_bucket,
         )
         report = self._scan_bytes(
             content=content,
@@ -158,7 +158,7 @@ class UploadSecurityService:
         if report.decision == "allow":
             final_result = await self._artifact_storage_service.move_object_uri(
                 temp_result["uri"],
-                bucket_name=self._settings.minio_upload_safe_bucket,
+                bucket_name=self._settings.rustfs_upload_safe_bucket,
                 object_name=f"{object_prefix}/safe/{Path(filename).name}",
             )
             return {
@@ -170,7 +170,7 @@ class UploadSecurityService:
         if report.decision == "quarantine":
             await self._artifact_storage_service.move_object_uri(
                 temp_result["uri"],
-                bucket_name=self._settings.minio_upload_quarantine_bucket,
+                bucket_name=self._settings.rustfs_upload_quarantine_bucket,
                 object_name=f"{object_prefix}/quarantine/{Path(filename).name}",
             )
             raise UploadSecurityError(

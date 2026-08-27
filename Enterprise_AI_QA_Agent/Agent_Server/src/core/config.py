@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     docker_managed_container_prefix: str
     docker_managed_volume_root: str
     docker_redis_image: str
-    docker_minio_image: str
+    docker_rustfs_image: str
     docker_mysql_image: str
     docker_postgres_image: str
     docker_memgraph_image: str
@@ -80,16 +80,16 @@ class Settings(BaseSettings):
     tool_job_backend: str = "postgres"
     ui_graph_backend: str = "memgraph"
     artifact_root_dir: str = "data/artifacts"
-    artifact_storage_backend: str = "minio"
+    artifact_storage_backend: str = "rustfs"
     artifact_keep_local_copy: bool = False
-    minio_endpoint: str = "127.0.0.1:9000"
-    minio_access_key: str = ""
-    minio_secret_key: str = ""
-    minio_bucket: str = "qa-agent"
-    minio_secure: bool = False
-    minio_upload_temp_bucket: str = "upload-temp"
-    minio_upload_safe_bucket: str = "upload-safe"
-    minio_upload_quarantine_bucket: str = "upload-quarantine"
+    rustfs_endpoint: str = "127.0.0.1:9000"
+    rustfs_access_key: str = ""
+    rustfs_secret_key: str = ""
+    rustfs_bucket: str = "qa-agent"
+    rustfs_secure: bool = False
+    rustfs_upload_temp_bucket: str = "upload-temp"
+    rustfs_upload_safe_bucket: str = "upload-safe"
+    rustfs_upload_quarantine_bucket: str = "upload-quarantine"
     upload_scan_max_bytes: int = 10 * 1024 * 1024
     upload_scan_medium_risk_threshold: int = 30
     upload_scan_high_risk_threshold: int = 70
@@ -250,7 +250,7 @@ class Settings(BaseSettings):
         "docker_managed_container_prefix",
         "docker_managed_volume_root",
         "docker_redis_image",
-        "docker_minio_image",
+        "docker_rustfs_image",
         "docker_mysql_image",
         "docker_postgres_image",
         "docker_memgraph_image",

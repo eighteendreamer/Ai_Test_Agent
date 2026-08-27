@@ -1230,7 +1230,7 @@ class ToolRuntimeService:
         preview_truncated = excerpt_truncated or bool(target.get("metadata", {}).get("preview_truncated"))
         size_bytes = target.get("metadata", {}).get("size_bytes")
 
-        if not prefer_excerpt and uri.startswith("minio://") and self._artifact_storage_service is not None:
+        if not prefer_excerpt and uri.startswith("rustfs://") and self._artifact_storage_service is not None:
             try:
                 storage_result = await self._artifact_storage_service.read_object_uri(uri)
                 decoded_content, decode_error = self._decode_attachment_bytes(
@@ -1242,7 +1242,7 @@ class ToolRuntimeService:
                 size_bytes = storage_result.get("size_bytes", size_bytes)
                 if decoded_content:
                     resolved_content = decoded_content
-                    resolved_from = "minio"
+                    resolved_from = "rustfs"
                     preview_truncated = len(storage_result["content"]) > len(decoded_content.encode("utf-8", errors="ignore"))
                 elif excerpt_text:
                     resolved_content = excerpt_text
@@ -5056,17 +5056,17 @@ class ToolRuntimeService:
             return False, security
 
         uri = str(item.get("uri") or "").strip()
-        if uri.startswith("minio://"):
+        if uri.startswith("rustfs://"):
             bucket = self._attachment_bucket_from_uri(uri)
             if self._settings is not None and bucket in {
-                self._settings.minio_upload_temp_bucket,
-                self._settings.minio_upload_quarantine_bucket,
+                self._settings.rustfs_upload_temp_bucket,
+                self._settings.rustfs_upload_quarantine_bucket,
             }:
                 return False, security
         return True, security
 
     def _attachment_bucket_from_uri(self, uri: str) -> str:
-        raw = uri.removeprefix("minio://")
+        raw = uri.removeprefix("rustfs://")
         bucket, _, _ = raw.partition("/")
         return bucket
 

@@ -563,7 +563,7 @@ export default {
   "docker.category_security": "安全测试",
   "docker.category_performance": "性能测试",
   "docker.purpose_redis": "用于分布式锁和系统运行状态协调。",
-  "docker.purpose_minio": "用于存储产物、附件和测试报告。",
+  "docker.purpose_rustfs": "用于存储产物、附件和测试报告。",
   "docker.purpose_mysql": "用于存储模型、邮箱和系统配置。",
   "docker.purpose_postgres": "用于存储会话、记忆、任务和运行状态。",
   "docker.purpose_memgraph": "用于存储知识图谱和界面关系图数据。",

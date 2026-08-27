@@ -263,9 +263,9 @@ class SmokeTestingModeRuntime:
             "plan_id": plan.plan_id,
             "plan_version": plan.version,
             "selected_case_ids": [case.case_id for case in selected_cases],
-            "approved_plan_uri": plan.minio_uris.get("approved_plan_uri", ""),
-            "run_result_uri": result.minio_uris.get("run_result_uri", ""),
-            "report_uri": result.minio_uris.get("report_uri", ""),
+            "approved_plan_uri": plan.rustfs_uris.get("approved_plan_uri", ""),
+            "run_result_uri": result.rustfs_uris.get("run_result_uri", ""),
+            "report_uri": result.rustfs_uris.get("report_uri", ""),
             "evidence_uris": [evidence.get("uri") for item in result.case_results for evidence in item.evidence if evidence.get("uri")],
             "storage_warnings": [*self._init_warnings, *warnings, *approval_warnings, *result_warnings],
         }
@@ -671,9 +671,9 @@ class SmokeTestingModeRuntime:
             "plan": plan.model_dump(mode="json"),
             "plan_markdown": self._plan_store.plan_markdown(plan),
             "selected_case_ids": [case.case_id for case in plan.cases if case.selected],
-            "plan_uri": plan.minio_uris.get("plan_uri", ""),
-            "plan_md_uri": plan.minio_uris.get("plan_md_uri", ""),
-            "approved_plan_uri": plan.minio_uris.get("approved_plan_uri", ""),
+            "plan_uri": plan.rustfs_uris.get("plan_uri", ""),
+            "plan_md_uri": plan.rustfs_uris.get("plan_md_uri", ""),
+            "approved_plan_uri": plan.rustfs_uris.get("approved_plan_uri", ""),
         }
         if extra:
             output.update(extra)

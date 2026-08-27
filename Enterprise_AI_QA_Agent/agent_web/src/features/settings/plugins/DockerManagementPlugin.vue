@@ -67,7 +67,7 @@ const categoryTranslationKeys: Record<string, string> = {
 
 const purposeTranslationKeys: Record<string, string> = {
   redis: "docker.purpose_redis",
-  minio: "docker.purpose_minio",
+  rustfs: "docker.purpose_rustfs",
   mysql: "docker.purpose_mysql",
   postgres: "docker.purpose_postgres",
   memgraph: "docker.purpose_memgraph",

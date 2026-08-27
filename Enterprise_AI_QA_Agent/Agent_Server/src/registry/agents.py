@@ -809,7 +809,7 @@ class AgentRegistry:
                     name="Smoke Source Analyst",
                     role="analyst",
                     summary="Analyze uploaded documents, API docs, UI graph knowledge, and project credentials for smoke planning.",
-                    description="Collects smoke test sources from chat attachments, MinIO API documents, UI graph knowledge, memory credentials, and future project case providers.",
+                    description="Collects smoke test sources from chat attachments, RustFS API documents, UI graph knowledge, memory credentials, and future project case providers.",
                     supported_tools=["smoke-suite-runner", "knowledge-rag", "api-docs-library", "attachment-reader", "observation-search"],
                     supported_skills=["smoke-test-planning", "api-contract-testing", "playwright-e2e-testing"],
                     supported_models=["gpt-5.4", "claude-sonnet-4"],

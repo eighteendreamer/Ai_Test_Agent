@@ -59,7 +59,7 @@ _INTERNAL_LOCATION_KEYS = {
     "local_path",
     "storage_uri",
     "object_uri",
-    "minio_uri",
+    "rustfs_uri",
 }
 _REDACTED = object()
 
@@ -1164,7 +1164,7 @@ def _optional_datetime(value: object) -> datetime | None:
 def _contains_internal_location(value: str) -> bool:
     normalized = value.strip().lower()
     return (
-        "minio://" in normalized
+        "rustfs://" in normalized
         or "file://" in normalized
         or bool(_WINDOWS_PATH_PATTERN.search(value))
     )

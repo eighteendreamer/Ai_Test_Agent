@@ -597,8 +597,8 @@ function artifactPreview(artifact: CompatibilityArtifactRecord) {
 
 function artifactContentUrl(artifact: CompatibilityArtifactRecord) {
   const storageBackend = String(artifact.metadata?.storage_backend || "").toLowerCase();
-  const hasReadableBackend = Boolean(artifact.metadata?.local_path) || ["local", "minio"].includes(storageBackend);
-  if (hasReadableBackend || artifact.uri.startsWith("minio://") || artifact.uri.startsWith("/api/")) {
+  const hasReadableBackend = Boolean(artifact.metadata?.local_path) || ["local", "rustfs"].includes(storageBackend);
+  if (hasReadableBackend || artifact.uri.startsWith("rustfs://") || artifact.uri.startsWith("/api/")) {
     return `/api/v1/compatibility/artifacts/${encodeURIComponent(artifact.artifact_id)}/content`;
   }
   return artifact.uri;

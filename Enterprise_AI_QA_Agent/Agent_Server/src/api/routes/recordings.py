@@ -210,7 +210,7 @@ async def poll_commands(
 async def upload_screenshot(
     recording_id: str, request: Request, file: UploadFile = File(...)
 ) -> dict[str, Any]:
-    """multipart 截图上传：MinIO 优先，本地产物目录兜底；同时缓存最近帧。"""
+    """multipart 截图上传：RustFS 优先，本地产物目录兜底；同时缓存最近帧。"""
     bridge = _bridge(request)
     content = await file.read()
     if len(content) > _SCREENSHOT_MAX_BYTES:
@@ -233,7 +233,7 @@ async def upload_screenshot(
             content_type=content_type,
         )
         ref = str(stored["uri"])
-        backend = "minio"
+        backend = "rustfs"
     else:
         artifact_root = (
             Path(__file__).resolve().parents[2] / request.app.state.settings.artifact_root_dir

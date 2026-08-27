@@ -562,7 +562,7 @@ export default {
   "docker.category_security": "Security Testing",
   "docker.category_performance": "Performance Testing",
   "docker.purpose_redis": "Distributed locks and shared runtime coordination.",
-  "docker.purpose_minio": "Artifact, attachment, and report object storage.",
+  "docker.purpose_rustfs": "Artifact, attachment, and report object storage.",
   "docker.purpose_mysql": "Model, mailbox, and system configuration storage.",
   "docker.purpose_postgres": "Session, memory, job, and runtime state storage.",
   "docker.purpose_memgraph": "Knowledge graph and UI relationship storage.",

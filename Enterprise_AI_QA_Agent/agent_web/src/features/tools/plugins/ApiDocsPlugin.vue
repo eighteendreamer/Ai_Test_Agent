@@ -510,7 +510,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="meta-item">
               <i class="fa-solid fa-database"></i>
-              <span>MinIO · {{ formatBytes(doc.size_bytes) }}</span>
+              <span>RustFS · {{ formatBytes(doc.size_bytes) }}</span>
             </div>
             <div class="meta-item" v-if="doc.endpoint_count !== null && doc.endpoint_count !== undefined">
               <i class="fa-solid fa-link"></i>
@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
               <div><strong>{{ t("apiDocs.meta_content_type") }}</strong>{{ selectedDoc.content_type }}</div>
               <div><strong>{{ t("apiDocs.meta_source") }}</strong>{{ selectedDoc.source }}</div>
               <div><strong>{{ t("apiDocs.meta_updated_at") }}</strong>{{ formatServerDateTime(selectedDoc.updated_at) }}</div>
-              <div><strong>MinIO URI：</strong>{{ selectedDoc.storage_uri }}</div>
+              <div><strong>RustFS URI：</strong>{{ selectedDoc.storage_uri }}</div>
             </div>
 
             <div v-if="selectedDoc.preview_error" class="preview-inline-error">{{ selectedDoc.preview_error }}</div>

@@ -108,14 +108,14 @@ class _ReadableArtifactStorage:
     async def store_uploaded_bytes(self, **kwargs):
         filename = kwargs.get("filename") or "artifact.bin"
         object_prefix = kwargs.get("object_prefix") or "compatibility"
-        uri = f"minio://qa-agent/{object_prefix}/{filename}"
+        uri = f"rustfs://qa-agent/{object_prefix}/{filename}"
         self.objects[uri] = {
             "content": kwargs.get("content") or b"",
             "content_type": kwargs.get("content_type") or "application/octet-stream",
         }
         return {
             "uri": uri,
-            "storage_backend": "minio",
+            "storage_backend": "rustfs",
             "bucket": "qa-agent",
             "object_name": f"{object_prefix}/{filename}",
         }
@@ -2203,8 +2203,8 @@ class _BlockingArtifactStorage:
         self.started.set()
         await self.release.wait()
         return {
-            "uri": "minio://qa-agent/compatibility/blocking-log.txt",
-            "storage_backend": "minio",
+            "uri": "rustfs://qa-agent/compatibility/blocking-log.txt",
+            "storage_backend": "rustfs",
             "bucket": "qa-agent",
             "object_name": "compatibility/blocking-log.txt",
         }
@@ -2263,7 +2263,7 @@ async def _exercise_artifact_storage_lock_boundary(root: Path):
     assert tasks[0].task_id == task_id
     storage.release.set()
     artifact = await asyncio.wait_for(upload, timeout=1)
-    assert artifact.metadata["storage_backend"] == "minio"
+    assert artifact.metadata["storage_backend"] == "rustfs"
 
     storage.started = asyncio.Event()
     storage.release = asyncio.Event()
@@ -2290,7 +2290,7 @@ async def _exercise_artifact_storage_lock_boundary(root: Path):
         raise AssertionError("Upload should fail when task is requeued before artifact commit.")
     except PermissionError as exc:
         assert "not assigned" in str(exc)
-    assert "minio://qa-agent/compatibility/blocking-log.txt" in storage.deleted_uris
+    assert "rustfs://qa-agent/compatibility/blocking-log.txt" in storage.deleted_uris
 
 
 async def _exercise_compatibility_runtime(root: Path):

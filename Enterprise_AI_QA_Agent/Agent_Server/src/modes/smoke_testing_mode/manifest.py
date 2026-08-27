@@ -4,7 +4,7 @@ MODE_MANIFEST = {
     "key": "smoke_testing",
     "name": "冒烟测试模式",
     "summary": "面向核心链路快速准入、方案确认和基础可用性验证。",
-    "description": "冒烟测试模式通过多智能体生成可审查测试方案，用户确认所选用例后自动执行，并将方案、证据和回归候选沉淀到 MinIO 与 PostgreSQL catalog。",
+    "description": "冒烟测试模式通过多智能体生成可审查测试方案，用户确认所选用例后自动执行，并将方案、证据和回归候选沉淀到 RustFS 与 PostgreSQL catalog。",
     "category": "testing",
     "is_test_mode": True,
     "case_driven_policy": "required",

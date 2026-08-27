@@ -16,7 +16,7 @@ from src.modes.smoke_testing_mode.contracts import (
 
 
 class SmokeCatalogStore:
-    """PostgreSQL catalog for MinIO-backed smoke plans and run history."""
+    """PostgreSQL catalog for RustFS-backed smoke plans and run history."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -214,8 +214,8 @@ class SmokeCatalogStore:
     def _save_plan_sync(self, plan: SmokeExecutionPlan) -> None:
         now = datetime.now(timezone.utc)
         selected_count = sum(1 for item in plan.cases if item.selected)
-        plan_uri = plan.minio_uris.get(f"plan.v{plan.version}.json") or plan.minio_uris.get("plan_uri") or ""
-        approved_uri = plan.minio_uris.get("approved_plan_uri") or ""
+        plan_uri = plan.rustfs_uris.get(f"plan.v{plan.version}.json") or plan.rustfs_uris.get("plan_uri") or ""
+        approved_uri = plan.rustfs_uris.get("approved_plan_uri") or ""
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -358,9 +358,9 @@ class SmokeCatalogStore:
                         result.blocked_cases,
                         _parse_dt(result.started_at) or datetime.now(timezone.utc),
                         completed,
-                        result.minio_uris.get("run_result_uri", ""),
-                        result.minio_uris.get("report_uri", ""),
-                        result.minio_uris.get("evidence_manifest_uri", ""),
+                        result.rustfs_uris.get("run_result_uri", ""),
+                        result.rustfs_uris.get("report_uri", ""),
+                        result.rustfs_uris.get("evidence_manifest_uri", ""),
                         json.dumps(make_json_safe(result.model_dump(mode="json")), ensure_ascii=False),
                     ),
                 )
@@ -377,8 +377,8 @@ class SmokeCatalogStore:
                     (
                         result.status,
                         completed or datetime.now(timezone.utc),
-                        result.minio_uris.get("run_result_uri", ""),
-                        result.minio_uris.get("report_uri", ""),
+                        result.rustfs_uris.get("run_result_uri", ""),
+                        result.rustfs_uris.get("report_uri", ""),
                         datetime.now(timezone.utc),
                         result.plan_id,
                     ),

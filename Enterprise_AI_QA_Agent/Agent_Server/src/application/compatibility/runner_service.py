@@ -549,7 +549,7 @@ class CompatibilityRunnerService:
             artifact = self._artifacts.get(artifact_id)
         if artifact is None:
             raise KeyError(artifact_id)
-        if artifact.uri.startswith("minio://") and self._artifact_storage_service is not None:
+        if artifact.uri.startswith("rustfs://") and self._artifact_storage_service is not None:
             stored = await self._artifact_storage_service.read_object_uri(artifact.uri)
             return {
                 "content": stored["content"],
@@ -1227,7 +1227,7 @@ class CompatibilityRunnerService:
                 content_type=content_type,
             )
             return str(stored.get("uri") or stored.get("path")), {
-                "storage_backend": stored.get("storage_backend", "minio"),
+                "storage_backend": stored.get("storage_backend", "rustfs"),
                 "bucket": stored.get("bucket", ""),
                 "object_name": stored.get("object_name", ""),
             }
@@ -1255,7 +1255,7 @@ class CompatibilityRunnerService:
 
     async def _delete_stored_artifact(self, uri: str, metadata: dict[str, Any]) -> None:
         try:
-            if uri.startswith("minio://") and self._artifact_storage_service is not None:
+            if uri.startswith("rustfs://") and self._artifact_storage_service is not None:
                 await self._artifact_storage_service.delete_object_uri(uri)
                 return
             local_path = str(metadata.get("local_path") or "").strip()

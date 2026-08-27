@@ -86,7 +86,7 @@ class RecorderEvent(BaseModel):
     pixel: dict[str, Any] | None = Field(default=None, description="viewport_point/bbox/rel_offset 像素三件套")
     value: Any = Field(default=None, description="输入值（敏感字段采集端已脱敏为 {length:n}）")
     page_effect: dict[str, Any] = Field(default_factory=dict, description="navigated_to/dom_mutation_count")
-    screenshot_ref: str | None = Field(default=None, description="截图产物引用（MinIO/本地产物目录）")
+    screenshot_ref: str | None = Field(default=None, description="截图产物引用（RustFS/本地产物目录）")
 
     @field_validator("type")
     @classmethod
