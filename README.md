@@ -46,11 +46,11 @@
 |---|---|---|
 | 目录 | `Enterprise_AI_QA_Agent/Agent_Server` + `Enterprise_AI_QA_Agent/agent_web` | 根目录 `Agent_Server/` + `agent_web_server/` |
 | 定位 | 企业级 QA 场景的**多 Agent 编排工作台**：会话 / 事件流 / 审批 / 回放 / 任务池 / 报告 / 知识图谱 | 一站式**智能自动化测试平台**：用例生成 → 浏览器执行 → Bug 分析 → 报告邮件 |
-| 后端 | FastAPI + **LangGraph** + Pydantic v2，`/api/v1` 前缀，21 组路由，14 种测试模式，54 个 Skill | FastAPI + Browser-Use 0.11.1 + 自研 LLM 适配器层（11 个 Provider） |
+| 后端 | FastAPI + **LangGraph** + Pydantic v2，`/api/v1` 前缀，21 组路由，14 种模式（8 实装 + 6 占位），54 个 Skill | FastAPI + Browser-Use 0.11.1 + 自研 LLM 适配器层（11 个 Provider） |
 | 前端 | Vue 3.5 + Vite 6 + Naive UI + TypeScript，9 个视图，15 种 locale，**Electron 桌面端**（产物 `御策天检.exe`），VitePress 手册 | Vue 3.4 + Vite 5 + Naive UI，56 个 `.vue` 页面 |
 | 存储 | PostgreSQL(运行时 + pgvector 向量记忆) + MySQL(配置) + Memgraph(图谱) + Redis(分布式锁) + **RustFS**(产物对象存储) | MySQL + Qdrant(页面知识库) + **MinIO**(接口文件) |
 | 状态 | **活跃**，提交持续到 2026-08-27 | **冻结**，仅作历史与参考实现保留 |
-| 详细文档 | [Enterprise_AI_QA_Agent/README.md](Enterprise_AI_QA_Agent/README.md) | 本文第四章 + [PROJECT_DESIGN.md](PROJECT_DESIGN.md) |
+| 详细文档 | [Enterprise_AI_QA_Agent/README.md](Enterprise_AI_QA_Agent/README.md) | 本文第四章 + `PROJECT_DESIGN.md`（本地文件，已被 `.gitignore` 排除，不在仓库内） |
 
 ### 关于迭代状态（说明白，避免误解）
 
@@ -79,26 +79,22 @@
 2. **`graph/` + `runtime/`** —— LangGraph 组织运行链路，沉淀可恢复、可审批、可中断、可重放的执行状态机（`planner → permission_gate → model_invoker → tool_executor → finalizer / reexpander`）。
 3. **`agent_web` + `api/routes`** —— 前端是工作台（会话、事件流、审批、回放），后端不是单一 `/chat`，而是 session shell + event stream + approval + dispatch 的统一运行接口。
 
-### 2.2 测试模式（14 种）
+### 2.2 测试模式（注册 14 种 = 8 实装 + 6 占位）
 
-`Agent_Server/src/modes/`，全部在 `registry/modes.py` 注册：
+`Agent_Server/src/modes/`，全部在 `registry/modes.py` 注册。**已实装 8 种**：
 
 | 模式 | 说明 |
 | --- | --- |
 | `api_testing_mode` | 链路最完整：API 文档解析 → 端点圈定 → 依赖规划 → 前置条件解析 → 执行 → 验证/评估 → 报告，含子代理协调与任务池 |
-| `performance_testing_mode` | 需求接入 → 负载建模 → k6 / JMeter 引擎执行 → 结果解析 → 失败分析 → 报告；含目标保护（allowlist、VU/RPS/时长上限、smoke 前置） |
+| `performance_testing_mode` | 需求接入 → 负载建模 → k6 / JMeter 引擎 Docker 化执行 → 结果解析 → 失败分析 → 报告；含目标保护（`PERFORMANCE_TARGET_ALLOWLIST`、VU/RPS/时长上限、smoke 前置） |
 | `security_testing_mode` | 基于 Docker（Kali）运行器的安全测试编排，含攻击链循环与漏洞库落库（`agent_security_bugs`） |
 | `ui_automation_mode` | UI 自动化（Playwright CLI Runtime）+ UI 录制编排 + 回放执行器 |
-| `compatibility_testing_mode` | 兼容性测试 Runner |
-| `smoke_testing_mode` | 冒烟测试（计划目录 / 版本 / 运行历史 / 回归候选四张表） |
-| `code_review_mode` | 代码评审 |
+| `compatibility_testing_mode` | 产品探查 → 环境矩阵 → 用例生成 → 审批 → 运行器分发 → 结果聚合 |
+| `smoke_testing_mode` | 冒烟测试（计划目录 / 版本 / 运行历史 / 回归候选四张表，方案需人工确认） |
+| `code_review_mode` | 多角色辩论式代码评审 |
 | `default_mode` | 默认对话模式 |
-| `integration_testing_mode` | 集成测试 |
-| `unit_component_testing_mode` | 单元 / 组件测试 |
-| `mobile_testing_mode` | 移动端测试 |
-| `visual_regression_testing_mode` | 视觉回归 |
-| `accessibility_testing_mode` | 无障碍 |
-| `reliability_testing_mode` | 可靠性 / 稳定性 |
+
+**另 6 种为占位模式**（manifest 标 `"placeholder": True`、`harness_key=placeholder_testing_harness`、`activation_policy=explicit_only`，只注册 Skills，**没有专用 Runner**）：`integration_testing_mode`、`unit_component_testing_mode`、`mobile_testing_mode`、`visual_regression_testing_mode`、`accessibility_testing_mode`、`reliability_testing_mode`。
 
 ### 2.3 Skills 体系
 
@@ -123,7 +119,7 @@
 | 断言建议 | `page_effect` 规则四类置信度分级（`navigated_to` high / DOM 变更 medium / title medium / 可交互数 low），`description` 携带依据供评审筛选，截断防上下文爆炸 | `assertion_suggester.py` |
 | 待做 | **P3 ego-lite 驱动 ⛔ 阻塞**（ego-lite 仅支持 macOS）；录制主链路的纯手工 GUI 验收项 | [docs/ui_recording_development_plan.md](Enterprise_AI_QA_Agent/docs/ui_recording_development_plan.md)、[ui_recording_progress.md](Enterprise_AI_QA_Agent/docs/ui_recording_progress.md) |
 
-> 已知文档漂移：`docs/ui_recording_progress.md` 等进度文档里仍写着 MinIO 和"12 端点"。代码已迁移到 **RustFS**，按路由装饰器统计为 **11 个端点**。以代码为准。
+> 口径已对齐（2026-08-30）：`docs/ui_recording_progress.md`、`docs/ui_recording_development_plan.md` 里的 MinIO 已统一改为 **RustFS**，`recordings` 端点数按路由装饰器实测改为 **11**（原写 12），人工验收步骤里项目内并不存在的 `docker compose up -d` 已改为设置页 Docker 面板。后续仍以代码为准。
 
 ### 2.5 UI Explorer Agent：从"执行器"收敛为"页面结构理解引擎"
 
@@ -233,13 +229,13 @@ cd ../agent_web && npm test            # vitest
 
 ### 2.11 核心文档
 
-- [Enterprise_AI_QA_Agent/README.md](Enterprise_AI_QA_Agent/README.md) —— 项目自己的说明（注意：其中"14 组路由 / 8 种模式 / 10 个 Skill / 6 个页面"为早期口径，实际为 21 / 14 / 54 / 9）
+- [Enterprise_AI_QA_Agent/README.md](Enterprise_AI_QA_Agent/README.md) —— 项目自己的说明（2026-08-30 已与代码对齐：21 组路由 / 14 种模式（8 实装 + 6 占位）/ 54 个 Skill / 9 个视图 / 36 个 application 子包）
 - [Claude_Code_UI_Agent_全流程复刻规范.md](Enterprise_AI_QA_Agent/docs/Claude_Code_UI_Agent_全流程复刻规范.md)
 - [HARNESS_ENGINEERING_开发规范.md](Enterprise_AI_QA_Agent/docs/HARNESS_ENGINEERING_开发规范.md)
-- [系统全景说明_每个模块要干啥.md](Enterprise_AI_QA_Agent/docs/系统全景说明_每个模块要干啥.md) —— 逐目录解释"每个模块负责什么、解决什么问题"
+- `Enterprise_AI_QA_Agent/docs/系统全景说明_每个模块要干啥.md` —— 逐目录解释"每个模块负责什么、解决什么问题"（**本地文件，被 `.gitignore` 的 `/Enterprise_AI_QA_Agent/docs/` 规则忽略，未入库**）
 - [AGENTS.md](Enterprise_AI_QA_Agent/AGENTS.md) —— AI 协作开发纪律（先查证 / 禁臆造 / 根因修复 / 完成必验证 / 提交规范）
 - VitePress 手册（编号 0~15，共 16 篇）：[agent_web/docs/docs/](Enterprise_AI_QA_Agent/agent_web/docs/docs/)（前言与目录、系统概述、整体架构、快速开始、核心概念、测试模式详解、前端工作台、后端运行时、Agent/Tool/Skill/MCP 能力体系、配置参考、REST API、数据与存储、二次开发、Harness 规范、FAQ 排障、术语表）
-- 规划与调研：[方案1.0.md](Enterprise_AI_QA_Agent/方案1.0.md)、[参考项目深度调研与系统增强路线图_2026-08-17.md](Enterprise_AI_QA_Agent/参考项目深度调研与系统增强路线图_2026-08-17.md)、[任务记录.md](Enterprise_AI_QA_Agent/任务记录.md)
+- 规划与调研：[方案1.0.md](Enterprise_AI_QA_Agent/方案1.0.md)、[参考项目深度调研与系统增强路线图_2026-08-17.md](Enterprise_AI_QA_Agent/参考项目深度调研与系统增强路线图_2026-08-17.md)；另有 `Enterprise_AI_QA_Agent/任务记录.md`（本地文件，被 `.gitignore` 显式排除，未入库）
 
 ---
 
@@ -266,7 +262,7 @@ cd ../agent_web && npm test            # vitest
 ## 四、Web 版（已停止迭代）能力全览
 
 > 以下是上一代平台的完整能力记录，保留作为功能参考与二次开发底稿。
-> 启动方式见本文第六章。更细的设计说明见 [PROJECT_DESIGN.md](PROJECT_DESIGN.md)（793 行，13 章，明确只覆盖 `Agent_Server/` + `agent_web_server/`）。
+> 启动方式见本文第六章。更细的设计说明见 `PROJECT_DESIGN.md`（793 行，13 章，明确只覆盖 `Agent_Server/` + `agent_web_server/`；**本地文件，被 `.gitignore` 显式排除，未入库**）。
 
 平台基于 LLM + 浏览器自动化，实现测试用例智能生成、自动执行、Bug 分析和报告生成。底层模型架构用**适配器模式**重构，内置智能止损、模糊匹配、Agent 判定优先、瞬态 UI 感知、用例间状态隔离等策略。
 
@@ -403,11 +399,13 @@ Ai_Test_Agent/
 │                                #   dashboard(1) / skills(1) / prompt(1)
 ├── Enterprise_AI_QA_Agent/      # ★ 当前迭代项目（见第二章）
 ├── img/                         # Enterprise 版界面截图与结构图
-├── outputs/                     # 5 份企业级指导文档 + 产品宣传 PPTX
-├── PROJECT_DESIGN.md            # Web 版设计说明（793 行 / 13 章，不含 Enterprise 版）
-├── 御策天检_项目设计文档.docx    # 同上的 Word 版
+├── outputs/                     # ⚠ 本地：5 份企业级指导文档 + 产品宣传 PPTX（.gitignore 排除，未入库）
+├── PROJECT_DESIGN.md            # ⚠ 本地：Web 版设计说明（793 行 / 13 章，不含 Enterprise 版；未入库）
+├── 御策天检_项目设计文档.docx    # ⚠ 本地：同上的 Word 版（未入库）
 └── count_lines.py               # 按扩展名统计代码量
 ```
+
+> 上面标 ⚠ 的三项被根 `.gitignore` 显式排除（第 332~334 行），只存在于作者本地；`Enterprise_AI_QA_Agent/docs/` 整个目录同样被忽略，其中少数几份（复刻规范、Harness 规范、两份录制文档、API 模式进度）是 `git add -f` 强制入库的，链接可用，其余只能在本地看。
 
 ---
 
@@ -464,8 +462,8 @@ npm install && npm run dev          # http://localhost:5175，/api 代理到 htt
 
 | 路径 | 说明 |
 | --- | --- |
-| `outputs/` | 5 份企业级指导文档：API 接口测试 2025-2026、CI/CD 工作流、性能测试、UI 自动化、安全测试；以及 `御策天检_AI测试平台_产品宣传.pptx` |
-| `Enterprise_AI_QA_Agent/项目借鉴/` | 第三方参考项目与本地课程原文（含 `llm-testing-course/`，是用例/评测/接口/性能/Agent 测试方向的信源） |
+| `outputs/` | **仅本地**（`.gitignore` 排除）：5 份企业级指导文档：API 接口测试 2025-2026、CI/CD 工作流、性能测试、UI 自动化、安全测试；以及 `御策天检_AI测试平台_产品宣传.pptx` |
+| `Enterprise_AI_QA_Agent/项目借鉴/` | **仅本地，未入库**：第三方参考项目与本地课程原文（含 `llm-testing-course/`）。注意 [AGENTS.md](Enterprise_AI_QA_Agent/AGENTS.md) 第七章把它列为测试工程信源，clone 仓库的人是拿不到这些材料的 |
 | `Enterprise_AI_QA_Agent/scripts/` | `run_today_fullflow_tests.py` 全链路测试脚本 |
 | `Enterprise_AI_QA_Agent/.github/workflows/code-governance.yml` | 代码治理 CI |
 | `tmp/` | browser-use 运行期产物目录（录制视频 / trace / agent 历史 / 下载），路径由 `SAVE_RECORDING_PATH` 等变量控制，已 gitignore，故本地为空 |
@@ -482,7 +480,8 @@ npm install && npm run dev          # http://localhost:5175，/api 代理到 htt
 
 ## 九、已知问题与说明
 
-- **两代 README 都有口径漂移**：`Enterprise_AI_QA_Agent/README.md` 的"14 组路由 / 8 种模式 / 10 个 Skill / 6 个页面 / `embedding_adapters` 目录"与代码不符（实际 21 / 14 / 54 / 9，无 `embedding_adapters`，另有 `capabilities`、`flow`、`intent`、`model_clients`、`recorder`、`test_cases`、`test_runs`、`test_suites`）；Enterprise 的部分进度文档仍写 MinIO。以代码为准。
+- **文档口径已在本轮与代码对齐**（2026-08-30）：`Enterprise_AI_QA_Agent/README.md` 的"14 组路由 / 8 种模式 / 10 个 Skill / 6 个页面 / `embedding_adapters/` 子包"已改为实测的 21 / 14（8 实装 + 6 占位）/ 54 / 9，并补齐 36 个 application 子包与 21 组路由清单；`docs/` 进度与方案文档里的 MinIO 已改 RustFS、录制端点数已改 11、不存在的 `docker compose up -d` 步骤已替换；VitePress 手册第 8 章那张 `requirements-analysis` / `risk-scoping` / `assertion-design` 等**源码中根本不存在**的技能表已按 `registry/skills.py` 重写，第 5 章误判"性能与冒烟仍是占位"也已纠正为实装并补写三节。改动代码时请继续同步这几份文档。
+- **多份被引用的文档其实不在仓库里**：根 `.gitignore` 显式排除了 `PROJECT_DESIGN.md`、`outputs/`、`御策天检_项目设计文档.docx`、`任务记录.md`、`/Enterprise_AI_QA_Agent/docs/`、`/Enterprise_AI_QA_Agent/scripts/`，另有 `项目借鉴/` 整目录未入库；只有少数文件当初用 `git add -f` 强制入库（如 `scripts/run_today_fullflow_tests.py`、`docs/` 下的复刻规范 / Harness 规范 / 两份录制文档）。因此本文对未入库文件一律用行内代码而非链接标注，AGENTS.md 第七章把 `项目借鉴/llm-testing-course/` 当信源也仅供本地使用。若希望他人能读到这些文档，需要显式 `git add -f` 再提交。
 - **Web 版旧 README 的错处已在本文修正**：入口是 `app.py` 不是 `src.py`；`Pentest_Agent/IMPLEMENTATION_STATUS.md` 已不存在；Skills 并非存 MinIO（`skill_manager.py` 只读 `GITHUB_PROXY`）；`比赛答辩定位与路演策略.md` 已被删除；`PressTest_Agent` 此前完全没写；旧文档里"多平台项目管理集成"重复三遍、"渗透测试"重复三遍、编号跳号与一处损坏标题已清理。
 - **Web 版不再收 issue 级修复**：如遇依赖安全告警或环境不兼容，建议直接迁移到 Enterprise 版对应能力。
 - **Enterprise 版 P3 ego-lite 驱动阻塞**：依赖方 ego-lite 仅支持 macOS，当前 Windows/Linux 环境无法推进。

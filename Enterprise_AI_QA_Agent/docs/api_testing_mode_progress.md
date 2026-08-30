@@ -7,7 +7,7 @@
 
 API Testing Mode 已从骨架实现进入可运行、可验证状态。此前仍标记为“待完善”的动态登录、InputBinding、重试、验证/评估、OpenAPI/Postman 解析、报告产物和前端适配均已在当前代码中实现；本文件不再把这些能力列为待办。
 
-当前版本的质量门仍以真实运行结果为准：单元测试覆盖模式内部组件和运行时契约，外部 API、真实凭证、PostgreSQL/MinIO/Redis 等依赖仍需在对应环境执行集成或容量测试。
+当前版本的质量门仍以真实运行结果为准：单元测试覆盖模式内部组件和运行时契约，外部 API、真实凭证、PostgreSQL/RustFS/Redis 等依赖仍需在对应环境执行集成或容量测试。
 
 ## 二、能力状态
 
@@ -46,7 +46,7 @@ cd Agent_Server
 python -m pip install -e .[dev]
 ```
 
-项目声明的生产依赖已覆盖源码直接使用的 FastAPI、Uvicorn、LangGraph、Pydantic、HTTP 客户端、模型 SDK、SQLAlchemy、PostgreSQL、Neo4j、MySQL、MinIO、Redis、MCP、加密和 Excel 依赖；`dev` extra 另外声明 `pytest` 与 `pytest-asyncio>=1.4.0`。
+项目声明的生产依赖已覆盖源码直接使用的 FastAPI、Uvicorn、LangGraph、Pydantic、HTTP 客户端、模型 SDK、SQLAlchemy、PostgreSQL、Neo4j 驱动（Memgraph）、MySQL、Redis、MCP、加密和 Excel 依赖，对象存储走 boto3（S3 协议访问 RustFS）；`dev` extra 另外声明 `pytest` 与 `pytest-asyncio>=1.4.0`。
 
 性能协调器测试已改为 `pytest.mark.asyncio` + `await`，不再依赖 pytest-asyncio 1.4.0 已移除的 `event_loop` fixture。
 

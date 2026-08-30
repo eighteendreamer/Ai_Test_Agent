@@ -103,7 +103,7 @@ P0-11 自动化端到端验收通过：真实服务组件级全链路串联（�
 
 **开发目标**：方案第 8 章端点全部落地。
 
-- 已交付：`src/api/routes/recordings.py` 12 端点（会话管理 POST/GET 列表·详情/DELETE；Electron 桥接 attach-registry 登记、events:batch 幂等上报、commands long-poll（wait_seconds≤30）、screenshots multipart 上传（≤10MB、仅 image/*，MinIO 优先本地产物目录兜底+bridge 最近帧缓存）；数据面 control 控制条指令、graph 子图投影、recorder.js 注入脚本统一下发（进程内缓存））。`main.py` lifespan 初始化四件套（PostgresRecordingStore/RecordingGraphStore/EmbeddedBridge/RecorderSessionService）挂 `app.state` 并注册路由。
+- 已交付：`src/api/routes/recordings.py` 11 端点（会话管理 POST/GET 列表·详情/DELETE；Electron 桥接 attach-registry 登记、events:batch 幂等上报、commands long-poll（wait_seconds≤30）、screenshots multipart 上传（≤10MB、仅 image/*，RustFS 优先本地产物目录兜底+bridge 最近帧缓存）；数据面 control 控制条指令、graph 子图投影、recorder.js 注入脚本统一下发（进程内缓存；`/recorder.js` 声明在 `/{recording_id}` 之前以免被路径参数吞掉））。`main.py` lifespan 初始化四件套（PostgresRecordingStore/RecordingGraphStore/EmbeddedBridge/RecorderSessionService）挂 `app.state` 并注册路由。
 - 幂等边界：events:batch 活跃 embedded 会话走 bridge 预收敛（批内去重+seen_seqs 幂等，回执 accepted/duplicates_in_batch/duplicates_retry 可见）；未知会话（服务重启、Electron 缓冲补投）直落 PG（ON CONFLICT 兜底，回执 sink=store）；已关会话 409。DELETE 先 Memgraph 删 Recording/Action 子图（失败 PG 保留可重试）再删 PG 行。control 的 ValueError 按语义映射 404（runtime not available）/409（illegal transition）/400。
 - 测试：`tests/test_recording_routes.py` 25 个契约测试（Fake service/store/graph/artifact + 真实 EmbeddedBridge 验证桥接通道语义：登记握手/事件幂等收敛三态/指令下发/截图落盘+最近帧缓存；覆盖 200/201/400/404/409/413/415/422/503 全错误码、DELETE 图先库后顺序断言）全部通过；录制域 6 文件组合 65 测试全绿。顺手修复 `recording_graph_store.py` `datetime.utcnow()` 废弃告警 → `datetime.now(timezone.utc)`。
 
@@ -163,7 +163,7 @@ P0-11 自动化端到端验收通过：真实服务组件级全链路串联（�
   - 自动化端到端（`tests/test_recording_e2e_p0.py`，真实服务组件级全链路 + Fake 基础设施）：主路径一条测试跑通"反问项目 → 三源检索不足 → ui_recording 审批落库 → apply_decision(approved)（SessionService.resolve_approval 委托点）→ launch + recorder.launch_requested 事件 → 驱动 ready 握手 → start → 登录表单 9 动作事件流（navigate/fill/click/submit，含 1 次重复投递）→ 攒批幂等落 PG（9 条，重复去重）→ stop → 固化 completed"；对账断言：`action_vertices(9) == PG 事件数(9)`、`reconciled=True`、`seq_gaps=[]`、`degraded=False`、Page≥2/Element≥1/HAS_STEP=9；图谱写入形状断言（MERGE Recording×1/Action×9/HAS_STEP×9/TARGETS/ON_PAGE 对齐指标）；安全红线断言（明文密码不出现在任何图谱写入参数，固化端兜底脱敏生效）；环节⑤闭环断言（固化后图谱计数充分 → 再编排 → `task_generation_ready`/`graph_coverage_sufficient`）。拒绝路：denied → `recorder.approval_declined` 事件 + 零录制会话/零驱动启动（未审批不得启动）。
   - Fake 契约忠实性修正过程中确认三个真实契约：① store.append_events 返回 RecordingEventAck（service 消费 .accepted/.duplicates）；② append 后同步 session.step_count = 落库总数（完整性对账依赖）；③ recorder.js seq 从 0 计数（graph store seq 连续性检查起点一致）。
   - 回归：录制域 9 测试文件 + `test_ui_mode_skills.py` + `test_session_flow_projection.py` 组合 103 passed / 2 skipped 全绿；agent_web vitest 29 全绿 + `npm run build` 通过（P0-10 已验）。
-  - 真实 GUI 人工验收（本环境无法自动化，需本地执行）：`docker compose up -d`（PG/Memgraph/MinIO）→ 后端 `uvicorn src.main:app` → 桌面端 `npm run desktop` → UI 自动化模式输入"测试 https://<目标> 登录流程" → 选项目 → 批准录制 → 录制窗口自动弹出 → 真实操作（登录+表单提交）→ 结束 → 检查 Memgraph 子图（Recording/Action/Page/Element）与 `ui_recording_event` 行数、时间线面板固化指标一致。
+  - 真实 GUI 人工验收（本环境无法自动化，需本地执行）：先用设置页的 Docker 管理面板拉起 PG / Memgraph / RustFS 等基础设施（项目内**没有** docker-compose 文件，`docker_management_service.py` 走 Docker SDK）→ 后端 `uvicorn src.main:app` → 桌面端 `npm run desktop` → UI 自动化模式输入"测试 https://<目标> 登录流程" → 选项目 → 批准录制 → 录制窗口自动弹出 → 真实操作（登录+表单提交）→ 结束 → 检查 Memgraph 子图（Recording/Action/Page/Element）与 `ui_recording_event` 行数、时间线面板固化指标一致。
 
 ---
 
