@@ -11,6 +11,7 @@ from src.application.security.prompt_injection_policy import PromptInjectionPoli
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
+from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
 from src.graph.state import AgentGraphState
 from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
@@ -28,6 +29,7 @@ def build_tool_executor_node(
     skill_registry: SkillRegistry | None = None,
     skill_runtime_service: SkillRuntimeService | None = None,
     tool_message_max_chars: int = 24000,
+    safety_gate: SafetyGate | None = None,
 ):
     async def tool_executor(state: AgentGraphState) -> AgentGraphState:
         append_graph_event(
@@ -38,6 +40,30 @@ def build_tool_executor_node(
             tool_call_names=",".join(item["name"] for item in state["model_tool_calls"]),
             tool_call_count=len(state["model_tool_calls"]),
         )
+
+        if safety_gate is not None:
+            security_ctx = SecurityContext(
+                session_id=state["session_id"],
+                agent_key=state.get("selected_agent_key", ""),
+                mode_key=state.get("mode_key", ""),
+                transcript_preview=state.get("user_message", "")[:500],
+                user_message=state.get("user_message", ""),
+            )
+            for tool_call in state.get("model_tool_calls", []):
+                verdict = await safety_gate.evaluate(
+                    tool_call={"tool_name": tool_call.get("name", ""), "arguments": tool_call.get("arguments", {})},
+                    context=security_ctx,
+                )
+                if verdict.decision == SafetyDecision.DENY:
+                    append_graph_event(
+                        state,
+                        "safety.tool_denied",
+                        "safety_gate",
+                        f"Tool call '{tool_call.get('name')}' denied by SafetyGate.",
+                        tool_name=tool_call.get("name", ""),
+                        reason=verdict.reason,
+                        risk_level=verdict.risk_level,
+                    )
 
         prior_tool_messages = list(state["tool_messages"])
         prior_tool_results = list(state["tool_results"])

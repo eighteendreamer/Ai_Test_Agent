@@ -10,6 +10,7 @@ from src.application.prompting.prompt_assembly_service import PromptAssemblyServ
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
+from src.core.safety_gate import SafetyGate
 from src.graph.nodes.context_builder import build_context_builder_node
 from src.graph.nodes.finalizer import build_finalizer_node
 from src.graph.nodes.model_invoker import build_model_invoker_node, route_after_model_invoker
@@ -40,6 +41,7 @@ def build_agent_graph(
     tool_runtime_service: ToolRuntimeService,
     tool_job_service: ToolJobService | None = None,
     tool_message_max_chars: int = 24000,
+    safety_gate: SafetyGate | None = None,
 ):
     graph = StateGraph(AgentGraphState)
     graph.add_node(
@@ -90,6 +92,7 @@ def build_agent_graph(
             skill_registry=skill_registry,
             skill_runtime_service=skill_runtime_service,
             tool_message_max_chars=tool_message_max_chars,
+            safety_gate=safety_gate,
         ),
     )
     graph.add_node(
