@@ -23,7 +23,7 @@ class PerfMetricsStore:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._table = settings.postgres_perf_runs_table
+        self._table = settings.database.postgres_perf_runs_table
         self._initialized = False
 
     async def initialize(self) -> bool:

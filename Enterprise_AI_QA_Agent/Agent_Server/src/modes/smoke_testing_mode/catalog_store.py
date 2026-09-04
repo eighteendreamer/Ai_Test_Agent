@@ -195,7 +195,7 @@ class SmokeCatalogStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {self.binding_table} (
                         project_scope TEXT PRIMARY KEY,
-                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID NOT NULL REFERENCES {self._settings.database.postgres_project_table}(id),
                         created_at TIMESTAMPTZ NOT NULL
                     )
                     """

@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 class PostgresRecordingStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._session_table = settings.postgres_recording_table
-        self._event_table = settings.postgres_recording_event_table
+        self._session_table = settings.database.postgres_recording_table
+        self._event_table = settings.database.postgres_recording_event_table
 
     # ------------------------------------------------------------------
     # async facade（对齐 PostgresSessionStore / PostgresToolJobStore 惯例）

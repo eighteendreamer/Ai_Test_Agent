@@ -51,9 +51,9 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
     def __init__(self, *, settings=None, auth_lock_manager=None) -> None:
         self._settings = settings or get_settings()
         self._auth_lock_manager = auth_lock_manager or RedisLockManager(
-            self._settings.redis_url,
-            ttl_seconds=self._settings.agently_auth_lock_ttl_seconds,
-            wait_seconds=self._settings.agently_auth_lock_wait_seconds,
+            self._settings.database.redis_url,
+            ttl_seconds=self._settings.mail.agently_auth_lock_ttl_seconds,
+            wait_seconds=self._settings.mail.agently_auth_lock_wait_seconds,
         )
 
     def capabilities(self) -> set[MailCapability]:

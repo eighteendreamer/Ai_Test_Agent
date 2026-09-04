@@ -938,19 +938,19 @@ class PostgresTestRunStore:
 
     @property
     def _run_table(self) -> str:
-        return self._settings.postgres_test_run_table
+        return self._settings.database.postgres_test_run_table
 
     @property
     def _item_table(self) -> str:
-        return self._settings.postgres_test_run_item_table
+        return self._settings.database.postgres_test_run_item_table
 
     @property
     def _attempt_table(self) -> str:
-        return self._settings.postgres_test_run_attempt_table
+        return self._settings.database.postgres_test_run_attempt_table
 
     @property
     def _result_table(self) -> str:
-        return self._settings.postgres_test_case_result_table
+        return self._settings.database.postgres_test_case_result_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -1193,8 +1193,8 @@ class PostgresTestRunStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._run_table} (
                         id UUID PRIMARY KEY,
-                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
-                        suite_id UUID NOT NULL REFERENCES {self._settings.postgres_test_suite_table}(id),
+                        project_id UUID NOT NULL REFERENCES {self._settings.database.postgres_project_table}(id),
+                        suite_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_suite_table}(id),
                         status TEXT NOT NULL,
                         mode_key TEXT NOT NULL,
                         session_id TEXT NULL,
@@ -1210,8 +1210,8 @@ class PostgresTestRunStore:
                     CREATE TABLE IF NOT EXISTS {self._item_table} (
                         id UUID PRIMARY KEY,
                         run_id UUID NOT NULL REFERENCES {self._run_table}(id),
-                        case_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_table}(id),
-                        case_version_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_version_table}(id),
+                        case_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_table}(id),
+                        case_version_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_version_table}(id),
                         position INTEGER NOT NULL,
                         status TEXT NOT NULL,
                         attempt_no INTEGER NOT NULL DEFAULT 0,
@@ -1248,8 +1248,8 @@ class PostgresTestRunStore:
                         id UUID PRIMARY KEY,
                         run_id UUID NOT NULL REFERENCES {self._run_table}(id),
                         run_item_id UUID NOT NULL REFERENCES {self._item_table}(id),
-                        case_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_table}(id),
-                        case_version_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_version_table}(id),
+                        case_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_table}(id),
+                        case_version_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_version_table}(id),
                         attempt_id UUID NOT NULL REFERENCES {self._attempt_table}(id),
                         status TEXT NOT NULL,
                         payload_hash TEXT NOT NULL,

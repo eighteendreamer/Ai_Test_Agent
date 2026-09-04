@@ -36,10 +36,10 @@ class PerfTargetGuard:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._allowlist = self._parse_allowlist(settings.performance_target_allowlist)
-        self._max_vus = settings.performance_max_vus
-        self._max_rate_rps = settings.performance_max_rate_rps
-        self._max_duration = settings.performance_max_duration_seconds
+        self._allowlist = self._parse_allowlist(settings.orchestration.performance_target_allowlist)
+        self._max_vus = settings.orchestration.performance_max_vus
+        self._max_rate_rps = settings.orchestration.performance_max_rate_rps
+        self._max_duration = settings.orchestration.performance_max_duration_seconds
 
     def validate(self, plan: PerfPlan) -> GuardResult:
         for target in plan.targets:

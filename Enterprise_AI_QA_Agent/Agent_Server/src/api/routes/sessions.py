@@ -269,7 +269,7 @@ async def get_session_artifact_content(session_id: str, artifact_id: str, reques
             local_path = Path(raw_path).resolve()
             artifact_root = (
                 Path(__file__).resolve().parents[2]
-                / request.app.state.settings.artifact_root_dir
+                / request.app.state.settings.storage.artifact_root_dir
             ).resolve()
             if artifact_root != local_path and artifact_root not in local_path.parents:
                 raise HTTPException(status_code=404, detail="Artifact content not available")

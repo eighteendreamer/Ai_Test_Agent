@@ -32,7 +32,7 @@ class DockerManagementService:
     def __init__(self, settings: Settings, image_catalog: ImageCatalog | None = None) -> None:
         self._settings = settings
         self._image_catalog = image_catalog or ImageCatalog()
-        root = Path(settings.docker_managed_volume_root).expanduser()
+        root = Path(settings.docker.docker_managed_volume_root).expanduser()
         if not root.is_absolute():
             root = Path(__file__).resolve().parents[2] / root
         self._volume_root = root.resolve()
@@ -399,8 +399,8 @@ class DockerManagementService:
         ]
         known_keys = {item["key"] for item in specs}
         image_overrides = {
-            "perf_k6_default": self._settings.k6_docker_image,
-            "perf_jmeter_default": self._settings.jmeter_docker_image,
+            "perf_k6_default": self._settings.orchestration.k6_docker_image,
+            "perf_jmeter_default": self._settings.orchestration.jmeter_docker_image,
         }
         for entry in self._image_catalog.list_entries():
             if entry.image_key in known_keys:
@@ -417,25 +417,25 @@ class DockerManagementService:
         return specs
 
     def _template_specs(self) -> dict[str, dict[str, Any]]:
-        prefix = self._settings.docker_managed_container_prefix
-        redis_port = urlparse(self._settings.redis_url).port or 6379
-        rustfs_port = self._endpoint_port(self._settings.rustfs_endpoint, 9000)
+        prefix = self._settings.docker.docker_managed_container_prefix
+        redis_port = urlparse(self._settings.database.redis_url).port or 6379
+        rustfs_port = self._endpoint_port(self._settings.storage.rustfs_endpoint, 9000)
         mysql_environment = {
-            "MYSQL_DATABASE": self._settings.mysql_database,
-            "MYSQL_USER": self._settings.mysql_user,
+            "MYSQL_DATABASE": self._settings.database.mysql_database,
+            "MYSQL_USER": self._settings.database.mysql_user,
         }
-        if self._settings.mysql_password:
+        if self._settings.database.mysql_password:
             mysql_environment.update(
                 {
-                    "MYSQL_PASSWORD": self._settings.mysql_password,
-                    "MYSQL_ROOT_PASSWORD": self._settings.mysql_password,
+                    "MYSQL_PASSWORD": self._settings.database.mysql_password,
+                    "MYSQL_ROOT_PASSWORD": self._settings.database.mysql_password,
                 }
             )
         else:
             mysql_environment["MYSQL_ALLOW_EMPTY_PASSWORD"] = "yes"
         return {
             "redis": {
-                "image": self._settings.docker_redis_image,
+                "image": self._settings.docker.docker_redis_image,
                 "category": "infrastructure",
                 "purpose": "Redis distributed locks and shared runtime coordination.",
                 "default_name": f"{prefix}-redis",
@@ -445,7 +445,7 @@ class DockerManagementService:
                 "command": ["redis-server", "--appendonly", "yes"],
             },
             "rustfs": {
-                "image": self._settings.docker_rustfs_image,
+                "image": self._settings.docker.docker_rustfs_image,
                 "category": "infrastructure",
                 "purpose": "Artifact, attachment, and report object storage.",
                 "default_name": f"{prefix}-rustfs",
@@ -459,47 +459,47 @@ class DockerManagementService:
                     "RUSTFS_ADDRESS": "0.0.0.0:9000",
                     "RUSTFS_CONSOLE_ADDRESS": "0.0.0.0:9001",
                     "RUSTFS_CONSOLE_ENABLE": "true",
-                    "RUSTFS_ACCESS_KEY": self._settings.rustfs_access_key,
-                    "RUSTFS_SECRET_KEY": self._settings.rustfs_secret_key,
+                    "RUSTFS_ACCESS_KEY": self._settings.storage.rustfs_access_key,
+                    "RUSTFS_SECRET_KEY": self._settings.storage.rustfs_secret_key,
                 },
                 "command": [],
             },
             "mysql": {
-                "image": self._settings.docker_mysql_image,
+                "image": self._settings.docker.docker_mysql_image,
                 "category": "infrastructure",
                 "purpose": "Model, mailbox, and system configuration database.",
                 "default_name": f"{prefix}-mysql",
-                "ports": [{"host_port": self._settings.mysql_port, "container_port": 3306}],
+                "ports": [{"host_port": self._settings.database.mysql_port, "container_port": 3306}],
                 "volumes": [{"source": f"{prefix}-mysql-data", "target": "/var/lib/mysql"}],
                 "environment": mysql_environment,
                 "command": [],
             },
             "postgres": {
-                "image": self._settings.docker_postgres_image,
+                "image": self._settings.docker.docker_postgres_image,
                 "category": "infrastructure",
                 "purpose": "Sessions, memories, jobs, and runtime state database.",
                 "default_name": f"{prefix}-postgres",
-                "ports": [{"host_port": self._settings.postgres_port, "container_port": 5432}],
+                "ports": [{"host_port": self._settings.database.postgres_port, "container_port": 5432}],
                 "volumes": [{"source": f"{prefix}-postgres-data", "target": "/var/lib/postgresql/data"}],
                 "environment": {
-                    "POSTGRES_USER": self._settings.postgres_user,
-                    "POSTGRES_PASSWORD": self._settings.postgres_password,
-                    "POSTGRES_DB": self._settings.postgres_database,
+                    "POSTGRES_USER": self._settings.database.postgres_user,
+                    "POSTGRES_PASSWORD": self._settings.database.postgres_password,
+                    "POSTGRES_DB": self._settings.database.postgres_database,
                 },
                 "command": [],
             },
             "memgraph": {
-                "image": self._settings.docker_memgraph_image,
+                "image": self._settings.docker.docker_memgraph_image,
                 "category": "infrastructure",
                 "purpose": "Knowledge and UI graph storage.",
                 "default_name": f"{prefix}-memgraph",
-                "ports": [{"host_port": self._settings.memgraph_port, "container_port": 7687}],
+                "ports": [{"host_port": self._settings.database.memgraph_port, "container_port": 7687}],
                 "volumes": [{"source": f"{prefix}-memgraph-data", "target": "/var/lib/memgraph"}],
                 "environment": {},
                 "command": [],
             },
             "security_runner": {
-                "image": self._settings.security_runner_docker_image,
+                "image": self._settings.security.security_runner_docker_image,
                 "category": "security",
                 "purpose": "Isolated security testing command environment.",
                 "default_name": f"{prefix}-security-runner",
@@ -510,7 +510,7 @@ class DockerManagementService:
                 "command": ["-lc", "sleep infinity"],
             },
             "perf_k6_default": {
-                "image": self._settings.k6_docker_image,
+                "image": self._settings.orchestration.k6_docker_image,
                 "category": "performance",
                 "purpose": "k6 performance and smoke testing runtime.",
                 "default_name": f"{prefix}-k6",
@@ -521,7 +521,7 @@ class DockerManagementService:
                 "command": ["-lc", "sleep infinity"],
             },
             "perf_jmeter_default": {
-                "image": self._settings.jmeter_docker_image,
+                "image": self._settings.orchestration.jmeter_docker_image,
                 "category": "performance",
                 "purpose": "JMeter performance testing runtime.",
                 "default_name": f"{prefix}-jmeter",

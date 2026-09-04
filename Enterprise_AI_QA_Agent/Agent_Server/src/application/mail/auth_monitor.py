@@ -38,7 +38,7 @@ class TencentAuthMonitor:
 
     async def startup(self) -> None:
         self._closing = False
-        interval = float(self._settings.agently_auth_check_interval_seconds)
+        interval = float(self._settings.mail.agently_auth_check_interval_seconds)
         if interval > 0 and self._task is None:
             self._task = asyncio.create_task(
                 self._health_loop(interval),

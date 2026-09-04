@@ -325,10 +325,10 @@ def test_live_append_events_batch_retry_is_idempotent() -> None:
         with postgres_connect(settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"DELETE FROM {settings.postgres_recording_event_table} WHERE recording_id = %s",
+                    f"DELETE FROM {settings.database.postgres_recording_event_table} WHERE recording_id = %s",
                     (session.id,),
                 )
                 cur.execute(
-                    f"DELETE FROM {settings.postgres_recording_table} WHERE id = %s",
+                    f"DELETE FROM {settings.database.postgres_recording_table} WHERE id = %s",
                     (session.id,),
                 )

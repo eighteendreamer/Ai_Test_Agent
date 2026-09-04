@@ -136,7 +136,7 @@ class PostgresApiDocStore:
 
     @property
     def _table(self) -> str:
-        return self._settings.postgres_api_doc_table
+        return self._settings.database.postgres_api_doc_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -176,7 +176,7 @@ class PostgresApiDocStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {table} (
                         id UUID PRIMARY KEY,
-                        project_id UUID REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID REFERENCES {self._settings.database.postgres_project_table}(id),
                         updated_at TIMESTAMPTZ NOT NULL,
                         record JSONB NOT NULL
                     )

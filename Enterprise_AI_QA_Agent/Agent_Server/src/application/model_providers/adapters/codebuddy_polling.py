@@ -135,7 +135,7 @@ class CodeBuddyPollingProvider(ModelProviderAdapter):
 
     async def list_models(self, *, state: str | None = None, base_url: str | None = None) -> list[dict]:
         completed = self._require_completed_flow(state)
-        models_url = (base_url or self._settings.oauth_codebuddy_models_endpoint).strip()
+        models_url = (base_url or self._settings.model.oauth_codebuddy_models_endpoint).strip()
         if not models_url:
             raise ValueError(
                 "CodeBuddy model listing endpoint is not configured. "
@@ -281,12 +281,12 @@ class CodeBuddyPollingProvider(ModelProviderAdapter):
 
     def _get_provider_credentials(self) -> tuple[str, str]:
         return (
-            self._settings.oauth_codebuddy_client_id.strip(),
-            self._settings.oauth_codebuddy_client_secret.strip(),
+            self._settings.model.oauth_codebuddy_client_id.strip(),
+            self._settings.model.oauth_codebuddy_client_secret.strip(),
         )
 
     def _get_poll_url(self) -> str:
-        return self._settings.oauth_codebuddy_poll_url.strip()
+        return self._settings.model.oauth_codebuddy_poll_url.strip()
 
     async def _refresh_access_token(
         self,

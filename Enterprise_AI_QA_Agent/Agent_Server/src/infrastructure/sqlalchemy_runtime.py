@@ -28,22 +28,22 @@ _SESSION_FACTORIES: dict[tuple[Any, ...], sessionmaker[Session]] = {}
 def mysql_url(settings: Settings) -> URL:
     return URL.create(
         "mysql+pymysql",
-        username=settings.mysql_user,
-        password=settings.mysql_password,
-        host=settings.mysql_host,
-        port=settings.mysql_port,
-        database=settings.mysql_database,
+        username=settings.database.mysql_user,
+        password=settings.database.mysql_password,
+        host=settings.database.mysql_host,
+        port=settings.database.mysql_port,
+        database=settings.database.mysql_database,
     )
 
 
 def postgres_url(settings: Settings) -> URL:
     return URL.create(
         "postgresql+psycopg",
-        username=settings.postgres_user,
-        password=settings.postgres_password,
-        host=settings.postgres_host,
-        port=settings.postgres_port,
-        database=settings.postgres_database,
+        username=settings.database.postgres_user,
+        password=settings.database.postgres_password,
+        host=settings.database.postgres_host,
+        port=settings.database.postgres_port,
+        database=settings.database.postgres_database,
     )
 
 
@@ -63,7 +63,7 @@ def mysql_engine(settings: Settings) -> Engine:
             mysql_url(settings),
             pool_pre_ping=True,
             connect_args={
-                "charset": settings.mysql_charset,
+                "charset": settings.database.mysql_charset,
             },
         ),
     )
@@ -76,10 +76,10 @@ def postgres_engine(settings: Settings) -> Engine:
         lambda: create_engine(
             postgres_url(settings),
             pool_pre_ping=True,
-            pool_size=settings.postgres_pool_size,
+            pool_size=settings.database.postgres_pool_size,
             max_overflow=0,
             connect_args={
-                "connect_timeout": settings.postgres_connect_timeout_seconds,
+                "connect_timeout": settings.database.postgres_connect_timeout_seconds,
             },
         ),
     )
@@ -272,23 +272,23 @@ def _normalize_execute_parameters(parameters: Any) -> Any:
 def _mysql_engine_key(settings: Settings) -> tuple[Any, ...]:
     return (
         "mysql",
-        settings.mysql_host,
-        settings.mysql_port,
-        settings.mysql_user,
-        settings.mysql_password,
-        settings.mysql_database,
-        settings.mysql_charset,
+        settings.database.mysql_host,
+        settings.database.mysql_port,
+        settings.database.mysql_user,
+        settings.database.mysql_password,
+        settings.database.mysql_database,
+        settings.database.mysql_charset,
     )
 
 
 def _postgres_engine_key(settings: Settings) -> tuple[Any, ...]:
     return (
         "postgres",
-        settings.postgres_host,
-        settings.postgres_port,
-        settings.postgres_user,
-        settings.postgres_password,
-        settings.postgres_database,
-        settings.postgres_pool_size,
-        settings.postgres_connect_timeout_seconds,
+        settings.database.postgres_host,
+        settings.database.postgres_port,
+        settings.database.postgres_user,
+        settings.database.postgres_password,
+        settings.database.postgres_database,
+        settings.database.postgres_pool_size,
+        settings.database.postgres_connect_timeout_seconds,
     )

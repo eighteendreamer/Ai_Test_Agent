@@ -64,7 +64,7 @@ class ChannelCredentialCodec:
 class MySQLChannelConfigStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._codec = ChannelCredentialCodec(settings.channel_credential_encryption_key)
+        self._codec = ChannelCredentialCodec(settings.database.channel_credential_encryption_key)
 
     def initialize(self) -> None:
         with self._connect() as conn:
@@ -84,7 +84,7 @@ class MySQLChannelConfigStore:
                     f"""
                     SELECT id, config_name, provider, domain, enabled, public_config_json,
                            credential_ciphertext, credential_version, description, created_at, updated_at
-                    FROM `{self._settings.channel_config_table}`
+                    FROM `{self._settings.database.channel_config_table}`
                     ORDER BY FIELD(domain, 'qq', 'feishu', 'lark', 'weixin'), id ASC
                     """
                 )
@@ -98,7 +98,7 @@ class MySQLChannelConfigStore:
                     f"""
                     SELECT id, config_name, provider, domain, enabled, public_config_json,
                            credential_ciphertext, credential_version, description, created_at, updated_at
-                    FROM `{self._settings.channel_config_table}`
+                    FROM `{self._settings.database.channel_config_table}`
                     WHERE id=%s
                     """,
                     (config_id,),
@@ -116,7 +116,7 @@ class MySQLChannelConfigStore:
                 with conn.cursor() as cur:
                     cur.execute(
                         f"""
-                        INSERT INTO `{self._settings.channel_config_table}`
+                        INSERT INTO `{self._settings.database.channel_config_table}`
                         (config_name, provider, domain, enabled, public_config_json,
                          credential_ciphertext, credential_version, description)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -155,7 +155,7 @@ class MySQLChannelConfigStore:
                 with conn.cursor() as cur:
                     cur.execute(
                         f"""
-                        UPDATE `{self._settings.channel_config_table}`
+                        UPDATE `{self._settings.database.channel_config_table}`
                         SET config_name=%s,
                             provider=%s,
                             domain=%s,
@@ -188,7 +188,7 @@ class MySQLChannelConfigStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"DELETE FROM `{self._settings.channel_config_table}` WHERE id=%s",
+                    f"DELETE FROM `{self._settings.database.channel_config_table}` WHERE id=%s",
                     (config_id,),
                 )
             conn.commit()
@@ -242,7 +242,7 @@ class MySQLChannelConfigStore:
             FROM information_schema.tables
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.mysql_database, self._settings.channel_config_table),
+            (self._settings.database.mysql_database, self._settings.database.channel_config_table),
         )
         return bool(cur.fetchone()["total"])
 
@@ -253,14 +253,14 @@ class MySQLChannelConfigStore:
             FROM information_schema.columns
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.mysql_database, self._settings.channel_config_table),
+            (self._settings.database.mysql_database, self._settings.database.channel_config_table),
         )
         return {row["COLUMN_NAME"] for row in cur.fetchall()}
 
     def _create_table(self, cur) -> None:
         cur.execute(
             f"""
-            CREATE TABLE IF NOT EXISTS `{self._settings.channel_config_table}` (
+            CREATE TABLE IF NOT EXISTS `{self._settings.database.channel_config_table}` (
                 `id` BIGINT NOT NULL AUTO_INCREMENT,
                 `config_name` VARCHAR(120) NOT NULL,
                 `provider` VARCHAR(32) NOT NULL,
@@ -274,7 +274,7 @@ class MySQLChannelConfigStore:
                 `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_channel_provider_domain` (`provider`, `domain`)
-            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
+            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.database.mysql_charset}
             """
         )
 
@@ -294,7 +294,7 @@ class MySQLChannelConfigStore:
         }
         for name, statement in required_columns.items():
             if name not in columns:
-                cur.execute(statement.format(table=self._settings.channel_config_table))
+                cur.execute(statement.format(table=self._settings.database.channel_config_table))
 
     def _ensure_unique_index(self, cur) -> None:
         cur.execute(
@@ -303,12 +303,12 @@ class MySQLChannelConfigStore:
             FROM information_schema.statistics
             WHERE table_schema=%s AND table_name=%s AND index_name='uniq_channel_provider_domain'
             """,
-            (self._settings.mysql_database, self._settings.channel_config_table),
+            (self._settings.database.mysql_database, self._settings.database.channel_config_table),
         )
         if not bool(cur.fetchone()["total"]):
             cur.execute(
                 f"""
-                ALTER TABLE `{self._settings.channel_config_table}`
+                ALTER TABLE `{self._settings.database.channel_config_table}`
                 ADD UNIQUE KEY `uniq_channel_provider_domain` (`provider`, `domain`)
                 """
             )

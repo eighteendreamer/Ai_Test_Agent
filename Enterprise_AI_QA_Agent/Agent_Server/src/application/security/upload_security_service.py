@@ -144,7 +144,7 @@ class UploadSecurityService:
             filename=filename,
             object_prefix=f"{object_prefix}/temp",
             content_type=detected_content_type,
-            bucket_name=self._settings.rustfs_upload_temp_bucket,
+            bucket_name=self._settings.storage.rustfs_upload_temp_bucket,
         )
         report = self._scan_bytes(
             content=content,
@@ -158,7 +158,7 @@ class UploadSecurityService:
         if report.decision == "allow":
             final_result = await self._artifact_storage_service.move_object_uri(
                 temp_result["uri"],
-                bucket_name=self._settings.rustfs_upload_safe_bucket,
+                bucket_name=self._settings.storage.rustfs_upload_safe_bucket,
                 object_name=f"{object_prefix}/safe/{Path(filename).name}",
             )
             return {
@@ -170,7 +170,7 @@ class UploadSecurityService:
         if report.decision == "quarantine":
             await self._artifact_storage_service.move_object_uri(
                 temp_result["uri"],
-                bucket_name=self._settings.rustfs_upload_quarantine_bucket,
+                bucket_name=self._settings.storage.rustfs_upload_quarantine_bucket,
                 object_name=f"{object_prefix}/quarantine/{Path(filename).name}",
             )
             raise UploadSecurityError(
@@ -196,13 +196,13 @@ class UploadSecurityService:
         allowed_extensions = self._allowed_extensions(profile)
         text_preview = self._decode_text_preview(content, filename, detected_content_type, max_chars=200_000)
 
-        if size_bytes > self._settings.upload_scan_max_bytes:
+        if size_bytes > self._settings.security.upload_scan_max_bytes:
             findings.append(
                 UploadSecurityFinding(
                     category="file_size",
                     severity="high",
                     score=80,
-                    message=f"File exceeds the upload limit of {self._settings.upload_scan_max_bytes} bytes.",
+                    message=f"File exceeds the upload limit of {self._settings.security.upload_scan_max_bytes} bytes.",
                     metadata={"size_bytes": size_bytes},
                 )
             )
@@ -258,9 +258,9 @@ class UploadSecurityService:
 
         risk_score = sum(item.score for item in findings)
         decision = "allow"
-        if risk_score >= self._settings.upload_scan_high_risk_threshold:
+        if risk_score >= self._settings.security.upload_scan_high_risk_threshold:
             decision = "reject"
-        elif risk_score >= self._settings.upload_scan_medium_risk_threshold:
+        elif risk_score >= self._settings.security.upload_scan_medium_risk_threshold:
             decision = "quarantine"
 
         return UploadSecurityReport(
@@ -543,7 +543,7 @@ class UploadSecurityService:
         if any("not allowed for profile" in reason for reason in reasons):
             return "请确认当前上传入口支持该文件类型，或更换为受支持的文件格式"
         if any("file exceeds the upload limit" in reason for reason in reasons):
-            max_size_mb = max(1, round(self._settings.upload_scan_max_bytes / (1024 * 1024)))
+            max_size_mb = max(1, round(self._settings.security.upload_scan_max_bytes / (1024 * 1024)))
             return f"请压缩文件或拆分后重试，当前限制约为 {max_size_mb} MB"
         if any("zip archive" in reason for reason in reasons):
             return "请检查压缩包内容，移除异常路径、宏脚本或受限文件后重新上传"

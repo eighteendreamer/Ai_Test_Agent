@@ -16,7 +16,7 @@ class CodexOAuthProvider(StandardOAuthProviderAdapter):
 
     def _get_provider_credentials(self) -> tuple[str, str, str | None]:
         return (
-            self._settings.oauth_codex_client_id,
-            self._settings.oauth_codex_client_secret,
+            self._settings.model.oauth_codex_client_id,
+            self._settings.model.oauth_codex_client_secret,
             None,
         )

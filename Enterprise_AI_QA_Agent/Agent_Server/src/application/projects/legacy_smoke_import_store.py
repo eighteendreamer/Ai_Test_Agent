@@ -103,9 +103,9 @@ class PostgresLegacySmokeImportStore:
                     CREATE TABLE IF NOT EXISTS {self._ledger_table} (
                         source_system TEXT NOT NULL,
                         legacy_run_id TEXT NOT NULL,
-                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID NOT NULL REFERENCES {self._settings.database.postgres_project_table}(id),
                         source_hash TEXT NOT NULL,
-                        canonical_run_id UUID NOT NULL REFERENCES {self._settings.postgres_test_run_table}(id)
+                        canonical_run_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_run_table}(id)
                             DEFERRABLE INITIALLY DEFERRED,
                         source_snapshot JSONB NOT NULL,
                         status TEXT NOT NULL CHECK (status IN ('imported')),
@@ -160,14 +160,14 @@ class PostgresLegacySmokeImportStore:
         return "imported", bundle.run.id
 
     def _write_bundle(self, cur, bundle: LegacySmokeImportedBundle) -> None:
-        case_table = self._settings.postgres_test_case_table
-        version_table = self._settings.postgres_test_case_version_table
-        suite_table = self._settings.postgres_test_suite_table
-        suite_item_table = self._settings.postgres_test_suite_item_table
-        run_table = self._settings.postgres_test_run_table
-        item_table = self._settings.postgres_test_run_item_table
-        attempt_table = self._settings.postgres_test_run_attempt_table
-        result_table = self._settings.postgres_test_case_result_table
+        case_table = self._settings.database.postgres_test_case_table
+        version_table = self._settings.database.postgres_test_case_version_table
+        suite_table = self._settings.database.postgres_test_suite_table
+        suite_item_table = self._settings.database.postgres_test_suite_item_table
+        run_table = self._settings.database.postgres_test_run_table
+        item_table = self._settings.database.postgres_test_run_item_table
+        attempt_table = self._settings.database.postgres_test_run_attempt_table
+        result_table = self._settings.database.postgres_test_case_result_table
         cur.executemany(
             f"INSERT INTO {case_table} ("
             "id, project_id, case_key, lifecycle_status, mode_key, priority, "

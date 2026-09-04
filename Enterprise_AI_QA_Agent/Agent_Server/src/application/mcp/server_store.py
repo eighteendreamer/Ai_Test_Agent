@@ -512,7 +512,7 @@ class PostgresMCPServerStore:
         return count
 
     def _initialize_sync(self) -> None:
-        table = self._settings.postgres_mcp_server_table
+        table = self._settings.database.postgres_mcp_server_table
         schema_name, table_name = _table_schema_and_name(table)
         with _postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -620,7 +620,7 @@ class PostgresMCPServerStore:
                 cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_updated ON {table} (updated_at DESC)")
 
     def _list_servers_sync(self) -> list[MCPServerRecord]:
-        table = self._settings.postgres_mcp_server_table
+        table = self._settings.database.postgres_mcp_server_table
         with _postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"SELECT * FROM {table} ORDER BY updated_at DESC")
@@ -628,7 +628,7 @@ class PostgresMCPServerStore:
         return [_record_from_row(row) for row in rows]
 
     def _get_server_sync(self, server_id: str) -> MCPServerRecord | None:
-        table = self._settings.postgres_mcp_server_table
+        table = self._settings.database.postgres_mcp_server_table
         with _postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"SELECT * FROM {table} WHERE id = %s", (server_id,))
@@ -636,7 +636,7 @@ class PostgresMCPServerStore:
         return _record_from_row(row) if row else None
 
     def _save_record_sync(self, record: MCPServerRecord) -> MCPServerRecord:
-        table = self._settings.postgres_mcp_server_table
+        table = self._settings.database.postgres_mcp_server_table
         with _postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -663,7 +663,7 @@ class PostgresMCPServerStore:
         return record
 
     def _delete_server_sync(self, server_id: str) -> bool:
-        table = self._settings.postgres_mcp_server_table
+        table = self._settings.database.postgres_mcp_server_table
         with _postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"DELETE FROM {table} WHERE id = %s RETURNING id", (server_id,))

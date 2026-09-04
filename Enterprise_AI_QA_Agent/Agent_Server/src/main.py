@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
     model_config_store.initialize()
     oauth_token_service = OAuthTokenService(
         settings=settings,
-        request_timeout=settings.llm_request_timeout_seconds,
+        request_timeout=settings.model.llm_request_timeout_seconds,
     )
     embedding_runtime_service = EmbeddingRuntimeService(
         model_config_store=model_config_store,
@@ -213,7 +213,7 @@ async def lifespan(app: FastAPI):
     memory_store = PostgresVectorMemoryStore(settings=settings)
     memory_runtime_service = MemoryRuntimeService(
         memory_store=memory_store,
-        top_k=settings.memory_top_k,
+        top_k=settings.orchestration.memory_top_k,
         embedding_runtime_service=embedding_runtime_service,
     )
     await memory_runtime_service.initialize()
@@ -221,14 +221,14 @@ async def lifespan(app: FastAPI):
     security_bug_store = PostgresSecurityBugStore(settings=settings)
     security_bug_service = SecurityBugService(
         security_bug_store,
-        reproduction_required=settings.security_bug_reproduction_required,
+        reproduction_required=settings.security.security_bug_reproduction_required,
     )
     await security_bug_service.initialize()
     knowledge_graph_service = KnowledgeGraphService(settings=settings)
     knowledge_graph_service.set_project_service(project_service)
     tool_job_service = ToolJobService(
         store=tool_job_store,
-        heartbeat_timeout_seconds=settings.tool_job_heartbeat_timeout_seconds,
+        heartbeat_timeout_seconds=settings.orchestration.tool_job_heartbeat_timeout_seconds,
     )
     await tool_job_service.initialize()
     report_service = ReportService(store=store, tool_job_service=tool_job_service)
@@ -280,7 +280,7 @@ async def lifespan(app: FastAPI):
         test_case_service=test_case_service,
         session_store=store,
         tool_job_service=tool_job_service,
-        lease_reaper_interval_seconds=settings.test_run_lease_reaper_interval_seconds,
+        lease_reaper_interval_seconds=settings.orchestration.test_run_lease_reaper_interval_seconds,
     )
     await test_run_service.initialize()
     legacy_smoke_catalog = SmokeCatalogStore(settings)
@@ -301,12 +301,12 @@ async def lifespan(app: FastAPI):
     input_orchestrator_service.set_semantic_intent_service(
         SemanticIntentService(
             model_runtime_service=model_runtime_service,
-            enabled=settings.intent_semantic_classifier_enabled,
-            deterministic_confidence_threshold=settings.intent_deterministic_confidence_threshold,
+            enabled=settings.orchestration.intent_semantic_classifier_enabled,
+            deterministic_confidence_threshold=settings.orchestration.intent_deterministic_confidence_threshold,
         )
     )
     tool_runtime_service = ToolRuntimeService(
-        request_timeout_seconds=settings.llm_request_timeout_seconds,
+        request_timeout_seconds=settings.model.llm_request_timeout_seconds,
         settings=settings,
         mcp_runtime_service=mcp_runtime_service,
         memory_runtime_service=memory_runtime_service,
@@ -355,13 +355,13 @@ async def lifespan(app: FastAPI):
         model_runtime_service=model_runtime_service,
         tool_runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
-        tool_message_max_chars=settings.tool_message_max_chars,
+        tool_message_max_chars=settings.orchestration.tool_message_max_chars,
     )
     context_compaction_service = ContextCompactionService(
         model_runtime_service=model_runtime_service,
         transcript_hygiene_service=transcript_hygiene_service,
-        watermark=settings.context_compaction_watermark,
-        max_tail_messages=settings.context_max_tail_messages,
+        watermark=settings.orchestration.context_compaction_watermark,
+        max_tail_messages=settings.orchestration.context_max_tail_messages,
     )
     runtime_service = RuntimeService(
         graph=graph,
@@ -370,10 +370,10 @@ async def lifespan(app: FastAPI):
         tool_registry=tool_registry,
         runtime_control=runtime_control,
         transcript_hygiene_service=transcript_hygiene_service,
-        max_iterations=settings.runtime_max_iterations,
+        max_iterations=settings.orchestration.runtime_max_iterations,
         session_resource_service=session_resource_service,
         context_compaction_service=context_compaction_service,
-        context_max_tail_messages=settings.context_max_tail_messages,
+        context_max_tail_messages=settings.orchestration.context_max_tail_messages,
     )
 
     app.state.settings = settings
@@ -408,14 +408,14 @@ async def lifespan(app: FastAPI):
     app.state.session_resource_store = session_resource_store
     app.state.session_resource_service = session_resource_service
     app.state.memory_runtime_service = memory_runtime_service
-    app.state.session_backend = settings.session_backend
+    app.state.session_backend = settings.orchestration.session_backend
     app.state.task_pool_service = task_pool_service
     app.state.tool_job_store = tool_job_store
     app.state.tool_job_service = tool_job_service
     app.state.security_bug_store = security_bug_store
     app.state.security_bug_service = security_bug_service
     app.state.report_service = report_service
-    app.state.tool_job_backend = settings.tool_job_backend
+    app.state.tool_job_backend = settings.orchestration.tool_job_backend
     app.state.knowledge_graph_service = knowledge_graph_service
     app.state.project_overview_service = project_overview_service
     app.state.test_case_store = test_case_store
@@ -430,7 +430,7 @@ async def lifespan(app: FastAPI):
     app.state.test_run_execution_service = test_run_execution_service
     app.state.legacy_smoke_history_service = legacy_smoke_history_service
     app.state.memory_backend = memory_runtime_service.backend
-    app.state.ui_graph_backend = settings.ui_graph_backend
+    app.state.ui_graph_backend = settings.orchestration.ui_graph_backend
     app.state.permission_service = permission_service
     app.state.input_orchestrator_service = input_orchestrator_service
     app.state.prompt_service = prompt_service
@@ -562,7 +562,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.frontend.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

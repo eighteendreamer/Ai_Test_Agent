@@ -36,13 +36,13 @@ class PerfRunnerService:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._semaphore = asyncio.Semaphore(settings.performance_max_concurrent_runs)
-        self._container_prefix = settings.performance_runner_docker_container_prefix
-        self._workdir = settings.performance_runner_docker_workdir
-        self._ephemeral = settings.performance_runner_ephemeral
+        self._semaphore = asyncio.Semaphore(settings.orchestration.performance_max_concurrent_runs)
+        self._container_prefix = settings.orchestration.performance_runner_docker_container_prefix
+        self._workdir = settings.orchestration.performance_runner_docker_workdir
+        self._ephemeral = settings.orchestration.performance_runner_ephemeral
 
     def detect_backend(self, engine_key: str = "k6") -> str:
-        configured = self._settings.performance_runner_backend
+        configured = self._settings.orchestration.performance_runner_backend
         if configured != "auto":
             return configured
 

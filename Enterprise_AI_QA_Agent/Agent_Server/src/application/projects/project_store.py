@@ -102,7 +102,7 @@ class PostgresProjectStore:
 
     @property
     def _table(self) -> str:
-        return self._settings.postgres_project_table
+        return self._settings.database.postgres_project_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)

@@ -47,7 +47,7 @@ class CompatibilityRunnerService:
         self._artifacts: dict[str, CompatibilityArtifactRecord] = {}
         self._lock = asyncio.Lock()
         self._local_artifact_root = (
-            Path(__file__).resolve().parents[2] / str(getattr(settings, "artifact_root_dir", "data/artifacts"))
+            Path(__file__).resolve().parents[2] / str(getattr(settings.storage, "artifact_root_dir", "data/artifacts"))
         ).resolve()
         self._local_artifact_root.mkdir(parents=True, exist_ok=True)
         self._data_dir = (

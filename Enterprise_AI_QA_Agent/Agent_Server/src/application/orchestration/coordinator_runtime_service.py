@@ -145,7 +145,7 @@ class CoordinatorRuntimeService:
         launch_records: list[dict[str, Any]] = []
         immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
 
-        for worker in workers[: self._settings.coordinator_max_workers]:
+        for worker in workers[: self._settings.orchestration.coordinator_max_workers]:
             if not self._is_agent_available(worker.agent_key):
                 launch_records.append(
                     {
@@ -1157,7 +1157,7 @@ class CoordinatorRuntimeService:
         parent_trace_id = str(parent_session.metadata.get("followup_workers_parent_trace_id") or "")
         current_round_total = int(self._pending_worker_total_round_count(round_batch[0]) or 0)
 
-        for item in round_batch[: self._settings.coordinator_max_workers]:
+        for item in round_batch[: self._settings.orchestration.coordinator_max_workers]:
             worker = WorkerDispatchSpec(
                 task_id=str(item.get("task_id") or uuid4()),
                 description=str(item.get("description") or "Cross Review Worker"),

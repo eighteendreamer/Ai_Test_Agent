@@ -63,7 +63,7 @@ class SettingsService:
         self._channel_config_store = channel_config_store
         self._oauth_token_service = oauth_token_service or OAuthTokenService(
             settings=settings,
-            request_timeout=settings.llm_request_timeout_seconds,
+            request_timeout=settings.model.llm_request_timeout_seconds,
         )
         self._embedding_runtime_service = (
             embedding_runtime_service
@@ -73,7 +73,7 @@ class SettingsService:
                 oauth_token_service=self._oauth_token_service,
             )
         )
-        self._channel_pairing_sessions = ChannelPairingSessionStore(settings.redis_url)
+        self._channel_pairing_sessions = ChannelPairingSessionStore(settings.database.redis_url)
         self._channel_gateway_policy = ChannelGatewayPolicyService(
             settings_loader=self.get_channel_advanced_settings,
             settings_saver=self.update_channel_advanced_settings,
@@ -184,7 +184,7 @@ class SettingsService:
         )
         client = resolve_client(
             record,
-            timeout_seconds=self._settings.llm_request_timeout_seconds,
+            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
         )
         started_at = perf_counter()
         try:

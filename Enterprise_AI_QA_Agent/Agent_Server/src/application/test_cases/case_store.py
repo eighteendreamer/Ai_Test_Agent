@@ -243,11 +243,11 @@ class PostgresTestCaseStore:
 
     @property
     def _case_table(self) -> str:
-        return self._settings.postgres_test_case_table
+        return self._settings.database.postgres_test_case_table
 
     @property
     def _version_table(self) -> str:
-        return self._settings.postgres_test_case_version_table
+        return self._settings.database.postgres_test_case_version_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -338,7 +338,7 @@ class PostgresTestCaseStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {case_table} (
                         id UUID PRIMARY KEY,
-                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID NOT NULL REFERENCES {self._settings.database.postgres_project_table}(id),
                         case_key TEXT NOT NULL,
                         lifecycle_status TEXT NOT NULL,
                         mode_key TEXT NOT NULL,

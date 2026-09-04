@@ -18,11 +18,11 @@ class ArtifactStorageService:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._artifact_root = (Path(__file__).resolve().parents[2] / settings.artifact_root_dir).resolve()
+        self._artifact_root = (Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir).resolve()
 
     @property
     def enabled(self) -> bool:
-        return self._settings.artifact_storage_backend.lower() == "rustfs"
+        return self._settings.storage.artifact_storage_backend.lower() == "rustfs"
 
     async def store_output_artifacts(
         self,
@@ -58,7 +58,7 @@ class ArtifactStorageService:
         if not self.enabled:
             raise RuntimeError("Artifact storage backend is not enabled.")
 
-        target_bucket = bucket_name or self._settings.rustfs_bucket
+        target_bucket = bucket_name or self._settings.storage.rustfs_bucket
         resolved_object_name = (
             self._safe_object_name(object_name)
             if object_name
@@ -222,45 +222,45 @@ class ArtifactStorageService:
         )
         content_type = self._content_type(local_path)
         client = self._rustfs_client()
-        self._ensure_bucket(client, self._settings.rustfs_bucket)
+        self._ensure_bucket(client, self._settings.storage.rustfs_bucket)
         try:
             client.upload_file(
                 str(local_path),
-                self._settings.rustfs_bucket,
+                self._settings.storage.rustfs_bucket,
                 object_name,
                 ExtraArgs={"ContentType": content_type},
             )
         except Exception as exc:
             logger.exception(
                 "rustfs_file_store_failed bucket=%s object_name=%s local_path=%s",
-                self._settings.rustfs_bucket,
+                self._settings.storage.rustfs_bucket,
                 object_name,
                 local_path,
             )
             raise RuntimeError(
                 f"Failed to store file '{local_path}' as RustFS object "
-                f"'{self._settings.rustfs_bucket}/{object_name}': {exc}"
+                f"'{self._settings.storage.rustfs_bucket}/{object_name}': {exc}"
             ) from exc
         logger.info(
             "rustfs_file_stored bucket=%s object_name=%s local_path=%s",
-            self._settings.rustfs_bucket,
+            self._settings.storage.rustfs_bucket,
             object_name,
             local_path,
         )
 
-        rustfs_uri = f"rustfs://{self._settings.rustfs_bucket}/{object_name}"
+        rustfs_uri = f"rustfs://{self._settings.storage.rustfs_bucket}/{object_name}"
         stored = {
             "path": rustfs_uri,
             "uri": rustfs_uri,
             "storage_backend": "rustfs",
-            "bucket": self._settings.rustfs_bucket,
+            "bucket": self._settings.storage.rustfs_bucket,
             "object_name": object_name,
             "content_type": content_type,
             "original_local_path": str(local_path),
         }
         cache[cache_key] = stored
 
-        if not self._settings.artifact_keep_local_copy:
+        if not self._settings.storage.artifact_keep_local_copy:
             self._remove_local_file(local_path)
 
         return stored
@@ -304,12 +304,12 @@ class ArtifactStorageService:
             from botocore.config import Config
         except ImportError as exc:
             raise RuntimeError("RustFS artifact storage requires the 'boto3' Python package.") from exc
-        scheme = "https" if self._settings.rustfs_secure else "http"
+        scheme = "https" if self._settings.storage.rustfs_secure else "http"
         return boto3.client(
             "s3",
-            endpoint_url=f"{scheme}://{self._settings.rustfs_endpoint}",
-            aws_access_key_id=self._settings.rustfs_access_key,
-            aws_secret_access_key=self._settings.rustfs_secret_key,
+            endpoint_url=f"{scheme}://{self._settings.storage.rustfs_endpoint}",
+            aws_access_key_id=self._settings.storage.rustfs_access_key,
+            aws_secret_access_key=self._settings.storage.rustfs_secret_key,
             region_name="us-east-1",
             config=Config(
                 signature_version="s3v4",

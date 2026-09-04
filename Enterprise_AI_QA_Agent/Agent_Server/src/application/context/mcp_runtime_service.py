@@ -31,7 +31,7 @@ class MCPRuntimeService:
         self._mcp_registry = mcp_registry
         self._settings = settings
         self._session_resource_service = session_resource_service
-        self._artifact_root = Path(__file__).resolve().parents[2] / settings.artifact_root_dir
+        self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
         self._artifact_root.mkdir(parents=True, exist_ok=True)
         self._playwright_cli = PythonPlaywrightCliRuntime(settings)
 
@@ -544,8 +544,8 @@ class MCPRuntimeService:
         return str(result.get("stdout") or "").strip()
 
     async def _resize_browser(self, session_name: str, artifact_dir: Path) -> list[dict[str, Any]]:
-        width = int(self._settings.browser_window_width or 0)
-        height = int(self._settings.browser_window_height or 0)
+        width = int(self._settings.orchestration.browser_window_width or 0)
+        height = int(self._settings.orchestration.browser_window_height or 0)
         if width <= 0 or height <= 0:
             return []
         return [await self._run_playwright_cli(session_name, ["resize", str(width), str(height)], artifact_dir)]
@@ -636,15 +636,15 @@ class MCPRuntimeService:
         return [action for action in actions if isinstance(action, dict)]
 
     def _playwright_open_args(self) -> list[str]:
-        browser = str(self._settings.browser_default_name or "chromium").strip().lower()
+        browser = str(self._settings.orchestration.browser_default_name or "chromium").strip().lower()
         browser_map = {"edge": "msedge", "chrome": "chrome", "msedge": "msedge", "firefox": "firefox", "webkit": "webkit"}
         args = [f"--browser={browser_map[browser]}"] if browser in browser_map else []
-        if not bool(self._settings.browser_headless):
+        if not bool(self._settings.orchestration.browser_headless):
             args.append("--headed")
         return args
 
     def _runtime_backend(self) -> str:
-        return f"{self._settings.browser_backend}:{self._settings.browser_default_name}"
+        return f"{self._settings.orchestration.browser_backend}:{self._settings.orchestration.browser_default_name}"
 
     def _playwright_session_name(self, context: dict[str, Any], tool_key: str) -> str:
         session_id = self._slug(str(context.get("session_id") or "session"))

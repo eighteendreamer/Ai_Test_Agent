@@ -111,7 +111,7 @@ class PostgresSecurityBugStore:
 
     @property
     def _table(self) -> str:
-        return self._settings.postgres_security_bug_table
+        return self._settings.database.postgres_security_bug_table
 
     def _initialize_sync(self) -> None:
         table = self._table

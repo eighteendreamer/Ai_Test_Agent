@@ -44,14 +44,14 @@ def _create_tables(settings: Settings) -> None:
     with postgres_connect(settings) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"CREATE TABLE {settings.postgres_test_run_table} ("
+                f"CREATE TABLE {settings.database.postgres_test_run_table} ("
                 "id UUID PRIMARY KEY, project_id UUID NOT NULL, suite_id UUID NOT NULL, "
                 "status TEXT NOT NULL, mode_key TEXT NOT NULL, session_id TEXT NULL, "
                 "parent_run_id UUID NULL, created_at TIMESTAMPTZ NOT NULL, "
                 "updated_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL)"
             )
             cur.execute(
-                f"CREATE TABLE {settings.postgres_test_run_item_table} ("
+                f"CREATE TABLE {settings.database.postgres_test_run_item_table} ("
                 "id UUID PRIMARY KEY, run_id UUID NOT NULL, case_id UUID NOT NULL, "
                 "case_version_id UUID NOT NULL, position INTEGER NOT NULL, status TEXT NOT NULL, "
                 "attempt_no INTEGER NOT NULL, lease_owner TEXT NULL, lease_token TEXT NULL, "
@@ -61,13 +61,13 @@ def _create_tables(settings: Settings) -> None:
                 "UNIQUE(run_id, case_id, case_version_id))"
             )
             cur.execute(
-                f"CREATE TABLE {settings.postgres_test_run_attempt_table} ("
+                f"CREATE TABLE {settings.database.postgres_test_run_attempt_table} ("
                 "id UUID PRIMARY KEY, run_id UUID NOT NULL, run_item_id UUID NOT NULL, "
                 "attempt_no INTEGER NOT NULL, lease_token TEXT NOT NULL, status TEXT NOT NULL, "
                 "record JSONB NOT NULL, UNIQUE(run_item_id, attempt_no), UNIQUE(lease_token))"
             )
             cur.execute(
-                f"CREATE TABLE {settings.postgres_test_case_result_table} ("
+                f"CREATE TABLE {settings.database.postgres_test_case_result_table} ("
                 "id UUID PRIMARY KEY, run_id UUID NOT NULL, run_item_id UUID NOT NULL, "
                 "case_id UUID NOT NULL, case_version_id UUID NOT NULL, attempt_id UUID NOT NULL, "
                 "status TEXT NOT NULL, payload_hash TEXT NOT NULL, "
@@ -75,19 +75,19 @@ def _create_tables(settings: Settings) -> None:
                 "record JSONB NOT NULL, UNIQUE(run_item_id))"
             )
             cur.execute(
-                f"CREATE INDEX idx_{settings.postgres_test_run_item_table}_run_status_position "
-                f"ON {settings.postgres_test_run_item_table} (run_id, status, position ASC)"
+                f"CREATE INDEX idx_{settings.database.postgres_test_run_item_table}_run_status_position "
+                f"ON {settings.database.postgres_test_run_item_table} (run_id, status, position ASC)"
             )
             cur.execute(
-                f"CREATE INDEX idx_{settings.postgres_test_run_attempt_table}_run_item "
-                f"ON {settings.postgres_test_run_attempt_table} (run_id, run_item_id, attempt_no DESC)"
+                f"CREATE INDEX idx_{settings.database.postgres_test_run_attempt_table}_run_item "
+                f"ON {settings.database.postgres_test_run_attempt_table} (run_id, run_item_id, attempt_no DESC)"
             )
             cur.execute(
-                f"CREATE INDEX idx_{settings.postgres_test_case_result_table}_run_status "
-                f"ON {settings.postgres_test_case_result_table} (run_id, status, created_at DESC)"
+                f"CREATE INDEX idx_{settings.database.postgres_test_case_result_table}_run_status "
+                f"ON {settings.database.postgres_test_case_result_table} (run_id, status, created_at DESC)"
             )
             cur.execute(
-                f"ANALYZE {settings.postgres_test_run_item_table}"
+                f"ANALYZE {settings.database.postgres_test_run_item_table}"
             )
 
 
@@ -188,14 +188,14 @@ async def test_live_postgres_full_lifecycle_capacity():
             elapsed = perf_counter() - started
             with postgres_connect(settings) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(f"SELECT COUNT(*) AS total FROM {settings.postgres_test_run_attempt_table}")
+                    cur.execute(f"SELECT COUNT(*) AS total FROM {settings.database.postgres_test_run_attempt_table}")
                     attempt_count = int(cur.fetchone()["total"])
-                    cur.execute(f"SELECT COUNT(*) AS total FROM {settings.postgres_test_case_result_table}")
+                    cur.execute(f"SELECT COUNT(*) AS total FROM {settings.database.postgres_test_case_result_table}")
                     result_count = int(cur.fetchone()["total"])
-                    cur.execute(f"SELECT status, COUNT(*) AS total FROM {settings.postgres_test_run_item_table} GROUP BY status")
+                    cur.execute(f"SELECT status, COUNT(*) AS total FROM {settings.database.postgres_test_run_item_table} GROUP BY status")
                     status_counts = {row["status"]: int(row["total"]) for row in cur.fetchall()}
                     cur.execute(
-                        f"SELECT status, record FROM {settings.postgres_test_run_table} WHERE id = %s",
+                        f"SELECT status, record FROM {settings.database.postgres_test_run_table} WHERE id = %s",
                         (run.id,),
                     )
                     run_row = cur.fetchone()
@@ -230,9 +230,9 @@ async def test_live_postgres_full_lifecycle_capacity():
             _tables(
                 settings,
                 [
-                    settings.postgres_test_case_result_table,
-                    settings.postgres_test_run_attempt_table,
-                    settings.postgres_test_run_item_table,
-                    settings.postgres_test_run_table,
+                    settings.database.postgres_test_case_result_table,
+                    settings.database.postgres_test_run_attempt_table,
+                    settings.database.postgres_test_run_item_table,
+                    settings.database.postgres_test_run_table,
                 ],
             )

@@ -709,7 +709,7 @@ class ToolRuntimeService:
         if time_range:
             payload["time_range"] = time_range
         settings = self._settings or Settings()
-        api_key = settings.anysearch_api_key.strip()
+        api_key = settings.model.anysearch_api_key.strip()
         if not api_key:
             return {
                 "status": "failed",
@@ -723,7 +723,7 @@ class ToolRuntimeService:
 
         try:
             async with httpx.AsyncClient(
-                base_url=settings.anysearch_api_base_url.strip() or "https://api.anysearch.com",
+                base_url=settings.model.anysearch_api_base_url.strip() or "https://api.anysearch.com",
                 timeout=min(max(self._request_timeout_seconds, 5), 30),
                 headers={
                     "Authorization": f"Bearer {api_key}",
@@ -3412,7 +3412,7 @@ class ToolRuntimeService:
         except Exception as e:
             return {"status": "error", "ok": False, "summary": f"计划解析失败: {e}"}
 
-        rewrite = self._settings.performance_rewrite_localhost if self._settings else True
+        rewrite = self._settings.orchestration.performance_rewrite_localhost if self._settings else True
         image = self._resolve_perf_engine_image(engine_key) if self._settings else ""
         if engine_key == "k6":
             adapter = K6EngineAdapter(
@@ -3443,14 +3443,14 @@ class ToolRuntimeService:
         normalized = (engine or "k6").lower().strip()
         resolver = ImageResolver()
         image_key = (
-            self._settings.jmeter_docker_image_key
+            self._settings.orchestration.jmeter_docker_image_key
             if normalized == "jmeter"
-            else self._settings.k6_docker_image_key
+            else self._settings.orchestration.k6_docker_image_key
         )
         resolution = resolver.resolve_by_key(image_key) if image_key else resolver.resolve_for_engine(normalized)
         if resolution.ok:
             return resolution.selected_image
-        return self._settings.jmeter_docker_image if normalized == "jmeter" else self._settings.k6_docker_image
+        return self._settings.orchestration.jmeter_docker_image if normalized == "jmeter" else self._settings.orchestration.k6_docker_image
 
     async def _run_perf_container_manager(
         self,
@@ -4673,7 +4673,7 @@ class ToolRuntimeService:
 
     def _prepare_local_artifact_dir(self, context: ToolExecutionContext, tool_key: str) -> Path:
         settings = self._settings or Settings()
-        artifact_root = Path(__file__).resolve().parents[2] / settings.artifact_root_dir
+        artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
         artifact_root.mkdir(parents=True, exist_ok=True)
         session_id = _slug(context.session_id or "session")
         turn_id = _slug(context.turn_id or datetime.utcnow().strftime("%Y%m%d%H%M%S"))
@@ -5059,8 +5059,8 @@ class ToolRuntimeService:
         if uri.startswith("rustfs://"):
             bucket = self._attachment_bucket_from_uri(uri)
             if self._settings is not None and bucket in {
-                self._settings.rustfs_upload_temp_bucket,
-                self._settings.rustfs_upload_quarantine_bucket,
+                self._settings.storage.rustfs_upload_temp_bucket,
+                self._settings.storage.rustfs_upload_quarantine_bucket,
             }:
                 return False, security
         return True, security

@@ -1421,7 +1421,7 @@ class ApiDocsService:
         client_auth = httpx.BasicAuth(*auth) if auth is not None else None
         try:
             async with httpx.AsyncClient(
-                timeout=min(self._settings.llm_request_timeout_seconds, 45.0),
+                timeout=min(self._settings.model.llm_request_timeout_seconds, 45.0),
                 follow_redirects=True,
             ) as client:
                 response = await client.get(normalized_url, headers=headers or {}, auth=client_auth)

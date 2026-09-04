@@ -30,7 +30,7 @@ class PerfContainerManager:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._prefix = settings.performance_runner_docker_container_prefix
+        self._prefix = settings.orchestration.performance_runner_docker_container_prefix
 
     async def start(self, engine: str, container_name: str = "") -> PerfContainerResult:
         engine = self._normalize_engine(engine)
@@ -129,16 +129,16 @@ class PerfContainerManager:
         from src.application.images.image_resolver import ImageResolver
         resolver = ImageResolver()
         image_key = (
-            self._settings.jmeter_docker_image_key
+            self._settings.orchestration.jmeter_docker_image_key
             if engine == "jmeter"
-            else self._settings.k6_docker_image_key
+            else self._settings.orchestration.k6_docker_image_key
         )
         result = resolver.resolve_by_key(image_key) if image_key else resolver.resolve_for_engine(engine)
         if result.ok:
             return result.selected_image
         if engine == "jmeter":
-            return self._settings.jmeter_docker_image
-        return self._settings.k6_docker_image
+            return self._settings.orchestration.jmeter_docker_image
+        return self._settings.orchestration.k6_docker_image
 
     @staticmethod
     def _normalize_engine(engine: str) -> str:

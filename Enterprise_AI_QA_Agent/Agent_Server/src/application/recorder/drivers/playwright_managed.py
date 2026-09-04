@@ -46,7 +46,7 @@ class PlaywrightManagedDriver(PlaywrightBindingDriverBase):
         super().__init__(recording_id=recording_id)
         self._viewport = tuple(config.viewport)
         base = (
-            Path(__file__).resolve().parents[2] / str(getattr(settings, "artifact_root_dir", "data/artifacts"))
+            Path(__file__).resolve().parents[2] / str(getattr(settings.storage, "artifact_root_dir", "data/artifacts"))
             if settings is not None
             else Path(__file__).resolve().parents[2] / "data" / "artifacts"
         )

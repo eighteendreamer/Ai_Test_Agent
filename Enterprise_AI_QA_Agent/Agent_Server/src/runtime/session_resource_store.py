@@ -92,7 +92,7 @@ class PostgresSessionResourceStore:
         return await asyncio.to_thread(self._mark_status_sync, resource_id, status, metadata or {})
 
     def _initialize_sync(self) -> None:
-        table = self._settings.postgres_session_resource_table
+        table = self._settings.database.postgres_session_resource_table
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -120,7 +120,7 @@ class PostgresSessionResourceStore:
     def _save_sync(self, resource: SessionResourceRecord) -> SessionResourceRecord:
         now = datetime.utcnow()
         resource.updated_at = now
-        table = self._settings.postgres_session_resource_table
+        table = self._settings.database.postgres_session_resource_table
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -154,7 +154,7 @@ class PostgresSessionResourceStore:
         return _resource_from_row(row)
 
     def _list_sync(self, session_id: str, active_only: bool) -> list[SessionResourceRecord]:
-        table = self._settings.postgres_session_resource_table
+        table = self._settings.database.postgres_session_resource_table
         where = "WHERE session_id = %s"
         params: list[object] = [session_id]
         if active_only:
@@ -175,7 +175,7 @@ class PostgresSessionResourceStore:
         status: SessionResourceStatus,
         metadata: dict,
     ) -> SessionResourceRecord | None:
-        table = self._settings.postgres_session_resource_table
+        table = self._settings.database.postgres_session_resource_table
         now = datetime.utcnow()
         released_at = now if status in {SessionResourceStatus.released, SessionResourceStatus.missing} else None
         with postgres_connect(self._settings) as conn:

@@ -284,7 +284,7 @@ class McpConnectionManager:
             return StreamableHttpMcpTransport(
                 endpoint_url=endpoint_url,
                 headers=self._string_map(config.get("headers")),
-                timeout_seconds=min(self._settings.llm_request_timeout_seconds, 45.0),
+                timeout_seconds=min(self._settings.model.llm_request_timeout_seconds, 45.0),
             )
         if transport == "sse":
             endpoint_url = self._text(config.get("url") or config.get("endpoint_url"))
@@ -293,7 +293,7 @@ class McpConnectionManager:
             return SseMcpTransport(
                 endpoint_url=endpoint_url,
                 headers=self._string_map(config.get("headers")),
-                timeout_seconds=min(self._settings.llm_request_timeout_seconds, 45.0),
+                timeout_seconds=min(self._settings.model.llm_request_timeout_seconds, 45.0),
             )
         if transport == "stdio":
             executable_command = self._text(config.get("command"))

@@ -61,7 +61,7 @@ class PostgresVectorMemoryStore:
                 cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_memory_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_memory_table} (
                         id TEXT PRIMARY KEY,
                         scope TEXT NOT NULL,
                         kind TEXT NOT NULL,
@@ -75,43 +75,43 @@ class PostgresVectorMemoryStore:
                         stale BOOLEAN NOT NULL DEFAULT FALSE,
                         mode_key TEXT NOT NULL DEFAULT 'default',
                         metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-                        embedding VECTOR({self._settings.postgres_vector_dimension}) NULL,
+                        embedding VECTOR({self._settings.database.postgres_vector_dimension}) NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL
                     )
                     """
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_session_updated "
-                    f"ON {self._settings.postgres_memory_table} (session_id, updated_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_session_updated "
+                    f"ON {self._settings.database.postgres_memory_table} (session_id, updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_scope "
-                    f"ON {self._settings.postgres_memory_table} (scope)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_scope "
+                    f"ON {self._settings.database.postgres_memory_table} (scope)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_kind "
-                    f"ON {self._settings.postgres_memory_table} (kind)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_kind "
+                    f"ON {self._settings.database.postgres_memory_table} (kind)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_stale "
-                    f"ON {self._settings.postgres_memory_table} (stale)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_stale "
+                    f"ON {self._settings.database.postgres_memory_table} (stale)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_created "
-                    f"ON {self._settings.postgres_memory_table} (created_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_created "
+                    f"ON {self._settings.database.postgres_memory_table} (created_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_tags "
-                    f"ON {self._settings.postgres_memory_table} USING GIN (tags)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_tags "
+                    f"ON {self._settings.database.postgres_memory_table} USING GIN (tags)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_metadata "
-                    f"ON {self._settings.postgres_memory_table} USING GIN (metadata)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_metadata "
+                    f"ON {self._settings.database.postgres_memory_table} USING GIN (metadata)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_memory_table}_embedding "
-                    f"ON {self._settings.postgres_memory_table} USING hnsw (embedding vector_cosine_ops)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_embedding "
+                    f"ON {self._settings.database.postgres_memory_table} USING hnsw (embedding vector_cosine_ops)"
                 )
 
     def _healthcheck_sync(self) -> None:
@@ -150,7 +150,7 @@ class PostgresVectorMemoryStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_memory_table} (
+                    INSERT INTO {self._settings.database.postgres_memory_table} (
                         id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
                         source, stale, mode_key, metadata, embedding, created_at, updated_at
                     ) VALUES (
@@ -170,7 +170,7 @@ class PostgresVectorMemoryStore:
                         stale = EXCLUDED.stale,
                         mode_key = EXCLUDED.mode_key,
                         metadata = EXCLUDED.metadata,
-                        embedding = COALESCE(EXCLUDED.embedding, {self._settings.postgres_memory_table}.embedding),
+                        embedding = COALESCE(EXCLUDED.embedding, {self._settings.database.postgres_memory_table}.embedding),
                         updated_at = EXCLUDED.updated_at
                     """,
                     (
@@ -267,7 +267,7 @@ class PostgresVectorMemoryStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT COUNT(*) AS total FROM {self._settings.postgres_memory_table} {where_clause}",
+                    f"SELECT COUNT(*) AS total FROM {self._settings.database.postgres_memory_table} {where_clause}",
                     params,
                 )
                 row = cur.fetchone()
@@ -277,7 +277,7 @@ class PostgresVectorMemoryStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT COUNT(*) AS total FROM {self._settings.postgres_memory_table} "
+                    f"SELECT COUNT(*) AS total FROM {self._settings.database.postgres_memory_table} "
                     "WHERE embedding IS NULL"
                 )
                 row = cur.fetchone()
@@ -290,7 +290,7 @@ class PostgresVectorMemoryStore:
                     f"""
                     SELECT id, scope, kind, content, summary, tags, session_id, turn_id,
                            trace_id, source, stale, metadata, created_at, updated_at
-                    FROM {self._settings.postgres_memory_table}
+                    FROM {self._settings.database.postgres_memory_table}
                     WHERE embedding IS NULL
                     ORDER BY created_at ASC, id ASC
                     LIMIT %s
@@ -338,7 +338,7 @@ class PostgresVectorMemoryStore:
             with conn.cursor() as cur:
                 cur.executemany(
                     f"""
-                    UPDATE {self._settings.postgres_memory_table}
+                    UPDATE {self._settings.database.postgres_memory_table}
                     SET embedding=%s::vector,
                         metadata=metadata || %s::jsonb
                     WHERE id=%s AND embedding IS NULL
@@ -364,7 +364,7 @@ class PostgresVectorMemoryStore:
                         SELECT id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
                                source, stale, metadata, created_at, updated_at,
                                1 - (embedding <=> %s::vector) AS vector_similarity
-                        FROM {self._settings.postgres_memory_table}
+                        FROM {self._settings.database.postgres_memory_table}
                         {vector_where}
                         ORDER BY embedding <=> %s::vector
                         LIMIT %s
@@ -381,7 +381,7 @@ class PostgresVectorMemoryStore:
                         SELECT id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
                                source, stale, metadata, created_at, updated_at,
                                NULL::double precision AS vector_similarity
-                        FROM {self._settings.postgres_memory_table}
+                        FROM {self._settings.database.postgres_memory_table}
                         {fallback_where}
                         ORDER BY updated_at DESC
                         LIMIT %s
@@ -395,7 +395,7 @@ class PostgresVectorMemoryStore:
                     SELECT id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
                            source, stale, metadata, created_at, updated_at,
                            NULL::double precision AS vector_similarity
-                    FROM {self._settings.postgres_memory_table}
+                    FROM {self._settings.database.postgres_memory_table}
                     {where_clause}
                     ORDER BY updated_at DESC
                     LIMIT %s

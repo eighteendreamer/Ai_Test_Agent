@@ -4,7 +4,7 @@ Every security execution must be checked against a configured allowlist before
 it runs. This mirrors the performance mode's ``PerfTargetGuard`` approach
 (``application/performance/perf_target_guard.py``) but is scoped to the security
 testing mode: it validates a task/command target host against
-``settings.security_target_allowlist`` and refuses out-of-scope targets.
+``settings.security.security_target_allowlist`` and refuses out-of-scope targets.
 
 Design notes:
 - Empty allowlist means "do not restrict", but the guard still reports whether
@@ -57,7 +57,7 @@ class SecurityTargetGuard:
     """Validate security testing targets against a configured allowlist."""
 
     def __init__(self, settings: object | None = None) -> None:
-        raw = getattr(settings, "security_target_allowlist", "") if settings is not None else ""
+        raw = getattr(settings.security, "security_target_allowlist", "") if settings is not None else ""
         self._allowlist = self._parse_allowlist(str(raw or ""))
 
     @property

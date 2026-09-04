@@ -18,7 +18,7 @@ async def _run(args: argparse.Namespace) -> None:
     model_store.initialize()
     oauth_service = OAuthTokenService(
         settings=settings,
-        request_timeout=settings.llm_request_timeout_seconds,
+        request_timeout=settings.model.llm_request_timeout_seconds,
     )
     embedding_service = EmbeddingRuntimeService(
         model_config_store=model_store,
@@ -27,7 +27,7 @@ async def _run(args: argparse.Namespace) -> None:
     )
     memory_service = MemoryRuntimeService(
         memory_store=PostgresVectorMemoryStore(settings),
-        top_k=settings.memory_top_k,
+        top_k=settings.orchestration.memory_top_k,
         embedding_runtime_service=embedding_service,
     )
     await memory_service.initialize()

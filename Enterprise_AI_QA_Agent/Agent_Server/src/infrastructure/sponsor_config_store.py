@@ -40,7 +40,7 @@ class MySQLSponsorConfigStore:
                     f"""
                     SELECT id, name, logo_file, website_url, sponsor_type, sort_order,
                            enabled, description, created_at, updated_at
-                    FROM `{self._settings.sponsor_config_table}`
+                    FROM `{self._settings.database.sponsor_config_table}`
                     WHERE enabled=1
                     ORDER BY sort_order ASC, id ASC
                     """
@@ -55,14 +55,14 @@ class MySQLSponsorConfigStore:
             FROM information_schema.tables
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.mysql_database, self._settings.sponsor_config_table),
+            (self._settings.database.mysql_database, self._settings.database.sponsor_config_table),
         )
         return bool(cur.fetchone()["total"])
 
     def _create_table(self, cur) -> None:
         cur.execute(
             f"""
-            CREATE TABLE IF NOT EXISTS `{self._settings.sponsor_config_table}` (
+            CREATE TABLE IF NOT EXISTS `{self._settings.database.sponsor_config_table}` (
                 `id` BIGINT NOT NULL AUTO_INCREMENT,
                 `name` VARCHAR(120) NOT NULL,
                 `logo_file` VARCHAR(255) NOT NULL,
@@ -75,20 +75,20 @@ class MySQLSponsorConfigStore:
                 `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_sponsor_name` (`name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
+            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.database.mysql_charset}
             """
         )
 
     def _seed_default_sponsors(self, cur) -> None:
         cur.execute(
-            f"SELECT COUNT(*) AS total FROM `{self._settings.sponsor_config_table}`"
+            f"SELECT COUNT(*) AS total FROM `{self._settings.database.sponsor_config_table}`"
         )
         if int(cur.fetchone()["total"]) > 0:
             return
         for sponsor in DEFAULT_SPONSORS:
             cur.execute(
                 f"""
-                INSERT INTO `{self._settings.sponsor_config_table}`
+                INSERT INTO `{self._settings.database.sponsor_config_table}`
                 (name, logo_file, website_url, sponsor_type, sort_order, enabled, description)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,

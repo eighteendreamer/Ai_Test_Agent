@@ -53,7 +53,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_tool_job_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_tool_job_table} (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         turn_id TEXT NOT NULL,
@@ -79,7 +79,7 @@ class PostgresToolJobStore:
                 )
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_tool_artifact_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_tool_artifact_table} (
                         id TEXT PRIMARY KEY,
                         tool_job_id TEXT NOT NULL,
                         session_id TEXT NOT NULL,
@@ -97,20 +97,20 @@ class PostgresToolJobStore:
                     """
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_tool_job_table}_session_created "
-                    f"ON {self._settings.postgres_tool_job_table} (session_id, created_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_job_table}_session_created "
+                    f"ON {self._settings.database.postgres_tool_job_table} (session_id, created_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_tool_job_table}_status_updated "
-                    f"ON {self._settings.postgres_tool_job_table} (status, updated_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_job_table}_status_updated "
+                    f"ON {self._settings.database.postgres_tool_job_table} (status, updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_tool_artifact_table}_job_created "
-                    f"ON {self._settings.postgres_tool_artifact_table} (tool_job_id, created_at ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_artifact_table}_job_created "
+                    f"ON {self._settings.database.postgres_tool_artifact_table} (tool_job_id, created_at ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_tool_artifact_table}_session_created "
-                    f"ON {self._settings.postgres_tool_artifact_table} (session_id, created_at ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_artifact_table}_session_created "
+                    f"ON {self._settings.database.postgres_tool_artifact_table} (session_id, created_at ASC)"
                 )
 
     def _save_job_sync(self, job: ToolJobRecord) -> ToolJobRecord:
@@ -118,7 +118,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_tool_job_table} (
+                    INSERT INTO {self._settings.database.postgres_tool_job_table} (
                         id, session_id, turn_id, trace_id, call_id, tool_key, tool_name, status,
                         attempt, summary, error_message, artifact_count, input_payload, output_payload,
                         metadata, created_at, updated_at, heartbeat_at, started_at, completed_at
@@ -177,7 +177,7 @@ class PostgresToolJobStore:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT * FROM {self._settings.postgres_tool_job_table} WHERE id = %s",
+                    f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id = %s",
                     (job_id,),
                 )
                 row = cur.fetchone()
@@ -189,7 +189,7 @@ class PostgresToolJobStore:
                 if session_id:
                     cur.execute(
                         f"""
-                        SELECT * FROM {self._settings.postgres_tool_job_table}
+                        SELECT * FROM {self._settings.database.postgres_tool_job_table}
                         WHERE session_id = %s
                         ORDER BY created_at DESC
                         """,
@@ -198,7 +198,7 @@ class PostgresToolJobStore:
                 else:
                     cur.execute(
                         f"""
-                        SELECT * FROM {self._settings.postgres_tool_job_table}
+                        SELECT * FROM {self._settings.database.postgres_tool_job_table}
                         ORDER BY created_at DESC
                         """
                     )
@@ -213,7 +213,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_tool_artifact_table} (
+                    INSERT INTO {self._settings.database.postgres_tool_artifact_table} (
                         id, tool_job_id, session_id, turn_id, trace_id, tool_key, artifact_type,
                         label, path, storage_mode, content_text, metadata, created_at
                     ) VALUES (
@@ -270,7 +270,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT * FROM {self._settings.postgres_tool_artifact_table}
+                    SELECT * FROM {self._settings.database.postgres_tool_artifact_table}
                     {where_clause}
                     ORDER BY created_at ASC
                     """,
@@ -283,7 +283,7 @@ class PostgresToolJobStore:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT * FROM {self._settings.postgres_tool_artifact_table} WHERE id = %s",
+                    f"SELECT * FROM {self._settings.database.postgres_tool_artifact_table} WHERE id = %s",
                     (artifact_id,),
                 )
                 row = cur.fetchone()
@@ -303,7 +303,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT * FROM {self._settings.postgres_tool_artifact_table}
+                    SELECT * FROM {self._settings.database.postgres_tool_artifact_table}
                     WHERE session_id IN ({placeholders})
                     ORDER BY created_at ASC
                     """,
@@ -318,7 +318,7 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    UPDATE {self._settings.postgres_tool_job_table}
+                    UPDATE {self._settings.database.postgres_tool_job_table}
                     SET status = %s,
                         updated_at = %s
                     WHERE status = %s

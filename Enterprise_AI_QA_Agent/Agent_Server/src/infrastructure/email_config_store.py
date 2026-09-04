@@ -54,7 +54,7 @@ class MySQLEmailConfigStore:
                     SELECT id, config_name, provider, owner_agent_key, api_key, secret_key, sender_email, test_email,
                            test_mode, enabled, is_default, description, smtp_host, smtp_port,
                            smtp_username, extra_config_json, created_at, updated_at
-                    FROM `{self._settings.email_config_table}`
+                    FROM `{self._settings.database.email_config_table}`
                     WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL})
                     ORDER BY is_default DESC, enabled DESC, id ASC
                     """
@@ -70,7 +70,7 @@ class MySQLEmailConfigStore:
                     SELECT id, config_name, provider, owner_agent_key, api_key, secret_key, sender_email, test_email,
                            test_mode, enabled, is_default, description, smtp_host, smtp_port,
                            smtp_username, extra_config_json, created_at, updated_at
-                    FROM `{self._settings.email_config_table}`
+                    FROM `{self._settings.database.email_config_table}`
                     WHERE id=%s AND provider IN ({AGENT_MAIL_PROVIDER_SQL})
                     """,
                     (config_id,),
@@ -87,14 +87,14 @@ class MySQLEmailConfigStore:
                 if payload.is_default:
                     cur.execute(
                         f"""
-                        UPDATE `{self._settings.email_config_table}`
+                        UPDATE `{self._settings.database.email_config_table}`
                         SET enabled=0, is_default=0
                         WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL})
                         """,
                     )
                 cur.execute(
                     f"""
-                    INSERT INTO `{self._settings.email_config_table}`
+                    INSERT INTO `{self._settings.database.email_config_table}`
                     (config_name, provider, owner_agent_key, api_key, secret_key, sender_email, test_email, test_mode,
                      enabled, is_default, description, smtp_host, smtp_port, smtp_username, extra_config_json)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -120,7 +120,7 @@ class MySQLEmailConfigStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE `{self._settings.email_config_table}` "
+                    f"UPDATE `{self._settings.database.email_config_table}` "
                     "SET extra_config_json=%s WHERE id=%s",
                     (json.dumps(extra, ensure_ascii=False), config_id),
                 )
@@ -136,7 +136,7 @@ class MySQLEmailConfigStore:
                 if merged.is_default:
                     cur.execute(
                         f"""
-                        UPDATE `{self._settings.email_config_table}`
+                        UPDATE `{self._settings.database.email_config_table}`
                         SET enabled=0, is_default=0
                         WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL}) AND id<>%s
                         """,
@@ -144,7 +144,7 @@ class MySQLEmailConfigStore:
                     )
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.email_config_table}`
+                    UPDATE `{self._settings.database.email_config_table}`
                     SET config_name=%s,
                         provider=%s,
                         owner_agent_key=%s,
@@ -190,14 +190,14 @@ class MySQLEmailConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.email_config_table}`
+                    UPDATE `{self._settings.database.email_config_table}`
                     SET enabled=0, is_default=0
                     WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL})
                     """,
                 )
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.email_config_table}`
+                    UPDATE `{self._settings.database.email_config_table}`
                     SET enabled=1, is_default=1
                     WHERE id=%s
                     """,
@@ -211,7 +211,7 @@ class MySQLEmailConfigStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"DELETE FROM `{self._settings.email_config_table}` WHERE id=%s",
+                    f"DELETE FROM `{self._settings.database.email_config_table}` WHERE id=%s",
                     (config_id,),
                 )
             conn.commit()
@@ -250,7 +250,7 @@ class MySQLEmailConfigStore:
             FROM information_schema.tables
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.mysql_database, self._settings.email_config_table),
+            (self._settings.database.mysql_database, self._settings.database.email_config_table),
         )
         return bool(cur.fetchone()["total"])
 
@@ -261,14 +261,14 @@ class MySQLEmailConfigStore:
             FROM information_schema.columns
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.mysql_database, self._settings.email_config_table),
+            (self._settings.database.mysql_database, self._settings.database.email_config_table),
         )
         return {row["COLUMN_NAME"] for row in cur.fetchall()}
 
     def _create_table(self, cur) -> None:
         cur.execute(
             f"""
-            CREATE TABLE IF NOT EXISTS `{self._settings.email_config_table}` (
+            CREATE TABLE IF NOT EXISTS `{self._settings.database.email_config_table}` (
                 `id` BIGINT NOT NULL AUTO_INCREMENT,
                 `config_name` VARCHAR(120) NOT NULL,
                 `provider` VARCHAR(64) NOT NULL,
@@ -289,7 +289,7 @@ class MySQLEmailConfigStore:
                 `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_email_config_name` (`config_name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
+            ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.database.mysql_charset}
             """
         )
 
@@ -313,10 +313,10 @@ class MySQLEmailConfigStore:
         }
         for name, statement in required_columns.items():
             if name not in columns:
-                cur.execute(statement.format(table=self._settings.email_config_table))
+                cur.execute(statement.format(table=self._settings.database.email_config_table))
         cur.execute(
             f"""
-            UPDATE `{self._settings.email_config_table}`
+            UPDATE `{self._settings.database.email_config_table}`
             SET config_name = CASE
                 WHEN config_name IS NULL OR config_name = '' THEN CONCAT(provider, '-', id)
                 ELSE config_name
@@ -325,14 +325,14 @@ class MySQLEmailConfigStore:
         )
         cur.execute(
             f"""
-            UPDATE `{self._settings.email_config_table}`
+            UPDATE `{self._settings.database.email_config_table}`
             SET enabled=0, is_default=0
             WHERE provider NOT IN ({AGENT_MAIL_PROVIDER_SQL})
             """
         )
         cur.execute(
             f"""
-            UPDATE `{self._settings.email_config_table}`
+            UPDATE `{self._settings.database.email_config_table}`
             SET owner_agent_key='global'
             WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL})
             """
@@ -340,7 +340,7 @@ class MySQLEmailConfigStore:
         cur.execute(
             f"""
             SELECT id
-            FROM `{self._settings.email_config_table}`
+            FROM `{self._settings.database.email_config_table}`
             WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL}) AND enabled=1
             ORDER BY is_default DESC, id ASC
             LIMIT 1
@@ -351,7 +351,7 @@ class MySQLEmailConfigStore:
             active_id = int(active["id"])
             cur.execute(
                 f"""
-                UPDATE `{self._settings.email_config_table}`
+                UPDATE `{self._settings.database.email_config_table}`
                 SET enabled=CASE WHEN id=%s THEN 1 ELSE 0 END,
                     is_default=CASE WHEN id=%s THEN 1 ELSE 0 END
                 WHERE provider IN ({AGENT_MAIL_PROVIDER_SQL})
@@ -362,9 +362,9 @@ class MySQLEmailConfigStore:
     def _migrate_legacy_table(self, cur) -> None:
         legacy_rows = self._fetch_legacy_rows(cur)
         backup_name = (
-            f"{self._settings.email_config_table}_legacy_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+            f"{self._settings.database.email_config_table}_legacy_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         )
-        cur.execute(f"RENAME TABLE `{self._settings.email_config_table}` TO `{backup_name}`")
+        cur.execute(f"RENAME TABLE `{self._settings.database.email_config_table}` TO `{backup_name}`")
         self._create_table(cur)
         for row in legacy_rows:
             if str(row.get("provider") or "").strip().lower() in AGENT_MAIL_PROVIDERS:
@@ -374,7 +374,7 @@ class MySQLEmailConfigStore:
         cur.execute(
             f"""
             SELECT provider, enabled, is_default, from_email, from_name, reply_to, config_json, created_at, updated_at
-            FROM `{self._settings.email_config_table}`
+            FROM `{self._settings.database.email_config_table}`
             ORDER BY provider ASC
             """
         )
@@ -412,7 +412,7 @@ class MySQLEmailConfigStore:
     def _insert_record(self, cur, record: EmailConfigRecord) -> None:
         cur.execute(
             f"""
-            INSERT INTO `{self._settings.email_config_table}`
+            INSERT INTO `{self._settings.database.email_config_table}`
             (config_name, provider, owner_agent_key, api_key, secret_key, sender_email, test_email, test_mode,
              enabled, is_default, description, smtp_host, smtp_port, smtp_username, extra_config_json, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -501,7 +501,7 @@ class MySQLEmailConfigStore:
         )
 
     def _mailbox_config_dir(self, profile_key: str) -> Path:
-        root = Path(self._settings.agently_cli_config_root).expanduser()
+        root = Path(self._settings.mail.agently_cli_config_root).expanduser()
         if not root.is_absolute():
             root = Path(__file__).resolve().parents[2] / root
         path = (root / profile_key).resolve()

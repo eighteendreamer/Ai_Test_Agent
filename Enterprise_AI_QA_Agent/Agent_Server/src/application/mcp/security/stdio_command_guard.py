@@ -16,7 +16,7 @@ class StdioCommandGuard:
 
     @classmethod
     def from_settings(cls, settings) -> "StdioCommandGuard":
-        raw = getattr(settings, "mcp_stdio_command_allowlist", []) or []
+        raw = getattr(settings.orchestration, "mcp_stdio_command_allowlist", []) or []
         return cls(allowlist=tuple(_normalize_executable(item) for item in raw if str(item).strip()))
 
     def validate(

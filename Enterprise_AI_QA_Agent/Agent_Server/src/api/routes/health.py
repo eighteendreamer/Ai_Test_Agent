@@ -31,5 +31,5 @@ async def health(request: Request):
         "memory_target": postgres_database_url(settings),
         "postgres_ok": postgres_status.ok,
         "postgres_error": postgres_status.error,
-        "knowledge_target": f"bolt://{settings.memgraph_host}:{settings.memgraph_port}",
+        "knowledge_target": f"bolt://{settings.database.memgraph_host}:{settings.database.memgraph_port}",
     }

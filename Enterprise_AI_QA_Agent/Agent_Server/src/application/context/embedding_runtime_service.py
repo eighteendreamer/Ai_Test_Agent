@@ -57,7 +57,7 @@ class EmbeddingRuntimeService:
         )
         client = resolve_embedding_client(
             resolved_config,
-            timeout_seconds=self._settings.llm_request_timeout_seconds,
+            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
         )
         cache_namespace = "|".join(
             (
@@ -106,7 +106,7 @@ class EmbeddingRuntimeService:
             provider=resolved_config.provider,
             adapter=client.key,
             original_dimension=original_dimension or len(vectors[0]),
-            stored_dimension=self._settings.postgres_vector_dimension,
+            stored_dimension=self._settings.database.postgres_vector_dimension,
             latency_ms=int((perf_counter() - started_at) * 1000),
         )
 
@@ -128,7 +128,7 @@ class EmbeddingRuntimeService:
         return token
 
     def _normalize_dimension(self, vector: list[float]) -> list[float]:
-        target = self._settings.postgres_vector_dimension
+        target = self._settings.database.postgres_vector_dimension
         values = [float(value) for value in vector[:target]]
         if len(values) < target:
             values.extend([0.0] * (target - len(values)))

@@ -236,7 +236,7 @@ async def upload_screenshot(
         backend = "rustfs"
     else:
         artifact_root = (
-            Path(__file__).resolve().parents[2] / request.app.state.settings.artifact_root_dir
+            Path(__file__).resolve().parents[2] / request.app.state.settings.storage.artifact_root_dir
         )
         target_dir = artifact_root / "recordings" / recording_id
         target_dir.mkdir(parents=True, exist_ok=True)

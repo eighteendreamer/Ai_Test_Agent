@@ -433,7 +433,7 @@ class IntegrationCatalogService:
         auth: tuple[str, str] | None,
     ) -> httpx.Response:
         async with httpx.AsyncClient(
-            timeout=min(self._settings.llm_request_timeout_seconds, 30.0),
+            timeout=min(self._settings.model.llm_request_timeout_seconds, 30.0),
             follow_redirects=True,
         ) as client:
             return await client.get(target_url, headers=headers, auth=auth)
@@ -453,14 +453,14 @@ class IntegrationCatalogService:
             },
         }
         async with httpx.AsyncClient(
-            timeout=min(self._settings.llm_request_timeout_seconds, 30.0),
+            timeout=min(self._settings.model.llm_request_timeout_seconds, 30.0),
             follow_redirects=True,
         ) as client:
             return await client.post(target_url, headers=headers, json=payload)
 
     async def _send_mcp_sse_probe(self, target_url: str, *, headers: dict[str, str]) -> httpx.Response:
         async with httpx.AsyncClient(
-            timeout=min(self._settings.llm_request_timeout_seconds, 30.0),
+            timeout=min(self._settings.model.llm_request_timeout_seconds, 30.0),
             follow_redirects=True,
         ) as client:
             return await client.get(target_url, headers=headers)

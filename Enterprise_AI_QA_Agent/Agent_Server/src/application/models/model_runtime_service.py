@@ -100,7 +100,7 @@ class ModelRuntimeService:
 
         client = resolve_client(
             config,
-            timeout_seconds=self._settings.llm_request_timeout_seconds,
+            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
         )
         return await self._invoke_with_client(client, config, api_key, request)
 

@@ -34,7 +34,7 @@ class UIExplorationService:
         self._memory_runtime_service = memory_runtime_service
         self._ui_graph_store = ui_graph_store
         self._playwright_runtime = PythonPlaywrightCliRuntime(settings)
-        self._artifact_root = Path(__file__).resolve().parents[2] / settings.artifact_root_dir
+        self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
 
     async def explore(self, arguments: dict[str, Any], context: ToolExecutionContext) -> dict[str, Any]:
         target_url = str(arguments.get("target_url") or arguments.get("url") or "").strip()
@@ -73,7 +73,7 @@ class UIExplorationService:
         if arguments.get("include_hidden"):
             args.append("--include-hidden")
         try:
-            base_timeout = int(self._settings.browser_action_timeout_seconds or 15)
+            base_timeout = int(self._settings.orchestration.browser_action_timeout_seconds or 15)
             per_page_budget = max(base_timeout, 8 + max_interactions * 4)
             command_result = await self._playwright_runtime.run(
                 session_name=f"ui-explorer-{context.session_id}",

@@ -16,7 +16,7 @@ class MemgraphRuntimeProvider:
 
     @property
     def bolt_uri(self) -> str:
-        return f"bolt://{self._settings.memgraph_host}:{self._settings.memgraph_port}"
+        return f"bolt://{self._settings.database.memgraph_host}:{self._settings.database.memgraph_port}"
 
     def initialize(self) -> None:
         self.driver().verify_connectivity()
@@ -26,8 +26,8 @@ class MemgraphRuntimeProvider:
             from neo4j import GraphDatabase
 
             auth = None
-            if self._settings.memgraph_user:
-                auth = (self._settings.memgraph_user, self._settings.memgraph_password)
+            if self._settings.database.memgraph_user:
+                auth = (self._settings.database.memgraph_user, self._settings.database.memgraph_password)
             connection_timeout = float(getattr(self._settings, "memgraph_connect_timeout_seconds", 1.0) or 1.0)
             self._driver = GraphDatabase.driver(
                 self.bolt_uri,

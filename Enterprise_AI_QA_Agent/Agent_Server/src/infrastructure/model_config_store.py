@@ -47,7 +47,7 @@ class MySQLModelConfigStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS `{self._settings.llm_model_table}` (
+                    CREATE TABLE IF NOT EXISTS `{self._settings.database.llm_model_table}` (
                         `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                         `model_name` VARCHAR(255) NOT NULL UNIQUE,
                         `api_key` TEXT NULL,
@@ -60,59 +60,59 @@ class MySQLModelConfigStore:
                         `is_active` TINYINT(1) NOT NULL DEFAULT 0,
                         `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                    ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.mysql_charset}
+                    ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.database.mysql_charset}
                     """
                 )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'id'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'id'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT UNIQUE FIRST
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'capability_overrides'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'capability_overrides'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `capability_overrides` JSON NULL AFTER `provider`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'transport'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'transport'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `transport` VARCHAR(64) NULL AFTER `provider`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'applications'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'applications'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `applications` JSON NULL AFTER `transport`
                         """
                     )
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.llm_model_table}`
+                    UPDATE `{self._settings.database.llm_model_table}`
                     SET `applications` = JSON_ARRAY('task_execution')
                     WHERE `applications` IS NULL OR JSON_LENGTH(`applications`) = 0
                     """
                 )
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.llm_model_table}`
+                    UPDATE `{self._settings.database.llm_model_table}`
                     SET `applications` = JSON_ARRAY(
                         JSON_UNQUOTE(JSON_EXTRACT(`applications`, '$[0]'))
                     )
@@ -121,7 +121,7 @@ class MySQLModelConfigStore:
                 )
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.llm_model_table}`
+                    UPDATE `{self._settings.database.llm_model_table}`
                     SET `transport` =
                         CASE
                             WHEN LOWER(TRIM(`provider`)) IN ('anthropic') THEN 'anthropic_messages'
@@ -132,103 +132,103 @@ class MySQLModelConfigStore:
                     """
                 )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'auth_type'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'auth_type'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `auth_type` VARCHAR(32) NOT NULL DEFAULT 'api_key' AFTER `transport`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_client_id'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_client_id'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_client_id` TEXT NULL AFTER `auth_type`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_client_secret'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_client_secret'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_client_secret` TEXT NULL AFTER `oauth_client_id`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_token_endpoint'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_token_endpoint'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_token_endpoint` VARCHAR(1024) NULL AFTER `oauth_client_secret`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_scope'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_scope'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_scope` VARCHAR(512) NULL AFTER `oauth_token_endpoint`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_provider'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_provider'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_provider` VARCHAR(64) NULL AFTER `auth_type`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'oauth_refresh_token'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'oauth_refresh_token'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `oauth_refresh_token` TEXT NULL AFTER `oauth_scope`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'context_window'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'context_window'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `context_window` BIGINT NULL AFTER `capability_overrides`
                         """
                     )
                 cur.execute(
-                    f"SHOW COLUMNS FROM `{self._settings.llm_model_table}` LIKE 'max_output_tokens'"
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'max_output_tokens'"
                 )
                 if not cur.fetchone():
                     cur.execute(
                         f"""
-                        ALTER TABLE `{self._settings.llm_model_table}`
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
                         ADD COLUMN `max_output_tokens` INT NULL AFTER `context_window`
                         """
                     )
                 cur.execute(
-                    f"SELECT COUNT(*) AS total FROM `{self._settings.llm_model_table}`"
+                    f"SELECT COUNT(*) AS total FROM `{self._settings.database.llm_model_table}`"
                 )
                 total = cur.fetchone()["total"]
                 if total == 0:
                     cur.executemany(
                         f"""
-                        INSERT INTO `{self._settings.llm_model_table}`
+                        INSERT INTO `{self._settings.database.llm_model_table}`
                         (model_name, api_key, base_url, provider, transport, applications, is_active)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """,
@@ -286,7 +286,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     ORDER BY id ASC
                     """
                 )
@@ -313,7 +313,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (model_name,),
@@ -331,7 +331,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (payload.model_name,),
@@ -339,11 +339,11 @@ class MySQLModelConfigStore:
                 existing_row = cur.fetchone()
                 if should_activate:
                     cur.execute(
-                        f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0"
+                        f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0"
                     )
                 cur.execute(
                     f"""
-                    INSERT INTO `{self._settings.llm_model_table}`
+                    INSERT INTO `{self._settings.database.llm_model_table}`
                     (`model_name`, `api_key`, `base_url`, `provider`, `transport`, `applications`, `capability_overrides`, `is_active`,
                      `auth_type`, `oauth_provider`, `oauth_refresh_token`, `context_window`, `max_output_tokens`)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -384,7 +384,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (payload.model_name,),
@@ -401,7 +401,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (original_model_name,),
@@ -413,7 +413,7 @@ class MySQLModelConfigStore:
                 target_model_name = payload.model_name.strip()
                 if target_model_name != original_model_name:
                     cur.execute(
-                        f"SELECT COUNT(*) AS total FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                        f"SELECT COUNT(*) AS total FROM `{self._settings.database.llm_model_table}` WHERE model_name=%s",
                         (target_model_name,),
                     )
                     duplicate_total = cur.fetchone()["total"]
@@ -421,11 +421,11 @@ class MySQLModelConfigStore:
                         raise ValueError(f"Model '{target_model_name}' already exists.")
 
                 if should_activate:
-                    cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+                    cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
 
                 cur.execute(
                     f"""
-                    UPDATE `{self._settings.llm_model_table}`
+                    UPDATE `{self._settings.database.llm_model_table}`
                     SET `model_name`=%s,
                         `api_key`=%s,
                         `base_url`=%s,
@@ -465,7 +465,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (target_model_name,),
@@ -478,7 +478,7 @@ class MySQLModelConfigStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT {self._SELECT_COLS} FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                    f"SELECT {self._SELECT_COLS} FROM `{self._settings.database.llm_model_table}` WHERE model_name=%s",
                     (model_name,),
                 )
                 existing_row = cur.fetchone()
@@ -490,15 +490,15 @@ class MySQLModelConfigStore:
                     raise ValueError(
                         "Only a model applied to task execution can be activated as the main model."
                     )
-                cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+                cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
                 cur.execute(
-                    f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
+                    f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
                     (model_name,),
                 )
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (model_name,),
@@ -513,7 +513,7 @@ class MySQLModelConfigStore:
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
-                    FROM `{self._settings.llm_model_table}`
+                    FROM `{self._settings.database.llm_model_table}`
                     WHERE model_name=%s
                     """,
                     (model_name,),
@@ -524,7 +524,7 @@ class MySQLModelConfigStore:
 
                 deleted_record = self._row_to_record(existing_row)
                 cur.execute(
-                    f"DELETE FROM `{self._settings.llm_model_table}` WHERE model_name=%s",
+                    f"DELETE FROM `{self._settings.database.llm_model_table}` WHERE model_name=%s",
                     (model_name,),
                 )
 
@@ -533,7 +533,7 @@ class MySQLModelConfigStore:
                     cur.execute(
                         f"""
                         SELECT {self._SELECT_COLS}
-                        FROM `{self._settings.llm_model_table}`
+                        FROM `{self._settings.database.llm_model_table}`
                         WHERE JSON_CONTAINS(`applications`, JSON_QUOTE('task_execution'))
                         ORDER BY id ASC
                         LIMIT 1
@@ -541,15 +541,15 @@ class MySQLModelConfigStore:
                     )
                     replacement_row = cur.fetchone()
                     if replacement_row:
-                        cur.execute(f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=0")
+                        cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
                         cur.execute(
-                            f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
+                            f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
                             (replacement_row["model_name"],),
                         )
                         cur.execute(
                             f"""
                             SELECT {self._SELECT_COLS}
-                            FROM `{self._settings.llm_model_table}`
+                            FROM `{self._settings.database.llm_model_table}`
                             WHERE model_name=%s
                             """,
                             (replacement_row["model_name"],),
@@ -562,7 +562,7 @@ class MySQLModelConfigStore:
         cur.execute(
             f"""
             SELECT COUNT(*) AS total
-            FROM `{self._settings.llm_model_table}`
+            FROM `{self._settings.database.llm_model_table}`
             WHERE `is_active`=1
               AND JSON_CONTAINS(`applications`, JSON_QUOTE('task_execution'))
             """
@@ -572,7 +572,7 @@ class MySQLModelConfigStore:
         cur.execute(
             f"""
             SELECT `model_name`
-            FROM `{self._settings.llm_model_table}`
+            FROM `{self._settings.database.llm_model_table}`
             WHERE JSON_CONTAINS(`applications`, JSON_QUOTE('task_execution'))
             ORDER BY `id` ASC
             LIMIT 1
@@ -581,7 +581,7 @@ class MySQLModelConfigStore:
         replacement = cur.fetchone()
         if replacement:
             cur.execute(
-                f"UPDATE `{self._settings.llm_model_table}` SET `is_active`=1 WHERE `model_name`=%s",
+                f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE `model_name`=%s",
                 (replacement["model_name"],),
             )
 
@@ -664,7 +664,7 @@ class MySQLModelConfigStore:
             api_base_url=base_url,
             api_key=row.get("api_key"),
             api_key_env=None,
-            description=f"Active model config loaded from MySQL table `{self._settings.llm_model_table}`.",
+            description=f"Active model config loaded from MySQL table `{self._settings.database.llm_model_table}`.",
             supports_tools=capabilities.tool_calling,
             supports_vision=capabilities.vision,
             supports_reasoning=capabilities.reasoning,

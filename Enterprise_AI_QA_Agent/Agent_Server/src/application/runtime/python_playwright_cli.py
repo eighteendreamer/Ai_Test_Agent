@@ -90,7 +90,7 @@ class PythonPlaywrightCliRuntime:
         raw: bool = False,
         timeout_seconds: int | None = None,
     ) -> dict[str, Any]:
-        timeout = timeout_seconds or int(self._settings.browser_action_timeout_seconds or 30)
+        timeout = timeout_seconds or int(self._settings.orchestration.browser_action_timeout_seconds or 30)
         timeout = max(1, min(timeout, 1800))
         try:
             return await asyncio.wait_for(
@@ -159,9 +159,9 @@ class PythonPlaywrightCliRuntime:
                 "Install it with: python -m pip install playwright && python -m playwright install"
             ) from exc
 
-        browser_name = self._option_value(open_args, "--browser") or self._settings.browser_default_name or "chromium"
+        browser_name = self._option_value(open_args, "--browser") or self._settings.orchestration.browser_default_name or "chromium"
         browser_name = browser_name.lower()
-        headed = "--headed" in open_args or not bool(self._settings.browser_headless)
+        headed = "--headed" in open_args or not bool(self._settings.orchestration.browser_headless)
         persistent = "--persistent" in open_args or bool(self._option_value(open_args, "--profile"))
         profile = self._option_value(open_args, "--profile")
         output_dir = cwd / ".playwright-cli" / self._slug(session_name)
@@ -169,8 +169,8 @@ class PythonPlaywrightCliRuntime:
 
         playwright = await async_playwright().start()
         viewport = {
-            "width": int(self._settings.browser_window_width or 1440),
-            "height": int(self._settings.browser_window_height or 960),
+            "width": int(self._settings.orchestration.browser_window_width or 1440),
+            "height": int(self._settings.orchestration.browser_window_height or 960),
         }
         launch_options: dict[str, Any] = {"headless": not headed}
         browser_type_name = browser_name

@@ -140,14 +140,14 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_session_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_session_table} (
                         id TEXT PRIMARY KEY,
                         title TEXT NOT NULL,
                         status TEXT NOT NULL,
                         session_mode TEXT NOT NULL,
                         runtime_mode TEXT NOT NULL,
                         mode_key TEXT NOT NULL DEFAULT 'default',
-                        project_id UUID NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID NULL REFERENCES {self._settings.database.postgres_project_table}(id),
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
                         preferred_model TEXT NULL,
@@ -159,12 +159,12 @@ class PostgresSessionStore:
                     """
                 )
                 cur.execute(
-                    f"ALTER TABLE {self._settings.postgres_session_table} "
-                    f"ADD COLUMN IF NOT EXISTS project_id UUID NULL REFERENCES {self._settings.postgres_project_table}(id)"
+                    f"ALTER TABLE {self._settings.database.postgres_session_table} "
+                    f"ADD COLUMN IF NOT EXISTS project_id UUID NULL REFERENCES {self._settings.database.postgres_project_table}(id)"
                 )
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_message_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_message_table} (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         role TEXT NOT NULL,
@@ -176,7 +176,7 @@ class PostgresSessionStore:
                 )
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_event_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_event_table} (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         type TEXT NOT NULL,
@@ -187,7 +187,7 @@ class PostgresSessionStore:
                 )
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_snapshot_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_snapshot_table} (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         version INTEGER NOT NULL,
@@ -200,7 +200,7 @@ class PostgresSessionStore:
                 )
                 cur.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS {self._settings.postgres_approval_table} (
+                    CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_approval_table} (
                         id TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         tool_key TEXT NOT NULL,
@@ -215,44 +215,44 @@ class PostgresSessionStore:
                     """
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_updated "
-                    f"ON {self._settings.postgres_session_table} (updated_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_session_table}_updated "
+                    f"ON {self._settings.database.postgres_session_table} (updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_project_updated "
-                    f"ON {self._settings.postgres_session_table} (project_id, updated_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_session_table}_project_updated "
+                    f"ON {self._settings.database.postgres_session_table} (project_id, updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_message_table}_session_created "
-                    f"ON {self._settings.postgres_message_table} (session_id, created_at ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_message_table}_session_created "
+                    f"ON {self._settings.database.postgres_message_table} (session_id, created_at ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_event_table}_session_timestamp "
-                    f"ON {self._settings.postgres_event_table} (session_id, timestamp ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_event_table}_session_timestamp "
+                    f"ON {self._settings.database.postgres_event_table} (session_id, timestamp ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_event_table}_session_timestamp_id "
-                    f"ON {self._settings.postgres_event_table} (session_id, timestamp ASC, id ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_event_table}_session_timestamp_id "
+                    f"ON {self._settings.database.postgres_event_table} (session_id, timestamp ASC, id ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_snapshot_table}_session_version "
-                    f"ON {self._settings.postgres_snapshot_table} (session_id, version DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_snapshot_table}_session_version "
+                    f"ON {self._settings.database.postgres_snapshot_table} (session_id, version DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_approval_table}_session_created "
-                    f"ON {self._settings.postgres_approval_table} (session_id, created_at ASC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_approval_table}_session_created "
+                    f"ON {self._settings.database.postgres_approval_table} (session_id, created_at ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_mode_updated "
-                    f"ON {self._settings.postgres_session_table} (mode_key, updated_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_session_table}_mode_updated "
+                    f"ON {self._settings.database.postgres_session_table} (mode_key, updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_status "
-                    f"ON {self._settings.postgres_session_table} (status)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_session_table}_status "
+                    f"ON {self._settings.database.postgres_session_table} (status)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.postgres_session_table}_created "
-                    f"ON {self._settings.postgres_session_table} (created_at DESC)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_session_table}_created "
+                    f"ON {self._settings.database.postgres_session_table} (created_at DESC)"
                 )
 
     def _save_session_sync(self, session: SessionRecord) -> SessionRecord:
@@ -262,7 +262,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_session_table} (
+                    INSERT INTO {self._settings.database.postgres_session_table} (
                         id, title, status, session_mode, runtime_mode, mode_key, project_id,
                         created_at, updated_at, preferred_model, selected_agent,
                         metadata, event_count, snapshot_count
@@ -282,8 +282,8 @@ class PostgresSessionStore:
                         preferred_model = EXCLUDED.preferred_model,
                         selected_agent = EXCLUDED.selected_agent,
                         metadata = EXCLUDED.metadata,
-                        event_count = GREATEST({self._settings.postgres_session_table}.event_count, EXCLUDED.event_count),
-                        snapshot_count = GREATEST({self._settings.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
+                        event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
+                        snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
                     RETURNING event_count, snapshot_count
                     """,
                     (
@@ -311,7 +311,7 @@ class PostgresSessionStore:
                         continue
                     cur.execute(
                         f"""
-                        INSERT INTO {self._settings.postgres_message_table} (
+                        INSERT INTO {self._settings.database.postgres_message_table} (
                             id, session_id, role, content, created_at, metadata
                         ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                         ON CONFLICT (id) DO UPDATE SET
@@ -336,7 +336,7 @@ class PostgresSessionStore:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT * FROM {self._settings.postgres_session_table} WHERE id = %s",
+                    f"SELECT * FROM {self._settings.database.postgres_session_table} WHERE id = %s",
                     (session_id,),
                 )
                 row = cur.fetchone()
@@ -346,7 +346,7 @@ class PostgresSessionStore:
                 if include_messages:
                     cur.execute(
                         f"""
-                        SELECT * FROM {self._settings.postgres_message_table}
+                        SELECT * FROM {self._settings.database.postgres_message_table}
                         WHERE session_id = %s
                         ORDER BY created_at ASC
                         """,
@@ -371,7 +371,7 @@ class PostgresSessionStore:
             conditions.append("updated_at < %s")
             params.append(cursor_before)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        query = f"SELECT * FROM {self._settings.postgres_session_table} {where} ORDER BY updated_at DESC"
+        query = f"SELECT * FROM {self._settings.database.postgres_session_table} {where} ORDER BY updated_at DESC"
         if limit is not None:
             query += " LIMIT %s"
             params.append(max(int(limit or 0), 0))
@@ -415,7 +415,7 @@ class PostgresSessionStore:
                             AS worker_dispatches,
                         COALESCE(metadata->>'parent_session_id', '')
                             AS parent_session_id
-                    FROM {self._settings.postgres_session_table}
+                    FROM {self._settings.database.postgres_session_table}
                     WHERE mode_key = 'code_review'
                        OR session_mode = 'background_task'
                     ORDER BY updated_at DESC
@@ -437,10 +437,10 @@ class PostgresSessionStore:
                            s.preferred_model,
                            (
                                SELECT COUNT(*)
-                               FROM {self._settings.postgres_message_table} m
+                               FROM {self._settings.database.postgres_message_table} m
                                WHERE m.session_id = s.id
                            ) AS message_count
-                    FROM {self._settings.postgres_session_table} s
+                    FROM {self._settings.database.postgres_session_table} s
                     ORDER BY s.updated_at DESC
                     LIMIT %s
                     """,
@@ -462,13 +462,13 @@ class PostgresSessionStore:
                     f"""
                     WITH recent_sessions AS (
                         SELECT id
-                        FROM {self._settings.postgres_session_table}
+                        FROM {self._settings.database.postgres_session_table}
                         ORDER BY updated_at DESC
                         LIMIT %s
                     )
                     SELECT m.session_id, m.role, m.content, m.created_at
                     FROM recent_sessions rs
-                    JOIN {self._settings.postgres_message_table} m
+                    JOIN {self._settings.database.postgres_message_table} m
                       ON m.session_id = rs.id
                     WHERE m.role = ANY(%s)
                       AND BTRIM(m.content) <> ''
@@ -499,7 +499,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_event_table} (
+                    INSERT INTO {self._settings.database.postgres_event_table} (
                         id, session_id, type, timestamp, payload
                     ) VALUES (%s, %s, %s, %s, %s::jsonb)
                     """,
@@ -513,7 +513,7 @@ class PostgresSessionStore:
                 )
                 cur.execute(
                     f"""
-                    UPDATE {self._settings.postgres_session_table}
+                    UPDATE {self._settings.database.postgres_session_table}
                     SET event_count = event_count + 1,
                         updated_at = %s
                     WHERE id = %s
@@ -533,7 +533,7 @@ class PostgresSessionStore:
                 if after_event_id:
                     cur.execute(
                         f"""
-                        SELECT timestamp, id FROM {self._settings.postgres_event_table}
+                        SELECT timestamp, id FROM {self._settings.database.postgres_event_table}
                         WHERE session_id = %s AND id = %s
                         LIMIT 1
                         """,
@@ -545,7 +545,7 @@ class PostgresSessionStore:
                     if limit_value is not None:
                         cur.execute(
                             f"""
-                            SELECT * FROM {self._settings.postgres_event_table}
+                            SELECT * FROM {self._settings.database.postgres_event_table}
                             WHERE session_id = %s
                               AND (timestamp > %s OR (timestamp = %s AND id > %s))
                             ORDER BY timestamp ASC, id ASC
@@ -562,7 +562,7 @@ class PostgresSessionStore:
                     else:
                         cur.execute(
                             f"""
-                            SELECT * FROM {self._settings.postgres_event_table}
+                            SELECT * FROM {self._settings.database.postgres_event_table}
                             WHERE session_id = %s
                               AND (timestamp > %s OR (timestamp = %s AND id > %s))
                             ORDER BY timestamp ASC, id ASC
@@ -578,7 +578,7 @@ class PostgresSessionStore:
                     cur.execute(
                         f"""
                         SELECT * FROM (
-                            SELECT * FROM {self._settings.postgres_event_table}
+                            SELECT * FROM {self._settings.database.postgres_event_table}
                             WHERE session_id = %s
                             ORDER BY timestamp DESC, id DESC
                             LIMIT %s
@@ -590,7 +590,7 @@ class PostgresSessionStore:
                 else:
                     cur.execute(
                         f"""
-                        SELECT * FROM {self._settings.postgres_event_table}
+                        SELECT * FROM {self._settings.database.postgres_event_table}
                         WHERE session_id = %s
                         ORDER BY timestamp ASC, id ASC
                         """,
@@ -614,7 +614,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_snapshot_table} (
+                    INSERT INTO {self._settings.database.postgres_snapshot_table} (
                         id, session_id, version, stage, created_at, graph_state
                     ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                     ON CONFLICT (id) DO UPDATE SET
@@ -635,7 +635,7 @@ class PostgresSessionStore:
                 )
                 cur.execute(
                     f"""
-                    UPDATE {self._settings.postgres_session_table}
+                    UPDATE {self._settings.database.postgres_session_table}
                     SET snapshot_count = GREATEST(snapshot_count, %s),
                         updated_at = %s
                     WHERE id = %s
@@ -657,7 +657,7 @@ class PostgresSessionStore:
                     cur.execute(
                         f"""
                         SELECT * FROM (
-                            SELECT {columns} FROM {self._settings.postgres_snapshot_table}
+                            SELECT {columns} FROM {self._settings.database.postgres_snapshot_table}
                             WHERE session_id = %s
                             ORDER BY version DESC
                             LIMIT %s
@@ -669,7 +669,7 @@ class PostgresSessionStore:
                 else:
                     cur.execute(
                         f"""
-                        SELECT {columns} FROM {self._settings.postgres_snapshot_table}
+                        SELECT {columns} FROM {self._settings.database.postgres_snapshot_table}
                         WHERE session_id = %s
                         ORDER BY version ASC
                         """,
@@ -683,7 +683,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT * FROM {self._settings.postgres_snapshot_table}
+                    SELECT * FROM {self._settings.database.postgres_snapshot_table}
                     WHERE session_id = %s
                     ORDER BY version DESC
                     LIMIT 1
@@ -699,7 +699,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    INSERT INTO {self._settings.postgres_approval_table} (
+                    INSERT INTO {self._settings.database.postgres_approval_table} (
                         id, session_id, tool_key, tool_name, reason, status,
                         created_at, resolved_at, decision_note, metadata
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
@@ -728,7 +728,7 @@ class PostgresSessionStore:
                     ),
                 )
                 cur.execute(
-                    f"UPDATE {self._settings.postgres_session_table} SET updated_at = %s WHERE id = %s",
+                    f"UPDATE {self._settings.database.postgres_session_table} SET updated_at = %s WHERE id = %s",
                     (now, session_id),
                 )
 
@@ -737,7 +737,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    SELECT * FROM {self._settings.postgres_approval_table}
+                    SELECT * FROM {self._settings.database.postgres_approval_table}
                     WHERE session_id = %s
                     ORDER BY created_at ASC
                     """,
@@ -758,7 +758,7 @@ class PostgresSessionStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    UPDATE {self._settings.postgres_approval_table}
+                    UPDATE {self._settings.database.postgres_approval_table}
                     SET status = %s,
                         decision_note = %s,
                         resolved_at = %s
@@ -770,7 +770,7 @@ class PostgresSessionStore:
                 row = cur.fetchone()
                 if row is None:
                     cur.execute(
-                        f"SELECT * FROM {self._settings.postgres_approval_table} "
+                        f"SELECT * FROM {self._settings.database.postgres_approval_table} "
                         "WHERE id = %s AND session_id = %s",
                         (approval_id, session_id),
                     )
@@ -782,7 +782,7 @@ class PostgresSessionStore:
                         return approval
                     raise ValueError(f"Approval already resolved: {approval_id}")
                 cur.execute(
-                    f"UPDATE {self._settings.postgres_session_table} SET updated_at = %s WHERE id = %s",
+                    f"UPDATE {self._settings.database.postgres_session_table} SET updated_at = %s WHERE id = %s",
                     (resolved_at, session_id),
                 )
         return _approval_from_row(row)
@@ -792,14 +792,14 @@ class PostgresSessionStore:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
                     for tbl in (
-                        self._settings.postgres_approval_table,
-                        self._settings.postgres_snapshot_table,
-                        self._settings.postgres_event_table,
-                        self._settings.postgres_message_table,
+                        self._settings.database.postgres_approval_table,
+                        self._settings.database.postgres_snapshot_table,
+                        self._settings.database.postgres_event_table,
+                        self._settings.database.postgres_message_table,
                     ):
                         cur.execute(f"DELETE FROM {tbl} WHERE session_id = %s", (session_id,))
                     cur.execute(
-                        f"DELETE FROM {self._settings.postgres_session_table} WHERE id = %s RETURNING id",
+                        f"DELETE FROM {self._settings.database.postgres_session_table} WHERE id = %s RETURNING id",
                         (session_id,),
                     )
                     deleted = cur.fetchone() is not None
@@ -812,7 +812,7 @@ class PostgresSessionStore:
         def _do() -> int:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
-                    table = self._settings.postgres_session_table
+                    table = self._settings.database.postgres_session_table
                     if before is None and after is None:
                         cur.execute(f"SELECT COUNT(id) AS cnt FROM {table}")
                     elif before and after:
@@ -839,7 +839,7 @@ class PostgresSessionStore:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"SELECT status, COUNT(id) AS cnt FROM {self._settings.postgres_session_table} GROUP BY status"
+                        f"SELECT status, COUNT(id) AS cnt FROM {self._settings.database.postgres_session_table} GROUP BY status"
                     )
                     rows = cur.fetchall() or []
                     return {row["status"]: int(row["cnt"]) for row in rows}
@@ -850,7 +850,7 @@ class PostgresSessionStore:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"SELECT COUNT(id) AS cnt FROM {self._settings.postgres_session_table} WHERE project_id = %s",
+                        f"SELECT COUNT(id) AS cnt FROM {self._settings.database.postgres_session_table} WHERE project_id = %s",
                         (project_id,),
                     )
                     row = cur.fetchone()
@@ -875,7 +875,7 @@ class PostgresSessionStore:
                 cur.execute(
                     f"""
                     SELECT id, title, mode_key, status, updated_at, metadata
-                    FROM {self._settings.postgres_session_table}
+                    FROM {self._settings.database.postgres_session_table}
                     WHERE project_id = %s
                     ORDER BY updated_at DESC, id ASC
                     LIMIT %s
@@ -895,16 +895,16 @@ class PostgresSessionStore:
                     else:
                         where = "WHERE updated_at < %s"
                         params = (cutoff,)
-                    id_query = f"SELECT id FROM {self._settings.postgres_session_table} {where}"
+                    id_query = f"SELECT id FROM {self._settings.database.postgres_session_table} {where}"
                     for tbl in (
-                        self._settings.postgres_approval_table,
-                        self._settings.postgres_snapshot_table,
-                        self._settings.postgres_event_table,
-                        self._settings.postgres_message_table,
+                        self._settings.database.postgres_approval_table,
+                        self._settings.database.postgres_snapshot_table,
+                        self._settings.database.postgres_event_table,
+                        self._settings.database.postgres_message_table,
                     ):
                         cur.execute(f"DELETE FROM {tbl} WHERE session_id IN ({id_query})", params)
                     cur.execute(
-                        f"DELETE FROM {self._settings.postgres_session_table} {where} RETURNING id",
+                        f"DELETE FROM {self._settings.database.postgres_session_table} {where} RETURNING id",
                         params,
                     )
                     deleted = len(cur.fetchall())
@@ -916,7 +916,7 @@ class PostgresSessionStore:
         def _do() -> dict[str, datetime | None]:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
-                    tbl = self._settings.postgres_session_table
+                    tbl = self._settings.database.postgres_session_table
                     cur.execute(f"SELECT MIN(updated_at) AS oldest, MAX(updated_at) AS newest FROM {tbl}")
                     row = cur.fetchone()
                     if not row:
@@ -929,11 +929,11 @@ class PostgresSessionStore:
 
     def _bulk_export_sync(self, progress_fn=None) -> list[dict]:
         """Batch-streamed export: iterate sessions in chunks, 5 queries per chunk."""
-        s_tbl = self._settings.postgres_session_table
-        m_tbl = self._settings.postgres_message_table
-        e_tbl = self._settings.postgres_event_table
-        snap_tbl = self._settings.postgres_snapshot_table
-        a_tbl = self._settings.postgres_approval_table
+        s_tbl = self._settings.database.postgres_session_table
+        m_tbl = self._settings.database.postgres_message_table
+        e_tbl = self._settings.database.postgres_event_table
+        snap_tbl = self._settings.database.postgres_snapshot_table
+        a_tbl = self._settings.database.postgres_approval_table
         batch_size = 500
 
         def _iso(v: object) -> str | None:

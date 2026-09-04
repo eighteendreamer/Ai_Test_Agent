@@ -95,11 +95,11 @@ class PostgresTestSuiteStore:
 
     @property
     def _suite_table(self) -> str:
-        return self._settings.postgres_test_suite_table
+        return self._settings.database.postgres_test_suite_table
 
     @property
     def _item_table(self) -> str:
-        return self._settings.postgres_test_suite_item_table
+        return self._settings.database.postgres_test_suite_item_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -136,7 +136,7 @@ class PostgresTestSuiteStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._suite_table} (
                         id UUID PRIMARY KEY,
-                        project_id UUID NOT NULL REFERENCES {self._settings.postgres_project_table}(id),
+                        project_id UUID NOT NULL REFERENCES {self._settings.database.postgres_project_table}(id),
                         status TEXT NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
                         record JSONB NOT NULL
@@ -148,8 +148,8 @@ class PostgresTestSuiteStore:
                     CREATE TABLE IF NOT EXISTS {self._item_table} (
                         id UUID PRIMARY KEY,
                         suite_id UUID NOT NULL REFERENCES {self._suite_table}(id),
-                        case_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_table}(id),
-                        case_version_id UUID NOT NULL REFERENCES {self._settings.postgres_test_case_version_table}(id),
+                        case_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_table}(id),
+                        case_version_id UUID NOT NULL REFERENCES {self._settings.database.postgres_test_case_version_table}(id),
                         position INTEGER NOT NULL,
                         record JSONB NOT NULL,
                         UNIQUE(suite_id, case_id, case_version_id),
