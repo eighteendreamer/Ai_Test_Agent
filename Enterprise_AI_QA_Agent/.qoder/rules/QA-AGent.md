@@ -137,18 +137,79 @@ trigger: always_on
 
 > 建议：本文件保持**通用**，各项目再建一份项目专属规则（技术栈、信源清单、已知踩坑、构建命令），两者叠加使用；项目专属规则优先级高于本文件。
 
-## 附录 B · 项目专属规则模板（各项目自行填写）
+## 附录 B · 御策天检 项目专属规则
 
-```markdown
-# <项目名> 专属规则
-## 信源优先级
-- 行为机制参考：<参考项目/目录>
-- 技术选型参考：<官方文档/参考实现>
-## 技术栈与命令
-- 语言/框架：
-- 构建：`<命令>`  测试：`<命令>`  lint：`<命令>`
-## 契约同步点
-- <前后端接口文件、类型定义文件等成对改动清单>
-## 已知踩坑速查
-- <坑> → <正确做法，勿回退>
+### 信源优先级
+
+- **行为机制参考**：`Agent_Server/src/` 现有实现 → `项目借鉴/llm-testing-course/` 课程原文 → `docs/系统地层升级方案.md` 架构设计
+- **标杆项目参考**（harness 设计）：`G:\Code_Warehouse\DeepAgent-Studio\借鉴\claudecode` / `codex` / `grok-build` / `warp`
+- **技术选型参考**：FastAPI 官方文档 / Pydantic v2 官方文档 / Vue3 官方文档 / Naive UI 官方文档
+- **测试工程参考**：`项目借鉴/llm-testing-course/` 本地课程原文（详见第七章）
+
+### 技术栈与命令
+
+| 层 | 技术栈 | 命令 |
+|---|---|---|
+| 后端 | Python 3.11+ / FastAPI / SQLAlchemy / Pydantic v2 | 启动：`cd Agent_Server && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000` |
+| 前端 | Vue 3.5+ / Pinia / Naive UI / Vite / Electron | 开发：`cd agent_web && npm run dev` |
+| 前端构建 | Vite + vue-tsc（待接入） | 构建：`cd agent_web && npm run build` |
+| 前端测试 | Vitest | 测试：`cd agent_web && npm run test` |
+| 存储 | PostgreSQL（主库）+ MySQL（配置库）+ Memgraph（图）+ Redis（缓存） | — |
+
+### 项目目录结构速查
+
 ```
+Agent_Server/src/
+├── api/routes/           # 21 组 REST 路由
+├── application/          # 应用服务层（36 个子包）
+│   ├── sessions/         # session_service.py (1815行) — 会话生命周期
+│   ├── runtime/          # tool_runtime_service.py (2000+行) — 工具执行分发
+│   ├── orchestration/    # coordinator_runtime_service.py (1554行) — 编排协调
+│   ├── models/           # 模型客户端（openai/anthropic/google）
+│   ├── intent/           # 意图识别（关键词 + 语义 + 安全）
+│   └── ...
+├── core/                 # 配置、常量
+├── graph/                # LangGraph agent 图（state.py 67 字段）
+├── infrastructure/       # 数据库、存储、外部服务
+├── modes/                # 14 种测试模式实现
+├── registry/             # Agent/Tool/Model/Skill/Mode 注册表
+└── runtime/              # 运行时 session/tool 管理
+
+agent_web/src/
+├── stores/session.ts     # 1330行 — SSE + 消息协调 + 审批
+├── services/api.ts       # 1187行 100+ 端点
+├── types/types.ts        # 2021行
+└── components/           # ChatTimeline / ReportsView 等
+```
+
+### 契约同步点（改动一侧必须同步另一侧）
+
+| 后端变更 | 必须同步的前端文件 |
+|---|---|
+| `src/api/routes/*.py` 路由签名 / 请求体 / 响应体 | `agent_web/src/services/api.ts` 对应调用 + `agent_web/src/types/types.ts` 类型定义 |
+| `src/graph/state.py` AgentGraphState 字段 | `agent_web/src/types/types.ts` 中 SSE 事件类型 |
+| `src/core/config.py` Settings 字段 | `.env` 文件 + 部署配置 |
+| SSE 事件格式（`src/application/sessions/`） | `agent_web/src/stores/session.ts` 事件处理 |
+| 数据库 schema（任何 store 的建表逻辑） | 相关 store 的查询代码 + Alembic migration（待引入） |
+
+### 已知踩坑速查
+
+- **`main.py` lifespan 598 行手动接线** → 所有 service 必须在此处构造，循环依赖靠 setter 注入。新增 service 必须在 lifespan 中找到正确插入点。
+- **`Settings` 190+ 字段平铺** → 新增配置项直接加到 Settings 类，命名用 `snake_case`，环境变量用大写。
+- **每个 store 自建表** → 各 store 的 `initialize()` 方法用 `CREATE TABLE IF NOT EXISTS`，无统一 migration。修改 schema 必须同时改 `initialize()` 中的 ALTER TABLE 逻辑。
+- **`AgentGraphState` 67 字段共享** → 所有 graph 节点读写同一个 TypedDict，新增字段必须考虑所有节点的兼容性。
+- **模型客户端三套 SDK** → OpenAI / Anthropic / Google 各有独立客户端，工具名清洗规则不同（`sanitize_tool_name`），新增模型必须对照 `provider_profiles.py` 的 transport 类型。
+- **前端双 markdown 渲染器** → `markdown-it`（ChatTimeline）和手写正则（ReportsView）并存，新界面统一用 `markdown-it`。
+- **`tool_executor.py` 981 行** → 混合了审批流、技能加载、安全检查、预算控制，修改时必须理解四个关注点的交互。
+- **`<untrusted_content>` 标签** → 已有 prompt injection 防御机制，新增外部内容注入点必须用此标签包裹，不可移除。
+
+### 系统地层升级约束（参考 `docs/系统地层升级方案.md`）
+
+当前系统正在经历系统地层升级，以下约束在升级完成前持续有效：
+
+1. **不引入新的 LangGraph 节点** — Agent Loop 将替换为 AsyncGenerator，新增逻辑应在现有节点内实现或等待新架构。
+2. **不新增硬编码 Agent 定义** — Agent 注册将迁移为声明式 `AgentManifest`，新 Agent 应等待新注册机制。
+3. **不新增独立 coordinator 实现** — 4 套 coordinator 将统一为 5 种编排策略，新编排逻辑应复用现有 `CoordinatorRuntimeService`。
+4. **不新增 `CREATE TABLE IF NOT EXISTS`** — 数据库迁移将迁入 Alembic，新表应等待 migration 机制就绪。
+5. **保留 `<untrusted_content>` 隔离** — 四个标杆项目都没做的独有优势，不可丢失。
+6. **保留用例驱动链路** — 生成草稿 → 评审 → 启用固定版本 → 套件冻结版本 → 运行条目原子领取 → 结果与证据入库 → 失败项创建新回归运行。禁止简化或断裂。
