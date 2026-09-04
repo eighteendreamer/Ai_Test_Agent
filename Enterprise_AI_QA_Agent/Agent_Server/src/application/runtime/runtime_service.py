@@ -14,6 +14,7 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.resources.session_resource_service import SessionResourceService
+from src.application.runtime.agent_loop import AgentLoop
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.security.approval_scope_service import ApprovalScopeService
 from src.application.security.authorization import verified_grant_matches_target
@@ -66,6 +67,11 @@ class RuntimeService:
         self._session_resource_service = session_resource_service
         self._context_compaction_service = context_compaction_service
         self._context_max_tail_messages = context_max_tail_messages
+        self._agent_loop = AgentLoop(
+            graph=graph,
+            runtime_control=runtime_control,
+            max_iterations=max_iterations,
+        )
 
     def request_interrupt(self, session_id: str, reason: str = "") -> None:
         self._runtime_control.request_interrupt(session_id, reason)
@@ -1022,29 +1028,11 @@ class RuntimeService:
         }
 
     async def _run_until_settled(self, state: dict[str, Any]) -> dict[str, Any]:
-        current_state = state
-        while True:
-            self._apply_interrupt_state(current_state)
-            if current_state["interrupt_requested"]:
-                return self._interrupt_result(current_state)
+        """Delegate to AgentLoop for the main execution loop.
 
-            result = await self._graph.ainvoke(current_state)
-            self._apply_interrupt_state(result)
-            if result["interrupt_requested"]:
-                return self._interrupt_result(result)
-            if not result["continue_loop"]:
-                return result
-
-            append_graph_event(
-                result,
-                "runtime.loop_reenter",
-                "runtime",
-                "Runtime is re-entering the recursive model loop for the same turn.",
-                next_iteration=result["loop_iteration"] + 1,
-                max_iterations=result["max_iterations"],
-            )
-            result["loop_iteration"] += 1
-            current_state = result
+        Phase 1 of D2 upgrade: extracted loop logic into AgentLoop class.
+        """
+        return await self._agent_loop.run_turn(state)
 
     def _convert_model_interruption_to_resumable(self, state: dict[str, Any]) -> None:
         summary = dict(state.get("model_response_summary") or {})
