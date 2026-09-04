@@ -160,8 +160,9 @@ class SecurityTestingModeRuntime:
         self._risk_policy = SecurityRiskPolicy()
         self._execution_monitor = SecurityExecutionMonitor()
         self._target_guard = SecurityTargetGuard(settings)
+        security_settings = getattr(settings, "security", None) if settings else None
         self._output_summary_threshold_bytes = int(
-            getattr(settings.security, "security_runner_output_summary_threshold_bytes", DEFAULT_THRESHOLD_BYTES)
+            getattr(security_settings, "security_runner_output_summary_threshold_bytes", DEFAULT_THRESHOLD_BYTES)
             or DEFAULT_THRESHOLD_BYTES
         )
         self._finding_normalizer = FindingNormalizer()
@@ -183,51 +184,43 @@ class SecurityTestingModeRuntime:
         self._reflection_service = SecurityReflectionService()
         self._attack_chain = SecurityAttackChainService(risk_policy=self._risk_policy)
         self._attack_chain_enabled = bool(
-            getattr(settings.security, "security_attack_chain_enabled", True)
+            getattr(security_settings, "security_attack_chain_enabled", True)
         )
         self._campaign_max_loops = max(
             1,
-            int(getattr(settings.security, "security_campaign_max_loops", 5) or 5),
+            int(getattr(security_settings, "security_campaign_max_loops", 5) or 5),
         )
         self._campaign_max_attempts = max(
             1,
-            int(getattr(settings.security, "security_campaign_max_attempts", 30) or 30),
+            int(getattr(security_settings, "security_campaign_max_attempts", 30) or 30),
         )
         self._security_bug_registry_enabled = bool(
-            getattr(settings.security, "security_bug_registry_enabled", True)
+            getattr(security_settings, "security_bug_registry_enabled", True)
         )
         self._attack_session_enabled = bool(
-            getattr(settings.security, "security_attack_session_enabled", False)
-            if settings is not None
-            else False
+            getattr(security_settings, "security_attack_session_enabled", False)
         )
         self._attack_session_timeout_seconds = float(
-            getattr(settings.security, "security_attack_session_timeout_seconds", 900) or 900
+            getattr(security_settings, "security_attack_session_timeout_seconds", 900) or 900
         )
         self._attack_session_command_timeout_seconds = float(
-            getattr(settings.security, "security_attack_session_command_timeout_seconds", 120) or 120
+            getattr(security_settings, "security_attack_session_command_timeout_seconds", 120) or 120
         )
         self._callback_broker_enabled = bool(
-            getattr(settings.security, "security_callback_broker_enabled", False)
-            if settings is not None
-            else False
+            getattr(security_settings, "security_callback_broker_enabled", False)
         )
         self._callback_broker = callback_broker or SecurityCallbackBroker(
             port_range=str(
-                getattr(settings.security, "security_callback_port_range", "28000-28100")
-                if settings is not None
-                else "28000-28100"
+                getattr(security_settings, "security_callback_port_range", "28000-28100")
+                or "28000-28100"
             ),
             lease_timeout_seconds=float(
-                getattr(settings.security, "security_callback_lease_timeout_seconds", 300)
-                if settings is not None
-                else 300
+                getattr(security_settings, "security_callback_lease_timeout_seconds", 300)
+                or 300
             ),
         )
         self._security_graph_memory_enabled = bool(
-            getattr(settings.security, "security_graph_memory_enabled", False)
-            if settings is not None
-            else False
+            getattr(security_settings, "security_graph_memory_enabled", False)
         )
         self._security_graph_store = security_graph_store or (
             SecurityGraphStore(settings) if self._security_graph_memory_enabled and settings is not None else None
@@ -235,7 +228,7 @@ class SecurityTestingModeRuntime:
         self._security_bug_service = security_bug_service or SecurityBugService(
             InMemorySecurityBugStore(),
             reproduction_required=bool(
-                getattr(settings.security, "security_bug_reproduction_required", True)
+                getattr(security_settings, "security_bug_reproduction_required", True)
             ),
         )
         self._subtask_generator = SecuritySubtaskGenerator()

@@ -620,13 +620,29 @@ class ToolBootstrapService:
         )
 
     def _get_str(self, attr: str, env_name: str, default: str) -> str:
-        value = getattr(self._settings, attr, None) if self._settings is not None else None
+        # Check nested security namespace first (D1a refactoring), then flat attribute.
+        if self._settings is not None:
+            security_ns = getattr(self._settings, "security", None)
+            if security_ns is not None:
+                value = getattr(security_ns, attr, None)
+                if value not in (None, ""):
+                    return str(value).strip()
+            value = getattr(self._settings, attr, None)
+        else:
+            value = None
         if value not in (None, ""):
             return str(value).strip()
         return str(os.getenv(env_name, default) or default).strip()
 
     def _get_bool(self, attr: str, env_name: str, default: bool) -> bool:
-        value = getattr(self._settings, attr, None) if self._settings is not None else None
+        # Check nested security namespace first (D1a refactoring), then flat attribute.
+        value = None
+        if self._settings is not None:
+            security_ns = getattr(self._settings, "security", None)
+            if security_ns is not None:
+                value = getattr(security_ns, attr, None)
+            if value is None:
+                value = getattr(self._settings, attr, None)
         if value is None:
             value = os.getenv(env_name)
         if value is None:
@@ -636,7 +652,14 @@ class ToolBootstrapService:
         return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
     def _get_float(self, attr: str, env_name: str, default: float) -> float:
-        value = getattr(self._settings, attr, None) if self._settings is not None else None
+        # Check nested security namespace first (D1a refactoring), then flat attribute.
+        value = None
+        if self._settings is not None:
+            security_ns = getattr(self._settings, "security", None)
+            if security_ns is not None:
+                value = getattr(security_ns, attr, None)
+            if value in (None, ""):
+                value = getattr(self._settings, attr, None)
         if value in (None, ""):
             value = os.getenv(env_name)
         try:

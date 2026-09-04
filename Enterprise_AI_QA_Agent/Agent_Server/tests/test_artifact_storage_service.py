@@ -72,14 +72,16 @@ class _RustFSClient:
 
 def _settings(tmp_path: Path, *, backend: str = "rustfs") -> SimpleNamespace:
     return SimpleNamespace(
-        artifact_root_dir=str(tmp_path / "artifacts"),
-        artifact_storage_backend=backend,
-        artifact_keep_local_copy=True,
-        rustfs_endpoint="127.0.0.1:9000",
-        rustfs_access_key="rustfsadmin",
-        rustfs_secret_key="rustfsadmin",
-        rustfs_bucket="qa-agent",
-        rustfs_secure=False,
+        storage=SimpleNamespace(
+            artifact_root_dir=str(tmp_path / "artifacts"),
+            artifact_storage_backend=backend,
+            artifact_keep_local_copy=True,
+            rustfs_endpoint="127.0.0.1:9000",
+            rustfs_access_key="rustfsadmin",
+            rustfs_secret_key="rustfsadmin",
+            rustfs_bucket="qa-agent",
+            rustfs_secure=False,
+        ),
     )
 
 

@@ -44,7 +44,7 @@ from src.schemas.tool_runtime import ToolExecutionRecord
 class _Settings:
     def __init__(self, root) -> None:
         self.data_dir = str(root / "data")
-        self.artifact_root_dir = str(root / "artifacts")
+        self.storage = SimpleNamespace(artifact_root_dir=str(root / "artifacts"))
         self.compatibility_runner_heartbeat_timeout_seconds = 120
 
 

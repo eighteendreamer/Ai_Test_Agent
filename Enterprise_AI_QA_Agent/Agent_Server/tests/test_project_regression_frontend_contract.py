@@ -2,11 +2,20 @@ from pathlib import Path
 
 
 WEB_ROOT = Path(__file__).resolve().parents[2] / "agent_web" / "src"
+SERVICES_DIR = WEB_ROOT / "services"
+
+
+def _all_services_source() -> str:
+    """Read all .ts files in the services directory (api.ts was split into sub-modules)."""
+    parts: list[str] = []
+    for ts_file in sorted(SERVICES_DIR.glob("*.ts")):
+        parts.append(ts_file.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def test_frontend_regression_api_contract_has_typed_keyset_endpoints():
     types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
-    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    api_source = _all_services_source()
 
     assert "export interface RegressionFailurePage" in types_source
     assert "export interface RegressionContext" in types_source
@@ -46,7 +55,7 @@ def test_projects_view_lazily_opens_public_evidence_and_batch_timeline():
 
 def test_security_profile_frontend_contract_consumes_capability_matrix():
     types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
-    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    api_source = _all_services_source()
     view_source = (
         WEB_ROOT / "features" / "tools" / "plugins" / "ScannersPlugin.vue"
     ).read_text(encoding="utf-8")
@@ -61,7 +70,7 @@ def test_security_profile_frontend_contract_consumes_capability_matrix():
 
 def test_frontend_run_item_approval_contract_uses_dedicated_endpoint():
     types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
-    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    api_source = _all_services_source()
     store_source = (WEB_ROOT / "stores" / "session.ts").read_text(encoding="utf-8")
     run_contract = types_source.split("export type RunItemStatus", 1)[1].split(
         "export interface TestRunDetail",
@@ -80,7 +89,7 @@ def test_frontend_run_item_approval_contract_uses_dedicated_endpoint():
 
 def test_projects_view_exposes_terminal_approval_and_cleanup_operations():
     types_source = (WEB_ROOT / "types.ts").read_text(encoding="utf-8")
-    api_source = (WEB_ROOT / "services" / "api.ts").read_text(encoding="utf-8")
+    api_source = _all_services_source()
     view_source = (WEB_ROOT / "views" / "ProjectsView.vue").read_text(encoding="utf-8")
 
     assert "resource_cleanup_completed_at?: string | null;" in types_source

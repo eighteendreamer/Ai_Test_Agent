@@ -252,6 +252,7 @@ async def test_security_case_execution_requires_verified_session_grant():
         adapter=adapter,
         session_store=FakeSessions(),
         security_settings=SimpleNamespace(
+            security=SimpleNamespace(security_target_allowlist="example.test"),
             security_target_allowlist="example.test",
             app_env="testing",
         ),
@@ -337,6 +338,7 @@ async def test_security_case_execution_blocks_without_matching_grant_before_adap
         adapter=FailingAdapter(),
         session_store=FakeSessions(),
         security_settings=SimpleNamespace(
+            security=SimpleNamespace(security_target_allowlist="example.test"),
             security_target_allowlist="example.test",
             app_env="testing",
         ),
@@ -787,6 +789,7 @@ async def test_high_risk_security_case_waits_for_approval_without_calling_runner
         permission_service=PermissionService(),
         tool_job_service=jobs,
         security_settings=SimpleNamespace(
+            security=SimpleNamespace(security_target_allowlist="example.test,changed.example.test"),
             security_target_allowlist="example.test,changed.example.test",
             app_env="testing",
         ),
@@ -1071,6 +1074,7 @@ async def test_security_approval_denial_blocks_once_without_running_adapter():
         permission_service=PermissionService(),
         tool_job_service=jobs,
         security_settings=SimpleNamespace(
+            security=SimpleNamespace(security_target_allowlist="example.test"),
             security_target_allowlist="example.test",
             app_env="testing",
         ),

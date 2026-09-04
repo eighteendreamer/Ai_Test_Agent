@@ -140,7 +140,7 @@ def _make_app(
     app.state.recording_store = store or FakeRecordingStore()
     app.state.recording_graph_store = graph or FakeGraphStore()
     app.state.artifact_storage_service = FakeArtifactService()
-    app.state.settings = SimpleNamespace(artifact_root_dir=artifact_root)
+    app.state.settings = SimpleNamespace(storage=SimpleNamespace(artifact_root_dir=artifact_root))
     return app
 
 
