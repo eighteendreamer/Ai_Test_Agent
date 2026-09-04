@@ -102,6 +102,7 @@ from src.application.recorder.recording_case_draft_service import RecordingCaseD
 from src.application.recorder.recording_approval_service import RecordingApprovalService
 from src.application.recorder.ui_resource_assessor import UIResourceAssessor
 from src.core.config import get_settings
+from src.containers import AppContainer
 from src.graph.builder import build_agent_graph
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
@@ -127,177 +128,118 @@ from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    project_store = PostgresProjectStore(settings)
-    project_service = ProjectService(store=project_store)
+    container = AppContainer()
+
+    # ── Async initialization of stores ───────────────────────────────
+    project_store = container.project_store()
+    project_service = container.project_service()
     await project_service.initialize()
-    store = PostgresSessionStore(settings)
+
+    store = container.session_store()
     await store.initialize()
-    task_pool_service = TaskPoolService(store=store)
-    agent_registry = AgentRegistry()
-    tool_registry = ToolRegistry()
-    model_config_store = MySQLModelConfigStore(settings)
+
+    task_pool_service = container.task_pool_service()
+
+    agent_registry = container.agent_registry()
+    tool_registry = container.tool_registry()
+
+    model_config_store = container.model_config_store()
     model_config_store.initialize()
-    oauth_token_service = OAuthTokenService(
-        settings=settings,
-        request_timeout=settings.model.llm_request_timeout_seconds,
-    )
-    embedding_runtime_service = EmbeddingRuntimeService(
-        model_config_store=model_config_store,
-        settings=settings,
-        oauth_token_service=oauth_token_service,
-    )
-    email_config_store = MySQLEmailConfigStore(settings)
+
+    oauth_token_service = container.oauth_token_service()
+    embedding_runtime_service = container.embedding_runtime_service()
+
+    email_config_store = container.email_config_store()
     email_config_store.initialize()
-    channel_config_store = MySQLChannelConfigStore(settings)
+    channel_config_store = container.channel_config_store()
     channel_config_store.initialize()
-    sponsor_config_store = MySQLSponsorConfigStore(settings)
+    sponsor_config_store = container.sponsor_config_store()
     sponsor_config_store.initialize()
-    model_registry = ModelRegistry(model_config_store)
-    skill_registry = SkillRegistry()
-    mcp_registry = MCPRegistry()
-    mode_registry = ModeRegistry()
-    skill_runtime_service = SkillRuntimeService(skill_registry=skill_registry)
-    session_resource_store = PostgresSessionResourceStore(settings=settings)
-    session_resource_service = SessionResourceService(store=session_resource_store)
+
+    model_registry = container.model_registry()
+
+    skill_registry = container.skill_registry()
+    mcp_registry = container.mcp_registry()
+    mode_registry = container.mode_registry()
+    skill_runtime_service = container.skill_runtime_service()
+
+    session_resource_store = container.session_resource_store()
+    session_resource_service = container.session_resource_service()
     await session_resource_service.initialize()
-    mcp_runtime_service = MCPRuntimeService(
-        mcp_registry=mcp_registry,
-        settings=settings,
-        session_resource_service=session_resource_service,
-    )
+
+    mcp_runtime_service = container.mcp_runtime_service()
     session_resource_service.set_browser_cleanup(mcp_runtime_service.close_browser_session)
-    artifact_storage_service = ArtifactStorageService(settings=settings)
-    upload_security_service = UploadSecurityService(
-        settings=settings,
-        artifact_storage_service=artifact_storage_service,
-    )
-    api_doc_store = PostgresApiDocStore(settings)
-    api_docs_service = ApiDocsService(
-        settings=settings,
-        artifact_storage_service=artifact_storage_service,
-        upload_security_service=upload_security_service,
-        catalog_store=api_doc_store,
-        project_service=project_service,
-    )
+
+    artifact_storage_service = container.artifact_storage_service()
+    upload_security_service = container.upload_security_service()
+
+    api_doc_store = container.api_doc_store()
+    api_docs_service = container.api_docs_service()
     await api_docs_service.initialize()
-    integration_catalog_service = IntegrationCatalogService(
-        settings=settings,
-    )
-    mcp_server_store = PostgresMCPServerStore(settings=settings)
+
+    integration_catalog_service = container.integration_catalog_service()
+    mcp_server_store = container.mcp_server_store()
     await mcp_server_store.initialize()
     await mcp_server_store.migrate_legacy_integrations(
         await integration_catalog_service.list_legacy_mcp_integrations()
     )
-    mcp_tool_bridge = McpToolBridge(tool_registry=tool_registry)
-    mcp_connection_manager = McpConnectionManager(
-        settings=settings,
-        mcp_server_store=mcp_server_store,
-        tool_bridge=mcp_tool_bridge,
-    )
-    mcp_runtime_manager = MCPRuntimeManager(
-        builtin_registry=mcp_registry,
-        mcp_runtime_service=mcp_runtime_service,
-        connection_manager=mcp_connection_manager,
-    )
-    mcp_manager_service = MCPManagerService(
-        builtin_registry=mcp_registry,
-        mcp_server_store=mcp_server_store,
-        runtime_manager=mcp_runtime_manager,
-        connection_manager=mcp_connection_manager,
-    )
-    skill_management_service = SkillManagementService(
-        skill_registry=skill_registry,
-        upload_security_service=upload_security_service,
-    )
-    skill_marketplace_service = SkillMarketplaceService(skill_management_service=skill_management_service)
-    memory_store = PostgresVectorMemoryStore(settings=settings)
-    memory_runtime_service = MemoryRuntimeService(
-        memory_store=memory_store,
-        top_k=settings.orchestration.memory_top_k,
-        embedding_runtime_service=embedding_runtime_service,
-    )
+
+    mcp_tool_bridge = container.mcp_tool_bridge()
+    mcp_connection_manager = container.mcp_connection_manager()
+    mcp_runtime_manager = container.mcp_runtime_manager()
+    mcp_manager_service = container.mcp_manager_service()
+
+    skill_management_service = container.skill_management_service()
+    skill_marketplace_service = container.skill_marketplace_service()
+
+    memory_store = container.memory_store()
+    memory_runtime_service = container.memory_runtime_service()
     await memory_runtime_service.initialize()
-    tool_job_store = PostgresToolJobStore(settings=settings)
-    security_bug_store = PostgresSecurityBugStore(settings=settings)
-    security_bug_service = SecurityBugService(
-        security_bug_store,
-        reproduction_required=settings.security.security_bug_reproduction_required,
-    )
+
+    tool_job_store = container.tool_job_store()
+    security_bug_store = container.security_bug_store()
+    security_bug_service = container.security_bug_service()
     await security_bug_service.initialize()
-    knowledge_graph_service = KnowledgeGraphService(settings=settings)
+
+    knowledge_graph_service = container.knowledge_graph_service()
     knowledge_graph_service.set_project_service(project_service)
-    tool_job_service = ToolJobService(
-        store=tool_job_store,
-        heartbeat_timeout_seconds=settings.orchestration.tool_job_heartbeat_timeout_seconds,
-    )
+
+    tool_job_service = container.tool_job_service()
     await tool_job_service.initialize()
-    report_service = ReportService(store=store, tool_job_service=tool_job_service)
-    permission_service = PermissionService()
-    compatibility_runner_service = CompatibilityRunnerService(
-        settings=settings,
-        artifact_storage_service=artifact_storage_service,
-    )
-    input_orchestrator_service = InputOrchestratorService(mode_registry=mode_registry)
-    prompt_service = PromptSubmissionService(input_orchestrator=input_orchestrator_service)
-    prompt_assembly_service = PromptAssemblyService()
-    observation_runtime_service = ObservationRuntimeService()
-    transcript_hygiene_service = TranscriptHygieneService()
-    runtime_control = RuntimeControlRegistry()
-    model_runtime_service = ModelRuntimeService(
-        model_registry=model_registry,
-        settings=settings,
-        oauth_token_service=oauth_token_service,
-    )
-    test_case_store = PostgresTestCaseStore(settings)
-    test_case_context_provider = ProjectTestCaseContextProvider(
-        api_docs_service=api_docs_service,
-        knowledge_graph_service=knowledge_graph_service,
-        session_store=store,
-    )
-    test_case_generator = ModelTestCaseGenerator(
-        model_runtime_service=model_runtime_service,
-        skill_runtime_service=skill_runtime_service,
-    )
-    test_case_service = TestCaseService(
-        store=test_case_store,
-        project_service=project_service,
-        context_provider=test_case_context_provider,
-        generator=test_case_generator,
-    )
+
+    report_service = container.report_service()
+    permission_service = container.permission_service()
+    compatibility_runner_service = container.compatibility_runner_service()
+
+    input_orchestrator_service = container.input_orchestrator_service()
+    prompt_service = container.prompt_service()
+    prompt_assembly_service = container.prompt_assembly_service()
+    observation_runtime_service = container.observation_runtime_service()
+    transcript_hygiene_service = container.transcript_hygiene_service()
+    runtime_control = container.runtime_control()
+
+    model_runtime_service = container.model_runtime_service()
+
+    test_case_store = container.test_case_store()
+    test_case_context_provider = container.test_case_context_provider()
+    test_case_generator = container.test_case_generator()
+    test_case_service = container.test_case_service()
     await test_case_service.initialize()
-    test_suite_store = PostgresTestSuiteStore(settings)
-    test_suite_service = TestSuiteService(
-        store=test_suite_store,
-        project_service=project_service,
-        test_case_service=test_case_service,
-    )
+
+    test_suite_store = container.test_suite_store()
+    test_suite_service = container.test_suite_service()
     await test_suite_service.initialize()
-    test_run_store = PostgresTestRunStore(settings)
-    test_run_service = TestRunService(
-        store=test_run_store,
-        project_service=project_service,
-        suite_service=test_suite_service,
-        test_case_service=test_case_service,
-        session_store=store,
-        tool_job_service=tool_job_service,
-        lease_reaper_interval_seconds=settings.orchestration.test_run_lease_reaper_interval_seconds,
-    )
+
+    test_run_store = container.test_run_store()
+    test_run_service = container.test_run_service()
     await test_run_service.initialize()
-    legacy_smoke_catalog = SmokeCatalogStore(settings)
-    legacy_smoke_history_service = LegacySmokeHistoryService(
-        project_service=project_service,
-        catalog=legacy_smoke_catalog,
-    )
+
+    legacy_smoke_catalog = container.legacy_smoke_catalog()
+    legacy_smoke_history_service = container.legacy_smoke_history_service()
     await legacy_smoke_history_service.initialize()
-    project_overview_service = ProjectOverviewService(
-        project_service=project_service,
-        api_doc_store=api_doc_store,
-        session_store=store,
-        knowledge_graph_service=knowledge_graph_service,
-        test_case_store=test_case_store,
-        test_suite_store=test_suite_store,
-        test_run_store=test_run_store,
-    )
+
+    project_overview_service = container.project_overview_service()
+
     input_orchestrator_service.set_semantic_intent_service(
         SemanticIntentService(
             model_runtime_service=model_runtime_service,
