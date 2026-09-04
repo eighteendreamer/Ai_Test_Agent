@@ -8,8 +8,9 @@ and flattens them into AgentGraphState before calling graph.ainvoke().
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncGenerator, Awaitable, Callable
 
+from src.application.runtime.events import LoopEvent, LoopEventType
 from src.application.runtime.state_types import LoopConfig, SessionContext, TurnState
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_logging import append_graph_event
@@ -72,6 +73,125 @@ class AgentLoop:
                 max_iterations=result["max_iterations"],
             )
             result["loop_iteration"] += 1
+            current_state = result
+
+    async def stream_turn(
+        self,
+        state: dict[str, Any],
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> AsyncGenerator[LoopEvent, None]:
+        """Execute the agent loop, yielding events as it progresses.
+
+        Phase 2 of D2 upgrade: AsyncGenerator event stream for real-time visibility.
+        Events are yielded between graph invocations, not from within nodes.
+        """
+        yield LoopEvent(
+            type=LoopEventType.TURN_STARTED,
+            iteration=state.get("loop_iteration", 0),
+            payload={
+                "session_id": state.get("session_id", ""),
+                "turn_id": state.get("turn_id", ""),
+            },
+        )
+
+        current_state = state
+        iteration = 0
+        while True:
+            self._apply_interrupt_state(current_state)
+            if current_state["interrupt_requested"]:
+                result = self._interrupt_result(current_state)
+                yield LoopEvent(
+                    type=LoopEventType.TURN_INTERRUPT,
+                    iteration=iteration,
+                    payload={
+                        "reason": result.get("interrupt_reason", ""),
+                        "loop_iteration": result.get("loop_iteration", 0),
+                    },
+                )
+                yield LoopEvent(
+                    type=LoopEventType.TURN_COMPLETED,
+                    iteration=iteration,
+                    payload={
+                        "termination_reason": "interrupted",
+                        "final_response_preview": (result.get("final_response") or "")[:160],
+                    },
+                )
+                return
+
+            result = await self._graph.ainvoke(current_state)
+
+            self._apply_interrupt_state(result)
+            if result["interrupt_requested"]:
+                result = self._interrupt_result(result)
+                yield LoopEvent(
+                    type=LoopEventType.TURN_INTERRUPT,
+                    iteration=iteration,
+                    payload={
+                        "reason": result.get("interrupt_reason", ""),
+                        "loop_iteration": result.get("loop_iteration", 0),
+                    },
+                )
+                yield LoopEvent(
+                    type=LoopEventType.TURN_COMPLETED,
+                    iteration=iteration,
+                    payload={
+                        "termination_reason": "interrupted",
+                        "final_response_preview": (result.get("final_response") or "")[:160],
+                    },
+                )
+                return
+
+            if result.get("model_tool_calls"):
+                yield LoopEvent(
+                    type=LoopEventType.MODEL_RESPONSE,
+                    iteration=iteration,
+                    payload={
+                        "tool_call_count": len(result["model_tool_calls"]),
+                        "response_text_preview": (result.get("model_response_text") or "")[:160],
+                    },
+                )
+
+            if result.get("tool_results"):
+                yield LoopEvent(
+                    type=LoopEventType.TOOL_EXECUTED,
+                    iteration=iteration,
+                    payload={
+                        "tool_result_count": len(result["tool_results"]),
+                        "pending_approval_count": len(result.get("pending_approvals") or []),
+                    },
+                )
+
+            if not result["continue_loop"]:
+                yield LoopEvent(
+                    type=LoopEventType.TURN_COMPLETED,
+                    iteration=iteration,
+                    payload={
+                        "termination_reason": result.get("termination_reason", ""),
+                        "final_response_preview": (result.get("final_response") or "")[:160],
+                        "tool_result_count": len(result.get("tool_results") or []),
+                    },
+                )
+                return
+
+            append_graph_event(
+                result,
+                "runtime.loop_reenter",
+                "runtime",
+                "Runtime is re-entering the recursive model loop for the same turn.",
+                next_iteration=result["loop_iteration"] + 1,
+                max_iterations=result["max_iterations"],
+            )
+            result["loop_iteration"] += 1
+            iteration += 1
+
+            yield LoopEvent(
+                type=LoopEventType.LOOP_REENTER,
+                iteration=iteration,
+                payload={
+                    "next_iteration": result["loop_iteration"],
+                    "max_iterations": result["max_iterations"],
+                },
+            )
             current_state = result
 
     def _apply_interrupt_state(self, state: dict[str, Any]) -> None:
