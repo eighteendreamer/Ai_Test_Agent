@@ -15,6 +15,7 @@ from src.application.context.context_compaction_service import ContextCompaction
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.agent_loop import AgentLoop
+from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.security.approval_scope_service import ApprovalScopeService
 from src.application.security.authorization import verified_grant_matches_target
@@ -67,10 +68,14 @@ class RuntimeService:
         self._session_resource_service = session_resource_service
         self._context_compaction_service = context_compaction_service
         self._context_max_tail_messages = context_max_tail_messages
+        self._error_recovery = ErrorRecoveryCascade(
+            context_compaction_service=context_compaction_service,
+        )
         self._agent_loop = AgentLoop(
             graph=graph,
             runtime_control=runtime_control,
             max_iterations=max_iterations,
+            error_recovery=self._error_recovery,
         )
 
     def request_interrupt(self, session_id: str, reason: str = "") -> None:

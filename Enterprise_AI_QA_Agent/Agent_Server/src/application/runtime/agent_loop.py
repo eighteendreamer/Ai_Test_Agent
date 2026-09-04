@@ -7,9 +7,11 @@ and flattens them into AgentGraphState before calling graph.ainvoke().
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, AsyncGenerator, Awaitable, Callable
 
+from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.events import LoopEvent, LoopEventType
 from src.application.runtime.state_types import LoopConfig, SessionContext, TurnState
 from src.runtime.control import RuntimeControlRegistry
@@ -31,10 +33,12 @@ class AgentLoop:
         graph: Any,
         runtime_control: RuntimeControlRegistry,
         max_iterations: int = 8,
+        error_recovery: ErrorRecoveryCascade | None = None,
     ) -> None:
         self._graph = graph
         self._runtime_control = runtime_control
         self._max_iterations = max_iterations
+        self._error_recovery = error_recovery
 
     async def run_turn(
         self,
@@ -55,13 +59,27 @@ class AgentLoop:
             if current_state["interrupt_requested"]:
                 return self._interrupt_result(current_state)
 
-            result = await self._graph.ainvoke(current_state)
+            try:
+                result = await self._graph.ainvoke(current_state)
+            except Exception as exc:
+                if self._error_recovery is not None:
+                    recovery = await self._error_recovery.attempt_recovery(exc, current_state)
+                    if recovery.action == "retry":
+                        if recovery.retry_delay_seconds > 0:
+                            await asyncio.sleep(recovery.retry_delay_seconds)
+                        current_state = recovery.state or current_state
+                        continue
+                    elif recovery.action == "terminate":
+                        return self._interrupt_result(recovery.state or current_state)
+                raise
 
             self._apply_interrupt_state(result)
             if result["interrupt_requested"]:
                 return self._interrupt_result(result)
 
             if not result["continue_loop"]:
+                if self._error_recovery is not None:
+                    self._error_recovery.clear_retry_count(str(result.get("session_id", "")))
                 return result
 
             append_graph_event(
