@@ -37,4 +37,14 @@ export class ApprovalManager {
   reset(): void {
     this._resolvingIds = [];
   }
+
+  markResolving(approvalId: string): void {
+    if (!this._resolvingIds.includes(approvalId)) {
+      this._resolvingIds = [...this._resolvingIds, approvalId];
+    }
+  }
+
+  unmarkResolving(approvalId: string): void {
+    this._resolvingIds = this._resolvingIds.filter((id) => id !== approvalId);
+  }
 }

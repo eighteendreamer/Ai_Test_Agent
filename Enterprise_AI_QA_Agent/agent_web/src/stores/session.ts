@@ -3,6 +3,9 @@ import { defineStore } from "pinia";
 import { api } from "../services/api";
 import { handleRecorderSseEvent } from "../features/recorder/recorderBridge";
 import { serverDateTimestamp } from "../utils/datetime";
+import { SSEStreamManager } from "../composables/useSSEStream";
+import { SessionWatcherManager } from "../composables/useSessionWatcher";
+import { ApprovalManager } from "../composables/useApprovalManager";
 import type {
   AgentDescriptor,
   ChatMessage,
@@ -194,6 +197,13 @@ const EVENT_REFRESH_DEBOUNCE_MS = 220;
 const TOOLING_REFRESH_MIN_INTERVAL_MS = 10000;
 const EVENT_RECONNECT_DELAY_MS = 1500;
 const RECEIVED_EVENT_ID_LIMIT = 5000;
+
+const _sseStream = new SSEStreamManager({
+  reconnectDelayMs: EVENT_RECONNECT_DELAY_MS,
+  receivedIdLimit: RECEIVED_EVENT_ID_LIMIT,
+});
+const _watcher = new SessionWatcherManager({ pollIntervalMs: WATCHER_INTERVAL_MS });
+const _approvalManager = new ApprovalManager();
 
 function isActiveSessionStatus(status: SessionLifecycleStatus) {
   return status === "running" || status === "waiting_approval";
@@ -432,8 +442,6 @@ export const useSessionStore = defineStore("session", {
     pendingModeKeySelection: "",
     isBootstrapping: false,
     isSending: false,
-    resolvingApprovalIds: [] as string[],
-    refreshTimer: null as number | null,
     scheduledRefreshTimer: null as number | null,
     scheduledToolingRefresh: false,
     refreshInFlight: false,
@@ -449,11 +457,6 @@ export const useSessionStore = defineStore("session", {
     sessionArtifacts: [] as ToolArtifactRecord[],
     selectedToolJob: null as ToolJobDetail | null,
     error: "",
-    eventSource: null as EventSource | null,
-    eventStreamSessionId: "",
-    eventReconnectTimer: null as number | null,
-    eventCursorBySession: {} as Record<string, string>,
-    receivedEventIds: [] as string[],
   }),
   getters: {
     activeAgent(state) {
@@ -480,8 +483,8 @@ export const useSessionStore = defineStore("session", {
     pendingApprovals(state): ToolApprovalRequest[] {
       return state.session?.pending_approvals ?? [];
     },
-    isResolvingApproval(state) {
-      return (approvalId: string) => state.resolvingApprovalIds.includes(approvalId);
+    isResolvingApproval() {
+      return (approvalId: string) => _approvalManager.isResolving(approvalId);
     },
     workerDispatches(state): WorkerDispatchRecord[] {
       const value =
@@ -692,150 +695,93 @@ export const useSessionStore = defineStore("session", {
         return;
       }
       const sessionId = this.session.id;
-      if (
-        !force &&
-        this.eventSource &&
-        this.eventStreamSessionId === sessionId &&
-        this.eventSource.readyState !== EventSource.CLOSED
-      ) {
-        return;
-      }
-      if (this.eventReconnectTimer !== null) {
-        window.clearTimeout(this.eventReconnectTimer);
-        this.eventReconnectTimer = null;
-      }
-      this.eventSource?.close();
-      this.eventStreamSessionId = sessionId;
-      const lastEventId = this.eventCursorBySession[sessionId] || "";
-      const source = api.connectEvents(sessionId, (event) => {
-        if (this.session?.id !== sessionId) {
-          return;
-        }
-        if (!this.rememberIncomingEvent(event)) {
-          return;
-        }
-        this.activity = [event, ...this.activity].slice(0, 50);
-        this.applyStreamingEvent(event);
-        // UI 录制编排事件（P0-10）：审批通过后自动弹桌面录制窗口。
-        if (event.type?.startsWith("recorder.")) {
-          void handleRecorderSseEvent(event);
-        }
-        // Debug: log all SSE events for notification troubleshooting
-        if (event.type?.startsWith("turn.") || event.type?.startsWith("approval.")) {
-          console.log("[SSE Event]", event.type, event.session_id);
-        }
-        if (
-          event.type === "approval.created" ||
-          event.type === "approval.resolved" ||
-          event.type === "tool.execution_completed" ||
-          event.type === "tool.execution_failed" ||
-          event.type === "tool.execution_denied" ||
-          event.type === "verification.completed" ||
-          event.type === "turn.completed" ||
-          event.type === "turn.failed"
-        ) {
-          // Desktop notifications for key events.
-          if (event.type === "turn.completed" || event.type === "turn.failed") {
-            import("../services/desktopNotifications").then(({ notifySessionComplete }) => {
-              const sessionTitle = this.session?.title?.trim() || `会话 ${event.session_id.slice(0, 8)}`;
-              const lastMessage = [...this.messages]
-                .reverse()
-                .find((m) => String(m.content || "").trim());
-              const statusLabel = event.type === "turn.completed" ? "已完成" : "执行失败";
-              const bodyPreview = lastMessage
-                ? `${statusLabel} · ${String(lastMessage.content).trim().slice(0, 60)}`
-                : `会话${statusLabel}`;
-              notifySessionComplete(event.session_id, { title: sessionTitle, body: bodyPreview });
-            });
+      _sseStream.bind({
+        onEvent: (event) => {
+          if (this.session?.id !== sessionId) {
+            return;
           }
-          if (event.type === "approval.created") {
-            const toolName = String(event.payload?.tool_name || event.payload?.tool_key || "");
-            import("../services/desktopNotifications").then(({ notifyApprovalRequired }) => {
-              notifyApprovalRequired(event.session_id, String(event.payload?.approval_id || ""), toolName);
-            });
+          this.activity = [event, ...this.activity].slice(0, 50);
+          this.applyStreamingEvent(event);
+          if (event.type?.startsWith("recorder.")) {
+            void handleRecorderSseEvent(event);
           }
-          this.scheduleRefresh(true);
-          return;
-        }
-        if (
-          event.type === "tool.execution_started" ||
-          event.type === "worker.task_notification_received" ||
-          event.type === "worker.auto_stopped" ||
-          event.type === "input.queued" ||
-          event.type === "input.dequeued" ||
-          event.type === "queue.interrupted_turn_superseded" ||
-          event.type === "runtime.interrupt_requested" ||
-          event.type === "turn.interrupted" ||
-          event.type === "turn.resumed"
-        ) {
-          this.scheduleRefresh(false);
-        }
-      }, lastEventId);
-      source.onopen = () => {
-        if (this.session?.id !== sessionId || this.eventSource !== source) {
-          return;
-        }
-        if (this.error === "事件流已断开，正在尝试重新连接。") {
-          this.error = "";
-        }
-      };
-      source.onerror = () => {
-        if (this.eventSource !== source) {
-          return;
-        }
-        source.close();
-        this.eventSource = null;
-        this.error = "事件流已断开，正在尝试重新连接。";
-        this.scheduleEventReconnect(sessionId);
-      };
-      this.eventSource = source;
+          if (event.type?.startsWith("turn.") || event.type?.startsWith("approval.")) {
+            console.log("[SSE Event]", event.type, event.session_id);
+          }
+          if (
+            event.type === "approval.created" ||
+            event.type === "approval.resolved" ||
+            event.type === "tool.execution_completed" ||
+            event.type === "tool.execution_failed" ||
+            event.type === "tool.execution_denied" ||
+            event.type === "verification.completed" ||
+            event.type === "turn.completed" ||
+            event.type === "turn.failed"
+          ) {
+            if (event.type === "turn.completed" || event.type === "turn.failed") {
+              import("../services/desktopNotifications").then(({ notifySessionComplete }) => {
+                const sessionTitle = this.session?.title?.trim() || `会话 ${event.session_id.slice(0, 8)}`;
+                const lastMessage = [...this.messages]
+                  .reverse()
+                  .find((m) => String(m.content || "").trim());
+                const statusLabel = event.type === "turn.completed" ? "已完成" : "执行失败";
+                const bodyPreview = lastMessage
+                  ? `${statusLabel} · ${String(lastMessage.content).trim().slice(0, 60)}`
+                  : `会话${statusLabel}`;
+                notifySessionComplete(event.session_id, { title: sessionTitle, body: bodyPreview });
+              });
+            }
+            if (event.type === "approval.created") {
+              const toolName = String(event.payload?.tool_name || event.payload?.tool_key || "");
+              import("../services/desktopNotifications").then(({ notifyApprovalRequired }) => {
+                notifyApprovalRequired(event.session_id, String(event.payload?.approval_id || ""), toolName);
+              });
+            }
+            this.scheduleRefresh(true);
+            return;
+          }
+          if (
+            event.type === "tool.execution_started" ||
+            event.type === "worker.task_notification_received" ||
+            event.type === "worker.auto_stopped" ||
+            event.type === "input.queued" ||
+            event.type === "input.dequeued" ||
+            event.type === "queue.interrupted_turn_superseded" ||
+            event.type === "runtime.interrupt_requested" ||
+            event.type === "turn.interrupted" ||
+            event.type === "turn.resumed"
+          ) {
+            this.scheduleRefresh(false);
+          }
+        },
+        onConnect: () => {
+          if (this.session?.id !== sessionId) {
+            return;
+          }
+          if (this.error === "事件流已断开，正在尝试重新连接。") {
+            this.error = "";
+          }
+        },
+        onError: (errorMessage) => {
+          this.error = errorMessage;
+        },
+      });
+      _sseStream.connect(sessionId, force);
     },
     scheduleEventReconnect(sessionId = this.session?.id || "") {
-      if (!sessionId || this.eventReconnectTimer !== null) {
-        return;
-      }
-      this.eventReconnectTimer = window.setTimeout(() => {
-        this.eventReconnectTimer = null;
-        if (this.session?.id === sessionId) {
-          this.connectEvents(true);
-        }
-      }, EVENT_RECONNECT_DELAY_MS);
+      _sseStream.scheduleReconnect(sessionId);
     },
     ensureEventStreamConnected() {
       if (!this.session) {
         return;
       }
-      if (
-        !this.eventSource ||
-        this.eventStreamSessionId !== this.session.id ||
-        this.eventSource.readyState === EventSource.CLOSED
-      ) {
-        this.connectEvents(true);
-      }
+      _sseStream.ensureConnected(this.session.id);
     },
     rememberIncomingEvent(event: ExecutionEvent) {
-      const eventId = String(event.id || "").trim();
-      if (!eventId) {
-        return true;
-      }
-      if (this.receivedEventIds.includes(eventId)) {
-        return false;
-      }
-      this.receivedEventIds = [...this.receivedEventIds, eventId].slice(-RECEIVED_EVENT_ID_LIMIT);
-      this.eventCursorBySession = {
-        ...this.eventCursorBySession,
-        [event.session_id]: eventId,
-      };
-      return true;
+      return _sseStream.rememberIncomingEvent(event);
     },
     disconnectEvents() {
-      if (this.eventReconnectTimer !== null) {
-        window.clearTimeout(this.eventReconnectTimer);
-        this.eventReconnectTimer = null;
-      }
-      this.eventSource?.close();
-      this.eventSource = null;
-      this.eventStreamSessionId = "";
+      _sseStream.disconnect();
     },
     scheduleRefresh(includeTooling = false, delayMs = EVENT_REFRESH_DEBOUNCE_MS) {
       if (!this.session) {
@@ -865,12 +811,14 @@ export const useSessionStore = defineStore("session", {
         const detail = await api.getSession(this.session.id);
         this.applySession(detail);
         await this.refreshToolingData(Boolean(options.includeTooling));
-        this.watcherFailures = 0;
-        this.watcherError = "";
-        this.watcherLastSyncAt = new Date().toISOString();
+        _watcher.recordSuccess();
+        this.watcherFailures = _watcher.failures;
+        this.watcherError = _watcher.error;
+        this.watcherLastSyncAt = _watcher.lastSyncAt;
       } catch (error) {
-        this.watcherFailures += 1;
-        this.watcherError = error instanceof Error ? error.message : "刷新会话失败。";
+        _watcher.recordFailure(error instanceof Error ? error.message : "刷新会话失败。");
+        this.watcherFailures = _watcher.failures;
+        this.watcherError = _watcher.error;
       } finally {
         this.refreshInFlight = false;
         if (this.scheduledToolingRefresh) {
@@ -879,19 +827,17 @@ export const useSessionStore = defineStore("session", {
       }
     },
     startWatcher() {
-      if (this.refreshTimer !== null) {
+      if (_watcher.timer !== null) {
         return;
       }
-      this.scheduleRefresh(false, 0);
-      this.refreshTimer = window.setInterval(() => {
+      _watcher.bindRefresh(async () => {
         this.scheduleRefresh(false);
-      }, WATCHER_INTERVAL_MS);
+      });
+      this.scheduleRefresh(false, 0);
+      _watcher.start();
     },
     stopWatcher() {
-      if (this.refreshTimer !== null) {
-        window.clearInterval(this.refreshTimer);
-        this.refreshTimer = null;
-      }
+      _watcher.stop();
       if (this.scheduledRefreshTimer !== null) {
         window.clearTimeout(this.scheduledRefreshTimer);
         this.scheduledRefreshTimer = null;
@@ -999,11 +945,11 @@ export const useSessionStore = defineStore("session", {
       decision: "approved" | "denied",
       reason?: string,
     ) {
-      if (!this.session || this.resolvingApprovalIds.includes(approvalId)) {
+      if (!this.session || _approvalManager.isResolving(approvalId)) {
         return;
       }
 
-      this.resolvingApprovalIds = [...this.resolvingApprovalIds, approvalId];
+      _approvalManager.markResolving(approvalId);
       this.error = "";
       try {
         const approval = this.session.pending_approvals.find((item) => item.id === approvalId);
@@ -1035,7 +981,7 @@ export const useSessionStore = defineStore("session", {
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Failed to resolve approval.";
       } finally {
-        this.resolvingApprovalIds = this.resolvingApprovalIds.filter((item) => item !== approvalId);
+        _approvalManager.unmarkResolving(approvalId);
       }
     },
     async interruptCurrentTurn() {

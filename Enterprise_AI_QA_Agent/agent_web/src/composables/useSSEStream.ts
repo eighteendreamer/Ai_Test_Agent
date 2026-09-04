@@ -1,8 +1,15 @@
 import type { ExecutionEvent } from "../types";
 import { api } from "../services/api";
 
-const EVENT_RECONNECT_DELAY_MS = 3000;
-const RECEIVED_EVENT_ID_LIMIT = 500;
+export interface SSEStreamConfig {
+  reconnectDelayMs: number;
+  receivedIdLimit: number;
+}
+
+const DEFAULT_SSE_CONFIG: SSEStreamConfig = {
+  reconnectDelayMs: 1500,
+  receivedIdLimit: 5000,
+};
 
 export interface SSEStreamCallbacks {
   onEvent: (event: ExecutionEvent) => void;
@@ -17,6 +24,7 @@ export class SSEStreamManager {
   private _receivedIds: string[] = [];
   private _cursorBySession: Record<string, string> = {};
   private _callbacks: SSEStreamCallbacks | null = null;
+  private _config: SSEStreamConfig;
 
   get source(): EventSource | null {
     return this._source;
@@ -48,6 +56,10 @@ export class SSEStreamManager {
 
   set cursorBySession(value: Record<string, string>) {
     this._cursorBySession = value;
+  }
+
+  constructor(config: Partial<SSEStreamConfig> = {}) {
+    this._config = { ...DEFAULT_SSE_CONFIG, ...config };
   }
 
   bind(callbacks: SSEStreamCallbacks): void {
@@ -105,14 +117,14 @@ export class SSEStreamManager {
     this._reconnectTimer = window.setTimeout(() => {
       this._reconnectTimer = null;
       this.connect(sessionId, true);
-    }, EVENT_RECONNECT_DELAY_MS);
+    }, this._config.reconnectDelayMs);
   }
 
   rememberIncomingEvent(event: ExecutionEvent): boolean {
     const eventId = String(event.id || "").trim();
     if (!eventId) return true;
     if (this._receivedIds.includes(eventId)) return false;
-    this._receivedIds = [...this._receivedIds, eventId].slice(-RECEIVED_EVENT_ID_LIMIT);
+    this._receivedIds = [...this._receivedIds, eventId].slice(-this._config.receivedIdLimit);
     this._cursorBySession = { ...this._cursorBySession, [event.session_id]: eventId };
     return true;
   }
