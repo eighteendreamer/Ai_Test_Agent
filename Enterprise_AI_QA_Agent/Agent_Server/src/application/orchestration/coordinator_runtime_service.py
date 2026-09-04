@@ -136,6 +136,18 @@ class CoordinatorRuntimeService:
         if parent_session is None:
             raise KeyError(f"Parent session not found: {parent_session_id}")
 
+        parent_depth = int(parent_session.metadata.get("agent_depth") or 0)
+        if parent_depth >= self._agent_control.MAX_DEPTH:
+            return {
+                "ok": False,
+                "trace_id": parent_trace_id,
+                "summary": f"Agent 嵌套深度 {parent_depth} 已达上限 {self._agent_control.MAX_DEPTH}，拒绝创建子 Agent。",
+                "workers": [],
+                "artifacts": [],
+                "metrics": {"worker_count": 0, "depth": parent_depth, "max_depth": self._agent_control.MAX_DEPTH},
+                "error": "agent_depth_exceeded",
+            }
+
         if self._is_dispatch_blocked(parent_session, parent_turn_id):
             guard = self._get_failure_guard(parent_session)
             return {
@@ -196,6 +208,7 @@ class CoordinatorRuntimeService:
                         "worker_description": worker.description,
                         "dispatch_role": dispatch_role,
                         "notification_mode": "task-notification",
+                        "agent_depth": parent_depth + 1,
                         **self._trusted_worker_metadata(parent_session, mode_key),
                     },
                 )
