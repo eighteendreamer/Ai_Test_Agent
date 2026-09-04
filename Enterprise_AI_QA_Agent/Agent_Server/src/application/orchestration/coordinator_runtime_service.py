@@ -9,7 +9,10 @@ from uuid import uuid4
 from xml.sax.saxutils import escape
 
 from src.application.sessions.session_service import SessionService
+from src.core.agent_communication import AgentMessage, AgentMessageBus, ChildSessionWatcher
+from src.core.agent_control import AgentControlService
 from src.core.config import Settings
+from src.core.worker_pool import WorkerPool
 from src.registry.agents import AgentRegistry
 from src.runtime.store import SessionStore
 from src.schemas.session import (
@@ -53,6 +56,18 @@ class CoordinatorRuntimeService:
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
         self._watch_tasks: dict[str, asyncio.Task[None]] = {}
         self._max_consecutive_failures = 3
+        self._agent_control = AgentControlService(
+            max_concurrent=settings.orchestration.coordinator_max_workers,
+        )
+        self._worker_pool = WorkerPool()
+        self._message_bus = AgentMessageBus()
+        self._watchers: dict[str, ChildSessionWatcher] = {}
+
+    def _on_worker_task_done(self, session_id: str, task_id: str) -> None:
+        watcher = self._watchers.pop(session_id, None)
+        if watcher and not watcher.is_settled:
+            watcher.notify_completed()
+        self._worker_pool.complete_worker(worker_id=task_id)
 
     async def cancel_workers(
         self,
@@ -213,6 +228,15 @@ class CoordinatorRuntimeService:
             )
             self._active_tasks[worker.task_id] = task
             task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
+            self._worker_pool.register_worker(
+                worker_id=worker.task_id,
+                session_id=child_session.id,
+                agent_key=worker.agent_key,
+            )
+            self._watchers[child_session.id] = ChildSessionWatcher(child_session.id)
+            task.add_done_callback(
+                lambda _finished, sid=child_session.id, tid=worker.task_id: self._on_worker_task_done(sid, tid)
+            )
 
         await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
         if followup_workers:
