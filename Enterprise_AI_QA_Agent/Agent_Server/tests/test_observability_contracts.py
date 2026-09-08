@@ -151,3 +151,56 @@ def test_trace_scope_exposes_only_external_run_reference_fields() -> None:
         "dotted_order": "trace-1.0001",
         "url": "https://smith.langchain.com/r/trace-1",
     }
+
+
+def test_errors_only_does_not_trace_successful_turn(monkeypatch: pytest.MonkeyPatch) -> None:
+    import langsmith
+
+    calls: list[tuple[object, object]] = []
+
+    class _ErrorTrace:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, traceback):
+            calls.append((exc_type, exc))
+            return False
+
+    monkeypatch.setattr(langsmith, "trace", lambda **kwargs: _ErrorTrace())
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="errors_only"),
+        client=object(),
+    )
+
+    with adapter.trace_turn(_context()):
+        pass
+
+    assert calls == []
+
+
+def test_errors_only_records_failed_turn_without_replacing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    import langsmith
+
+    calls: list[tuple[object, object]] = []
+
+    class _ErrorTrace:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, traceback):
+            calls.append((exc_type, exc))
+            return False
+
+    monkeypatch.setattr(langsmith, "trace", lambda **kwargs: _ErrorTrace())
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="errors_only"),
+        client=object(),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with adapter.trace_turn(_context()):
+            raise RuntimeError("boom")
+
+    assert len(calls) == 1
+    assert calls[0][0] is RuntimeError
+    assert isinstance(calls[0][1], RuntimeError)

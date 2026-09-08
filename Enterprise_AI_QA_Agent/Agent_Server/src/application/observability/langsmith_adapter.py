@@ -83,6 +83,17 @@ class LangSmithObservabilityAdapter:
             yield None
             return
 
+        # ``errors_only`` deliberately avoids opening a successful Run.  The
+        # exception is recorded after the business callback unwinds, so the
+        # observability path cannot affect the callback's control flow.
+        if self._config.tracing_mode == "errors_only":
+            try:
+                yield None
+            except BaseException as exc:
+                self._record_error_trace(context, inputs=inputs, exception=exc)
+                raise
+            return
+
         try:
             import langsmith as ls
 
@@ -144,7 +155,7 @@ class LangSmithObservabilityAdapter:
         inputs: dict[str, Any] | None = None,
     ) -> Iterator[None]:
         """Create a child span while a turn trace is active."""
-        if not self.enabled:
+        if not self.enabled or self._config.tracing_mode == "errors_only":
             yield
             return
         try:
@@ -206,6 +217,45 @@ class LangSmithObservabilityAdapter:
             kwargs["workspace_id"] = workspace_id
         self._client = langsmith_module.Client(**kwargs)
         return self._client
+
+    def _record_error_trace(
+        self,
+        context: TraceContext,
+        *,
+        inputs: dict[str, Any] | None,
+        exception: BaseException,
+    ) -> None:
+        try:
+            import langsmith as ls
+
+            client = self._get_client(ls)
+            metadata = self._redactor.sanitize_for_audit(
+                {**context.metadata(), "environment": self._environment}
+            )
+            safe_inputs = self._redactor.sanitize_for_audit(inputs or {})
+            if not self._config.capture_inputs:
+                safe_inputs = {"trace_id": context.trace_id, "turn_id": context.turn_id}
+            trace_cm = ls.trace(
+                name="enterprise_ai_qa_agent.turn.error",
+                run_type="chain",
+                inputs=safe_inputs,
+                project_name=self._config.project,
+                tags=[*context.tags, "outcome:error"],
+                metadata=metadata,
+                client=client,
+                exceptions_to_handle=(Exception,),
+            )
+            run = trace_cm.__enter__()
+            self._safe_exit(trace_cm, exception)
+            logger.info(
+                "langsmith_error_trace_recorded",
+                extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
+            )
+        except Exception:
+            logger.exception(
+                "langsmith_error_trace_failed",
+                extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
+            )
 
     @staticmethod
     def _safe_exit(manager: Any, exception: BaseException | None) -> None:
