@@ -705,7 +705,7 @@ pip check 已知冲突：
 
 前置条件：
 
-- 阶段 0 已完成。
+- 阶段 0 的可执行基线与 P0-10 契约固化已完成；P0-07 的生态版本阻塞单独保留，不得被误判为已关闭。
 - LangSmith 项目、API Key 存储方式和数据驻留策略已确认。
 - 脱敏字段白名单已评审。
 
@@ -747,7 +747,7 @@ pip check 已知冲突：
 本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入但等待外部环境验证；补齐 `errors_only` 成功/失败语义。
 当前测试结果（2026-09-08，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测/Flow 专项 20 passed；后端全量 739 passed、8 skipped、1 warning（24.26s）；前端 32 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、默认模型会话、事件历史、completed Snapshot 和 Flow 查询均通过；真实模型回复为“观测策略回归成功”。
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
-当前阻塞：真实 LangSmith 环境验证尚未完成；P1-08/P1-09 需外部环境复验后才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
+当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
 最近提交：`a5efb31`（errors_only 观测语义）；阶段 1 本轮未修改其执行代码。
 
