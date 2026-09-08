@@ -289,6 +289,8 @@ async def lifespan(app: FastAPI):
         settings.langsmith,
         environment=settings.app_env,
     )
+    model_runtime_service.set_observability_service(observability_service)
+    tool_runtime_service.set_observability_service(observability_service)
     graph = build_agent_graph(
         agent_registry=agent_registry,
         tool_registry=tool_registry,

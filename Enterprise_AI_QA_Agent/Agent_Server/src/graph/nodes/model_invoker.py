@@ -68,6 +68,13 @@ def build_model_invoker_node(
             tools=tool_registry.build_model_tools(model_visible_tool_keys),
             system_prompt_sections=system_sections,
             runtime_message_sections=runtime_message_sections,
+            trace_context={
+                "session_id": state["session_id"],
+                "turn_id": state["turn_id"],
+                "trace_id": state["trace_id"],
+                "mode_key": state["mode_key"],
+                "agent_key": state["selected_agent_key"],
+            },
         )
         state["model_request_payload"] = request_payload.model_dump(mode="python")
         state["model_response_summary"] = {}

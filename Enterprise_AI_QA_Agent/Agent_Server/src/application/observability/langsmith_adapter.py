@@ -154,6 +154,16 @@ class LangSmithObservabilityAdapter:
         with trace_cm:
             yield
 
+    def context_from_mapping(self, value: dict[str, Any]) -> TraceContext:
+        return TraceContext(
+            session_id=value.get("session_id", ""),
+            turn_id=value.get("turn_id", ""),
+            trace_id=value.get("trace_id", ""),
+            mode_key=value.get("mode_key", "default"),
+            agent_key=value.get("agent_key", ""),
+            environment=self._environment,
+        )
+
     def _get_client(self, langsmith_module: Any) -> Any:
         if self._client is not None:
             return self._client

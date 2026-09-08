@@ -166,6 +166,7 @@ class ModelInvocationRequest(BaseModel):
     tools: list[dict[str, Any]] = Field(default_factory=list)
     system_prompt_sections: list[PromptSection] = Field(default_factory=list)
     runtime_message_sections: list[PromptSection] = Field(default_factory=list)
+    trace_context: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _normalize_messages(self):

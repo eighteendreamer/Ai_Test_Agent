@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ from typing import Any
 import httpx
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.observability import LangSmithObservabilityAdapter
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.documents.api_docs_service import ApiDocsService
@@ -115,6 +117,7 @@ class ToolRuntimeService:
     ) -> None:
         self._request_timeout_seconds = request_timeout_seconds
         self._settings = settings
+        self._observability_service: LangSmithObservabilityAdapter | None = None
         self._docs_dir = Path(__file__).resolve().parents[3] / "docs"
         self._workspace_root = Path.cwd()
         self._mcp_runtime_service = mcp_runtime_service
@@ -264,6 +267,9 @@ class ToolRuntimeService:
             "mail-trash": self._run_mail_trash,
             "mail-download-attachment": self._run_mail_download_attachment,
         }
+
+    def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
+        self._observability_service = service
 
     def set_coordinator_runtime_service(self, coordinator_runtime_service) -> None:
         self._coordinator_runtime_service = coordinator_runtime_service
@@ -437,7 +443,28 @@ class ToolRuntimeService:
                     call_id=call.id,
                 )
 
-            raw_result = await handler(call.arguments, job_context)
+            trace_context = None
+            if self._observability_service is not None:
+                trace_context = self._observability_service.context_from_mapping(
+                    {
+                        "session_id": context.session_id,
+                        "turn_id": context.turn_id,
+                        "trace_id": context.trace_id,
+                        "mode_key": context.context_bundle.get("mode_key", "default"),
+                        "agent_key": context.selected_agent_key,
+                    }
+                )
+            trace_manager = (
+                self._observability_service.trace_node(
+                    trace_context,
+                    node_name=f"tool.{tool.key}",
+                    inputs={"tool_key": tool.key, "call_id": call.id},
+                )
+                if trace_context is not None
+                else nullcontext()
+            )
+            with trace_manager:
+                raw_result = await handler(call.arguments, job_context)
             result = self._normalize_result(tool, raw_result, context=job_context)
             if self._artifact_storage_service is not None:
                 result = await self._artifact_storage_service.store_output_artifacts(

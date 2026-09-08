@@ -3,7 +3,7 @@
 import contextvars
 import json
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
 
 from src.application.model_clients import ProviderClient, ProviderClientError, resolve_client
@@ -12,6 +12,8 @@ from src.application.model_clients.provider_profiles import (
     resolve_provider_profile,
 )
 from src.application.models.oauth_token_service import OAuthTokenService
+from src.application.observability import LangSmithObservabilityAdapter
+from src.application.observability.trace_context import TraceContext
 from src.core.config import Settings
 from src.registry.models import ModelRegistry
 from src.runtime.execution_logging import summarize_messages, truncate_text
@@ -42,6 +44,10 @@ class ModelRuntimeService:
         self._model_registry = model_registry
         self._settings = settings
         self._oauth_token_service = oauth_token_service
+        self._observability_service: LangSmithObservabilityAdapter | None = None
+
+    def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
+        self._observability_service = service
 
     def get_default_model_config(self) -> ModelConfigRecord | None:
         try:
@@ -192,9 +198,22 @@ class ModelRuntimeService:
         api_key: str,
         request: ModelInvocationRequest,
     ) -> dict[str, Any]:
-        if _stream_handler_var.get() is not None:
-            return await client.stream(config, api_key, request, self._emit_stream_chunk)
-        return await client.invoke(config, api_key, request)
+        trace_context = None
+        if self._observability_service is not None and request.trace_context:
+            trace_context = self._observability_service.context_from_mapping(request.trace_context)
+        trace_manager = (
+            self._observability_service.trace_node(
+                trace_context,
+                node_name="model_call",
+                inputs={"model_key": config.key, "provider": config.provider},
+            )
+            if trace_context is not None
+            else nullcontext()
+        )
+        with trace_manager:
+            if _stream_handler_var.get() is not None:
+                return await client.stream(config, api_key, request, self._emit_stream_chunk)
+            return await client.invoke(config, api_key, request)
 
     def _provider_profile_name(self, config: ModelConfigRecord) -> str:
         return resolve_provider_profile(config.provider).provider
