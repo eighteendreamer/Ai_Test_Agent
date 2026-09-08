@@ -132,8 +132,18 @@ class RuntimeService:
             self._security_tool_bootstrap_requested(request)
             or self._should_use_dedicated_security_runtime(request)
         ):
-            return await self._execute_security_mode_turn(session, request, initial_state)
-        return await self._execute_state(session, initial_state, on_model_chunk=on_model_chunk)
+            return await self._execute_observed(
+                session,
+                request,
+                initial_state,
+                lambda: self._execute_security_mode_turn(session, request, initial_state),
+            )
+        return await self._execute_observed(
+            session,
+            request,
+            initial_state,
+            lambda: self._execute_state(session, initial_state, on_model_chunk=on_model_chunk),
+        )
 
     async def resume_after_approval(
         self,
@@ -431,7 +441,57 @@ class RuntimeService:
             approval_id=approval["id"],
         )
         self.clear_interrupt(session.id)
-        return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
+        request = ExecutionRequest(
+            session_id=session.id,
+            turn_id=str(state["turn_id"]),
+            user_message=str(state.get("user_message") or ""),
+            normalized_input=str(state.get("normalized_input") or ""),
+            mode_key=str(state.get("mode_key") or session.mode_key),
+            agent_key=str(state.get("selected_agent_key") or ""),
+            model_key=str(state.get("selected_model_key") or ""),
+            context=dict(state.get("context_bundle") or {}),
+        )
+        return await self._execute_observed(
+            session,
+            request,
+            state,
+            lambda: self._execute_state(session, state, on_model_chunk=on_model_chunk),
+        )
+
+    async def _execute_observed(
+        self,
+        session: SessionRecord,
+        request: ExecutionRequest,
+        state: dict[str, Any],
+        executor: Callable[[], Awaitable[RuntimeTurnResult]],
+    ) -> RuntimeTurnResult:
+        trace_context = TraceContext.from_graph_state(
+            state,
+            project_id=str(getattr(session, "project_id", "") or ""),
+        )
+        trace_inputs = {
+            "session_id": trace_context.session_id,
+            "turn_id": trace_context.turn_id,
+            "mode_key": trace_context.mode_key,
+        }
+        trace_manager = (
+            self._observability_service.trace_turn(trace_context, inputs=trace_inputs)
+            if self._observability_service is not None
+            else nullcontext()
+        )
+        with trace_manager as trace_scope:
+            result = await executor()
+            if trace_scope is not None:
+                trace_scope.set_outputs(
+                    {
+                        "termination_reason": result.state.get("termination_reason", ""),
+                        "control_state": result.state.get("control_state", ""),
+                        "tool_result_count": len(result.state.get("tool_results") or []),
+                        "pending_approval_count": len(result.state.get("pending_approvals") or []),
+                        "response_preview": truncate_text(result.output_text, 240),
+                    }
+                )
+        return result
 
     async def resume_turn(
         self,
@@ -465,33 +525,8 @@ class RuntimeService:
         state: dict[str, Any],
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
-        trace_context = TraceContext.from_graph_state(
-            state,
-            project_id=str(getattr(session, "project_id", "") or ""),
-        )
-        trace_inputs = {
-            "session_id": trace_context.session_id,
-            "turn_id": trace_context.turn_id,
-            "mode_key": trace_context.mode_key,
-        }
-        trace_manager = (
-            self._observability_service.trace_turn(trace_context, inputs=trace_inputs)
-            if self._observability_service is not None
-            else nullcontext()
-        )
-        with trace_manager as trace_scope:
-            async with self._model_runtime_service.stream_handler(on_model_chunk):
-                result = await self._run_until_settled(state)
-            if trace_scope is not None:
-                trace_scope.set_outputs(
-                    {
-                        "termination_reason": result.get("termination_reason", ""),
-                        "control_state": result.get("control_state", ""),
-                        "tool_result_count": len(result.get("tool_results") or []),
-                        "pending_approval_count": len(result.get("pending_approvals") or []),
-                        "response_preview": truncate_text(result.get("final_response", ""), 240),
-                    }
-                )
+        async with self._model_runtime_service.stream_handler(on_model_chunk):
+            result = await self._run_until_settled(state)
 
         self._convert_model_interruption_to_resumable(result)
         if result["termination_reason"] == "interrupted":

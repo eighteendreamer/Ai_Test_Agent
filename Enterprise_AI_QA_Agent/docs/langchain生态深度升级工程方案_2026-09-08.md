@@ -577,7 +577,7 @@ Feature Flags：
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 70% | 已落地生态依赖声明、LangSmith 配置、TraceContext 和 Flag 默认关闭；依赖冲突处置、锁定文件和全量契约固化仍未完成 | 新增契约测试和全量回归通过；pip check 未通过 |
-| 1 | LangSmith 非阻塞观测 | 进行中 | 30% | 已落地可选 Adapter、No-op 降级和 Turn 根 Trace 接线；Graph Node/Model/Tool/Worker 子 Trace、本地 Run 引用和前端深链接仍未完成 | Adapter 离线测试通过；真实 LangSmith 上报未执行 |
+| 1 | LangSmith 非阻塞观测 | 进行中 | 50% | 已落地普通/安全/恢复入口的 Turn 根 Trace、Graph Node 子 Trace、No-op 降级；Model/Tool/Worker 子 Trace、本地 Run 引用和前端深链接仍未完成 | 离线观测测试通过；真实业务链路通过；真实 LangSmith 上报未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
 | 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
@@ -663,8 +663,8 @@ pip check 已知冲突：
 - 全量回归不低于 14.2 基线。
 - 尚未改变任何生产执行语义。
 
-本批完成项：P0-01、P0-02、P0-08、P0-09；部分完成 P0-06。  
-当前测试结果：`test_observability_contracts.py` 9 passed；后端全量 736 passed、8 skipped、1 warning；compileall 通过；真实 FastAPI 启动和健康检查通过。  
+本批完成项：P0-01、P0-02、P0-08、P0-09；部分完成 P0-06。
+当前测试结果：`test_observability_contracts.py` 9 passed；后端全量 736 passed、8 skipped、1 warning；compileall 通过；真实 FastAPI 启动和健康检查通过。
 当前阻塞：依赖冲突处置方案、锁定文件、Deep Agents 兼容版本、事件契约全量固化尚未完成。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
 最近提交：待本批代码提交。
@@ -715,8 +715,8 @@ pip check 已知冲突：
 - Flow 仍以本地事件为事实源。
 - 有一键关闭和回滚验证。
 
-本批完成项：P1-01、P1-02、P1-03、P1-04 的最小实现；P1-11 已覆盖 SDK 启动失败降级。
-当前测试结果：Adapter 离线测试通过；LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key）。真实业务链路在 LangSmith 关闭状态下已验证：创建 Session、默认模型调用、事件持久化、Snapshot 保存和 Flow 查询均通过。
+本批完成项：P1-01、P1-02、P1-03、P1-04、P1-05 的最小实现；P1-11 已覆盖 SDK 启动失败降级。
+当前测试结果：观测相关测试 17 passed；后端全量 736 passed、8 skipped、1 warning；真实业务链路第二次验证通过：创建 Session、默认模型调用、事件持久化、completed Snapshot 和 Flow 查询均通过，模型返回“观测链路成功”。第一次真实验证发现同步 `planner` 节点被错误 `await`，修复包装器后回归通过。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key）。
 当前阻塞：Graph Node/Model/Tool/Worker 子 Trace、本地外部 Run 引用、前端 Trace 深链接和真实 LangSmith 环境验证尚未完成。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
 最近提交：待本批代码提交。

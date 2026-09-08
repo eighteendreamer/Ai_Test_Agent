@@ -285,6 +285,10 @@ async def lifespan(app: FastAPI):
         tool_job_service=tool_job_service,
         security_settings=settings,
     )
+    observability_service = LangSmithObservabilityAdapter(
+        settings.langsmith,
+        environment=settings.app_env,
+    )
     graph = build_agent_graph(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
@@ -299,16 +303,13 @@ async def lifespan(app: FastAPI):
         tool_runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
         tool_message_max_chars=settings.orchestration.tool_message_max_chars,
+        observability_service=observability_service,
     )
     context_compaction_service = ContextCompactionService(
         model_runtime_service=model_runtime_service,
         transcript_hygiene_service=transcript_hygiene_service,
         watermark=settings.orchestration.context_compaction_watermark,
         max_tail_messages=settings.orchestration.context_max_tail_messages,
-    )
-    observability_service = LangSmithObservabilityAdapter(
-        settings.langsmith,
-        environment=settings.app_env,
     )
     runtime_service = RuntimeService(
         graph=graph,

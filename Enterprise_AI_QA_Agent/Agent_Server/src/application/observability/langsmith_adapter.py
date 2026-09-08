@@ -114,6 +114,46 @@ class LangSmithObservabilityAdapter:
             self._safe_exit(tracing_cm, None)
             self._safe_exit(run_cm, None)
 
+    @contextmanager
+    def trace_node(
+        self,
+        context: TraceContext,
+        *,
+        node_name: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> Iterator[None]:
+        """Create a child span while a turn trace is active."""
+        if not self.enabled:
+            yield
+            return
+        try:
+            import langsmith as ls
+
+            client = self._get_client(ls)
+            metadata = self._redactor.sanitize_for_audit(context.metadata())
+            safe_inputs = self._redactor.sanitize_for_audit(inputs or {})
+            if not self._config.capture_inputs:
+                safe_inputs = {"trace_id": context.trace_id, "turn_id": context.turn_id}
+            trace_cm = ls.trace(
+                name=f"enterprise_ai_qa_agent.node.{node_name}",
+                run_type="chain",
+                inputs=safe_inputs,
+                project_name=self._config.project,
+                tags=[*context.tags, f"node:{node_name}"],
+                metadata={**metadata, "node_name": node_name},
+                client=client,
+                exceptions_to_handle=(Exception,),
+            )
+        except Exception:
+            logger.exception(
+                "langsmith_node_trace_failed",
+                extra={"trace_id": context.trace_id, "node_name": node_name},
+            )
+            yield
+            return
+        with trace_cm:
+            yield
+
     def _get_client(self, langsmith_module: Any) -> Any:
         if self._client is not None:
             return self._client

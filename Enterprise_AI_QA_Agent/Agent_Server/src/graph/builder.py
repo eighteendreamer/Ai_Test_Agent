@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import inspect
+
 from langgraph.graph import END, START, StateGraph
 
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.permissions.permission_service import PermissionService
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
@@ -42,15 +45,38 @@ def build_agent_graph(
     tool_job_service: ToolJobService | None = None,
     tool_message_max_chars: int = 24000,
     safety_gate: SafetyGate | None = None,
+    observability_service: LangSmithObservabilityAdapter | None = None,
 ):
+    def instrument(node_name: str, node):
+        if observability_service is None:
+            return node
+
+        async def observed_node(state: AgentGraphState) -> AgentGraphState:
+            context = TraceContext.from_graph_state(state)
+            with observability_service.trace_node(
+                context,
+                node_name=node_name,
+                inputs={"phase": node_name},
+            ):
+                result = node(state)
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+
+        observed_node.__name__ = getattr(node, "__name__", node_name)
+        return observed_node
+
     graph = StateGraph(AgentGraphState)
     graph.add_node(
         "context_builder",
-        build_context_builder_node(memory_runtime_service=memory_runtime_service),
+        instrument(
+            "context_builder",
+            build_context_builder_node(memory_runtime_service=memory_runtime_service),
+        ),
     )
     graph.add_node(
         "router",
-        build_router_node(
+        instrument("router", build_router_node(
             agent_registry=agent_registry,
             tool_registry=tool_registry,
             model_registry=model_registry,
@@ -58,33 +84,33 @@ def build_agent_graph(
             skill_runtime_service=skill_runtime_service,
             mcp_runtime_service=mcp_runtime_service,
             memory_runtime_service=memory_runtime_service,
-        ),
+        )),
     )
-    graph.add_node("planner", planner)
+    graph.add_node("planner", instrument("planner", planner))
     graph.add_node(
         "permission_gate",
-        build_permission_gate(
+        instrument("permission_gate", build_permission_gate(
             permission_service=permission_service,
             tool_registry=tool_registry,
-        ),
+        )),
     )
     graph.add_node(
         "prompt_assembler",
-        build_prompt_assembler_node(
+        instrument("prompt_assembler", build_prompt_assembler_node(
             prompt_assembly_service=prompt_assembly_service,
             agent_registry=agent_registry,
-        ),
+        )),
     )
     graph.add_node(
         "model_invoker",
-        build_model_invoker_node(
+        instrument("model_invoker", build_model_invoker_node(
             model_runtime_service=model_runtime_service,
             tool_registry=tool_registry,
-        ),
+        )),
     )
     graph.add_node(
         "tool_executor",
-        build_tool_executor_node(
+        instrument("tool_executor", build_tool_executor_node(
             tool_registry=tool_registry,
             permission_service=permission_service,
             tool_runtime_service=tool_runtime_service,
@@ -93,15 +119,15 @@ def build_agent_graph(
             skill_runtime_service=skill_runtime_service,
             tool_message_max_chars=tool_message_max_chars,
             safety_gate=safety_gate,
-        ),
+        )),
     )
     graph.add_node(
         "finalizer",
-        build_finalizer_node(
+        instrument("finalizer", build_finalizer_node(
             model_runtime_service=model_runtime_service,
-        ),
+        )),
     )
-    graph.add_node("responder", responder)
+    graph.add_node("responder", instrument("responder", responder))
 
     graph.add_edge(START, "context_builder")
     graph.add_edge("context_builder", "router")
