@@ -627,7 +627,7 @@ pip check 已知冲突：
 
 真实运行链路（2026-09-08）已验证两次：启动 `uvicorn src.main:app --host 127.0.0.1 --port 18124` 成功；`GET /api/v1/health` 返回 200 且 `postgres_ok=true`；创建 Session、发送消息、调用数据库默认模型、获取事件历史、Snapshot 和 Flow 均返回 200；最近一次验证生成 24 条事件和 1 个 Snapshot。LangSmith 未启用，因此本次不证明外部 Trace 已成功上报。
 
-这些冲突发生在生态升级代码实施前，必须作为“既有环境债务”单独记录。处置结论已确定为将 browser-use、mem0ai、mitmproxy 隔离到独立工具环境，不通过降级主服务依赖消除共享环境冲突。详细证据和兼容矩阵见 `Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md`。阶段 0 完成仍需在干净主服务环境证明 `pip check` 和真实运行通过。
+这些冲突发生在生态升级代码实施前，必须作为“既有环境债务”单独记录。处置结论已确定为将 browser-use、mem0ai、mitmproxy 隔离到独立工具环境，不通过降级主服务依赖消除共享环境冲突。详细证据和兼容矩阵见 `Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md`。干净主服务环境的 `pip check` 和真实运行已通过；阶段 0 目前仅剩 P0-07 的生态协调阻塞，不能因此提前关闭阶段。
 
 ### 14.3 阶段 0：契约、依赖和可回滚基线
 
@@ -682,7 +682,7 @@ pip check 已知冲突：
 
 当前阻塞：主服务不能直接声明 Deep Agents extra，因为官方 0.7.13 要求 LangChain 至少 1.3.18、Core 至少 1.6.1、LangGraph 至少 1.2.11，和当前锁定组合不兼容；还需阶段 2—3 完成协调升级、Provider 真实链路和回滚验证。P0-10 已完成，不再是阶段 0 阻塞项。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
-最近提交：待本批提交。
+最近提交：`ef1a9bc`（P0-10 契约固化）；`99f95e8`（契约文档格式修正）。
 
 #### P0-10 实施批次记录（2026-09-08）
 
@@ -696,7 +696,7 @@ pip check 已知冲突：
 - 跳过：未执行真实 LangSmith 外部上报；没有 API Key，因此不能宣称外部 Trace 可访问。
 - 回滚验证：默认关闭 Feature Flag 的旧路径全量回归通过；本批仅扩大前端类型与增加契约测试，可回滚至上一提交。
 - 已知限制：LangSmith 真实网络上报、Deep Agents 主服务接入和外部 Trace 树仍分别留在阶段 1/4，不计入 P0-10 完成。
-- 下一步：先提交本批；然后按方案进入阶段 1 未完成的真实 LangSmith 验证，或在用户批准并完成兼容升级矩阵后开始阶段 2 Model Adapter，不直接跳入 Deep Agents。
+- 下一步：本批已提交；按方案先完成阶段 1 的真实 LangSmith 验证，或在用户批准并完成兼容升级矩阵后开始阶段 2 Model Adapter，不直接跳入 Deep Agents。
 
 ### 14.4 阶段 1：LangSmith 非阻塞观测
 
@@ -749,7 +749,7 @@ pip check 已知冲突：
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
 当前阻塞：真实 LangSmith 环境验证尚未完成；P1-08/P1-09 需外部环境复验后才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
-最近提交：待本批代码提交。
+最近提交：`a5efb31`（errors_only 观测语义）；阶段 1 本轮未修改其执行代码。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
