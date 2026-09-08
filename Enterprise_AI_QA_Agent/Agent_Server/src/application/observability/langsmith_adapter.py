@@ -22,6 +22,27 @@ class TraceScope:
     _redactor: OutputSafetyPolicy
     _capture_outputs: bool = False
 
+    def reference(self) -> dict[str, str]:
+        """Return non-sensitive identifiers for local event/snapshot correlation."""
+        reference: dict[str, str] = {}
+        for key, attribute in (
+            ("run_id", "id"),
+            ("trace_id", "trace_id"),
+            ("dotted_order", "dotted_order"),
+        ):
+            value = getattr(self._run, attribute, "")
+            if value:
+                reference[key] = str(value)
+        get_url = getattr(self._run, "get_url", None)
+        if callable(get_url):
+            try:
+                url = get_url()
+            except Exception:  # pragma: no cover - SDK/network specific
+                url = ""
+            if url:
+                reference["url"] = str(url)
+        return reference
+
     def set_outputs(self, outputs: dict[str, Any]) -> None:
         if not self._capture_outputs:
             return
@@ -159,6 +180,7 @@ class LangSmithObservabilityAdapter:
             session_id=value.get("session_id", ""),
             turn_id=value.get("turn_id", ""),
             trace_id=value.get("trace_id", ""),
+            parent_trace_id=value.get("parent_trace_id", ""),
             mode_key=value.get("mode_key", "default"),
             agent_key=value.get("agent_key", ""),
             environment=self._environment,

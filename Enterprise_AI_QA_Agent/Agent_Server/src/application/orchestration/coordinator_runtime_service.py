@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import defaultdict
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,7 @@ from uuid import uuid4
 from xml.sax.saxutils import escape
 
 from src.application.sessions.session_service import SessionService
+from src.application.observability import LangSmithObservabilityAdapter
 from src.core.agent_communication import AgentMessage, AgentMessageBus, ChildSessionWatcher
 from src.core.agent_control import AgentControlService
 from src.core.config import Settings
@@ -62,6 +64,10 @@ class CoordinatorRuntimeService:
         self._worker_pool = WorkerPool()
         self._message_bus = AgentMessageBus()
         self._watchers: dict[str, ChildSessionWatcher] = {}
+        self._observability_service: LangSmithObservabilityAdapter | None = None
+
+    def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
+        self._observability_service = service
 
     def _on_worker_task_done(self, session_id: str, task_id: str) -> None:
         watcher = self._watchers.pop(session_id, None)
@@ -357,30 +363,57 @@ class CoordinatorRuntimeService:
 
         try:
             mode_key = self._resolve_worker_mode_key(worker)
-            response = await self._session_service.send_message(
-                child_session_id,
-                SendMessageRequest(
-                    content=worker.prompt,
-                    mode_key=mode_key,
-                    agent_key=worker.agent_key,
-                    model_key=worker.model_key,
-                    skill_keys=worker.skill_keys,
-                    context={
-                        **worker.context,
-                        "parent_session_id": parent_session_id,
-                        "parent_turn_id": parent_turn_id,
+            trace_context = None
+            observability_service = getattr(self, "_observability_service", None)
+            if observability_service is not None and parent_trace_id and parent_turn_id:
+                trace_context = observability_service.context_from_mapping(
+                    {
+                        "session_id": child_session_id,
+                        "turn_id": parent_turn_id,
+                        "trace_id": parent_trace_id,
                         "parent_trace_id": parent_trace_id,
+                        "mode_key": mode_key,
+                        "agent_key": worker.agent_key,
+                    }
+                )
+            trace_manager = (
+                observability_service.trace_node(
+                    trace_context,
+                    node_name=f"worker.{worker.agent_key}",
+                    inputs={
                         "task_id": worker.task_id,
-                        "dispatch_description": worker.description,
+                        "child_session_id": child_session_id,
+                        "agent_key": worker.agent_key,
                     },
-                    metadata={
-                        "message_kind": "coordinator_assignment",
-                        "task_id": worker.task_id,
-                        "parent_session_id": parent_session_id,
-                        "parent_turn_id": parent_turn_id,
-                    },
-                ),
+                )
+                if trace_context is not None
+                else nullcontext()
             )
+            with trace_manager:
+                response = await self._session_service.send_message(
+                    child_session_id,
+                    SendMessageRequest(
+                        content=worker.prompt,
+                        mode_key=mode_key,
+                        agent_key=worker.agent_key,
+                        model_key=worker.model_key,
+                        skill_keys=worker.skill_keys,
+                        context={
+                            **worker.context,
+                            "parent_session_id": parent_session_id,
+                            "parent_turn_id": parent_turn_id,
+                            "parent_trace_id": parent_trace_id,
+                            "task_id": worker.task_id,
+                            "dispatch_description": worker.description,
+                        },
+                        metadata={
+                            "message_kind": "coordinator_assignment",
+                            "task_id": worker.task_id,
+                            "parent_session_id": parent_session_id,
+                            "parent_turn_id": parent_turn_id,
+                        },
+                    ),
+                )
             child_session = response.session
             result_text = response.output.content
             notification_status = child_session.status.value

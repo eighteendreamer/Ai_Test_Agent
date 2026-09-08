@@ -577,7 +577,7 @@ Feature Flags：
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 70% | 已落地生态依赖声明、LangSmith 配置、TraceContext 和 Flag 默认关闭；依赖冲突处置、锁定文件和全量契约固化仍未完成 | 新增契约测试和全量回归通过；pip check 未通过 |
-| 1 | LangSmith 非阻塞观测 | 进行中 | 65% | 已落地普通/安全/恢复入口的 Turn 根 Trace、Graph Node、Model、Tool 子 Trace 和 No-op 降级；Worker 父子 Trace、本地 Run 引用、前端深链接和真实外部上报仍未完成 | 2026-09-08 观测专项 70 项、后端全量和真实默认模型链路通过；真实 LangSmith 上报未执行 |
+| 1 | LangSmith 非阻塞观测 | 进行中 | 72% | 已落地普通/安全/恢复入口的 Turn 根 Trace、Graph Node、Model、Tool、Worker 边界 Trace、No-op 降级和本地 Run 引用写入；前端深链接、配置采样语义和真实外部上报仍未完成 | 2026-09-08 观测专项 71 项、后端全量和真实默认模型链路通过；真实 LangSmith 上报未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
 | 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
@@ -691,8 +691,8 @@ pip check 已知冲突：
 | P1-05 | 建立 Graph Node 子运行 | graph 节点边界 | 未进行 | 节点层级和状态正确 |
 | P1-06 | 建立 Model Run | ModelRuntimeService.invoke | 已完成（本批） | Model 调用通过观测适配器创建独立子 Trace；Provider 调用语义保持不变 |
 | P1-07 | 建立 Tool Run | ToolRuntimeService | 已完成（本批） | Tool handler 执行通过适配器创建独立子 Trace；权限、审批、Job 和错误语义保持不变 |
-| P1-08 | 建立 Worker Nested Run | CoordinatorRuntimeService | 未进行 | 父子 trace 可关联 |
-| P1-09 | 本地保存外部 Run 引用 | Event/Snapshot metadata | 未进行 | trace_id 可双向定位 |
+| P1-08 | 建立 Worker Nested Run | CoordinatorRuntimeService | 进行中（本批已实现边界） | Worker 边界复用现有父上下文并创建子 Trace；需真实 LangSmith 环境确认外部树层级 |
+| P1-09 | 本地保存外部 Run 引用 | Event/Snapshot metadata | 进行中（本批已实现） | 已将 run_id、trace_id、dotted_order、URL 写入本地执行上下文和事件；需真实上报确认引用可访问 |
 | P1-10 | 前端增加 Trace 深链接 | Flow Inspector/Snapshot 面板 | 未进行 | 未启用时不影响页面 |
 | P1-11 | 增加超时、降级和结构化日志 | Adapter/主链边界 | 未进行 | 外部失败不阻断业务 |
 
@@ -715,10 +715,10 @@ pip check 已知冲突：
 - Flow 仍以本地事件为事实源。
 - 有一键关闭和回滚验证。
 
-本批完成项：P1-01、P1-02、P1-03、P1-04、P1-05、P1-06、P1-07 的实现；P1-11 已覆盖 SDK 启动失败降级。
-当前测试结果（2026-09-08，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测/模型/安全专项 70 passed；后端全量 736 passed、8 skipped、1 warning（18.51s）；前端 32 passed；`npm run build` 成功，3154 modules transformed，存在主 chunk 约 2.5 MB 的既有警告。真实 FastAPI 启动、健康检查、默认模型会话、事件历史、completed Snapshot 和 Flow 查询均通过。
-第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key）。
-当前阻塞：Worker 父子 Trace、本地外部 Run 引用、前端 Trace 深链接、`errors_only`/`sampled` 完整语义和真实 LangSmith 环境验证尚未完成。
+本批完成项：P1-01、P1-02、P1-03、P1-04、P1-05、P1-06、P1-07；P1-08/P1-09 已完成代码接入；P1-11 已覆盖 SDK 启动失败降级。
+当前测试结果（2026-09-08，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测/模型/安全专项 71 passed；后端全量 737 passed、8 skipped、1 warning（18.13s）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、默认模型会话、事件历史、completed Snapshot 和 Flow 查询均通过；真实模型回复为“外部引用链路成功”。
+第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
+当前阻塞：前端 Trace 深链接、`errors_only`/`sampled` 完整语义和真实 LangSmith 环境验证尚未完成；P1-08/P1-09 需外部环境复验后才能满足阶段退出条件。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
 最近提交：待本批代码提交。
 

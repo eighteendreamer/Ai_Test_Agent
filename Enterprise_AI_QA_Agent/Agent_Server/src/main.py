@@ -420,6 +420,7 @@ async def lifespan(app: FastAPI):
         session_service=session_service,
         agent_registry=agent_registry,
     )
+    coordinator_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_coordinator_runtime_service(coordinator_runtime_service)
     tool_runtime_service.set_model_registry(model_registry)
     tool_runtime_service.set_session_store(store)

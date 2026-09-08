@@ -480,6 +480,20 @@ class RuntimeService:
             else nullcontext()
         )
         with trace_manager as trace_scope:
+            if trace_scope is not None:
+                trace_reference = trace_scope.reference()
+                if trace_reference:
+                    context_bundle = dict(state.get("context_bundle") or {})
+                    context_bundle["langsmith_trace"] = trace_reference
+                    state["context_bundle"] = context_bundle
+                    append_graph_event(
+                        state,
+                        "observability.trace_linked",
+                        "observability",
+                        "Local execution state linked to the external LangSmith trace.",
+                        run_id=trace_reference.get("run_id", ""),
+                        external_trace_id=trace_reference.get("trace_id", ""),
+                    )
             result = await executor()
             if trace_scope is not None:
                 trace_scope.set_outputs(
