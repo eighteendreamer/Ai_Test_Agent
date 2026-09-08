@@ -35,6 +35,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
   const sessionDetail = ref<SessionDetail | null>(null);
   const flowWorkerRecords = ref<WorkerDispatchRecord[] | null>(null);
   const flowGraphState = ref<Record<string, unknown> | null>(null);
+  const langsmithTrace = ref<SessionFlowResponse["langsmith_trace"]>({});
   const toolJobs = ref<ToolJobRecord[]>([]);
   const artifacts = ref<ToolArtifactRecord[]>([]);
   const sideDataLoaded = ref(false);
@@ -83,6 +84,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
 
   function applyFlowSideData(flow: SessionFlowResponse) {
     flowGraphState.value = flow.graph_state ?? null;
+    langsmithTrace.value = flow.langsmith_trace ?? {};
     flowWorkerRecords.value = Array.isArray(flow.workers)
       ? flow.workers.map((item) => item.worker).filter((item) => item && typeof item === "object")
       : [];
@@ -123,6 +125,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     artifacts.value = Array.isArray(nextArtifacts) ? nextArtifacts : [];
     sessionDetail.value = nextSession ?? null;
     flowGraphState.value = null;
+    langsmithTrace.value = {};
     flowWorkerRecords.value = null;
     sideDataLoaded.value = true;
   }
@@ -181,6 +184,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     sessionDetail.value = null;
     flowWorkerRecords.value = null;
     flowGraphState.value = null;
+    langsmithTrace.value = {};
     toolJobs.value = [];
     artifacts.value = [];
     sideDataLoaded.value = false;
@@ -241,6 +245,7 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     stageEdges: computed(() => flowNodes.value.edges),
     activeSnapshot,
     graphState,
+    langsmithTrace,
     reload: load,
   };
 }

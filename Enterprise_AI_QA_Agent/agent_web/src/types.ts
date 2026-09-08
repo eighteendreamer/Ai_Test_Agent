@@ -710,6 +710,12 @@ export interface SessionFlowResponse {
   snapshot_id: string | null;
   tool_jobs: ToolJobRecord[];
   artifacts: ToolArtifactRecord[];
+  langsmith_trace?: {
+    run_id?: string;
+    trace_id?: string;
+    dotted_order?: string;
+    url?: string;
+  };
 }
 
 export interface CodeReviewReportMeta {

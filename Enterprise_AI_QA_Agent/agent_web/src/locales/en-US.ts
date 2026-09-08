@@ -28,6 +28,7 @@ export default {
   "flow.bound_turn": "Current turn {turn}",
   "flow.loading": "Loading events…",
   "flow.live_hint": "Live session events are connected. Nodes light up as the turn runs.",
+  "flow.langsmith_trace": "Open LangSmith trace",
   "flow.reset_layout": "Reset layout",
   "flow.stage.context_builder": "Context Builder",
   "flow.stage.router": "Router",

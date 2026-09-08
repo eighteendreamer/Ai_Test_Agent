@@ -50,3 +50,4 @@ class SessionFlowResponse(BaseModel):
     snapshot_id: str | None = None
     tool_jobs: list[ToolJobRecord] = Field(default_factory=list)
     artifacts: list[ToolArtifactRecord] = Field(default_factory=list)
+    langsmith_trace: dict[str, str] = Field(default_factory=dict)

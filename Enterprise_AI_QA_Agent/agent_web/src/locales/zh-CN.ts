@@ -28,6 +28,7 @@ export default {
   "flow.bound_turn": "当前轮次 {turn}",
   "flow.loading": "正在加载事件…",
   "flow.live_hint": "已连接当前会话事件流，节点会随执行点亮。",
+  "flow.langsmith_trace": "打开 LangSmith Trace",
   "flow.reset_layout": "重置布局",
   "flow.stage.context_builder": "上下文构建",
   "flow.stage.router": "路由",

@@ -357,6 +357,12 @@ class FlowProjectionService:
         resolved_turn = requested_turn or resolve_latest_turn_id(events)
         snapshot = pick_snapshot_for_turn(snapshots, resolved_turn)
         graph_state = snapshot.graph_state if snapshot and isinstance(snapshot.graph_state, dict) else None
+        context_bundle = graph_state.get("context_bundle") if isinstance(graph_state, dict) else None
+        langsmith_trace = (
+            dict(context_bundle.get("langsmith_trace"))
+            if isinstance(context_bundle, dict) and isinstance(context_bundle.get("langsmith_trace"), dict)
+            else {}
+        )
         metadata = detail.metadata if isinstance(getattr(detail, "metadata", None), dict) else {}
         workers = collect_worker_dispatches(metadata, graph_state, resolved_turn)
         stage_nodes, edges = project_flow_nodes(events, resolved_turn, workers)
@@ -389,4 +395,5 @@ class FlowProjectionService:
             snapshot_id=snapshot.id if snapshot else None,
             tool_jobs=list(jobs),
             artifacts=list(artifacts),
+            langsmith_trace=langsmith_trace,
         )

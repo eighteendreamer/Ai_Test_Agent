@@ -38,6 +38,7 @@ const {
   stages,
   stageEdges,
   graphState,
+  langsmithTrace,
 } = useFlowSession(viewingSessionId, viewingTurnId);
 
 const selectedStageId = ref("");
@@ -190,6 +191,15 @@ watch(
           <span v-if="isChildView">{{ t("flow.viewing_child") }}</span>
         </div>
         <div class="flow-toolbar-meta">
+          <a
+            v-if="langsmithTrace?.url"
+            class="flow-trace-link"
+            :href="langsmithTrace.url"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ t("flow.langsmith_trace") }}
+          </a>
           <span v-if="loading">{{ t("flow.loading") }}</span>
           <span v-else-if="error" class="flow-toolbar-error">{{ error }}</span>
           <span v-else>{{ t("flow.live_hint") }}</span>
@@ -320,6 +330,16 @@ watch(
 
 .flow-toolbar-error {
   color: #dc2626;
+}
+
+.flow-trace-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.flow-trace-link:hover {
+  text-decoration: underline;
 }
 
 .flow-canvas-wrap {
