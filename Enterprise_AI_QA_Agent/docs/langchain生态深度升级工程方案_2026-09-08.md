@@ -641,10 +641,10 @@ pip check 已知冲突：
 | P0-03 | 保存直接/传递依赖快照 | Agent_Server/docs 或 requirements lock | 未进行 | 可在干净环境复现 |
 | P0-04 | 处理或隔离 pip check 冲突 | 依赖约束/运行环境说明 | 未进行 | pip check 通过或每项有隔离结论 |
 | P0-05 | 建立 LangChain 生态兼容矩阵 | 新增兼容矩阵文档 | 未进行 | Python、四个生态包、Provider 均有验证 |
-| P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 未进行 | 项目声明与验证环境一致 |
+| P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 进行中 | 已声明并验证导入；锁定文件和干净环境复现仍未完成 |
 | P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 未进行 | 默认安装不启用 Deep Agents |
-| P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 未进行 | 类型、校验和单测齐全 |
-| P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 未进行 | 默认关闭且配置校验通过 |
+| P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 已完成 | 类型、校验、序列化和契约测试已通过 |
+| P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 已完成 | 默认关闭且配置校验通过 |
 | P0-10 | 固化现有事件和状态契约 | schemas、契约测试 | 未进行 | 消费方引用已全局核对 |
 
 测试计划：
@@ -663,11 +663,11 @@ pip check 已知冲突：
 - 全量回归不低于 14.2 基线。
 - 尚未改变任何生产执行语义。
 
-本批完成项：P0-01、P0-02、P0-08、P0-09；部分完成 P0-06。
-当前测试结果：`test_observability_contracts.py` 9 passed；后端全量 736 passed、8 skipped、1 warning；compileall 通过；真实 FastAPI 启动和健康检查通过。
+本批完成项：P0-01、P0-02、P0-08、P0-09；P0-06 进行中。
+当前测试结果（2026-09-08）：`test_observability_contracts.py` 10 passed；后端全量 737 passed、8 skipped、1 warning；compileall 通过；真实 FastAPI 启动、健康检查和默认模型链路通过。
 当前阻塞：依赖冲突处置方案、锁定文件、Deep Agents 兼容版本、事件契约全量固化尚未完成。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
-最近提交：待本批代码提交。
+最近提交：`0df3050`（补充 Run 引用契约测试）。
 
 ### 14.4 阶段 1：LangSmith 非阻塞观测
 
