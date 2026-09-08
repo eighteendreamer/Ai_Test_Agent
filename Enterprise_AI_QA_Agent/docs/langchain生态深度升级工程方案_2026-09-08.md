@@ -228,13 +228,16 @@ Flow 是产品级会话轨迹投影，不是 LangSmith UI 的替代品。
         enabled: bool = False
         project: str = ""
         endpoint: str = ""
+        api_key: SecretStr | None = None
+        workspace_id: str = ""
         api_key_env: str = "LANGSMITH_API_KEY"
+        workspace_id_env: str = "LANGSMITH_WORKSPACE_ID"
         tracing_mode: str = "off"
         sample_rate: float = 1.0
         capture_inputs: bool = False
         capture_outputs: bool = False
 
-实际字段命名和 SDK 参数必须在锁定版本后核对官方文档，不能凭记忆复制 API。
+实际字段命名和 SDK 参数已按锁定版 SDK 核对；密钥通过 `LANGSMITH__API_KEY` 进入 Pydantic `SecretStr`，也兼容由 `LANGSMITH_API_KEY` 注入的进程变量。配置模板统一放在 `Agent_Server/.env.example`，本机 `.env` 默认关闭且不提交密钥。不能凭记忆复制 API。
 
 ### 5.2 依赖分层
 
@@ -750,7 +753,7 @@ pip check 已知冲突：
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归；本批进一步发现并修复“未设置 `LANGCHAIN_TRACING_V2` 时 root trace 不会 post、只有子 trace 上报”的适配器根因。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
 当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧通过 `Agent_Server/.env` 配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
-最近提交：待本批提交。
+最近提交：`7a4e429`（修复根轨迹上报并统一环境变量配置）。
 
 #### 阶段 1 根 Trace 与环境配置批次记录（2026-09-09）
 

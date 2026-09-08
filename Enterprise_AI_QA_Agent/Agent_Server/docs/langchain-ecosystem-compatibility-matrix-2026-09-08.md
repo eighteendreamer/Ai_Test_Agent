@@ -1,8 +1,9 @@
 # LangChain 生态依赖兼容与环境隔离矩阵
 
-日期：2026-09-08
+首次建立：2026-09-08
+最近验证：2026-09-09
 适用解释器：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`
-状态：进行中（当前主服务组合已验证；Deep Agents 候选组合尚未建立隔离环境验证）
+状态：进行中（当前主服务组合与 Deep Agents C2 候选组合已验证；真实 LangSmith 外部上报和 C3/C4 尚未完成）
 
 ## 1. 结论与边界
 
@@ -14,8 +15,8 @@
 | `langchain` | 1.2.3 | 已验证 | 包元数据、后端全量测试、真实会话 |
 | `langchain-core` | 1.2.7 | 已验证 | 包元数据、后端全量测试、真实会话 |
 | `langgraph` | 1.0.10 | 已验证 | 包元数据、后端全量测试、真实会话 |
-| `langsmith` | 0.10.18 | 已验证（本地适配） | 观测契约测试；真实外部上报尚未验证 |
-| `deepagents` | 未安装、未声明 | 阻塞 | 当前索引未返回发行包；官方主线依赖高于项目锁定组合 |
+| `langsmith` | 0.10.18 | 已验证（本地适配与 SDK 协议） | 观测契约、root→node 协议测试；真实外部上报尚未验证 |
+| `deepagents` | 0.7.13（主服务未安装/未声明） | 候选已验证，主服务阻塞 | C2 隔离环境通过；官方主线依赖高于项目锁定组合 |
 
 本次干净环境导入验证还发现，应用真实启动链直接使用的 `dependency-injector`、`python-magic`、`playwright` 原先未在项目声明中列出，已补入 `pyproject.toml`。这三项不是 LangChain 生态依赖，但属于应用可执行性的必要直接依赖，不能依赖共享开发环境“恰好已安装”。
 
@@ -27,7 +28,7 @@
 | `anthropic` | `>=0.40.0` | 0.111.0 | 包元数据已验证；真实 Provider 会话未在本批执行 |
 | `google-genai` | `>=1.0.0` | 1.75.0 | 包元数据已验证；真实 Provider 会话未在本批执行 |
 
-这份矩阵只证明“当前组合在当前开发环境可运行”，不等价于干净环境可重复安装。干净环境解析、安装和真实运行仍是 P0-06 的退出条件。
+这份矩阵区分主服务 C1 与 Deep Agents C2：C1 证明当前主服务可重复安装，C2 只证明候选生态组合可安装和 Harness 可执行，不等价于主服务已经升级。真实 LangSmith 云端上报仍未验证。
 
 ## 2. 依据到决策
 
@@ -55,7 +56,7 @@
 | `mem0ai==1.0.0` | 要求 `protobuf>=5.29,<6`，当前为 7.35.1 | 记忆附加工具 | 已隔离（设计结论） | 后续放入独立工具环境；不得为其回退主服务传递依赖 |
 | `mitmproxy==11.0.2` | `asgiref`、`cryptography`、`h11`、`pyOpenSSL` 冲突 | 安全代理工具 | 已隔离（设计结论） | 使用独立安全测试环境；不得污染 API 服务环境 |
 
-“已隔离（设计结论）”表示依赖边界和处置路线已确定，不表示当前共享开发环境的 `pip check` 已通过。验证完成必须满足：新建最小主服务环境、仅安装项目声明依赖、`pip check` 通过、导入冒烟通过、服务真实启动与会话通过。
+“已隔离（设计结论）”表示依赖边界和处置路线已确定，不表示当前共享开发环境的 `pip check` 已通过。C1 已在最小主服务环境完成安装、`pip check`、导入冒烟、服务启动和真实会话；共享环境冲突仍保留为附加工具隔离债务。
 
 ## 4. 后续兼容验证矩阵
 
@@ -84,10 +85,10 @@
 - 干净 C1 环境的运行时依赖快照已保存为 `Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt`；该文件不包含项目自身的 editable git 行，避免把本地路径误当成可复现依赖。
 - C2 候选环境快照已保存为 `Agent_Server/docs/python311-deepagents-c2-freeze-2026-09-08.txt`。候选组合为 Deep Agents 0.7.13、LangChain 1.4.0、LangChain Core 1.6.2、LangGraph 1.2.11、LangSmith 0.12.2，并额外安装 `langchain-openai==1.6.1`。
 - C2 第一次用 OpenAI provider 构造 agent 时因未安装 `langchain-openai` 失败；补装官方 provider 包后因环境未提供 OpenAI key 无法构造真实 OpenAI client。随后使用只在命令中定义的 tool-capable fake chat model，完成 `create_deep_agent` 构造和一次离线 `invoke`，结果为 2 条消息，证明 harness 图和工具绑定路径可执行。该测试不证明真实 Provider 网络调用。
+- 2026-09-09：锁定版 `langsmith==0.10.18` 实际 SDK 录制客户端测试通过 root 与 node 两层请求；未设置 `LANGCHAIN_TRACING_V2` 时 root 也已发送，敏感值未进入请求。
 
-## 6. 阶段 0 剩余出口
+## 6. 当前剩余出口
 
-1. 建立 C1 干净主服务环境并完成真实运行验证。
-2. 明确当前 pip 索引配置为何无法解析 `deepagents`，不得记录或提交索引凭据。
-3. 在隔离环境完成 C2 后，才确定 `deepagents` 的版本区间并写入可选依赖。
-4. C2 如果要求升级 LangChain/LangGraph/LangSmith，先形成独立升级批次和回滚证据，不能与 Deep Agent 业务接入混为一个变更。
+1. P0-07 仍阻塞：不得把 `deepagents` 写入主服务 optional extra；需先完成阶段 2—3 协调升级和 C4 回滚证据。
+2. 阶段 1 仍需用户配置 LangSmith Key 后完成真实云端上报、控制台父子树、外部 URL 与性能预算验证。
+3. C3/C4 必须在独立环境验证 Provider 适配、受控工具、权限、审批、路径隔离、全量回归和回滚后，才能决定统一生态版本。
