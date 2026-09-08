@@ -748,7 +748,7 @@ pip check 已知冲突：
 - 有一键关闭和回滚验证。
 
 本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入和本地 SDK 协议验证，但仍等待真实外部环境验证；补齐 `errors_only` 成功/失败语义并修复根 Trace 未上报问题。
-当前测试结果（2026-09-09，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测契约专项 19 passed；后端全量 747 passed、8 skipped、1 warning（18.09s）；前端 33 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、数据库默认模型会话、事件历史、Snapshot 和 Flow 查询均通过（23 events、1 Snapshot、9 stages）。
+当前测试结果（2026-09-09，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测契约专项 19 passed（0.25s）；后端全量 747 passed、8 skipped、1 warning（17.86s）；前端 33 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；最新真实 FastAPI 启动、健康检查（`postgres_ok=true`）、数据库默认模型会话、事件历史、Snapshot 和 Flow 查询均通过（41 events、1 Snapshot、9 stages），事件中包含 `runtime.turn_completed` 与 `turn.completed`。
 新增锁定版 LangSmith SDK 协议验证（[证据文件](../Agent_Server/docs/python311-langsmith-sdk-protocol-2026-09-09.txt)）：在本地隔离 HTTP 端点收到 `/runs/multipart` 的 root Turn 与 `router` 子 Run 两批请求；子 Run 的 `parent_run_id` 指向 root，`trace_id` 可见，敏感输入、API Key 和密码值未出现。该结果证明当前 SDK 适配顺序和脱敏边界可执行，不等价于 LangSmith 云端可访问性。
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归；本批进一步发现并修复“未设置 `LANGCHAIN_TRACING_V2` 时 root trace 不会 post、只有子 trace 上报”的适配器根因。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
 当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧通过 `Agent_Server/.env` 配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
@@ -767,6 +767,21 @@ pip check 已知冲突：
 - 回滚验证：LangSmith 默认关闭时后端全量 747 passed，真实 FastAPI 默认模型会话仍成功；关闭观测不会改变本地 Event/SSE/Snapshot/Flow。
 - 已知限制：本地协议端点只验证 SDK 请求形状和适配器行为，不证明云端鉴权、项目权限、数据驻留或网络重试策略。
 - 下一步：用户在 `Agent_Server/.env` 写入 LangSmith Key 后，执行一次 full 模式真实会话并核对控制台父子树、外部 URL、本地 trace_id 对账和性能预算；通过后再进入阶段 2 Model Adapter。
+
+#### 阶段 1 真实服务可执行性复验批次记录（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：在 LangSmith 默认关闭的前提下，用指定 Python3.11 启动真实 FastAPI，调用数据库默认模型完成一轮会话，并核对本地事件、终态、Snapshot 和 Flow，证明观测旁路未破坏主执行链。
+- 实际修改文件：无（仅运行验证；服务使用的临时端口为 `18130`，验证结束后已正常关闭）。
+- 完成任务 ID：P1-11（业务主链失败降级和关闭路径的运行时复验）。
+- 未完成任务 ID：P1-08、P1-09 的真实 LangSmith 云端上报、外部父子树和 URL 可访问性。
+- 执行命令：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe -m uvicorn src.main:app --host 127.0.0.1 --port 18130`；随后调用 `/api/v1/health`、`POST /api/v1/sessions`、`POST /api/v1/sessions/{session_id}/messages`、`GET /events/history?limit=0`、`GET /snapshots?limit=0` 和 `GET /flow`。
+- 通过：health 200 且 `postgres_ok=true`；创建会话、默认模型消息、Events、Snapshot、Flow 均返回 200；得到 41 条事件、1 个 Snapshot、9 个 Flow stages；原始事件含 `runtime.turn_completed` 和 `turn.completed`；Uvicorn 收到正常关闭信号并完成 application shutdown。
+- 业务结果：模型返回安全策略拒绝说明，因为测试提示要求模型无证据地声称“验证成功”；该结果符合当前系统的证据约束，不能把它记为模型按字面回复成功。
+- 失败：首次脚本将 PowerShell 的事件数组包成单元素数组，导致事件类型读取为空；重新读取原始 JSON 后确认是验收脚本解析问题，不是服务或事件存储失败。
+- 跳过：LangSmith 云端调用、控制台父子树、外部 URL 和开启观测性能对比；当前 `Agent_Server/.env` 中 `LANGSMITH__API_KEY` 为空且 `LANGSMITH__ENABLED=false`。
+- 回滚验证：默认关闭观测路径可启动、可调用、可落库；未改动代码和数据结构，不需要回滚。
+- 下一步：先由用户在本机 `.env` 配置 LangSmith 项目和 Key，再复验 P1-08/P1-09；在阶段 1 退出条件满足前不进入阶段 2。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
