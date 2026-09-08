@@ -1,8 +1,8 @@
 # Enterprise AI QA Agent · LangChain 生态深度升级工程方案
 
-版本：v1.0  
-日期：2026-09-08  
-适用环境：E:\PyThon\Anaconda_PyThon\envs\Python3.11  
+版本：v1.0
+日期：2026-09-08
+适用环境：E:\PyThon\Anaconda_PyThon\envs\Python3.11
 适用范围：后端运行时、Agent 编排、模型与工具适配、轨迹观测、评测与前端执行轨迹展示
 
 ## 1. 方案结论
@@ -551,4 +551,462 @@ Feature Flags：
 - 本地 Flow 在 LangSmith 不可用时仍正常展示。
 - 没有遗留双重状态机、临时兼容分支或未声明 TODO。
 - 每个阶段都有可执行的回滚方式。
++
+## 14. 阶段执行状态与测试台账
+
+本节是本方案的唯一执行状态源。第 6、11、12 节用于描述路线和交付物，本节用于记录每个阶段实际做到了哪里。状态只允许使用：
+
+- 未进行：尚未修改该阶段代码，阶段测试未执行。
+- 进行中：已开始产生阶段交付物，但尚未满足全部退出条件。
+- 已完成：全部任务、测试、对账、文档和回滚验证均已完成。
+
+状态更新规则：
+
+1. 每次开发结束必须更新“当前状态、完成项、未完成项、测试结果、阻塞项、最近提交”。
+2. 测试结果必须包含日期、环境、命令、通过/失败/跳过数量和错误摘要。
+3. “代码已写完”不等于“已完成”；只要测试、对账、脱敏或回滚验证缺一项，状态仍为进行中。
+4. 未实施阶段的测试结果必须写“未执行”，不能沿用其他阶段的结果。
+5. 某阶段发生需求调整时，先更新本节的范围和退出条件，再修改代码。
+6. 阶段完成后原则上不回写历史结果；新增回归失败以新记录追加，保留原始证据。
+
+### 14.1 总体状态看板
+
+截至 2026-09-08：
+
+| 阶段 | 名称 | 状态 | 已完成度 | 当前结论 | 测试状态 |
+|---|---|---:|---:|---|---|
+| 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
+| 0 | 契约、依赖和可回滚基线 | 进行中 | 35% | 已确认开发环境和测试基线；依赖冲突、契约和 Flag 尚未落地 | 基线测试完成，pip check 未通过 |
+| 1 | LangSmith 非阻塞观测 | 未进行 | 0% | 尚未修改业务代码 | 未执行 |
+| 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
+| 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
+| 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
+| 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
+| 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
+| 7 | 按模式灰度迁移 | 未进行 | 0% | 等待阶段 1—6 完成 | 未执行 |
+
+“完成度”只用于进度展示，不参与是否完成的判定。
+
+### 14.2 当前基线测试记录
+
+测试环境：
+
+    Python：E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe
+    Python 版本：3.11.15
+    Node/Vite：使用 agent_web 当前安装环境
+    日期：2026-09-08
+
+| 检查 | 命令 | 结果 | 证据摘要 |
+|---|---|---|---|
+| Python 编译 | python.exe -m compileall -q src tests | 通过 | exit code 0 |
+| 后端测试 | python.exe -m pytest -q | 通过 | 727 passed，8 skipped，1 warning，24.04s |
+| 前端测试 | npm test -- --run | 通过 | 2 files passed，32 tests passed，2.10s |
+| 前端构建 | npm run build | 通过但有警告 | 3154 modules transformed，8.96s；主 chunk 约 2.5 MB |
+| Python 依赖一致性 | python.exe -m pip check | 未通过 | 发现 browser-use、mem0ai、mitmproxy 的既有版本冲突 |
+
+后端警告：
+
+    StarletteTestClient 使用 httpx 的方式已标记 deprecated，建议依赖迁移时单独核对；
+    本阶段不顺手升级，避免扩大范围。
+
+pip check 已知冲突：
+
+- browser-use 0.11.1 要求 openai>=2.7.2,<3.0.0，当前为 openai 1.109.1。
+- browser-use 0.11.1 要求 pypdf>=5.7.0，当前为 5.6.0。
+- browser-use 0.11.1 要求 python-docx>=1.2.0，当前为 1.1.2。
+- mem0ai 1.0.0 要求 protobuf>=5.29.0,<6.0.0，当前为 7.35.1。
+- mitmproxy 11.0.2 与当前 asgiref、cryptography、h11、pyOpenSSL 存在版本冲突。
+
+这些冲突发生在生态升级代码实施前，必须作为“既有环境债务”单独记录。阶段 0 完成前要决定使用约束文件统一版本，还是将冲突工具隔离到独立运行环境。
+
+### 14.3 阶段 0：契约、依赖和可回滚基线
+
+状态：进行中
+目标：建立可重复安装、可测试、可回滚的基线，避免后续出现“开发机能运行、项目声明无法复现”。
+
+前置条件：
+
+- 指定 Python3.11 环境可用。
+- 当前主分支后端和前端基线测试已执行。
+- 官方文档归档可读。
+
+具体任务：
+
+| ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
+|---|---|---|---|---|
+| P0-01 | 核对解释器和已安装版本 | Python3.11 环境 | 已完成 | 版本记录进入本文 |
+| P0-02 | 运行 compileall、pytest、前端测试和构建 | Agent_Server、agent_web | 已完成 | 结果进入 14.2 |
+| P0-03 | 保存直接/传递依赖快照 | Agent_Server/docs 或 requirements lock | 未进行 | 可在干净环境复现 |
+| P0-04 | 处理或隔离 pip check 冲突 | 依赖约束/运行环境说明 | 未进行 | pip check 通过或每项有隔离结论 |
+| P0-05 | 建立 LangChain 生态兼容矩阵 | 新增兼容矩阵文档 | 未进行 | Python、四个生态包、Provider 均有验证 |
+| P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 未进行 | 项目声明与验证环境一致 |
+| P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 未进行 | 默认安装不启用 Deep Agents |
+| P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 未进行 | 类型、校验和单测齐全 |
+| P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 未进行 | 默认关闭且配置校验通过 |
+| P0-10 | 固化现有事件和状态契约 | schemas、契约测试 | 未进行 | 消费方引用已全局核对 |
+
+测试计划：
+
+- 配置默认值、环境变量映射和非法值测试。
+- TraceContext 必填字段、父子关系和序列化测试。
+- 所有 Flag 关闭时全量回归。
+- 干净环境安装和 import smoke test。
+- pip check 或隔离环境一致性检查。
+
+退出条件：
+
+- 项目依赖声明与验证环境一致。
+- 现有冲突已解决或有明确隔离方案。
+- 所有 Flag 默认关闭。
+- 全量回归不低于 14.2 基线。
+- 尚未改变任何生产执行语义。
+
+当前测试结果：基线测试已完成；阶段新增测试未执行。
+当前阻塞：依赖冲突处置方案和 Deep Agents 兼容版本尚未确定。
+回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
+最近提交：尚无阶段 0 代码提交。
+
+### 14.4 阶段 1：LangSmith 非阻塞观测
+
+状态：未进行
+目标：为当前运行链建立完整调用树，同时确保 LangSmith 永远不是执行主链硬依赖。
+
+前置条件：
+
+- 阶段 0 已完成。
+- LangSmith 项目、API Key 存储方式和数据驻留策略已确认。
+- 脱敏字段白名单已评审。
+
+具体任务：
+
+| ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
+|---|---|---|---|---|
+| P1-01 | 定义 ObservabilityPort 与 No-op 实现 | application/observability | 未进行 | 关闭功能时零外部调用 |
+| P1-02 | 实现 LangSmith Adapter | langsmith_adapter.py | 未进行 | SDK 隔离在适配器内部 |
+| P1-03 | 实现输入输出脱敏与截断 | trace_redaction.py | 未进行 | 敏感样本测试通过 |
+| P1-04 | 建立 Turn Root Trace | RuntimeService.execute_turn | 未进行 | 每个 turn 一个根运行 |
+| P1-05 | 建立 Graph Node 子运行 | graph 节点边界 | 未进行 | 节点层级和状态正确 |
+| P1-06 | 建立 Model Run | ModelRuntimeService.invoke | 未进行 | Provider、Token、耗时可见 |
+| P1-07 | 建立 Tool Run | ToolRuntimeService | 未进行 | 工具成功/失败/拒绝可区分 |
+| P1-08 | 建立 Worker Nested Run | CoordinatorRuntimeService | 未进行 | 父子 trace 可关联 |
+| P1-09 | 本地保存外部 Run 引用 | Event/Snapshot metadata | 未进行 | trace_id 可双向定位 |
+| P1-10 | 前端增加 Trace 深链接 | Flow Inspector/Snapshot 面板 | 未进行 | 未启用时不影响页面 |
+| P1-11 | 增加超时、降级和结构化日志 | Adapter/主链边界 | 未进行 | 外部失败不阻断业务 |
+
+测试计划：
+
+- No-op 模式零网络调用。
+- LangSmith 成功上报的调用树测试。
+- DNS、超时、401、429、5xx 和 SDK 异常降级测试。
+- 输入、输出、Authorization、Cookie、Token、密码和安全目标脱敏测试。
+- Event/SSE/Snapshot 数量与关闭前对账。
+- 多轮、审批恢复和 Worker 父子 Trace 测试。
+- 开启前后 TTFT、完整耗时、内存和连接数对比。
+
+退出条件：
+
+- 本地 trace_id 能定位外部 Trace。
+- 外部 Trace 的 Run 层级与实际执行一致。
+- LangSmith 不可用时全量业务测试仍通过。
+- 敏感字段未泄漏。
+- Flow 仍以本地事件为事实源。
+- 有一键关闭和回滚验证。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 0。
+回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
+最近提交：无。
+
+### 14.5 阶段 2：LangChain 模型与消息适配
+
+状态：未进行
+目标：使用 LangChain 标准消息、模型和结构化输出能力，逐步减少自定义 Provider 协议代码，但保留现有模型配置、OAuth 和业务错误语义。
+
+前置条件：
+
+- 阶段 1 已完成，能观测新旧模型路径。
+- 现有 ModelInvocationRequest/Result 契约已冻结。
+- 目标 Provider 的官方 LangChain 集成和版本已核对。
+
+具体任务：
+
+| ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
+|---|---|---|---|---|
+| P2-01 | 定义 ModelPort | application/langchain | 未进行 | 旧新实现共享业务接口 |
+| P2-02 | 实现 Message 双向转换 | message_adapter.py | 未进行 | system/user/assistant/tool 无损转换 |
+| P2-03 | 实现 LangChainModelAdapter | model_adapter.py | 未进行 | 至少一个 Provider 跑通 |
+| P2-04 | 保留 LegacyProviderAdapter | model_runtime_service.py | 未进行 | 可按 Flag 回退 |
+| P2-05 | 统一 Tool Call 转换 | schemas/tool runtime | 未进行 | call id、name、args 保真 |
+| P2-06 | 接入 Structured Output | 目标业务节点 | 未进行 | Schema 错误可观测且可恢复 |
+| P2-07 | 对齐 Streaming | model stream handler/SSE | 未进行 | chunk 顺序和终态正确 |
+| P2-08 | 对齐 Usage/Error | adapter/错误映射 | 未进行 | Token 和错误类型兼容 |
+| P2-09 | 按 Provider 建立契约测试 | tests/test_langchain_model_adapter.py | 未进行 | 旧新结果可对账 |
+
+测试计划：
+
+- OpenAI、Anthropic、Google 及项目实际启用 Provider 的消息契约测试。
+- 文本响应、单工具、多工具、无工具、流式、中断和结构化输出测试。
+- OAuth、缺少密钥、超时、限流、上下文超限和协议错误测试。
+- Legacy/LangChain 双跑对账；不比较自然语言逐字一致，比较结构化语义和终态。
+
+退出条件：
+
+- 至少一个非关键模式灰度稳定。
+- 旧路径仍可通过 Flag 回退。
+- 工具调用、错误分类、Token 和 SSE 不发生未声明破坏。
+- ModelRuntimeService 的业务 DTO 未被 LangChain 类型污染。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 1。
+回滚点：关闭 LANGCHAIN_MODEL_ADAPTER_ENABLED。
+最近提交：无。
+
+### 14.6 阶段 3：LangChain 工具适配与 Middleware
+
+状态：未进行
+目标：标准化工具暴露与横切能力，减少重复代码，同时保留业务权限、安全和测试运行治理。
+
+前置条件：
+
+- 阶段 2 已完成。
+- ToolRegistry、ToolRuntimeService、PermissionService 的契约已冻结。
+- 所选 Middleware API 已按锁定版本核对官方文档。
+
+具体任务：
+
+| ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
+|---|---|---|---|---|
+| P3-01 | 实现 LangChainToolAdapter | application/langchain/tool_adapter.py | 未进行 | Registry 工具可安全转换 |
+| P3-02 | 建立 Tool 输入输出 Schema 对账 | registry/schemas | 未进行 | 参数和错误不丢失 |
+| P3-03 | 建立 Middleware Registry | middleware_registry.py | 未进行 | 顺序、开关和作用域明确 |
+| P3-04 | 迁移通用 Retry/Timeout | Middleware | 未进行 | 不与业务重试叠加 |
+| P3-05 | 迁移 Redaction/Observability | Middleware | 未进行 | 与阶段 1 策略一致 |
+| P3-06 | 评估 Context Compaction | context service/Middleware | 未进行 | 不产生双重摘要 |
+| P3-07 | 评估 Dynamic Prompt/Token Budget | prompting/Middleware | 未进行 | Prompt 结构和预算可追踪 |
+| P3-08 | 保留业务安全强制层 | Permission/Safety/Approval | 未进行 | Middleware 无法绕过 |
+
+测试计划：
+
+- 工具 Schema、默认值、枚举、嵌套对象和非法参数测试。
+- allow/deny/approval 三种权限路径。
+- 工具超时、取消、重复调用、并行安全和 Artifact 测试。
+- Middleware 顺序与重复执行测试。
+- MCP、Skill 和普通 Registry 工具一致性测试。
+
+退出条件：
+
+- LangChain Tool 只能调用 Registry 已暴露工具。
+- 权限和安全结果与旧路径一致。
+- 不存在双重 Retry、双重压缩或双重审批。
+- 工具事件和 LangSmith Run 可对账。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 2。
+回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
+最近提交：无。
+
+### 14.7 阶段 4：Deep Agents code_review 试点
+
+状态：未进行
+目标：在低外部副作用的 code_review 模式中验证 Deep Agents 的规划、文件系统、上下文管理、Skills 和 Subagents 能力。
+
+前置条件：
+
+- 阶段 1—3 已完成。
+- Deep Agents 版本和许可证已核对。
+- 安装后全量测试无依赖回归。
+- code_review 当前真实输入、输出和失败样本已建立基线。
+
+具体任务：
+
+| ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
+|---|---|---|---|---|
+| P4-01 | 安装可选 deepagents 依赖 | pyproject/lock | 未进行 | 默认启动不强依赖 |
+| P4-02 | 实现 DeepAgentModeAdapter | application/deep_agents | 未进行 | 不泄漏框架类型 |
+| P4-03 | 桥接现有 Tools | tool adapter | 未进行 | 权限和审计仍生效 |
+| P4-04 | 桥接现有 Skills | skill runtime | 未进行 | 渐进加载且版本可追踪 |
+| P4-05 | 限定文件系统后端 | project scope/artifact | 未进行 | 不越过项目目录 |
+| P4-06 | 建立 Subagent 配置 | code_review_agent.py | 未进行 | 角色、工具、预算明确 |
+| P4-07 | 结果归一化 | result_normalizer.py | 未进行 | 回到 AgentGraphState/RuntimeTurnResult |
+| P4-08 | 接入本地 Event 与 LangSmith | observability/flow | 未进行 | 两套视图均可追踪 |
+| P4-09 | 建立新旧 code_review 对账 | tests/fixtures | 未进行 | 质量、稳定性、耗时有比较 |
+
+测试计划：
+
+- 单文件、多文件、大仓库、无可审查变更和损坏输入。
+- 规划、多工具、子代理、上下文卸载、失败恢复和取消。
+- 路径穿越、越权工具、敏感文件和审批。
+- 本地 Flow、LangSmith Trace 和最终报告一致性。
+- 真实代码评审失败样本回归。
+
+退出条件：
+
+- code_review 质量不低于旧路径。
+- 无权限、安全、路径或证据链回归。
+- Deep Agents 失败时可回退旧 Harness。
+- 没有形成第二套外层 Agent Loop。
+- 试点连续稳定后才能讨论其他模式。
+
+当前测试结果：未执行。
+当前阻塞：deepagents 未安装，且依赖阶段 1—3。
+回滚点：关闭 DEEP_AGENTS_CODE_REVIEW_ENABLED。
+最近提交：无。
+
+### 14.8 阶段 5：Coordinator/Worker 与 Subagents 对齐
+
+状态：未进行
+目标：把 Deep Agents Subagents 作为受控 Worker 实现，统一父子任务、权限、状态、Trace 和失败传播。
+
+前置条件：
+
+- 阶段 4 已完成且试点稳定。
+- CoordinatorRuntimeService 的 Worker 生命周期契约已冻结。
+- 子任务并发、深度和预算限制已定义。
+
+具体任务：
+
+| ID | 任务 | 状态 | 完成判据 |
+|---|---|---|---|
+| P5-01 | 定义统一 WorkerExecutionContract | 未进行 | 现有 Worker 和 Subagent 共用 |
+| P5-02 | 实现 SubagentBridge | 未进行 | 父子 Session/Trace 可关联 |
+| P5-03 | 对齐取消、中断和超时 | 未进行 | 父任务终止能可靠传播 |
+| P5-04 | 对齐 ApprovalProxy | 未进行 | 子 Agent 不绕过父审批 |
+| P5-05 | 对齐 Artifact/Evidence | 未进行 | 产物归属和引用正确 |
+| P5-06 | 对齐并发、深度和预算 | 未进行 | 超限有确定性终态 |
+| P5-07 | 移除被替代的重复状态机 | 未进行 | 不保留长期双轨 |
+
+测试计划：
+
+- 父子 Trace、子 Session、并发 Worker、部分失败、超时和取消。
+- 审批转发、重复通知和终态不可重领。
+- Worker Artifact、Evidence 和结果聚合。
+- 崩溃恢复和幂等。
+
+退出条件：
+
+- 一个 Worker 只有一个权威状态源。
+- 父子任务可以从本地和 LangSmith 双向定位。
+- Coordinator 原有模式回归通过。
+- 重复实现已删除或有明确淘汰期限。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 4。
+回滚点：按模式切回现有 Coordinator Worker。
+最近提交：无。
+
+### 14.9 阶段 6：LangSmith 评测闭环
+
+状态：未进行
+目标：把本地版本化测试资产映射到 LangSmith Dataset/Experiment/Feedback，形成模型、Prompt、Agent 轨迹的可重复质量评估。
+
+前置条件：
+
+- 阶段 1 的 Trace 稳定。
+- 本地 Test Case/Suite/Run 版本契约已冻结。
+- 数据脱敏和外发范围已批准。
+
+具体任务：
+
+| ID | 任务 | 状态 | 完成判据 |
+|---|---|---|---|
+| P6-01 | 定义本地用例到 Dataset Example 的映射 | 未进行 | case_version_id 不丢失 |
+| P6-02 | 定义 Test Run 到 Experiment 的映射 | 未进行 | 环境和基线可追溯 |
+| P6-03 | 建立 Evaluator Registry | 未进行 | 规则/模型/人工评估分离 |
+| P6-04 | 建立 Feedback 回流 | 未进行 | 不覆盖原始运行结果 |
+| P6-05 | 建立失败样本治理 | 未进行 | 脱敏、去重、上下文和通过标准齐全 |
+| P6-06 | 建立模型/Prompt 比较实验 | 未进行 | 可重复并可定位版本 |
+| P6-07 | 建立 CI 质量门候选 | 未进行 | 阈值有基线证据 |
+
+测试计划：
+
+- 数据集幂等同步、版本变化和删除策略。
+- Experiment 可重复执行。
+- Evaluator 超时、异常和部分失败。
+- Feedback 回流不覆盖历史结果。
+- project_id/case_version_id/test_run_id 全链路追踪。
+
+退出条件：
+
+- LangSmith 数据能回查本地固定版本。
+- 本地正式 Test Run 仍是唯一业务事实。
+- 失败样本治理符合项目测试工程规则。
+- CI 质量门先观察后阻断，阈值有统计依据。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 1，部分能力依赖阶段 2—5。
+回滚点：停止同步和实验，不删除本地测试资产。
+最近提交：无。
+
+### 14.10 阶段 7：按模式灰度迁移
+
+状态：未进行
+目标：基于前述适配层和评测证据逐个迁移业务模式，最终减少重复自研能力而不破坏专业测试治理。
+
+前置条件：
+
+- 阶段 1—6 达到各自退出条件。
+- 每个模式有旧路径基线、真实失败样本和回滚 Flag。
+- 灰度范围和责任人明确。
+
+迁移顺序与专项目标：
+
+| 顺序 | 模式 | 重点验证 | 状态 | 测试结果 |
+|---:|---|---|---|---|
+| 1 | code_review | Deep Agents 规划、文件与子代理 | 未进行 | 未执行 |
+| 2 | default | 通用对话、工具选择、上下文 | 未进行 | 未执行 |
+| 3 | api_testing | 契约、鉴权、幂等、并发、证据 | 未进行 | 未执行 |
+| 4 | ui_automation | 浏览器状态、录制、回放、断言 | 未进行 | 未执行 |
+| 5 | compatibility_testing | 环境矩阵、部分失败、聚合 | 未进行 | 未执行 |
+| 6 | smoke_testing | 快速终态、失败判定、回归 | 未进行 | 未执行 |
+| 7 | performance_testing | TTFT、吞吐、P95/P99、资源限制 | 未进行 | 未执行 |
+| 8 | security_testing | 授权目标、隔离、审批、证据和清理 | 未进行 | 未执行 |
+
+每个模式必须完成：
+
+1. 旧路径基线。
+2. 新路径离线回放。
+3. 新旧双跑对账。
+4. 小范围灰度。
+5. 错误率、质量、性能和成本观察。
+6. 回滚演练。
+7. 扩大流量或停止迁移的评审结论。
+
+退出条件：
+
+- 全部模式都有明确迁移结论。
+- 被替代的旧代码有删除计划并通过回归。
+- 不存在没有 Owner 的双轨实现。
+- 安全和性能模式通过专项验收。
+- 文档、配置、运行手册和告警同步完成。
+
+当前测试结果：未执行。
+当前阻塞：依赖阶段 1—6。
+回滚点：按模式和项目切回旧路径。
+最近提交：无。
+
+## 15. 每次实施后的记录模板
+
+后续每完成一个开发批次，在对应阶段下追加：
+
+    批次：
+    日期：
+    当前状态：未进行 / 进行中 / 已完成
+    本批目标：
+    实际修改文件：
+    完成任务 ID：
+    未完成任务 ID：
+    依赖或契约变化：
+    测试环境：
+    执行命令：
+    通过：
+    失败：
+    跳过：
+    警告：
+    失败根因：
+    回滚验证：
+    已知限制：
+    提交：
+    下一步：
+
+禁止只写“测试通过”而不记录命令和数量；禁止阶段未满足退出条件时把状态改为已完成。
 
