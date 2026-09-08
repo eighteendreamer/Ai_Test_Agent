@@ -191,6 +191,60 @@ class _RecordingLangSmithClient:
         self.updated.append(kwargs)
 
 
+class _FailingLangSmithClient:
+    def create_run(self, **kwargs: object) -> None:
+        raise RuntimeError("observability transport unavailable")
+
+    def update_run(self, **kwargs: object) -> None:
+        raise RuntimeError("observability transport unavailable")
+
+
+class _RootOnlyLangSmithClient(_RecordingLangSmithClient):
+    def create_run(self, **kwargs: object) -> None:
+        if self.created:
+            raise RuntimeError("child observability transport unavailable")
+        super().create_run(**kwargs)
+
+
+def test_trace_transport_failure_does_not_block_business_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="full"),
+        client=_FailingLangSmithClient(),
+    )
+    callback_ran = False
+
+    with adapter.trace_turn(_context()) as scope:
+        callback_ran = True
+        assert scope is None
+
+    assert callback_ran is True
+
+
+def test_node_transport_failure_does_not_block_business_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    client = _RootOnlyLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="full"),
+        client=client,
+    )
+    callback_ran = False
+
+    with adapter.trace_turn(_context()) as scope:
+        assert scope is not None
+        with adapter.trace_node(_context(), node_name="router"):
+            callback_ran = True
+
+    assert callback_ran is True
+    assert [item["name"] for item in client.created] == [
+        "enterprise_ai_qa_agent.turn"
+    ]
+
+
 def test_full_trace_posts_root_and_nested_node_with_actual_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     """The locked LangSmith SDK must emit the root before its child nodes."""
     monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)

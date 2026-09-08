@@ -1,0 +1,22 @@
+LangSmith SDK protocol verification
+Date: 2026-09-09
+Interpreter: E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe
+Project: local-contract-test
+SDK: langsmith==0.10.18
+
+Setup:
+- Adapter configured with tracing_mode=full, capture_inputs=false, capture_outputs=true.
+- A local loopback HTTP endpoint recorded requests; no external network or real key was used.
+- LANGCHAIN_TRACING_V2 was absent.
+
+Observed:
+- POST /runs/multipart: 2 requests.
+- Root run name: enterprise_ai_qa_agent.turn.
+- Child run name: enterprise_ai_qa_agent.node.router.
+- Child parent_run_id matched the root run id.
+- Local trace_id was present in the serialized request metadata.
+- Test input secret, API key value, and password value were absent from serialized requests.
+- Root and child run requests were both emitted.
+
+Conclusion:
+The locked SDK and adapter ordering are executable in an isolated protocol test. This is not proof of LangSmith cloud authentication, project permissions, data residency, or external URL accessibility.
