@@ -55,6 +55,7 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.observability import LangSmithObservabilityAdapter
 from src.application.intent.semantic_intent_service import SemanticIntentService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
 from src.application.permissions.permission_service import PermissionService
@@ -305,6 +306,10 @@ async def lifespan(app: FastAPI):
         watermark=settings.orchestration.context_compaction_watermark,
         max_tail_messages=settings.orchestration.context_max_tail_messages,
     )
+    observability_service = LangSmithObservabilityAdapter(
+        settings.langsmith,
+        environment=settings.app_env,
+    )
     runtime_service = RuntimeService(
         graph=graph,
         model_runtime_service=model_runtime_service,
@@ -316,6 +321,7 @@ async def lifespan(app: FastAPI):
         session_resource_service=session_resource_service,
         context_compaction_service=context_compaction_service,
         context_max_tail_messages=settings.orchestration.context_max_tail_messages,
+        observability_service=observability_service,
     )
 
     app.state.settings = settings
@@ -393,6 +399,7 @@ async def lifespan(app: FastAPI):
     app.state.tencent_auth_monitor = tencent_auth_monitor
     app.state.compatibility_runner_service = compatibility_runner_service
     app.state.runtime_service = runtime_service
+    app.state.observability_service = observability_service
     session_service = SessionService(
         store=store,
         input_orchestrator_service=input_orchestrator_service,

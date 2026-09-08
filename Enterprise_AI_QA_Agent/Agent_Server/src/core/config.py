@@ -254,6 +254,40 @@ class FrontendConfig(BaseModel):
         return value
 
 
+class LangSmithConfig(BaseModel):
+    enabled: bool = False
+    project: str = "enterprise-ai-qa-agent-dev"
+    endpoint: str = ""
+    api_key_env: str = "LANGSMITH_API_KEY"
+    workspace_id_env: str = "LANGSMITH_WORKSPACE_ID"
+    tracing_mode: str = "off"
+    sample_rate: float = 1.0
+    capture_inputs: bool = False
+    capture_outputs: bool = False
+    timeout_ms: int = 3000
+
+    @field_validator("tracing_mode")
+    @classmethod
+    def validate_tracing_mode(cls, value: str) -> str:
+        normalized = str(value or "off").strip().lower()
+        allowed = {"off", "errors_only", "sampled", "full"}
+        if normalized not in allowed:
+            raise ValueError(f"tracing_mode must be one of: {', '.join(sorted(allowed))}")
+        return normalized
+
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("sample_rate must be between 0.0 and 1.0")
+        return value
+
+    @field_validator("timeout_ms")
+    @classmethod
+    def validate_timeout_ms(cls, value: int) -> int:
+        return max(100, value)
+
+
 class Settings(BaseSettings):
     app_name: str = "Enterprise AI QA Agent"
     app_env: str = "development"
@@ -269,6 +303,7 @@ class Settings(BaseSettings):
     docker: DockerConfig
     mail: MailConfig
     frontend: FrontendConfig
+    langsmith: LangSmithConfig = Field(default_factory=LangSmithConfig)
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

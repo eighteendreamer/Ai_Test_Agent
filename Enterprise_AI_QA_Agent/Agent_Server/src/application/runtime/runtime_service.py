@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -11,6 +12,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.resources.session_resource_service import SessionResourceService
@@ -57,6 +59,7 @@ class RuntimeService:
         session_resource_service: SessionResourceService | None = None,
         context_compaction_service: ContextCompactionService | None = None,
         context_max_tail_messages: int = 24,
+        observability_service: LangSmithObservabilityAdapter | None = None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -68,6 +71,7 @@ class RuntimeService:
         self._session_resource_service = session_resource_service
         self._context_compaction_service = context_compaction_service
         self._context_max_tail_messages = context_max_tail_messages
+        self._observability_service = observability_service
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -461,8 +465,33 @@ class RuntimeService:
         state: dict[str, Any],
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
-        async with self._model_runtime_service.stream_handler(on_model_chunk):
-            result = await self._run_until_settled(state)
+        trace_context = TraceContext.from_graph_state(
+            state,
+            project_id=str(getattr(session, "project_id", "") or ""),
+        )
+        trace_inputs = {
+            "session_id": trace_context.session_id,
+            "turn_id": trace_context.turn_id,
+            "mode_key": trace_context.mode_key,
+        }
+        trace_manager = (
+            self._observability_service.trace_turn(trace_context, inputs=trace_inputs)
+            if self._observability_service is not None
+            else nullcontext()
+        )
+        with trace_manager as trace_scope:
+            async with self._model_runtime_service.stream_handler(on_model_chunk):
+                result = await self._run_until_settled(state)
+            if trace_scope is not None:
+                trace_scope.set_outputs(
+                    {
+                        "termination_reason": result.get("termination_reason", ""),
+                        "control_state": result.get("control_state", ""),
+                        "tool_result_count": len(result.get("tool_results") or []),
+                        "pending_approval_count": len(result.get("pending_approvals") or []),
+                        "response_preview": truncate_text(result.get("final_response", ""), 240),
+                    }
+                )
 
         self._convert_model_interruption_to_resumable(result)
         if result["termination_reason"] == "interrupted":
