@@ -882,12 +882,23 @@ export type SessionWatcherPhase =
   | "failed"
   | "completed";
 
+/**
+ * JSON carried by the session event APIs and SSE stream.  Event payloads are
+ * deliberately extensible because graph nodes, governed tools, workers and
+ * observability each attach their own structured, audit-safe metadata.
+ */
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
 export interface ExecutionEvent {
   id?: string;
   type: string;
   session_id: string;
   timestamp: string;
-  payload: Record<string, string | number | boolean | null | undefined>;
+  payload: JsonObject;
 }
 
 export interface ConversationResponse {

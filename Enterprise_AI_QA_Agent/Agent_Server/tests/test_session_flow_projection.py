@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -22,6 +23,7 @@ from src.application.projects.project_store import InMemoryProjectStore
 from src.application.sessions.session_service import SessionService
 from src.registry.modes import ModeRegistry
 from src.runtime.store import InMemorySessionStore
+from src.runtime.streaming import format_sse
 from src.schemas.session import ExecutionEvent, SessionSnapshot
 
 
@@ -297,3 +299,65 @@ def test_flow_route_aggregates_existing_session_without_replay():
     assert body["workers"][0]["worker"]["task_id"] == "task-a"
     assert [event.type for event in after] == [event.type for event in before]
     assert "session.replay_requested" not in {event.type for event in after}
+
+
+def test_nested_event_payload_survives_history_flow_and_sse_contract():
+    """Events remain the local fact source even when observability adds JSON metadata."""
+    app, store = _build_app()
+    created = _request(app, "POST", "/api/v1/sessions", json={"title": "Nested event contract"})
+    session_id = created.json()["id"]
+    payload = {
+        "turn_id": "turn-nested",
+        "phase": "observability",
+        "message": "Trace linked without exposing credentials.",
+        "trace": {"run_id": "run-1", "url": "https://smith.example/r/run-1"},
+        "worker_ids": ["worker-1", "worker-2"],
+        "attempts": [{"index": 1, "status": "completed"}],
+    }
+    event = ExecutionEvent(
+        id="event-nested",
+        type="observability.trace_linked",
+        session_id=session_id,
+        timestamp=datetime.now(timezone.utc),
+        payload=payload,
+    )
+    _run(store.append_event(session_id, event))
+    _run(
+        store.save_snapshot(
+            session_id,
+            SessionSnapshot(
+                id="snapshot-nested",
+                session_id=session_id,
+                version=1,
+                stage="observability",
+                created_at=datetime.now(timezone.utc),
+                graph_state={
+                    "turn_id": "turn-nested",
+                    "context_bundle": {
+                        "langsmith_trace": {
+                            "run_id": "run-1",
+                            "trace_id": "trace-1",
+                            "url": "https://smith.example/r/run-1",
+                        }
+                    },
+                },
+            ),
+        )
+    )
+
+    history = _request(app, "GET", f"/api/v1/sessions/{session_id}/events/history")
+    flow = _request(app, "GET", f"/api/v1/sessions/{session_id}/flow?turn_id=turn-nested")
+    sse_data = next(line[6:] for line in format_sse(event).splitlines() if line.startswith("data: "))
+
+    assert history.status_code == 200
+    history_event = next(item for item in history.json() if item["id"] == "event-nested")
+    assert history_event["payload"] == payload
+    assert flow.status_code == 200
+    flow_event = next(item for item in flow.json()["events"] if item["id"] == "event-nested")
+    assert flow_event["payload"] == payload
+    assert flow.json()["langsmith_trace"] == {
+        "run_id": "run-1",
+        "trace_id": "trace-1",
+        "url": "https://smith.example/r/run-1",
+    }
+    assert json.loads(sse_data)["payload"] == payload

@@ -576,7 +576,7 @@ Feature Flags：
 | 阶段 | 名称 | 状态 | 已完成度 | 当前结论 | 测试状态 |
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
-| 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | 已落地生态依赖声明、LangSmith 配置、TraceContext、Flag、完整环境快照、运行时直接依赖补齐、干净 C1 复现、Deep Agents C2 候选验证和冲突隔离结论；生态升级版本决策与全量契约固化仍未完成 | 现有环境、干净 C1 环境和隔离 C2 候选 Harness 均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
+| 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | P0-01～P0-06、P0-08～P0-10 已完成；P0-07 因 Deep Agents 与当前主服务生态版本不兼容而阻塞，阶段仍不能关闭 | 现有环境、干净 C1 环境、隔离 C2 候选 Harness、后端/前端契约回归和真实默认模型链路均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
 | 1 | LangSmith 非阻塞观测 | 进行中 | 85% | 已落地 Turn/Graph/Model/Tool/Worker Trace、No-op 降级、本地 Run 引用、Flow 可选深链接和 errors_only 语义；真实外部上报与外部树层级仍未完成 | 2026-09-08 观测专项 20 项、前端 32 项、后端全量和真实默认模型链路通过；真实 LangSmith 上报未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
@@ -653,7 +653,7 @@ pip check 已知冲突：
 | P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 阻塞 | C2 候选已验证，但与当前主服务生态版本不兼容；必须先完成阶段 2—3 的协调升级和回滚证据，不能声明一个无法解析的 extra |
 | P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 已完成 | 类型、校验、序列化和契约测试已通过 |
 | P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 已完成 | 默认关闭且配置校验通过 |
-| P0-10 | 固化现有事件和状态契约 | schemas、契约测试 | 未进行 | 消费方引用已全局核对 |
+| P0-10 | 固化现有事件和状态契约 | `Agent_Server/docs/session-event-flow-contract-2026-09-08.md`、schemas、前后端契约测试 | 已完成 | Event/Snapshot/Flow 单一数据通路、递归 JSON payload、轮次筛选、只读投影、SSE 序列化和 LangSmith 引用边界均有文档与回归证据 |
 
 测试计划：
 
@@ -671,11 +671,32 @@ pip check 已知冲突：
 - 全量回归不低于 14.2 基线。
 - 尚未改变任何生产执行语义。
 
-本批完成项：P0-01 至 P0-06、P0-08、P0-09；P0-05 已完成候选矩阵；P0-07 仍阻塞于主服务生态协调升级，P0-10 仍未完成。
-当前测试结果（2026-09-08）：现有开发环境 `test_observability_contracts.py` 10 passed；后端全量 739 passed、8 skipped、1 warning（26.20s）；`compileall -q src tests` 通过；现有开发环境真实 FastAPI 链路通过。C1 干净 Python 3.11 venv 安装通过，`pip check` 通过，`import src.main` 成功，C1 后端全量 739 passed、8 skipped、1 warning（26.52s），真实 FastAPI 健康检查、默认模型会话、Events、Snapshot 和 Flow 成功（25 events、1 Snapshot）。C2 独立环境安装 Deep Agents 0.7.13 及官方依赖成功，`pip check` 通过，`create_deep_agent` 构造与 fake tool-capable model 离线 invoke 成功。共享开发环境 `pip check` 仍返回 8 条非主服务工具冲突；默认索引 `pip index versions deepagents` 无匹配，但官方 PyPI 可见 0.7.13。
-当前阻塞：主服务不能直接声明 Deep Agents extra，因为官方 0.7.13 要求 LangChain 至少 1.3.18、Core 至少 1.6.1、LangGraph 至少 1.2.11，和当前锁定组合不兼容；还需阶段 2—3 完成协调升级、Provider 真实链路、事件契约全量固化和回滚验证。
+本批完成项：P0-01 至 P0-06、P0-08 至 P0-10；P0-07 仍阻塞于主服务生态协调升级。
+当前测试结果（2026-09-08，本批 P0-10）：
+
+- 后端契约专项：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe -m pytest -q tests/test_session_flow_projection.py`，9 passed。
+- 前端 Flow 契约专项：`npm test -- --run src/features/flow/flow.test.ts`，1 file / 10 passed。
+- 后端编译与全量回归：`compileall -q src tests` 通过；`pytest -q`，740 passed、8 skipped、1 warning（23.31s）。
+- 前端全量回归与构建：2 files / 33 passed；`npm run build` 通过（3154 modules transformed）；保留既有主 chunk 大于 500 kB 警告，未将其误报为失败。
+- 真实可执行链路：使用指定 Python3.11 启动 `uvicorn src.main:app --host 127.0.0.1 --port 18126`；`/api/v1/health` 200 且 `postgres_ok=true`；创建 Session、使用数据库默认模型发送真实消息、查询 Events/Snapshots/Flow 均 200，得到 24 条事件、1 个 Snapshot、9 个 Flow stages，并包含 `runtime.turn_completed`。
+
+当前阻塞：主服务不能直接声明 Deep Agents extra，因为官方 0.7.13 要求 LangChain 至少 1.3.18、Core 至少 1.6.1、LangGraph 至少 1.2.11，和当前锁定组合不兼容；还需阶段 2—3 完成协调升级、Provider 真实链路和回滚验证。P0-10 已完成，不再是阶段 0 阻塞项。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
-最近提交：`0df3050`（补充 Run 引用契约测试）。
+最近提交：待本批提交。
+
+#### P0-10 实施批次记录（2026-09-08）
+
+- 当前状态：已完成。
+- 本批目标：冻结 Event、Snapshot、Flow、SSE 和前端类型的真实跨层契约，为后续 LangChain/Deep Agents/LangSmith 适配提供稳定边界。
+- 实际修改文件：`Agent_Server/docs/session-event-flow-contract-2026-09-08.md`、`Agent_Server/tests/test_session_flow_projection.py`、`agent_web/src/types.ts`、`agent_web/src/features/flow/flow.test.ts`。
+- 完成任务 ID：P0-10。
+- 未完成任务 ID：无（P0-07 仍为阶段级阻塞，但不属于本批范围）。
+- 依赖或契约变化：`ExecutionEvent.payload` 前端类型由一层标量字典扩大为递归 JSON object；后端 JSONB、历史 API、SSE、Flow 投影均保持原有运行语义，未新增事件总线。
+- 失败：首次专项测试错误地取了创建 Session 时产生的首条事件，已按稳定 Event ID 修正测试；该失败不是产品代码失败。
+- 跳过：未执行真实 LangSmith 外部上报；没有 API Key，因此不能宣称外部 Trace 可访问。
+- 回滚验证：默认关闭 Feature Flag 的旧路径全量回归通过；本批仅扩大前端类型与增加契约测试，可回滚至上一提交。
+- 已知限制：LangSmith 真实网络上报、Deep Agents 主服务接入和外部 Trace 树仍分别留在阶段 1/4，不计入 P0-10 完成。
+- 下一步：先提交本批；然后按方案进入阶段 1 未完成的真实 LangSmith 验证，或在用户批准并完成兼容升级矩阵后开始阶段 2 Model Adapter，不直接跳入 Deep Agents。
 
 ### 14.4 阶段 1：LangSmith 非阻塞观测
 

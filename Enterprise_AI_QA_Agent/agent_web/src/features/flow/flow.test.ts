@@ -8,7 +8,7 @@ import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openF
 import { projectFlowNodes } from "./stages";
 import { collectWorkerDispatches, workerFlowStatus, workerNodeId } from "./workers";
 import { t } from "../../services/i18n";
-import type { WorkerDispatchRecord } from "../../types";
+import type { ExecutionEvent, WorkerDispatchRecord } from "../../types";
 
 function worker(overrides: Partial<WorkerDispatchRecord> = {}): WorkerDispatchRecord {
   return {
@@ -139,6 +139,26 @@ describe("Dynamic flow projection", () => {
     expect(stages.edges).toEqual([
       { id: "e-context_builder-router", source: "context_builder", target: "router", kind: "stage" },
     ]);
+  });
+
+  it("accepts the nested JSON event payload contract used by traces and workers", () => {
+    const event: ExecutionEvent = {
+      id: "nested-1",
+      session_id: "session-1",
+      type: "observability.trace_linked",
+      timestamp: "2026-09-08T00:00:00Z",
+      payload: {
+        turn_id: "turn-1",
+        trace: { run_id: "run-1", url: "https://smith.example/r/run-1" },
+        worker_ids: ["worker-1", "worker-2"],
+        attempts: [{ index: 1, status: "completed" }],
+      },
+    };
+
+    expect(event.payload).toMatchObject({
+      trace: { run_id: "run-1" },
+      worker_ids: ["worker-1", "worker-2"],
+    });
   });
 });
 
