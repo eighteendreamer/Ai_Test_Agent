@@ -17,6 +17,8 @@
 | `langsmith` | 0.10.18 | 已验证（本地适配） | 观测契约测试；真实外部上报尚未验证 |
 | `deepagents` | 未安装、未声明 | 阻塞 | 当前索引未返回发行包；官方主线依赖高于项目锁定组合 |
 
+本次干净环境导入验证还发现，应用真实启动链直接使用的 `dependency-injector`、`python-magic`、`playwright` 原先未在项目声明中列出，已补入 `pyproject.toml`。这三项不是 LangChain 生态依赖，但属于应用可执行性的必要直接依赖，不能依赖共享开发环境“恰好已安装”。
+
 当前 Provider SDK 基线：
 
 | Provider SDK | 项目约束 | 当前环境 | 状态 |
@@ -60,8 +62,8 @@
 | 矩阵编号 | 环境/组合 | 目标 | 状态 | 必须执行的验证 | 通过标准 |
 |---|---|---|---|---|---|
 | C0 | 当前 Python 3.11 + 当前四包锁定版本 | 保存可回归基线 | 已完成 | import、compileall、全量 pytest、前端测试/构建、真实默认模型会话 | 已通过；外部 LangSmith 除外 |
-| C1 | 干净 Python 3.11 + `pyproject.toml` 默认依赖 | 证明主服务可重复安装 | 未进行 | 安装、`pip check`、四包版本、import、全量 pytest、FastAPI 健康检查和真实会话 | 全部通过，无共享工具冲突 |
-| C2 | 隔离 Python 3.11 + Deep Agents 候选版本及其官方下限 | 确认依赖解析与导入 | 阻塞 | 解析发行版本、安装、`pip check`、`create_deep_agent` import、无模型最小构建 | 包索引可用且全部通过 |
+| C1 | 干净 Python 3.11 + `pyproject.toml` 默认依赖 | 证明主服务可重复安装 | 已完成 | 安装、`pip check`、四包版本、`src.main` import、FastAPI 健康检查、真实默认模型会话和 Flow | 全部通过；生成 25 条事件和 1 个 Snapshot；运行时依赖已补齐 |
+| C2 | 隔离 Python 3.11 + Deep Agents 0.7.13 官方依赖 | 确认依赖解析、Provider 扩展和 Harness 最小执行 | 已完成（候选环境） | PyPI 解析、安装、`pip check`、`create_deep_agent` import/构造、工具可绑定离线调用 | 通过；候选快照已保存；不代表主服务已升级 |
 | C3 | C2 + 项目 Provider 适配 + `code_review` 受控工具 | 验证实际集成可行性 | 未进行 | 工具调用、权限、审批、路径隔离、事件、Trace、取消与恢复 | 不绕过现有治理，无第二套外层状态机 |
 | C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 未进行 | 全量回归、真实会话、性能、回滚演练 | 质量不降、性能预算达标、可一键回滚 |
 
@@ -79,6 +81,9 @@
 - `pip check` 失败：共 8 条，均来自上述三个共享环境附加工具。
 - `pip index versions deepagents` 失败：当前索引无匹配发行包。
 - 第一次版本探测使用 `langgraph.__version__` 失败，因为该模块未公开此属性；已改用 `importlib.metadata.version('langgraph')` 并成功。该失败不代表 LangGraph 导入失败。
+- 干净 C1 环境的运行时依赖快照已保存为 `Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt`；该文件不包含项目自身的 editable git 行，避免把本地路径误当成可复现依赖。
+- C2 候选环境快照已保存为 `Agent_Server/docs/python311-deepagents-c2-freeze-2026-09-08.txt`。候选组合为 Deep Agents 0.7.13、LangChain 1.4.0、LangChain Core 1.6.2、LangGraph 1.2.11、LangSmith 0.12.2，并额外安装 `langchain-openai==1.6.1`。
+- C2 第一次用 OpenAI provider 构造 agent 时因未安装 `langchain-openai` 失败；补装官方 provider 包后因环境未提供 OpenAI key 无法构造真实 OpenAI client。随后使用只在命令中定义的 tool-capable fake chat model，完成 `create_deep_agent` 构造和一次离线 `invoke`，结果为 2 条消息，证明 harness 图和工具绑定路径可执行。该测试不证明真实 Provider 网络调用。
 
 ## 6. 阶段 0 剩余出口
 

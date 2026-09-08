@@ -576,7 +576,7 @@ Feature Flags：
 | 阶段 | 名称 | 状态 | 已完成度 | 当前结论 | 测试状态 |
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
-| 0 | 契约、依赖和可回滚基线 | 进行中 | 78% | 已落地生态依赖声明、LangSmith 配置、TraceContext、Flag、完整环境快照和冲突隔离结论；干净环境复现、Deep Agents 候选组合和全量契约固化仍未完成 | 新增契约测试和全量回归通过；共享开发环境 pip check 未通过，冲突已归因 |
+| 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | 已落地生态依赖声明、LangSmith 配置、TraceContext、Flag、完整环境快照、运行时直接依赖补齐、干净 C1 复现、Deep Agents C2 候选验证和冲突隔离结论；生态升级版本决策与全量契约固化仍未完成 | 现有环境、干净 C1 环境和隔离 C2 候选 Harness 均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
 | 1 | LangSmith 非阻塞观测 | 进行中 | 85% | 已落地 Turn/Graph/Model/Tool/Worker Trace、No-op 降级、本地 Run 引用、Flow 可选深链接和 errors_only 语义；真实外部上报与外部树层级仍未完成 | 2026-09-08 观测专项 20 项、前端 32 项、后端全量和真实默认模型链路通过；真实 LangSmith 上报未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
@@ -604,6 +604,11 @@ Feature Flags：
 | 前端构建 | npm run build | 通过但有警告 | 3154 modules transformed，18.77s；主 chunk 约 2.5 MB |
 | Python 依赖一致性 | python.exe -m pip check | 未通过 | 发现 browser-use、mem0ai、mitmproxy 的既有版本冲突 |
 | 完整环境快照 | python.exe -m pip freeze | 通过 | 已保存为 Agent_Server/docs/python311-runtime-freeze-2026-09-08.txt |
+| 干净主服务 C1 安装 | 临时 Python3.11 venv + pip install -e . | 通过 | `pip check` 通过；运行时快照已保存为 Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt |
+| 干净环境应用导入 | C1 venv + `import src.main` | 通过 | 应用入口导入成功；此前缺失的 dependency-injector/python-magic/playwright 已补齐声明 |
+| 干净环境真实链路 | C1 venv + uvicorn + HTTP API | 通过 | health 200、postgres_ok=true、Session/Message/Flow/Snapshot/Events 均成功；25 events、1 Snapshot |
+| Deep Agents C2 候选解析 | PyPI + 独立 C2 venv | 通过 | `deepagents==0.7.13` 安装成功；LangChain 1.4.0/Core 1.6.2/LangGraph 1.2.11/LangSmith 0.12.2；`pip check` 通过 |
+| Deep Agents C2 Harness | C2 venv + fake tool-capable chat model | 通过 | `create_deep_agent` 构造成功；离线 `invoke` 成功，2 messages |
 | 生态包元数据 | python.exe + importlib.metadata | 通过 | Python 3.11.15；LangChain 1.2.3；Core 1.2.7；LangGraph 1.0.10；LangSmith 0.10.18 |
 | Deep Agents 索引解析 | python.exe -m pip index versions deepagents | 未通过 | 当前软件包索引返回 No matching distribution found；未修改环境 |
 
@@ -643,9 +648,9 @@ pip check 已知冲突：
 | P0-02 | 运行 compileall、pytest、前端测试和构建 | Agent_Server、agent_web | 已完成 | 结果进入 14.2 |
 | P0-03 | 保存直接/传递依赖快照 | Agent_Server/docs/python311-runtime-freeze-2026-09-08.txt | 已完成 | 当前开发环境完整 `pip freeze` 已保存；不冒充主服务 lock |
 | P0-04 | 处理或隔离 pip check 冲突 | 兼容矩阵文档 | 已完成（隔离决策） | 8 条冲突均已归因并确定独立环境边界；共享环境仍不通过 |
-| P0-05 | 建立 LangChain 生态兼容矩阵 | Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md | 进行中 | 当前四包已验证；Deep Agents/Provider 候选组合待隔离验证 |
-| P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 进行中 | 已声明并验证导入；锁定文件和干净环境复现仍未完成 |
-| P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 阻塞 | 当前索引无法解析发行包，且官方主线依赖高于已锁定生态版本；C2 验证后再声明 |
+| P0-05 | 建立 LangChain 生态兼容矩阵 | Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md | 已完成（候选矩阵） | 当前四包、Provider 基线、C1 主服务和 C2 Deep Agents 候选组合均有证据；主服务升级决策仍属于后续阶段 |
+| P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 已完成 | 声明、安装、`pip check`、应用导入和 C1 真实链路均通过；C1 快照已保存 |
+| P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 阻塞 | C2 候选已验证，但与当前主服务生态版本不兼容；必须先完成阶段 2—3 的协调升级和回滚证据，不能声明一个无法解析的 extra |
 | P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 已完成 | 类型、校验、序列化和契约测试已通过 |
 | P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 已完成 | 默认关闭且配置校验通过 |
 | P0-10 | 固化现有事件和状态契约 | schemas、契约测试 | 未进行 | 消费方引用已全局核对 |
@@ -666,9 +671,9 @@ pip check 已知冲突：
 - 全量回归不低于 14.2 基线。
 - 尚未改变任何生产执行语义。
 
-本批完成项：P0-01 至 P0-04、P0-08、P0-09；P0-05/P0-06 进行中；P0-07 阻塞于候选依赖解析与兼容验证。
-当前测试结果（2026-09-08）：`test_observability_contracts.py` 10 passed；后端全量 739 passed、8 skipped、1 warning（24.84s）；本轮再次执行 `compileall -q src tests` 通过；包元数据核验通过。真实 FastAPI 启动、健康检查和默认模型链路已在同日通过，最近一次生成 24 条事件和 1 个 Snapshot，Flow 200。本轮 `pip check` 仍返回 8 条共享工具环境冲突；`pip index versions deepagents` 返回无匹配发行包。第一次使用 `langgraph.__version__` 的探测命令失败，改用 `importlib.metadata` 后成功。
-当前阻塞：干净主服务环境安装/锁定、Deep Agents 候选版本解析与兼容试验、事件契约全量固化尚未完成。官方 Deep Agents 主线 0.7.13 要求 `langchain>=1.4.0`、`langchain-core>=1.6.2`、`langsmith>=0.12.2`，与当前锁定组合不兼容，因此不能直接写入可选依赖。
+本批完成项：P0-01 至 P0-06、P0-08、P0-09；P0-05 已完成候选矩阵；P0-07 仍阻塞于主服务生态协调升级，P0-10 仍未完成。
+当前测试结果（2026-09-08）：现有开发环境 `test_observability_contracts.py` 10 passed；后端全量 739 passed、8 skipped、1 warning（26.20s）；`compileall -q src tests` 通过；现有开发环境真实 FastAPI 链路通过。C1 干净 Python 3.11 venv 安装通过，`pip check` 通过，`import src.main` 成功，C1 后端全量 739 passed、8 skipped、1 warning（26.52s），真实 FastAPI 健康检查、默认模型会话、Events、Snapshot 和 Flow 成功（25 events、1 Snapshot）。C2 独立环境安装 Deep Agents 0.7.13 及官方依赖成功，`pip check` 通过，`create_deep_agent` 构造与 fake tool-capable model 离线 invoke 成功。共享开发环境 `pip check` 仍返回 8 条非主服务工具冲突；默认索引 `pip index versions deepagents` 无匹配，但官方 PyPI 可见 0.7.13。
+当前阻塞：主服务不能直接声明 Deep Agents extra，因为官方 0.7.13 要求 LangChain 至少 1.3.18、Core 至少 1.6.1、LangGraph 至少 1.2.11，和当前锁定组合不兼容；还需阶段 2—3 完成协调升级、Provider 真实链路、事件契约全量固化和回滚验证。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
 最近提交：`0df3050`（补充 Run 引用契约测试）。
 
