@@ -2,7 +2,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -258,6 +258,10 @@ class LangSmithConfig(BaseModel):
     enabled: bool = False
     project: str = "enterprise-ai-qa-agent-dev"
     endpoint: str = ""
+    # The secret is loaded only from the nested environment configuration.  It
+    # is never included in trace metadata or application logs.
+    api_key: SecretStr | None = None
+    workspace_id: str = ""
     api_key_env: str = "LANGSMITH_API_KEY"
     workspace_id_env: str = "LANGSMITH_WORKSPACE_ID"
     tracing_mode: str = "off"

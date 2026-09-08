@@ -744,12 +744,26 @@ pip check 已知冲突：
 - Flow 仍以本地事件为事实源。
 - 有一键关闭和回滚验证。
 
-本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入但等待外部环境验证；补齐 `errors_only` 成功/失败语义。
-当前测试结果（2026-09-08，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测/Flow 专项 20 passed；后端全量 739 passed、8 skipped、1 warning（24.26s）；前端 32 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、默认模型会话、事件历史、completed Snapshot 和 Flow 查询均通过；真实模型回复为“观测策略回归成功”。
-第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
-当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
+本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入和本地 SDK 协议验证，但仍等待真实外部环境验证；补齐 `errors_only` 成功/失败语义并修复根 Trace 未上报问题。
+当前测试结果（2026-09-09，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测契约专项 17 passed；后端全量 745 passed、8 skipped、1 warning（17.95s）；前端 33 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、数据库默认模型会话、事件历史、Snapshot 和 Flow 查询均通过（23 events、1 Snapshot、9 stages）。
+新增锁定版 LangSmith SDK 协议验证：在本地隔离 HTTP 端点收到 `/runs/multipart` 的 root Turn 与 `router` 子 Run 两批请求；子 Run 的 `parent_run_id` 指向 root，`trace_id` 可见，敏感输入、API Key 和密码值未出现。该结果证明当前 SDK 适配顺序和脱敏边界可执行，不等价于 LangSmith 云端可访问性。
+第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归；本批进一步发现并修复“未设置 `LANGCHAIN_TRACING_V2` 时 root trace 不会 post、只有子 trace 上报”的适配器根因。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
+当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧通过 `Agent_Server/.env` 配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
-最近提交：`a5efb31`（errors_only 观测语义）；阶段 1 本轮未修改其执行代码。
+最近提交：待本批提交。
+
+#### 阶段 1 根 Trace 与环境配置批次记录（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：确保锁定版 LangSmith SDK 在应用未设置全局 `LANGCHAIN_TRACING_V2` 时仍会上报 Turn root，并验证 root→node 父子关系、脱敏和环境变量配置路径。
+- 实际修改文件：`Agent_Server/src/application/observability/langsmith_adapter.py`、`Agent_Server/src/core/config.py`、`Agent_Server/tests/test_observability_contracts.py`、`Agent_Server/.env.example`；本机 `Agent_Server/.env` 已追加同名非敏感配置项，默认关闭且密钥为空。
+- 完成任务 ID：P1-01、P1-02、P1-03、P1-04、P1-05、P1-06、P1-07、P1-10、P1-11（代码与本地协议证据）；P1-08/P1-09 的真实外部部分未完成。
+- 依赖或契约变化：`LangSmithConfig.api_key` 使用 Pydantic `SecretStr` 从 `LANGSMITH__API_KEY` 读取；适配器优先使用该配置，仍兼容 `LANGSMITH_API_KEY` 进程变量，不把密钥放入 metadata。
+- 通过：实际 SDK fake client 测试 17 passed；root 与 node 均产生请求，node `parent_run_id` 指向 root；`errors_only` 错误字段和脱敏断言通过。
+- 跳过：真实 LangSmith 云端上报、控制台树层级和外部 URL 可访问性，原因是当前环境没有 `LANGSMITH_API_KEY`。
+- 回滚验证：LangSmith 默认关闭时后端全量 745 passed，真实 FastAPI 默认模型会话仍成功；关闭观测不会改变本地 Event/SSE/Snapshot/Flow。
+- 已知限制：本地协议端点只验证 SDK 请求形状和适配器行为，不证明云端鉴权、项目权限、数据驻留或网络重试策略。
+- 下一步：用户在 `Agent_Server/.env` 写入 LangSmith Key 后，执行一次 full 模式真实会话并核对控制台父子树、外部 URL、本地 trace_id 对账和性能预算；通过后再进入阶段 2 Model Adapter。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 

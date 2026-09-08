@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from src.application.observability import TraceContext
 from src.application.observability.langsmith_adapter import LangSmithObservabilityAdapter, TraceScope
 from src.application.security.output_safety_policy import OutputSafetyPolicy
-from src.core.config import LangSmithConfig
+from src.core.config import LangSmithConfig, Settings
 
 
 def test_langsmith_config_is_safe_by_default() -> None:
@@ -17,6 +19,30 @@ def test_langsmith_config_is_safe_by_default() -> None:
     assert config.capture_inputs is False
     assert config.capture_outputs is False
     assert config.api_key_env == "LANGSMITH_API_KEY"
+    assert config.api_key is None
+
+
+def test_langsmith_config_accepts_secret_from_settings_without_exposing_repr() -> None:
+    config = LangSmithConfig(api_key="config-secret")
+
+    assert config.api_key is not None
+    assert config.api_key.get_secret_value() == "config-secret"
+    assert "config-secret" not in repr(config)
+
+
+def test_settings_loads_nested_langsmith_values_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANGSMITH__ENABLED", "true")
+    monkeypatch.setenv("LANGSMITH__TRACING_MODE", "sampled")
+    monkeypatch.setenv("LANGSMITH__API_KEY", "nested-secret")
+    monkeypatch.setenv("LANGSMITH__WORKSPACE_ID", "workspace-1")
+
+    config = Settings().langsmith
+
+    assert config.enabled is True
+    assert config.tracing_mode == "sampled"
+    assert config.api_key is not None
+    assert config.api_key.get_secret_value() == "nested-secret"
+    assert config.workspace_id == "workspace-1"
 
 
 def test_langsmith_config_validates_mode_sampling_and_timeout() -> None:
@@ -151,6 +177,104 @@ def test_trace_scope_exposes_only_external_run_reference_fields() -> None:
         "dotted_order": "trace-1.0001",
         "url": "https://smith.langchain.com/r/trace-1",
     }
+
+
+class _RecordingLangSmithClient:
+    def __init__(self) -> None:
+        self.created: list[dict[str, object]] = []
+        self.updated: list[dict[str, object]] = []
+
+    def create_run(self, **kwargs: object) -> None:
+        self.created.append(kwargs)
+
+    def update_run(self, **kwargs: object) -> None:
+        self.updated.append(kwargs)
+
+
+def test_full_trace_posts_root_and_nested_node_with_actual_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The locked LangSmith SDK must emit the root before its child nodes."""
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    client = _RecordingLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(
+            enabled=True,
+            tracing_mode="full",
+            capture_outputs=True,
+        ),
+        client=client,
+    )
+
+    with adapter.trace_turn(
+        _context(),
+        inputs={"api_key": "must-not-send", "message": "safe"},
+    ) as scope:
+        assert scope is not None
+        with adapter.trace_node(
+            _context(),
+            node_name="router",
+            inputs={"password": "must-not-send"},
+        ):
+            pass
+        scope.set_outputs({"summary": "ok", "api_key": "must-not-send"})
+
+    assert [item["name"] for item in client.created] == [
+        "enterprise_ai_qa_agent.turn",
+        "enterprise_ai_qa_agent.node.router",
+    ]
+    root_id = client.created[0]["id"]
+    assert client.created[1]["parent_run_id"] == root_id
+    assert client.updated[-1]["run_id"] == root_id
+    assert client.updated[-1]["outputs"] == {
+        "summary": "ok",
+        "api_key": "[REDACTED]",
+    }
+    serialized = json.dumps(client.created + client.updated, default=str)
+    assert "must-not-send" not in serialized
+
+
+def test_errors_only_posts_failed_root_with_actual_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    client = _RecordingLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="errors_only"),
+        client=client,
+    )
+
+    with pytest.raises(RuntimeError, match="business failure"):
+        with adapter.trace_turn(_context()):
+            raise RuntimeError("business failure")
+
+    assert [item["name"] for item in client.created] == [
+        "enterprise_ai_qa_agent.turn.error"
+    ]
+    assert client.updated[-1]["run_id"] == client.created[0]["id"]
+    assert "business failure" in str(client.updated[-1]["error"])
+
+
+def test_configured_langsmith_api_key_is_used_without_process_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    import langsmith
+
+    captured: dict[str, object] = {}
+
+    class _Client:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.setattr(langsmith, "Client", _Client)
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(
+            enabled=True,
+            tracing_mode="full",
+            api_key="config-secret",
+            workspace_id="workspace-from-config",
+        )
+    )
+
+    adapter._get_client(langsmith)
+
+    assert captured["api_key"] == "config-secret"
+    assert captured["workspace_id"] == "workspace-from-config"
 
 
 def test_errors_only_does_not_trace_successful_turn(monkeypatch: pytest.MonkeyPatch) -> None:

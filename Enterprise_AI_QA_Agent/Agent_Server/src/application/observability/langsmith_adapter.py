@@ -94,6 +94,9 @@ class LangSmithObservabilityAdapter:
                 raise
             return
 
+        tracing_cm: Any | None = None
+        run_cm: Any | None = None
+        run: Any | None = None
         try:
             import langsmith as ls
 
@@ -107,6 +110,19 @@ class LangSmithObservabilityAdapter:
             safe_inputs = self._redactor.sanitize_for_audit(inputs or {})
             if not self._config.capture_inputs:
                 safe_inputs = {"trace_id": context.trace_id, "turn_id": context.turn_id}
+            # ``langsmith.trace`` only posts a run when tracing is enabled in
+            # the current SDK context.  Establish an explicit root context
+            # before entering the root run; otherwise only child node runs are
+            # emitted when the application does not set LANGCHAIN_TRACING_V2.
+            tracing_cm = ls.tracing_context(
+                project_name=self._config.project,
+                tags=context.tags,
+                metadata=metadata,
+                parent=False,
+                enabled=True,
+                client=client,
+            )
+            tracing_cm.__enter__()
             run_cm = ls.trace(
                 name="enterprise_ai_qa_agent.turn",
                 run_type="chain",
@@ -114,20 +130,15 @@ class LangSmithObservabilityAdapter:
                 project_name=self._config.project,
                 tags=context.tags,
                 metadata=metadata,
+                parent="ignore",
                 client=client,
-                exceptions_to_handle=(Exception,),
             )
             run = run_cm.__enter__()
-            tracing_cm = ls.tracing_context(
-                project_name=self._config.project,
-                tags=context.tags,
-                metadata=metadata,
-                parent=run,
-                enabled=True,
-                client=client,
-            )
-            tracing_cm.__enter__()
-        except Exception:
+        except Exception as exc:
+            if run_cm is not None:
+                self._safe_exit(run_cm, exc)
+            if tracing_cm is not None:
+                self._safe_exit(tracing_cm, exc)
             logger.exception(
                 "langsmith_trace_start_failed",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
@@ -139,12 +150,12 @@ class LangSmithObservabilityAdapter:
         try:
             yield scope
         except BaseException as exc:
-            self._safe_exit(tracing_cm, exc)
             self._safe_exit(run_cm, exc)
+            self._safe_exit(tracing_cm, exc)
             raise
         else:
-            self._safe_exit(tracing_cm, None)
             self._safe_exit(run_cm, None)
+            self._safe_exit(tracing_cm, None)
 
     @contextmanager
     def trace_node(
@@ -158,6 +169,7 @@ class LangSmithObservabilityAdapter:
         if not self.enabled or self._config.tracing_mode == "errors_only":
             yield
             return
+        trace_cm: Any | None = None
         try:
             import langsmith as ls
 
@@ -176,6 +188,7 @@ class LangSmithObservabilityAdapter:
                 client=client,
                 exceptions_to_handle=(Exception,),
             )
+            trace_cm.__enter__()
         except Exception:
             logger.exception(
                 "langsmith_node_trace_failed",
@@ -183,8 +196,13 @@ class LangSmithObservabilityAdapter:
             )
             yield
             return
-        with trace_cm:
+        try:
             yield
+        except BaseException as exc:
+            self._safe_exit(trace_cm, exc)
+            raise
+        else:
+            self._safe_exit(trace_cm, None)
 
     def context_from_mapping(self, value: dict[str, Any]) -> TraceContext:
         return TraceContext(
@@ -200,7 +218,10 @@ class LangSmithObservabilityAdapter:
     def _get_client(self, langsmith_module: Any) -> Any:
         if self._client is not None:
             return self._client
-        api_key = os.getenv(self._config.api_key_env, "").strip()
+        configured_key = ""
+        if self._config.api_key is not None:
+            configured_key = self._config.api_key.get_secret_value().strip()
+        api_key = configured_key or os.getenv(self._config.api_key_env, "").strip()
         if not api_key:
             raise RuntimeError(
                 f"LangSmith tracing is enabled but {self._config.api_key_env} is not configured"
@@ -212,7 +233,10 @@ class LangSmithObservabilityAdapter:
         }
         if self._config.endpoint.strip():
             kwargs["api_url"] = self._config.endpoint.strip()
-        workspace_id = os.getenv(self._config.workspace_id_env, "").strip()
+        workspace_id = self._config.workspace_id.strip() or os.getenv(
+            self._config.workspace_id_env,
+            "",
+        ).strip()
         if workspace_id:
             kwargs["workspace_id"] = workspace_id
         self._client = langsmith_module.Client(**kwargs)
@@ -225,6 +249,8 @@ class LangSmithObservabilityAdapter:
         inputs: dict[str, Any] | None,
         exception: BaseException,
     ) -> None:
+        tracing_cm: Any | None = None
+        trace_cm: Any | None = None
         try:
             import langsmith as ls
 
@@ -235,6 +261,15 @@ class LangSmithObservabilityAdapter:
             safe_inputs = self._redactor.sanitize_for_audit(inputs or {})
             if not self._config.capture_inputs:
                 safe_inputs = {"trace_id": context.trace_id, "turn_id": context.turn_id}
+            tracing_cm = ls.tracing_context(
+                project_name=self._config.project,
+                tags=context.tags,
+                metadata=metadata,
+                parent=False,
+                enabled=True,
+                client=client,
+            )
+            tracing_cm.__enter__()
             trace_cm = ls.trace(
                 name="enterprise_ai_qa_agent.turn.error",
                 run_type="chain",
@@ -242,16 +277,21 @@ class LangSmithObservabilityAdapter:
                 project_name=self._config.project,
                 tags=[*context.tags, "outcome:error"],
                 metadata=metadata,
+                parent="ignore",
                 client=client,
-                exceptions_to_handle=(Exception,),
             )
-            run = trace_cm.__enter__()
+            trace_cm.__enter__()
             self._safe_exit(trace_cm, exception)
+            self._safe_exit(tracing_cm, exception)
             logger.info(
                 "langsmith_error_trace_recorded",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
             )
-        except Exception:
+        except Exception as trace_error:
+            if trace_cm is not None:
+                self._safe_exit(trace_cm, trace_error)
+            if tracing_cm is not None:
+                self._safe_exit(tracing_cm, trace_error)
             logger.exception(
                 "langsmith_error_trace_failed",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
