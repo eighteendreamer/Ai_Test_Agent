@@ -576,7 +576,7 @@ Feature Flags：
 | 阶段 | 名称 | 状态 | 已完成度 | 当前结论 | 测试状态 |
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
-| 0 | 契约、依赖和可回滚基线 | 进行中 | 70% | 已落地生态依赖声明、LangSmith 配置、TraceContext 和 Flag 默认关闭；依赖冲突处置、锁定文件和全量契约固化仍未完成 | 新增契约测试和全量回归通过；pip check 未通过 |
+| 0 | 契约、依赖和可回滚基线 | 进行中 | 78% | 已落地生态依赖声明、LangSmith 配置、TraceContext、Flag、完整环境快照和冲突隔离结论；干净环境复现、Deep Agents 候选组合和全量契约固化仍未完成 | 新增契约测试和全量回归通过；共享开发环境 pip check 未通过，冲突已归因 |
 | 1 | LangSmith 非阻塞观测 | 进行中 | 85% | 已落地 Turn/Graph/Model/Tool/Worker Trace、No-op 降级、本地 Run 引用、Flow 可选深链接和 errors_only 语义；真实外部上报与外部树层级仍未完成 | 2026-09-08 观测专项 20 项、前端 32 项、后端全量和真实默认模型链路通过；真实 LangSmith 上报未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
@@ -599,10 +599,13 @@ Feature Flags：
 | 检查 | 命令 | 结果 | 证据摘要 |
 |---|---|---|---|
 | Python 编译 | python.exe -m compileall -q src tests | 通过 | exit code 0 |
-| 后端测试 | python.exe -m pytest -q | 通过 | 736 passed，8 skipped，1 warning，20.20s（本批新增 9 项测试） |
-| 前端测试 | npm test -- --run | 通过 | 2 files passed，32 tests passed，2.10s |
-| 前端构建 | npm run build | 通过但有警告 | 3154 modules transformed，8.96s；主 chunk 约 2.5 MB |
+| 后端测试 | python.exe -m pytest -q | 通过 | 739 passed，8 skipped，1 warning，24.84s；观测/Flow 专项 20 passed |
+| 前端测试 | npm test -- --run | 通过 | 2 files passed，32 tests passed，3.62s |
+| 前端构建 | npm run build | 通过但有警告 | 3154 modules transformed，18.77s；主 chunk 约 2.5 MB |
 | Python 依赖一致性 | python.exe -m pip check | 未通过 | 发现 browser-use、mem0ai、mitmproxy 的既有版本冲突 |
+| 完整环境快照 | python.exe -m pip freeze | 通过 | 已保存为 Agent_Server/docs/python311-runtime-freeze-2026-09-08.txt |
+| 生态包元数据 | python.exe + importlib.metadata | 通过 | Python 3.11.15；LangChain 1.2.3；Core 1.2.7；LangGraph 1.0.10；LangSmith 0.10.18 |
+| Deep Agents 索引解析 | python.exe -m pip index versions deepagents | 未通过 | 当前软件包索引返回 No matching distribution found；未修改环境 |
 
 后端警告：
 
@@ -617,9 +620,9 @@ pip check 已知冲突：
 - mem0ai 1.0.0 要求 protobuf>=5.29.0,<6.0.0，当前为 7.35.1。
 - mitmproxy 11.0.2 与当前 asgiref、cryptography、h11、pyOpenSSL 存在版本冲突。
 
-真实运行链路（2026-09-08）已验证：启动 `uvicorn src.main:app --host 127.0.0.1 --port 18123` 成功；`GET /api/v1/health` 返回 200 且 `postgres_ok=true`；创建 Session、发送消息、调用数据库默认模型 `qwen3.8-max-0902`、获取事件历史和 Flow 均返回 200；模型返回“链路测试成功”，该轮生成 23 条事件和 1 个 completed Snapshot。LangSmith 未启用，因此本次不证明外部 Trace 已成功上报。
+真实运行链路（2026-09-08）已验证两次：启动 `uvicorn src.main:app --host 127.0.0.1 --port 18124` 成功；`GET /api/v1/health` 返回 200 且 `postgres_ok=true`；创建 Session、发送消息、调用数据库默认模型、获取事件历史、Snapshot 和 Flow 均返回 200；最近一次验证生成 24 条事件和 1 个 Snapshot。LangSmith 未启用，因此本次不证明外部 Trace 已成功上报。
 
-这些冲突发生在生态升级代码实施前，必须作为“既有环境债务”单独记录。阶段 0 完成前要决定使用约束文件统一版本，还是将冲突工具隔离到独立运行环境。
+这些冲突发生在生态升级代码实施前，必须作为“既有环境债务”单独记录。处置结论已确定为将 browser-use、mem0ai、mitmproxy 隔离到独立工具环境，不通过降级主服务依赖消除共享环境冲突。详细证据和兼容矩阵见 `Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md`。阶段 0 完成仍需在干净主服务环境证明 `pip check` 和真实运行通过。
 
 ### 14.3 阶段 0：契约、依赖和可回滚基线
 
@@ -638,11 +641,11 @@ pip check 已知冲突：
 |---|---|---|---|---|
 | P0-01 | 核对解释器和已安装版本 | Python3.11 环境 | 已完成 | 版本记录进入本文 |
 | P0-02 | 运行 compileall、pytest、前端测试和构建 | Agent_Server、agent_web | 已完成 | 结果进入 14.2 |
-| P0-03 | 保存直接/传递依赖快照 | Agent_Server/docs 或 requirements lock | 未进行 | 可在干净环境复现 |
-| P0-04 | 处理或隔离 pip check 冲突 | 依赖约束/运行环境说明 | 未进行 | pip check 通过或每项有隔离结论 |
-| P0-05 | 建立 LangChain 生态兼容矩阵 | 新增兼容矩阵文档 | 未进行 | Python、四个生态包、Provider 均有验证 |
+| P0-03 | 保存直接/传递依赖快照 | Agent_Server/docs/python311-runtime-freeze-2026-09-08.txt | 已完成 | 当前开发环境完整 `pip freeze` 已保存；不冒充主服务 lock |
+| P0-04 | 处理或隔离 pip check 冲突 | 兼容矩阵文档 | 已完成（隔离决策） | 8 条冲突均已归因并确定独立环境边界；共享环境仍不通过 |
+| P0-05 | 建立 LangChain 生态兼容矩阵 | Agent_Server/docs/langchain-ecosystem-compatibility-matrix-2026-09-08.md | 进行中 | 当前四包已验证；Deep Agents/Provider 候选组合待隔离验证 |
 | P0-06 | 显式声明 LangChain/LangSmith 依赖 | Agent_Server/pyproject.toml | 进行中 | 已声明并验证导入；锁定文件和干净环境复现仍未完成 |
-| P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 未进行 | 默认安装不启用 Deep Agents |
+| P0-07 | 将 deepagents 放入可选依赖组 | Agent_Server/pyproject.toml | 阻塞 | 当前索引无法解析发行包，且官方主线依赖高于已锁定生态版本；C2 验证后再声明 |
 | P0-08 | 新增 TraceContext 契约 | application/observability/trace_context.py | 已完成 | 类型、校验、序列化和契约测试已通过 |
 | P0-09 | 新增观测 Feature Flags | core/config.py、配置示例 | 已完成 | 默认关闭且配置校验通过 |
 | P0-10 | 固化现有事件和状态契约 | schemas、契约测试 | 未进行 | 消费方引用已全局核对 |
@@ -663,9 +666,9 @@ pip check 已知冲突：
 - 全量回归不低于 14.2 基线。
 - 尚未改变任何生产执行语义。
 
-本批完成项：P0-01、P0-02、P0-08、P0-09；P0-06 进行中。
-当前测试结果（2026-09-08）：`test_observability_contracts.py` 10 passed；后端全量 737 passed、8 skipped、1 warning；compileall 通过；真实 FastAPI 启动、健康检查和默认模型链路通过。
-当前阻塞：依赖冲突处置方案、锁定文件、Deep Agents 兼容版本、事件契约全量固化尚未完成。
+本批完成项：P0-01 至 P0-04、P0-08、P0-09；P0-05/P0-06 进行中；P0-07 阻塞于候选依赖解析与兼容验证。
+当前测试结果（2026-09-08）：`test_observability_contracts.py` 10 passed；后端全量 739 passed、8 skipped、1 warning（24.84s）；本轮再次执行 `compileall -q src tests` 通过；包元数据核验通过。真实 FastAPI 启动、健康检查和默认模型链路已在同日通过，最近一次生成 24 条事件和 1 个 Snapshot，Flow 200。本轮 `pip check` 仍返回 8 条共享工具环境冲突；`pip index versions deepagents` 返回无匹配发行包。第一次使用 `langgraph.__version__` 的探测命令失败，改用 `importlib.metadata` 后成功。
+当前阻塞：干净主服务环境安装/锁定、Deep Agents 候选版本解析与兼容试验、事件契约全量固化尚未完成。官方 Deep Agents 主线 0.7.13 要求 `langchain>=1.4.0`、`langchain-core>=1.6.2`、`langsmith>=0.12.2`，与当前锁定组合不兼容，因此不能直接写入可选依赖。
 回滚点：恢复 pyproject/config/契约变更；因为 Flag 默认关闭，不影响旧路径。
 最近提交：`0df3050`（补充 Run 引用契约测试）。
 
@@ -718,7 +721,7 @@ pip check 已知冲突：
 本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入但等待外部环境验证；补齐 `errors_only` 成功/失败语义。
 当前测试结果（2026-09-08，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测/Flow 专项 20 passed；后端全量 739 passed、8 skipped、1 warning（24.26s）；前端 32 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；真实 FastAPI 启动、健康检查（`postgres_ok=true`）、默认模型会话、事件历史、completed Snapshot 和 Flow 查询均通过；真实模型回复为“观测策略回归成功”。
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
-当前阻塞：前端 Trace 深链接、`errors_only`/`sampled` 完整语义和真实 LangSmith 环境验证尚未完成；P1-08/P1-09 需外部环境复验后才能满足阶段退出条件。
+当前阻塞：真实 LangSmith 环境验证尚未完成；P1-08/P1-09 需外部环境复验后才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
 最近提交：待本批代码提交。
 
@@ -1014,4 +1017,11 @@ pip check 已知冲突：
     下一步：
 
 禁止只写“测试通过”而不记录命令和数量；禁止阶段未满足退出条件时把状态改为已完成。
+
+状态维护补充规则：
+
+1. 每个任务只允许使用“未进行 / 进行中 / 已完成 / 阻塞”；“阻塞”必须同时写明证据、解除条件和不采取的危险捷径。
+2. 一个阶段的目标、输入、任务、输出、测试、退出条件和回滚证据必须能够一一对应；无法对应的工作不得计入完成度。
+3. 环境快照、依赖锁和兼容矩阵是三个不同交付物：快照用于取证，锁用于复现，矩阵用于选型，禁止混用结论。
+4. 真实外部系统未验证时，单元测试或 Mock 只能记为“代码路径通过”，不得把阶段标为已完成。
 
