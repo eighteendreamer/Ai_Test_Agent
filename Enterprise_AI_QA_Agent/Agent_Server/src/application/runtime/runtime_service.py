@@ -65,6 +65,7 @@ class RuntimeService:
         deep_agent_enabled: bool = False,
         deep_agent_pilot_mode_keys: list[str] | None = None,
         deep_agent_read_only_filesystem_enabled: bool = False,
+        deep_agent_read_only_max_file_size_mb: int = 10,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -81,6 +82,7 @@ class RuntimeService:
         self._deep_agent_enabled = bool(deep_agent_enabled)
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
+        self._deep_agent_read_only_max_file_size_mb = max(1, int(deep_agent_read_only_max_file_size_mb))
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -176,7 +178,10 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
         event_queue: asyncio.Queue | None,
     ) -> RuntimeTurnResult:
-        """Run the DA-E1 harness while preserving the existing result contract."""
+        """Run the staged Deep Agents pilot while preserving result contracts."""
+        pilot_stage = (
+            "DA-E2" if self._deep_agent_read_only_filesystem_enabled else "DA-E1"
+        )
         state = self._build_initial_state(session, request)
         state["_event_queue"] = event_queue
         append_graph_event(
@@ -185,7 +190,7 @@ class RuntimeService:
             "runtime",
             "Deep Agents pilot execution started for the current turn.",
             harness="deepagents",
-            pilot_stage="DA-E1",
+            pilot_stage=pilot_stage,
             mode_key=request.mode_key,
         )
         result = await self._deep_agent_runtime_adapter.execute(
@@ -196,19 +201,21 @@ class RuntimeService:
                 model_key=state["selected_model_key"],
                 system_prompt=(
                     "You are the Enterprise AI QA Agent code review pilot. "
-                    "Return evidence-grounded review guidance. Do not execute "
-                    "business tools in the DA-E1 boundary."
+                    "Return evidence-grounded review guidance. Use only the "
+                    "read-only project and selected skill capabilities exposed "
+                    "by the current pilot stage. Do not execute business tools."
                 ),
                 messages=list(state["runtime_messages"]),
                 context={**dict(request.context), "skill_keys": list(request.skill_keys)},
                 read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
+                read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
             )
         )
         state["model_response_text"] = result.output_text
         state["model_response_summary"] = {
             "mode": "ok",
             "harness": "deepagents",
-            "pilot_stage": "DA-E1",
+            "pilot_stage": pilot_stage,
             **result.metadata,
         }
         state["final_response"] = result.output_text
@@ -222,7 +229,7 @@ class RuntimeService:
             "runtime",
             "Deep Agents pilot execution finished for the current turn.",
             harness="deepagents",
-            pilot_stage="DA-E1",
+            pilot_stage=pilot_stage,
             final_response_length=len(result.output_text),
         )
         snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)

@@ -6,6 +6,10 @@ import shutil
 import tempfile
 from typing import Any, Awaitable, Callable
 
+from src.application.deep_agents.read_only_backend import (
+    build_read_only_filesystem_backend,
+)
+
 
 class DeepAgentRuntimeError(RuntimeError):
     """A boundary error raised by the optional Deep Agents harness."""
@@ -21,6 +25,7 @@ class DeepAgentRuntimeRequest:
     messages: list[dict[str, Any]]
     context: dict[str, Any] = field(default_factory=dict)
     read_only_filesystem_enabled: bool = False
+    read_only_max_file_size_mb: int = 10
 
 
 @dataclass(frozen=True)
@@ -38,9 +43,9 @@ class DeepAgentRuntimeAdapter:
     """Small boundary around the official ``create_deep_agent`` harness.
 
     This adapter deliberately does not expose business tools or execute them.
-    DA-E1 only proves the model/message/state boundary.  Tool governance,
-    filesystem permissions, checkpoints and subagent dispatch are added in
-    later migration batches after their existing business contracts are mapped.
+    DA-E1 proves the model/message/state boundary.  DA-E2 adds an explicitly
+    scoped, read-only project filesystem and SkillRegistry-backed skills;
+    business tools, checkpoints and subagent dispatch remain future batches.
     """
 
     def __init__(
@@ -67,6 +72,7 @@ class DeepAgentRuntimeAdapter:
                 harness_kwargs, cleanup = self._configure_harness(
                     model,
                     read_only_filesystem_enabled=request.read_only_filesystem_enabled,
+                    read_only_max_file_size_mb=request.read_only_max_file_size_mb,
                     context=request.context,
                 )
             else:
@@ -106,7 +112,7 @@ class DeepAgentRuntimeAdapter:
             output_text=output_text,
             metadata={
                 "harness": "deepagents",
-                "stage": "DA-E1",
+                "stage": "DA-E2" if request.read_only_filesystem_enabled else "DA-E1",
                 "message_count": len(messages),
             },
             messages=messages,
@@ -129,6 +135,7 @@ class DeepAgentRuntimeAdapter:
         model: Any,
         *,
         read_only_filesystem_enabled: bool,
+        read_only_max_file_size_mb: int,
         context: dict[str, Any],
     ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
@@ -202,7 +209,10 @@ class DeepAgentRuntimeAdapter:
                 "DA-E2 read-only filesystem requires Deep Agents filesystem APIs."
             ) from exc
 
-        project_backend = FilesystemBackend(root_dir=root, virtual_mode=True)
+        project_backend = build_read_only_filesystem_backend(
+            root,
+            max_file_size_mb=read_only_max_file_size_mb,
+        )
         permissions = [
             FilesystemPermission(
                 operations=["read", "write"],
@@ -250,7 +260,11 @@ class DeepAgentRuntimeAdapter:
                         f"DA-E2 SkillRegistry entry has no valid SKILL.md: {descriptor.key}"
                     )
                 shutil.copytree(source, staging_root / descriptor.key)
-            skill_backend = FilesystemBackend(root_dir=staging_root, virtual_mode=True)
+            skill_backend = FilesystemBackend(
+                root_dir=staging_root,
+                virtual_mode=True,
+                max_file_size_mb=read_only_max_file_size_mb,
+            )
             backend = CompositeBackend(
                 default=project_backend,
                 routes={"/skills/": skill_backend},
