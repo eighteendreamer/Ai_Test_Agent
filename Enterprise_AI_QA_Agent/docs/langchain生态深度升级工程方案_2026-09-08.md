@@ -1095,6 +1095,14 @@ pip check 已知冲突：
 - 已知限制：短档仅验证 Harness 可执行，不证明4/24小时内存趋势、连接稳定性或 LangSmith 上传积压；尚无项目方确认的 RSS 增长、连接数和 P95/P99正式阈值，因此长档先记录事实，不自设阻断阈值。
 - 下一步：安排4小时 PostgreSQL生命周期 Soak；完成后基于采样曲线决定是否进入24小时低速档，并另行执行启用 LangSmith 的长时 Trace 上传/断网专项。
 
+#### 长任务 L5：Soak 持续窗口复验（2026-09-09）
+
+- 当前状态：短时持续窗口已完成；4小时/24小时正式窗口未进行。
+- 执行命令：`$env:RUN_LIVE_POSTGRES_SOAK='1'; $env:RUN_LIVE_POSTGRES_SOAK_SECONDS='65'; $env:RUN_LIVE_POSTGRES_SOAK_SAMPLE_INTERVAL_SECONDS='10'; $env:RUN_LIVE_POSTGRES_SOAK_ITERATION_INTERVAL_SECONDS='1'; $env:RUN_LIVE_POSTGRES_SOAK_WORKERS='4'; $env:RUN_LIVE_POSTGRES_SOAK_MAX_ITERATIONS='0'; python -m pytest tests/test_live_postgres_capacity.py -k soak -q -s`。
+- 通过：1 passed；持续 65.03 秒，62 轮全部完成（62/62），错误率 0；complete P50/P95/P99 为 10.28/13.94/14.81ms；RSS 最小/最大 111,132,672/111,624,192 bytes；数据库连接峰值4；随机隔离表 finally 清理成功。
+- 结论：时间控制、周期采样、错误聚合和资源指标输出可执行；65秒样本不足以推断小时级内存趋势或性能退化，也不替代正式长窗口验收。
+- 下一步：在项目方确认资源与延迟阈值后执行 `RUN_LIVE_POSTGRES_SOAK_SECONDS=14400` 的4小时档；通过后再安排 `86400` 的24小时低速档，并独立记录 LangSmith 启用/断网场景。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
