@@ -1019,12 +1019,12 @@ pip check 已知冲突：
 
 - 当前状态：已完成（代码、真实服务主链与回归测试）；本批不重复执行云端查询。
 - 本批目标：以 `TestRunItem` 为 bounded Trace 单位，把长任务拆成可关联的观测片段；Trace 不覆盖审批等待、租约等待或结果落库，避免把 wall-clock 时长误报成 Agent 执行时长。
-- 实际修改文件：`Agent_Server/src/application/observability/trace_context.py`、`Agent_Server/src/application/observability/langsmith_adapter.py`、`Agent_Server/src/application/test_runs/case_execution.py`、`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/src/application/runtime/tool_runtime_service.py`、`Agent_Server/src/graph/nodes/model_invoker.py`、`Agent_Server/src/main.py`、`Agent_Server/tests/test_observability_contracts.py`、`Agent_Server/tests/test_case_execution_service.py`。
-- 实现规则：稳定上下文新增 `run_item_id`、`attempt_id`、`thread_id`；新增 `enterprise_ai_qa_agent.test_run_item` Trace；Trace 仅包住 `CaseExecutionAdapter.execute`；Item 上下文继续传播到 Tool/Model 子 Run；输入只传 run/item/attempt/mode 摘要，输出只传状态、摘要和 job ID，并沿用既有脱敏与失败隔离；LangSmith 不参与业务恢复和结果判定。
-- 通过：`python -m compileall -q src`；定向测试 55 passed；后端全量测试 758 passed、8 skipped、1 warning；真实 Uvicorn + PostgreSQL 默认模型链路 health 200、消息 200、事件 24 条、Flow 10 stages，服务正常关闭。
+- 实际修改文件：`Agent_Server/src/application/observability/trace_context.py`、`Agent_Server/src/application/observability/langsmith_adapter.py`、`Agent_Server/src/application/test_runs/case_execution.py`、`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/src/application/runtime/tool_runtime_service.py`、`Agent_Server/src/graph/nodes/model_invoker.py`、`Agent_Server/src/main.py`、`Agent_Server/tests/test_observability_contracts.py`、`Agent_Server/tests/test_case_execution_service.py`、`Agent_Server/tests/test_case_execution_adapter.py`。
+- 实现规则：稳定上下文新增 `run_item_id`、`attempt_id`、`thread_id`；新增 `enterprise_ai_qa_agent.test_run_item` Trace；Trace 仅包住 `CaseExecutionAdapter.execute`；Item 上下文继续传播到 Tool/Model 子 Run；工具执行和断言评估分别复用现有 `trace_node` 形成 Stage/Assertion 子 Run；输入只传 run/item/attempt/mode 摘要，输出只传状态、摘要和 job ID，并沿用既有脱敏与失败隔离；LangSmith 不参与业务恢复和结果判定。
+- 通过：`python -m compileall -q src`；定向测试 55 passed；后端全量测试 758 passed、8 skipped、1 warning；真实 Uvicorn + PostgreSQL 默认模型链路 health 200、消息 200、事件 67 条、Flow 11 stages，服务正常关闭。
 - 失败：无。
-- 未覆盖：本批未重复执行真实 LangSmith 云端上传；Stage/Assertion 专用子 Run、LangSmith 限流/断网专项、PostgreSQL 多进程接管和 4/24 小时 soak 仍未完成。现有 Tool/Model 子 Run 已接收 Item 关联上下文，但其专用命名和完整证据输出仍待后续批次。
-- 下一步：建立 Stage/Assertion 子 Run 的最小契约并增加 LangSmith 客户端断开、重复提交专项；保持本地 TestRun 作为唯一恢复事实源。
+- 未覆盖：本批未重复执行真实 LangSmith 云端上传；LangSmith 限流/断网专项、PostgreSQL 多进程接管和 4/24 小时 soak 仍未完成。Stage/Assertion 子 Run 已建立最小边界，完整证据输出和更细粒度阶段拆分仍待后续批次。
+- 下一步：增加 LangSmith 客户端断开、重复提交专项，并安排 PostgreSQL 多进程接管与 4/24 小时长任务验收；保持本地 TestRun 作为唯一恢复事实源。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
