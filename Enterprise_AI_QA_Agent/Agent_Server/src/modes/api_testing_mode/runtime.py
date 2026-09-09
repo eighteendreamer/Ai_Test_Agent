@@ -815,6 +815,12 @@ class ApiTestingModeRuntime:
             "event_count": len(state.task_events),
             "updated_at": now,
             "trace_id": state.trace_id,
+            "completed_task_ids": [
+                candidate.task_id
+                for candidate in task_list
+                if candidate.status == TASK_COMPLETED
+            ],
+            "active_task_idempotency_key": task.idempotency_key if task is not None else "",
         }
         self._persist_state(state, context)
 
@@ -957,6 +963,7 @@ class ApiTestingModeRuntime:
         return {
             "status": "completed",
             "ok": result.status == "completed",
+            "idempotency_key": result.idempotency_key,
             "summary": summary,
             "worker_kind": "api_test_task_execution",
             "task_result": result.model_dump(mode="json"),

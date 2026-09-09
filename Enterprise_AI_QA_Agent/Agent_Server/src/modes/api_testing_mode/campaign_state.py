@@ -179,6 +179,12 @@ class ApiTestTask(BaseModel):
     worker_session_id: str = ""
     worker_status: str = ""
     worker_summary: str = ""
+    execution_checkpoint: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def idempotency_key(self) -> str:
+        """Stable logical request identity; attempt count is intentionally excluded."""
+        return f"api-task:{self.task_id}:{self.method.upper()}:{self.full_url or self.path}"
 
 
 # ---------------------------------------------------------------------------

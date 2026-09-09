@@ -12,6 +12,7 @@ from src.graph.nodes.router import build_router_node
 from src.graph.nodes.tool_executor import _run_skill_loader
 from src.modes.api_testing_mode.manifest import MODE_MANIFEST
 from src.modes.api_testing_mode.skills import API_TESTING_AGENT_SKILLS, API_TESTING_SKILL_KEYS
+from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.registry.agents import AgentRegistry
 from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
@@ -218,3 +219,11 @@ def test_test_data_strategy_is_one_cross_mode_skill_instance():
     assert "code-testability-reviewer" in descriptor.recommended_agents
     assert descriptor.key == "test-data-strategy"
     assert (registry.skills_root / "test-data-strategy" / "SKILL.md").is_file()
+
+
+def test_api_task_idempotency_key_excludes_attempt_count():
+    task = ApiTestTask(task_id="task-1", method="get", path="/orders")
+    task.attempts = 1
+    first = task.idempotency_key
+    task.attempts = 2
+    assert task.idempotency_key == first

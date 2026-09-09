@@ -957,6 +957,21 @@ pip check 已知冲突：
 - 回滚验证：无数据库结构变更；未提供 checkpoint 时行为与原路径一致。
 - 下一步：为 API task 定义版本化 checkpoint payload 和请求结果幂等协议，再进行真实 Worker 强杀/进程重启恢复测试；LangSmith 分段 Trace 仍待后续批次。
 
+#### 长任务 L2：API 请求级幂等标识（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：为已有 `api_testing` 任务定义稳定的逻辑请求身份，确保 Attempt 重试不会因为尝试次数变化而生成不同幂等键；本批不自动跳过 HTTP 请求。
+- 实际修改文件：`Agent_Server/src/modes/api_testing_mode/campaign_state.py`、`Agent_Server/src/modes/api_testing_mode/runtime.py`、`Agent_Server/tests/test_api_mode_skills.py`。
+- 实现规则：`ApiTestTask.idempotency_key` 由 `task_id + method + full_url/path` 构成，明确排除 `attempts`；恢复检查点继续保留任务上下文；Runner 输出携带幂等键，便于后续结果和证据对账。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_api_mode_skills.py tests/test_case_execution_adapter.py -q`；`python -m pytest -q`。
+- 通过：定向测试 31 passed；后端全量 752 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：尚未建立“幂等键对应的已完成响应、断言结果和 Artifact 完整证据”存储，因此不能安全地自动跳过请求；当前仍由 Runner 正常执行。
+- 已知限制：幂等键未包含请求体摘要，适用于当前固定 `task_id` 语义；若未来同一 task_id 允许动态请求体变更，必须先扩展版本化输入摘要并同步契约。
+- 回滚验证：不提供 checkpoint 时行为与原路径一致；幂等键是附加输出字段，不改变现有状态判定。
+- 下一步：将 API 响应、断言和 Artifact 摘要写入版本化 checkpoint payload，并在只读/幂等请求上增加“证据完整才可跳过”的判定；随后执行 Worker 强杀恢复实测。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
