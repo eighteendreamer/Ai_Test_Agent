@@ -67,7 +67,7 @@
 | C1 | 干净 Python 3.11 + `pyproject.toml` 默认依赖 | 证明主服务可重复安装 | 已完成 | 安装、`pip check`、四包版本、`src.main` import、FastAPI 健康检查、真实默认模型会话和 Flow | 全部通过；生成 25 条事件和 1 个 Snapshot；运行时依赖已补齐 |
 | C2 | 隔离 Python 3.11 + Deep Agents 0.7.13 官方依赖 | 确认依赖解析、Provider 扩展和 Harness 最小执行 | 已完成（候选环境） | PyPI 解析、安装、`pip check`、`create_deep_agent` import/构造、工具可绑定离线调用 | 通过；候选快照已保存；不代表主服务已升级 |
 | C3 | C2 + 项目 Provider 适配 + `code_review` 受控工具 | 验证实际集成可行性 | 未进行 | 工具调用、权限、审批、路径隔离、事件、Trace、取消与恢复 | 不绕过现有治理，无第二套外层状态机 |
-| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选解析通过，运行验证未进行 | 去除旧生态固定项后可解析 Deep Agents 0.7.13 及候选四包，但会同时升级 OpenAI、Anthropic、Google GenAI、MCP、FastAPI 等多项依赖；待候选项目元数据切换后再做全量回归、真实会话、性能和回滚演练 | 质量不降、性能预算达标、可一键回滚 |
+| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选环境全量回归通过，真实业务链路未进行 | 隔离 C4 环境安装候选生态及项目其余依赖，`pip check`、项目入口导入、Deep Agents 离线 Harness、LangChain/上下文专项和后端全量均通过；真实数据库模型链路、性能和回滚演练仍待执行 | 质量不降、性能预算达标、可一键回滚 |
 
 ## 5. 可复现命令与本次结果
 
@@ -85,6 +85,8 @@
 - 官方 PyPI 组合 `pip install --dry-run --ignore-installed` 失败：`deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务锁定的 `langchain==1.2.3` 产生 `ResolutionImpossible`；该命令未修改环境。
 - C4 完整项目依赖 dry-run 失败：项目包 `enterprise-ai-qa-agent-server==0.1.0` 自身固定 `langchain==1.2.3`，与候选 `langchain==1.4.0` 产生 `ResolutionImpossible`；该命令未修改环境。
 - 去除项目旧生态固定项后，官方 PyPI 完整候选 dry-run 解析通过；候选集合包含 `deepagents==0.7.13`、`langchain==1.4.0`、`langchain-core==1.6.2`、`langgraph==1.2.11`、`langsmith==0.12.2`，同时解析到 OpenAI 3.10、Anthropic 1.4、Google GenAI 2.22、MCP 1.30、FastAPI 0.141 等版本。该结果只证明依赖可解析，不证明项目运行兼容；命令未修改环境。
+- C4 隔离环境 `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b` 安装候选依赖后，`pip check` 通过，`src.main`/适配器导入通过，Deep Agents 官方 Harness 使用实现 `bind_tools` 的离线替身调用通过（2 条消息），生态/上下文专项 `40 passed`，后端全量 `781 passed, 10 skipped, 1 warning`（27.07s）。候选 freeze 已保存为 `Agent_Server/docs/python311-deepagents-c4-freeze-20260909.txt`。
+- C4 候选第一次使用普通 Fake Chat Model 调用失败，原因为替身未实现官方要求的 `bind_tools`，不是依赖冲突；替换为实现该协议的离线替身后通过。真实数据库默认模型、LangSmith 外部上报、长任务性能和回滚尚未验证。
 - 第一次版本探测使用 `langgraph.__version__` 失败，因为该模块未公开此属性；已改用 `importlib.metadata.version('langgraph')` 并成功。该失败不代表 LangGraph 导入失败。
 - 干净 C1 环境的运行时依赖快照已保存为 `Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt`；该文件不包含项目自身的 editable git 行，避免把本地路径误当成可复现依赖。
 - C2 候选环境快照已保存为 `Agent_Server/docs/python311-deepagents-c2-freeze-2026-09-08.txt`。候选组合为 Deep Agents 0.7.13、LangChain 1.4.0、LangChain Core 1.6.2、LangGraph 1.2.11、LangSmith 0.12.2，并额外安装 `langchain-openai==1.6.1`。
