@@ -340,6 +340,7 @@ def test_security_adapter_requires_explicit_profile_and_preserves_trusted_contex
     assert invocation.call.arguments["worker_action"] == "execute_security_task"
     assert invocation.call.arguments["command_profile"] == "http_headers_probe"
     assert invocation.call.arguments["task"]["target"] == "https://example.test"
+    assert invocation.call.arguments["execution_checkpoint"]["version"] == 3
     assert invocation.context.context_bundle["trusted_security_authorization"]["status"] == "verified"
     assert invocation.context.context_bundle["execution_checkpoint"]["payload"]["step"] == 4
 

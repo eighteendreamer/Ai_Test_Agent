@@ -929,6 +929,9 @@ class ApiTestingModeRuntime:
             }
 
         task = ApiTestTask.model_validate(raw_task)
+        checkpoint = arguments.get("execution_checkpoint")
+        if isinstance(checkpoint, dict):
+            task.execution_checkpoint = dict(checkpoint)
         credential_manager = CredentialManager()
 
         raw_credential = arguments.get("credential_session")

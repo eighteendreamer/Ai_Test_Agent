@@ -145,6 +145,9 @@ class CaseExecutionAdapter:
                 )
             arguments["_server_approval_granted"] = True
         arguments["test_case"] = test_case_envelope
+        execution_checkpoint = (trusted_context_bundle or {}).get("execution_checkpoint")
+        if isinstance(execution_checkpoint, dict):
+            arguments["execution_checkpoint"] = deepcopy(execution_checkpoint)
 
         call_id = f"test-run-item:{item.id}:attempt:{item.attempt_no}"
         trace_id = f"test-run:{run.id}:item:{item.id}:attempt:{item.attempt_no}"

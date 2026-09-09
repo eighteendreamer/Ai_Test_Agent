@@ -942,6 +942,21 @@ pip check 已知冲突：
 - 回滚验证：无数据库结构变更；旧适配器和旧 Attempt 记录可继续执行。
 - 下一步：为至少一个实际模式定义版本化 checkpoint payload schema 和幂等步骤判定，随后执行 Worker 强杀/进程重启恢复实测；LangSmith 分段 Trace 仍待后续批次。
 
+#### 长任务 L2：API 测试模式恢复上下文接入（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：为已有 `api_testing` 模式接入版本化恢复上下文，确保持久化 Attempt 检查点可以传递到现有 API Runner；不在本批自动跳过 HTTP 请求，避免恢复时重复外部副作用。
+- 实际修改文件：`Agent_Server/src/application/test_runs/case_execution.py`、`Agent_Server/src/modes/api_testing_mode/runtime.py`、`Agent_Server/tests/test_case_execution_adapter.py`。
+- 实现规则：`CaseExecutionAdapter.build_invocation` 将白名单 `execution_checkpoint` 放入 Runner 参数和 `ToolExecutionContext`；`ApiTestingModeRuntime._execute_dispatched_task` 将其恢复到 `ApiTestTask.execution_checkpoint`。现有 API 测试运行时已有 checkpoint 字段和阶段回调，因此复用现有状态机。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_case_execution_adapter.py tests/test_case_execution_service.py tests/test_api_mode_skills.py -q`；`python -m pytest -q`。
+- 通过：定向测试 39 passed；后端全量 751 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：尚未定义 API 请求级幂等键和“请求已完成”判定，因此恢复执行仍由 Runner 根据 checkpoint 业务语义决定，不自动跳过或重放请求。
+- 已知限制：当前检查点只传递到 API Runner；还未将每个 HTTP 请求的幂等结果、响应 Artifact 和断言阶段拆成可恢复子阶段。
+- 回滚验证：无数据库结构变更；未提供 checkpoint 时行为与原路径一致。
+- 下一步：为 API task 定义版本化 checkpoint payload 和请求结果幂等协议，再进行真实 Worker 强杀/进程重启恢复测试；LangSmith 分段 Trace 仍待后续批次。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
