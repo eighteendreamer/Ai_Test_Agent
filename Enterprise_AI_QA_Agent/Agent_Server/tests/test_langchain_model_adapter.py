@@ -73,6 +73,17 @@ class _FakeFactory:
         return self.model
 
 
+class _FailingRunnable(_FakeRunnable):
+    async def ainvoke(self, messages):
+        raise RuntimeError("provider failure")
+
+
+class _FailingFactory(_FakeFactory):
+    def __init__(self):
+        super().__init__()
+        self.model = _FailingRunnable()
+
+
 @pytest.mark.asyncio
 async def test_adapter_invokes_langchain_and_returns_business_dto():
     factory = _FakeFactory()
@@ -182,6 +193,14 @@ async def test_adapter_surfaces_structured_output_parse_error():
 
     with pytest.raises(ProviderClientError, match="structured-output parsing failed"):
         await adapter.invoke_structured(_config(), "secret-not-logged", _request(), _Answer)
+
+
+@pytest.mark.asyncio
+async def test_adapter_maps_unexpected_provider_failure_to_uniform_error():
+    adapter = LangChainModelAdapter(model_factory=_FailingFactory())
+
+    with pytest.raises(ProviderClientError, match="LangChain model invocation failed"):
+        await adapter.invoke(_config(), "secret-not-logged", _request())
 
 
 def test_runtime_flag_routes_openai_compatible_model_to_langchain_adapter(monkeypatch):
