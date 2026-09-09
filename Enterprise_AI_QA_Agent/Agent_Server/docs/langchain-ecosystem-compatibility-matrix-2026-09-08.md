@@ -59,6 +59,31 @@
 
 “已隔离（设计结论）”表示依赖边界和处置路线已确定，不表示当前共享开发环境的 `pip check` 已通过。C1 已在最小主服务环境完成安装、`pip check`、导入冒烟、服务启动和真实会话；共享环境冲突仍保留为附加工具隔离债务。
 
+### 3.1 C4 基础依赖升级影响与最小升级边界
+
+完整候选解析得到的“最新版集合”不等于 Deep Agents 的全部硬性要求。根据候选包元数据、项目直接导入点和实际回归，升级边界如下：
+
+| 依赖 | 当前基线 → C4 首次解析 | 是否为 Deep Agents 链路硬要求 | 项目影响面 | 当前证据 | 决策 |
+|---|---|---|---|---|---|
+| `openai` | 1.109.1 → 3.10.0 | 是，`langchain-openai==1.6.1` 要求 `openai>=2.45,<4` | OpenAI Chat/Responses、Embedding、Qwen 等 OpenAI-compatible 路径；2.x/3.x 改用 `httpx2`，自定义 HTTP Client 是重点风险 | 单元/全量回归通过；真实默认 Qwen 的 LangChain 与 Deep Agents 调用通过；OpenAI 原生未实测 | 候选先固定 `2.45.0`，不直接跳 3.x；补 OpenAI 原生 Chat/Responses/Embedding 与错误/流式测试 |
+| `anthropic` | 0.111.0 → 1.4.0 | 是，`langchain-anthropic>=1.7` 要求 `anthropic>=0.120,<2` | Messages、stream、tool use、错误类型；1.x 官方迁移说明包含 HTTP 层切换及废弃 API 删除 | Mock 契约与全量回归通过；真实 Anthropic 未实测 | 候选先固定 `0.120.0`；真实 Provider 通过前不升 1.x |
+| `google-genai` | 1.75.0 → 2.22.0 | 是，`langchain-google-genai>=4.3.7` 要求 `google-genai>=2.20,<3` | Gemini GenerateContent、Embedding、tool schema、usage、AFC/stream 行为 | Mock 契约与全量回归通过；真实 Gemini 未实测 | 候选固定 `2.20.0` 起测；必须补真实 GenerateContent/Embedding/工具/流式 |
+| `mcp` | 1.28.0 → 1.30.0 | 否，项目宽松约束使解析器选择新版 | stdio/SSE/Streamable HTTP、Session 初始化、协议协商、健康检查 | 全量回归通过；真实三传输矩阵未在 C4 执行 | 保持 `1.28.0`，待独立 MCP 升级批次验证 |
+| `fastapi` | 0.140.0 → 0.141.1 | 否 | 37 个源码/测试文件涉及 API、lifespan、SSE、上传与错误响应 | C4 全量回归和真实 Uvicorn health 通过 | 保持 `0.140.0`；不和 Deep Agents 同批升级 |
+| `uvicorn` | 0.34.0 → 0.52.4 | 否 | 服务启动、lifespan、SSE/长连接、优雅退出 | C4 真实启动/health/正常关闭通过，长连接未测 | 保持 `0.34.0`；不和 Deep Agents 同批升级 |
+| `pydantic` | 2.13.4 → 2.13.5 | 否（现有版本已满足） | 56 个源码/测试文件涉及 DTO、设置、序列化 | C4 全量回归通过 | 保持 `2.13.4` |
+| `playwright` | 1.49.1 → 1.62.0 | 否 | UI 自动化驱动和浏览器二进制必须版本匹配 | C4 全量回归未覆盖真实浏览器二进制 | 保持 `1.49.1`；UI 工具链单独升级并重新安装/验证浏览器 |
+
+官方依据：
+
+- OpenAI Python SDK HTTPX2 迁移：<https://github.com/openai/openai-python/blob/main/httpx2.md>
+- Anthropic Python SDK v1 迁移：<https://github.com/anthropics/anthropic-sdk-python/blob/main/MIGRATION.md>
+- Google Gen AI SDK 变更记录：<https://github.com/googleapis/python-genai/blob/main/CHANGELOG.md>
+- MCP Python SDK 版本策略：<https://github.com/modelcontextprotocol/python-sdk/blob/main/VERSIONING.md>
+- FastAPI 发布记录：<https://fastapi.tiangolo.com/release-notes/>
+
+最小组合 dry-run（2026-09-09）已通过：保留 `fastapi==0.140.0`、`uvicorn==0.34.0`、`mcp==1.28.0`、`pydantic==2.13.4`、`pydantic-settings==2.14.2`、`playwright==1.49.1`，只把 Deep Agents 强制链路固定为 `deepagents==0.7.13`、LangChain/Core/LangGraph/LangSmith 候选版本、`langchain-openai==1.6.1`、`openai==2.45.0`、`anthropic==0.120.0`、`google-genai==2.20.0`。该结果只证明依赖可解析；必须建立独立 C5 环境并重复全量、真实 Provider、长任务和回滚验证后才能修改主环境。
+
 ## 4. 后续兼容验证矩阵
 
 | 矩阵编号 | 环境/组合 | 目标 | 状态 | 必须执行的验证 | 通过标准 |
@@ -67,7 +92,7 @@
 | C1 | 干净 Python 3.11 + `pyproject.toml` 默认依赖 | 证明主服务可重复安装 | 已完成 | 安装、`pip check`、四包版本、`src.main` import、FastAPI 健康检查、真实默认模型会话和 Flow | 全部通过；生成 25 条事件和 1 个 Snapshot；运行时依赖已补齐 |
 | C2 | 隔离 Python 3.11 + Deep Agents 0.7.13 官方依赖 | 确认依赖解析、Provider 扩展和 Harness 最小执行 | 已完成（候选环境） | PyPI 解析、安装、`pip check`、`create_deep_agent` import/构造、工具可绑定离线调用 | 通过；候选快照已保存；不代表主服务已升级 |
 | C3 | C2 + 项目 Provider 适配 + `code_review` 受控工具 | 验证实际集成可行性 | 未进行 | 工具调用、权限、审批、路径隔离、事件、Trace、取消与恢复 | 不绕过现有治理，无第二套外层状态机 |
-| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选环境全量回归通过，真实业务链路未进行 | 隔离 C4 环境安装候选生态及项目其余依赖，`pip check`、项目入口导入、Deep Agents 离线 Harness、LangChain/上下文专项和后端全量均通过；真实数据库模型链路、性能和回滚演练仍待执行 | 质量不降、性能预算达标、可一键回滚 |
+| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选环境全量回归与真实默认模型冒烟通过，性能/回滚未进行 | 隔离 C4 环境安装候选生态及项目其余依赖，`pip check`、项目入口导入、Deep Agents 离线 Harness、LangChain/上下文专项、后端全量、真实 Uvicorn 健康检查、数据库默认 Qwen 的 LangChain 与 Deep Agents 调用均通过；长任务性能、LangSmith 外部上报和回滚演练仍待执行 | 质量不降、性能预算达标、可一键回滚 |
 
 ## 5. 可复现命令与本次结果
 
@@ -86,7 +111,9 @@
 - C4 完整项目依赖 dry-run 失败：项目包 `enterprise-ai-qa-agent-server==0.1.0` 自身固定 `langchain==1.2.3`，与候选 `langchain==1.4.0` 产生 `ResolutionImpossible`；该命令未修改环境。
 - 去除项目旧生态固定项后，官方 PyPI 完整候选 dry-run 解析通过；候选集合包含 `deepagents==0.7.13`、`langchain==1.4.0`、`langchain-core==1.6.2`、`langgraph==1.2.11`、`langsmith==0.12.2`，同时解析到 OpenAI 3.10、Anthropic 1.4、Google GenAI 2.22、MCP 1.30、FastAPI 0.141 等版本。该结果只证明依赖可解析，不证明项目运行兼容；命令未修改环境。
 - C4 隔离环境 `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b` 安装候选依赖后，`pip check` 通过，`src.main`/适配器导入通过，Deep Agents 官方 Harness 使用实现 `bind_tools` 的离线替身调用通过（2 条消息），生态/上下文专项 `40 passed`，后端全量 `781 passed, 10 skipped, 1 warning`（27.07s）。候选 freeze 已保存为 `Agent_Server/docs/python311-deepagents-c4-freeze-20260909.txt`。
-- C4 候选第一次使用普通 Fake Chat Model 调用失败，原因为替身未实现官方要求的 `bind_tools`，不是依赖冲突；替换为实现该协议的离线替身后通过。真实数据库默认模型、LangSmith 外部上报、长任务性能和回滚尚未验证。
+- C4 候选第一次使用普通 `FakeMessagesListChatModel` 调用失败：该类继承的 `BaseChatModel.bind_tools` 直接抛出 `NotImplementedError`。Deep Agents 默认装配规划、文件系统、子代理等工具，并由 LangChain Agent Factory 调用模型的 `bind_tools(...)`，所以这是测试替身缺少工具绑定能力，不是依赖冲突。实现该协议的离线替身调用通过。
+- C4 真实运行验证通过：候选 FastAPI/Uvicorn 完成应用生命周期初始化，`GET /api/v1/health` 返回 200、`postgres_ok=true`、`memory_backend=postgres_pgvector`，随后正常关闭；数据库默认 `qwen3.8-max-0902` 经升级后的 `ChatOpenAI` 适配器实际返回 `C4_OK` 并保留 usage；同一真实模型交给 `create_deep_agent` 后返回 `DEEPAGENT_C4_OK`，证明生产候选模型实现了 `bind_tools` 并可被 Deep Agents Harness 使用。以上未输出 API Key。
+- C4 尚未验证 LangSmith 外部上报、长任务性能/取消/恢复和依赖回滚，故不能据此升级主环境或开放 Deep Agents 主路径。
 - 第一次版本探测使用 `langgraph.__version__` 失败，因为该模块未公开此属性；已改用 `importlib.metadata.version('langgraph')` 并成功。该失败不代表 LangGraph 导入失败。
 - 干净 C1 环境的运行时依赖快照已保存为 `Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt`；该文件不包含项目自身的 editable git 行，避免把本地路径误当成可复现依赖。
 - C2 候选环境快照已保存为 `Agent_Server/docs/python311-deepagents-c2-freeze-2026-09-08.txt`。候选组合为 Deep Agents 0.7.13、LangChain 1.4.0、LangChain Core 1.6.2、LangGraph 1.2.11、LangSmith 0.12.2，并额外安装 `langchain-openai==1.6.1`。

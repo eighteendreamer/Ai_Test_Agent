@@ -617,7 +617,7 @@ Feature Flags：
 | Deep Agents 主组合解析 | python.exe -m pip install --dry-run --ignore-installed ... | 未通过（预期阻塞） | 官方 PyPI 解析确认 `deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务 `langchain==1.2.3` 冲突；未修改环境 |
 | C4 完整项目依赖解析 | python.exe -m pip install --dry-run --ignore-installed . deepagents==0.7.13 langchain==1.4.0 ... | 未通过（预期阻塞） | 项目自身 `enterprise-ai-qa-agent-server==0.1.0` 固定 `langchain==1.2.3`，与候选 `langchain==1.4.0` 冲突；未修改环境 |
 | C4 去除旧生态固定项后的候选解析 | python.exe + pyproject 其余依赖 + 官方候选生态 dry-run | 依赖解析通过，运行验证未进行 | 可解析 Deep Agents 0.7.13、LangChain 1.4.0/Core 1.6.2/LangGraph 1.2.11/LangSmith 0.12.2，但同时选择了 OpenAI 3.10、Anthropic 1.4、Google GenAI 2.22、MCP 1.30 等新版本；未修改环境 |
-| C4 隔离环境可执行性 | 独立 Python3.11 环境 + 候选生态 + 项目源码 | 通过（真实业务链路除外） | `pip check`、项目入口导入、Deep Agents 离线 Harness、生态/上下文专项 `40 passed`、后端全量 `781 passed, 10 skipped, 1 warning`（27.07s）均通过；真实数据库默认模型、LangSmith 外部上报、性能和回滚未执行 |
+| C4 隔离环境可执行性 | 独立 Python3.11 环境 + 候选生态 + 项目源码 | 部分通过（真实默认模型冒烟已通过） | `pip check`、项目入口导入、Deep Agents 离线 Harness、生态/上下文专项 `40 passed`、后端全量 `781 passed, 10 skipped, 1 warning`（27.07s）均通过；真实 Uvicorn 健康检查、数据库默认 Qwen 的 LangChain 与 Deep Agents 调用通过；LangSmith 外部上报、长任务性能和回滚未执行 |
 
 后端警告：
 
