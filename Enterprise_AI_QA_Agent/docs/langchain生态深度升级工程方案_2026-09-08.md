@@ -757,7 +757,7 @@ pip check 已知冲突：
 
 #### 阶段 1 根 Trace 与环境配置批次记录（2026-09-09）
 
-- 当前状态：进行中。
+- 当前状态：已完成。
 - 本批目标：确保锁定版 LangSmith SDK 在应用未设置全局 `LANGCHAIN_TRACING_V2` 时仍会上报 Turn root，并验证 root→node 父子关系、脱敏和环境变量配置路径。
 - 实际修改文件：`Agent_Server/src/application/observability/langsmith_adapter.py`、`Agent_Server/src/core/config.py`、`Agent_Server/tests/test_observability_contracts.py`、`Agent_Server/.env.example`；本机 `Agent_Server/.env` 已追加同名非敏感配置项，默认关闭且密钥为空。
 - 完成任务 ID：P1-01、P1-02、P1-03、P1-04、P1-05、P1-06、P1-07、P1-10、P1-11（代码与本地协议证据）；P1-08/P1-09 的真实外部部分未完成。
@@ -1000,7 +1000,7 @@ pip check 已知冲突：
 - 失败：无。
 - 跳过：尚未进行真实独立 Worker 进程强杀；当前恢复行为已由 InMemory 生命周期测试覆盖，真实多进程接管测试待运行环境准备后执行。
 - 回滚验证：仅增加日志和事件 payload 可选字段，不改变领取、租约和状态迁移。
-- 下一步：建立 LangSmith TestRun→Item→Stage 分段 Trace；真实独立 Worker 强杀和 PostgreSQL 多进程接管仍需在具备数据库与可控进程环境后执行。
+- 下一步：继续补充 Stage/Tool/Model 子 Run 与 PostgreSQL 多进程接管专项；真实独立 Worker 强杀和 4/24 小时 soak 仍需在具备可控外部运行环境后执行。
 
 #### 长任务 L2：服务重启后的 Attempt 接管回归（2026-09-09）
 
@@ -1014,6 +1014,17 @@ pip check 已知冲突：
 - 失败：无。
 - 未覆盖：真实 OS 进程强杀、PostgreSQL 事务并发、网络中断和 4/24 小时 soak；这些需要可控外部运行环境，不能用内存 Store 结果替代。
 - 下一步：先实现 LangSmith 分段 Trace 契约与失败隔离，再安排 PostgreSQL 多进程接管专项。
+
+#### 长任务 L2：TestRunItem 分段 LangSmith Trace（2026-09-09）
+
+- 当前状态：已完成（代码、真实服务主链与回归测试）；本批不重复执行云端查询。
+- 本批目标：以 `TestRunItem` 为 bounded Trace 单位，把长任务拆成可关联的观测片段；Trace 不覆盖审批等待、租约等待或结果落库，避免把 wall-clock 时长误报成 Agent 执行时长。
+- 实际修改文件：`Agent_Server/src/application/observability/trace_context.py`、`Agent_Server/src/application/observability/langsmith_adapter.py`、`Agent_Server/src/application/test_runs/case_execution.py`、`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/src/application/runtime/tool_runtime_service.py`、`Agent_Server/src/graph/nodes/model_invoker.py`、`Agent_Server/src/main.py`、`Agent_Server/tests/test_observability_contracts.py`、`Agent_Server/tests/test_case_execution_service.py`。
+- 实现规则：稳定上下文新增 `run_item_id`、`attempt_id`、`thread_id`；新增 `enterprise_ai_qa_agent.test_run_item` Trace；Trace 仅包住 `CaseExecutionAdapter.execute`；Item 上下文继续传播到 Tool/Model 子 Run；输入只传 run/item/attempt/mode 摘要，输出只传状态、摘要和 job ID，并沿用既有脱敏与失败隔离；LangSmith 不参与业务恢复和结果判定。
+- 通过：`python -m compileall -q src`；定向测试 55 passed；后端全量测试 758 passed、8 skipped、1 warning；真实 Uvicorn + PostgreSQL 默认模型链路 health 200、消息 200、事件 24 条、Flow 10 stages，服务正常关闭。
+- 失败：无。
+- 未覆盖：本批未重复执行真实 LangSmith 云端上传；Stage/Assertion 专用子 Run、LangSmith 限流/断网专项、PostgreSQL 多进程接管和 4/24 小时 soak 仍未完成。现有 Tool/Model 子 Run 已接收 Item 关联上下文，但其专用命名和完整证据输出仍待后续批次。
+- 下一步：建立 Stage/Assertion 子 Run 的最小契约并增加 LangSmith 客户端断开、重复提交专项；保持本地 TestRun 作为唯一恢复事实源。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
