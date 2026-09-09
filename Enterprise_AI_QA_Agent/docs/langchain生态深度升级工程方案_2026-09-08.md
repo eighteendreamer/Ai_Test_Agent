@@ -583,7 +583,7 @@ Feature Flags：
 | 1 | LangSmith 非阻塞观测 | 进行中 | 98% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和短时 soak 已完成；正式业务阈值、直接队列深度和 30 分钟持续窗口仍未确认/完成 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯均通过；短时 soak 9/10 + 重试通过 |
 | 2 | LangChain 模型与消息适配 | 已完成 | 100% | 默认 Qwen Provider 已完成新旧适配器双跑、工具调用、结构化输出、错误/取消传播和限流契约验证 | 后端全量 781 passed，10 skipped，1 warning；compileall 通过；真实默认模型链路通过 |
 | 3 | LangChain 工具适配与 Middleware | 进行中 | 50% | P3-01～P3-03 已完成；P3-04～P3-08 已完成兼容性评估，其中 P3-04～P3-07 暂不迁移，P3-08 保留现有安全强制层 | 工具/Middleware/模型消息专项 18 passed；上下文压缩专项 10 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
-| 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
+| 4 | Deep Agents code_review 试点 | 前置依赖阻塞 | 0% | 主环境未安装 deepagents；官方候选组合仅在隔离 C2 环境验证，尚未进入主服务 | 主环境导入不可用；C2 隔离候选 Harness 已通过离线构造与 invoke 验证 |
 | 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
 | 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
 | 7 | 按模式灰度迁移 | 未进行 | 0% | 等待阶段 1—6 完成 | 未执行 |
@@ -1224,7 +1224,7 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 
 ### 14.7 阶段 4：Deep Agents code_review 试点
 
-状态：未进行
+状态：前置依赖阻塞
 目标：在低外部副作用的 code_review 模式中验证 Deep Agents 的规划、文件系统、上下文管理、Skills 和 Subagents 能力。
 
 前置条件：
@@ -1233,6 +1233,8 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 - Deep Agents 版本和许可证已核对。
 - 安装后全量测试无依赖回归。
 - code_review 当前真实输入、输出和失败样本已建立基线。
+
+当前准入结论（2026-09-09）：主环境保持不安装 `deepagents`。候选 `deepagents==0.7.13` 及其 LangChain/Core/LangGraph 组合已在隔离 C2 环境完成导入、构造和离线调用验证，但该组合与主环境当前锁定版本不兼容；在阶段 0 P0-07 完成依赖协调、主服务真实 Provider 回归、旧路径回滚和安全边界验证前，不得执行 P4-01～P4-09。
 
 具体任务：
 
