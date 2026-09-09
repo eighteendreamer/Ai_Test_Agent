@@ -99,6 +99,10 @@ async def _resolved_model():
     return object()
 
 
+async def _async_value(value):
+    return value
+
+
 def test_da_e2_read_matches_legacy_project_file_reader(tmp_path: Path):
     """The pilot must preserve the existing code-review reader's text contract."""
     pytest.importorskip("deepagents")
@@ -184,6 +188,51 @@ async def test_da_e2_concurrent_skill_staging_is_request_scoped(tmp_path: Path):
         for _key, _backend, cleanup in configured:
             assert cleanup is not None
             cleanup()
+
+
+@pytest.mark.asyncio
+async def test_da_e2_official_agent_reads_project_file(tmp_path: Path):
+    """Exercise the real Deep Agents graph, not only the backend in isolation."""
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    class ToolCapableFake(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    model = ToolCapableFake(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"file_path": "/README.md"},
+                        "id": "read-readme",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="DA_E2_AGENT_READ_OK"),
+        ]
+    )
+    (tmp_path / "README.md").write_text("# Read-only fixture\n", encoding="utf-8")
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda _key: _async_value(model))
+    result = await adapter.execute(
+        DeepAgentRuntimeRequest(
+            session_id="session-e2",
+            turn_id="turn-e2",
+            trace_id="trace-e2",
+            model_key="fake-tool-capable",
+            system_prompt="Read README.md and report completion.",
+            messages=[{"role": "user", "content": "Read README.md."}],
+            context={"project_root": str(tmp_path)},
+            read_only_filesystem_enabled=True,
+        )
+    )
+    assert result.output_text == "DA_E2_AGENT_READ_OK"
+    assert any(message.get("role") == "tool" for message in result.messages)
 
 
 @pytest.mark.parametrize("path", ["../outside.txt", "/../outside.txt"])
