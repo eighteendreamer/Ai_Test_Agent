@@ -20,9 +20,10 @@ from src.schemas.run_management import (
     TestRunRecord as _RunRecord,
 )
 from src.schemas.session import ToolApprovalStatus
+from tests.live_postgres_config import LivePostgresTestConfig
 
 
-LIVE_POSTGRES = os.getenv("RUN_LIVE_POSTGRES_TESTS") == "1"
+LIVE_POSTGRES = LivePostgresTestConfig().run_live_postgres_tests
 live_postgres = pytest.mark.skipif(
     not LIVE_POSTGRES,
     reason="set RUN_LIVE_POSTGRES_TESTS=1 to use the local PostgreSQL instance",
