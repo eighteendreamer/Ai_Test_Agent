@@ -10,6 +10,7 @@ from src.application.model_adapters.langchain_model_adapter import LangChainMode
 from src.application.model_adapters.legacy_model_adapter import LegacyProviderAdapter
 from src.application.model_adapters.message_adapter import (
     from_langchain_message,
+    to_langchain_tools,
     to_langchain_messages,
 )
 
@@ -19,4 +20,5 @@ __all__ = [
     "ModelPort",
     "from_langchain_message",
     "to_langchain_messages",
+    "to_langchain_tools",
 ]

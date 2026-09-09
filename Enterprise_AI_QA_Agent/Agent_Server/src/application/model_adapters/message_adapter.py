@@ -30,6 +30,31 @@ def to_langchain_messages(
     return messages
 
 
+def to_langchain_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert the frozen application tool schema to LangChain's schema."""
+
+    mapped: list[dict[str, Any]] = []
+    for tool in tools:
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        function = tool.get("function")
+        if isinstance(function, dict):
+            description = function.get("description") or tool.get("description") or ""
+            parameters = function.get("parameters") or tool.get("input_schema")
+        else:
+            description = tool.get("description") or ""
+            parameters = tool.get("input_schema")
+        mapped.append(
+            {
+                "name": name,
+                "description": str(description),
+                "parameters": parameters or {"type": "object"},
+            }
+        )
+    return mapped
+
+
 def from_langchain_message(message: BaseMessage) -> dict[str, Any]:
     """Extract the existing result fields from a LangChain AI message.
 

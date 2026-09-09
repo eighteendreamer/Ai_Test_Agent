@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
 
 from src.application.model_clients import ProviderClient, ProviderClientError, resolve_client
+from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.model_clients.provider_profiles import (
     normalize_transport,
     resolve_provider_profile,
@@ -104,11 +105,45 @@ class ModelRuntimeService:
                 raw_response={"mode": "missing_api_key", "model_key": config.key},
             )
 
+        if (
+            getattr(self._settings.model, "langchain_model_adapter_enabled", False)
+            and config.transport == "openai_chat_completions"
+        ):
+            return await self._invoke_with_langchain_adapter(config, api_key, request)
+
         client = resolve_client(
             config,
             timeout_seconds=self._settings.model.llm_request_timeout_seconds,
         )
         return await self._invoke_with_client(client, config, api_key, request)
+
+    async def _invoke_with_langchain_adapter(
+        self,
+        config: ModelConfigRecord,
+        api_key: str,
+        request: ModelInvocationRequest,
+    ) -> ModelInvocationResult:
+        adapter = LangChainModelAdapter(
+            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
+            stream_handler=self._emit_stream_chunk if _stream_handler_var.get() is not None else None,
+        )
+        trace_context = None
+        if self._observability_service is not None and request.trace_context:
+            trace_context = self._observability_service.context_from_mapping(request.trace_context)
+        trace_manager = (
+            self._observability_service.trace_node(
+                trace_context,
+                node_name="model_call_langchain",
+                inputs={"model_key": config.key, "provider": config.provider},
+            )
+            if trace_context is not None
+            else nullcontext()
+        )
+        try:
+            with trace_manager:
+                return await adapter.invoke(config, api_key, request)
+        except ProviderClientError as exc:
+            return self._http_error_result(config, request, exc)
 
     async def _resolve_auth_token(self, config: ModelConfigRecord) -> str | None:
         """Return the bearer token to use for this model config.

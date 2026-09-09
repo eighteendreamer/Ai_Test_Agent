@@ -8,6 +8,7 @@ from src.application.model_adapters.base import ModelPort
 from src.application.model_adapters.message_adapter import (
     from_langchain_message,
     to_langchain_messages,
+    to_langchain_tools,
 )
 from src.application.model_clients.base import ProviderClientError
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
@@ -54,7 +55,7 @@ class LangChainModelAdapter(ModelPort):
         try:
             model = self._build_model(config, api_key)
             if config.supports_tools and request.tools:
-                model = model.bind_tools(_langchain_tools(request.tools), tool_choice="auto")
+                model = model.bind_tools(to_langchain_tools(request.tools), tool_choice="auto")
             messages = to_langchain_messages(request.system_prompt, request)
             if self._stream_handler is None:
                 response = await model.ainvoke(messages)
@@ -133,21 +134,3 @@ def _text_from_content(content: Any) -> str:
             if isinstance(item, dict) and item.get("type") in {"text", "output_text"}
         )
     return ""
-
-
-def _langchain_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map the application's tool schema to LangChain's provider-neutral form."""
-
-    mapped: list[dict[str, Any]] = []
-    for tool in tools:
-        name = str(tool.get("name") or "").strip()
-        if not name:
-            continue
-        mapped.append(
-            {
-                "name": name,
-                "description": str(tool.get("description") or ""),
-                "parameters": tool.get("input_schema") or {"type": "object"},
-            }
-        )
-    return mapped
