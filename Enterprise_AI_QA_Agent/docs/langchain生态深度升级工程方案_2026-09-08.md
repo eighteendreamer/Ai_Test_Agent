@@ -1135,7 +1135,7 @@ pip check 已知冲突：
 | P2-01 | 定义 ModelPort | application/model_adapters/base.py | 已完成（本批） | 旧新实现共享业务接口 |
 | P2-02 | 实现 Message 双向转换 | application/model_adapters/message_adapter.py | 已完成（本批） | system/user/assistant/tool 无损转换 |
 | P2-03 | 实现 LangChainModelAdapter | application/model_adapters/langchain_model_adapter.py | 已完成（独立适配器） | 至少一个 Provider 跑通 |
-| P2-04 | 保留 LegacyProviderAdapter | model_runtime_service.py | 未进行 | 可按 Flag 回退 |
+| P2-04 | 保留 LegacyProviderAdapter | application/model_adapters/legacy_model_adapter.py | 已完成（边界实现） | 可按 Flag 回退 |
 | P2-05 | 统一 Tool Call 转换 | schemas/tool runtime | 未进行 | call id、name、args 保真 |
 | P2-06 | 接入 Structured Output | 目标业务节点 | 未进行 | Schema 错误可观测且可恢复 |
 | P2-07 | 对齐 Streaming | model stream handler/SSE | 未进行 | chunk 顺序和终态正确 |
@@ -1156,7 +1156,7 @@ pip check 已知冲突：
 - 工具调用、错误分类、Token 和 SSE 不发生未声明破坏。
 - ModelRuntimeService 的业务 DTO 未被 LangChain 类型污染。
 
-当前测试结果：P2-01/P2-02 契约测试 `2 passed`；P2-03 适配器、消息适配器和既有模型客户端回归合计 `18 passed`；`python -m compileall -q src tests` 通过。`pip check` 仍有环境既有的 browser-use/mitmproxy 等版本冲突，本批未新增可归因冲突。
+当前测试结果：P2-01/P2-02 契约测试 `2 passed`；P2-03/P2-04 适配器、消息适配器和既有模型客户端回归合计 `19 passed`；后端全量 `768 passed, 10 skipped, 1 warning`；`python -m compileall -q src tests` 通过。`pip check` 仍有环境既有的 browser-use/mitmproxy 等版本冲突，本批未新增可归因冲突。
 本批记录（2026-09-09）：新增 `ModelPort`、UnifiedMessage↔LangChain BaseMessage 转换和 OpenAI-compatible `LangChainModelAdapter`；转换不把 LangChain 类型泄漏到业务 DTO，保留 system/user/assistant/tool、tool call id/name/args、图像内容、usage 和响应元数据；应用工具 schema 在 `bind_tools` 前映射为 LangChain 标准参数；新增 opt-in 配置 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`，主链仍保持旧 Provider 路径。
 真实模型验证（2026-09-09）：从数据库读取默认 Qwen 配置，使用 LangChain `ChatOpenAI` 适配器实际调用 OpenAI-compatible endpoint，模型返回 `LANGCHAIN_LIVE_OK`，`mode=ok`、usage 存在、tool_calls=0，退出码0；未输出密钥或 Token。
 当前阻塞：P2-04/P2-07 仍需完成 Legacy 回退、真实工具调用、流式中断/终态、错误分类和双跑对账后，才允许通过 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED` 接入主链；Anthropic/Google 集成包尚未安装，不在本批扩展。
@@ -1385,7 +1385,7 @@ pip check 已知冲突：
 当前测试结果：未执行。
 当前阻塞：依赖阶段 1—6。
 回滚点：按模式和项目切回旧路径。
-最近提交：代码 `f1b9ccc`、适配器补充待提交；台账待本批文档提交后登记。
+最近提交：代码 `850a266`（LangChain 适配器）、本批 Legacy 边界待提交；台账待本批文档提交后登记。
 
 ### 14.11 阶段 2 进入前兼容预检（只读，2026-09-09）
 
