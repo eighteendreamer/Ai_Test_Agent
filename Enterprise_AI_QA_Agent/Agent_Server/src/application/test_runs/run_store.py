@@ -103,6 +103,15 @@ class TestRunStore(Protocol):
         lease_seconds: int,
         now: datetime,
     ) -> TestRunItemRecord: ...
+    async def save_checkpoint(
+        self,
+        item_id: str,
+        lease_token: str,
+        checkpoint_key: str,
+        checkpoint_payload: dict[str, object],
+        checkpoint_version: int | None,
+        now: datetime,
+    ) -> TestRunAttemptRecord: ...
     async def mark_waiting_approval(
         self,
         item_id: str,
@@ -574,6 +583,34 @@ class InMemoryTestRunStore:
                 },
             )
             self._refresh_run(item.run_id, now)
+            return updated.model_copy(deep=True)
+
+    async def save_checkpoint(
+        self,
+        item_id: str,
+        lease_token: str,
+        checkpoint_key: str,
+        checkpoint_payload: dict[str, object],
+        checkpoint_version: int | None,
+        now: datetime,
+    ) -> TestRunAttemptRecord:
+        async with self._lock:
+            item = self._require_active_lease(item_id, lease_token, now, {"claimed", "running"})
+            attempt = self._active_attempt(item_id, lease_token)
+            version = checkpoint_version or attempt.checkpoint_version + 1
+            if version <= attempt.checkpoint_version:
+                raise ValueError(f"Checkpoint version must increase for run item: {item_id}")
+            updated = attempt.model_copy(
+                deep=True,
+                update={
+                    "checkpoint_version": version,
+                    "checkpoint_key": checkpoint_key,
+                    "checkpoint_payload": dict(checkpoint_payload),
+                    "checkpoint_at": now,
+                    "heartbeat_at": now,
+                },
+            )
+            self._attempts[attempt.id] = updated
             return updated.model_copy(deep=True)
 
     async def resume_waiting_approval(
@@ -1246,6 +1283,25 @@ class PostgresTestRunStore:
             item_id,
             lease_token,
             lease_seconds,
+            now,
+        )
+
+    async def save_checkpoint(
+        self,
+        item_id: str,
+        lease_token: str,
+        checkpoint_key: str,
+        checkpoint_payload: dict[str, object],
+        checkpoint_version: int | None,
+        now: datetime,
+    ) -> TestRunAttemptRecord:
+        return await asyncio.to_thread(
+            self._save_checkpoint_sync,
+            item_id,
+            lease_token,
+            checkpoint_key,
+            checkpoint_payload,
+            checkpoint_version,
             now,
         )
 
@@ -1961,6 +2017,35 @@ class PostgresTestRunStore:
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
         return item
+
+    def _save_checkpoint_sync(
+        self,
+        item_id: str,
+        lease_token: str,
+        checkpoint_key: str,
+        checkpoint_payload: dict[str, object],
+        checkpoint_version: int | None,
+        now: datetime,
+    ) -> TestRunAttemptRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                self._validate_lease(item, lease_token, now, {"claimed", "running"})
+                attempt = self._lock_attempt(cur, item_id, lease_token)
+                version = checkpoint_version or attempt.checkpoint_version + 1
+                if version <= attempt.checkpoint_version:
+                    raise ValueError(f"Checkpoint version must increase for run item: {item_id}")
+                attempt = attempt.model_copy(
+                    update={
+                        "checkpoint_version": version,
+                        "checkpoint_key": checkpoint_key,
+                        "checkpoint_payload": dict(checkpoint_payload),
+                        "checkpoint_at": now,
+                        "heartbeat_at": now,
+                    }
+                )
+                self._write_attempt(cur, attempt)
+        return attempt
 
     def _complete_item_sync(
         self,

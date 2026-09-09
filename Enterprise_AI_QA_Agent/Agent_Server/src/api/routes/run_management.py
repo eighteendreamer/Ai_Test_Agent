@@ -17,11 +17,13 @@ from src.schemas.run_management import (
     RunItemApprovalPending,
     RunItemExecuteRequest,
     RunItemHeartbeatRequest,
+    RunItemCheckpointRequest,
     RunItemLeaseRequest,
     TestCaseResultRecord,
     TestRunCreateRequest,
     TestRunDetail,
     TestRunItemRecord,
+    TestRunAttemptRecord,
     TestRunPage,
     TestRunStatus,
 )
@@ -184,6 +186,18 @@ async def complete_test_run_item(
 ):
     try:
         return await request.app.state.test_run_service.complete_item(item_id, payload)
+    except (KeyError, ValueError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/run-items/{item_id}/checkpoint", response_model=TestRunAttemptRecord)
+async def save_test_run_item_checkpoint(
+    item_id: str,
+    payload: RunItemCheckpointRequest,
+    request: Request,
+):
+    try:
+        return await request.app.state.test_run_service.save_checkpoint(item_id, payload)
     except (KeyError, ValueError) as exc:
         raise _http_error(exc) from exc
 

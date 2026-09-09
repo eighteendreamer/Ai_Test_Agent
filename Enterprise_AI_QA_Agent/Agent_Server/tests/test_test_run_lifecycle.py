@@ -129,6 +129,45 @@ def _create_run(app: FastAPI, suite_id: str):
     )
 
 
+def test_checkpoint_is_persisted_and_lease_guarded():
+    app, _, suite, _, _ = _run(_build_components(case_count=1))
+    run_id = _create_run(app, suite.suite.id).json()["run"]["id"]
+    claimed = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/claim",
+        json={"worker_id": "checkpoint-worker"},
+    ).json()["claims"][0]
+    item_id = claimed["item"]["id"]
+    token = claimed["lease_token"]
+    saved = _request(
+        app,
+        "POST",
+        f"/api/v1/run-items/{item_id}/checkpoint",
+        json={
+            "lease_token": token,
+            "checkpoint_key": "api_assertion",
+            "checkpoint_payload": {"step": 2, "evidence_id": "artifact-1"},
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["checkpoint_version"] == 1
+    assert saved.json()["checkpoint_payload"]["step"] == 2
+
+    stale = _request(
+        app,
+        "POST",
+        f"/api/v1/run-items/{item_id}/checkpoint",
+        json={
+            "lease_token": token,
+            "checkpoint_key": "old",
+            "checkpoint_payload": {},
+            "checkpoint_version": 1,
+        },
+    )
+    assert stale.status_code == 409
+
+
 def test_create_run_freezes_suite_items_and_lists_project_history():
     app, project, suite, _, _ = _run(_build_components())
 

@@ -882,6 +882,21 @@ pip check 已知冲突：
 - 回滚验证：未修改数据库表结构，只扩展 JSONB 记录和 Schema 默认值；回滚代码即可读取旧记录，旧记录字段缺失自动按 0/None 处理。
 - 下一步：补充长任务专用暂停/恢复语义、阶段 Checkpoint 与 Attempt 恢复测试，再把 `run_id/run_item_id/attempt_id/thread_id` 绑定到分段 LangSmith Trace；阶段 2 继续保持未进行。
 
+#### 长任务 L2：Attempt 检查点持久化（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：复用现有 `TestRunAttempt` JSONB 记录增加最近检查点，避免新增重复任务表；检查点必须受当前租约保护，失效 Worker 或旧版本不能覆盖新 Attempt 状态。
+- 实际修改文件：`Agent_Server/src/schemas/run_management.py`、`Agent_Server/src/application/test_runs/run_store.py`、`Agent_Server/src/application/test_runs/run_service.py`、`Agent_Server/src/api/routes/run_management.py`、`Agent_Server/tests/test_test_run_lifecycle.py`。
+- 新增契约：`POST /api/v1/run-items/{item_id}/checkpoint`；请求包含 `lease_token`、`checkpoint_key`、`checkpoint_payload` 和可选 `checkpoint_version`；Attempt 持久化 `checkpoint_version`、`checkpoint_key`、`checkpoint_payload`、`checkpoint_at`。
+- 一致性规则：默认版本为当前版本加一；显式版本必须严格大于已保存版本；保存前校验 Item 状态和租约；保存同时刷新 Attempt 心跳时间；检查点事件写入现有 TestRun 事件通路。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_test_run_lifecycle.py tests/test_test_run_timing.py -q`；`python -m pytest -q`。
+- 通过：定向测试 14 passed；后端全量 750 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：本批未实现独立 pause 状态、检查点恢复执行器和 4/24 小时真实压测；当前只完成检查点写入与租约保护。
+- 回滚验证：无数据库结构变更；旧 Attempt JSONB 记录缺少检查点字段时按默认值兼容读取，回滚代码不会破坏历史记录。
+- 下一步：实现从最近检查点恢复的新 Attempt 流程，并增加 Worker 强杀/租约过期后的恢复回归；随后接入分段 LangSmith Trace 和 `thread_id` 关联。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行

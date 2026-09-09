@@ -126,6 +126,10 @@ class TestRunAttemptRecord(BaseModel):
     waiting_duration_ms: int = Field(default=0, ge=0)
     paused_duration_ms: int = Field(default=0, ge=0)
     wall_clock_duration_ms: int = Field(default=0, ge=0)
+    checkpoint_version: int = Field(default=0, ge=0)
+    checkpoint_key: str | None = Field(default=None, max_length=160)
+    checkpoint_payload: dict[str, Any] = Field(default_factory=dict)
+    checkpoint_at: datetime | None = None
 
 
 class RunEvidenceRef(BaseModel):
@@ -330,6 +334,12 @@ class RunItemLeaseRequest(BaseModel):
 
 class RunItemHeartbeatRequest(RunItemLeaseRequest):
     lease_seconds: int = Field(default=90, ge=15, le=3600)
+
+
+class RunItemCheckpointRequest(RunItemLeaseRequest):
+    checkpoint_key: str = Field(min_length=1, max_length=160)
+    checkpoint_payload: dict[str, Any] = Field(default_factory=dict)
+    checkpoint_version: int | None = Field(default=None, ge=1)
 
 
 class RunItemExecuteRequest(RunItemLeaseRequest):

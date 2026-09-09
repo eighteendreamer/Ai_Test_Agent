@@ -36,6 +36,7 @@ from src.schemas.run_management import (
     RunItemCompleteRequest,
     RunItemCompletion,
     RunItemHeartbeatRequest,
+    RunItemCheckpointRequest,
     RunItemLeaseRequest,
     TestCaseResultRecord,
     TestRunCreateRequest,
@@ -685,6 +686,43 @@ class TestRunService:
         if item is None:
             raise KeyError(f"Test run item not found: {item_id}")
         return item
+
+    async def save_checkpoint(
+        self,
+        item_id: str,
+        payload: RunItemCheckpointRequest,
+    ) -> TestRunAttemptRecord:
+        attempt = await self._store.save_checkpoint(
+            item_id,
+            payload.lease_token,
+            payload.checkpoint_key,
+            payload.checkpoint_payload,
+            payload.checkpoint_version,
+            self._clock(),
+        )
+        logger.info(
+            "test_run_item_checkpoint_saved",
+            extra={
+                "run_id": attempt.run_id,
+                "run_item_id": attempt.run_item_id,
+                "attempt_id": attempt.id,
+                "checkpoint_key": attempt.checkpoint_key,
+                "checkpoint_version": attempt.checkpoint_version,
+            },
+        )
+        run = await self._get_run_record(attempt.run_id)
+        await self._emit(
+            run,
+            "test_run.item_checkpoint_saved",
+            {
+                "run_id": attempt.run_id,
+                "run_item_id": attempt.run_item_id,
+                "attempt_id": attempt.id,
+                "checkpoint_key": attempt.checkpoint_key,
+                "checkpoint_version": attempt.checkpoint_version,
+            },
+        )
+        return attempt
 
     async def get_result(self, result_id: str) -> TestCaseResultRecord:
         result = await self._store.get_result(result_id)
