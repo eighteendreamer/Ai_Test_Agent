@@ -40,6 +40,13 @@ def _tables(settings: Settings, names: list[str]) -> None:
                 cur.execute(f"DROP TABLE IF EXISTS {name}")
 
 
+def _settings_with_database_overrides(**overrides: object) -> Settings:
+    """Apply live-test table overrides to the nested DatabaseConfig contract."""
+    base = Settings()
+    database = base.database.model_copy(update=overrides)
+    return base.model_copy(update={"database": database})
+
+
 def _create_tables(settings: Settings) -> None:
     with postgres_connect(settings) as conn:
         with conn.cursor() as cur:
@@ -99,14 +106,12 @@ async def test_live_postgres_full_lifecycle_capacity():
     workers = max(1, int(os.getenv("RUN_LIVE_POSTGRES_CAPACITY_WORKERS", "32")))
     for size in sizes:
         suffix = f"{size}_{uuid4().hex[:8]}"
-        settings = Settings().model_copy(
-            update={
-                "postgres_pool_size": min(max(workers, 4), 64),
-                "postgres_test_run_table": f"cap_run_{suffix}",
-                "postgres_test_run_item_table": f"cap_item_{suffix}",
-                "postgres_test_run_attempt_table": f"cap_attempt_{suffix}",
-                "postgres_test_case_result_table": f"cap_result_{suffix}",
-            }
+        settings = _settings_with_database_overrides(
+            postgres_pool_size=min(max(workers, 4), 64),
+            postgres_test_run_table=f"cap_run_{suffix}",
+            postgres_test_run_item_table=f"cap_item_{suffix}",
+            postgres_test_run_attempt_table=f"cap_attempt_{suffix}",
+            postgres_test_case_result_table=f"cap_result_{suffix}",
         )
         store = PostgresTestRunStore(settings)
         now = datetime.now(timezone.utc)
