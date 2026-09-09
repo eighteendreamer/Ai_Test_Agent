@@ -1162,6 +1162,7 @@ pip check 已知冲突：
 真实运行时验证（2026-09-09）：开启 Flag 后读取数据库默认 Qwen 配置，调用返回 `RUNTIME_LANGCHAIN_FLAG_OK`，`mode=ok`、usage 存在；同一运行时流式调用返回 `RUNTIME_LANGCHAIN_STREAM_OK`，收到2个有序 chunk，终态文本和 usage 正常；独立结构化调用返回 Pydantic `Answer(answer='STRUCTURED_LIVE_OK', confidence=1.0)`；未输出密钥或 Token。
 双跑对账（2026-09-09）：同一数据库默认 Qwen 配置、同一请求分别走 Legacy 与 LangChain，双方均 `mode=ok`、tool_calls=0、usage 存在，均返回 `DUAL_RUN_OK`；该结果是默认 Provider smoke 对账，不替代多样本/工具/失败场景契约测试。
 工具调用对账（2026-09-09）：同一数据库默认 Qwen 配置、同一只读工具 schema 和同一请求分别走 Legacy 与 LangChain；双方均生成1个 `read_only_probe` 调用，`target` 参数均为 `probe-target`，未执行工具本身。
+多样本对账（2026-09-09）：连续3轮相同语义文本请求分别走 Legacy 与 LangChain；3/3 轮双方均 `mode=ok`、tool_calls=0、usage 存在，并返回 `MULTI_DUAL_OK`。
 当前阻塞：P2-09 仍需补充多样本和失败场景对账；中断恢复专项仍需补齐。Structured Output 已完成通用适配器入口，尚未绑定具体业务节点。Anthropic/Google 集成包尚未安装，不在本批扩展。
 全量回归（2026-09-09）：`python -m pytest -q` 为 `774 passed, 10 skipped, 1 warning`（26.02s）；工作区无未提交修改。
 回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
