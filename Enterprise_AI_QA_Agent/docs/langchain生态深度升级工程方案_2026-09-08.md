@@ -1050,6 +1050,56 @@ pip check 已知冲突：
 回滚点：按模式和项目切回旧路径。
 最近提交：无。
 
+### 14.11 阶段 2 进入前兼容预检（只读，2026-09-09）
+
+本预检不代表阶段 2 已开始，也不改变当前依赖和运行路径；目的仅是依据现有代码和 LangChain 官方文档，确定阶段 2 的真实切入点、必须验证的兼容面和禁止采取的捷径。
+
+#### 现有代码事实
+
+| 检查项 | 当前事实 | 对阶段 2 的影响 |
+|---|---|---|
+| 业务模型调用入口 | `ModelRuntimeService.invoke(model_key, ModelInvocationRequest)` | 适配器应实现该业务服务依赖的稳定端口，不能改 API DTO |
+| 消息契约 | `UnifiedMessage` 同时包含 role、parts、tool_call_id、tool_calls；请求还保留原始 `messages` | 做双向转换并保留原始结构，不能只转换纯文本 |
+| Provider 选择 | `ModelRegistry` 从数据库解析 provider、transport、api_base_url、headers、auth_type 和能力 | LangChain 模型实例必须由数据库配置驱动，不能在代码中硬编码模型或密钥 |
+| 现有传输 | Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini Generate Content，以及大量 OpenAI-compatible Provider | 每种 transport 必须单独做契约测试；不能把 OpenAI-compatible 直接宣称等同于 OpenAI 原生行为 |
+| 认证与错误 | `ModelRuntimeService` 负责 API Key/OAuth 解析并将 ProviderClientError 映射为业务结果 | LangChain 适配器不得绕过 OAuth、超时、错误分类和现有重试边界 |
+| 流式链路 | 当前通过 `stream_handler` 将 ProviderClient 流式 chunk 推送到本地 SSE | 适配器必须验证 chunk 顺序、tool-call chunk、终态和 token usage，不以 `invoke` 通过替代流式验证 |
+
+#### 官方 API 对齐结论
+
+LangChain 官方模型文档明确将 `invoke`、`stream`、`bind_tools` 和 `with_structured_output` 作为标准模型能力；消息是跨 Provider 的标准输入输出单元，工具调用结果通过 `tool_call_id` 关联。依据：
+
+- [LangChain Models](https://docs.langchain.com/oss/python/langchain/models)
+- [LangChain Messages](https://docs.langchain.com/oss/python/langchain/messages)
+- [LangChain Structured Output](https://docs.langchain.com/oss/python/langchain/structured-output)
+- [Chat model integrations](https://docs.langchain.com/oss/python/integrations/chat/index)
+
+据此，阶段 2 的实现边界确定为：
+
+1. 在 `application/langchain/` 定义内部 `ModelPort` 和消息转换器；LangChain 的 `BaseMessage`、`AIMessage`、`ToolMessage` 只能停留在适配器内部。
+2. 先以一个实际启用且支持工具调用的 Provider 做端到端验证，再扩展其他 Provider；不得一次性替换所有 transport。
+3. `bind_tools` 只负责协议绑定，工具执行仍由现有 ToolRegistry、PermissionService、SafetyGate 和 ToolRuntimeService 完成。
+4. `with_structured_output` 只在目标 Provider 的能力和错误行为完成实测后启用；解析失败必须映射回现有错误/恢复契约。
+5. LangChain 适配器与 LegacyProviderAdapter 双跑对账时，比较结构化语义、工具调用、终态、错误分类、usage 和 SSE 顺序，不比较自然语言逐字一致。
+
+#### 依赖与兼容决策
+
+- 当前 `pyproject.toml` 没有声明 `langchain-openai`、`langchain-anthropic` 或 `langchain-google-genai`；本预检不新增这些依赖，也不把它们作为“已兼容”记录。
+- 当前主服务锁定的 `langchain==1.2.3`、`langchain-core==1.2.7`、`langgraph==1.0.10` 和 `langsmith==0.10.18` 继续保持不变；任何升级必须先建立 C4 组合、全量回归、真实默认模型会话和回滚证据。
+- 当前数据库默认模型实际为 Qwen OpenAI-compatible 路径；该路径尚不能直接套用 `ChatOpenAI` 的 Provider 语义，必须先核对 `api_base_url`、额外请求头、tool schema、usage 和 streaming 行为。
+
+#### 阶段 2 进入条件（当前未满足）
+
+| 条件 | 状态 | 证据/缺口 |
+|---|---|---|
+| 阶段 1 外部 LangSmith Trace 完成 | 未满足 | `.env` 中 LangSmith Key 为空，P1-08/P1-09 未完成 |
+| 选定 Provider 官方集成包和版本已锁定 | 未满足 | 尚未对实际 Qwen 兼容端点完成安装与协议验证 |
+| ModelPort/消息转换契约测试设计完成 | 进行中 | 本预检已冻结边界，代码和测试尚未创建 |
+| Legacy/LangChain 双跑真实对账 | 未进行 | 必须在实现后执行 |
+| 依赖升级后的 C4 回滚证据 | 未进行 | 阶段 0 P0-07 仍阻塞 |
+
+结论：阶段 2 继续保持“未进行”，但其实现切入点和兼容验证清单已冻结；在阶段 1 云端验证完成前，不安装新的 LangChain Provider 包、不升级主服务生态版本、不修改现有模型执行路径。
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：
