@@ -308,11 +308,17 @@ class DeepAgentsConfig(BaseModel):
     pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
+    read_only_max_output_chars: int = 120000
 
     @field_validator("read_only_max_file_size_mb")
     @classmethod
     def validate_read_only_max_file_size_mb(cls, value: int) -> int:
         return max(1, value)
+
+    @field_validator("read_only_max_output_chars")
+    @classmethod
+    def validate_read_only_max_output_chars(cls, value: int) -> int:
+        return max(1000, value)
 
     @field_validator("pilot_mode_keys", mode="before")
     @classmethod

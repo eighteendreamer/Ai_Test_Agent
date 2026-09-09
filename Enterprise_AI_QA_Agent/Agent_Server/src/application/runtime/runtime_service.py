@@ -66,6 +66,7 @@ class RuntimeService:
         deep_agent_pilot_mode_keys: list[str] | None = None,
         deep_agent_read_only_filesystem_enabled: bool = False,
         deep_agent_read_only_max_file_size_mb: int = 10,
+        deep_agent_read_only_max_output_chars: int = 120000,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -83,6 +84,7 @@ class RuntimeService:
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
         self._deep_agent_read_only_max_file_size_mb = max(1, int(deep_agent_read_only_max_file_size_mb))
+        self._deep_agent_read_only_max_output_chars = max(1000, int(deep_agent_read_only_max_output_chars))
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -209,6 +211,7 @@ class RuntimeService:
                 context={**dict(request.context), "skill_keys": list(request.skill_keys)},
                 read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
                 read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
+                read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
             )
         )
         state["model_response_text"] = result.output_text

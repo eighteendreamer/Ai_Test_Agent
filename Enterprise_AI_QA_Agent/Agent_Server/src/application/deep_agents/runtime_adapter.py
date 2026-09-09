@@ -26,6 +26,7 @@ class DeepAgentRuntimeRequest:
     context: dict[str, Any] = field(default_factory=dict)
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
+    read_only_max_output_chars: int = 120000
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ class DeepAgentRuntimeAdapter:
                     model,
                     read_only_filesystem_enabled=request.read_only_filesystem_enabled,
                     read_only_max_file_size_mb=request.read_only_max_file_size_mb,
+                    read_only_max_output_chars=request.read_only_max_output_chars,
                     context=request.context,
                 )
             else:
@@ -137,6 +139,7 @@ class DeepAgentRuntimeAdapter:
         read_only_filesystem_enabled: bool,
         read_only_max_file_size_mb: int,
         context: dict[str, Any],
+        read_only_max_output_chars: int = 120000,
     ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
 
@@ -212,6 +215,7 @@ class DeepAgentRuntimeAdapter:
         project_backend = build_read_only_filesystem_backend(
             root,
             max_file_size_mb=read_only_max_file_size_mb,
+            max_output_chars=read_only_max_output_chars,
         )
         permissions = [
             FilesystemPermission(

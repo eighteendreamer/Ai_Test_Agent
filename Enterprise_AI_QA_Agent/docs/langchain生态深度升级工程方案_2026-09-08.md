@@ -1562,7 +1562,7 @@ API / Session / TestRun 控制平面（系统保留）
 | 主环境验证 | 定向测试：`3 passed`；`compileall -q src`：通过；增加 Skills 映射后后端全量：`784 passed, 10 skipped, 1 warning in 48.48s` |
 | C4 验证 | C4 `deepagents==0.7.13` 实际调用只读适配器返回 `DA_E2_PROFILE_OK`，模型 `bound_tools=[['ls', 'read_file', 'glob', 'grep']]`；加入 `tdd-review` 后返回 `DA_E2_SKILLS_OK`、`skill_visible=True`，仍只绑定四个只读工具；模型尝试读取 `.env` 时得到权限拒绝并最终返回 `DA_E2_PERMISSION_OK`，没有泄露内容 |
 | Skills 治理 | Runtime 只传递请求已选择的 `skill_keys`；Adapter 仅接受现有 SkillRegistry 能解析且有合法 `SKILL.md` 的条目，把选中目录复制到单次调用临时 source，再通过 CompositeBackend `/skills/` 路由交给官方 SkillsMiddleware；调用结束立即清理，不暴露全部 `src/SKILLS`，未知 key 直接拒绝 |
-| 未完成 | 尚未完成新旧文件读取结果对账及符号链接和并发读取测试；路径穿越、超大文本、二进制和 `.env` 已完成 C4 验证；现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，还需同步映射版本字段 |
+| 未完成 | 符号链接测试仍受当前 Windows 账号缺少 `SeCreateSymbolicLinkPrivilege` 限制（`WinError 1314`），因此 DA-E2 不能关闭；其余本批路径安全、并发读取和新旧结果对账已取得 C4 证据。现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，还需同步映射版本字段 |
 
 ### DA-E2 边界安全补充记录（2026-09-10）
 
@@ -1571,7 +1571,24 @@ API / Session / TestRun 控制平面（系统保留）
 - C4 结果：`large_read` 返回 DA-E2 read limit 错误；`large_grep` 返回空匹配且不返回超大行；`binary` 返回 binary reads disabled；`../outside.txt` 返回 Path traversal not allowed。
 - Windows C4 运行账号没有创建符号链接的权限（`WinError 1314`），因此符号链接测试尚未声称通过；需在具备符号链接权限的隔离环境完成同一用例后，才能关闭该门槛。
 | 长任务边界 | 本批不增加 Checkpointer、租约、Worker 或后台任务能力；DA-E2 仍只能用于短的 code_review 认知步骤，不能用于数小时 TestRun |
-| 下一步 | 先实现 SkillRegistry → 官方 skills source 的受控映射，再补齐路径安全和结果对账测试；所有门槛通过后才将 DA-E2 标为已完成 |
+| 下一步 | 在具备符号链接权限的隔离 Windows 环境重跑根内/根外链接、链接目录和循环用例；通过后再复核 DA-E2 退出条件并决定是否标记已完成 |
+
+### DA-E2 验证补充记录（2026-09-10）
+
+| 项目 | 结果 |
+|---|---|
+| 本批目标 | 在不改变官方 FilesystemBackend 路径语义的前提下，完成旧 `project-file-reader` 对账、并发只读隔离、虚拟路径安全和超长单行输出边界验证 |
+| 实际修改 | `read_only_backend.py` 增加可配置 `max_output_chars`（默认 120000，与旧 reader 的 `max_chars` 上限对齐）；配置贯通 `DeepAgentsConfig`、`RuntimeService`、`DeepAgentRuntimeRequest` 和 `.env.example`；新增 DA-E2 回归用例 |
+| 输出边界依据 | 旧 reader 支持最多 120000 字符，但官方 backend 按行分页；为避免一个超长单行绕过行数限制并挤爆模型上下文，读取结果超过上限时显式返回错误，要求缩小行范围或先 grep，不静默截断 |
+| 新旧结果对账 | C4 真实 `FilesystemBackend` 与旧 `_read_local_project_file` 对同一文件、行区间的内容行、路径和行号对账通过；唯一差异是官方保留末尾换行、旧 reader 的 `splitlines()` 去掉末尾换行，已在测试中显式记录为展示格式差异 |
+| 并发只读 | C4 同一 backend 并发 12 次 `read` + 12 次 `grep` 全部通过；临时 Skills staging 两个并发请求分别只可见自己的 `/skills/<key>/`，无串租户/串请求 |
+| 路径安全 | `../` 和 `/../` 被官方 virtual root 拒绝；`~` 不展开到用户目录，仅按虚拟根下字面路径处理并返回不存在；根内符号链接用例已编写，但当前账号无法创建符号链接，未虚报通过 |
+| C4 定向验证 | `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b\Scripts\python.exe -m pytest -q Agent_Server/tests/test_deep_agent_runtime_adapter.py`：`10 passed, 1 skipped` |
+| C4 全量回归 | 同一 C4 Python：`python -m pytest -q Agent_Server/tests`：`791 passed, 11 skipped, 1 warning`，耗时 `25.06s` |
+| 主环境验证 | `E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`：定向 `3 passed, 8 skipped`；全量 `784 passed, 18 skipped, 1 warning`，耗时 `31.30s`；`compileall -q Agent_Server/src` 通过。主环境未安装 `deepagents`，Deep Agents 专项用例按设计跳过 |
+| 当前状态 | 进行中；并发、对账、路径穿越、敏感/二进制、超大文件和输出字符边界已完成；符号链接仍是唯一未关闭门槛 |
+| 长任务边界 | 本批仍未接入 Checkpointer、租约、Worker 或后台任务；Deep Agents 只可用于短 code_review 认知步骤，不可用于数小时 TestRun |
+| 回滚验证 | 新增配置默认关闭/兼容旧默认值；关闭 `DEEP_AGENTS__ENABLED` 或只读开关即回到旧 RuntimeService 路径；未修改业务事实表和长任务状态机 |
 
 ## 15. 每次实施后的记录模板
 

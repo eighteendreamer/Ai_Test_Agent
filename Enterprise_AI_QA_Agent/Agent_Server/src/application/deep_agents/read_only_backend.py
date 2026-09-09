@@ -8,6 +8,7 @@ def build_read_only_filesystem_backend(
     root: Path,
     *,
     max_file_size_mb: int,
+    max_output_chars: int = 120000,
 ) -> Any:
     """Build the official filesystem backend with bounded text reads.
 
@@ -21,6 +22,7 @@ def build_read_only_filesystem_backend(
     from deepagents.backends.protocol import ReadResult
 
     max_bytes = max(1, int(max_file_size_mb)) * 1024 * 1024
+    bounded_output_chars = max(1000, int(max_output_chars))
 
     class BoundedFilesystemBackend(FilesystemBackend):
         def _ripgrep_search(self, pattern, base_path, glob, max_count):
@@ -53,7 +55,21 @@ def build_read_only_filesystem_backend(
                         )
             except (OSError, RuntimeError, ValueError) as exc:
                 return ReadResult(error=f"Error reading file '{file_path}': {exc}")
-            return super().read(file_path, offset, limit)
+            result = super().read(file_path, offset, limit)
+            if (
+                result.error is None
+                and result.file_data is not None
+                and result.file_data.get("encoding") == "utf-8"
+                and len(result.file_data.get("content") or "") > bounded_output_chars
+            ):
+                return ReadResult(
+                    error=(
+                        f"Read window for '{file_path}' exceeds the DA-E2 output limit "
+                        f"of {bounded_output_chars} characters; narrow the line range "
+                        "or locate content with grep first."
+                    )
+                )
+            return result
 
     return BoundedFilesystemBackend(
         root_dir=root,
