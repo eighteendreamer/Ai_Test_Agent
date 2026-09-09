@@ -580,7 +580,7 @@ Feature Flags：
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | P0-01～P0-06、P0-08～P0-10 已完成；P0-07 因 Deep Agents 与当前主服务生态版本不兼容而阻塞，阶段仍不能关闭 | 现有环境、干净 C1 环境、隔离 C2 候选 Harness、后端/前端契约回归和真实默认模型链路均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
-| 1 | LangSmith 非阻塞观测 | 进行中 | 85% | 已落地 Turn/Graph/Model/Tool/Worker Trace、No-op 降级、本地 Run 引用、Flow 可选深链接和 errors_only 语义；真实外部上报与外部树层级仍未完成 | 2026-09-09 观测专项 19 项、前端 33 项、后端全量 747 项和真实默认模型链路通过；真实 LangSmith 上报未执行 |
+| 1 | LangSmith 非阻塞观测 | 进行中 | 95% | 已完成真实 LangSmith 上报、Turn→LangGraph→Node→Model 父子树、本地 Run 对账、敏感数据扫描和故障降级；开启前后性能预算对比仍未完成 | 2026-09-09 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路和真实云端 Trace 均通过；性能对比未执行 |
 | 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
 | 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
 | 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
@@ -751,7 +751,7 @@ pip check 已知冲突：
 当前测试结果（2026-09-09，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测契约专项 19 passed（0.25s）；后端全量 747 passed、8 skipped、1 warning（17.86s）；前端 33 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；最新真实 FastAPI 启动、健康检查（`postgres_ok=true`）、数据库默认模型会话、事件历史、Snapshot 和 Flow 查询均通过（41 events、1 Snapshot、9 stages），事件中包含 `runtime.turn_completed` 与 `turn.completed`。
 新增锁定版 LangSmith SDK 协议验证（[证据文件](../Agent_Server/docs/python311-langsmith-sdk-protocol-2026-09-09.txt)）：在本地隔离 HTTP 端点收到 `/runs/multipart` 的 root Turn 与 `router` 子 Run 两批请求；子 Run 的 `parent_run_id` 指向 root，`trace_id` 可见，敏感输入、API Key 和密码值未出现。该结果证明当前 SDK 适配顺序和脱敏边界可执行，不等价于 LangSmith 云端可访问性。
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归；本批进一步发现并修复“未设置 `LANGCHAIN_TRACING_V2` 时 root trace 不会 post、只有子 trace 上报”的适配器根因。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
-当前阻塞：当前进程未配置 `LANGSMITH_API_KEY`，因此真实 LangSmith 环境验证尚未执行；P1-08/P1-09 需在用户侧通过 `Agent_Server/.env` 配置密钥、项目和数据驻留策略后复验，才能满足阶段退出条件。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
+当前未完成项：开启前后 TTFT、完整耗时、内存、连接数和 Trace 上报队列积压的性能预算对比尚未执行；P1-08/P1-09 的真实云端父子树、Run 对账和敏感数据验证已通过。前端 Trace 深链接和 `errors_only` 已完成；`sampled` 由 LangSmith SDK 的 `tracing_sampling_rate` 实现，根 Trace 决定采样且子 Run 跟随，不再自研第二套采样器。
 回滚点：关闭 LANGSMITH_ENABLED；删除 Adapter 接线不影响本地 Event/SSE。
 最近提交：`720649e`（补齐 LangSmith 根轨迹故障降级验证）。
 
@@ -763,10 +763,27 @@ pip check 已知冲突：
 - 完成任务 ID：P1-01、P1-02、P1-03、P1-04、P1-05、P1-06、P1-07、P1-10、P1-11（代码与本地协议证据）；P1-08/P1-09 的真实外部部分未完成。
 - 依赖或契约变化：`LangSmithConfig.api_key` 使用 Pydantic `SecretStr` 从 `LANGSMITH__API_KEY` 读取；适配器优先使用该配置，仍兼容 `LANGSMITH_API_KEY` 进程变量，不把密钥放入 metadata。
 - 通过：实际 SDK fake client 测试 19 passed；root 与 node 均产生请求，node `parent_run_id` 指向 root；`errors_only` 错误字段、传输失败降级和脱敏断言通过。
-- 跳过：真实 LangSmith 云端上报、控制台树层级和外部 URL 可访问性，原因是当前环境没有 `LANGSMITH_API_KEY`。
+- 跳过：开启前后性能预算对比；真实 LangSmith 云端上报、控制台树层级和外部 URL 已在后续批次完成。
 - 回滚验证：LangSmith 默认关闭时后端全量 747 passed，真实 FastAPI 默认模型会话仍成功；关闭观测不会改变本地 Event/SSE/Snapshot/Flow。
 - 已知限制：本地协议端点只验证 SDK 请求形状和适配器行为，不证明云端鉴权、项目权限、数据驻留或网络重试策略。
 - 下一步：用户在 `Agent_Server/.env` 写入 LangSmith Key 后，执行一次 full 模式真实会话并核对控制台父子树、外部 URL、本地 trace_id 对账和性能预算；通过后再进入阶段 2 Model Adapter。
+
+#### 阶段 1 真实 LangSmith 云端验证批次记录（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：使用用户配置的 LangSmith Key，在 full 模式启动真实服务并完成一次数据库默认模型会话；核对云端父子 Trace、本地外部 Run 引用、项目 URL 和敏感数据边界。
+- 实际修改文件：`Agent_Server/.env`（本机忽略文件，仅将 `LANGSMITH__ENABLED` 从 `false` 改为 `true`、`LANGSMITH__TRACING_MODE` 从 `off` 改为 `full`；没有读取、打印或提交 Key）。
+- 完成任务 ID：P1-08、P1-09（真实云端部分）；P1-11 的业务旁路继续通过。
+- 未完成任务 ID：性能预算对比（TTFT、完整耗时、内存、连接数、上报队列积压）。
+- 执行环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`；服务端口 `18131`，验证结束后已正常关闭。
+- 执行命令：启动 `python.exe -m uvicorn src.main:app --host 127.0.0.1 --port 18131`；调用 `/api/v1/health`、创建 Session、`POST /sessions/{id}/messages`、Events、Snapshots 和 Flow；再用锁定版 LangSmith SDK 按 `project_name` 与外部 `trace_id` 查询 Run。
+- 通过：health 200 且 `postgres_ok=true`；消息调用成功；本地 26 条事件、1 个 Snapshot、10 个 Flow stages，含 `runtime.turn_completed`；本地 `observability.trace_linked` 记录 `run_id=01a083e5-a9b4-7d70-8d47-7d016f529c77` 与外部 Trace ID。
+- 云端结果：项目 `enterprise-ai-qa-agent-dev` 查询到 20 个 Run、1 个根 Run `enterprise_ai_qa_agent.turn`，根 Run 状态 `success`；父子树包含 `LangGraph`、`context_builder`、`router`、`planner`、`permission_gate`、`prompt_assembler`、`model_invoker`、`enterprise_ai_qa_agent.node.model_call`、`finalizer`、`responder` 等节点；外部 Run URL 可由 SDK 生成并访问。
+- 敏感数据检查：对本次 20 个云端 Run 的序列化输入、输出和元数据扫描，未发现实际 API Key、Bearer 凭证、Cookie、密码或密钥值；通用字段名如 `authorization_status` 属于业务安全状态，不是凭证泄露。
+- 失败：第一次按本地业务 `trace_id` 查询云端返回 0 条；根因是本地业务 Trace ID 与 LangSmith SDK 生成的外部 Trace ID 不同。随后使用本地 `observability.trace_linked.external_trace_id` 查询成功；这验证了本地对账字段的必要性，不是上报失败。
+- 跳过：开启前后性能对比；本批只证明一次真实云端成功路径和数据边界，不据此宣称性能预算达标。
+- 回滚验证：服务已正常 shutdown；将 `LANGSMITH__ENABLED=false`、`LANGSMITH__TRACING_MODE=off` 即可回到本地 Event/SSE/Snapshot/Flow 路径，既有降级专项 19 passed 已覆盖。
+- 下一步：执行开启/关闭观测的成对性能基准；性能预算达标后才关闭阶段 1并进入阶段 2。
 
 #### 阶段 1 真实服务可执行性复验批次记录（2026-09-09）
 
