@@ -774,7 +774,7 @@ pip check 已知冲突：
 - 本批目标：使用用户配置的 LangSmith Key，在 full 模式启动真实服务并完成一次数据库默认模型会话；核对云端父子 Trace、本地外部 Run 引用、项目 URL 和敏感数据边界。
 - 实际修改文件：`Agent_Server/.env`（本机忽略文件，仅将 `LANGSMITH__ENABLED` 从 `false` 改为 `true`、`LANGSMITH__TRACING_MODE` 从 `off` 改为 `full`；没有读取、打印或提交 Key）。
 - 完成任务 ID：P1-08、P1-09（真实云端部分）；P1-11 的业务旁路继续通过。
-- 未完成任务 ID：性能预算对比（TTFT、完整耗时、内存、连接数、上报队列积压）。
+- 未完成任务 ID：性能预算的多样本统计、阈值评审和上报队列积压监测；本批完成一对初步基准，不将其误记为性能门禁通过。
 - 执行环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`；服务端口 `18131`，验证结束后已正常关闭。
 - 执行命令：启动 `python.exe -m uvicorn src.main:app --host 127.0.0.1 --port 18131`；调用 `/api/v1/health`、创建 Session、`POST /sessions/{id}/messages`、Events、Snapshots 和 Flow；再用锁定版 LangSmith SDK 按 `project_name` 与外部 `trace_id` 查询 Run。
 - 通过：health 200 且 `postgres_ok=true`；消息调用成功；本地 26 条事件、1 个 Snapshot、10 个 Flow stages，含 `runtime.turn_completed`；本地 `observability.trace_linked` 记录 `run_id=01a083e5-a9b4-7d70-8d47-7d016f529c77` 与外部 Trace ID。
@@ -784,6 +784,19 @@ pip check 已知冲突：
 - 跳过：开启前后性能对比；本批只证明一次真实云端成功路径和数据边界，不据此宣称性能预算达标。
 - 回滚验证：服务已正常 shutdown；将 `LANGSMITH__ENABLED=false`、`LANGSMITH__TRACING_MODE=off` 即可回到本地 Event/SSE/Snapshot/Flow 路径，既有降级专项 19 passed 已覆盖。
 - 下一步：执行开启/关闭观测的成对性能基准；性能预算达标后才关闭阶段 1并进入阶段 2。
+
+#### 阶段 1 开关前后初步性能基准批次记录（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：在同一 Python3.11、同一数据库默认模型和同一短消息下，分别关闭和开启 LangSmith，记录 TTFT、完整运行时间、事件数量、进程内存和本地连接数。
+- 实际修改文件：`Agent_Server/.env`（本机忽略文件，仅在两轮之间切换 `LANGSMITH__ENABLED` 与 `LANGSMITH__TRACING_MODE`；验证结束保持 `true/full`，Key 未读取或输出）。
+- 关闭观测样本：Session `2d77d42a-5e4f-4c32-910e-971ba3d690ce`；37 events；首 `assistant.stream.started` 约 14,666.11 ms；首 delta 约 14,674.34 ms；`turn.completed` 约 16,284.03 ms；进程工作集 240.50 MB；本地连接 1；包含 `runtime.turn_completed`。
+- 开启观测样本：Session `8f21dfa4-48fa-45e9-8da1-264e91806119`；25 events；首 `assistant.stream.started` 约 9,583.10 ms；首 delta 约 9,589.88 ms；`turn.completed` 约 9,736.05 ms；进程工作集 258.11 MB；本地连接 1；包含 `runtime.turn_completed` 和 1 个 `observability.trace_linked`。
+- 通过：两种开关均能启动服务、连接 PostgreSQL、调用默认模型并完成本地事件/快照链；full 模式确实产生外部 Trace 关联事件。
+- 结果解释：本对样本的 full 模式内存比 off 高约 17.61 MB；耗时指标未显示稳定的观测开销方向，原因是单次真实模型响应存在明显网络/模型波动，不能据此宣称性能预算达标或 LangSmith 无开销。
+- 跳过：多样本 P50/P95/P99、TTFT 分布、持续运行内存、连接池变化和 Trace 上报队列积压；方案没有预先冻结数值阈值，必须先补齐基线窗口与阈值再验收。
+- 回滚验证：关闭样本和开启样本均完成；服务均收到正常 shutdown；将 `.env` 切回 `LANGSMITH__ENABLED=false`、`LANGSMITH__TRACING_MODE=off` 即可关闭外部观测。
+- 下一步：补充至少 5 轮开关交替样本，记录 P50/P95/P99 和错误率；再按性能预算评审是否满足阶段 1退出条件。性能统计通过前不进入阶段 2。
 
 #### 阶段 1 真实服务可执行性复验批次记录（2026-09-09）
 
