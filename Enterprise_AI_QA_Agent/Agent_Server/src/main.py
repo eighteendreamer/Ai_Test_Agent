@@ -334,6 +334,7 @@ async def lifespan(app: FastAPI):
         deep_agent_runtime_adapter=deep_agent_runtime_adapter,
         deep_agent_enabled=settings.deep_agents.enabled,
         deep_agent_pilot_mode_keys=settings.deep_agents.pilot_mode_keys,
+        deep_agent_read_only_filesystem_enabled=settings.deep_agents.read_only_filesystem_enabled,
     )
 
     app.state.settings = settings

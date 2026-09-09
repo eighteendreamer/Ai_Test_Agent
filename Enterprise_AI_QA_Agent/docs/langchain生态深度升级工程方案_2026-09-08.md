@@ -1514,7 +1514,7 @@ API / Session / TestRun 控制平面（系统保留）
 | 批次 | 状态 | 工作 | 目标与验收 |
 |---|---|---|---|
 | DA-E1 边界适配 | 已完成 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag；用官方 HarnessProfile 隐藏内置文件/execute/task 工具 | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop`；真实 Deep Agents 不暴露未治理的默认工具 |
-| DA-E2 只读文件与 Skills | 未进行 | 使用限制在正式 `project_id` 根目录的 backend；接入官方 SkillsMiddleware；隐藏 write/edit/delete/execute | 路径穿越、`.env`/凭据、符号链接、超大文件、二进制、并发读取测试通过；只读结果与旧实现对账 |
+| DA-E2 只读文件与 Skills | 进行中 | 已完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)` 和 `FilesystemMiddleware` 只读工具面；待接入现有 SkillRegistry 治理、敏感文件/路径对账和旧实现结果对账 | 当前 C4 已证明仅绑定 `read_file/ls/glob/grep`；完整阶段仍需路径穿越、`.env`/凭据、符号链接、超大文件、二进制、并发读取和 Skills 版本治理测试 |
 | DA-E3 认知计划与同步子代理 | 未进行 | 启用 `write_todos` 和受控 subagents；映射 plan/subagent typed events | todo 状态可视化；父子 Trace 完整；并发/深度受限；同一任务不进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
 | DA-E5 Checkpoint 与长任务 | 未进行 | PostgreSQL checkpointer/store；映射 session/turn/test_run/item/attempt/stage | 进程重启、跨进程接管、数小时任务、重复投递、取消、超时、终态不可重领全部通过 |
@@ -1549,6 +1549,21 @@ API / Session / TestRun 控制平面（系统保留）
 | 已知限制 | 当前只允许 OpenAI-compatible LangChain 模型；profile 仅用于 DA-E1 工具面隔离；未实现 PostgreSQL Checkpointer、HITL/Approval 映射、Skills/只读项目 backend、长任务恢复、完整 PromptAssembly/ContextCompaction 对账；因此不得用于数小时 TestRun |
 | 提交 | 待提交：`【feat】建立Deep Agents DA-E1边界适配` |
 | 下一步 | DA-E2：正式 project_id 根目录受限只读 FilesystemBackend + Skills 渐进加载；完成路径穿越、凭据、符号链接、超大文件和新旧实现结果对账后再启用 |
+
+### DA-E2 实施记录（进行中，2026-09-09）
+
+| 项目 | 结果 |
+|---|---|
+| 当前状态 | 进行中；只读 FilesystemBackend 子目标已完成，Skills/结果对账尚未完成 |
+| 本批目标 | 仅在显式 `DEEP_AGENTS__READ_ONLY_FILESYSTEM_ENABLED=true` 且请求上下文提供本地 `project_root` 或 `project_source.root_path` 时，启用 Deep Agents 官方虚拟文件系统；只暴露 `read_file/ls/glob/grep` |
+| 依据 | 官方 Deep Agents Overview/Customization：`FilesystemBackend(root_dir=..., virtual_mode=True)`、自定义 `FilesystemMiddleware(tools=[...])`；现有 `project_source.py` 的本地 root 解析和路径约束 |
+| 实际修改文件 | `Agent_Server/src/application/deep_agents/runtime_adapter.py`、`Agent_Server/src/application/runtime/runtime_service.py`、`Agent_Server/src/core/config.py`、`Agent_Server/src/main.py`、`Agent_Server/.env.example`、`Agent_Server/tests/test_deep_agent_runtime_adapter.py` |
+| 配置 | `DEEP_AGENTS__READ_ONLY_FILESYSTEM_ENABLED=false` 默认关闭；SSH source 不允许进入本地 FilesystemBackend；没有显式 root 时拒绝 DA-E2，而不是退回当前工作目录 |
+| 主环境验证 | 定向测试：`3 passed`；`compileall -q src`：通过；后端全量：`783 passed, 10 skipped, 1 warning in 28.96s` |
+| C4 验证 | C4 `deepagents==0.7.13` 实际调用适配器返回 `DA_E2_PROFILE_OK`，模型 `bound_tools=[['ls', 'read_file', 'glob', 'grep']]`；未绑定写入、删除、命令执行或 `task` |
+| 未完成 | 尚未把全部 `src/SKILLS` 直接暴露给 Deep Agents；需先将 `SkillRegistry` 的启用版本、模式和工具白名单映射到官方 SkillsMiddleware，避免同名覆盖和未授权技能加载；尚未完成新旧文件读取结果对账及敏感文件/符号链接测试 |
+| 长任务边界 | 本批不增加 Checkpointer、租约、Worker 或后台任务能力；DA-E2 仍只能用于短的 code_review 认知步骤，不能用于数小时 TestRun |
+| 下一步 | 先实现 SkillRegistry → 官方 skills source 的受控映射，再补齐路径安全和结果对账测试；所有门槛通过后才将 DA-E2 标为已完成 |
 
 ## 15. 每次实施后的记录模板
 

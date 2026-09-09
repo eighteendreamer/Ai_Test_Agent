@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 
@@ -17,6 +18,7 @@ class DeepAgentRuntimeRequest:
     system_prompt: str
     messages: list[dict[str, Any]]
     context: dict[str, Any] = field(default_factory=dict)
+    read_only_filesystem_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,11 +59,22 @@ class DeepAgentRuntimeAdapter:
         try:
             model = await self._model_resolver(request.model_key)
             if self._agent_factory is None:
-                self._configure_da_e1_harness(model)
+                harness_kwargs = self._configure_harness(
+                    model,
+                    read_only_filesystem_enabled=request.read_only_filesystem_enabled,
+                    context=request.context,
+                )
+            else:
+                harness_kwargs = {}
             factory = self._resolve_factory()
             # ``tools=[]`` is intentional for DA-E1.  Business tools must not
             # bypass ToolRuntimeService before the DA-E4 governance adapter.
-            agent = factory(model=model, tools=[], system_prompt=request.system_prompt)
+            agent = factory(
+                model=model,
+                tools=[],
+                system_prompt=request.system_prompt,
+                **harness_kwargs,
+            )
             result = await agent.ainvoke(
                 {"messages": list(request.messages)},
                 config={"configurable": {"thread_id": request.turn_id}},
@@ -103,8 +116,13 @@ class DeepAgentRuntimeAdapter:
         return create_deep_agent
 
     @staticmethod
-    def _configure_da_e1_harness(model: Any) -> None:
-        """Hide Deep Agents' default tools for the isolated DA-E1 pilot.
+    def _configure_harness(
+        model: Any,
+        *,
+        read_only_filesystem_enabled: bool,
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Configure the official harness without bypassing project governance.
 
         ``create_deep_agent(..., tools=[])`` is additive.  Without an explicit
         HarnessProfile it still exposes filesystem and ``task`` tools, which
@@ -122,21 +140,17 @@ class DeepAgentRuntimeAdapter:
                 "its built-in filesystem and subagent tools."
             ) from exc
 
-        excluded_tools = frozenset(
-            {
-                "ls",
-                "read_file",
-                "write_file",
-                "edit_file",
-                "delete",
-                "glob",
-                "grep",
-                "execute",
-                "task",
-            }
-        )
+        excluded_tools = {
+            "write_file",
+            "edit_file",
+            "delete",
+            "execute",
+            "task",
+        }
+        if not read_only_filesystem_enabled:
+            excluded_tools.update({"ls", "read_file", "glob", "grep"})
         profile = HarnessProfile(
-            excluded_tools=excluded_tools,
+            excluded_tools=frozenset(excluded_tools),
             general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
         )
         providers = {"openai"}
@@ -150,6 +164,56 @@ class DeepAgentRuntimeAdapter:
                 providers.add(str(provider))
         for provider in providers:
             register_harness_profile(provider, profile)
+
+        if not read_only_filesystem_enabled:
+            return {}
+
+        project_root = _project_root_from_context(context)
+        if project_root is None:
+            raise DeepAgentRuntimeError(
+                "DA-E2 read-only filesystem requires an explicit local project_root."
+            )
+        try:
+            root = Path(project_root).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise DeepAgentRuntimeError(
+                f"DA-E2 project_root is not a readable local directory: {project_root}"
+            ) from exc
+        if not root.is_dir():
+            raise DeepAgentRuntimeError(
+                f"DA-E2 project_root is not a directory: {root}"
+            )
+
+        try:
+            from deepagents.backends import FilesystemBackend
+            from deepagents.middleware import FilesystemMiddleware
+        except ImportError as exc:
+            raise DeepAgentRuntimeError(
+                "DA-E2 read-only filesystem requires Deep Agents filesystem APIs."
+            ) from exc
+
+        backend = FilesystemBackend(root_dir=root, virtual_mode=True)
+        return {
+            "backend": backend,
+            "middleware": [
+                FilesystemMiddleware(
+                    backend=backend,
+                    tools=["read_file", "ls", "glob", "grep"],
+                )
+            ],
+        }
+
+
+def _project_root_from_context(context: dict[str, Any]) -> str:
+    direct = str(context.get("project_root") or context.get("root_path") or "").strip()
+    if direct:
+        return direct
+    source = context.get("project_source")
+    if isinstance(source, dict):
+        source_type = str(source.get("source_type") or "local").strip().lower()
+        if source_type == "local":
+            return str(source.get("root_path") or "").strip()
+    return ""
 
 
 def _normalize_messages(value: Any) -> list[dict[str, Any]]:

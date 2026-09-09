@@ -306,6 +306,7 @@ class DeepAgentsConfig(BaseModel):
 
     enabled: bool = False
     pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
+    read_only_filesystem_enabled: bool = False
 
     @field_validator("pilot_mode_keys", mode="before")
     @classmethod

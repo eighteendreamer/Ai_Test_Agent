@@ -6,6 +6,7 @@ from src.application.deep_agents import (
     DeepAgentRuntimeAdapter,
     DeepAgentRuntimeRequest,
 )
+from src.application.deep_agents.runtime_adapter import _project_root_from_context
 
 
 class _FakeAgent:
@@ -75,6 +76,16 @@ async def test_da_e1_rejects_missing_assistant_output():
                 messages=[],
             )
         )
+
+
+def test_da_e2_resolves_only_explicit_local_project_root():
+    assert _project_root_from_context({"project_root": "C:/workspace"}) == "C:/workspace"
+    assert _project_root_from_context(
+        {"project_source": {"source_type": "local", "root_path": "C:/repo"}}
+    ) == "C:/repo"
+    assert _project_root_from_context(
+        {"project_source": {"source_type": "ssh", "root_path": "/srv/repo"}}
+    ) == ""
 
 
 async def _resolved_model():

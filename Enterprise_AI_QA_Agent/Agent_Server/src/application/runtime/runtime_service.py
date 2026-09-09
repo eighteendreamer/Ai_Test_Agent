@@ -64,6 +64,7 @@ class RuntimeService:
         deep_agent_runtime_adapter: DeepAgentRuntimeAdapter | None = None,
         deep_agent_enabled: bool = False,
         deep_agent_pilot_mode_keys: list[str] | None = None,
+        deep_agent_read_only_filesystem_enabled: bool = False,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -79,6 +80,7 @@ class RuntimeService:
         self._deep_agent_runtime_adapter = deep_agent_runtime_adapter
         self._deep_agent_enabled = bool(deep_agent_enabled)
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
+        self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -199,6 +201,7 @@ class RuntimeService:
                 ),
                 messages=list(state["runtime_messages"]),
                 context=dict(request.context),
+                read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
             )
         )
         state["model_response_text"] = result.output_text
