@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,6 +30,8 @@ class ApiTaskExecutor:
 
     async def execute(self, task: ApiTestTask) -> ApiTestTask:
         """Execute the task and populate result fields in-place."""
+        if self._restore_completed_request(task):
+            return task
         task.started_at = datetime.now(timezone.utc).isoformat()
         task.attempts += 1
 
@@ -95,6 +98,30 @@ class ApiTaskExecutor:
 
         task.completed_at = datetime.now(timezone.utc).isoformat()
         return task
+
+    def _restore_completed_request(self, task: ApiTestTask) -> bool:
+        """Reuse only a checkpoint with complete, matching request evidence."""
+        checkpoint = task.execution_checkpoint
+        completed = checkpoint.get("completed_request") if isinstance(checkpoint, dict) else None
+        if not isinstance(completed, dict):
+            return False
+        if completed.get("idempotency_key") != task.idempotency_key:
+            return False
+        if completed.get("status") != "completed":
+            return False
+        if not isinstance(completed.get("response_status"), int):
+            return False
+        if "response_body" not in completed or not isinstance(completed.get("check_results"), list):
+            return False
+        task.status = TASK_COMPLETED
+        task.response_status = completed["response_status"]
+        task.response_headers = dict(completed.get("response_headers") or {})
+        task.response_body = deepcopy(completed["response_body"])
+        task.check_results = deepcopy(completed["check_results"])
+        task.duration_ms = float(completed.get("duration_ms") or 0)
+        task.last_error = ""
+        task.completed_at = str(completed.get("completed_at") or datetime.now(timezone.utc).isoformat())
+        return True
 
     # ------------------------------------------------------------------
     # Dynamic login

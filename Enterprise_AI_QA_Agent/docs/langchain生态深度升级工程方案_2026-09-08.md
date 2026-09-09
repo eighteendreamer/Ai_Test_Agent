@@ -972,6 +972,22 @@ pip check 已知冲突：
 - 回滚验证：不提供 checkpoint 时行为与原路径一致；幂等键是附加输出字段，不改变现有状态判定。
 - 下一步：将 API 响应、断言和 Artifact 摘要写入版本化 checkpoint payload，并在只读/幂等请求上增加“证据完整才可跳过”的判定；随后执行 Worker 强杀恢复实测。
 
+#### 长任务 L2：API 请求证据完整性恢复判定（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：在 API 测试任务恢复时，仅当检查点具备完整且匹配的请求证据才复用结果；缺少证据时继续真实请求，避免把状态字段误当成已完成。
+- 实际修改文件：`Agent_Server/src/modes/api_testing_mode/executor.py`、`Agent_Server/src/modes/api_testing_mode/runtime.py`、`Agent_Server/src/modes/api_testing_mode/campaign_state.py`、`Agent_Server/tests/test_api_task_executor_recovery.py`。
+- 复用条件：`completed_request.idempotency_key` 必须匹配当前任务；状态必须为 `completed`；必须存在整数 HTTP 状态、响应体和断言列表；复用时恢复响应头、响应体、断言结果、耗时和完成时间。
+- 检查点增强：API 模式的 campaign checkpoint 增加 `completed_task_ids`、当前任务幂等键，以及任务完成时的完整 `completed_request` 证据。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_api_task_executor_recovery.py tests/test_api_mode_skills.py tests/test_case_execution_adapter.py -q`；`python -m pytest -q`。
+- 通过：定向测试 33 passed；后端全量 754 passed、8 skipped、1 warning；编译通过。
+- 失败：首次专项测试发现恢复分支缺少 `deepcopy` 导入，根因是新分支使用了深复制但未同步 import；已修复并重新通过。
+- 跳过：尚未把所有 API 请求结果写入独立 Attempt checkpoint 表；当前通过现有 checkpoint payload 传递，且只在证据完整时复用。
+- 已知限制：当前请求幂等键不包含请求体摘要；若未来同一 task_id 允许动态请求体变化，必须扩展输入摘要后才能继续复用。
+- 回滚验证：缺少 `completed_request` 或证据不完整时自动回到原始 HTTP 执行路径；不改变现有失败和断言判定。
+- 下一步：执行真实 Worker 强杀/进程重启恢复测试，确认新 Attempt 能携带完整 API 证据并避免重复请求；完成后再设计 LangSmith 长任务分段 Trace。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行

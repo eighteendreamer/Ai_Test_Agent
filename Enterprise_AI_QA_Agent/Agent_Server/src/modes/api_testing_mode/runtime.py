@@ -822,6 +822,17 @@ class ApiTestingModeRuntime:
             ],
             "active_task_idempotency_key": task.idempotency_key if task is not None else "",
         }
+        if task is not None and task.status == TASK_COMPLETED:
+            state.execution_checkpoint["completed_request"] = {
+                "idempotency_key": task.idempotency_key,
+                "status": task.status,
+                "response_status": task.response_status,
+                "response_headers": dict(task.response_headers),
+                "response_body": task.response_body,
+                "check_results": list(task.check_results),
+                "duration_ms": task.duration_ms,
+                "completed_at": task.completed_at,
+            }
         self._persist_state(state, context)
 
     def _task_status_summary(self, tasks: list[ApiTestTask]) -> dict[str, int]:
