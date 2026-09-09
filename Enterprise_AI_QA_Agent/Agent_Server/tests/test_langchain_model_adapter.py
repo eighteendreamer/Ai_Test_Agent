@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from pydantic import BaseModel
 
 from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
+from src.application.model_adapters.legacy_model_adapter import LegacyProviderAdapter
 from src.application.model_clients.base import ProviderClientError
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
@@ -80,10 +81,25 @@ class _FailingRunnable(_FakeRunnable):
         raise RuntimeError("provider failure")
 
 
+class _RateLimitedError(Exception):
+    status_code = 429
+
+
+class _RateLimitedRunnable(_FakeRunnable):
+    async def ainvoke(self, messages):
+        raise _RateLimitedError("rate limited")
+
+
 class _FailingFactory(_FakeFactory):
     def __init__(self):
         super().__init__()
         self.model = _FailingRunnable()
+
+
+class _RateLimitedFactory(_FakeFactory):
+    def __init__(self):
+        super().__init__()
+        self.model = _RateLimitedRunnable()
 
 
 class _CancelledRunnable(_FakeRunnable):
@@ -214,6 +230,43 @@ async def test_adapter_maps_unexpected_provider_failure_to_uniform_error():
 
     with pytest.raises(ProviderClientError, match="LangChain model invocation failed"):
         await adapter.invoke(_config(), "secret-not-logged", _request())
+
+
+@pytest.mark.asyncio
+async def test_adapter_preserves_direct_rate_limit_status_code():
+    adapter = LangChainModelAdapter(model_factory=_RateLimitedFactory())
+
+    with pytest.raises(ProviderClientError) as exc_info:
+        await adapter.invoke(_config(), "secret-not-logged", _request())
+
+    assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_legacy_and_langchain_adapters_share_structured_contract():
+    class _LegacyClient:
+        async def invoke(self, config, api_key, request):
+            return {
+                "text": "same semantic result",
+                "tool_calls": [],
+                "response_id": "legacy",
+                "finish_reason": "stop",
+                "stop_reason": None,
+                "usage": {"total_tokens": 5},
+                "raw_response": {},
+            }
+
+    modern_factory = _FakeFactory()
+    legacy = await LegacyProviderAdapter(_LegacyClient()).invoke(
+        _config(), "secret-not-logged", _request()
+    )
+    modern = await LangChainModelAdapter(model_factory=modern_factory).invoke(
+        _config(), "secret-not-logged", _request()
+    )
+
+    assert (legacy.response_summary["mode"], modern.response_summary["mode"]) == ("ok", "ok")
+    assert len(legacy.tool_calls) == len(modern.tool_calls) == 0
+    assert bool(legacy.response_summary["usage"]) == bool(modern.response_summary["usage"])
 
 
 @pytest.mark.asyncio

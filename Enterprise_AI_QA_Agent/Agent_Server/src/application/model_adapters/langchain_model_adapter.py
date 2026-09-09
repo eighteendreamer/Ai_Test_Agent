@@ -68,7 +68,7 @@ class LangChainModelAdapter(ModelPort):
             raise ProviderClientError(
                 f"LangChain model invocation failed for provider={config.provider!r}: "
                 f"{truncate_text(str(exc), 240)}",
-                status_code=getattr(getattr(exc, "response", None), "status_code", None),
+                status_code=_exception_status_code(exc),
             ) from exc
 
         return ModelInvocationResult(
@@ -129,7 +129,7 @@ class LangChainModelAdapter(ModelPort):
             raise ProviderClientError(
                 f"LangChain structured-output invocation failed for provider={config.provider!r}: "
                 f"{truncate_text(str(exc), 240)}",
-                status_code=getattr(getattr(exc, "response", None), "status_code", None),
+                status_code=_exception_status_code(exc),
             ) from exc
 
         if not isinstance(payload, dict):
@@ -186,3 +186,12 @@ def _text_from_content(content: Any) -> str:
             if isinstance(item, dict) and item.get("type") in {"text", "output_text"}
         )
     return ""
+
+
+def _exception_status_code(exc: BaseException) -> int | None:
+    direct = getattr(exc, "status_code", None)
+    if isinstance(direct, int):
+        return direct
+    response = getattr(exc, "response", None)
+    nested = getattr(response, "status_code", None)
+    return nested if isinstance(nested, int) else None
