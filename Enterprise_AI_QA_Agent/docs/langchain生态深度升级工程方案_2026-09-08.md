@@ -1457,6 +1457,78 @@ LangChain 官方模型文档明确将 `invoke`、`stream`、`bind_tools` 和 `wi
 
 结论：阶段 2 继续保持“未进行”，但其实现切入点和兼容验证清单已冻结；在阶段 1 云端验证完成前，不安装新的 LangChain Provider 包、不升级主服务生态版本、不修改现有模型执行路径。
 
+## 14.12 Deep Agents 能力接管考核（2026-09-09）
+
+### 结论
+
+采用“Deep Agents 接管认知型 Harness，系统保留业务控制平面”的目标架构，不采用“把现有规划、文件、子代理、记忆、持久化全部删除后直接交给 Deep Agents”的整体替换方案。
+
+原因不是保守，而是两类能力语义不同：Deep Agents 官方定位是建立在 LangChain/LangGraph 上的 Agent Harness，提供模型工具循环、虚拟文件系统、上下文卸载、可选任务规划、Skills、临时子代理和 HITL；本系统还承担 TestRun/Item/Attempt/Stage 原子领取、租约、正式项目绑定、权限授权、审批范围、防越权、审计、Artifact、终态不可重领和失败样本回流。这些是自动化测试平台的业务事实与控制平面，不能由模型可变状态或通用 Harness 取代。
+
+官方依据：
+
+- Deep Agents Overview：<https://docs.langchain.com/oss/python/deepagents/overview>
+- Deep Agents Customization：<https://docs.langchain.com/oss/python/deepagents/customization>
+- Deep Agents Subagents：<https://docs.langchain.com/oss/python/deepagents/subagents>
+- Deep Agents Human-in-the-loop：<https://docs.langchain.com/oss/python/deepagents/human-in-the-loop>
+- Deep Agents Skills：<https://docs.langchain.com/oss/python/deepagents/skills>
+
+项目事实依据：`graph/builder.py` 当前维护外层 LangGraph；`RuntimeService`/`AgentLoop` 维护中断、恢复、Snapshot 和循环；`CoordinatorRuntimeService` 创建可追踪的子 Session 并维护并发、深度、取消与失败传播；`PermissionService`、`SafetyGate`、`ExecutionSafetyPolicy`、`ApprovalScopeService` 和 `ToolRuntimeService` 组成业务安全链；PostgreSQL Store、TestRun Store 和 Artifact Store 是业务事实源。
+
+### 逐项考核
+
+| 能力 | Deep Agents 官方能力 | 当前系统能力 | 决策 | 迁移目标 |
+|---|---|---|---|---|
+| Agent 工具循环 | LangChain Agent Factory + LangGraph runtime | `AgentLoop` 外包围当前自建 Graph，多轮重复调用 | 条件接管 | 在试点模式中让 Deep Agents 成为唯一内层模型/工具循环，删除该模式的重复 loop；平台只负责启动、暂停、恢复和落库 |
+| 任务规划 | v0.7 起 `write_todos` 为可选能力，状态仅有 pending/in_progress/completed | 当前 `planner.py` 生成固定五步说明，不是真实动态计划；正式测试计划另有版本和审批 | 接管非正式认知计划 | 删除试点模式固定 `planner` 展示，使用 Deep Agents todo 作为可视化认知计划；正式 TestCase/TestSuite/TestRun 计划继续由业务服务管理 |
+| 只读文件探索 | `ls/read_file/glob/grep`，可配置 backend 和 permissions | `project-tree-scanner`、`project-file-reader`、`project-diff-reader` 等存在明显重叠 | 优先接管 | code_review 试点使用受限虚拟 `FilesystemBackend` 或自定义 backend；验证等价后下线重复的只读扫描实现 |
+| 文件写入/删除 | `write_file/edit_file/delete`；默认权限无匹配时允许；sandbox 权限语义不同 | 项目路径治理、Artifact、资源范围、审批和审计已有独立策略 | 不直接接管 | 初期隐藏写/删/execute；后续只能通过项目适配的自定义 backend 或治理工具进入现有权限、审批、Artifact 和审计链 |
+| 子代理认知委派 | 默认 `task` 工具创建临时、隔离上下文的子代理；官方说明为 stateless messaging | `CoordinatorRuntimeService` 创建持久 Child Session，支持并发、深度、取消、通知、失败保护和父子 Trace | 分层接管 | Deep Agents 接管单次推理内的临时认知分解；跨小时、需要独立状态/重试/产物的 Worker 仍走现有 Coordinator。不得同时对同一任务双重派发 |
+| 长时后台任务 | 可配 async subagents/checkpointer，但通用 agent state 不等于测试运行租约 | TestRun/Item/Attempt/Stage、WorkerPool、租约、心跳、终态和接管 | 禁止替代 | Deep Agents 只能作为某个受租约保护 Stage 的执行器；平台 Store 仍是任务事实源和调度所有者 |
+| 对话压缩/大结果卸载 | 内置 summarization、context offloading、虚拟文件系统 | `ContextCompactionService` 有 `covers_until_index`，原消息留存，结果/Artifact 有业务存储 | 条件接管 | 试点模式只保留一个摘要所有者；先建立摘要索引、恢复、成本、原文可追溯对账，再替换现有压缩服务，禁止双重摘要 |
+| 长期记忆 | 以 backend 中 AGENTS.md/文件保存长期规则和偏好 | PostgreSQL/pgvector 提供作用域、标签、向量检索、测试 observation、跨会话隔离 | 适配复用，不替代 | 实现 Deep Agents Store/Backend 到现有 MemoryStore 的适配；AGENTS.md/Skills 用于规则，pgvector 用于语义事实，避免两份可写真相 |
+| Skills | 官方按元数据→SKILL.md→资源渐进披露 | 项目已有 SkillRegistry/SkillRuntimeService 与大量 SKILL.md | 接管加载机制，保留治理 | 用官方 SkillsMiddleware 做渐进加载；Registry 继续负责启用、版本、模式和工具白名单；必须防止同名覆盖绕过治理 |
+| MCP | 可把 MCP 工具传给 Agent | 项目已有连接管理、namespace、健康检查、资源和权限 | 适配复用，不重建 | MCPRegistry/ConnectionManager 仍负责连接；只把当前允许的 MCP tools 暴露给 Deep Agents |
+| HITL | `interrupt_on` + LangGraph checkpointer + 同一 thread_id 恢复 | 审批记录持久化、scope hash、状态校验、API/UI、审计事件 | 接管暂停机制，保留裁决 | Deep Agents interrupt 映射到现有 Approval DTO/Store；批准恢复前仍执行 scope、授权和 ExecutionSafetyPolicy 二次校验 |
+| Checkpoint | 支持 checkpointer/store；HITL 必须使用 checkpointer | Session/Snapshot/Event/TestRun 数据模型已上线 | 适配复用，不建第二事实源 | 建立 PostgreSQL checkpointer 映射和 thread_id/session_id 规则；Deep Agents checkpoint 是执行态，本地业务表是事实态，两者用 trace/run/stage ID 对账 |
+| Observability | 原生 LangSmith Trace 和 typed event stream | 本地 Event/SSE/Snapshot/Flow 已冻结，LangSmith 为旁路 | 接管 Agent 细粒度 Trace | LangSmith 展示模型、工具、subagent 和 middleware；本地事件保留用户可见业务里程碑。不得把 LangSmith 当业务数据库 |
+| 权限、安全、Artifact | 提供路径权限和 tool interrupts | 项目有模式隔离、授权证明、输入安全、工具安全、审批范围、凭据脱敏、对象存储 | 禁止替代 | Deep Agents 权限仅作为前置缩小工具面；所有副作用最终必须经过现有控制平面 |
+
+### 目标架构
+
+```text
+API / Session / TestRun 控制平面（系统保留）
+  -> 模式路由、正式计划、租约、取消、恢复、审批、业务事件
+  -> DeepAgentRuntimeAdapter（新增边界，默认关闭）
+       -> Deep Agents：模型循环、todo、Skills、只读文件、认知子代理、上下文管理
+       -> GovernedToolAdapter：所有业务工具回到 ToolRuntimeService
+       -> CheckpointAdapter：执行态映射到 PostgreSQL
+       -> EventAdapter：typed events -> 本地业务事件 + LangSmith Trace
+  -> TestRun/Session/Event/Artifact/Memory（系统事实源）
+```
+
+硬约束：同一模式只能有一个模型工具循环、一个上下文摘要所有者、一个子任务派发所有者、一个审批裁决源和一个任务事实源。只要出现双重循环、双重摘要、同一 worker 双重派发或批准后不复核，试点立即回滚。
+
+### 分阶段迁移建议
+
+| 批次 | 状态 | 工作 | 目标与验收 |
+|---|---|---|---|
+| DA-E1 边界适配 | 未进行 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop` |
+| DA-E2 只读文件与 Skills | 未进行 | 使用限制在正式 `project_id` 根目录的 backend；接入官方 SkillsMiddleware；隐藏 write/edit/delete/execute | 路径穿越、`.env`/凭据、符号链接、超大文件、二进制、并发读取测试通过；只读结果与旧实现对账 |
+| DA-E3 认知计划与同步子代理 | 未进行 | 启用 `write_todos` 和受控 subagents；映射 plan/subagent typed events | todo 状态可视化；父子 Trace 完整；并发/深度受限；同一任务不进入 Coordinator 双跑 |
+| DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
+| DA-E5 Checkpoint 与长任务 | 未进行 | PostgreSQL checkpointer/store；映射 session/turn/test_run/item/attempt/stage | 进程重启、跨进程接管、数小时任务、重复投递、取消、超时、终态不可重领全部通过 |
+| DA-E6 上下文与记忆 | 未进行 | 对账内置 summarization/offloading 与现有 Compaction/Memory；选定唯一所有者 | 不双重摘要；原始证据可追溯；token/延迟/质量不低于基线；敏感数据不进入虚拟文件或 Trace |
+| DA-E7 灰度替换 | 未进行 | code_review 5%→25%→50%→100%，稳定后再评估其他模式 | 成功率、P95、token、工具错误、恢复成功率、人工介入率满足门槛；一键回旧 Harness |
+
+### 考核结论和建议
+
+总体建议：**批准“分层接管”，否决“一次性全量替换”。** 最值得优先删除的重复代码是固定 `planner.py`、code_review 的只读文件扫描编排，以及试点模式中的自建模型工具循环。最不应移交的是正式测试运行状态机、Coordinator 长任务 Worker、权限/安全/审批裁决、Artifact、数据库事实源和恢复租约。
+
+预期收益是减少 Agent Harness 重复实现，同时利用 Deep Agents 的规划、上下文卸载、Skills、临时子代理和 LangSmith 原生 Trace；代价是需要一层明确的 Runtime/Tool/Checkpoint/Event Adapter。该适配层不是额外业务框架，而是防止 Deep Agents 的通用状态与本项目业务事实混在一起的必要边界。
+
+当前状态：考核已完成，实施未开始。C4 只证明真实模型可运行 Deep Agents，不证明上述治理、长任务和替换门槛已通过。
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：
