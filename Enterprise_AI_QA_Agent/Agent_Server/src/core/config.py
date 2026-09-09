@@ -155,6 +155,7 @@ class ModelConfig(BaseModel):
 
 
 class OrchestrConfig(BaseModel):
+    langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False
     intent_semantic_classifier_enabled: bool = True
     intent_deterministic_confidence_threshold: float = 0.82

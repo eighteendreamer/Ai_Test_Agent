@@ -8,6 +8,7 @@ default until the adapter contract is wired behind its feature flag.
 from src.application.model_adapters.base import ModelPort
 from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.model_adapters.legacy_model_adapter import LegacyProviderAdapter
+from src.application.model_adapters.middleware_registry import LangChainMiddlewareRegistry
 from src.application.model_adapters.tool_adapter import LangChainToolAdapter
 from src.application.model_adapters.message_adapter import (
     from_langchain_message,
@@ -17,6 +18,7 @@ from src.application.model_adapters.message_adapter import (
 
 __all__ = [
     "LangChainModelAdapter",
+    "LangChainMiddlewareRegistry",
     "LangChainToolAdapter",
     "LegacyProviderAdapter",
     "ModelPort",
