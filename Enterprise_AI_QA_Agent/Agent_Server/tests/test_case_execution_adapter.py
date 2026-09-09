@@ -518,6 +518,29 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
                 artifacts=[SimpleNamespace(id="artifact-1", label="响应证据", path="rustfs://bucket/a")],
             )
 
+    class RecordingTrace:
+        def __init__(self, events, name):
+            self.events = events
+            self.name = name
+
+        def __enter__(self):
+            self.events.append(("enter", self.name))
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            self.events.append(("exit", self.name, exc_type))
+            return False
+
+    trace_events = []
+
+    class FakeObservability:
+        def context_from_mapping(self, mapping):
+            return mapping
+
+        def trace_node(self, context, *, node_name, inputs):
+            trace_events.append(("context", context, inputs))
+            return RecordingTrace(trace_events, node_name)
+
     adapter = CaseExecutionAdapter(
         tool_resolver=lambda mode_key: ToolDescriptor(
             key="api-test-runner",
@@ -528,9 +551,16 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
         ),
         runtime_service=FakeRuntime(),
         tool_job_service=FakeJobs(),
+        observability_service=FakeObservability(),
     )
 
-    outcome = await adapter.execute(case=case, version=version, run=run, item=item)
+    outcome = await adapter.execute(
+        case=case,
+        version=version,
+        run=run,
+        item=item,
+        attempt_id="attempt-1",
+    )
 
     assert outcome.completion.status == "passed"
     assert outcome.completion.tool_job_id == "job-1"
@@ -538,6 +568,12 @@ async def test_adapter_projects_real_tool_job_and_verification_output():
     assert len(outcome.verification_results) == 1
     assert outcome.completion.verification_ids == [outcome.verification_results[0].id]
     assert outcome.completion.actual["verification_results"][0]["passed_count"] == 1
+    assert [item[1] for item in trace_events if item[0] == "enter"] == [
+        "test_run_item.stage.tool.api-test-runner",
+        "test_run_item.assertion.evaluate",
+    ]
+    assert trace_events[0][1]["run_item_id"] == item.id
+    assert trace_events[0][1]["attempt_id"] == "attempt-1"
 
 
 @pytest.mark.asyncio

@@ -271,14 +271,15 @@ async def lifespan(app: FastAPI):
         """从模式清单解析专业执行入口，避免在运行服务中复制模式映射。"""
         return resolve_case_execution_entry(mode_registry, tool_registry, mode_key)
 
+    observability_service = LangSmithObservabilityAdapter(
+        settings.langsmith,
+        environment=settings.app_env,
+    )
     case_execution_adapter = CaseExecutionAdapter(
         tool_resolver=resolve_case_execution_tool,
         runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
-    )
-    observability_service = LangSmithObservabilityAdapter(
-        settings.langsmith,
-        environment=settings.app_env,
+        observability_service=observability_service,
     )
     test_run_execution_service = TestRunExecutionService(
         run_service=test_run_service,

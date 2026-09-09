@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -8,6 +9,7 @@ from src.application.runtime.tool_runtime_service import (
     ToolExecutionContext,
     ToolRuntimeService,
 )
+from src.application.observability import LangSmithObservabilityAdapter
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.security.command_profiles import get_profile_registry
 from src.application.testing.verification_service import VerificationService
@@ -74,11 +76,13 @@ class CaseExecutionAdapter:
         runtime_service: ToolRuntimeService | None = None,
         tool_job_service: ToolJobService | None = None,
         verification_service: VerificationService | None = None,
+        observability_service: LangSmithObservabilityAdapter | None = None,
     ) -> None:
         self._tool_resolver = tool_resolver
         self._runtime = runtime_service
         self._jobs = tool_job_service
         self._verification = verification_service or VerificationService()
+        self._observability = observability_service
 
     def build_invocation(
         self,
@@ -515,11 +519,36 @@ class CaseExecutionAdapter:
             tool_job_id=tool_job_id,
             server_approval_granted=server_approval_granted,
         )
-        tool_record = await self._runtime.execute(
-            invocation.tool,
-            invocation.call,
-            invocation.context,
+        trace_context = (
+            self._observability.context_from_mapping(
+                {
+                    "session_id": invocation.context.session_id,
+                    "turn_id": invocation.context.turn_id,
+                    "trace_id": invocation.context.trace_id,
+                    **invocation.context.context_bundle,
+                }
+            )
+            if self._observability is not None
+            else None
         )
+        tool_trace = (
+            self._observability.trace_node(
+                trace_context,
+                node_name=f"test_run_item.stage.tool.{invocation.tool.key}",
+                inputs={
+                    "tool_key": invocation.tool.key,
+                    "run_item_id": invocation.context.context_bundle.get("run_item_id", ""),
+                },
+            )
+            if self._observability is not None and trace_context is not None
+            else nullcontext()
+        )
+        with tool_trace:
+            tool_record = await self._runtime.execute(
+                invocation.tool,
+                invocation.call,
+                invocation.context,
+            )
         job_detail = (
             await self._jobs.get_job_detail(tool_record.job_id)
             if tool_record.job_id
@@ -541,13 +570,26 @@ class CaseExecutionAdapter:
             ),
             "output": full_output,
         }
-        verification_results = self._verification.build_results(
-            session_id=invocation.context.session_id,
-            turn_id=invocation.context.turn_id,
-            trace_id=invocation.context.trace_id,
-            tool_results=[tool_result],
-            context_bundle=invocation.context.context_bundle,
+        assertion_trace = (
+            self._observability.trace_node(
+                trace_context,
+                node_name="test_run_item.assertion.evaluate",
+                inputs={
+                    "tool_key": tool_record.tool_key,
+                    "run_item_id": invocation.context.context_bundle.get("run_item_id", ""),
+                },
+            )
+            if self._observability is not None and trace_context is not None
+            else nullcontext()
         )
+        with assertion_trace:
+            verification_results = self._verification.build_results(
+                session_id=invocation.context.session_id,
+                turn_id=invocation.context.turn_id,
+                trace_id=invocation.context.trace_id,
+                tool_results=[tool_result],
+                context_bundle=invocation.context.context_bundle,
+            )
         status = self._result_status(tool_record, verification_results)
         artifact_ids = [str(artifact.id) for artifact in artifacts]
         evidence_refs = [
