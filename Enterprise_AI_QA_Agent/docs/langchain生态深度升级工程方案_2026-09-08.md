@@ -1042,6 +1042,17 @@ pip check 已知冲突：
 - 已知限制：客户端在 Scope 退出时的异常只记录日志，不提供上传重试队列；长任务恢复仍以本地 Attempt/Checkpoint 为准。
 - 下一步：补充可控断网/限流替身与重复提交回归，随后进行 PostgreSQL 多进程接管和长时 soak 验收。
 
+#### 长任务 L3：幂等专项与 PostgreSQL Live 前置检查（2026-09-09）
+
+- 当前状态：幂等代码路径已完成并通过；PostgreSQL 多进程/Live 验收阻塞于测试夹具前置条件，阶段不关闭。
+- 本批目标：确认重复审批回调、重复完成提交不会重复执行；探测真实 PostgreSQL 并发测试是否具备接管验收前置条件。
+- 现有证据：`tests/test_case_execution_service.py -k approval` 通过 3 项；`tests/test_test_run_lifecycle.py -k "idempotent or concurrent_workers"` 通过 3 项。既有断言包括重复批准返回同一 `result_id` 且 Adapter 仅执行一次、重复完成不生成新结果、冲突完成载荷被拒绝。
+- 执行命令：`$env:RUN_LIVE_POSTGRES_TESTS='1'; python -m pytest tests/test_live_postgres_concurrency.py -q`（工作目录 `Agent_Server`）。
+- 失败：2 项 Live PostgreSQL 测试失败，未计入通过。其一为随机 `project_id` 不存在，触发实际数据库外键 `agent_test_runs.project_id -> agent_projects`；其二为 approval 并发测试预期的自定义 approval 表未被当前 SessionStore 完整采用，最终成功 CAS 数为 0 而非 16。
+- 失败根因与解除条件：需先在测试夹具中创建并清理真实 project/suite 父记录，并核对 `PostgresSessionStore` 的表名配置与初始化/查询路径；修复后才能执行多进程 Worker 接管、租约过期恢复和长时 soak。禁止通过关闭外键、改默认表或降低断言绕过。
+- 未完成：真实多进程强杀恢复、4 小时长任务、24 小时低速 soak、LangSmith 断网/限流真实网络验证。
+- 下一步：修复 Live PostgreSQL 测试夹具并单独提交；随后重新执行同进程并发、跨进程接管和恢复对账。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
