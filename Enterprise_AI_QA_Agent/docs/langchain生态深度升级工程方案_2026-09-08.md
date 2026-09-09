@@ -703,7 +703,7 @@ pip check 已知冲突：
 
 ### 14.4 阶段 1：LangSmith 非阻塞观测
 
-状态：进行中
+状态：部分验收通过（核心实现）；正式长稳与真实 LangSmith 云端验收未完成
 目标：为当前运行链建立完整调用树，同时确保 LangSmith 永远不是执行主链硬依赖。
 
 前置条件：
@@ -748,6 +748,7 @@ pip check 已知冲突：
 - 有一键关闭和回滚验证。
 
 本批完成项：P1-01 至 P1-07、P1-10、P1-11；P1-08/P1-09 已完成代码接入和本地 SDK 协议验证，但仍等待真实外部环境验证；补齐 `errors_only` 成功/失败语义并修复根 Trace 未上报问题。
+验收结论（范围限定）：核心实现、非阻塞降级、本地协议、真实服务主链、持久化恢复、短档性能和资源采集已验收通过；4 小时 Soak 于 2 小时48分人工中断，未形成正式长稳性能结论；当前不能将阶段 1 的全部退出条件标记为完成，也不启动阶段 2。
 当前测试结果（2026-09-09，`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`）：`compileall` 通过；观测契约专项 19 passed（0.25s）；后端全量 747 passed、8 skipped、1 warning（17.86s）；前端 33 passed；`npm run build` 成功（3154 modules transformed，保留既有主 chunk 约 2.5 MB 警告）；最新真实 FastAPI 启动、健康检查（`postgres_ok=true`）、数据库默认模型会话、事件历史、Snapshot 和 Flow 查询均通过（41 events、1 Snapshot、9 stages），事件中包含 `runtime.turn_completed` 与 `turn.completed`。
 新增锁定版 LangSmith SDK 协议验证（[证据文件](../Agent_Server/docs/python311-langsmith-sdk-protocol-2026-09-09.txt)）：在本地隔离 HTTP 端点收到 `/runs/multipart` 的 root Turn 与 `router` 子 Run 两批请求；子 Run 的 `parent_run_id` 指向 root，`trace_id` 可见，敏感输入、API Key 和密码值未出现。该结果证明当前 SDK 适配顺序和脱敏边界可执行，不等价于 LangSmith 云端可访问性。
 第一次真实验证发现同步 `planner` 节点被错误 `await`，已修复包装器并完成回归；本批进一步发现并修复“未设置 `LANGCHAIN_TRACING_V2` 时 root trace 不会 post、只有子 trace 上报”的适配器根因。LangSmith 真实外部上报未执行（当前配置默认关闭且未提供 LangSmith API Key），因此本批不宣称外部父子树和 URL 可访问性已验证。
