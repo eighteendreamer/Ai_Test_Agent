@@ -582,7 +582,7 @@ Feature Flags：
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | P0-01～P0-06、P0-08～P0-10 已完成；P0-07 因 Deep Agents 与当前主服务生态版本不兼容而阻塞，阶段仍不能关闭 | 现有环境、干净 C1 环境、隔离 C2 候选 Harness、后端/前端契约回归和真实默认模型链路均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
 | 1 | LangSmith 非阻塞观测 | 进行中 | 98% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和短时 soak 已完成；正式业务阈值、直接队列深度和 30 分钟持续窗口仍未确认/完成 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯均通过；短时 soak 9/10 + 重试通过 |
 | 2 | LangChain 模型与消息适配 | 已完成 | 100% | 默认 Qwen Provider 已完成新旧适配器双跑、工具调用、结构化输出、错误/取消传播和限流契约验证 | 后端全量 781 passed，10 skipped，1 warning；compileall 通过；真实默认模型链路通过 |
-| 3 | LangChain 工具适配与 Middleware | 进行中 | 38% | P3-01～P3-03 已完成；P3-04～P3-08 尚未迁移或评估 | 工具/Middleware/模型消息专项 18 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
+| 3 | LangChain 工具适配与 Middleware | 进行中 | 50% | P3-01～P3-03 已完成；P3-04～P3-08 已完成兼容性评估，其中 P3-04～P3-07 暂不迁移，P3-08 保留现有安全强制层 | 工具/Middleware/模型消息专项 18 passed；上下文压缩专项 10 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
 | 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
 | 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
 | 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
@@ -1192,8 +1192,8 @@ pip check 已知冲突：
 | P3-04 | 迁移通用 Retry/Timeout | Middleware | 评估完成，迁移待接入 Agent Runtime | 明确唯一重试所有者和超时边界后再启用 |
 | P3-05 | 迁移 Redaction/Observability | Middleware | 评估完成，迁移待拆分边界 | 不削弱字段白名单、凭据清洗和故障旁路 |
 | P3-06 | 评估 Context Compaction | context service/Middleware | 评估完成，保留现有服务 | 不产生双重摘要且原始消息可恢复 |
-| P3-07 | 评估 Dynamic Prompt/Token Budget | prompting/Middleware | 未进行 | Prompt 结构和预算可追踪 |
-| P3-08 | 保留业务安全强制层 | Permission/Safety/Approval | 未进行 | Middleware 无法绕过 |
+| P3-07 | 评估 Dynamic Prompt/Token Budget | prompting/Middleware | 评估完成，保留现有实现 | Prompt 结构和预算可追踪 |
+| P3-08 | 保留业务安全强制层 | Permission/Safety/Approval | 已完成（评估） | Middleware 无法绕过 |
 
 测试计划：
 
@@ -1216,7 +1216,9 @@ pip check 已知冲突：
 P3-04 兼容性评估（2026-09-09）：当前 Provider SDK（OpenAI-compatible、Anthropic、Embedding）默认使用 `max_retries=2`；LangChain 模型适配器向 `ChatOpenAI` 传递同一配置；API/安全/性能模式还在任务层维护自己的 `max_retries` 和失败重排；运行器对心跳超时、租约失效另有恢复重试。请求超时由 `llm_request_timeout_seconds` 及各工具/Worker 的独立边界控制。直接叠加 `ModelRetryMiddleware` 或 `ToolRetryMiddleware` 会重复发送请求、放大长任务时长并改变既有失败语义，因此本批不接入现有主 Runtime。后续接入闸门为：选定单一重试所有者、将其他层明确设为 0 或仅负责恢复、建立总时长预算和取消传播测试，再通过默认关闭的灰度开关启用。
 P3-05 兼容性评估（2026-09-09）：现有 `OutputSafetyPolicy` 同时承担凭据字段清洗、文本模式脱敏和 Prompt Injection 评估；`LangSmithObservabilityAdapter` 在所有输入、输出、metadata 写入前调用该策略，并保留故障旁路语义。官方 `PIIMiddleware` 主要覆盖 email、credit card、IP、MAC、URL 等 PII 类型，不能替代现有凭据清洗和注入判定；将其直接叠加会造成重复脱敏或改变字段结构。后续只评估把可证明等价的 PII 检测作为独立、默认关闭的 Middleware，并继续由现有策略作为唯一 LangSmith 出口门卫。
 P3-06 兼容性评估（2026-09-09）：现有 `ContextCompactionService` 已按 `context_compaction_watermark` 和 `context_max_tail_messages` 触发，使用业务模型生成带索引的滚动摘要，并将 `context_summary.covers_until_index` 持久化；原始消息继续保存在 Session Store，恢复时不会丢失。官方 `SummarizationMiddleware` 也是模型可见上下文压缩，但若直接叠加会对同一会话产生双重摘要、重复模型调用并破坏索引覆盖语义，因此本阶段保留现有服务，不接入 Middleware。后续若迁移，必须先让 Middleware 成为唯一摘要所有者，并建立摘要幂等、恢复和长任务成本回归。
-当前阻塞：P3-04 尚未满足迁移闸门；P3-05 尚未形成可安全接入的等价实现；P3-06 已评估但尚未迁移。不得在这些边界完成前重复叠加横切逻辑。
+P3-07 兼容性评估（2026-09-09）：现有 `PromptAssemblyService` 已按会话模式、运行时上下文、Agent/Skill 和安全状态生成结构化 System Prompt；`model_context_window`、provider usage、`resolve_tool_message_budget`、`context_budget_ratio` 和 `runtime_max_iterations` 已共同约束上下文与循环预算。官方 `dynamic_prompt` 需要新的 Agent Middleware 运行时，而当前锁定 `langgraph==1.0.10` 低于归档文档要求的 `langgraph>=1.1.5`；直接引入会触发依赖升级和 Prompt 双重组装风险。因此本批保留现有 Prompt/预算链路，待阶段 0 兼容矩阵允许升级后再做单一入口迁移。
+P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、Approval 流程、`ToolRuntimeService` 和执行安全策略仍是业务强制边界；官方 Middleware 只能作为编排层能力，不能替代这些权限、审批、审计和副作用控制。后续任何 Middleware 接入都必须经过现有安全边界，且不能直接暴露 Executor。
+当前阻塞：P3-04 尚未满足迁移闸门；P3-05 尚未形成可安全接入的等价实现；P3-06～P3-08 已完成评估但尚未迁移。不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
 最近提交：本批代码与台账提交后登记。
 
