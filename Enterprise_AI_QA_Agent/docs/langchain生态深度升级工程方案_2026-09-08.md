@@ -1160,6 +1160,7 @@ pip check 已知冲突：
 本批记录（2026-09-09）：新增 `ModelPort`、UnifiedMessage↔LangChain BaseMessage 转换和 OpenAI-compatible `LangChainModelAdapter`；转换不把 LangChain 类型泄漏到业务 DTO，保留 system/user/assistant/tool、tool call id/name/args、图像内容、usage 和响应元数据；应用工具 schema 在 `bind_tools` 前映射为 LangChain 标准参数；新增 opt-in 配置 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`，主链仍保持旧 Provider 路径。
 真实模型验证（2026-09-09）：从数据库读取默认 Qwen 配置，使用 LangChain `ChatOpenAI` 适配器实际调用 OpenAI-compatible endpoint，模型返回 `LANGCHAIN_LIVE_OK`，`mode=ok`、usage 存在、tool_calls=0，退出码0；未输出密钥或 Token。
 当前阻塞：P2-04/P2-07 仍需完成 Legacy 回退、真实工具调用、流式中断/终态、错误分类和双跑对账后，才允许通过 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED` 接入主链；Anthropic/Google 集成包尚未安装，不在本批扩展。
+全量回归（2026-09-09）：`python -m pytest -q` 为 `768 passed, 10 skipped, 1 warning`（27.82s）；工作区无未提交修改。
 回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
 最近提交：无。
 
