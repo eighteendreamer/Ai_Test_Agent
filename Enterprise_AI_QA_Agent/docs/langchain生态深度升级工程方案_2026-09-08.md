@@ -866,6 +866,22 @@ pip check 已知冲突：
 - 回滚验证：本批未修改代码或依赖；将 `.env` 切换到 `LANGSMITH__ENABLED=false`、`LANGSMITH__TRACING_MODE=off` 即可回滚观测旁路。服务收尾时必须确认 `Application shutdown complete`。
 - 下一步：完成服务正常 shutdown 取证；由项目方确认正式并发/资源/持续时间阈值后，决定阶段 1 是否关闭。阶段 2 继续保持“未进行”，不安装 Deep Agents、不升级 LangChain 生态版本。
 
+#### 长任务 L0/L1：统一执行时间模型与现有 TestRun 持久化边界（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：基于现有 `TestRun`、`TestRunItem`、`TestRunAttempt`、租约、心跳、审批等待和恢复机制，增加长任务可审计的活动执行时长、等待时长和墙钟时长；不新建重复任务表，不改变 LangChain/LangGraph/LangSmith 版本和现有执行路径。
+- 实际修改文件：`Agent_Server/src/schemas/run_management.py`、`Agent_Server/src/application/test_runs/timing.py`、`Agent_Server/src/application/test_runs/run_store.py`、`Agent_Server/tests/test_test_run_timing.py`。
+- 依赖或契约变化：Run、Item、Attempt JSONB 记录新增 `active_duration_ms`、`waiting_duration_ms`、`paused_duration_ms`、`wall_clock_duration_ms` 及活动/等待起止字段；旧记录缺失字段时由 Pydantic 默认值兼容读取。LangSmith 暂不改造，后续使用这些本地事实字段对齐阶段 Run 时长。
+- 实现规则：进入 `running` 设置 `active_started_at`；进入 `waiting_approval` 结算活动时长并开始等待计时；审批恢复结算等待时长；完成或阻断时结算未闭合计时并写入墙钟时长；Run 汇总从持久化 Item 聚合活动/等待/墙钟时长。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_test_run_timing.py tests/test_test_run_lifecycle.py tests/test_test_run_postgres_claim.py -q`；`python -m pytest -q`。
+- 通过：定向测试 28 passed；后端全量 749 passed、8 skipped、1 warning；编译通过；`git diff --check` 通过。
+- 失败：无。
+- 跳过：尚未实现暂停/恢复专用状态字段和 4/24 小时真实长任务压测；当前已有审批等待计时先纳入 `waiting_duration_ms`，正式 pause 状态将在任务状态机扩展批次实现。
+- 已知限制：PostgreSQL 运行级刷新为按 Item JSONB 聚合，长任务高频心跳仍会产生写放大；本批未改变事件归档、Artifact 外置和 LangSmith Trace 分段策略。
+- 回滚验证：未修改数据库表结构，只扩展 JSONB 记录和 Schema 默认值；回滚代码即可读取旧记录，旧记录字段缺失自动按 0/None 处理。
+- 下一步：补充长任务专用暂停/恢复语义、阶段 Checkpoint 与 Attempt 恢复测试，再把 `run_id/run_item_id/attempt_id/thread_id` 绑定到分段 LangSmith Trace；阶段 2 继续保持未进行。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行

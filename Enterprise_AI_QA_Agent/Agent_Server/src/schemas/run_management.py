@@ -71,6 +71,10 @@ class TestRunRecord(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     cancel_reason: str | None = None
+    active_duration_ms: int = Field(default=0, ge=0)
+    waiting_duration_ms: int = Field(default=0, ge=0)
+    paused_duration_ms: int = Field(default=0, ge=0)
+    wall_clock_duration_ms: int = Field(default=0, ge=0)
 
 
 class TestRunItemRecord(BaseModel):
@@ -94,6 +98,12 @@ class TestRunItemRecord(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     resource_cleanup_completed_at: datetime | None = None
+    active_started_at: datetime | None = None
+    waiting_started_at: datetime | None = None
+    active_duration_ms: int = Field(default=0, ge=0)
+    waiting_duration_ms: int = Field(default=0, ge=0)
+    paused_duration_ms: int = Field(default=0, ge=0)
+    wall_clock_duration_ms: int = Field(default=0, ge=0)
 
 
 class TestRunAttemptRecord(BaseModel):
@@ -110,6 +120,12 @@ class TestRunAttemptRecord(BaseModel):
     approval_id: str | None = None
     tool_job_id: str | None = None
     completed_at: datetime | None = None
+    active_started_at: datetime | None = None
+    waiting_started_at: datetime | None = None
+    active_duration_ms: int = Field(default=0, ge=0)
+    waiting_duration_ms: int = Field(default=0, ge=0)
+    paused_duration_ms: int = Field(default=0, ge=0)
+    wall_clock_duration_ms: int = Field(default=0, ge=0)
 
 
 class RunEvidenceRef(BaseModel):

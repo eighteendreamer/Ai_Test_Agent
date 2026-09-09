@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from src.core.config import Settings
+from src.application.test_runs.timing import add_active_duration, add_waiting_duration, elapsed_ms
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.run_management import (
     LatestRegressionRecord,
@@ -478,6 +479,7 @@ class InMemoryTestRunStore:
                 update={
                     "status": "running",
                     "started_at": item.started_at or now,
+                    "active_started_at": item.active_started_at or now,
                     "updated_at": now,
                 },
             )
@@ -488,6 +490,7 @@ class InMemoryTestRunStore:
                 update={
                     "status": "running",
                     "started_at": attempt.started_at or now,
+                    "active_started_at": attempt.active_started_at or now,
                     "heartbeat_at": now,
                 },
             )
@@ -543,6 +546,13 @@ class InMemoryTestRunStore:
                     "heartbeat_at": now,
                     "approval_id": approval_id,
                     "tool_job_id": tool_job_id,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=item.active_duration_ms,
+                        active_started_at=item.active_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": now,
                     "updated_at": now,
                 },
             )
@@ -554,6 +564,13 @@ class InMemoryTestRunStore:
                     "heartbeat_at": now,
                     "approval_id": approval_id,
                     "tool_job_id": tool_job_id,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=attempt.active_duration_ms,
+                        active_started_at=attempt.active_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": now,
                 },
             )
             self._refresh_run(item.run_id, now)
@@ -592,13 +609,28 @@ class InMemoryTestRunStore:
                     "status": "claimed",
                     "lease_expires_at": now + timedelta(seconds=lease_seconds),
                     "heartbeat_at": now,
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=item.waiting_duration_ms,
+                        waiting_started_at=item.waiting_started_at,
+                        now=now,
+                    ),
+                    "waiting_started_at": None,
                     "updated_at": now,
                 },
             )
             self._items[item_id] = updated
             self._attempts[attempt.id] = attempt.model_copy(
                 deep=True,
-                update={"status": "claimed", "heartbeat_at": now},
+                update={
+                    "status": "claimed",
+                    "heartbeat_at": now,
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=attempt.waiting_duration_ms,
+                        waiting_started_at=attempt.waiting_started_at,
+                        now=now,
+                    ),
+                    "waiting_started_at": None,
+                },
             )
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
@@ -683,12 +715,41 @@ class InMemoryTestRunStore:
                     "status": "blocked",
                     "result_id": result.id,
                     "completed_at": now,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=item.active_duration_ms,
+                        active_started_at=item.active_started_at,
+                        now=now,
+                    ),
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=item.waiting_duration_ms,
+                        waiting_started_at=item.waiting_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": None,
+                    "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
                     "updated_at": now,
                 },
             )
             self._attempts[attempt.id] = attempt.model_copy(
                 deep=True,
-                update={"status": "blocked", "completed_at": now},
+                update={
+                    "status": "blocked",
+                    "completed_at": now,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=attempt.active_duration_ms,
+                        active_started_at=attempt.active_started_at,
+                        now=now,
+                    ),
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=attempt.waiting_duration_ms,
+                        waiting_started_at=attempt.waiting_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": None,
+                    "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                },
             )
             self._refresh_run(item.run_id, now)
             return result.model_copy(deep=True)
@@ -732,12 +793,41 @@ class InMemoryTestRunStore:
                     "status": completion.status,
                     "result_id": result.id,
                     "completed_at": now,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=item.active_duration_ms,
+                        active_started_at=item.active_started_at,
+                        now=now,
+                    ),
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=item.waiting_duration_ms,
+                        waiting_started_at=item.waiting_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": None,
+                    "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
                     "updated_at": now,
                 },
             )
             self._attempts[attempt.id] = attempt.model_copy(
                 deep=True,
-                update={"status": completion.status, "completed_at": now},
+                update={
+                    "status": completion.status,
+                    "completed_at": now,
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=attempt.active_duration_ms,
+                        active_started_at=attempt.active_started_at,
+                        now=now,
+                    ),
+                    "waiting_duration_ms": add_waiting_duration(
+                        waiting_duration_ms=attempt.waiting_duration_ms,
+                        waiting_started_at=attempt.waiting_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": None,
+                    "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                },
             )
             self._refresh_run(item.run_id, now)
             return result.model_copy(deep=True)
@@ -903,6 +993,8 @@ class InMemoryTestRunStore:
         completed_at = run.completed_at
         if status == "completed" and completed_at is None:
             completed_at = now
+        active_duration_ms = sum(item.active_duration_ms for item in items)
+        waiting_duration_ms = sum(item.waiting_duration_ms for item in items)
         self._runs[run_id] = run.model_copy(
             deep=True,
             update={
@@ -910,6 +1002,9 @@ class InMemoryTestRunStore:
                 "stats": stats,
                 "started_at": started_at,
                 "completed_at": completed_at,
+                "active_duration_ms": active_duration_ms,
+                "waiting_duration_ms": waiting_duration_ms,
+                "wall_clock_duration_ms": elapsed_ms(run.created_at, completed_at or now),
                 "updated_at": now,
             },
         )
@@ -1821,6 +1916,7 @@ class PostgresTestRunStore:
                     update={
                         "status": "running",
                         "started_at": item.started_at or now,
+                        "active_started_at": item.active_started_at or now,
                         "updated_at": now,
                     }
                 )
@@ -1828,6 +1924,7 @@ class PostgresTestRunStore:
                     update={
                         "status": "running",
                         "started_at": attempt.started_at or now,
+                        "active_started_at": attempt.active_started_at or now,
                         "heartbeat_at": now,
                     }
                 )
@@ -1923,11 +2020,40 @@ class PostgresTestRunStore:
                         "status": completion.status,
                         "result_id": result.id,
                         "completed_at": now,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=item.active_duration_ms,
+                            active_started_at=item.active_started_at,
+                            now=now,
+                        ),
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=item.waiting_duration_ms,
+                            waiting_started_at=item.waiting_started_at,
+                            now=now,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": None,
+                        "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
                         "updated_at": now,
                     }
                 )
                 attempt = attempt.model_copy(
-                    update={"status": completion.status, "completed_at": now}
+                    update={
+                        "status": completion.status,
+                        "completed_at": now,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=attempt.active_duration_ms,
+                            active_started_at=attempt.active_started_at,
+                            now=now,
+                        ),
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=attempt.waiting_duration_ms,
+                            waiting_started_at=attempt.waiting_started_at,
+                            now=now,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": None,
+                        "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                    }
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
@@ -1959,6 +2085,13 @@ class PostgresTestRunStore:
                         "heartbeat_at": now,
                         "approval_id": approval_id,
                         "tool_job_id": tool_job_id,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=item.active_duration_ms,
+                            active_started_at=item.active_started_at,
+                            now=now,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": now,
                         "updated_at": now,
                     }
                 )
@@ -1968,6 +2101,13 @@ class PostgresTestRunStore:
                         "heartbeat_at": now,
                         "approval_id": approval_id,
                         "tool_job_id": tool_job_id,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=attempt.active_duration_ms,
+                            active_started_at=attempt.active_started_at,
+                            now=now,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": now,
                     }
                 )
                 self._write_item(cur, item)
@@ -2011,11 +2151,26 @@ class PostgresTestRunStore:
                         "status": "claimed",
                         "lease_expires_at": now + timedelta(seconds=lease_seconds),
                         "heartbeat_at": now,
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=item.waiting_duration_ms,
+                            waiting_started_at=item.waiting_started_at,
+                            now=now,
+                        ),
+                        "waiting_started_at": None,
                         "updated_at": now,
                     }
                 )
                 attempt = attempt.model_copy(
-                    update={"status": "claimed", "heartbeat_at": now}
+                    update={
+                        "status": "claimed",
+                        "heartbeat_at": now,
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=attempt.waiting_duration_ms,
+                            waiting_started_at=attempt.waiting_started_at,
+                            now=now,
+                        ),
+                        "waiting_started_at": None,
+                    }
                 )
                 self._write_item(cur, item)
                 self._write_attempt(cur, attempt)
@@ -2426,6 +2581,11 @@ class PostgresTestRunStore:
             if status in counts:
                 counts[status] = count
             total += count
+        cur.execute(
+            f"SELECT record FROM {self._item_table} WHERE run_id = %s",
+            (run_id,),
+        )
+        item_records = [self._item_from_value(row["record"]) for row in (cur.fetchall() or [])]
         stats = TestRunStats(total=total, **counts)
         terminal_count = sum(counts[status] for status in TERMINAL_ITEM_STATUSES)
         if preserve_cancelled or run.status == "cancelled":
@@ -2448,6 +2608,9 @@ class PostgresTestRunStore:
                 "stats": stats,
                 "started_at": started_at,
                 "completed_at": completed_at,
+                "active_duration_ms": sum(item.active_duration_ms for item in item_records),
+                "waiting_duration_ms": sum(item.waiting_duration_ms for item in item_records),
+                "wall_clock_duration_ms": elapsed_ms(run.created_at, completed_at or now),
                 "updated_at": now,
             }
         )
