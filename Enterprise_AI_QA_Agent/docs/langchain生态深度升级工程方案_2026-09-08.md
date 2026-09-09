@@ -1079,6 +1079,22 @@ pip check 已知冲突：
 - 结论边界：该结果只证明 100 条短档生命周期容量，不证明数小时稳定性、内存无增长、连接无泄漏或 LangSmith 长时上传无积压。
 - 下一步：增加按 wall-clock 循环、定期采集进程 RSS/数据库连接数/错误率和延迟分位数的 soak harness；以 1—5 分钟短档验证后，才能安排 4/24 小时档。
 
+#### 长任务 L5：可参数化 PostgreSQL Soak Harness（2026-09-09）
+
+- 当前状态：Harness 与短档验证已完成；4 小时和24小时真实持续运行未进行。
+- 依据来源：`项目借鉴/llm-testing-course/性能测试-基础篇.html`、`性能测试-通用篇.html`、`性能测试-AI专项篇.html` 要求记录吞吐、错误率和 P50/P95/P99，并在长稳定性测试中持续采集资源；`Agent测试专项.html`、`Agent轨迹与协议鲁棒性.html` 要求同时验证结果、状态迁移、幂等和超时恢复。本批复用既有 `PostgresTestRunStore`、Run/Item/Attempt/Result 表和 Live 测试，不引入第二套任务框架。
+- 实际修改文件：`Agent_Server/tests/live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_capacity.py`、`Agent_Server/tests/test_live_postgres_concurrency.py`、`Agent_Server/.env.example`。
+- 配置契约：所有 Live/Capacity/Soak 开关、持续时间、采样周期、迭代间隔、Worker 数和最大迭代数统一由 `Agent_Server/.env` 或同名进程环境变量加载；默认全部关闭。4小时档为 `RUN_LIVE_POSTGRES_SOAK_SECONDS=14400`，24小时档单独设置为 `86400`，不得将短档结果替代长档。
+- 观测指标：每轮真实执行 claim/start/complete；汇总 completed、error_rate、complete P50/P95/P99；定期采集当前 Python 进程 RSS 和 `pg_stat_activity` 当前数据库连接数。Windows RSS 使用标准库 `ctypes` 调用 `GetProcessMemoryInfo`，未新增依赖。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，本机 PostgreSQL，Windows spawn 多进程。
+- 短档 Soak：5轮、4 Worker、100ms 间隔，5/5 完成，错误率 0；complete P50/P95/P99 为 11.12/13.81/13.81ms；RSS 110,821,376 bytes；数据库连接峰值4。首次短跑发现 Windows 伪句柄返回类型未声明导致 RSS unavailable，按 WinAPI 真实签名修复后重跑通过。
+- 容量复验：100 条、4 Worker，1 passed；吞吐 66.96/s；claim P50/P95/P99 6.08/140.91/140.91ms，start 11.17/17.90/52.85ms，heartbeat 9.28/13.56/15.70ms，complete 12.43/20.51/30.20ms。
+- 其他验证：Live PostgreSQL 并发/跨进程 3 passed；共享环境配置 1 passed；后端全量 760 passed、10 skipped、1 warning；`python -m compileall -q src tests` 通过。
+- 真实系统可执行性：Uvicorn 端口18132启动成功；health 200且 `postgres_ok=true`；未传 `model_key` 的默认模式消息请求 200，使用数据库默认模型；得到25个事件、1个 Snapshot、10个 Flow stage，`runtime.turn_completed` 与 `observability.trace_linked` 均存在；服务日志确认 `Application shutdown complete`。
+- 数据与回滚：Soak 使用随机后缀隔离表并在 finally 清理；不开启环境开关时测试跳过，不修改业务表、依赖或模型执行路径。
+- 已知限制：短档仅验证 Harness 可执行，不证明4/24小时内存趋势、连接稳定性或 LangSmith 上传积压；尚无项目方确认的 RSS 增长、连接数和 P95/P99正式阈值，因此长档先记录事实，不自设阻断阈值。
+- 下一步：安排4小时 PostgreSQL生命周期 Soak；完成后基于采样曲线决定是否进入24小时低速档，并另行执行启用 LangSmith 的长时 Trace 上传/断网专项。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
