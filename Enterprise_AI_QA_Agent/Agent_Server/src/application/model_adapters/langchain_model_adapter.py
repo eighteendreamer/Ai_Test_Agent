@@ -164,6 +164,15 @@ class LangChainModelAdapter(ModelPort):
             kwargs["default_headers"] = dict(config.extra_headers)
         return self._model_factory(**kwargs)
 
+    def build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
+        """Build the provider model for another LangChain-native harness.
+
+        The construction remains in this adapter so timeout, retry, headers
+        and database-backed provider settings cannot diverge between the
+        normal LangChain path and a Deep Agents pilot.
+        """
+        return self._build_model(config, api_key)
+
     async def _stream(self, model: Any, messages: list[Any]) -> Any:
         aggregate = None
         async for chunk in model.astream(messages):

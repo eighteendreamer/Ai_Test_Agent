@@ -297,6 +297,24 @@ class LangSmithConfig(BaseModel):
         return max(100, value)
 
 
+class DeepAgentsConfig(BaseModel):
+    """Opt-in Deep Agents pilot switches.
+
+    The default is deliberately disabled so installing the optional package
+    cannot alter the existing runtime path.
+    """
+
+    enabled: bool = False
+    pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
+
+    @field_validator("pilot_mode_keys", mode="before")
+    @classmethod
+    def split_pilot_mode_keys(cls, value):
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+
 class Settings(BaseSettings):
     app_name: str = "Enterprise AI QA Agent"
     app_env: str = "development"
@@ -313,6 +331,7 @@ class Settings(BaseSettings):
     mail: MailConfig
     frontend: FrontendConfig
     langsmith: LangSmithConfig = Field(default_factory=LangSmithConfig)
+    deep_agents: DeepAgentsConfig = Field(default_factory=DeepAgentsConfig)
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

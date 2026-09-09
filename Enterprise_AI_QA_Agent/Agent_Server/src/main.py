@@ -55,6 +55,7 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.deep_agents import DeepAgentRuntimeAdapter
 from src.application.observability import LangSmithObservabilityAdapter
 from src.application.intent.semantic_intent_service import SemanticIntentService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
@@ -293,6 +294,9 @@ async def lifespan(app: FastAPI):
     )
     model_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_observability_service(observability_service)
+    deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(
+        model_resolver=model_runtime_service.resolve_langchain_chat_model,
+    )
     graph = build_agent_graph(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
@@ -327,6 +331,9 @@ async def lifespan(app: FastAPI):
         context_compaction_service=context_compaction_service,
         context_max_tail_messages=settings.orchestration.context_max_tail_messages,
         observability_service=observability_service,
+        deep_agent_runtime_adapter=deep_agent_runtime_adapter,
+        deep_agent_enabled=settings.deep_agents.enabled,
+        deep_agent_pilot_mode_keys=settings.deep_agents.pilot_mode_keys,
     )
 
     app.state.settings = settings

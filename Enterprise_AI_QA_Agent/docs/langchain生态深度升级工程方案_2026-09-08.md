@@ -1513,7 +1513,7 @@ API / Session / TestRun 控制平面（系统保留）
 
 | 批次 | 状态 | 工作 | 目标与验收 |
 |---|---|---|---|
-| DA-E1 边界适配 | 未进行 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop` |
+| DA-E1 边界适配 | 已完成 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag；用官方 HarnessProfile 隐藏内置文件/execute/task 工具 | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop`；真实 Deep Agents 不暴露未治理的默认工具 |
 | DA-E2 只读文件与 Skills | 未进行 | 使用限制在正式 `project_id` 根目录的 backend；接入官方 SkillsMiddleware；隐藏 write/edit/delete/execute | 路径穿越、`.env`/凭据、符号链接、超大文件、二进制、并发读取测试通过；只读结果与旧实现对账 |
 | DA-E3 认知计划与同步子代理 | 未进行 | 启用 `write_todos` 和受控 subagents；映射 plan/subagent typed events | todo 状态可视化；父子 Trace 完整；并发/深度受限；同一任务不进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
@@ -1527,7 +1527,28 @@ API / Session / TestRun 控制平面（系统保留）
 
 预期收益是减少 Agent Harness 重复实现，同时利用 Deep Agents 的规划、上下文卸载、Skills、临时子代理和 LangSmith 原生 Trace；代价是需要一层明确的 Runtime/Tool/Checkpoint/Event Adapter。该适配层不是额外业务框架，而是防止 Deep Agents 的通用状态与本项目业务事实混在一起的必要边界。
 
-当前状态：考核已完成，实施未开始。C4 只证明真实模型可运行 Deep Agents，不证明上述治理、长任务和替换门槛已通过。
+当前状态：考核已完成，DA-E1 已完成；DA-E2～DA-E7 尚未开始。C4 真实模型与本批隔离 Harness 验证只证明模型/消息边界和默认工具隔离可运行，不证明 Skills、治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛已通过。
+
+### DA-E1 边界适配实施记录（2026-09-09）
+
+| 项目 | 结果 |
+|---|---|
+| 当前状态 | 已完成 |
+| 本批目标 | 在不改变 TestRun/Session/Attempt/Stage 控制平面的前提下，建立可关闭的 Deep Agents code_review 试点边界；保持现有 RuntimeTurnResult、Session、Snapshot、Event 契约；避免双重 AgentLoop；不暴露未经治理的 Deep Agents 默认工具 |
+| 实际修改文件 | `Agent_Server/src/application/deep_agents/__init__.py`、`Agent_Server/src/application/deep_agents/runtime_adapter.py`、`Agent_Server/src/application/runtime/runtime_service.py`、`Agent_Server/src/application/models/model_runtime_service.py`、`Agent_Server/src/application/model_adapters/langchain_model_adapter.py`、`Agent_Server/src/core/config.py`、`Agent_Server/src/main.py`、`Agent_Server/.env.example`、`Agent_Server/tests/test_deep_agent_runtime_adapter.py` |
+| 配置边界 | `DEEP_AGENTS__ENABLED=false` 默认关闭；仅 `DEEP_AGENTS__PILOT_MODE_KEYS=code_review` 可进入；DA-E1 不接入业务工具、文件写入/删除、命令执行、Checkpointer 或长任务恢复 |
+| 官方依据 | Deep Agents Overview 的 `HarnessProfile.excluded_tools`；Deep Agents Subagents 的 `GeneralPurposeSubagentProfile(enabled=False)`；官方明确 `tools=[]` 只追加工具，不会移除默认 filesystem/task 工具 |
+| 测试环境 | 主环境 `E:\PyThon\Anaconda_PyThon\envs\Python3.11`；隔离 C4 `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b` |
+| 定向测试 | `python.exe -m pytest -q tests/test_deep_agent_runtime_adapter.py`（在 `Agent_Server` 工作目录执行）：`2 passed in 0.03s` |
+| 编译验证 | `python.exe -m compileall -q src`：通过 |
+| 后端全量回归 | `python.exe -m pytest -q tests`：`783 passed, 10 skipped, 1 warning in 31.68s` |
+| C4 真实 Harness 验证 | 使用 C4 `deepagents==0.7.13`、带 `bind_tools` 的离线 ChatModel，实际调用本适配器返回 `DA_E1_PROFILE_OK`；`bound_tools=[]`，证明 HarnessProfile 生效且默认文件/execute/task 工具未进入模型工具绑定 |
+| 旧路径验证 | Deep Agents 默认关闭；既有后端全量测试通过，未改变 legacy AgentLoop 的默认路径。此前 C4 Uvicorn health/PostgreSQL/真实 Qwen 模型链路已通过 |
+| 失败/警告 | 从仓库根目录直接运行定向测试会因项目 import 约定得到 `ModuleNotFoundError: src`；按项目实际入口切换到 `Agent_Server` 工作目录后通过。全量测试保留既有 Starlette/httpx 弃用警告 |
+| 回滚验证 | 删除/关闭 `DEEP_AGENTS__ENABLED` 即回到旧 RuntimeService 分支；本批未修改业务事实表、Worker 租约或正式测试状态机 |
+| 已知限制 | 当前只允许 OpenAI-compatible LangChain 模型；profile 仅用于 DA-E1 工具面隔离；未实现 PostgreSQL Checkpointer、HITL/Approval 映射、Skills/只读项目 backend、长任务恢复、完整 PromptAssembly/ContextCompaction 对账；因此不得用于数小时 TestRun |
+| 提交 | 待提交：`【feat】建立Deep Agents DA-E1边界适配` |
+| 下一步 | DA-E2：正式 project_id 根目录受限只读 FilesystemBackend + Skills 渐进加载；完成路径穿越、凭据、符号链接、超大文件和新旧实现结果对账后再启用 |
 
 ## 15. 每次实施后的记录模板
 

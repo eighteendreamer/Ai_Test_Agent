@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -60,6 +61,9 @@ class RuntimeService:
         context_compaction_service: ContextCompactionService | None = None,
         context_max_tail_messages: int = 24,
         observability_service: LangSmithObservabilityAdapter | None = None,
+        deep_agent_runtime_adapter: DeepAgentRuntimeAdapter | None = None,
+        deep_agent_enabled: bool = False,
+        deep_agent_pilot_mode_keys: list[str] | None = None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -72,6 +76,9 @@ class RuntimeService:
         self._context_compaction_service = context_compaction_service
         self._context_max_tail_messages = context_max_tail_messages
         self._observability_service = observability_service
+        self._deep_agent_runtime_adapter = deep_agent_runtime_adapter
+        self._deep_agent_enabled = bool(deep_agent_enabled)
+        self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -99,6 +106,13 @@ class RuntimeService:
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
         self.clear_interrupt(session.id)
+        if self._should_use_deep_agent(request):
+            return await self._execute_deep_agent_turn(
+                session,
+                request,
+                on_model_chunk=on_model_chunk,
+                event_queue=event_queue,
+            )
         compaction_info = None
         if self._context_compaction_service is not None:
             compaction_info = await self._context_compaction_service.maybe_compact(session)
@@ -143,6 +157,80 @@ class RuntimeService:
             request,
             initial_state,
             lambda: self._execute_state(session, initial_state, on_model_chunk=on_model_chunk),
+        )
+
+    def _should_use_deep_agent(self, request: ExecutionRequest) -> bool:
+        return bool(
+            self._deep_agent_enabled
+            and self._deep_agent_runtime_adapter is not None
+            and str(request.mode_key or "default") in self._deep_agent_pilot_mode_keys
+        )
+
+    async def _execute_deep_agent_turn(
+        self,
+        session: SessionRecord,
+        request: ExecutionRequest,
+        *,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None,
+        event_queue: asyncio.Queue | None,
+    ) -> RuntimeTurnResult:
+        """Run the DA-E1 harness while preserving the existing result contract."""
+        state = self._build_initial_state(session, request)
+        state["_event_queue"] = event_queue
+        append_graph_event(
+            state,
+            "runtime.turn_started",
+            "runtime",
+            "Deep Agents pilot execution started for the current turn.",
+            harness="deepagents",
+            pilot_stage="DA-E1",
+            mode_key=request.mode_key,
+        )
+        result = await self._deep_agent_runtime_adapter.execute(
+            DeepAgentRuntimeRequest(
+                session_id=session.id,
+                turn_id=request.turn_id,
+                trace_id=state["trace_id"],
+                model_key=state["selected_model_key"],
+                system_prompt=(
+                    "You are the Enterprise AI QA Agent code review pilot. "
+                    "Return evidence-grounded review guidance. Do not execute "
+                    "business tools in the DA-E1 boundary."
+                ),
+                messages=list(state["runtime_messages"]),
+                context=dict(request.context),
+            )
+        )
+        state["model_response_text"] = result.output_text
+        state["model_response_summary"] = {
+            "mode": "ok",
+            "harness": "deepagents",
+            "pilot_stage": "DA-E1",
+            **result.metadata,
+        }
+        state["final_response"] = result.output_text
+        state["termination_reason"] = "completed"
+        state["control_state"] = "completed"
+        if on_model_chunk is not None:
+            await on_model_chunk(result.output_text)
+        append_graph_event(
+            state,
+            "runtime.turn_completed",
+            "runtime",
+            "Deep Agents pilot execution finished for the current turn.",
+            harness="deepagents",
+            pilot_stage="DA-E1",
+            final_response_length=len(result.output_text),
+        )
+        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+        return RuntimeTurnResult(
+            output_text=result.output_text,
+            events=self._events_from_log(session.id, state["event_log"]),
+            snapshot=snapshot,
+            approvals=[],
+            state=state,
+            tool_messages=[],
+            pending_turn={},
         )
 
     async def resume_after_approval(

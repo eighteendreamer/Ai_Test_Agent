@@ -62,6 +62,28 @@ class ModelRuntimeService:
         except KeyError:
             return None
 
+    async def resolve_langchain_chat_model(self, model_key: str) -> Any:
+        """Resolve a database-backed LangChain chat model for a harness.
+
+        Authentication and provider selection stay owned by this service; a
+        harness receives only the already configured model object.
+        """
+        try:
+            config = self._model_registry.get_runtime_config(model_key)
+        except KeyError as exc:
+            raise ProviderClientError(f"No active model configuration found for '{model_key}'.") from exc
+        if config.transport != "openai_chat_completions":
+            raise ProviderClientError(
+                "Deep Agents pilot currently supports only openai_chat_completions; "
+                f"received transport={config.transport!r}."
+            )
+        api_key = await self._resolve_auth_token(config)
+        if not api_key:
+            raise ProviderClientError(f"Model '{config.name}' has no usable API key.")
+        return LangChainModelAdapter(
+            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
+        ).build_model(config, api_key)
+
     async def invoke(
         self,
         model_key: str,
