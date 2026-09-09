@@ -168,6 +168,42 @@ def test_checkpoint_is_persisted_and_lease_guarded():
     assert stale.status_code == 409
 
 
+def test_expired_attempt_reclaims_with_latest_checkpoint():
+    clock = _Clock()
+    app, _, suite, _, _ = _run(_build_components(case_count=1, clock=clock))
+    run_id = _create_run(app, suite.suite.id).json()["run"]["id"]
+    first = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/claim",
+        json={"worker_id": "worker-a", "lease_seconds": 15},
+    ).json()["claims"][0]
+    item_id = first["item"]["id"]
+    _request(
+        app,
+        "POST",
+        f"/api/v1/run-items/{item_id}/checkpoint",
+        json={
+            "lease_token": first["lease_token"],
+            "checkpoint_key": "browser_step",
+            "checkpoint_payload": {"url": "/orders", "step": 3},
+        },
+    ).raise_for_status()
+
+    clock.advance(20)
+    recovered = _request(app, "POST", f"/api/v1/runs/{run_id}/recover-expired")
+    assert recovered.status_code == 200
+    second = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/claim",
+        json={"worker_id": "worker-b"},
+    ).json()["claims"][0]
+    assert second["attempt"]["recovered_from_attempt_id"] == first["attempt"]["id"]
+    assert second["attempt"]["checkpoint_version"] == 1
+    assert second["attempt"]["checkpoint_payload"]["step"] == 3
+
+
 def test_create_run_freezes_suite_items_and_lists_project_history():
     app, project, suite, _, _ = _run(_build_components())
 

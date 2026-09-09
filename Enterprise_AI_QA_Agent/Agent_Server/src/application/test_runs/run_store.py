@@ -447,6 +447,15 @@ class InMemoryTestRunStore:
             for item in queued:
                 token = str(uuid4())
                 attempt_no = item.attempt_no + 1
+                prior = next(
+                    (
+                        self._attempts[attempt_id]
+                        for attempt_id in reversed(self._attempt_ids_by_run[run_id])
+                        if self._attempts[attempt_id].run_item_id == item.id
+                        and self._attempts[attempt_id].status == "expired"
+                    ),
+                    None,
+                )
                 attempt = TestRunAttemptRecord(
                     id=str(uuid4()),
                     run_id=run_id,
@@ -455,6 +464,11 @@ class InMemoryTestRunStore:
                     worker_id=worker_id,
                     lease_token=token,
                     claimed_at=now,
+                    checkpoint_version=prior.checkpoint_version if prior else 0,
+                    checkpoint_key=prior.checkpoint_key if prior else None,
+                    checkpoint_payload=prior.checkpoint_payload if prior else {},
+                    checkpoint_at=prior.checkpoint_at if prior else None,
+                    recovered_from_attempt_id=prior.id if prior else None,
                 )
                 stored_item = item.model_copy(
                     deep=True,
@@ -1892,6 +1906,14 @@ class PostgresTestRunStore:
                 for item in candidates:
                     token = str(uuid4())
                     attempt_no = item.attempt_no + 1
+                    cur.execute(
+                        f"SELECT record FROM {self._attempt_table} "
+                        "WHERE run_item_id = %s AND status = 'expired' "
+                        "ORDER BY attempt_no DESC LIMIT 1",
+                        (item.id,),
+                    )
+                    prior_row = cur.fetchone()
+                    prior = self._attempt_from_value(prior_row["record"]) if prior_row else None
                     attempt = TestRunAttemptRecord(
                         id=str(uuid4()),
                         run_id=run_id,
@@ -1900,6 +1922,11 @@ class PostgresTestRunStore:
                         worker_id=worker_id,
                         lease_token=token,
                         claimed_at=now,
+                        checkpoint_version=prior.checkpoint_version if prior else 0,
+                        checkpoint_key=prior.checkpoint_key if prior else None,
+                        checkpoint_payload=prior.checkpoint_payload if prior else {},
+                        checkpoint_at=prior.checkpoint_at if prior else None,
+                        recovered_from_attempt_id=prior.id if prior else None,
                     )
                     updated = item.model_copy(
                         update={

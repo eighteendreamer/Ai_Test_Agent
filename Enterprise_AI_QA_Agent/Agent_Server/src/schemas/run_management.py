@@ -130,6 +130,7 @@ class TestRunAttemptRecord(BaseModel):
     checkpoint_key: str | None = Field(default=None, max_length=160)
     checkpoint_payload: dict[str, Any] = Field(default_factory=dict)
     checkpoint_at: datetime | None = None
+    recovered_from_attempt_id: str | None = None
 
 
 class RunEvidenceRef(BaseModel):

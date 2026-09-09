@@ -897,6 +897,21 @@ pip check 已知冲突：
 - 回滚验证：无数据库结构变更；旧 Attempt JSONB 记录缺少检查点字段时按默认值兼容读取，回滚代码不会破坏历史记录。
 - 下一步：实现从最近检查点恢复的新 Attempt 流程，并增加 Worker 强杀/租约过期后的恢复回归；随后接入分段 LangSmith Trace 和 `thread_id` 关联。
 
+#### 长任务 L2：租约过期后的检查点恢复（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：让租约过期后的新 Attempt 继承最近有效检查点，同时保留旧 Attempt 的历史身份，避免复用旧 Attempt 或从头盲重跑。
+- 实际修改文件：`Agent_Server/src/schemas/run_management.py`、`Agent_Server/src/application/test_runs/run_store.py`、`Agent_Server/tests/test_test_run_lifecycle.py`。
+- 实现规则：`recover_expired` 仍将旧 Attempt 标记为 `expired` 并把 Item 放回队列；下一次原子 claim 创建全新 Attempt，复制最近过期 Attempt 的 checkpoint 字段，并写入 `recovered_from_attempt_id`；新 Attempt 使用新的 lease token，旧 token 不能继续操作。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_test_run_lifecycle.py tests/test_test_run_timing.py -q`；`python -m pytest -q`。
+- 通过：定向测试 15 passed；后端全量 751 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：恢复后尚未自动执行“从 checkpoint_payload 继续未完成阶段”，目前由新 Attempt 暴露恢复上下文，执行器消费逻辑待下一批接入。
+- 已知限制：当前只继承最近一个 expired Attempt 的检查点；检查点 payload 的业务 schema 和幂等动作确认仍由具体模式执行器负责。
+- 回滚验证：无数据库结构变更；旧 JSONB Attempt 记录缺少恢复字段时按默认值兼容读取。
+- 下一步：在 `execution_service` 中消费恢复检查点，增加恢复阶段事件和幂等步骤跳过规则，再进行 Worker 强杀恢复测试；随后接入 LangSmith 分段 Trace。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
