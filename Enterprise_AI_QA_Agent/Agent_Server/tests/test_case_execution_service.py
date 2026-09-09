@@ -270,6 +270,77 @@ async def test_execution_service_wraps_only_item_execution_in_observability_trac
 
 
 @pytest.mark.asyncio
+async def test_execution_service_isolates_observability_start_failure():
+    now, run, item, case, version = _records()
+
+    class FakeRuns:
+        def __init__(self):
+            self.completed_payload = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def complete_item(self, item_id, payload):
+            self.completed_payload = payload
+            return _CaseResultRecord(
+                id="result-observability-failure",
+                run_id=run.id,
+                run_item_id=item.id,
+                case_id=case.id,
+                case_version_id=version.id,
+                attempt_id="attempt-observability-failure",
+                attempt_no=1,
+                status=payload.status,
+                summary=payload.summary,
+                actual=payload.actual,
+                payload_hash="c" * 64,
+                created_at=now,
+            )
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class FakeAdapter:
+        async def execute(self, **kwargs):
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=kwargs["item"].lease_token,
+                    status="passed",
+                    summary="业务执行不受观测故障影响",
+                ),
+                tool_record=None,
+                verification_results=[],
+            )
+
+    class FailingObservability:
+        def trace_test_run_item(self, context, **kwargs):
+            raise TimeoutError("LangSmith client timed out")
+
+    runs = FakeRuns()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=FakeAdapter(),
+        observability_service=FailingObservability(),
+    )
+
+    result = await service.execute_item(
+        item.id,
+        RunItemExecuteRequest(lease_token="lease-1"),
+    )
+
+    assert result.status == "passed"
+    assert runs.completed_payload.status == "passed"
+
+
+@pytest.mark.asyncio
 async def test_security_case_execution_requires_verified_session_grant():
     now, run, item, case, version = _records()
     run = run.model_copy(update={"mode_key": "security_testing"})

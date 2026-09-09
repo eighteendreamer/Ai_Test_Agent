@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from contextlib import nullcontext
+from contextlib import contextmanager
 import logging
 from datetime import datetime, timezone
 
@@ -172,16 +172,12 @@ class TestRunExecutionService:
                     "attempt_no": item.attempt_no,
                     "mode_key": run.mode_key,
                 }
-                trace_scope = (
-                    self._observability.trace_test_run_item(
-                        trace_context,
-                        run_item_id=item.id,
-                        attempt_id=trace_context.attempt_id,
-                        thread_id=trace_context.thread_id,
-                        inputs=trace_inputs,
-                    )
-                    if self._observability is not None
-                    else nullcontext(None)
+                trace_scope = self._safe_item_trace_scope(
+                    trace_context,
+                    run_item_id=item.id,
+                    attempt_id=trace_context.attempt_id,
+                    thread_id=trace_context.thread_id,
+                    inputs=trace_inputs,
                 )
                 with trace_scope as item_trace:
                     outcome = await self._adapter.execute(
@@ -297,6 +293,72 @@ class TestRunExecutionService:
             thread_id=str(run.session_id or run.id),
             tags=["test_run", str(run.mode_key)],
         )
+
+    @contextmanager
+    def _safe_item_trace_scope(
+        self,
+        context: TraceContext,
+        *,
+        run_item_id: str,
+        attempt_id: str,
+        thread_id: str,
+        inputs: dict[str, object],
+    ):
+        """Keep Trace setup/teardown failures isolated from item execution."""
+        if self._observability is None:
+            yield None
+            return
+
+        trace_cm = None
+        scope = None
+        try:
+            trace_cm = self._observability.trace_test_run_item(
+                context,
+                run_item_id=run_item_id,
+                attempt_id=attempt_id,
+                thread_id=thread_id,
+                inputs=inputs,
+            )
+            scope = trace_cm.__enter__()
+        except Exception:
+            logger.exception(
+                "test_run_item_observability_start_failed",
+                extra={
+                    "trace_id": context.trace_id,
+                    "run_item_id": run_item_id,
+                    "attempt_id": attempt_id,
+                },
+            )
+            yield None
+            return
+
+        try:
+            yield scope
+        except BaseException as exc:
+            try:
+                trace_cm.__exit__(type(exc), exc, exc.__traceback__)
+            except Exception:
+                logger.exception(
+                    "test_run_item_observability_finish_failed",
+                    extra={
+                        "trace_id": context.trace_id,
+                        "run_item_id": run_item_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
+            raise
+        else:
+            try:
+                trace_cm.__exit__(None, None, None)
+            except Exception:
+                logger.exception(
+                    "test_run_item_observability_finish_failed",
+                    extra={
+                        "trace_id": context.trace_id,
+                        "run_item_id": run_item_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
 
     async def resolve_item_approval(
         self,
