@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 from types import SimpleNamespace
@@ -82,6 +84,17 @@ class _FailingFactory(_FakeFactory):
     def __init__(self):
         super().__init__()
         self.model = _FailingRunnable()
+
+
+class _CancelledRunnable(_FakeRunnable):
+    async def ainvoke(self, messages):
+        raise asyncio.CancelledError()
+
+
+class _CancelledFactory(_FakeFactory):
+    def __init__(self):
+        super().__init__()
+        self.model = _CancelledRunnable()
 
 
 @pytest.mark.asyncio
@@ -200,6 +213,14 @@ async def test_adapter_maps_unexpected_provider_failure_to_uniform_error():
     adapter = LangChainModelAdapter(model_factory=_FailingFactory())
 
     with pytest.raises(ProviderClientError, match="LangChain model invocation failed"):
+        await adapter.invoke(_config(), "secret-not-logged", _request())
+
+
+@pytest.mark.asyncio
+async def test_adapter_does_not_swallow_task_cancellation():
+    adapter = LangChainModelAdapter(model_factory=_CancelledFactory())
+
+    with pytest.raises(asyncio.CancelledError):
         await adapter.invoke(_config(), "secret-not-logged", _request())
 
 
