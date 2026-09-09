@@ -1081,10 +1081,11 @@ pip check 已知冲突：
 
 #### 长任务 L5：可参数化 PostgreSQL Soak Harness（2026-09-09）
 
-- 当前状态：Harness 与短档验证已完成；4 小时和24小时真实持续运行未进行。
+- 当前状态：Harness 与短档验证已完成；4 小时真实持续运行中（进程句柄 `58300`）；24小时未进行。
 - 依据来源：`项目借鉴/llm-testing-course/性能测试-基础篇.html`、`性能测试-通用篇.html`、`性能测试-AI专项篇.html` 要求记录吞吐、错误率和 P50/P95/P99，并在长稳定性测试中持续采集资源；`Agent测试专项.html`、`Agent轨迹与协议鲁棒性.html` 要求同时验证结果、状态迁移、幂等和超时恢复。本批复用既有 `PostgresTestRunStore`、Run/Item/Attempt/Result 表和 Live 测试，不引入第二套任务框架。
 - 实际修改文件：`Agent_Server/tests/live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_capacity.py`、`Agent_Server/tests/test_live_postgres_concurrency.py`、`Agent_Server/.env.example`。
 - 配置契约：所有 Live/Capacity/Soak 开关、持续时间、采样周期、迭代间隔、Worker 数和最大迭代数统一由 `Agent_Server/.env` 或同名进程环境变量加载；默认全部关闭。4小时档为 `RUN_LIVE_POSTGRES_SOAK_SECONDS=14400`，24小时档单独设置为 `86400`，不得将短档结果替代长档。
+- 可选门禁：`RUN_LIVE_POSTGRES_SOAK_MAX_ERROR_RATE`、`MAX_COMPLETE_P95_MS`、`MAX_P95_GROWTH_RATIO`、`MAX_RSS_GROWTH_BYTES`、`MAX_CONNECTIONS` 均默认为观察模式；只有项目方在 `.env` 明确配置后才阻断。错误率使用 `-1` 表示禁用，避免把未确认的示例阈值伪装成正式 SLA。
 - 观测指标：每轮真实执行 claim/start/complete；汇总 completed、error_rate、complete P50/P95/P99；定期采集当前 Python 进程 RSS 和 `pg_stat_activity` 当前数据库连接数。Windows RSS 使用标准库 `ctypes` 调用 `GetProcessMemoryInfo`，未新增依赖。
 - 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，本机 PostgreSQL，Windows spawn 多进程。
 - 短档 Soak：5轮、4 Worker、100ms 间隔，5/5 完成，错误率 0；complete P50/P95/P99 为 11.12/13.81/13.81ms；RSS 110,821,376 bytes；数据库连接峰值4。首次短跑发现 Windows 伪句柄返回类型未声明导致 RSS unavailable，按 WinAPI 真实签名修复后重跑通过。
@@ -1094,6 +1095,16 @@ pip check 已知冲突：
 - 数据与回滚：Soak 使用随机后缀隔离表并在 finally 清理；不开启环境开关时测试跳过，不修改业务表、依赖或模型执行路径。
 - 已知限制：短档仅验证 Harness 可执行，不证明4/24小时内存趋势、连接稳定性或 LangSmith 上传积压；尚无项目方确认的 RSS 增长、连接数和 P95/P99正式阈值，因此长档先记录事实，不自设阻断阈值。
 - 下一步：安排4小时 PostgreSQL生命周期 Soak；完成后基于采样曲线决定是否进入24小时低速档，并另行执行启用 LangSmith 的长时 Trace 上传/断网专项。
+
+#### 长任务 L5：Soak 可配置门禁验证（2026-09-09）
+
+- 当前状态：代码与短档门禁验证已完成；4小时 Soak 仍在运行，最终结果待进程结束后登记。
+- 本批目标：让错误率、完成 P95、首尾 P95 增长、RSS 增长和连接峰值具备环境变量门禁，同时保持默认观察模式；不得在未确认项目 SLA 前自设硬阈值。
+- 实际修改文件：`Agent_Server/tests/live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_config.py`、`Agent_Server/tests/test_live_postgres_capacity.py`、`Agent_Server/.env.example`。
+- 通过：配置/门禁单测 `3 passed、2 skipped`；显式门槛短档 5/5 完成、错误率0、Complete P95 12.38ms、首尾 P95 11.19/12.38ms、连接峰值4；门禁超限单测确认会抛出 AssertionError；`compileall -q src tests` 通过；后端全量 `762 passed、10 skipped、1 warning`。
+- 真实4小时任务：已用 `RUN_LIVE_POSTGRES_SOAK_SECONDS=14400`、采样60秒、4 Worker、默认观察门禁启动，当前句柄 `58300`；未结束前不记录通过或失败结论。
+- 边界修复：所有轮次失败时现在明确报告无成功样本；默认观察模式不会因未配置门禁而误阻断，配置门禁后才执行相应断言。
+- 下一步：等待4小时进程自然结束并核对清理、样本数、错误率、P50/P95/P99、RSS首尾变化和连接峰值；只有证据充分且阈值确认后才安排24小时档。
 
 #### 长任务 L5：Soak 持续窗口复验（2026-09-09）
 
