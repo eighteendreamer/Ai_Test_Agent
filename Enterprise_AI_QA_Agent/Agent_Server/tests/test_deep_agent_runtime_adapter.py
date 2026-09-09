@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -280,3 +282,35 @@ def test_da_e2_rejects_escape_symlink_and_accepts_in_root_symlink(tmp_path: Path
     assert backend.read("/inside-link.txt").error is None
     outside_result = backend.read("/outside-link.txt")
     assert outside_result.error and "outside root" in outside_result.error.lower()
+
+
+def test_da_e2_rejects_escape_directory_junction(tmp_path: Path):
+    """Cover the Windows reparse-point variant available without symlink privilege."""
+    pytest.importorskip("deepagents")
+    if os.name != "nt":
+        pytest.skip("directory junctions are Windows-specific")
+    outside = tmp_path.parent / f"{tmp_path.name}-junction-outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("outside", encoding="utf-8")
+    link = tmp_path / "outside-directory-link"
+    created = subprocess.run(
+        ["cmd.exe", "/c", "mklink", "/J", str(link), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if created.returncode != 0:
+        pytest.skip(f"directory junction unavailable: {created.stderr or created.stdout}")
+    try:
+        backend = build_read_only_filesystem_backend(tmp_path, max_file_size_mb=1)
+        result = backend.read("/outside-directory-link/secret.txt")
+        assert result.error and "outside root" in result.error.lower()
+    finally:
+        subprocess.run(
+            ["cmd.exe", "/c", "rmdir", "/s", "/q", str(link)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        (outside / "secret.txt").unlink(missing_ok=True)
+        outside.rmdir()

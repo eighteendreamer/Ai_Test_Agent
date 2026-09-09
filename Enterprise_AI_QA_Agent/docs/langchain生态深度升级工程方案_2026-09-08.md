@@ -1582,12 +1582,12 @@ API / Session / TestRun 控制平面（系统保留）
 | 输出边界依据 | 旧 reader 支持最多 120000 字符，但官方 backend 按行分页；为避免一个超长单行绕过行数限制并挤爆模型上下文，读取结果超过上限时显式返回错误，要求缩小行范围或先 grep，不静默截断 |
 | 新旧结果对账 | C4 真实 `FilesystemBackend` 与旧 `_read_local_project_file` 对同一文件、行区间的内容行、路径和行号对账通过；唯一差异是官方保留末尾换行、旧 reader 的 `splitlines()` 去掉末尾换行，已在测试中显式记录为展示格式差异 |
 | 并发只读 | C4 同一 backend 并发 12 次 `read` + 12 次 `grep` 全部通过；临时 Skills staging 两个并发请求分别只可见自己的 `/skills/<key>/`，无串租户/串请求 |
-| 路径安全 | `../` 和 `/../` 被官方 virtual root 拒绝；`~` 不展开到用户目录，仅按虚拟根下字面路径处理并返回不存在；根内符号链接用例已编写，但当前账号无法创建符号链接，未虚报通过 |
+| 路径安全 | `../` 和 `/../` 被官方 virtual root 拒绝；`~` 不展开到用户目录，仅按虚拟根下字面路径处理并返回不存在；Windows 目录联接（junction/reparse point）越界读取已实测拒绝；普通符号链接和链接循环用例已编写，但当前账号无法创建符号链接，未将 junction 结果冒充普通符号链接通过 |
 | C4 定向验证 | `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b\Scripts\python.exe -m pytest -q Agent_Server/tests/test_deep_agent_runtime_adapter.py`：本批新增官方 Agent 实链路后为 `11 passed, 1 skipped` |
 | C4 官方 Agent 实链路 | 新增用例使用实现 `bind_tools` 的离线模型，实际通过 `create_deep_agent`/官方工具循环读取 `/README.md`，返回 `DA_E2_AGENT_READ_OK`，并收到 `tool` 消息；证明不是只有 backend 单测通过 |
 | C4 全量回归 | 同一 C4 Python：`python -m pytest -q Agent_Server/tests`：`792 passed, 11 skipped, 1 warning`，耗时 `21.08s` |
 | 主环境验证 | `E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`：定向 `3 passed, 9 skipped`；全量 `784 passed, 19 skipped, 1 warning`，耗时 `26.30s`；`compileall -q Agent_Server/src` 通过。主环境未安装 `deepagents`，Deep Agents 专项用例按设计跳过 |
-| 当前状态 | 进行中；并发、对账、路径穿越、敏感/二进制、超大文件和输出字符边界已完成；符号链接仍是唯一未关闭门槛 |
+| 当前状态 | 进行中；并发、对账、路径穿越、敏感/二进制、超大文件、输出字符边界和 Windows junction 越界已完成；普通符号链接/循环仍是未关闭门槛 |
 | 长任务边界 | 本批仍未接入 Checkpointer、租约、Worker 或后台任务；Deep Agents 只可用于短 code_review 认知步骤，不可用于数小时 TestRun |
 | 回滚验证 | 新增配置默认关闭/兼容旧默认值；关闭 `DEEP_AGENTS__ENABLED` 或只读开关即回到旧 RuntimeService 路径；未修改业务事实表和长任务状态机 |
 
