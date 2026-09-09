@@ -1135,7 +1135,7 @@ pip check 已知冲突：
 | P2-01 | 定义 ModelPort | application/model_adapters/base.py | 已完成（本批） | 旧新实现共享业务接口 |
 | P2-02 | 实现 Message 双向转换 | application/model_adapters/message_adapter.py | 已完成（本批） | system/user/assistant/tool 无损转换 |
 | P2-03 | 实现 LangChainModelAdapter | application/model_adapters/langchain_model_adapter.py | 已完成（独立适配器） | 至少一个 Provider 跑通 |
-| P2-04 | 保留 LegacyProviderAdapter | application/model_adapters/legacy_model_adapter.py | 已完成（边界实现） | 可按 Flag 回退 |
+| P2-04 | 保留 LegacyProviderAdapter | application/model_adapters/legacy_model_adapter.py | 已完成（边界实现，主链未分流） | 接入后可按 Flag 回退 |
 | P2-05 | 统一 Tool Call 转换 | schemas/tool runtime | 未进行 | call id、name、args 保真 |
 | P2-06 | 接入 Structured Output | 目标业务节点 | 未进行 | Schema 错误可观测且可恢复 |
 | P2-07 | 对齐 Streaming | model stream handler/SSE | 未进行 | chunk 顺序和终态正确 |
@@ -1385,7 +1385,7 @@ pip check 已知冲突：
 当前测试结果：未执行。
 当前阻塞：依赖阶段 1—6。
 回滚点：按模式和项目切回旧路径。
-最近提交：代码 `850a266`（LangChain 适配器）、本批 Legacy 边界待提交；台账待本批文档提交后登记。
+最近提交：代码 `850a266`（LangChain 适配器）、`d6d10a9`（Legacy 边界）、`d6ca520`（契约测试）；文档本批提交后登记。
 
 ### 14.11 阶段 2 进入前兼容预检（只读，2026-09-09）
 
