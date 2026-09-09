@@ -1189,7 +1189,7 @@ pip check 已知冲突：
 | P3-01 | 实现 LangChainToolAdapter | application/model_adapters/tool_adapter.py | 已完成（本批） | Registry 工具可安全转换 |
 | P3-02 | 建立 Tool 输入输出 Schema 对账 | application/model_adapters/tool_adapter.py / tests | 已完成（本批） | 参数和错误不丢失 |
 | P3-03 | 建立 Middleware Registry | middleware_registry.py | 已完成（本批） | 顺序、开关和作用域明确 |
-| P3-04 | 迁移通用 Retry/Timeout | Middleware | 未进行 | 不与业务重试叠加 |
+| P3-04 | 迁移通用 Retry/Timeout | Middleware | 评估完成，迁移待接入 Agent Runtime | 明确唯一重试所有者和超时边界后再启用 |
 | P3-05 | 迁移 Redaction/Observability | Middleware | 未进行 | 与阶段 1 策略一致 |
 | P3-06 | 评估 Context Compaction | context service/Middleware | 未进行 | 不产生双重摘要 |
 | P3-07 | 评估 Dynamic Prompt/Token Budget | prompting/Middleware | 未进行 | Prompt 结构和预算可追踪 |
@@ -1213,7 +1213,8 @@ pip check 已知冲突：
 当前测试结果：Middleware Registry、ToolAdapter、消息/模型适配器专项 `18 passed`；后端全量 `781 passed, 10 skipped, 1 warning`（25.79s）；`compileall` 通过；从实际 ToolRegistry 读取 `knowledge-rag` 并转换为 LangChain schema 的可执行验证通过。
 本批记录（2026-09-09）：P3-01/P3-02 只转换已选中的 `ToolDescriptor`，校验 key、input_schema 和模型返回工具是否属于 Registry 白名单；不创建 LangChain executor，实际执行仍由 `ToolRuntimeService` 负责权限、审批、审计和 artifact。
 本批记录（2026-09-09）：P3-03 新增 `LangChainMiddlewareRegistry`，仅负责官方 Middleware 实例的注册、名称唯一性、作用域筛选、启用开关和稳定排序；不执行 Middleware、不改变现有 Runtime 调度，也不绕过权限、审批、审计或 artifact 链路。配置 `LANGCHAIN_MIDDLEWARE_ENABLED=false` 作为默认关闭的灰度开关。
-当前阻塞：P3-04 Retry/Timeout 迁移、P3-05 Redaction/Observability 迁移、P3-06～P3-08 评估尚未开始；不得在这些边界完成前重复叠加横切逻辑。
+P3-04 兼容性评估（2026-09-09）：当前 Provider SDK（OpenAI-compatible、Anthropic、Embedding）默认使用 `max_retries=2`；LangChain 模型适配器向 `ChatOpenAI` 传递同一配置；API/安全/性能模式还在任务层维护自己的 `max_retries` 和失败重排；运行器对心跳超时、租约失效另有恢复重试。请求超时由 `llm_request_timeout_seconds` 及各工具/Worker 的独立边界控制。直接叠加 `ModelRetryMiddleware` 或 `ToolRetryMiddleware` 会重复发送请求、放大长任务时长并改变既有失败语义，因此本批不接入现有主 Runtime。后续接入闸门为：选定单一重试所有者、将其他层明确设为 0 或仅负责恢复、建立总时长预算和取消传播测试，再通过默认关闭的灰度开关启用。
+当前阻塞：P3-04 尚未满足迁移闸门；P3-05 Redaction/Observability 迁移、P3-06～P3-08 评估尚未开始。不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
 最近提交：本批代码与台账提交后登记。
 
