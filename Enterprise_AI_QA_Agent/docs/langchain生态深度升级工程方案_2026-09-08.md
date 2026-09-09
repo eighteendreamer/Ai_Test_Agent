@@ -1068,6 +1068,17 @@ pip check 已知冲突：
 - 已知限制：本测试验证真实 PostgreSQL 和两个独立 Python 进程，但尚未启动完整 Worker 服务、发送 OS 强杀信号或执行实际外部 API 工具；这些留给独立 Worker E2E。
 - 下一步：建立可参数化的 4 小时/24 小时 soak harness，先用短时档验证统计、资源采样、错误率和清理，再由项目方安排长时运行窗口。
 
+#### 长任务 L4：PostgreSQL 生命周期短档容量基线（2026-09-09）
+
+- 当前状态：短档已完成；4 小时/24 小时 soak 未进行。
+- 本批目标：验证修复后的容量 harness 能在隔离表上完成 claim、start、heartbeat、complete 全生命周期，并形成后续 soak 可比较的延迟基线。
+- 执行命令：`$env:RUN_LIVE_POSTGRES_CAPACITY='1'; $env:RUN_LIVE_POSTGRES_CAPACITY_SIZES='100'; $env:RUN_LIVE_POSTGRES_CAPACITY_WORKERS='4'; python -m pytest tests/test_live_postgres_capacity.py -q -s`（工作目录 `Agent_Server`）。
+- 通过：1 passed；100 个条目全部完成，吞吐 86.56/s；claim P50/P95/P99 为 5.90/90.62/90.62ms，start 为 8.65/11.71/13.34ms，heartbeat 为 7.23/9.60/12.43ms，complete 为 9.64/15.18/39.73ms。
+- 失败：无。
+- 回滚与清理：随机后缀 Run/Item/Attempt/Result 表均由 finally 清理，未写默认业务表。
+- 结论边界：该结果只证明 100 条短档生命周期容量，不证明数小时稳定性、内存无增长、连接无泄漏或 LangSmith 长时上传无积压。
+- 下一步：增加按 wall-clock 循环、定期采集进程 RSS/数据库连接数/错误率和延迟分位数的 soak harness；以 1—5 分钟短档验证后，才能安排 4/24 小时档。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
