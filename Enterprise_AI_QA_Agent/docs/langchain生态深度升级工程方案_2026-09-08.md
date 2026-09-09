@@ -581,8 +581,8 @@ Feature Flags：
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | P0-01～P0-06、P0-08～P0-10 已完成；P0-07 因 Deep Agents 与当前主服务生态版本不兼容而阻塞，阶段仍不能关闭 | 现有环境、干净 C1 环境、隔离 C2 候选 Harness、后端/前端契约回归和真实默认模型链路均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
 | 1 | LangSmith 非阻塞观测 | 进行中 | 98% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和短时 soak 已完成；正式业务阈值、直接队列深度和 30 分钟持续窗口仍未确认/完成 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯均通过；短时 soak 9/10 + 重试通过 |
-| 2 | LangChain 模型与消息适配 | 未进行 | 0% | 尚未建立新旧适配器 | 未执行 |
-| 3 | LangChain 工具适配与 Middleware | 未进行 | 0% | 尚未改造横切能力 | 未执行 |
+| 2 | LangChain 模型与消息适配 | 已完成 | 100% | 默认 Qwen Provider 已完成新旧适配器双跑、工具调用、结构化输出、错误/取消传播和限流契约验证 | 后端全量 781 passed，10 skipped，1 warning；compileall 通过；真实默认模型链路通过 |
+| 3 | LangChain 工具适配与 Middleware | 进行中 | 38% | P3-01～P3-03 已完成；P3-04～P3-08 尚未迁移或评估 | 工具/Middleware/模型消息专项 18 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
 | 4 | Deep Agents code_review 试点 | 未进行 | 0% | deepagents 尚未安装 | 未执行 |
 | 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
 | 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
@@ -1173,7 +1173,7 @@ pip check 已知冲突：
 
 ### 14.6 阶段 3：LangChain 工具适配与 Middleware
 
-状态：进行中（P3-01/P3-02 已完成）
+状态：进行中（P3-01/P3-02/P3-03 已完成）
 目标：标准化工具暴露与横切能力，减少重复代码，同时保留业务权限、安全和测试运行治理。
 
 前置条件：
@@ -1188,7 +1188,7 @@ pip check 已知冲突：
 |---|---|---|---|---|
 | P3-01 | 实现 LangChainToolAdapter | application/model_adapters/tool_adapter.py | 已完成（本批） | Registry 工具可安全转换 |
 | P3-02 | 建立 Tool 输入输出 Schema 对账 | application/model_adapters/tool_adapter.py / tests | 已完成（本批） | 参数和错误不丢失 |
-| P3-03 | 建立 Middleware Registry | middleware_registry.py | 未进行 | 顺序、开关和作用域明确 |
+| P3-03 | 建立 Middleware Registry | middleware_registry.py | 已完成（本批） | 顺序、开关和作用域明确 |
 | P3-04 | 迁移通用 Retry/Timeout | Middleware | 未进行 | 不与业务重试叠加 |
 | P3-05 | 迁移 Redaction/Observability | Middleware | 未进行 | 与阶段 1 策略一致 |
 | P3-06 | 评估 Context Compaction | context service/Middleware | 未进行 | 不产生双重摘要 |
@@ -1210,9 +1210,10 @@ pip check 已知冲突：
 - 不存在双重 Retry、双重压缩或双重审批。
 - 工具事件和 LangSmith Run 可对账。
 
-当前测试结果：ToolAdapter、消息/模型适配器专项 `16 passed`；后端全量 `779 passed, 10 skipped, 1 warning`（26.74s）；`compileall` 通过；从实际 ToolRegistry 读取 `knowledge-rag` 并转换为 LangChain schema 的可执行验证通过。
+当前测试结果：Middleware Registry、ToolAdapter、消息/模型适配器专项 `18 passed`；后端全量 `781 passed, 10 skipped, 1 warning`（25.79s）；`compileall` 通过；从实际 ToolRegistry 读取 `knowledge-rag` 并转换为 LangChain schema 的可执行验证通过。
 本批记录（2026-09-09）：P3-01/P3-02 只转换已选中的 `ToolDescriptor`，校验 key、input_schema 和模型返回工具是否属于 Registry 白名单；不创建 LangChain executor，实际执行仍由 `ToolRuntimeService` 负责权限、审批、审计和 artifact。
-当前阻塞：P3-03 Middleware Registry、P3-04 Retry/Timeout 迁移、P3-05 Redaction/Observability 迁移尚未开始；不得在这些边界完成前重复叠加横切逻辑。
+本批记录（2026-09-09）：P3-03 新增 `LangChainMiddlewareRegistry`，仅负责官方 Middleware 实例的注册、名称唯一性、作用域筛选、启用开关和稳定排序；不执行 Middleware、不改变现有 Runtime 调度，也不绕过权限、审批、审计或 artifact 链路。配置 `LANGCHAIN_MIDDLEWARE_ENABLED=false` 作为默认关闭的灰度开关。
+当前阻塞：P3-04 Retry/Timeout 迁移、P3-05 Redaction/Observability 迁移、P3-06～P3-08 评估尚未开始；不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
 最近提交：本批代码与台账提交后登记。
 
