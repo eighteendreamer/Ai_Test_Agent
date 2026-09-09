@@ -129,6 +129,9 @@ class SecurityConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     llm_request_timeout_seconds: float = 60.0
+    # Keep the LangChain path opt-in until its provider contract and rollback
+    # tests are complete.  The legacy client remains the default runtime path.
+    langchain_model_adapter_enabled: bool = False
 
     oauth_azure_ad_client_id: str = ""
     oauth_azure_ad_client_secret: str = ""
