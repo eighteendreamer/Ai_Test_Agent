@@ -327,7 +327,13 @@ def test_security_adapter_requires_explicit_profile_and_preserves_trusted_contex
             "trusted_security_authorization": {
                 "status": "verified",
                 "targets": ["https://example.test"],
-            }
+            },
+            "execution_checkpoint": {
+                "attempt_id": "attempt-2",
+                "version": 3,
+                "key": "browser_step",
+                "payload": {"step": 4},
+            },
         },
     )
 
@@ -335,6 +341,7 @@ def test_security_adapter_requires_explicit_profile_and_preserves_trusted_contex
     assert invocation.call.arguments["command_profile"] == "http_headers_probe"
     assert invocation.call.arguments["task"]["target"] == "https://example.test"
     assert invocation.context.context_bundle["trusted_security_authorization"]["status"] == "verified"
+    assert invocation.context.context_bundle["execution_checkpoint"]["payload"]["step"] == 4
 
 
 def test_security_adapter_accepts_assertions_declared_by_selected_profile():

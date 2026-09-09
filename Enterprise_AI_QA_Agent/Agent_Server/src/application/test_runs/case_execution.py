@@ -160,6 +160,7 @@ class CaseExecutionAdapter:
                 "trusted_security_authorization",
                 "safety_assessment",
                 "environment",
+                "execution_checkpoint",
             ):
                 if key in trusted_context_bundle:
                     context_bundle[key] = deepcopy(trusted_context_bundle[key])

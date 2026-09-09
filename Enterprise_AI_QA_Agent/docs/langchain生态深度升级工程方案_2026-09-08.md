@@ -927,6 +927,21 @@ pip check 已知冲突：
 - 回滚验证：无数据库结构变更；旧 Attempt 和旧测试替身均可继续工作。
 - 下一步：为 `CaseExecutionAdapter` 增加明确的恢复上下文协议和步骤幂等判定，再执行 Worker 强杀、进程重启和长任务恢复专项。
 
+#### 长任务 L2：模式适配器恢复上下文协议（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：将持久化检查点从执行入口明确传递到 `CaseExecutionAdapter` 的可信上下文，使具体模式能够基于自身步骤和幂等契约决定恢复策略；通用层不自动跳过测试步骤。
+- 实际修改文件：`Agent_Server/src/application/test_runs/case_execution.py`、`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/src/application/test_runs/run_service.py`、`Agent_Server/src/application/test_runs/run_store.py`、`Agent_Server/tests/test_case_execution_adapter.py`。
+- 实现规则：执行入口读取最新 Attempt；存在检查点时写入 `trusted_context_bundle.execution_checkpoint`；适配器仅复制安全白名单上下文到 `ToolExecutionContext.context_bundle`；旧测试替身无 `get_latest_attempt` 时保持兼容。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest tests/test_case_execution_adapter.py tests/test_case_execution_service.py tests/test_test_run_lifecycle.py -q`。
+- 通过：定向测试 46 passed；编译通过。
+- 失败：无生产路径失败；初次全量测试发现 7 个旧测试替身缺少新读取方法，已通过可选调用兼容处理并在前批全量回归中验证。
+- 跳过：尚未实现模式级步骤幂等判定、自动跳过和 Worker 强杀真实恢复；当前只完成恢复上下文协议传递。
+- 已知限制：`checkpoint_payload` 的字段语义仍由各测试模式定义，通用层不会猜测 `step`、`action` 或证据状态。
+- 回滚验证：无数据库结构变更；旧适配器和旧 Attempt 记录可继续执行。
+- 下一步：为至少一个实际模式定义版本化 checkpoint payload schema 和幂等步骤判定，随后执行 Worker 强杀/进程重启恢复实测；LangSmith 分段 Trace 仍待后续批次。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
