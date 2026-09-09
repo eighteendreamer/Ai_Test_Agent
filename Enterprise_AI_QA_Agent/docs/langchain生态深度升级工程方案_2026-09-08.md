@@ -1173,7 +1173,7 @@ pip check 已知冲突：
 
 ### 14.6 阶段 3：LangChain 工具适配与 Middleware
 
-状态：未进行
+状态：进行中（P3-01/P3-02 已完成）
 目标：标准化工具暴露与横切能力，减少重复代码，同时保留业务权限、安全和测试运行治理。
 
 前置条件：
@@ -1186,8 +1186,8 @@ pip check 已知冲突：
 
 | ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
 |---|---|---|---|---|
-| P3-01 | 实现 LangChainToolAdapter | application/langchain/tool_adapter.py | 未进行 | Registry 工具可安全转换 |
-| P3-02 | 建立 Tool 输入输出 Schema 对账 | registry/schemas | 未进行 | 参数和错误不丢失 |
+| P3-01 | 实现 LangChainToolAdapter | application/model_adapters/tool_adapter.py | 已完成（本批） | Registry 工具可安全转换 |
+| P3-02 | 建立 Tool 输入输出 Schema 对账 | application/model_adapters/tool_adapter.py / tests | 已完成（本批） | 参数和错误不丢失 |
 | P3-03 | 建立 Middleware Registry | middleware_registry.py | 未进行 | 顺序、开关和作用域明确 |
 | P3-04 | 迁移通用 Retry/Timeout | Middleware | 未进行 | 不与业务重试叠加 |
 | P3-05 | 迁移 Redaction/Observability | Middleware | 未进行 | 与阶段 1 策略一致 |
@@ -1210,10 +1210,11 @@ pip check 已知冲突：
 - 不存在双重 Retry、双重压缩或双重审批。
 - 工具事件和 LangSmith Run 可对账。
 
-当前测试结果：未执行。
-当前阻塞：依赖阶段 2。
+当前测试结果：ToolAdapter、消息/模型适配器专项 `16 passed`；后端全量 `779 passed, 10 skipped, 1 warning`（26.74s）；`compileall` 通过；从实际 ToolRegistry 读取 `knowledge-rag` 并转换为 LangChain schema 的可执行验证通过。
+本批记录（2026-09-09）：P3-01/P3-02 只转换已选中的 `ToolDescriptor`，校验 key、input_schema 和模型返回工具是否属于 Registry 白名单；不创建 LangChain executor，实际执行仍由 `ToolRuntimeService` 负责权限、审批、审计和 artifact。
+当前阻塞：P3-03 Middleware Registry、P3-04 Retry/Timeout 迁移、P3-05 Redaction/Observability 迁移尚未开始；不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
-最近提交：无。
+最近提交：本批代码与台账提交后登记。
 
 ### 14.7 阶段 4：Deep Agents code_review 试点
 
