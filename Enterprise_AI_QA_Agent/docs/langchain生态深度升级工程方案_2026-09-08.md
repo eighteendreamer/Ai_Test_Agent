@@ -615,6 +615,7 @@ Feature Flags：
 | 生态包元数据 | python.exe + importlib.metadata | 通过 | Python 3.11.15；LangChain 1.2.3；Core 1.2.7；LangGraph 1.0.10；LangSmith 0.10.18 |
 | Deep Agents 索引解析 | python.exe -m pip index versions deepagents | 镜像失败，官方索引通过 | 当前配置镜像返回 No matching distribution found；官方 PyPI 可解析 `0.7.13`，未修改环境 |
 | Deep Agents 主组合解析 | python.exe -m pip install --dry-run --ignore-installed ... | 未通过（预期阻塞） | 官方 PyPI 解析确认 `deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务 `langchain==1.2.3` 冲突；未修改环境 |
+| C4 完整项目依赖解析 | python.exe -m pip install --dry-run --ignore-installed . deepagents==0.7.13 langchain==1.4.0 ... | 未通过（预期阻塞） | 项目自身 `enterprise-ai-qa-agent-server==0.1.0` 固定 `langchain==1.2.3`，与候选 `langchain==1.4.0` 冲突；未修改环境 |
 
 后端警告：
 
