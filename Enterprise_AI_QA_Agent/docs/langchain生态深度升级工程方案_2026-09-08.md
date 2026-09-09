@@ -1026,6 +1026,22 @@ pip check 已知冲突：
 - 未覆盖：本批未重复执行真实 LangSmith 云端上传；LangSmith 限流/断网专项、PostgreSQL 多进程接管和 4/24 小时 soak 仍未完成。Stage/Assertion 子 Run 已建立最小边界，完整证据输出和更细粒度阶段拆分仍待后续批次。
 - 下一步：增加 LangSmith 客户端断开、重复提交专项，并安排 PostgreSQL 多进程接管与 4/24 小时长任务验收；保持本地 TestRun 作为唯一恢复事实源。
 
+#### 长任务 L2 旁路故障隔离批次（2026-09-09）
+
+- 当前状态：已完成（代码路径与回归测试）；真实网络断开、限流和多进程接管仍未完成。
+- 本批目标：验证 LangSmith Trace Scope 创建失败时不改变 TestRunItem 业务结果，确保观测系统是旁路而非执行事实源。
+- 实际修改文件：`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/tests/test_case_execution_service.py`。
+- 完成任务 ID：L2 观测失败隔离；重复回调既有幂等契约未修改。
+- 根因修复：执行服务新增安全 Trace Scope 边界，仅隔离 Scope 进入和正常退出异常；Adapter 执行体内异常仍交由既有业务错误处理，避免吞掉真实测试失败。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m pytest tests/test_case_execution_service.py -k "observability" -q`；`python -m pytest tests/test_observability_contracts.py -q`；`python -m pytest -q`；`python -m compileall -q src`（工作目录均为 `Agent_Server`）。
+- 通过：旁路定向 2 passed；观测契约 21 passed；后端全量 759 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：真实 LangSmith 断网/限流、PostgreSQL 多进程 Worker 接管、4/24 小时 soak。
+- 回滚验证：关闭 `LANGSMITH__ENABLED` 或将 `LANGSMITH__TRACING_MODE=off` 后仍走原有本地执行路径；本批未改依赖和数据库 schema。
+- 已知限制：客户端在 Scope 退出时的异常只记录日志，不提供上传重试队列；长任务恢复仍以本地 Attempt/Checkpoint 为准。
+- 下一步：补充可控断网/限流替身与重复提交回归，随后进行 PostgreSQL 多进程接管和长时 soak 验收。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
