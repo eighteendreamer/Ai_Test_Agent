@@ -452,6 +452,16 @@ class ToolRuntimeService:
                         "trace_id": context.trace_id,
                         "mode_key": context.context_bundle.get("mode_key", "default"),
                         "agent_key": context.selected_agent_key,
+                        "project_id": context.context_bundle.get("project_id", ""),
+                        "test_run_id": context.context_bundle.get("test_run_id", ""),
+                        "run_item_id": context.context_bundle.get(
+                            "run_item_id",
+                            context.context_bundle.get("test_run_item_id", ""),
+                        ),
+                        "attempt_id": context.context_bundle.get("attempt_id", ""),
+                        "thread_id": context.context_bundle.get(
+                            "thread_id", context.session_id
+                        ),
                     }
                 )
             trace_manager = (

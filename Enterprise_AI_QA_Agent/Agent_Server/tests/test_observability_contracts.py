@@ -286,6 +286,34 @@ def test_full_trace_posts_root_and_nested_node_with_actual_sdk(monkeypatch: pyte
     assert "must-not-send" not in serialized
 
 
+def test_test_run_item_trace_is_bounded_and_carries_attempt_thread_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    client = _RecordingLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="full", capture_outputs=True),
+        client=client,
+    )
+
+    with adapter.trace_test_run_item(
+        _context(),
+        run_item_id="item-1",
+        attempt_id="attempt-2",
+        thread_id="thread-1",
+        inputs={"request": "redacted-by-policy"},
+    ) as scope:
+        assert scope is not None
+        scope.set_outputs({"status": "passed", "api_key": "secret"})
+
+    assert client.created[0]["name"] == "enterprise_ai_qa_agent.test_run_item"
+    metadata = client.created[0]["extra"]["metadata"]
+    assert metadata["run_item_id"] == "item-1"
+    assert metadata["attempt_id"] == "attempt-2"
+    assert metadata["thread_id"] == "thread-1"
+    assert client.updated[-1]["outputs"] == {"status": "passed", "api_key": "[REDACTED]"}
+
+
 def test_errors_only_posts_failed_root_with_actual_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
     client = _RecordingLangSmithClient()
@@ -303,6 +331,23 @@ def test_errors_only_posts_failed_root_with_actual_sdk(monkeypatch: pytest.Monke
     ]
     assert client.updated[-1]["run_id"] == client.created[0]["id"]
     assert "business failure" in str(client.updated[-1]["error"])
+
+
+def test_errors_only_item_trace_keeps_item_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    client = _RecordingLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="errors_only"),
+        client=client,
+    )
+
+    with pytest.raises(RuntimeError, match="item failure"):
+        with adapter.trace_test_run_item(_context(), run_item_id="item-1"):
+            raise RuntimeError("item failure")
+
+    assert [item["name"] for item in client.created] == [
+        "enterprise_ai_qa_agent.test_run_item.error"
+    ]
 
 
 def test_configured_langsmith_api_key_is_used_without_process_secret(monkeypatch: pytest.MonkeyPatch) -> None:

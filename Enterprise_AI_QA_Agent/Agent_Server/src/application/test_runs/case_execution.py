@@ -88,6 +88,7 @@ class CaseExecutionAdapter:
         run: TestRunRecord,
         item: TestRunItemRecord,
         trusted_context_bundle: dict[str, Any] | None = None,
+        attempt_id: str = "",
         tool_job_id: str = "",
         server_approval_granted: bool = False,
     ) -> CaseToolInvocation:
@@ -154,7 +155,11 @@ class CaseExecutionAdapter:
         context_bundle = {
             "project_id": run.project_id,
             "test_run_id": run.id,
+            "run_item_id": item.id,
             "test_run_item_id": item.id,
+            "attempt_id": attempt_id,
+            "thread_id": run.session_id or run.id,
+            "mode_key": run.mode_key,
             "test_case": test_case_envelope,
             f"{run.mode_key}_request": deepcopy(arguments),
         }
@@ -494,6 +499,7 @@ class CaseExecutionAdapter:
         run: TestRunRecord,
         item: TestRunItemRecord,
         trusted_context_bundle: dict[str, Any] | None = None,
+        attempt_id: str = "",
         tool_job_id: str = "",
         server_approval_granted: bool = False,
     ) -> CaseExecutionOutcome:
@@ -505,6 +511,7 @@ class CaseExecutionAdapter:
             run=run,
             item=item,
             trusted_context_bundle=trusted_context_bundle,
+            attempt_id=attempt_id,
             tool_job_id=tool_job_id,
             server_approval_granted=server_approval_granted,
         )

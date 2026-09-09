@@ -78,6 +78,7 @@ class LangSmithObservabilityAdapter:
         context: TraceContext,
         *,
         inputs: dict[str, Any] | None = None,
+        trace_name: str = "enterprise_ai_qa_agent.turn",
     ) -> Iterator[TraceScope | None]:
         if not self.enabled:
             yield None
@@ -90,7 +91,12 @@ class LangSmithObservabilityAdapter:
             try:
                 yield None
             except BaseException as exc:
-                self._record_error_trace(context, inputs=inputs, exception=exc)
+                self._record_error_trace(
+                    context,
+                    inputs=inputs,
+                    exception=exc,
+                    trace_name=f"{trace_name}.error",
+                )
                 raise
             return
 
@@ -124,7 +130,7 @@ class LangSmithObservabilityAdapter:
             )
             tracing_cm.__enter__()
             run_cm = ls.trace(
-                name="enterprise_ai_qa_agent.turn",
+                name=trace_name,
                 run_type="chain",
                 inputs=safe_inputs,
                 project_name=self._config.project,
@@ -156,6 +162,31 @@ class LangSmithObservabilityAdapter:
         else:
             self._safe_exit(run_cm, None)
             self._safe_exit(tracing_cm, None)
+
+    @contextmanager
+    def trace_test_run_item(
+        self,
+        context: TraceContext,
+        *,
+        run_item_id: str,
+        attempt_id: str = "",
+        thread_id: str = "",
+        inputs: dict[str, Any] | None = None,
+    ) -> Iterator[TraceScope | None]:
+        """Trace one bounded TestRunItem execution independently of wall-clock waits."""
+        item_context = context.model_copy(
+            update={
+                "run_item_id": run_item_id,
+                "attempt_id": attempt_id,
+                "thread_id": thread_id,
+            }
+        )
+        with self.trace_turn(
+            item_context,
+            inputs=inputs,
+            trace_name="enterprise_ai_qa_agent.test_run_item",
+        ) as scope:
+            yield scope
 
     @contextmanager
     def trace_node(
@@ -212,6 +243,14 @@ class LangSmithObservabilityAdapter:
             parent_trace_id=value.get("parent_trace_id", ""),
             mode_key=value.get("mode_key", "default"),
             agent_key=value.get("agent_key", ""),
+            project_id=value.get("project_id", ""),
+            case_id=value.get("case_id", ""),
+            case_version_id=value.get("case_version_id", ""),
+            suite_version_id=value.get("suite_version_id", ""),
+            test_run_id=value.get("test_run_id", ""),
+            run_item_id=value.get("run_item_id", ""),
+            attempt_id=value.get("attempt_id", ""),
+            thread_id=value.get("thread_id", ""),
             environment=self._environment,
         )
 
@@ -248,6 +287,7 @@ class LangSmithObservabilityAdapter:
         *,
         inputs: dict[str, Any] | None,
         exception: BaseException,
+        trace_name: str = "enterprise_ai_qa_agent.turn.error",
     ) -> None:
         tracing_cm: Any | None = None
         trace_cm: Any | None = None
@@ -271,7 +311,7 @@ class LangSmithObservabilityAdapter:
             )
             tracing_cm.__enter__()
             trace_cm = ls.trace(
-                name="enterprise_ai_qa_agent.turn.error",
+                name=trace_name,
                 run_type="chain",
                 inputs=safe_inputs,
                 project_name=self._config.project,

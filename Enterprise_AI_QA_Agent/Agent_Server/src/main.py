@@ -276,6 +276,10 @@ async def lifespan(app: FastAPI):
         runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
     )
+    observability_service = LangSmithObservabilityAdapter(
+        settings.langsmith,
+        environment=settings.app_env,
+    )
     test_run_execution_service = TestRunExecutionService(
         run_service=test_run_service,
         test_case_service=test_case_service,
@@ -284,10 +288,7 @@ async def lifespan(app: FastAPI):
         permission_service=permission_service,
         tool_job_service=tool_job_service,
         security_settings=settings,
-    )
-    observability_service = LangSmithObservabilityAdapter(
-        settings.langsmith,
-        environment=settings.app_env,
+        observability_service=observability_service,
     )
     model_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_observability_service(observability_service)

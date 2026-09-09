@@ -21,6 +21,9 @@ class TraceContext(BaseModel):
     case_version_id: str = ""
     suite_version_id: str = ""
     test_run_id: str = ""
+    run_item_id: str = ""
+    attempt_id: str = ""
+    thread_id: str = ""
     environment: str = "development"
     runtime_version: str = "0.1.0"
     tags: list[str] = Field(default_factory=list)
@@ -42,6 +45,9 @@ class TraceContext(BaseModel):
         "case_version_id",
         "suite_version_id",
         "test_run_id",
+        "run_item_id",
+        "attempt_id",
+        "thread_id",
         "environment",
         "runtime_version",
         mode="before",
@@ -80,6 +86,9 @@ class TraceContext(BaseModel):
             case_version_id=context.get("case_version_id", ""),
             suite_version_id=context.get("suite_version_id", ""),
             test_run_id=context.get("test_run_id", ""),
+            run_item_id=context.get("run_item_id", ""),
+            attempt_id=context.get("attempt_id", ""),
+            thread_id=context.get("thread_id", ""),
             environment=environment,
             runtime_version=runtime_version,
             tags=[

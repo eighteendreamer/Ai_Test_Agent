@@ -74,6 +74,22 @@ def build_model_invoker_node(
                 "trace_id": state["trace_id"],
                 "mode_key": state["mode_key"],
                 "agent_key": state["selected_agent_key"],
+                "project_id": str(state.get("project_id") or ""),
+                "test_run_id": str(
+                    (state.get("context_bundle") or {}).get("test_run_id") or ""
+                ),
+                "run_item_id": str(
+                    (state.get("context_bundle") or {}).get("run_item_id")
+                    or (state.get("context_bundle") or {}).get("test_run_item_id")
+                    or ""
+                ),
+                "attempt_id": str(
+                    (state.get("context_bundle") or {}).get("attempt_id") or ""
+                ),
+                "thread_id": str(
+                    (state.get("context_bundle") or {}).get("thread_id")
+                    or state["session_id"]
+                ),
             },
         )
         state["model_request_payload"] = request_payload.model_dump(mode="python")

@@ -167,6 +167,109 @@ async def test_execution_service_starts_executes_and_completes_with_the_same_lea
 
 
 @pytest.mark.asyncio
+async def test_execution_service_wraps_only_item_execution_in_observability_trace():
+    now, run, item, case, version = _records()
+
+    class FakeRuns:
+        def __init__(self):
+            self.completed_payload = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def complete_item(self, item_id, payload):
+            self.completed_payload = payload
+            return _CaseResultRecord(
+                id="result-observed-1",
+                run_id=run.id,
+                run_item_id=item.id,
+                case_id=case.id,
+                case_version_id=version.id,
+                attempt_id="attempt-observed-1",
+                attempt_no=1,
+                status=payload.status,
+                summary=payload.summary,
+                payload_hash="d" * 64,
+                created_at=now,
+            )
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class FakeAdapter:
+        async def execute(self, **kwargs):
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=kwargs["item"].lease_token,
+                    status="passed",
+                    summary="item trace observed",
+                    tool_job_id="job-observed-1",
+                ),
+                tool_record=None,
+                verification_results=[],
+            )
+
+    class RecordingScope:
+        def __init__(self, recorder):
+            self.recorder = recorder
+
+        def __enter__(self):
+            self.recorder.append(("enter", None))
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            self.recorder.append(("exit", exc_type))
+            return False
+
+        def set_outputs(self, outputs):
+            self.recorder.append(("outputs", outputs))
+
+    trace_events = []
+
+    class FakeObservability:
+        def trace_test_run_item(self, context, **kwargs):
+            trace_events.append(("start", context, kwargs))
+            return RecordingScope(trace_events)
+
+    runs = FakeRuns()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=FakeAdapter(),
+        observability_service=FakeObservability(),
+    )
+
+    result = await service.execute_item(
+        item.id,
+        RunItemExecuteRequest(lease_token="lease-1"),
+    )
+
+    assert result.status == "passed"
+    assert trace_events[0][0] == "start"
+    assert trace_events[0][1].test_run_id == run.id
+    assert trace_events[0][1].run_item_id == item.id
+    assert trace_events[0][2]["attempt_id"] == ""
+    assert trace_events[1][0] == "enter"
+    assert trace_events[2] == (
+        "outputs",
+        {
+            "status": "passed",
+            "summary": "item trace observed",
+            "tool_job_id": "job-observed-1",
+        },
+    )
+    assert trace_events[3] == ("exit", None)
+    assert runs.completed_payload.status == "passed"
+
+
+@pytest.mark.asyncio
 async def test_security_case_execution_requires_verified_session_grant():
     now, run, item, case, version = _records()
     run = run.model_copy(update={"mode_key": "security_testing"})

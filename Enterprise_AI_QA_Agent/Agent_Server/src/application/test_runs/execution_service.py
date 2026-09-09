@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from contextlib import nullcontext
 import logging
 from datetime import datetime, timezone
 
@@ -17,6 +18,7 @@ from src.application.test_runs.case_execution import (
 )
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.test_runs.run_service import TestRunService
+from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.runtime.store import SessionStore
 from src.schemas.run_management import (
     RunItemApprovalDecisionRequest,
@@ -52,6 +54,7 @@ class TestRunExecutionService:
         tool_job_service: ToolJobService | None = None,
         security_settings: object | None = None,
         lease_heartbeat_interval_seconds: float | None = None,
+        observability_service: LangSmithObservabilityAdapter | None = None,
     ) -> None:
         self._runs = run_service
         self._cases = test_case_service
@@ -68,6 +71,7 @@ class TestRunExecutionService:
             self._security_environment = "production"
         self._approval_scope = ApprovalScopeService()
         self._lease_heartbeat_interval_seconds = lease_heartbeat_interval_seconds
+        self._observability = observability_service
 
     async def execute_item(
         self,
@@ -157,15 +161,47 @@ class TestRunExecutionService:
                         raise RuntimeError(
                             f"Tool job not found for approved execution: {item.tool_job_id}"
                         )
-                outcome = await self._adapter.execute(
-                    case=case,
-                    version=version,
+                trace_context = self._build_item_trace_context(
                     run=run,
                     item=item,
-                    trusted_context_bundle=trusted_context_bundle,
-                    tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
-                    server_approval_granted=bool(payload.approval_id),
+                    attempt_id=str(getattr(latest_attempt, "id", "") or ""),
                 )
+                trace_inputs = {
+                    "run_id": run.id,
+                    "run_item_id": item.id,
+                    "attempt_no": item.attempt_no,
+                    "mode_key": run.mode_key,
+                }
+                trace_scope = (
+                    self._observability.trace_test_run_item(
+                        trace_context,
+                        run_item_id=item.id,
+                        attempt_id=trace_context.attempt_id,
+                        thread_id=trace_context.thread_id,
+                        inputs=trace_inputs,
+                    )
+                    if self._observability is not None
+                    else nullcontext(None)
+                )
+                with trace_scope as item_trace:
+                    outcome = await self._adapter.execute(
+                        case=case,
+                        version=version,
+                        run=run,
+                        item=item,
+                        trusted_context_bundle=trusted_context_bundle,
+                        attempt_id=str(getattr(latest_attempt, "id", "") or ""),
+                        tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
+                        server_approval_granted=bool(payload.approval_id),
+                    )
+                    if item_trace is not None:
+                        item_trace.set_outputs(
+                            {
+                                "status": outcome.completion.status,
+                                "summary": outcome.completion.summary,
+                                "tool_job_id": outcome.completion.tool_job_id,
+                            }
+                        )
                 completion = outcome.completion.model_copy(
                     update={"lease_token": payload.lease_token}
                 )
@@ -247,6 +283,20 @@ class TestRunExecutionService:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+
+    def _build_item_trace_context(self, *, run, item, attempt_id: str) -> TraceContext:
+        return TraceContext(
+            session_id=str(run.session_id or f"test-run:{run.id}"),
+            turn_id=f"test-run-item:{item.id}:attempt:{item.attempt_no}",
+            trace_id=f"test-run:{run.id}:item:{item.id}:attempt:{item.attempt_no}",
+            project_id=str(run.project_id),
+            mode_key=str(run.mode_key),
+            test_run_id=str(run.id),
+            run_item_id=str(item.id),
+            attempt_id=attempt_id,
+            thread_id=str(run.session_id or run.id),
+            tags=["test_run", str(run.mode_key)],
+        )
 
     async def resolve_item_approval(
         self,
