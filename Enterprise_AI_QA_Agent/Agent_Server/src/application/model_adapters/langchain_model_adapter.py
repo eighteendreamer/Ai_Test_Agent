@@ -97,6 +97,58 @@ class LangChainModelAdapter(ModelPort):
             raw_response=parsed["raw_response"],
         )
 
+    async def invoke_structured(
+        self,
+        config: ModelConfigRecord,
+        api_key: str,
+        request: ModelInvocationRequest,
+        schema: Any,
+    ) -> Any:
+        """Invoke the model with LangChain's validated structured-output path.
+
+        ``include_raw=True`` is intentional: it lets us preserve provider
+        response metadata for observability while returning only the validated
+        schema to the caller.  Parsing failures become the existing provider
+        error type so callers can apply their normal recovery policy.
+        """
+
+        if config.transport != "openai_chat_completions":
+            raise ProviderClientError(
+                "Structured LangChain output currently supports only "
+                f"openai_chat_completions; received transport={config.transport!r}."
+            )
+        try:
+            model = self._build_model(config, api_key)
+            structured_model = model.with_structured_output(schema, include_raw=True)
+            payload = await structured_model.ainvoke(
+                to_langchain_messages(request.system_prompt, request)
+            )
+        except ProviderClientError:
+            raise
+        except Exception as exc:
+            raise ProviderClientError(
+                f"LangChain structured-output invocation failed for provider={config.provider!r}: "
+                f"{truncate_text(str(exc), 240)}",
+                status_code=getattr(getattr(exc, "response", None), "status_code", None),
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise ProviderClientError(
+                "LangChain structured-output response did not use the include_raw envelope."
+            )
+        parsing_error = payload.get("parsing_error")
+        if parsing_error is not None:
+            raise ProviderClientError(
+                "LangChain structured-output parsing failed: "
+                f"{truncate_text(str(parsing_error), 240)}"
+            )
+        parsed = payload.get("parsed")
+        if parsed is None:
+            raise ProviderClientError(
+                "LangChain structured-output response contained no parsed value."
+            )
+        return parsed
+
     def _build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
         kwargs: dict[str, Any] = {
             "model": config.model_id,
