@@ -1053,6 +1053,21 @@ pip check 已知冲突：
 - 未完成：真实多进程强杀恢复、4 小时长任务、24 小时低速 soak、LangSmith 断网/限流真实网络验证。
 - 下一步：修复 Live PostgreSQL 测试夹具并单独提交；随后重新执行同进程并发、跨进程接管和恢复对账。
 
+#### 长任务 L3：PostgreSQL 跨进程接管验证（2026-09-09）
+
+- 当前状态：已完成（受控跨进程接管）；真实独立 Worker 服务强杀和 4/24 小时长时验收仍未完成。
+- 本批目标：修复 Live PostgreSQL 测试夹具的嵌套配置错误，并验证 Worker 进程退出后，另一进程能回收过期租约、创建新 Attempt 和恢复 checkpoint。
+- 实际修改文件：`Agent_Server/tests/test_live_postgres_concurrency.py`、`Agent_Server/tests/test_live_postgres_capacity.py`。
+- 根因修复：测试原先把 `postgres_*` 字段写入 `Settings` 顶层，Store 实际读取 `Settings.database`，导致隔离表配置未生效并误用默认业务表；现统一通过 `DatabaseConfig.model_copy` 更新嵌套配置。
+- 跨进程场景：Windows `spawn` Worker A 领取条目并持久化版本 1 checkpoint 后直接退出；Worker B 以租约过期后的时间回收并重新领取；父进程核对 PostgreSQL 中的新 Attempt、`recovered_from_attempt_id`、checkpoint key/version/payload。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，本机 PostgreSQL。
+- 执行命令：`$env:RUN_LIVE_POSTGRES_TESTS='1'; python -m pytest tests/test_live_postgres_concurrency.py -q`；`python -m pytest tests/test_live_postgres_concurrency.py -q`；`python -m pytest -q`；`python -m compileall -q tests`（工作目录 `Agent_Server`）。
+- 通过：Live PostgreSQL 3 passed，其中跨进程接管回收数为 1、Attempt 从 1 增至 2且恢复关联完整；默认关闭 Live 开关时 3 skipped；后端全量 759 passed、9 skipped、1 warning；测试编译通过。
+- 失败：修复前 2 项 Live 测试失败，证据已记录于上一批；修复后无失败。
+- 回滚验证：所有表均使用随机后缀并在 finally 清理；未修改生产表、业务代码、数据库 schema 或依赖。
+- 已知限制：本测试验证真实 PostgreSQL 和两个独立 Python 进程，但尚未启动完整 Worker 服务、发送 OS 强杀信号或执行实际外部 API 工具；这些留给独立 Worker E2E。
+- 下一步：建立可参数化的 4 小时/24 小时 soak harness，先用短时档验证统计、资源采样、错误率和清理，再由项目方安排长时运行窗口。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
