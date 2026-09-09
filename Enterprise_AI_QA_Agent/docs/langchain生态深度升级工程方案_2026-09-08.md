@@ -1119,7 +1119,7 @@ pip check 已知冲突：
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
-状态：未进行
+状态：进行中（P2-01/P2-02 已完成）
 目标：使用 LangChain 标准消息、模型和结构化输出能力，逐步减少自定义 Provider 协议代码，但保留现有模型配置、OAuth 和业务错误语义。
 
 前置条件：
@@ -1132,8 +1132,8 @@ pip check 已知冲突：
 
 | ID | 任务 | 目标文件/位置 | 状态 | 完成判据 |
 |---|---|---|---|---|
-| P2-01 | 定义 ModelPort | application/langchain | 未进行 | 旧新实现共享业务接口 |
-| P2-02 | 实现 Message 双向转换 | message_adapter.py | 未进行 | system/user/assistant/tool 无损转换 |
+| P2-01 | 定义 ModelPort | application/model_adapters/base.py | 已完成（本批） | 旧新实现共享业务接口 |
+| P2-02 | 实现 Message 双向转换 | application/model_adapters/message_adapter.py | 已完成（本批） | system/user/assistant/tool 无损转换 |
 | P2-03 | 实现 LangChainModelAdapter | model_adapter.py | 未进行 | 至少一个 Provider 跑通 |
 | P2-04 | 保留 LegacyProviderAdapter | model_runtime_service.py | 未进行 | 可按 Flag 回退 |
 | P2-05 | 统一 Tool Call 转换 | schemas/tool runtime | 未进行 | call id、name、args 保真 |
@@ -1156,9 +1156,10 @@ pip check 已知冲突：
 - 工具调用、错误分类、Token 和 SSE 不发生未声明破坏。
 - ModelRuntimeService 的业务 DTO 未被 LangChain 类型污染。
 
-当前测试结果：未执行。
-当前阻塞：依赖阶段 1。
-回滚点：关闭 LANGCHAIN_MODEL_ADAPTER_ENABLED。
+当前测试结果：P2-01/P2-02 契约测试 `2 passed`；与既有模型客户端回归合计 `14 passed`；`python -m compileall -q src tests` 通过。`pip check` 仍有环境既有的 browser-use/mitmproxy 等版本冲突，本批未新增可归因冲突。
+本批记录（2026-09-09）：新增 `ModelPort` 和 UnifiedMessage↔LangChain BaseMessage 转换；转换不把 LangChain 类型泄漏到业务 DTO，保留 system/user/assistant/tool、tool call id/name/args、图像内容、usage 和响应元数据；新增 opt-in 配置 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`，且本批尚未接入主链，旧 Provider 路径不变。
+当前阻塞：P2-03 适配器接入前需完成 OpenAI-compatible Provider 的实际请求、工具调用、流式和错误对账；Anthropic/Google 集成包尚未安装，不在本批扩展。
+回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
 最近提交：无。
 
 ### 14.6 阶段 3：LangChain 工具适配与 Middleware
@@ -1382,7 +1383,7 @@ pip check 已知冲突：
 当前测试结果：未执行。
 当前阻塞：依赖阶段 1—6。
 回滚点：按模式和项目切回旧路径。
-最近提交：无。
+最近提交：待本批代码与台账提交后登记。
 
 ### 14.11 阶段 2 进入前兼容预检（只读，2026-09-09）
 
