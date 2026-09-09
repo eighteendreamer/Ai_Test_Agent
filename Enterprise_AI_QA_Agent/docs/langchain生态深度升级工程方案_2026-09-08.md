@@ -1156,7 +1156,7 @@ pip check 已知冲突：
 - 工具调用、错误分类、Token 和 SSE 不发生未声明破坏。
 - ModelRuntimeService 的业务 DTO 未被 LangChain 类型污染。
 
-当前测试结果：适配器、消息转换、工具转换、Flag 分流、Legacy 边界、Structured Output、错误映射和取消传播专项 `19 passed`；后端全量 `775 passed, 10 skipped, 1 warning`（26.67s）；`python -m compileall -q src tests` 通过。`pip check` 仍有环境既有的 browser-use/mitmproxy 等版本冲突，本批未新增可归因冲突。
+当前测试结果：适配器、消息转换、工具转换、Flag 分流、Legacy 边界、Structured Output、错误映射、取消传播和双跑契约专项 `21 passed`；后端全量 `777 passed, 10 skipped, 1 warning`（24.45s）；`python -m compileall -q src tests` 通过。`pip check` 仍有环境既有的 browser-use/mitmproxy 等版本冲突，本批未新增可归因冲突。
 本批记录（2026-09-09）：新增 `ModelPort`、UnifiedMessage↔LangChain BaseMessage 转换、统一工具 schema 转换、OpenAI-compatible `LangChainModelAdapter` 和 `LegacyProviderAdapter`；转换不把 LangChain 类型泄漏到业务 DTO，保留 system/user/assistant/tool、tool call id/name/args、图像内容、usage 和响应元数据；新增 opt-in 配置 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`，开启后仅 OpenAI-compatible transport 分流到 LangChain，其他 transport 保持旧路径。
 真实模型验证（2026-09-09）：从数据库读取默认 Qwen 配置，使用 LangChain `ChatOpenAI` 适配器实际调用 OpenAI-compatible endpoint，模型返回 `LANGCHAIN_LIVE_OK`，`mode=ok`、usage 存在、tool_calls=0，退出码0；未输出密钥或 Token。
 真实运行时验证（2026-09-09）：开启 Flag 后读取数据库默认 Qwen 配置，调用返回 `RUNTIME_LANGCHAIN_FLAG_OK`，`mode=ok`、usage 存在；同一运行时流式调用返回 `RUNTIME_LANGCHAIN_STREAM_OK`，收到2个有序 chunk，终态文本和 usage 正常；独立结构化调用返回 Pydantic `Answer(answer='STRUCTURED_LIVE_OK', confidence=1.0)`；未输出密钥或 Token。
@@ -1164,8 +1164,9 @@ pip check 已知冲突：
 工具调用对账（2026-09-09）：同一数据库默认 Qwen 配置、同一只读工具 schema 和同一请求分别走 Legacy 与 LangChain；双方均生成1个 `read_only_probe` 调用，`target` 参数均为 `probe-target`，未执行工具本身。
 多样本对账（2026-09-09）：连续3轮相同语义文本请求分别走 Legacy 与 LangChain；3/3 轮双方均 `mode=ok`、tool_calls=0、usage 存在，并返回 `MULTI_DUAL_OK`。
 失败/取消对账（2026-09-09）：本机不可达测试端点在1秒超时、0重试配置下转换为 `ProviderClientError`，未泄漏密钥；Fake LangChain 任务收到 `asyncio.CancelledError` 时继续向上传播，适配器未吞取消信号。
-当前阻塞：P2-09 仍需补充超时/限流/上下文超限的更多真实 Provider 对账，以及业务层中断恢复专项。Structured Output 已完成通用适配器入口，尚未绑定具体业务节点。Anthropic/Google 集成包尚未安装，不在本批扩展。
-全量回归（2026-09-09）：`python -m pytest -q` 为 `775 passed, 10 skipped, 1 warning`（26.67s）；工作区无未提交修改。
+限流/双跑契约（2026-09-09）：新增429直接状态码保留测试；Legacy 与 LangChain 的统一结果契约测试通过。真实公网限流未主动触发，避免对默认模型产生不必要请求。
+当前阻塞：P2-09 仍需补充上下文超限的真实 Provider 对账，以及业务层中断恢复专项。Structured Output 已完成通用适配器入口，尚未绑定具体业务节点。Anthropic/Google 集成包尚未安装，不在本批扩展。
+全量回归（2026-09-09）：`python -m pytest -q` 为 `777 passed, 10 skipped, 1 warning`（24.45s）；工作区无未提交修改。
 回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
 最近提交：无。
 
