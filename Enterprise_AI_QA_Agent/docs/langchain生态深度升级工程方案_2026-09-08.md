@@ -1167,9 +1167,9 @@ pip check 已知冲突：
 限流/双跑契约（2026-09-09）：新增429直接状态码保留测试；Legacy 与 LangChain 的统一结果契约测试通过。真实公网限流未主动触发，避免对默认模型产生不必要请求。
 阶段 2 退出结论（2026-09-09）：默认数据库 Qwen Provider 已满足至少一个非关键模式灰度稳定、旧路径 Flag 回退、工具调用/错误/Token/SSE 兼容和业务 DTO 隔离；P2-09 的文本多样本、工具调用、限流错误、取消传播和 Legacy/LangChain 双跑已取得证据。上下文超限真实公网场景未主动触发，业务中断恢复复用既有 Runtime/Checkpoint 机制并已覆盖其现有回归；不新增第二套恢复实现。阶段 2 标记完成。
 后续限制：Structured Output 已完成通用适配器入口，尚未绑定具体业务节点；Anthropic/Google 集成包尚未安装，待其成为实际启用 Provider 后按同一契约矩阵补测。
-全量回归（2026-09-09）：`python -m pytest -q` 为 `777 passed, 10 skipped, 1 warning`（24.45s）；工作区无未提交修改。
+全量回归（2026-09-09）：`python -m pytest -q` 为 `777 passed, 10 skipped, 1 warning`（24.45s）；该记录对应阶段 2 关闭时的基线，阶段 3 后续回归另行登记。
 回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
-最近提交：`ce40511`（限流状态与双跑契约）、`f03cf7c`（台账更新）；阶段 2 本批关闭记录待本次文档提交后登记。
+最近提交：`ce40511`（限流状态与双跑契约）、`f03cf7c`（台账更新）、`3eb4cdf`（阶段 2 默认 Provider 验收）。
 
 ### 14.6 阶段 3：LangChain 工具适配与 Middleware
 
@@ -1220,7 +1220,7 @@ P3-07 兼容性评估（2026-09-09）：现有 `PromptAssemblyService` 已按会
 P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、Approval 流程、`ToolRuntimeService` 和执行安全策略仍是业务强制边界；官方 Middleware 只能作为编排层能力，不能替代这些权限、审批、审计和副作用控制。后续任何 Middleware 接入都必须经过现有安全边界，且不能直接暴露 Executor。
 当前阻塞：P3-04 尚未满足迁移闸门；P3-05 尚未形成可安全接入的等价实现；P3-06～P3-08 已完成评估但尚未迁移。不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
-最近提交：本批代码与台账提交后登记。
+最近提交：`4a19c16`（Middleware Registry 代码与专项测试）、`03835fa`（P3-03 台账）、`55a922b`（Retry/Timeout 评估）、`710f444`（Redaction/Observability 评估）、`5470bfb`（Context Compaction 评估）、`103e237`（Dynamic Prompt 与安全边界评估）、`1400882`（Deep Agents 阶段准入阻塞）。
 
 ### 14.7 阶段 4：Deep Agents code_review 试点
 
