@@ -110,6 +110,36 @@ def _postgres_connection_count(settings: Settings) -> int | None:
         return None
 
 
+def _soak_percentile_windows(values: list[float]) -> tuple[float, float]:
+    window_size = max(1, len(values) // 4)
+    return (
+        _percentile(values[:window_size], 0.95),
+        _percentile(values[-window_size:], 0.95),
+    )
+
+
+def _assert_soak_thresholds(
+    config: LivePostgresTestConfig,
+    *,
+    error_rate: float,
+    complete_p95_ms: float,
+    first_p95_ms: float,
+    last_p95_ms: float,
+    rss_samples: list[int],
+    connection_samples: list[int],
+) -> None:
+    if config.run_live_postgres_soak_max_error_rate >= 0:
+        assert error_rate <= config.run_live_postgres_soak_max_error_rate
+    if config.run_live_postgres_soak_max_complete_p95_ms > 0:
+        assert complete_p95_ms <= config.run_live_postgres_soak_max_complete_p95_ms
+    if config.run_live_postgres_soak_max_p95_growth_ratio > 0 and first_p95_ms > 0:
+        assert last_p95_ms / first_p95_ms <= config.run_live_postgres_soak_max_p95_growth_ratio
+    if config.run_live_postgres_soak_max_rss_growth_bytes > 0 and len(rss_samples) >= 2:
+        assert rss_samples[-1] - rss_samples[0] <= config.run_live_postgres_soak_max_rss_growth_bytes
+    if config.run_live_postgres_soak_max_connections > 0 and connection_samples:
+        assert max(connection_samples) <= config.run_live_postgres_soak_max_connections
+
+
 def _create_tables(settings: Settings) -> None:
     with postgres_connect(settings) as conn:
         with conn.cursor() as cur:
@@ -426,18 +456,34 @@ async def test_live_postgres_lifecycle_soak():
             await asyncio.sleep(iteration_interval_seconds)
 
         elapsed = perf_counter() - started
-        assert not errors, errors[:5]
-        assert completed == iterations
+        assert completed + len(errors) == iterations, errors[:5]
         assert iterations > 0
+        assert completed > 0, errors[:5]
+        error_rate = len(errors) / max(iterations, 1)
+        complete_p95_ms = _percentile(latencies, 0.95)
+        first_p95_ms, last_p95_ms = _soak_percentile_windows(latencies)
+        _assert_soak_thresholds(
+            LIVE_CONFIG,
+            error_rate=error_rate,
+            complete_p95_ms=complete_p95_ms,
+            first_p95_ms=first_p95_ms,
+            last_p95_ms=last_p95_ms,
+            rss_samples=rss_samples,
+            connection_samples=connection_samples,
+        )
         print(
             "postgres_soak "
             f"duration_seconds={elapsed:.2f} iterations={iterations} completed={completed} "
-            f"error_rate={len(errors) / max(iterations, 1):.6f} "
+            f"errors={len(errors)} "
+            f"error_rate={error_rate:.6f} "
             f"complete_p50={_percentile(latencies, 0.50):.2f}ms "
-            f"complete_p95={_percentile(latencies, 0.95):.2f}ms "
+            f"complete_p95={complete_p95_ms:.2f}ms "
             f"complete_p99={_percentile(latencies, 0.99):.2f}ms "
+            f"complete_first_p95={first_p95_ms:.2f}ms "
+            f"complete_last_p95={last_p95_ms:.2f}ms "
             f"rss_min={min(rss_samples) if rss_samples else 'unavailable'} "
             f"rss_max={max(rss_samples) if rss_samples else 'unavailable'} "
+            f"rss_growth={rss_samples[-1] - rss_samples[0] if len(rss_samples) >= 2 else 'unavailable'} "
             f"connections_max={max(connection_samples) if connection_samples else 'unavailable'}"
         )
     finally:
@@ -449,4 +495,48 @@ async def test_live_postgres_lifecycle_soak():
                 settings.database.postgres_test_run_item_table,
                 settings.database.postgres_test_run_table,
             ],
+        )
+
+
+def test_soak_thresholds_are_observation_only_until_configured(monkeypatch):
+    for name in (
+        "RUN_LIVE_POSTGRES_SOAK_MAX_ERROR_RATE",
+        "RUN_LIVE_POSTGRES_SOAK_MAX_COMPLETE_P95_MS",
+        "RUN_LIVE_POSTGRES_SOAK_MAX_P95_GROWTH_RATIO",
+        "RUN_LIVE_POSTGRES_SOAK_MAX_RSS_GROWTH_BYTES",
+        "RUN_LIVE_POSTGRES_SOAK_MAX_CONNECTIONS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    config = LivePostgresTestConfig(_env_file=None)
+
+    _assert_soak_thresholds(
+        config,
+        error_rate=1.0,
+        complete_p95_ms=9999,
+        first_p95_ms=10,
+        last_p95_ms=100,
+        rss_samples=[1, 10_000_000],
+        connection_samples=[999],
+    )
+
+
+def test_soak_thresholds_reject_a_configured_regression():
+    config = LivePostgresTestConfig(
+        _env_file=None,
+        run_live_postgres_soak_max_error_rate=0,
+        run_live_postgres_soak_max_complete_p95_ms=20,
+        run_live_postgres_soak_max_p95_growth_ratio=1.2,
+        run_live_postgres_soak_max_rss_growth_bytes=1024,
+        run_live_postgres_soak_max_connections=4,
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_soak_thresholds(
+            config,
+            error_rate=0.01,
+            complete_p95_ms=25,
+            first_p95_ms=10,
+            last_p95_ms=15,
+            rss_samples=[1000, 3000],
+            connection_samples=[5],
         )

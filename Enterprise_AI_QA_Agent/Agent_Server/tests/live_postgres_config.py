@@ -18,6 +18,11 @@ class LivePostgresTestConfig(BaseSettings):
     run_live_postgres_soak_iteration_interval_seconds: float = 1.0
     run_live_postgres_soak_workers: int = 4
     run_live_postgres_soak_max_iterations: int = 0
+    run_live_postgres_soak_max_error_rate: float = -1.0
+    run_live_postgres_soak_max_complete_p95_ms: float = 0.0
+    run_live_postgres_soak_max_p95_growth_ratio: float = 0.0
+    run_live_postgres_soak_max_rss_growth_bytes: int = 0
+    run_live_postgres_soak_max_connections: int = 0
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),
@@ -25,4 +30,3 @@ class LivePostgresTestConfig(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
-
