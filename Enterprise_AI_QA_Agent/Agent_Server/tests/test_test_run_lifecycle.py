@@ -204,6 +204,73 @@ def test_expired_attempt_reclaims_with_latest_checkpoint():
     assert second["attempt"]["checkpoint_payload"]["step"] == 3
 
 
+def test_service_restart_recovers_expired_attempt_and_rejects_old_lease():
+    """Startup recovery must work when a new service instance takes over the store."""
+    clock = _Clock()
+    app, _, suite, _, first_service = _run(
+        _build_components(case_count=1, clock=clock, lease_reaper_interval_seconds=0.1)
+    )
+    run_id = _create_run(app, suite.suite.id).json()["run"]["id"]
+    first = _request(
+        app,
+        "POST",
+        f"/api/v1/runs/{run_id}/claim",
+        json={"worker_id": "worker-before-restart", "lease_seconds": 15},
+    ).json()["claims"][0]
+    item_id = first["item"]["id"]
+    _request(
+        app,
+        "POST",
+        f"/api/v1/run-items/{item_id}/checkpoint",
+        json={
+            "lease_token": first["lease_token"],
+            "checkpoint_key": "api_request",
+            "checkpoint_payload": {"request_id": "req-1", "step": 4},
+        },
+    ).raise_for_status()
+
+    clock.advance(16)
+    run_store = first_service._store
+    restarted_service_type = type(first_service)
+    restarted_service = restarted_service_type(
+        store=run_store,
+        project_service=first_service._projects,
+        suite_service=first_service._suites,
+        test_case_service=first_service._cases,
+        session_store=first_service._sessions,
+        clock=clock,
+        lease_reaper_interval_seconds=0.1,
+    )
+    _run(restarted_service.initialize())
+
+    restarted_app = FastAPI()
+    restarted_app.state.test_run_service = restarted_service
+    restarted_app.state.session_store = first_service._sessions
+    restarted_app.include_router(_components()[0], prefix="/api/v1")
+
+    old_lease = _request(
+        restarted_app,
+        "POST",
+        f"/api/v1/run-items/{item_id}/heartbeat",
+        json={"lease_token": first["lease_token"]},
+    )
+    assert old_lease.status_code == 409
+
+    second = _request(
+        restarted_app,
+        "POST",
+        f"/api/v1/runs/{run_id}/claim",
+        json={"worker_id": "worker-after-restart"},
+    ).json()["claims"][0]
+    assert second["attempt"]["id"] != first["attempt"]["id"]
+    assert second["attempt"]["recovered_from_attempt_id"] == first["attempt"]["id"]
+    assert second["attempt"]["checkpoint_version"] == 1
+    assert second["attempt"]["checkpoint_payload"] == {
+        "request_id": "req-1",
+        "step": 4,
+    }
+
+
 def test_create_run_freezes_suite_items_and_lists_project_history():
     app, project, suite, _, _ = _run(_build_components())
 
