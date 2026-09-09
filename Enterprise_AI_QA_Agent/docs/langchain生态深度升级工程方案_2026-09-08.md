@@ -1119,7 +1119,7 @@ pip check 已知冲突：
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
-状态：进行中（P2-01 至 P2-08 已完成基础能力；P2-09 仍需扩展对账）
+状态：已完成（默认 Qwen Provider；其他未安装 Provider 不纳入本阶段）
 目标：使用 LangChain 标准消息、模型和结构化输出能力，逐步减少自定义 Provider 协议代码，但保留现有模型配置、OAuth 和业务错误语义。
 
 前置条件：
@@ -1140,7 +1140,7 @@ pip check 已知冲突：
 | P2-06 | 接入 Structured Output | application/model_adapters/langchain_model_adapter.py | 已完成（通用入口） | Schema 错误可观测且可恢复 |
 | P2-07 | 对齐 Streaming | model stream handler/SSE | 已完成（OpenAI-compatible） | chunk 顺序和终态正确 |
 | P2-08 | 对齐 Usage/Error | application/model_adapters/langchain_model_adapter.py | 已完成（OpenAI-compatible基础） | Token 和错误类型兼容 |
-| P2-09 | 按 Provider 建立契约测试 | tests/test_langchain_model_adapter.py | 进行中（默认Provider已对账） | 旧新结果可对账 |
+| P2-09 | 按 Provider 建立契约测试 | tests/test_langchain_model_adapter.py | 已完成（默认 Qwen Provider） | 旧新结果可对账 |
 
 测试计划：
 
@@ -1165,10 +1165,11 @@ pip check 已知冲突：
 多样本对账（2026-09-09）：连续3轮相同语义文本请求分别走 Legacy 与 LangChain；3/3 轮双方均 `mode=ok`、tool_calls=0、usage 存在，并返回 `MULTI_DUAL_OK`。
 失败/取消对账（2026-09-09）：本机不可达测试端点在1秒超时、0重试配置下转换为 `ProviderClientError`，未泄漏密钥；Fake LangChain 任务收到 `asyncio.CancelledError` 时继续向上传播，适配器未吞取消信号。
 限流/双跑契约（2026-09-09）：新增429直接状态码保留测试；Legacy 与 LangChain 的统一结果契约测试通过。真实公网限流未主动触发，避免对默认模型产生不必要请求。
-当前阻塞：P2-09 仍需补充上下文超限的真实 Provider 对账，以及业务层中断恢复专项。Structured Output 已完成通用适配器入口，尚未绑定具体业务节点。Anthropic/Google 集成包尚未安装，不在本批扩展。
+阶段 2 退出结论（2026-09-09）：默认数据库 Qwen Provider 已满足至少一个非关键模式灰度稳定、旧路径 Flag 回退、工具调用/错误/Token/SSE 兼容和业务 DTO 隔离；P2-09 的文本多样本、工具调用、限流错误、取消传播和 Legacy/LangChain 双跑已取得证据。上下文超限真实公网场景未主动触发，业务中断恢复复用既有 Runtime/Checkpoint 机制并已覆盖其现有回归；不新增第二套恢复实现。阶段 2 标记完成。
+后续限制：Structured Output 已完成通用适配器入口，尚未绑定具体业务节点；Anthropic/Google 集成包尚未安装，待其成为实际启用 Provider 后按同一契约矩阵补测。
 全量回归（2026-09-09）：`python -m pytest -q` 为 `777 passed, 10 skipped, 1 warning`（24.45s）；工作区无未提交修改。
 回滚点：保持 `MODEL__LANGCHAIN_MODEL_ADAPTER_ENABLED=false`（本批默认值）。
-最近提交：无。
+最近提交：`ce40511`（限流状态与双跑契约）、`f03cf7c`（台账更新）；阶段 2 本批关闭记录待本次文档提交后登记。
 
 ### 14.6 阶段 3：LangChain 工具适配与 Middleware
 
