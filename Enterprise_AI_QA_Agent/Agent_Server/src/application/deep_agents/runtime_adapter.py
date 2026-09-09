@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any, Awaitable, Callable
 
 
@@ -46,9 +48,11 @@ class DeepAgentRuntimeAdapter:
         *,
         model_resolver: ModelResolver,
         agent_factory: AgentFactory | None = None,
+        skill_registry: Any | None = None,
     ) -> None:
         self._model_resolver = model_resolver
         self._agent_factory = agent_factory
+        self._skill_registry = skill_registry
 
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
         if not request.session_id or not request.turn_id or not request.model_key:
@@ -58,8 +62,9 @@ class DeepAgentRuntimeAdapter:
 
         try:
             model = await self._model_resolver(request.model_key)
+            cleanup = None
             if self._agent_factory is None:
-                harness_kwargs = self._configure_harness(
+                harness_kwargs, cleanup = self._configure_harness(
                     model,
                     read_only_filesystem_enabled=request.read_only_filesystem_enabled,
                     context=request.context,
@@ -69,16 +74,20 @@ class DeepAgentRuntimeAdapter:
             factory = self._resolve_factory()
             # ``tools=[]`` is intentional for DA-E1.  Business tools must not
             # bypass ToolRuntimeService before the DA-E4 governance adapter.
-            agent = factory(
-                model=model,
-                tools=[],
-                system_prompt=request.system_prompt,
-                **harness_kwargs,
-            )
-            result = await agent.ainvoke(
-                {"messages": list(request.messages)},
-                config={"configurable": {"thread_id": request.turn_id}},
-            )
+            try:
+                agent = factory(
+                    model=model,
+                    tools=[],
+                    system_prompt=request.system_prompt,
+                    **harness_kwargs,
+                )
+                result = await agent.ainvoke(
+                    {"messages": list(request.messages)},
+                    config={"configurable": {"thread_id": request.turn_id}},
+                )
+            finally:
+                if cleanup is not None:
+                    cleanup()
         except DeepAgentRuntimeError:
             raise
         except Exception as exc:
@@ -115,13 +124,13 @@ class DeepAgentRuntimeAdapter:
             ) from exc
         return create_deep_agent
 
-    @staticmethod
     def _configure_harness(
+        self,
         model: Any,
         *,
         read_only_filesystem_enabled: bool,
         context: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
 
         ``create_deep_agent(..., tools=[])`` is additive.  Without an explicit
@@ -166,10 +175,10 @@ class DeepAgentRuntimeAdapter:
             register_harness_profile(provider, profile)
 
         if not read_only_filesystem_enabled:
-            return {}
+            return {}, None
 
         project_root = _project_root_from_context(context)
-        if project_root is None:
+        if not project_root:
             raise DeepAgentRuntimeError(
                 "DA-E2 read-only filesystem requires an explicit local project_root."
             )
@@ -185,23 +194,61 @@ class DeepAgentRuntimeAdapter:
             )
 
         try:
-            from deepagents.backends import FilesystemBackend
-            from deepagents.middleware import FilesystemMiddleware
+            from deepagents.backends import CompositeBackend, FilesystemBackend
+            from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
         except ImportError as exc:
             raise DeepAgentRuntimeError(
                 "DA-E2 read-only filesystem requires Deep Agents filesystem APIs."
             ) from exc
 
-        backend = FilesystemBackend(root_dir=root, virtual_mode=True)
-        return {
-            "backend": backend,
-            "middleware": [
+        project_backend = FilesystemBackend(root_dir=root, virtual_mode=True)
+        backend = project_backend
+        middleware = [
+            FilesystemMiddleware(
+                backend=backend,
+                tools=["read_file", "ls", "glob", "grep"],
+            )
+        ]
+        cleanup = None
+        skill_keys = context.get("skill_keys")
+        if skill_keys:
+            if self._skill_registry is None:
+                raise DeepAgentRuntimeError(
+                    "DA-E2 skill_keys were supplied but no SkillRegistry is configured."
+                )
+            selected_keys = [str(item).strip() for item in skill_keys if str(item).strip()]
+            selected = self._skill_registry.get_many(selected_keys)
+            if len(selected) != len(set(selected_keys)):
+                raise DeepAgentRuntimeError(
+                    "DA-E2 skill_keys contain an unknown or disabled SkillRegistry key."
+                )
+            staging = tempfile.TemporaryDirectory(prefix="deepagents-skills-")
+            staging_root = Path(staging.name)
+            for descriptor in selected:
+                source = (self._skill_registry.skills_root / descriptor.key).resolve()
+                if not source.is_dir() or not (source / "SKILL.md").is_file():
+                    staging.cleanup()
+                    raise DeepAgentRuntimeError(
+                        f"DA-E2 SkillRegistry entry has no valid SKILL.md: {descriptor.key}"
+                    )
+                shutil.copytree(source, staging_root / descriptor.key)
+            skill_backend = FilesystemBackend(root_dir=staging_root, virtual_mode=True)
+            backend = CompositeBackend(
+                default=project_backend,
+                routes={"/skills/": skill_backend},
+            )
+            middleware = [
                 FilesystemMiddleware(
                     backend=backend,
                     tools=["read_file", "ls", "glob", "grep"],
-                )
-            ],
-        }
+                ),
+                SkillsMiddleware(backend=backend, sources=["/skills/"]),
+            ]
+            cleanup = staging.cleanup
+        return {
+            "backend": backend,
+            "middleware": middleware,
+        }, cleanup
 
 
 def _project_root_from_context(context: dict[str, Any]) -> str:

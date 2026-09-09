@@ -200,7 +200,7 @@ class RuntimeService:
                     "business tools in the DA-E1 boundary."
                 ),
                 messages=list(state["runtime_messages"]),
-                context=dict(request.context),
+                context={**dict(request.context), "skill_keys": list(request.skill_keys)},
                 read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
             )
         )

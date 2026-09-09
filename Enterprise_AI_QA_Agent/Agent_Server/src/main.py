@@ -296,6 +296,7 @@ async def lifespan(app: FastAPI):
     tool_runtime_service.set_observability_service(observability_service)
     deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(
         model_resolver=model_runtime_service.resolve_langchain_chat_model,
+        skill_registry=skill_registry,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,
