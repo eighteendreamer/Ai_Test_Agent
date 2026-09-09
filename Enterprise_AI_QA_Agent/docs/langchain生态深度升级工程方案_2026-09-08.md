@@ -1191,7 +1191,7 @@ pip check 已知冲突：
 | P3-03 | 建立 Middleware Registry | middleware_registry.py | 已完成（本批） | 顺序、开关和作用域明确 |
 | P3-04 | 迁移通用 Retry/Timeout | Middleware | 评估完成，迁移待接入 Agent Runtime | 明确唯一重试所有者和超时边界后再启用 |
 | P3-05 | 迁移 Redaction/Observability | Middleware | 评估完成，迁移待拆分边界 | 不削弱字段白名单、凭据清洗和故障旁路 |
-| P3-06 | 评估 Context Compaction | context service/Middleware | 未进行 | 不产生双重摘要 |
+| P3-06 | 评估 Context Compaction | context service/Middleware | 评估完成，保留现有服务 | 不产生双重摘要且原始消息可恢复 |
 | P3-07 | 评估 Dynamic Prompt/Token Budget | prompting/Middleware | 未进行 | Prompt 结构和预算可追踪 |
 | P3-08 | 保留业务安全强制层 | Permission/Safety/Approval | 未进行 | Middleware 无法绕过 |
 
@@ -1215,7 +1215,8 @@ pip check 已知冲突：
 本批记录（2026-09-09）：P3-03 新增 `LangChainMiddlewareRegistry`，仅负责官方 Middleware 实例的注册、名称唯一性、作用域筛选、启用开关和稳定排序；不执行 Middleware、不改变现有 Runtime 调度，也不绕过权限、审批、审计或 artifact 链路。配置 `LANGCHAIN_MIDDLEWARE_ENABLED=false` 作为默认关闭的灰度开关。
 P3-04 兼容性评估（2026-09-09）：当前 Provider SDK（OpenAI-compatible、Anthropic、Embedding）默认使用 `max_retries=2`；LangChain 模型适配器向 `ChatOpenAI` 传递同一配置；API/安全/性能模式还在任务层维护自己的 `max_retries` 和失败重排；运行器对心跳超时、租约失效另有恢复重试。请求超时由 `llm_request_timeout_seconds` 及各工具/Worker 的独立边界控制。直接叠加 `ModelRetryMiddleware` 或 `ToolRetryMiddleware` 会重复发送请求、放大长任务时长并改变既有失败语义，因此本批不接入现有主 Runtime。后续接入闸门为：选定单一重试所有者、将其他层明确设为 0 或仅负责恢复、建立总时长预算和取消传播测试，再通过默认关闭的灰度开关启用。
 P3-05 兼容性评估（2026-09-09）：现有 `OutputSafetyPolicy` 同时承担凭据字段清洗、文本模式脱敏和 Prompt Injection 评估；`LangSmithObservabilityAdapter` 在所有输入、输出、metadata 写入前调用该策略，并保留故障旁路语义。官方 `PIIMiddleware` 主要覆盖 email、credit card、IP、MAC、URL 等 PII 类型，不能替代现有凭据清洗和注入判定；将其直接叠加会造成重复脱敏或改变字段结构。后续只评估把可证明等价的 PII 检测作为独立、默认关闭的 Middleware，并继续由现有策略作为唯一 LangSmith 出口门卫。
-当前阻塞：P3-04 尚未满足迁移闸门；P3-05 尚未形成可安全接入的等价实现；P3-06～P3-08 评估尚未开始。不得在这些边界完成前重复叠加横切逻辑。
+P3-06 兼容性评估（2026-09-09）：现有 `ContextCompactionService` 已按 `context_compaction_watermark` 和 `context_max_tail_messages` 触发，使用业务模型生成带索引的滚动摘要，并将 `context_summary.covers_until_index` 持久化；原始消息继续保存在 Session Store，恢复时不会丢失。官方 `SummarizationMiddleware` 也是模型可见上下文压缩，但若直接叠加会对同一会话产生双重摘要、重复模型调用并破坏索引覆盖语义，因此本阶段保留现有服务，不接入 Middleware。后续若迁移，必须先让 Middleware 成为唯一摘要所有者，并建立摘要幂等、恢复和长任务成本回归。
+当前阻塞：P3-04 尚未满足迁移闸门；P3-05 尚未形成可安全接入的等价实现；P3-06 已评估但尚未迁移。不得在这些边界完成前重复叠加横切逻辑。
 回滚点：关闭 LANGCHAIN_TOOL_ADAPTER_ENABLED，并恢复旧工具暴露路径。
 最近提交：本批代码与台账提交后登记。
 
