@@ -613,7 +613,8 @@ Feature Flags：
 | Deep Agents C2 候选解析 | PyPI + 独立 C2 venv | 通过 | `deepagents==0.7.13` 安装成功；LangChain 1.4.0/Core 1.6.2/LangGraph 1.2.11/LangSmith 0.12.2；`pip check` 通过 |
 | Deep Agents C2 Harness | C2 venv + fake tool-capable chat model | 通过 | `create_deep_agent` 构造成功；离线 `invoke` 成功，2 messages |
 | 生态包元数据 | python.exe + importlib.metadata | 通过 | Python 3.11.15；LangChain 1.2.3；Core 1.2.7；LangGraph 1.0.10；LangSmith 0.10.18 |
-| Deep Agents 索引解析 | python.exe -m pip index versions deepagents | 未通过 | 当前软件包索引返回 No matching distribution found；未修改环境 |
+| Deep Agents 索引解析 | python.exe -m pip index versions deepagents | 镜像失败，官方索引通过 | 当前配置镜像返回 No matching distribution found；官方 PyPI 可解析 `0.7.13`，未修改环境 |
+| Deep Agents 主组合解析 | python.exe -m pip install --dry-run --ignore-installed ... | 未通过（预期阻塞） | 官方 PyPI 解析确认 `deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务 `langchain==1.2.3` 冲突；未修改环境 |
 
 后端警告：
 

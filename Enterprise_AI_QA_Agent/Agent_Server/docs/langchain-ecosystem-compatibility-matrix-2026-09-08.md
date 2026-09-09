@@ -39,7 +39,8 @@
 | 指定解释器包元数据 | 四个生态包版本与项目声明一致 | 当前组合标记为“已验证” |
 | LangChain 官方 Deep Agents Quickstart | 安装包名为 `deepagents`，入口为 `from deepagents import create_deep_agent` | 不自创包名或 API；仅在官方包可解析后建立试点 |
 | Deep Agents 官方仓库 `libs/deepagents/pyproject.toml`（2026-09-08 拉取） | 主线 0.7.13 要求 Python `>=3.11,<4.0`、`langchain>=1.4.0`、`langchain-core>=1.6.2`、`langsmith>=0.12.2`，许可证 MIT | Python 版本兼容，但当前 LangChain/LangSmith 组合不兼容；必须在隔离环境先做升级矩阵，不能直接加入默认或可选依赖组 |
-| `pip index versions deepagents` | 当前配置的软件包索引返回 `No matching distribution found for deepagents` | 当前环境不安装 Deep Agents；先查明索引源/镜像同步状态，再验证候选版本 |
+| `pip index versions deepagents` | 当前配置镜像返回 `No matching distribution found`；官方 PyPI 可解析 `0.7.13` | 镜像同步问题与版本兼容问题分开处理；主环境仍不安装 Deep Agents |
+| 官方 PyPI 组合 dry-run | `deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务 `langchain==1.2.3` 冲突 | 保留 P0-07 阻塞；先完成隔离升级矩阵和 C4 回滚证据，不修改主环境 |
 
 官方来源：
 
@@ -80,7 +81,8 @@
 
 - 包元数据读取成功：Python 3.11.15、LangChain 1.2.3、LangChain Core 1.2.7、LangGraph 1.0.10、LangSmith 0.10.18；OpenAI 1.109.1、Anthropic 0.111.0、Google Gen AI 1.75.0。
 - `pip check` 失败：共 8 条，均来自上述三个共享环境附加工具。
-- `pip index versions deepagents` 失败：当前索引无匹配发行包。
+- 当前配置镜像上的 `pip index versions deepagents` 失败：无匹配发行包；改用官方 PyPI 索引后解析到 `deepagents==0.7.13`。
+- 官方 PyPI 组合 `pip install --dry-run --ignore-installed` 失败：`deepagents==0.7.13` 要求 `langchain>=1.3.18`，与主服务锁定的 `langchain==1.2.3` 产生 `ResolutionImpossible`；该命令未修改环境。
 - 第一次版本探测使用 `langgraph.__version__` 失败，因为该模块未公开此属性；已改用 `importlib.metadata.version('langgraph')` 并成功。该失败不代表 LangGraph 导入失败。
 - 干净 C1 环境的运行时依赖快照已保存为 `Agent_Server/docs/python311-main-service-c1-freeze-2026-09-08.txt`；该文件不包含项目自身的 editable git 行，避免把本地路径误当成可复现依赖。
 - C2 候选环境快照已保存为 `Agent_Server/docs/python311-deepagents-c2-freeze-2026-09-08.txt`。候选组合为 Deep Agents 0.7.13、LangChain 1.4.0、LangChain Core 1.6.2、LangGraph 1.2.11、LangSmith 0.12.2，并额外安装 `langchain-openai==1.6.1`。
