@@ -1000,7 +1000,20 @@ pip check 已知冲突：
 - 失败：无。
 - 跳过：尚未进行真实独立 Worker 进程强杀；当前恢复行为已由 InMemory 生命周期测试覆盖，真实多进程接管测试待运行环境准备后执行。
 - 回滚验证：仅增加日志和事件 payload 可选字段，不改变领取、租约和状态迁移。
-- 下一步：执行真实 Worker/服务进程恢复测试；通过后建立 LangSmith TestRun→Item→Stage 分段 Trace。
+- 下一步：建立 LangSmith TestRun→Item→Stage 分段 Trace；真实独立 Worker 强杀和 PostgreSQL 多进程接管仍需在具备数据库与可控进程环境后执行。
+
+#### 长任务 L2：服务重启后的 Attempt 接管回归（2026-09-09）
+
+- 当前状态：已完成（生命周期级集成测试）；真实独立进程验收未完成。
+- 本批目标：验证服务重新初始化时会执行过期租约恢复，并由新 Worker 创建新 Attempt 继承最近检查点；旧 Worker 的 lease token 不得继续写入。
+- 实际修改文件：`Agent_Server/tests/test_test_run_lifecycle.py`。
+- 测试场景：第一服务实例领取条目并保存 checkpoint；推进时钟使 lease 过期；创建第二个 `TestRunService` 实例并调用 `initialize()`；旧 token heartbeat 必须返回 409；新 Worker 领取后 Attempt ID 必须变化，`recovered_from_attempt_id`、checkpoint version 和 payload 必须一致。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m pytest tests/test_test_run_lifecycle.py -q`（工作目录 `Agent_Server`）。
+- 通过：14 passed。
+- 失败：无。
+- 未覆盖：真实 OS 进程强杀、PostgreSQL 事务并发、网络中断和 4/24 小时 soak；这些需要可控外部运行环境，不能用内存 Store 结果替代。
+- 下一步：先实现 LangSmith 分段 Trace 契约与失败隔离，再安排 PostgreSQL 多进程接管专项。
 
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
