@@ -988,6 +988,20 @@ pip check 已知冲突：
 - 回滚验证：缺少 `completed_request` 或证据不完整时自动回到原始 HTTP 执行路径；不改变现有失败和断言判定。
 - 下一步：执行真实 Worker 强杀/进程重启恢复测试，确认新 Attempt 能携带完整 API 证据并避免重复请求；完成后再设计 LangSmith 长任务分段 Trace。
 
+#### 长任务 L2：恢复领取审计事件（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：让普通 Claim 与恢复 Claim 在事件和日志中可区分，为后续 Worker 强杀、租约过期和 LangSmith 对账提供明确证据。
+- 实际修改文件：`Agent_Server/src/application/test_runs/run_service.py`。
+- 实现规则：`test_run_items_claimed` 日志增加 `recovered_count`；Claim 事件增加 `recovered_attempts`，包含 `run_item_id`、新旧 Attempt ID 和 checkpoint 版本；首次领取不生成恢复项，保持事件结构兼容。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest -q`。
+- 通过：后端全量 754 passed、8 skipped、1 warning；编译通过。
+- 失败：无。
+- 跳过：尚未进行真实独立 Worker 进程强杀；当前恢复行为已由 InMemory 生命周期测试覆盖，真实多进程接管测试待运行环境准备后执行。
+- 回滚验证：仅增加日志和事件 payload 可选字段，不改变领取、租约和状态迁移。
+- 下一步：执行真实 Worker/服务进程恢复测试；通过后建立 LangSmith TestRun→Item→Stage 分段 Trace。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行

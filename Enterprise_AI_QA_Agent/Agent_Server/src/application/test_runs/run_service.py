@@ -659,6 +659,9 @@ class TestRunService:
                 "run_id": run_id,
                 "worker_id": payload.worker_id,
                 "claim_count": len(claims),
+                "recovered_count": sum(
+                    1 for claim in claims if claim.attempt.recovered_from_attempt_id
+                ),
             },
         )
         await self._emit(
@@ -668,6 +671,16 @@ class TestRunService:
                 "run_id": run_id,
                 "worker_id": payload.worker_id,
                 "item_ids": [claim.item.id for claim in claims],
+                "recovered_attempts": [
+                    {
+                        "run_item_id": claim.item.id,
+                        "attempt_id": claim.attempt.id,
+                        "recovered_from_attempt_id": claim.attempt.recovered_from_attempt_id,
+                        "checkpoint_version": claim.attempt.checkpoint_version,
+                    }
+                    for claim in claims
+                    if claim.attempt.recovered_from_attempt_id
+                ],
             },
         )
         return RunClaimResponse(claims=claims)
