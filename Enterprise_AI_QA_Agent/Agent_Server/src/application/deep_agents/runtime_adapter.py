@@ -195,6 +195,7 @@ class DeepAgentRuntimeAdapter:
 
         try:
             from deepagents.backends import CompositeBackend, FilesystemBackend
+            from deepagents import FilesystemPermission
             from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
         except ImportError as exc:
             raise DeepAgentRuntimeError(
@@ -202,11 +203,28 @@ class DeepAgentRuntimeAdapter:
             ) from exc
 
         project_backend = FilesystemBackend(root_dir=root, virtual_mode=True)
+        permissions = [
+            FilesystemPermission(
+                operations=["read", "write"],
+                paths=[
+                    "/.env",
+                    "/.env.*",
+                    "/**/.env",
+                    "/**/.env.*",
+                    "/**/*credentials*",
+                    "/**/*secret*",
+                    "/**/*.pem",
+                    "/**/*.key",
+                ],
+                mode="deny",
+            )
+        ]
         backend = project_backend
         middleware = [
             FilesystemMiddleware(
                 backend=backend,
                 tools=["read_file", "ls", "glob", "grep"],
+                _permissions=permissions,
             )
         ]
         cleanup = None
@@ -241,6 +259,7 @@ class DeepAgentRuntimeAdapter:
                 FilesystemMiddleware(
                     backend=backend,
                     tools=["read_file", "ls", "glob", "grep"],
+                    _permissions=permissions,
                 ),
                 SkillsMiddleware(backend=backend, sources=["/skills/"]),
             ]

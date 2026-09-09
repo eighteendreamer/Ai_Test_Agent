@@ -1560,9 +1560,9 @@ API / Session / TestRun 控制平面（系统保留）
 | 实际修改文件 | `Agent_Server/src/application/deep_agents/runtime_adapter.py`、`Agent_Server/src/application/runtime/runtime_service.py`、`Agent_Server/src/core/config.py`、`Agent_Server/src/main.py`、`Agent_Server/.env.example`、`Agent_Server/tests/test_deep_agent_runtime_adapter.py` |
 | 配置 | `DEEP_AGENTS__READ_ONLY_FILESYSTEM_ENABLED=false` 默认关闭；SSH source 不允许进入本地 FilesystemBackend；没有显式 root 时拒绝 DA-E2，而不是退回当前工作目录 |
 | 主环境验证 | 定向测试：`3 passed`；`compileall -q src`：通过；增加 Skills 映射后后端全量：`784 passed, 10 skipped, 1 warning in 48.48s` |
-| C4 验证 | C4 `deepagents==0.7.13` 实际调用只读适配器返回 `DA_E2_PROFILE_OK`，模型 `bound_tools=[['ls', 'read_file', 'glob', 'grep']]`；加入 `tdd-review` 后返回 `DA_E2_SKILLS_OK`、`skill_visible=True`，仍只绑定四个只读工具 |
+| C4 验证 | C4 `deepagents==0.7.13` 实际调用只读适配器返回 `DA_E2_PROFILE_OK`，模型 `bound_tools=[['ls', 'read_file', 'glob', 'grep']]`；加入 `tdd-review` 后返回 `DA_E2_SKILLS_OK`、`skill_visible=True`，仍只绑定四个只读工具；模型尝试读取 `.env` 时得到权限拒绝并最终返回 `DA_E2_PERMISSION_OK`，没有泄露内容 |
 | Skills 治理 | Runtime 只传递请求已选择的 `skill_keys`；Adapter 仅接受现有 SkillRegistry 能解析且有合法 `SKILL.md` 的条目，把选中目录复制到单次调用临时 source，再通过 CompositeBackend `/skills/` 路由交给官方 SkillsMiddleware；调用结束立即清理，不暴露全部 `src/SKILLS`，未知 key 直接拒绝 |
-| 未完成 | 尚未完成新旧文件读取结果对账及敏感文件、路径穿越、符号链接、超大文件、二进制和并发读取测试；现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，还需同步映射版本字段 |
+| 未完成 | 尚未完成新旧文件读取结果对账及路径穿越、符号链接、超大文件、二进制和并发读取测试；敏感文件 deny 规则已加入并完成 `.env` C4 运行验证；现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，还需同步映射版本字段 |
 | 长任务边界 | 本批不增加 Checkpointer、租约、Worker 或后台任务能力；DA-E2 仍只能用于短的 code_review 认知步骤，不能用于数小时 TestRun |
 | 下一步 | 先实现 SkillRegistry → 官方 skills source 的受控映射，再补齐路径安全和结果对账测试；所有门槛通过后才将 DA-E2 标为已完成 |
 
