@@ -79,6 +79,12 @@ class TestRunExecutionService:
             RunItemLeaseRequest(lease_token=payload.lease_token),
         )
         run = await self._runs.get_record(item.run_id)
+        get_latest_attempt = getattr(self._runs, "get_latest_attempt", None)
+        latest_attempt = (
+            await get_latest_attempt(item.id)
+            if get_latest_attempt is not None
+            else None
+        )
         case = await self._cases.get_case(item.case_id)
         version = await self._cases.get_version(item.case_version_id)
         heartbeat_errors: list[str] = []
@@ -97,6 +103,30 @@ class TestRunExecutionService:
                     run=run,
                     version=version,
                 )
+                if latest_attempt and latest_attempt.checkpoint_version:
+                    trusted_context_bundle = {
+                        **trusted_context_bundle,
+                        "execution_checkpoint": {
+                            "attempt_id": latest_attempt.id,
+                            "recovered_from_attempt_id": latest_attempt.recovered_from_attempt_id,
+                            "version": latest_attempt.checkpoint_version,
+                            "key": latest_attempt.checkpoint_key,
+                            "payload": deepcopy(latest_attempt.checkpoint_payload),
+                            "created_at": latest_attempt.checkpoint_at.isoformat()
+                            if latest_attempt.checkpoint_at
+                            else None,
+                        },
+                    }
+                    logger.info(
+                        "test_run_execution_checkpoint_loaded",
+                        extra={
+                            "run_id": run.id,
+                            "run_item_id": item.id,
+                            "attempt_id": latest_attempt.id,
+                            "checkpoint_version": latest_attempt.checkpoint_version,
+                            "checkpoint_key": latest_attempt.checkpoint_key,
+                        },
+                    )
                 pending = await self._suspend_for_approval_if_required(
                     run=run,
                     case=case,

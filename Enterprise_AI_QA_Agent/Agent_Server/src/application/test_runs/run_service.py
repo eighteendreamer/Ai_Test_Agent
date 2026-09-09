@@ -687,6 +687,9 @@ class TestRunService:
             raise KeyError(f"Test run item not found: {item_id}")
         return item
 
+    async def get_latest_attempt(self, item_id: str) -> TestRunAttemptRecord | None:
+        return await self._store.get_latest_attempt(item_id)
+
     async def save_checkpoint(
         self,
         item_id: str,

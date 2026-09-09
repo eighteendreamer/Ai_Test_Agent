@@ -48,6 +48,7 @@ class TestRunStore(Protocol):
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
     async def get_item(self, item_id: str) -> TestRunItemRecord | None: ...
+    async def get_latest_attempt(self, item_id: str) -> TestRunAttemptRecord | None: ...
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]: ...
     async def list_regression_candidates(
         self,
@@ -208,6 +209,20 @@ class InMemoryTestRunStore:
     async def get_item(self, item_id: str) -> TestRunItemRecord | None:
         item = self._items.get(item_id)
         return item.model_copy(deep=True) if item else None
+
+    async def get_latest_attempt(self, item_id: str) -> TestRunAttemptRecord | None:
+        async with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                return None
+            attempts = [
+                self._attempts[attempt_id]
+                for attempt_id in self._attempt_ids_by_run.get(item.run_id, [])
+                if self._attempts[attempt_id].run_item_id == item_id
+            ]
+            if not attempts:
+                return None
+            return max(attempts, key=lambda attempt: attempt.attempt_no).model_copy(deep=True)
 
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
         wanted = {str(run_id).strip() for run_id in run_ids if str(run_id).strip()}
@@ -1120,6 +1135,9 @@ class PostgresTestRunStore:
     async def get_item(self, item_id: str) -> TestRunItemRecord | None:
         return await asyncio.to_thread(self._get_item_sync, item_id)
 
+    async def get_latest_attempt(self, item_id: str) -> TestRunAttemptRecord | None:
+        return await asyncio.to_thread(self._get_latest_attempt_sync, item_id)
+
     async def find_projected_legacy_smoke_run_ids(self, run_ids: list[str]) -> set[str]:
         return await asyncio.to_thread(
             self._find_projected_legacy_smoke_run_ids_sync,
@@ -1589,6 +1607,17 @@ class PostgresTestRunStore:
                 )
                 row = cur.fetchone()
         return self._item_from_value(row["record"]) if row else None
+
+    def _get_latest_attempt_sync(self, item_id: str) -> TestRunAttemptRecord | None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT record FROM {self._attempt_table} "
+                    "WHERE run_item_id = %s ORDER BY attempt_no DESC LIMIT 1",
+                    (item_id,),
+                )
+                row = cur.fetchone()
+        return self._attempt_from_value(row["record"]) if row else None
 
     def _find_projected_legacy_smoke_run_ids_sync(self, run_ids: list[str]) -> set[str]:
         normalized = list(dict.fromkeys(str(run_id).strip() for run_id in run_ids if str(run_id).strip()))

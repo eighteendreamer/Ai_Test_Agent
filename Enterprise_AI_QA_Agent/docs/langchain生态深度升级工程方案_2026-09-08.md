@@ -912,6 +912,21 @@ pip check 已知冲突：
 - 回滚验证：无数据库结构变更；旧 JSONB Attempt 记录缺少恢复字段时按默认值兼容读取。
 - 下一步：在 `execution_service` 中消费恢复检查点，增加恢复阶段事件和幂等步骤跳过规则，再进行 Worker 强杀恢复测试；随后接入 LangSmith 分段 Trace。
 
+#### 长任务 L2：执行入口消费恢复检查点（2026-09-09）
+
+- 当前状态：进行中。
+- 本批目标：让新 Attempt 领取到的检查点真正进入测试执行上下文，使具体模式适配器能够基于已完成步骤、证据引用和恢复来源继续执行；不在通用层擅自跳过业务步骤。
+- 实际修改文件：`Agent_Server/src/application/test_runs/run_store.py`、`Agent_Server/src/application/test_runs/run_service.py`、`Agent_Server/src/application/test_runs/execution_service.py`、`Agent_Server/tests/test_test_run_lifecycle.py`。
+- 实现规则：新增 `get_latest_attempt` 读取当前条目最新 Attempt；执行入口在启动后加载检查点，将 `attempt_id`、`recovered_from_attempt_id`、版本、key、payload 和时间放入 `trusted_context_bundle.execution_checkpoint`；存在检查点时记录 `test_run_execution_checkpoint_loaded` 日志。模式适配器负责依据自身业务契约消费该上下文，通用层不做误判式跳步。
+- 兼容修复：执行服务对旧版测试替身/非 TestRunService 实现使用可选方法调用，保持现有调用方兼容；真实 TestRunService 始终提供该读取能力。
+- 测试环境：`E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`，Python 3.11.15。
+- 执行命令：`python -m compileall -q src`；`python -m pytest -q`。
+- 通过：后端全量 751 passed、8 skipped、1 warning；编译通过。
+- 失败：首次全量测试发现 7 个旧测试替身没有 `get_latest_attempt`，根因是新增服务协作方法未对旧替身做兼容；已改为可选调用并复验通过，不是生产路径失败。
+- 跳过：尚未实现模式级 checkpoint payload schema、幂等动作跳过和 Worker 强杀真实恢复压测；本批只完成恢复上下文传递。
+- 回滚验证：无数据库结构变更；旧 Attempt 和旧测试替身均可继续工作。
+- 下一步：为 `CaseExecutionAdapter` 增加明确的恢复上下文协议和步骤幂等判定，再执行 Worker 强杀、进程重启和长任务恢复专项。
+
 ### 14.5 阶段 2：LangChain 模型与消息适配
 
 状态：未进行
