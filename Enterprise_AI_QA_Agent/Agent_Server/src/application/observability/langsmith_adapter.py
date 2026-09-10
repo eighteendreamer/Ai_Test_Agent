@@ -52,6 +52,28 @@ class TraceScope:
         except Exception:  # pragma: no cover - SDK/network specific
             logger.exception("langsmith_trace_output_failed")
 
+    def set_outcome(
+        self,
+        *,
+        termination_reason: str,
+        control_state: str,
+    ) -> None:
+        """Attach non-sensitive business outcome metadata to every root trace."""
+        outcome = "interrupted" if termination_reason == "interrupted" else (
+            "failed" if termination_reason == "failed" else "completed"
+        )
+        metadata = self._redactor.sanitize_for_audit(
+            {
+                "outcome": outcome,
+                "termination_reason": termination_reason,
+                "control_state": control_state,
+            }
+        )
+        try:
+            self._run.add_metadata(metadata)
+        except Exception:  # pragma: no cover - SDK/network specific
+            logger.exception("langsmith_trace_outcome_failed")
+
 
 class LangSmithObservabilityAdapter:
     """Best-effort LangSmith bridge; failures never stop the business runtime."""

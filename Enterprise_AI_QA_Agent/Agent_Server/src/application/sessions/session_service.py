@@ -1587,8 +1587,13 @@ class SessionService:
             self._store.get_latest_snapshot(session.id),
         )
         control = self._ensure_control_metadata(session)
+        has_pending_turn = bool(session.metadata.get("pending_turn"))
         derived_resumable = bool(control.get("is_resumable")) or (
-            last_snapshot is not None and last_snapshot.stage in {"waiting_approval", "interrupted", "resumable"}
+            last_snapshot is not None
+            and (
+                last_snapshot.stage in {"waiting_approval", "resumable"}
+                or (last_snapshot.stage == "interrupted" and has_pending_turn)
+            )
         )
         derived_interrupted = bool(control.get("is_interrupted")) or session.status == SessionStatus.interrupted
         return SessionDetail(

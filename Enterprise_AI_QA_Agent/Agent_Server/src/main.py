@@ -340,6 +340,10 @@ async def lifespan(app: FastAPI):
         deep_agent_read_only_max_output_chars=settings.deep_agents.read_only_max_output_chars,
         deep_agent_cognitive_planning_enabled=settings.deep_agents.cognitive_planning_enabled,
         deep_agent_turn_timeout_seconds=settings.deep_agents.turn_timeout_seconds,
+        deep_agent_cognitive_subagents_enabled=settings.deep_agents.cognitive_subagents_enabled,
+        deep_agent_max_subagent_calls_per_turn=settings.deep_agents.max_subagent_calls_per_turn,
+        deep_agent_subagent_model_call_limit=settings.deep_agents.subagent_model_call_limit,
+        deep_agent_subagent_tool_call_limit=settings.deep_agents.subagent_tool_call_limit,
     )
 
     app.state.settings = settings

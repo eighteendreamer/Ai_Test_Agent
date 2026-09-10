@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from src.application.deep_agents.runtime_adapter import _project_root_from_conte
 from src.application.deep_agents.read_only_backend import build_read_only_filesystem_backend
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.runtime.runtime_service import RuntimeService
+from src.application.sessions.session_service import SessionService
 from src.core.config import DeepAgentsConfig
 from src.domain.models import SessionRecord
 from src.modes.code_review_mode.models import ProjectSource
@@ -69,7 +70,9 @@ async def test_da_e1_maps_messages_and_keeps_business_tools_empty():
     assert result.output_text == "DA_E1_OK"
     assert result.metadata["stage"] == "DA-E1"
     assert factory_calls[0]["tools"] == []
-    assert calls[0]["config"] == {"configurable": {"thread_id": "turn-1"}}
+    assert calls[0]["config"]["configurable"] == {"thread_id": "turn-1"}
+    assert calls[0]["config"]["run_name"] == "enterprise_ai_qa_agent.deep_agent_turn"
+    assert calls[0]["config"]["metadata"]["trace_id"] == "trace-1"
     assert calls[0]["payload"]["messages"] == [{"role": "user", "content": "inspect"}]
 
 
@@ -124,6 +127,19 @@ def test_deep_agents_nested_env_uses_json_list(monkeypatch):
 def test_deep_agents_turn_timeout_must_be_positive():
     with pytest.raises(ValueError, match="greater than zero"):
         DeepAgentsConfig(turn_timeout_seconds=0)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_subagent_calls_per_turn",
+        "subagent_model_call_limit",
+        "subagent_tool_call_limit",
+    ],
+)
+def test_deep_agents_subagent_limits_must_be_positive(field: str):
+    with pytest.raises(ValueError, match="greater than zero"):
+        DeepAgentsConfig(**{field: 0})
 
 
 async def _resolved_model():
@@ -317,6 +333,139 @@ async def test_da_e3_official_todo_state_is_returned(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
+    tmp_path: Path,
+):
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    bound_tool_names: list[list[str]] = []
+
+    class ToolCapableFake(FakeMessagesListChatModel):
+        def _get_ls_params(self, **kwargs):
+            return {
+                "ls_provider": "da-e3-subagent-test",
+                "ls_model_name": "tool-capable-fake",
+                "ls_model_type": "chat",
+            }
+
+        def bind_tools(self, tools, **kwargs):
+            bound_tool_names.append(
+                [str(getattr(tool, "name", "")) for tool in tools]
+            )
+            return self
+
+    model = ToolCapableFake(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "task",
+                        "args": {
+                            "description": "Inspect the bounded fixture.",
+                            "subagent_type": "code-review-researcher",
+                        },
+                        "id": "delegate-review",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="SUBAGENT_EVIDENCE"),
+            AIMessage(content="DA_E3_SUBAGENT_OK"),
+        ]
+    )
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda _key: _async_value(model))
+    streamed_events: list[dict] = []
+    result = await adapter.execute(
+        DeepAgentRuntimeRequest(
+            session_id="session-e3-subagent",
+            turn_id="turn-e3-subagent",
+            trace_id="trace-e3-subagent",
+            model_key="fake-tool-capable",
+            system_prompt="Delegate one bounded evidence task.",
+            messages=[{"role": "user", "content": "Review the fixture."}],
+            context={"project_root": str(tmp_path)},
+            read_only_filesystem_enabled=True,
+            cognitive_subagents_enabled=True,
+            on_subagent_event=streamed_events.append,
+        )
+    )
+
+    # The declarative subagent compiler copies FakeMessagesListChatModel; its
+    # response index sharing differs depending on earlier profile registration.
+    # Either non-empty terminal response is valid for this contract test.
+    assert result.output_text in {"SUBAGENT_EVIDENCE", "DA_E3_SUBAGENT_OK"}
+    assert result.metadata["stage"] == "DA-E3"
+    assert [item["type"] for item in result.subagent_events] == [
+        "started",
+        "completed",
+    ], {"messages": result.messages, "bound_tool_names": bound_tool_names}
+    assert streamed_events == result.subagent_events
+    assert all(
+        item["name"] == "code-review-researcher"
+        for item in result.subagent_events
+    )
+    assert any("task" in names for names in bound_tool_names)
+    subagent_tool_sets = [names for names in bound_tool_names if "task" not in names]
+    assert ["ls", "read_file", "glob", "grep"] in subagent_tool_sets
+    assert all(
+        not ({"write_file", "edit_file", "delete", "execute", "task"} & set(names))
+        for names in subagent_tool_sets
+    )
+
+
+def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path):
+    pytest.importorskip("deepagents")
+    from langchain.agents.middleware import (
+        ModelCallLimitMiddleware,
+        ToolCallLimitMiddleware,
+    )
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda _key: _resolved_model())
+    kwargs, cleanup = adapter._configure_harness(
+        object(),
+        read_only_filesystem_enabled=True,
+        read_only_max_file_size_mb=1,
+        read_only_max_output_chars=120000,
+        cognitive_subagents_enabled=True,
+        max_subagent_calls_per_turn=1,
+        subagent_model_call_limit=4,
+        subagent_tool_call_limit=7,
+        context={"project_root": str(tmp_path)},
+    )
+    try:
+        parent_limiters = [
+            item
+            for item in kwargs["middleware"]
+            if isinstance(item, ToolCallLimitMiddleware) and item.tool_name == "task"
+        ]
+        assert len(parent_limiters) == 1
+        assert parent_limiters[0].run_limit == 1
+        assert parent_limiters[0].exit_behavior == "continue"
+
+        subagent = kwargs["subagents"][0]
+        assert subagent["name"] == "code-review-researcher"
+        assert subagent["tools"] == []
+        model_limiters = [
+            item
+            for item in subagent["middleware"]
+            if isinstance(item, ModelCallLimitMiddleware)
+        ]
+        tool_limiters = [
+            item
+            for item in subagent["middleware"]
+            if isinstance(item, ToolCallLimitMiddleware)
+        ]
+        assert model_limiters[0].run_limit == 4
+        assert tool_limiters[0].run_limit == 7
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+@pytest.mark.asyncio
 async def test_da_e3_runtime_maps_todos_to_existing_plan_event():
     class ModelRuntimeStub:
         def get_model_config(self, model_key):
@@ -380,6 +529,117 @@ async def test_da_e3_runtime_maps_todos_to_existing_plan_event():
     assert len(plan_events) == 1
     assert plan_events[0].payload["todos"][0]["status"] == "completed"
     assert result.state["worker_dispatches"] == []
+
+
+@pytest.mark.asyncio
+async def test_da_e3_runtime_projects_subagent_events_without_worker_dispatch():
+    class AdapterStub:
+        async def execute(self, request):
+            assert request.cognitive_subagents_enabled is True
+            started = {
+                "type": "started",
+                "name": "code-review-researcher",
+                "run_id": "subagent-run",
+                "parent_run_id": "task-run",
+            }
+            completed = {**started, "type": "completed"}
+            request.on_subagent_event(started)
+            request.on_subagent_event(completed)
+            return DeepAgentRuntimeResult(
+                output_text="SUBAGENT_RUNTIME_OK",
+                metadata={"stage": "DA-E3"},
+                subagent_events=[started, completed],
+            )
+
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        deep_agent_runtime_adapter=AdapterStub(),
+        deep_agent_enabled=True,
+        deep_agent_pilot_mode_keys=["code_review"],
+        deep_agent_cognitive_subagents_enabled=True,
+    )
+    result = await runtime.execute_turn(
+        _runtime_session("session-subagent-runtime"),
+        _runtime_request("session-subagent-runtime", "turn-subagent-runtime"),
+    )
+
+    assert result.output_text == "SUBAGENT_RUNTIME_OK"
+    assert result.state["worker_dispatches"] == []
+    assert result.state["cognitive_subagent_events"][1]["type"] == "completed"
+    assert [
+        event.type
+        for event in result.events
+        if event.type.startswith("graph.subagent_")
+    ] == ["graph.subagent_started", "graph.subagent_completed"]
+    assert all(
+        event.payload["persistent_worker"] is False
+        for event in result.events
+        if event.type.startswith("graph.subagent_")
+    )
+
+
+@pytest.mark.asyncio
+async def test_deep_agent_turn_is_nested_under_existing_observability_root():
+    class AdapterStub:
+        async def execute(self, request):
+            return DeepAgentRuntimeResult(output_text="OBSERVED_DEEP_AGENT_OK")
+
+    class TraceScopeStub:
+        def __init__(self):
+            self.outputs = []
+            self.outcomes = []
+
+        def reference(self):
+            return {"run_id": "langsmith-run", "trace_id": "langsmith-trace"}
+
+        def set_outputs(self, outputs):
+            self.outputs.append(outputs)
+
+        def set_outcome(self, **outcome):
+            self.outcomes.append(outcome)
+
+    class ObservabilityStub:
+        def __init__(self):
+            self.scope = TraceScopeStub()
+            self.contexts = []
+
+        @contextmanager
+        def trace_turn(self, context, *, inputs):
+            self.contexts.append((context, inputs))
+            yield self.scope
+
+    observability = ObservabilityStub()
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        observability_service=observability,
+        deep_agent_runtime_adapter=AdapterStub(),
+        deep_agent_enabled=True,
+        deep_agent_pilot_mode_keys=["code_review"],
+    )
+    result = await runtime.execute_turn(
+        _runtime_session("session-observed-deep-agent"),
+        _runtime_request("session-observed-deep-agent", "turn-observed-deep-agent"),
+    )
+
+    assert result.output_text == "OBSERVED_DEEP_AGENT_OK"
+    assert len(observability.contexts) == 1
+    assert observability.scope.outputs[0]["termination_reason"] == "completed"
+    assert observability.scope.outcomes == [
+        {"termination_reason": "completed", "control_state": "completed"}
+    ]
+    trace_events = [
+        event for event in result.events if event.type == "observability.trace_linked"
+    ]
+    assert len(trace_events) == 1
+    assert trace_events[0].payload["run_id"] == "langsmith-run"
 
 
 def _runtime_session(session_id: str) -> SessionRecord:
@@ -499,6 +759,28 @@ async def test_deep_agent_timeout_cancels_invocation_without_leaking_task():
     assert result.pending_turn == {}
     assert any(event.type == "runtime.turn_timed_out" for event in result.events)
     assert control.has_interruptible_task("session-timeout") is False
+
+    class DetailStoreStub:
+        async def list_approvals(self, session_id):
+            return []
+
+        async def get_latest_snapshot(self, session_id):
+            return result.snapshot
+
+    interrupted_session = _runtime_session("session-timeout")
+    interrupted_session.status = SessionStatus.interrupted
+    interrupted_session.metadata = {
+        "control": {"is_interrupted": True, "is_resumable": False},
+        "pending_turn": {},
+    }
+    session_service = SessionService(
+        store=DetailStoreStub(),
+        input_orchestrator_service=object(),
+        runtime_service=runtime,
+        mode_registry=object(),
+    )
+    detail = await session_service._to_detail(interrupted_session)
+    assert detail.is_resumable is False
 
 
 @pytest.mark.asyncio

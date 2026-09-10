@@ -311,6 +311,10 @@ class DeepAgentsConfig(BaseModel):
     read_only_max_output_chars: int = 120000
     cognitive_planning_enabled: bool = False
     turn_timeout_seconds: float = 600.0
+    cognitive_subagents_enabled: bool = False
+    max_subagent_calls_per_turn: int = 1
+    subagent_model_call_limit: int = 6
+    subagent_tool_call_limit: int = 12
 
     @field_validator("read_only_max_file_size_mb")
     @classmethod
@@ -327,6 +331,17 @@ class DeepAgentsConfig(BaseModel):
     def validate_turn_timeout_seconds(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("turn_timeout_seconds must be greater than zero")
+        return value
+
+    @field_validator(
+        "max_subagent_calls_per_turn",
+        "subagent_model_call_limit",
+        "subagent_tool_call_limit",
+    )
+    @classmethod
+    def validate_subagent_limits(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Deep Agents subagent limits must be greater than zero")
         return value
 
     @field_validator("pilot_mode_keys", mode="before")

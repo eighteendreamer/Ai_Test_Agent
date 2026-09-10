@@ -141,6 +141,7 @@ def test_langsmith_adapter_degrades_when_api_key_is_missing(monkeypatch: pytest.
 class _FakeRun:
     def __init__(self) -> None:
         self.outputs: list[dict[str, object]] = []
+        self.metadata: dict[str, object] = {}
         self.id = "run-1"
         self.trace_id = "trace-1"
         self.dotted_order = "trace-1.0001"
@@ -150,6 +151,9 @@ class _FakeRun:
 
     def add_outputs(self, outputs: dict[str, object]) -> None:
         self.outputs.append(outputs)
+
+    def add_metadata(self, metadata: dict[str, object]) -> None:
+        self.metadata.update(metadata)
 
 
 def test_trace_scope_sanitizes_outputs_without_ending_the_parent_run() -> None:
@@ -166,6 +170,22 @@ def test_trace_scope_does_not_capture_outputs_by_default() -> None:
     TraceScope(fake, OutputSafetyPolicy()).set_outputs({"summary": "private"})
 
     assert fake.outputs == []
+
+
+def test_trace_scope_always_records_non_sensitive_business_outcome() -> None:
+    fake = _FakeRun()
+    scope = TraceScope(fake, OutputSafetyPolicy())
+
+    scope.set_outcome(
+        termination_reason="interrupted",
+        control_state="interrupted",
+    )
+
+    assert fake.metadata == {
+        "outcome": "interrupted",
+        "termination_reason": "interrupted",
+        "control_state": "interrupted",
+    }
 
 
 def test_trace_scope_exposes_only_external_run_reference_fields() -> None:

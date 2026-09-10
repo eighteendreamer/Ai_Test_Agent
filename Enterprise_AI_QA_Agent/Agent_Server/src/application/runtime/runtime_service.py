@@ -69,6 +69,10 @@ class RuntimeService:
         deep_agent_read_only_max_output_chars: int = 120000,
         deep_agent_cognitive_planning_enabled: bool = False,
         deep_agent_turn_timeout_seconds: float = 600.0,
+        deep_agent_cognitive_subagents_enabled: bool = False,
+        deep_agent_max_subagent_calls_per_turn: int = 1,
+        deep_agent_subagent_model_call_limit: int = 6,
+        deep_agent_subagent_tool_call_limit: int = 12,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -91,6 +95,10 @@ class RuntimeService:
         if deep_agent_turn_timeout_seconds <= 0:
             raise ValueError("deep_agent_turn_timeout_seconds must be greater than zero")
         self._deep_agent_turn_timeout_seconds = float(deep_agent_turn_timeout_seconds)
+        self._deep_agent_cognitive_subagents_enabled = bool(deep_agent_cognitive_subagents_enabled)
+        self._deep_agent_max_subagent_calls_per_turn = max(1, int(deep_agent_max_subagent_calls_per_turn))
+        self._deep_agent_subagent_model_call_limit = max(1, int(deep_agent_subagent_model_call_limit))
+        self._deep_agent_subagent_tool_call_limit = max(1, int(deep_agent_subagent_tool_call_limit))
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -119,11 +127,29 @@ class RuntimeService:
     ) -> RuntimeTurnResult:
         self.clear_interrupt(session.id)
         if self._should_use_deep_agent(request):
-            return await self._execute_deep_agent_turn(
+            pilot_stage = self._deep_agent_pilot_stage()
+            state = self._build_initial_state(session, request)
+            state["_event_queue"] = event_queue
+            append_graph_event(
+                state,
+                "runtime.turn_started",
+                "runtime",
+                "Deep Agents pilot execution started for the current turn.",
+                harness="deepagents",
+                pilot_stage=pilot_stage,
+                mode_key=request.mode_key,
+            )
+            return await self._execute_observed(
                 session,
                 request,
-                on_model_chunk=on_model_chunk,
-                event_queue=event_queue,
+                state,
+                lambda: self._execute_deep_agent_turn(
+                    session,
+                    request,
+                    state=state,
+                    pilot_stage=pilot_stage,
+                    on_model_chunk=on_model_chunk,
+                ),
             )
         compaction_info = None
         if self._context_compaction_service is not None:
@@ -178,33 +204,49 @@ class RuntimeService:
             and str(request.mode_key or "default") in self._deep_agent_pilot_mode_keys
         )
 
+    def _deep_agent_pilot_stage(self) -> str:
+        if (
+            self._deep_agent_cognitive_planning_enabled
+            or self._deep_agent_cognitive_subagents_enabled
+        ):
+            return "DA-E3"
+        if self._deep_agent_read_only_filesystem_enabled:
+            return "DA-E2"
+        return "DA-E1"
+
     async def _execute_deep_agent_turn(
         self,
         session: SessionRecord,
         request: ExecutionRequest,
         *,
+        state: dict[str, Any],
+        pilot_stage: str,
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
-        event_queue: asyncio.Queue | None,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
-        pilot_stage = (
-            "DA-E3"
-            if self._deep_agent_cognitive_planning_enabled
-            else "DA-E2"
-            if self._deep_agent_read_only_filesystem_enabled
-            else "DA-E1"
-        )
-        state = self._build_initial_state(session, request)
-        state["_event_queue"] = event_queue
-        append_graph_event(
-            state,
-            "runtime.turn_started",
-            "runtime",
-            "Deep Agents pilot execution started for the current turn.",
-            harness="deepagents",
-            pilot_stage=pilot_stage,
-            mode_key=request.mode_key,
-        )
+        def on_subagent_event(item: dict[str, Any]) -> None:
+            event_type = str(item.get("type") or "")
+            append_graph_event(
+                state,
+                (
+                    "graph.subagent_started"
+                    if event_type == "started"
+                    else "graph.subagent_completed"
+                ),
+                "deepagents.subagent",
+                (
+                    "Deep Agents cognitive subagent started."
+                    if event_type == "started"
+                    else "Deep Agents cognitive subagent completed."
+                ),
+                harness="deepagents",
+                pilot_stage=pilot_stage,
+                subagent_name=str(item.get("name") or ""),
+                subagent_run_id=str(item.get("run_id") or ""),
+                parent_run_id=str(item.get("parent_run_id") or ""),
+                dispatch_owner="deepagents",
+                persistent_worker=False,
+            )
         execution_task = asyncio.create_task(
             self._deep_agent_runtime_adapter.execute(
                 DeepAgentRuntimeRequest(
@@ -224,6 +266,15 @@ class RuntimeService:
                     read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
                     read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
                     cognitive_planning_enabled=self._deep_agent_cognitive_planning_enabled,
+                    cognitive_subagents_enabled=self._deep_agent_cognitive_subagents_enabled,
+                    max_subagent_calls_per_turn=self._deep_agent_max_subagent_calls_per_turn,
+                    subagent_model_call_limit=self._deep_agent_subagent_model_call_limit,
+                    subagent_tool_call_limit=self._deep_agent_subagent_tool_call_limit,
+                    on_subagent_event=(
+                        on_subagent_event
+                        if self._deep_agent_cognitive_subagents_enabled
+                        else None
+                    ),
                 )
             ),
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",
@@ -259,6 +310,7 @@ class RuntimeService:
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
         state["plan_steps"] = [item["content"] for item in result.todos]
+        state["cognitive_subagent_events"] = list(result.subagent_events)
         if result.todos:
             append_graph_event(
                 state,
@@ -712,6 +764,10 @@ class RuntimeService:
                     )
             result = await executor()
             if trace_scope is not None:
+                trace_scope.set_outcome(
+                    termination_reason=str(result.state.get("termination_reason", "")),
+                    control_state=str(result.state.get("control_state", "")),
+                )
                 trace_scope.set_outputs(
                     {
                         "termination_reason": result.state.get("termination_reason", ""),

@@ -28,6 +28,11 @@ class DeepAgentRuntimeRequest:
     read_only_max_file_size_mb: int = 10
     read_only_max_output_chars: int = 120000
     cognitive_planning_enabled: bool = False
+    cognitive_subagents_enabled: bool = False
+    max_subagent_calls_per_turn: int = 1
+    subagent_model_call_limit: int = 6
+    subagent_tool_call_limit: int = 12
+    on_subagent_event: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -36,10 +41,12 @@ class DeepAgentRuntimeResult:
     metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[dict[str, Any]] = field(default_factory=list)
     todos: list[dict[str, str]] = field(default_factory=list)
+    subagent_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
 AgentFactory = Callable[..., Any]
+DEEP_AGENT_RUN_NAME = "enterprise_ai_qa_agent.deep_agent_turn"
 
 
 class DeepAgentRuntimeAdapter:
@@ -79,6 +86,10 @@ class DeepAgentRuntimeAdapter:
                     read_only_max_file_size_mb=request.read_only_max_file_size_mb,
                     read_only_max_output_chars=request.read_only_max_output_chars,
                     cognitive_planning_enabled=request.cognitive_planning_enabled,
+                    cognitive_subagents_enabled=request.cognitive_subagents_enabled,
+                    max_subagent_calls_per_turn=request.max_subagent_calls_per_turn,
+                    subagent_model_call_limit=request.subagent_model_call_limit,
+                    subagent_tool_call_limit=request.subagent_tool_call_limit,
                     context=request.context,
                 )
             else:
@@ -93,10 +104,27 @@ class DeepAgentRuntimeAdapter:
                     system_prompt=request.system_prompt,
                     **harness_kwargs,
                 )
-                result = await agent.ainvoke(
-                    {"messages": list(request.messages)},
-                    config={"configurable": {"thread_id": request.turn_id}},
-                )
+                invoke_input = {"messages": list(request.messages)}
+                invoke_config = {
+                    "configurable": {"thread_id": request.turn_id},
+                    "run_name": DEEP_AGENT_RUN_NAME,
+                    "metadata": {
+                        "session_id": request.session_id,
+                        "turn_id": request.turn_id,
+                        "trace_id": request.trace_id,
+                        "harness": "deepagents",
+                    },
+                }
+                if request.cognitive_subagents_enabled:
+                    result, subagent_events = await _invoke_with_subagent_events(
+                        agent,
+                        invoke_input,
+                        invoke_config,
+                        on_event=request.on_subagent_event,
+                    )
+                else:
+                    result = await agent.ainvoke(invoke_input, config=invoke_config)
+                    subagent_events = []
             finally:
                 if cleanup is not None:
                     cleanup()
@@ -123,6 +151,7 @@ class DeepAgentRuntimeAdapter:
             },
             messages=messages,
             todos=_normalize_todos(result.get("todos") if isinstance(result, dict) else []),
+            subagent_events=subagent_events,
         )
 
     def _resolve_factory(self) -> AgentFactory:
@@ -146,6 +175,10 @@ class DeepAgentRuntimeAdapter:
         context: dict[str, Any],
         read_only_max_output_chars: int = 120000,
         cognitive_planning_enabled: bool = False,
+        cognitive_subagents_enabled: bool = False,
+        max_subagent_calls_per_turn: int = 1,
+        subagent_model_call_limit: int = 6,
+        subagent_tool_call_limit: int = 12,
     ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
 
@@ -170,8 +203,9 @@ class DeepAgentRuntimeAdapter:
             "edit_file",
             "delete",
             "execute",
-            "task",
         }
+        if not cognitive_subagents_enabled:
+            excluded_tools.add("task")
         if not read_only_filesystem_enabled:
             excluded_tools.update({"ls", "read_file", "glob", "grep"})
         profile = HarnessProfile(
@@ -200,6 +234,26 @@ class DeepAgentRuntimeAdapter:
                 ) from exc
             planning_middleware = [TodoListMiddleware()]
 
+        subagent_kwargs: dict[str, Any] = {}
+        if cognitive_subagents_enabled:
+            if not read_only_filesystem_enabled:
+                raise DeepAgentRuntimeError(
+                    "DA-E3 cognitive subagents require the governed read-only filesystem."
+                )
+            try:
+                from langchain.agents.middleware import ToolCallLimitMiddleware
+            except ImportError as exc:
+                raise DeepAgentRuntimeError(
+                    "Deep Agents DA-E3 subagents require ToolCallLimitMiddleware."
+                ) from exc
+            planning_middleware.append(
+                ToolCallLimitMiddleware(
+                    tool_name="task",
+                    run_limit=max(1, int(max_subagent_calls_per_turn)),
+                    exit_behavior="continue",
+                )
+            )
+
         if not read_only_filesystem_enabled:
             return ({"middleware": planning_middleware} if planning_middleware else {}), None
 
@@ -223,6 +277,10 @@ class DeepAgentRuntimeAdapter:
             from deepagents.backends import CompositeBackend, FilesystemBackend
             from deepagents import FilesystemPermission
             from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
+            from langchain.agents.middleware import (
+                ModelCallLimitMiddleware,
+                ToolCallLimitMiddleware,
+            )
         except ImportError as exc:
             raise DeepAgentRuntimeError(
                 "DA-E2 read-only filesystem requires Deep Agents filesystem APIs."
@@ -258,6 +316,41 @@ class DeepAgentRuntimeAdapter:
                 _permissions=permissions,
             )
         ]
+        if cognitive_subagents_enabled:
+            subagent_kwargs = {
+                "subagents": [
+                    {
+                        "name": "code-review-researcher",
+                        "description": (
+                            "Inspect multiple project files for one bounded code-review "
+                            "question and return concise evidence with file paths."
+                        ),
+                        "system_prompt": (
+                            "You are a bounded code-review evidence researcher. Use only "
+                            "the provided read-only filesystem tools. Do not delegate, "
+                            "execute commands, modify files, or call business tools. Return "
+                            "only concise findings with concrete file paths."
+                        ),
+                        "model": model,
+                        "tools": [],
+                        "middleware": [
+                            FilesystemMiddleware(
+                                backend=backend,
+                                tools=["read_file", "ls", "glob", "grep"],
+                                _permissions=permissions,
+                            ),
+                            ModelCallLimitMiddleware(
+                                run_limit=max(1, int(subagent_model_call_limit)),
+                                exit_behavior="end",
+                            ),
+                            ToolCallLimitMiddleware(
+                                run_limit=max(1, int(subagent_tool_call_limit)),
+                                exit_behavior="end",
+                            ),
+                        ],
+                    }
+                ]
+            }
         cleanup = None
         skill_keys = context.get("skill_keys")
         if skill_keys:
@@ -303,6 +396,7 @@ class DeepAgentRuntimeAdapter:
         return {
             "backend": backend,
             "middleware": middleware,
+            **subagent_kwargs,
         }, cleanup
 
 
@@ -319,11 +413,69 @@ def _project_root_from_context(context: dict[str, Any]) -> str:
 
 
 def _pilot_stage(request: DeepAgentRuntimeRequest) -> str:
-    if request.cognitive_planning_enabled:
+    if request.cognitive_planning_enabled or request.cognitive_subagents_enabled:
         return "DA-E3"
     if request.read_only_filesystem_enabled:
         return "DA-E2"
     return "DA-E1"
+
+
+async def _invoke_with_subagent_events(
+    agent: Any,
+    invoke_input: dict[str, Any],
+    invoke_config: dict[str, Any],
+    *,
+    on_event: Callable[[dict[str, Any]], None] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Project LangGraph v2 events into a stable, framework-neutral subset."""
+    result: dict[str, Any] | None = None
+    projected: list[dict[str, Any]] = []
+    active_runs: dict[str, str] = {}
+    async for event in agent.astream_events(
+        invoke_input,
+        config=invoke_config,
+        version="v2",
+    ):
+        event_type = str(event.get("event") or "")
+        event_name = str(event.get("name") or "").strip()
+        run_id = str(event.get("run_id") or "").strip()
+        data = event.get("data") or {}
+        tool_input = data.get("input") or {}
+        if event_name == "task" and event_type == "on_tool_start" and run_id:
+            agent_name = (
+                str(tool_input.get("subagent_type") or "").strip()
+                if isinstance(tool_input, dict)
+                else ""
+            )
+            active_runs[run_id] = agent_name
+            item = {
+                "type": "started",
+                "name": agent_name,
+                "run_id": run_id,
+                "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
+            }
+            projected.append(item)
+            if on_event is not None:
+                on_event(item)
+        elif event_name == "task" and event_type == "on_tool_end" and run_id in active_runs:
+            item = {
+                "type": "completed",
+                "name": active_runs.pop(run_id),
+                "run_id": run_id,
+                "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
+            }
+            projected.append(item)
+            if on_event is not None:
+                on_event(item)
+        if event_type == "on_chain_end" and event_name == DEEP_AGENT_RUN_NAME:
+            output = (event.get("data") or {}).get("output")
+            if isinstance(output, dict):
+                result = output
+    if result is None:
+        raise DeepAgentRuntimeError(
+            "Deep Agents subagent event stream ended without a final graph state."
+        )
+    return result, projected
 
 
 def _normalize_messages(value: Any) -> list[dict[str, Any]]:
