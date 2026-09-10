@@ -1228,7 +1228,7 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 
 ### 14.7 阶段 4：Deep Agents code_review 试点
 
-状态：前置依赖阻塞
+状态：进行中（仅隔离 C4 试点；主环境仍默认关闭）
 目标：在低外部副作用的 code_review 模式中验证 Deep Agents 的规划、文件系统、上下文管理、Skills 和 Subagents 能力。
 
 前置条件：
@@ -1270,8 +1270,8 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 - 没有形成第二套外层 Agent Loop。
 - 试点连续稳定后才能讨论其他模式。
 
-当前测试结果：未执行。
-当前阻塞：deepagents 未安装，且依赖阶段 1—3。
+当前测试结果：DA-E1、DA-E2 已完成；DA-E3 的认知计划与取消/超时基础已通过自动化回归，受控同步子代理尚未开始。详细证据见本节后续 DA-E1～DA-E3 实施记录。
+当前阻塞：数据库默认模型的当前 API Key 在 2026-09-10 真实调用中返回 401，DA-E3 最新代码尚未完成真实模型成功链路；主环境继续不安装 deepagents，候选实现仅在 C4 验证。
 回滚点：关闭 DEEP_AGENTS_CODE_REVIEW_ENABLED。
 最近提交：无。
 
@@ -1515,7 +1515,7 @@ API / Session / TestRun 控制平面（系统保留）
 |---|---|---|---|
 | DA-E1 边界适配 | 已完成 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag；用官方 HarnessProfile 隐藏内置文件/execute/task 工具 | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop`；真实 Deep Agents 不暴露未治理的默认工具 |
 | DA-E2 只读文件与 Skills | 已完成 | 完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面、SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射，以及敏感文件/路径、符号链接、junction、循环、超大文件、二进制、并发读取和旧实现结果对账 | C4 已证明仅绑定 `read_file/ls/glob/grep`；官方 Agent 实链路、Windows reparse point 越界和符号链接循环均通过；主环境默认仍关闭 Deep Agents |
-| DA-E3 认知计划与同步子代理 | 未进行 | 启用 `write_todos` 和受控 subagents；映射 plan/subagent typed events | todo 状态可视化；父子 Trace 完整；并发/深度受限；同一任务不进入 Coordinator 双跑 |
+| DA-E3 认知计划与同步子代理 | 进行中 | 已启用可选 `write_todos`、映射现有 plan event，并补齐 Deep Agents 单轮取消/超时；受控 subagents 与 subagent typed events 尚未开始 | todo 状态可视化已通过；取消后无残留任务；父子 Trace、并发/深度和同步子代理仍待验收；同一任务当前不会进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
 | DA-E5 Checkpoint 与长任务 | 未进行 | PostgreSQL checkpointer/store；映射 session/turn/test_run/item/attempt/stage | 进程重启、跨进程接管、数小时任务、重复投递、取消、超时、终态不可重领全部通过 |
 | DA-E6 上下文与记忆 | 未进行 | 对账内置 summarization/offloading 与现有 Compaction/Memory；选定唯一所有者 | 不双重摘要；原始证据可追溯；token/延迟/质量不低于基线；敏感数据不进入虚拟文件或 Trace |
@@ -1527,7 +1527,7 @@ API / Session / TestRun 控制平面（系统保留）
 
 预期收益是减少 Agent Harness 重复实现，同时利用 Deep Agents 的规划、上下文卸载、Skills、临时子代理和 LangSmith 原生 Trace；代价是需要一层明确的 Runtime/Tool/Checkpoint/Event Adapter。该适配层不是额外业务框架，而是防止 Deep Agents 的通用状态与本项目业务事实混在一起的必要边界。
 
-当前状态：考核已完成，DA-E1、DA-E2 已完成；DA-E3～DA-E7 尚未开始。C4 真实模型与 DA-E2 官方 Agent 实链路已证明当前试点边界可运行；治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛仍未通过，因此不得用于正式长任务。
+当前状态：考核已完成，DA-E1、DA-E2 已完成，DA-E3 进行中；DA-E4～DA-E7 尚未开始。C4 的 DA-E2 官方 Agent 实链路已证明只读边界可运行；DA-E3 已完成 todo 与单轮取消/超时基础，但同步子代理尚未接入。治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛仍未通过，因此不得用于正式长任务。
 
 ### DA-E1 边界适配实施记录（2026-09-09）
 
@@ -1592,6 +1592,27 @@ API / Session / TestRun 控制平面（系统保留）
 | 当前状态 | 已完成；并发、对账、路径穿越、敏感/二进制、超大文件、输出字符边界、junction、普通文件/目录符号链接和循环均已完成 |
 | 长任务边界 | 本批仍未接入 Checkpointer、租约、Worker 或后台任务；Deep Agents 只可用于短 code_review 认知步骤，不可用于数小时 TestRun |
 | 回滚验证 | 新增配置默认关闭/兼容旧默认值；关闭 `DEEP_AGENTS__ENABLED` 或只读开关即回到旧 RuntimeService 路径；真实服务已正常关闭；未修改业务事实表和长任务状态机 |
+
+### DA-E3 认知计划与单轮取消基础实施记录（进行中，2026-09-10）
+
+| 项目 | 结果 |
+|---|---|
+| 当前状态 | 进行中；认知 todo 与单轮取消/超时基础已完成，受控同步子代理和 subagent typed events 未进行 |
+| 本批目标 | 使用官方 `TodoListMiddleware` 接管试点模式的非正式认知计划，并先解决真实长调用暴露的 Deep Agents `ainvoke` 不响应现有中断、客户端超时后 Session 永久 `running` 的架构缺口；不进入 DA-E5 长任务持久化，不改变 TestRun/Item/Attempt/Stage 控制平面 |
+| 依据 | 本地官方 Deep Agents Overview/Customization 与实际 C4 API：v0.7 的 `write_todos` 为 opt-in，使用 `TodoListMiddleware()`；官方 Subagents 文档明确同步子代理会阻塞父 Agent，长时/并行/需中途控制的任务应使用 async subagents。现有项目依据为 `RuntimeControlRegistry`、`AgentLoop._apply_interrupt_state`、`SessionService.interrupt_session/_finalize_runtime_result` |
+| 认知计划实现 | `DeepAgentRuntimeRequest` 增加 `cognitive_planning_enabled`，按 Flag 装配官方 `TodoListMiddleware()`；仅接受 pending/in_progress/completed 三种官方 todo 状态；映射到现有 `plan_steps` 与 `graph.plan_built`，不新建第二套计划状态机；非 Deep Agents 的固定 planner 保留 |
+| 子代理边界 | 未启用 `task`，`GeneralPurposeSubagentProfile(enabled=False)` 继续生效；测试确认 `worker_dispatches=[]`。在取消传播通过前没有接入同步子代理，因此不存在与 Coordinator 双重派发 |
+| 真实失败复现 | 会话 `08850ac2-4e6f-430f-9f5a-7025cecfe04a` 在旧实现中反复执行 `glob`，客户端 300 秒超时后 Session 仍为 `running`、messages=1、events=4、snapshot=0；调用 `/interrupt` 只能写入 `interrupt_requested`，无法停止单次 `agent.ainvoke`。根因是 Deep Agents 路径没有 `AgentLoop` 安全边界，也没有可取消任务注册 |
+| 根因修复 | Deep Agents `ainvoke` 现在运行在独立 `asyncio.Task` 中并注册到现有 `RuntimeControlRegistry`；`request_interrupt` 直接取消该子任务；`asyncio.timeout` 提供单轮硬上限；两者映射为现有 interrupted Event/Snapshot/Session 契约，并在 finally 注销任务。该上限只约束一次认知 Turn，不约束数小时 TestRun 生命周期 |
+| 配置 | 新增 `DEEP_AGENTS__TURN_TIMEOUT_SECONDS=600`，必须大于 0；`.env.example` 与本地 `.env` 已同步。Deep Agents 所有开关仍默认关闭；配置中不记录或输出真实 Key |
+| 恢复语义 | DA-E3 尚无 durable checkpointer，因而取消/超时后的 Deep Agents Turn 明确 `is_resumable=false`、`pending_turn={}`；`resume_session` 会拒绝没有持久检查点的 interrupted Snapshot，防止错误进入 legacy graph resume。真正的跨进程恢复仍属于 DA-E5 |
+| 客户端断开 | 消息路由监听 `Request.is_disconnected()`，断开后调用现有 `interrupt_session`。初版用 `Task.cancel()` 停止监听时，被当前 Starlette/AnyIO 的内部 CancelScope 吸收并导致响应收尾挂起；真实 Uvicorn 已复现，现改为 stop event，专项测试和真实 500 响应收尾均通过 |
+| 自动化测试 | 主环境定向：`10 passed, 13 skipped in 23.01s`；C4 定向：`23 passed in 14.12s`；主环境全量：`791 passed, 23 skipped, 1 warning in 37.42s`；C4 全量：`804 passed, 10 skipped, 1 warning in 29.75s`；`compileall -q Agent_Server/src` 通过 |
+| 覆盖场景 | 官方 `write_todos` 真工具循环、todo 映射、正常完成、总超时、`/interrupt` 取消、客户端断开、监听正常收尾、取消清理、无残留 interruptible task、`worker_dispatches=[]`、旧 Runtime 全量回归 |
+| 真实服务验证 | C4 Uvicorn 健康检查 200、`postgres_ok=true`；修复后的同步消息请求在模型认证失败时 5 秒内返回 HTTP 500，Session 收敛为 `interrupted/control_state=interrupted/is_resumable=false`，不再挂起。数据库默认模型当前返回 `401 invalid_api_key`，所以本批真实模型成功链路未通过，不能虚报 |
+| 已知限制 | 当前取消只能终止进程内活动 Turn；进程崩溃/重启恢复、跨 Worker 接管和数小时 Stage 仍需 DA-E5 PostgreSQL Checkpointer/租约对齐。模型 SDK 如果把不可取消的同步工作放在线程中，Task 取消不能强杀线程；正式灰度前需用真实 Provider 继续验证。同步子代理完全未启用 |
+| 回滚验证 | `DEEP_AGENTS__ENABLED=false` 继续走旧 Runtime；取消/超时注册只包围 Deep Agents 子任务，不改变 legacy `AgentLoop`；两套全量测试通过 |
+| 下一步 | 先更新数据库默认模型的有效 API Key，补跑 DA-E3 真实成功、真实 `/interrupt` 和 LangSmith Trace 终态对账；通过后再设计受控同步子代理的并发/深度/Trace 限制。DA-E3 在此之前保持“进行中” |
 
 ## 15. 每次实施后的记录模板
 

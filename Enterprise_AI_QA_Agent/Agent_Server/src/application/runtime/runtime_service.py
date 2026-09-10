@@ -67,6 +67,8 @@ class RuntimeService:
         deep_agent_read_only_filesystem_enabled: bool = False,
         deep_agent_read_only_max_file_size_mb: int = 10,
         deep_agent_read_only_max_output_chars: int = 120000,
+        deep_agent_cognitive_planning_enabled: bool = False,
+        deep_agent_turn_timeout_seconds: float = 600.0,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -85,6 +87,10 @@ class RuntimeService:
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
         self._deep_agent_read_only_max_file_size_mb = max(1, int(deep_agent_read_only_max_file_size_mb))
         self._deep_agent_read_only_max_output_chars = max(1000, int(deep_agent_read_only_max_output_chars))
+        self._deep_agent_cognitive_planning_enabled = bool(deep_agent_cognitive_planning_enabled)
+        if deep_agent_turn_timeout_seconds <= 0:
+            raise ValueError("deep_agent_turn_timeout_seconds must be greater than zero")
+        self._deep_agent_turn_timeout_seconds = float(deep_agent_turn_timeout_seconds)
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -182,7 +188,11 @@ class RuntimeService:
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
         pilot_stage = (
-            "DA-E2" if self._deep_agent_read_only_filesystem_enabled else "DA-E1"
+            "DA-E3"
+            if self._deep_agent_cognitive_planning_enabled
+            else "DA-E2"
+            if self._deep_agent_read_only_filesystem_enabled
+            else "DA-E1"
         )
         state = self._build_initial_state(session, request)
         state["_event_queue"] = event_queue
@@ -195,25 +205,72 @@ class RuntimeService:
             pilot_stage=pilot_stage,
             mode_key=request.mode_key,
         )
-        result = await self._deep_agent_runtime_adapter.execute(
-            DeepAgentRuntimeRequest(
-                session_id=session.id,
-                turn_id=request.turn_id,
-                trace_id=state["trace_id"],
-                model_key=state["selected_model_key"],
-                system_prompt=(
-                    "You are the Enterprise AI QA Agent code review pilot. "
-                    "Return evidence-grounded review guidance. Use only the "
-                    "read-only project and selected skill capabilities exposed "
-                    "by the current pilot stage. Do not execute business tools."
-                ),
-                messages=list(state["runtime_messages"]),
-                context={**dict(request.context), "skill_keys": list(request.skill_keys)},
-                read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
-                read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
-                read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
-            )
+        execution_task = asyncio.create_task(
+            self._deep_agent_runtime_adapter.execute(
+                DeepAgentRuntimeRequest(
+                    session_id=session.id,
+                    turn_id=request.turn_id,
+                    trace_id=state["trace_id"],
+                    model_key=state["selected_model_key"],
+                    system_prompt=(
+                        "You are the Enterprise AI QA Agent code review pilot. "
+                        "Return evidence-grounded review guidance. Use only the "
+                        "read-only project and selected skill capabilities exposed "
+                        "by the current pilot stage. Do not execute business tools."
+                    ),
+                    messages=list(state["runtime_messages"]),
+                    context={**dict(request.context), "skill_keys": list(request.skill_keys)},
+                    read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
+                    read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
+                    read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
+                    cognitive_planning_enabled=self._deep_agent_cognitive_planning_enabled,
+                )
+            ),
+            name=f"deep-agent-turn:{session.id}:{request.turn_id}",
         )
+        self._runtime_control.register_interruptible_task(session.id, execution_task)
+        try:
+            async with asyncio.timeout(self._deep_agent_turn_timeout_seconds):
+                result = await execution_task
+        except TimeoutError:
+            return self._build_deep_agent_interrupted_result(
+                session,
+                state,
+                pilot_stage=pilot_stage,
+                reason=(
+                    "Deep Agents cognitive turn exceeded the configured "
+                    f"{self._deep_agent_turn_timeout_seconds:g} second limit."
+                ),
+                cause="timeout",
+            )
+        except asyncio.CancelledError:
+            if not self._runtime_control.is_interrupt_requested(session.id):
+                raise
+            return self._build_deep_agent_interrupted_result(
+                session,
+                state,
+                pilot_stage=pilot_stage,
+                reason=(
+                    self._runtime_control.get_interrupt_reason(session.id)
+                    or "Deep Agents cognitive turn was interrupted."
+                ),
+                cause="interrupt",
+            )
+        finally:
+            self._runtime_control.unregister_interruptible_task(session.id, execution_task)
+        state["plan_steps"] = [item["content"] for item in result.todos]
+        if result.todos:
+            append_graph_event(
+                state,
+                "graph.plan_built",
+                "deepagents.todo",
+                "Deep Agents cognitive plan has been synchronized for this turn.",
+                harness="deepagents",
+                pilot_stage=pilot_stage,
+                plan_step_count=len(result.todos),
+                plan_outline=" | ".join(item["content"] for item in result.todos),
+                todos=result.todos,
+            )
         state["model_response_text"] = result.output_text
         state["model_response_summary"] = {
             "mode": "ok",
@@ -238,6 +295,64 @@ class RuntimeService:
         snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
         return RuntimeTurnResult(
             output_text=result.output_text,
+            events=self._events_from_log(session.id, state["event_log"]),
+            snapshot=snapshot,
+            approvals=[],
+            state=state,
+            tool_messages=[],
+            pending_turn={},
+        )
+
+    def _build_deep_agent_interrupted_result(
+        self,
+        session: SessionRecord,
+        state: dict[str, Any],
+        *,
+        pilot_stage: str,
+        reason: str,
+        cause: str,
+    ) -> RuntimeTurnResult:
+        """Map a bounded Deep Agents stop to existing terminal runtime contracts.
+
+        DA-E3 has no durable Deep Agents checkpointer yet, so an interrupted
+        invocation is deliberately non-resumable instead of being resumed by
+        the legacy graph path.
+        """
+        logger.warning(
+            "deep_agent_turn_stopped",
+            extra={
+                "session_id": session.id,
+                "turn_id": state.get("turn_id", ""),
+                "pilot_stage": pilot_stage,
+                "cause": cause,
+                "resumable": False,
+            },
+        )
+        state["model_response_summary"] = {
+            "mode": "interrupted",
+            "harness": "deepagents",
+            "pilot_stage": pilot_stage,
+            "cause": cause,
+        }
+        state["final_response"] = ""
+        state["termination_reason"] = "interrupted"
+        state["control_state"] = "interrupted"
+        state["interrupt_requested"] = cause == "interrupt"
+        state["interrupt_reason"] = reason
+        state["pending_turn"] = {}
+        append_graph_event(
+            state,
+            "runtime.turn_timed_out" if cause == "timeout" else "runtime.interrupt_applied",
+            "deepagents",
+            reason,
+            harness="deepagents",
+            pilot_stage=pilot_stage,
+            cause=cause,
+            resumable=False,
+        )
+        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+        return RuntimeTurnResult(
+            output_text="",
             events=self._events_from_log(session.id, state["event_log"]),
             snapshot=snapshot,
             approvals=[],

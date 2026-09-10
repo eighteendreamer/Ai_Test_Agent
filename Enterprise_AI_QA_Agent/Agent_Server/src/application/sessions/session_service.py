@@ -354,6 +354,10 @@ class SessionService:
                 raise ValueError("No snapshot is available for resume.")
             if snapshot.stage not in {"waiting_approval", "interrupted", "resumable"}:
                 raise ValueError("Latest snapshot is not resumable.")
+            if snapshot.stage == "interrupted" and not session.metadata.get("pending_turn"):
+                raise ValueError(
+                    "The interrupted runtime has no durable checkpoint and cannot be resumed."
+                )
 
             session.status = SessionStatus.running
             control = self._ensure_control_metadata(session)
@@ -1223,11 +1227,12 @@ class SessionService:
 
         control = self._ensure_control_metadata(session)
         control_state = self._control_state_from_runtime_result(runtime_result)
+        is_resumable = bool(runtime_result.pending_turn) or control_state == "waiting_approval"
         control.update(
             {
                 "control_state": control_state,
                 "is_interrupted": control_state == "interrupted",
-                "is_resumable": control_state in {"waiting_approval", "interrupted", "resumable"},
+                "is_resumable": is_resumable,
                 "preserve_resources": control_state in {"waiting_approval", "interrupted", "resumable"},
                 "replay_available": True,
                 "last_snapshot_stage": runtime_result.snapshot.stage,

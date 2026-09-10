@@ -309,6 +309,8 @@ class DeepAgentsConfig(BaseModel):
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
     read_only_max_output_chars: int = 120000
+    cognitive_planning_enabled: bool = False
+    turn_timeout_seconds: float = 600.0
 
     @field_validator("read_only_max_file_size_mb")
     @classmethod
@@ -319,6 +321,13 @@ class DeepAgentsConfig(BaseModel):
     @classmethod
     def validate_read_only_max_output_chars(cls, value: int) -> int:
         return max(1000, value)
+
+    @field_validator("turn_timeout_seconds")
+    @classmethod
+    def validate_turn_timeout_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("turn_timeout_seconds must be greater than zero")
+        return value
 
     @field_validator("pilot_mode_keys", mode="before")
     @classmethod

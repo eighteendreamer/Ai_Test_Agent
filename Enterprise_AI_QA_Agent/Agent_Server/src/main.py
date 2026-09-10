@@ -338,6 +338,8 @@ async def lifespan(app: FastAPI):
         deep_agent_read_only_filesystem_enabled=settings.deep_agents.read_only_filesystem_enabled,
         deep_agent_read_only_max_file_size_mb=settings.deep_agents.read_only_max_file_size_mb,
         deep_agent_read_only_max_output_chars=settings.deep_agents.read_only_max_output_chars,
+        deep_agent_cognitive_planning_enabled=settings.deep_agents.cognitive_planning_enabled,
+        deep_agent_turn_timeout_seconds=settings.deep_agents.turn_timeout_seconds,
     )
 
     app.state.settings = settings

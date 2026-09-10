@@ -27,6 +27,7 @@ class DeepAgentRuntimeRequest:
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
     read_only_max_output_chars: int = 120000
+    cognitive_planning_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class DeepAgentRuntimeResult:
     output_text: str
     metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    todos: list[dict[str, str]] = field(default_factory=list)
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
@@ -66,6 +68,7 @@ class DeepAgentRuntimeAdapter:
                 "Deep Agents runtime requires session_id, turn_id and model_key."
             )
 
+        stage = _pilot_stage(request)
         try:
             model = await self._model_resolver(request.model_key)
             cleanup = None
@@ -75,6 +78,7 @@ class DeepAgentRuntimeAdapter:
                     read_only_filesystem_enabled=request.read_only_filesystem_enabled,
                     read_only_max_file_size_mb=request.read_only_max_file_size_mb,
                     read_only_max_output_chars=request.read_only_max_output_chars,
+                    cognitive_planning_enabled=request.cognitive_planning_enabled,
                     context=request.context,
                 )
             else:
@@ -100,7 +104,7 @@ class DeepAgentRuntimeAdapter:
             raise
         except Exception as exc:
             raise DeepAgentRuntimeError(
-                "Deep Agents execution failed at the DA-E1 boundary: "
+                f"Deep Agents execution failed at the {stage} boundary: "
                 f"{exc.__class__.__name__}: {str(exc)[:240]}"
             ) from exc
 
@@ -114,10 +118,11 @@ class DeepAgentRuntimeAdapter:
             output_text=output_text,
             metadata={
                 "harness": "deepagents",
-                "stage": "DA-E2" if request.read_only_filesystem_enabled else "DA-E1",
+                "stage": stage,
                 "message_count": len(messages),
             },
             messages=messages,
+            todos=_normalize_todos(result.get("todos") if isinstance(result, dict) else []),
         )
 
     def _resolve_factory(self) -> AgentFactory:
@@ -140,6 +145,7 @@ class DeepAgentRuntimeAdapter:
         read_only_max_file_size_mb: int,
         context: dict[str, Any],
         read_only_max_output_chars: int = 120000,
+        cognitive_planning_enabled: bool = False,
     ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
 
@@ -184,8 +190,18 @@ class DeepAgentRuntimeAdapter:
         for provider in providers:
             register_harness_profile(provider, profile)
 
+        planning_middleware = []
+        if cognitive_planning_enabled:
+            try:
+                from langchain.agents.middleware import TodoListMiddleware
+            except ImportError as exc:
+                raise DeepAgentRuntimeError(
+                    "Deep Agents DA-E3 cognitive planning requires TodoListMiddleware."
+                ) from exc
+            planning_middleware = [TodoListMiddleware()]
+
         if not read_only_filesystem_enabled:
-            return {}, None
+            return ({"middleware": planning_middleware} if planning_middleware else {}), None
 
         project_root = _project_root_from_context(context)
         if not project_root:
@@ -235,6 +251,7 @@ class DeepAgentRuntimeAdapter:
         ]
         backend = project_backend
         middleware = [
+            *planning_middleware,
             FilesystemMiddleware(
                 backend=backend,
                 tools=["read_file", "ls", "glob", "grep"],
@@ -274,6 +291,7 @@ class DeepAgentRuntimeAdapter:
                 routes={"/skills/": skill_backend},
             )
             middleware = [
+                *planning_middleware,
                 FilesystemMiddleware(
                     backend=backend,
                     tools=["read_file", "ls", "glob", "grep"],
@@ -300,6 +318,14 @@ def _project_root_from_context(context: dict[str, Any]) -> str:
     return ""
 
 
+def _pilot_stage(request: DeepAgentRuntimeRequest) -> str:
+    if request.cognitive_planning_enabled:
+        return "DA-E3"
+    if request.read_only_filesystem_enabled:
+        return "DA-E2"
+    return "DA-E1"
+
+
 def _normalize_messages(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -311,6 +337,20 @@ def _normalize_messages(value: Any) -> list[dict[str, Any]]:
         role = str(getattr(message, "type", "") or "")
         content = getattr(message, "content", "")
         normalized.append({"role": role, "content": content})
+    return normalized
+
+
+def _normalize_todos(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        status = str(item.get("status") or "").strip()
+        if content and status in {"pending", "in_progress", "completed"}:
+            normalized.append({"content": content, "status": status})
     return normalized
 
 

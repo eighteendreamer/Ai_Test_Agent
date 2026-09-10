@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
 
@@ -134,12 +135,48 @@ async def list_events(
 
 @router.post("/{session_id}/messages")
 async def send_message(session_id: str, payload: SendMessageRequest, request: Request):
+    service = request.app.state.session_service
+    disconnect_watch_stop = asyncio.Event()
+    execution_task = asyncio.create_task(service.send_message(session_id, payload))
+    disconnect_task = asyncio.create_task(
+        _wait_for_request_disconnect(request, disconnect_watch_stop)
+    )
     try:
-        return await request.app.state.session_service.send_message(session_id, payload)
+        done, _pending = await asyncio.wait(
+            {execution_task, disconnect_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if disconnect_task in done and disconnect_task.result() and not execution_task.done():
+            with suppress(KeyError, ValueError):
+                await service.interrupt_session(
+                    session_id,
+                    InterruptSessionRequest(
+                        reason="The HTTP client disconnected during the active turn.",
+                        source="client_disconnect",
+                    ),
+                )
+        return await execution_task
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        disconnect_watch_stop.set()
+        await disconnect_task
+
+
+async def _wait_for_request_disconnect(
+    request: Request,
+    stop_event: asyncio.Event,
+) -> bool:
+    while not stop_event.is_set():
+        if await request.is_disconnected():
+            return True
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=0.25)
+        except TimeoutError:
+            continue
+    return False
 
 
 @router.get("/{session_id}/snapshots")
