@@ -142,3 +142,11 @@
 - Windows 双进程真实 PostgreSQL 争抢测试通过：同一 Job 只有一个进程领取成功；进程退出后的未知结果转为 resume_requested 且不可再次领取。超时阈值改用数据库 `now()` 计算，避免无时区应用时间与 TIMESTAMPTZ 的解释偏差。
 - 最新全量（最终代码状态重跑）：主环境 `811 passed, 34 skipped, 1 warning in 39.46s`；C4 `831 passed, 14 skipped, 1 warning in 31.60s`；前端 `33 passed`；两环境编译和 `src.main` 入口导入通过；C4 启用 Deep Agents/PostgreSQL Checkpointer 的真实 health 启动检查通过。
 - 本批外部默认模型/HITL HTTP 复验因执行许可被安全审查拒绝，未执行且不沿用上一批结果冒充本批证据；DA-E5 仍需 Session/turn 跨 Worker 所有权、任意取消恢复、Stage 级对账以及 4/24 小时长时验证。
+
+## 9. 2026-09-10 审批续跑租约增量
+
+- 依赖版本与数据库 schema 不变；Approval 现有 JSONB metadata 保存续跑 owner、token、数据库时钟到期时间和完成标记。
+- 多 Worker 对同一已裁决 Approval 通过 PostgreSQL 条件 UPDATE 原子领取；活动任务心跳续租，token 条件完成；取消/崩溃不误标完成，租约到期后可重新领取。
+- 配置统一为 `ORCHESTRATION__APPROVAL_CONTINUATION_LEASE_SECONDS=120` 和 `ORCHESTRATION__APPROVAL_CONTINUATION_HEARTBEAT_SECONDS=30`，心跳周期必须严格短于租约。
+- 真实 PostgreSQL 完整并发测试 `4 passed`；最终全量为主环境 `815 passed, 34 skipped`、C4 `835 passed, 14 skipped`、前端 `33 passed`，双环境入口/编译、C4 pip check 与真实 health 均通过。
+- 当前只完成 Approval continuation 的所有权。Session/Snapshot/Event 写入尚未用相同 token 做 fencing，因此暂不自动扫描/接管到期任务，也不宣称通用跨 Worker exactly-once。

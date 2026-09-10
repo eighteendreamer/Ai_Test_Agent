@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+import logging
+import os
+import socket
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -50,6 +53,7 @@ DEFAULT_EVENT_HISTORY_LIMIT = 500
 DEFAULT_REPLAY_EVENT_LIMIT = 500
 DEFAULT_SNAPSHOT_HISTORY_LIMIT = 10
 RECENT_CONVERSATION_EVENT_LIMIT = 10
+logger = logging.getLogger(__name__)
 SERVER_MANAGED_SESSION_METADATA_KEYS = frozenset(
     {"environment", "resource_scope", "security_authorization"}
 )
@@ -80,6 +84,8 @@ class SessionService:
         verification_service: VerificationService | None = None,
         session_resource_service: SessionResourceService | None = None,
         project_service: ProjectService | None = None,
+        approval_continuation_lease_seconds: int = 120,
+        approval_continuation_heartbeat_seconds: float = 30.0,
     ) -> None:
         self._store = store
         self._input_orchestrator_service = input_orchestrator_service
@@ -91,6 +97,13 @@ class SessionService:
         self._verification_service = verification_service or VerificationService()
         self._session_resource_service = session_resource_service
         self._project_service = project_service
+        self._approval_continuation_lease_seconds = max(
+            1, int(approval_continuation_lease_seconds)
+        )
+        self._approval_continuation_heartbeat_seconds = max(
+            0.1, float(approval_continuation_heartbeat_seconds)
+        )
+        self._continuation_owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4()}"
         # UI 录制审批回调（方案 4.2 环节④/⑤，P0-8）：main.py 在 recorder 域初始化后注入
         self._recording_approval_service = None
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -477,19 +490,8 @@ class SessionService:
                 status=payload.decision,
                 reason=payload.reason,
             )
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "approval.resolved",
-                    {
-                        "approval_id": approval.id,
-                        "tool_key": approval.tool_key,
-                        "decision": approval.status.value,
-                    },
-                ),
-            )
             if proxy_child_session_id and proxy_child_approval_id:
+                await self._append_approval_resolved_event(session_id, approval)
                 proxy_execution_status = (
                     SessionStatus.running.value
                     if payload.decision == ToolApprovalStatus.approved
@@ -519,6 +521,7 @@ class SessionService:
             # UI 录制审批（方案 4.2 环节④/⑤，P0-8）：不走 graph 工具重执行链路——
             # approved → RecorderSessionService.launch；denied → 降级事件。
             if approval.metadata.get("approval_type") == "ui_recording":
+                await self._append_approval_resolved_event(session_id, approval)
                 session.status = SessionStatus.idle
                 control = self._ensure_control_metadata(session)
                 control.update(
@@ -550,6 +553,26 @@ class SessionService:
                 )
                 return approval
 
+            continuation_token = str(uuid4())
+            continuation_claimed = await self._store.claim_approval_continuation(
+                session_id=session_id,
+                approval_id=approval.id,
+                owner_id=self._continuation_owner_id,
+                lease_token=continuation_token,
+                lease_seconds=self._approval_continuation_lease_seconds,
+            )
+            if not continuation_claimed:
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(session_id, "approval.continuation_already_claimed", {
+                        "approval_id": approval.id,
+                        "tool_key": approval.tool_key,
+                        "message": "Another worker owns or completed this approval continuation.",
+                    }),
+                )
+                return approval
+
+            await self._append_approval_resolved_event(session_id, approval)
             session.status = SessionStatus.running
             control = self._ensure_control_metadata(session)
             control.update(
@@ -579,6 +602,7 @@ class SessionService:
                 self._resume_after_approval_async(
                     session_id=session_id,
                     approval=approval,
+                    continuation_token=continuation_token,
                 )
             )
             self._approval_resume_tasks[approval.id] = task
@@ -591,10 +615,21 @@ class SessionService:
         self,
         session_id: str,
         approval: ToolApprovalRequest,
+        continuation_token: str,
     ) -> None:
         async with self._session_locks[session_id]:
             session = await self._require_session(session_id)
             assistant_message_id = str(uuid4())
+            heartbeat_stop = asyncio.Event()
+            heartbeat_task = asyncio.create_task(
+                self._keep_approval_continuation_alive(
+                    session_id=session_id,
+                    approval_id=approval.id,
+                    continuation_token=continuation_token,
+                    stop_event=heartbeat_stop,
+                )
+            )
+            continuation_settled = False
             try:
                 stream_chunk_handler = self._build_stream_chunk_handler(
                     session_id=session_id,
@@ -608,6 +643,7 @@ class SessionService:
                     event_queue=self._store.get_queue(session_id),
                 )
                 if continuation is None:
+                    continuation_settled = True
                     return
                 await self._finalize_runtime_result(
                     session=session,
@@ -615,6 +651,7 @@ class SessionService:
                     assistant_message_id=assistant_message_id,
                     user_message_override=str(continuation.state.get("user_message", "")),
                 )
+                continuation_settled = True
             except Exception as exc:
                 session.status = SessionStatus.interrupted
                 control = self._ensure_control_metadata(session)
@@ -643,6 +680,78 @@ class SessionService:
                         },
                     ),
                 )
+                continuation_settled = True
+            finally:
+                heartbeat_stop.set()
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+                if continuation_settled:
+                    completed = await self._store.complete_approval_continuation(
+                        session_id=session_id,
+                        approval_id=approval.id,
+                        lease_token=continuation_token,
+                    )
+                    if not completed:
+                        logger.warning(
+                            "approval_continuation_completion_lease_lost",
+                            extra={"session_id": session_id, "approval_id": approval.id},
+                        )
+
+    async def _keep_approval_continuation_alive(
+        self,
+        *,
+        session_id: str,
+        approval_id: str,
+        continuation_token: str,
+        stop_event: asyncio.Event,
+    ) -> None:
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=self._approval_continuation_heartbeat_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                return
+            renewed = await self._store.renew_approval_continuation(
+                session_id=session_id,
+                approval_id=approval_id,
+                lease_token=continuation_token,
+                lease_seconds=self._approval_continuation_lease_seconds,
+            )
+            if not renewed:
+                logger.error(
+                    "approval_continuation_heartbeat_lease_lost",
+                    extra={"session_id": session_id, "approval_id": approval_id},
+                )
+                self._runtime_service.request_interrupt(
+                    session_id,
+                    "Approval continuation lease was lost to another worker.",
+                )
+                return
+
+    async def _append_approval_resolved_event(
+        self,
+        session_id: str,
+        approval: ToolApprovalRequest,
+    ) -> None:
+        await self._store.append_event(
+            session_id,
+            self._make_event(
+                session_id,
+                "approval.resolved",
+                {
+                    "approval_id": approval.id,
+                    "tool_key": approval.tool_key,
+                    "decision": approval.status.value,
+                },
+            ),
+        )
 
     async def send_message(self, session_id: str, payload: SendMessageRequest) -> ConversationResponse:
         session_lock = self._session_locks[session_id]

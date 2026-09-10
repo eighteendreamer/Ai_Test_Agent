@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from src.domain.models import SessionRecord
@@ -70,6 +70,27 @@ class SessionStore(Protocol):
         status: ToolApprovalStatus,
         reason: str | None = None,
     ) -> ToolApprovalRequest: ...
+    async def claim_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool: ...
+    async def renew_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool: ...
+    async def complete_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+    ) -> bool: ...
     async def delete_session(self, session_id: str) -> bool: ...
     async def count_sessions(self, before: datetime | None = None, after: datetime | None = None) -> int: ...
     async def count_sessions_by_status(self) -> dict[str, int]: ...
@@ -310,6 +331,69 @@ class InMemorySessionStore:
             approval.resolved_at = datetime.utcnow()
             return approval
 
+    async def claim_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        async with self._lock:
+            approval = self._approvals.get(session_id, {}).get(approval_id)
+            if approval is None or approval.status == ToolApprovalStatus.pending:
+                return False
+            metadata = approval.metadata
+            if metadata.get("continuation_completed_at"):
+                return False
+            expires_at = _parse_datetime(metadata.get("continuation_lease_expires_at"))
+            if expires_at is not None and expires_at > datetime.utcnow():
+                return False
+            metadata.update({
+                "continuation_lease_owner": owner_id,
+                "continuation_lease_token": lease_token,
+                "continuation_lease_expires_at": (
+                    datetime.utcnow() + timedelta(seconds=lease_seconds)
+                ).isoformat(),
+            })
+            return True
+
+    async def renew_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        async with self._lock:
+            approval = self._approvals.get(session_id, {}).get(approval_id)
+            if approval is None or approval.metadata.get("continuation_completed_at"):
+                return False
+            if approval.metadata.get("continuation_lease_token") != lease_token:
+                return False
+            approval.metadata["continuation_lease_expires_at"] = (
+                datetime.utcnow() + timedelta(seconds=lease_seconds)
+            ).isoformat()
+            return True
+
+    async def complete_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+    ) -> bool:
+        async with self._lock:
+            approval = self._approvals.get(session_id, {}).get(approval_id)
+            if approval is None:
+                return False
+            if approval.metadata.get("continuation_lease_token") != lease_token:
+                return False
+            approval.metadata.pop("continuation_lease_owner", None)
+            approval.metadata.pop("continuation_lease_token", None)
+            approval.metadata.pop("continuation_lease_expires_at", None)
+            approval.metadata["continuation_completed_at"] = datetime.utcnow().isoformat()
+            return True
+
     async def delete_session(self, session_id: str) -> bool:
         async with self._lock:
             if session_id not in self._sessions:
@@ -448,3 +532,15 @@ def _session_history_context(session: SessionRecord) -> dict:
         "updated_at": session.updated_at.isoformat(),
         "failure_summary": failure_summary[:500],
     }
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed

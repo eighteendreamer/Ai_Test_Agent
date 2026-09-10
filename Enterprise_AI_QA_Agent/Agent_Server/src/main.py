@@ -447,6 +447,12 @@ async def lifespan(app: FastAPI):
         transcript_hygiene_service=transcript_hygiene_service,
         session_resource_service=session_resource_service,
         project_service=project_service,
+        approval_continuation_lease_seconds=(
+            settings.orchestration.approval_continuation_lease_seconds
+        ),
+        approval_continuation_heartbeat_seconds=(
+            settings.orchestration.approval_continuation_heartbeat_seconds
+        ),
     )
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,

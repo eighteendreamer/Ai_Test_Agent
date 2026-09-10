@@ -135,6 +135,51 @@ class PostgresSessionStore:
             reason,
         )
 
+    async def claim_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._claim_approval_continuation_sync,
+            session_id,
+            approval_id,
+            owner_id,
+            lease_token,
+            lease_seconds,
+        )
+
+    async def renew_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._renew_approval_continuation_sync,
+            session_id,
+            approval_id,
+            lease_token,
+            lease_seconds,
+        )
+
+    async def complete_approval_continuation(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._complete_approval_continuation_sync,
+            session_id,
+            approval_id,
+            lease_token,
+        )
+
     def _initialize_sync(self) -> None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -786,6 +831,91 @@ class PostgresSessionStore:
                     (resolved_at, session_id),
                 )
         return _approval_from_row(row)
+
+    def _claim_approval_continuation_sync(
+        self,
+        session_id: str,
+        approval_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_approval_table}
+                    SET metadata = metadata || jsonb_build_object(
+                        'continuation_lease_owner', %s::text,
+                        'continuation_lease_token', %s::text,
+                        'continuation_lease_expires_at',
+                            to_jsonb(now() + (%s * INTERVAL '1 second'))
+                    )
+                    WHERE id = %s
+                      AND session_id = %s
+                      AND status != 'pending'
+                      AND NOT (metadata ? 'continuation_completed_at')
+                      AND (
+                          NOT (metadata ? 'continuation_lease_expires_at')
+                          OR (metadata->>'continuation_lease_expires_at')::timestamptz <= now()
+                      )
+                    RETURNING id
+                    """,
+                    (owner_id, lease_token, lease_seconds, approval_id, session_id),
+                )
+                return cur.fetchone() is not None
+
+    def _renew_approval_continuation_sync(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_approval_table}
+                    SET metadata = metadata || jsonb_build_object(
+                        'continuation_lease_expires_at',
+                            to_jsonb(now() + (%s * INTERVAL '1 second'))
+                    )
+                    WHERE id = %s
+                      AND session_id = %s
+                      AND metadata->>'continuation_lease_token' = %s
+                      AND NOT (metadata ? 'continuation_completed_at')
+                    RETURNING id
+                    """,
+                    (lease_seconds, approval_id, session_id, lease_token),
+                )
+                return cur.fetchone() is not None
+
+    def _complete_approval_continuation_sync(
+        self,
+        session_id: str,
+        approval_id: str,
+        lease_token: str,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_approval_table}
+                    SET metadata = (
+                        metadata
+                        - 'continuation_lease_owner'
+                        - 'continuation_lease_token'
+                        - 'continuation_lease_expires_at'
+                    ) || jsonb_build_object('continuation_completed_at', to_jsonb(now()))
+                    WHERE id = %s
+                      AND session_id = %s
+                      AND metadata->>'continuation_lease_token' = %s
+                    RETURNING id
+                    """,
+                    (approval_id, session_id, lease_token),
+                )
+                return cur.fetchone() is not None
 
     async def delete_session(self, session_id: str) -> bool:
         def _do() -> bool:

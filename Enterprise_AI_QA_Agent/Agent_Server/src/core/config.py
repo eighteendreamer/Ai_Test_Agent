@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 import re
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -168,6 +168,8 @@ class OrchestrConfig(BaseModel):
     memory_top_k: int = 6
 
     tool_job_heartbeat_timeout_seconds: int = 90
+    approval_continuation_lease_seconds: int = 120
+    approval_continuation_heartbeat_seconds: float = 30.0
     test_run_lease_reaper_interval_seconds: float = 30.0
     compatibility_runner_heartbeat_timeout_seconds: int = 120
 
@@ -219,6 +221,31 @@ class OrchestrConfig(BaseModel):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("approval_continuation_lease_seconds")
+    @classmethod
+    def validate_approval_continuation_lease_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("approval_continuation_lease_seconds must be greater than zero")
+        return value
+
+    @field_validator("approval_continuation_heartbeat_seconds")
+    @classmethod
+    def validate_approval_continuation_heartbeat_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("approval_continuation_heartbeat_seconds must be greater than zero")
+        return value
+
+    @model_validator(mode="after")
+    def validate_approval_continuation_timing(self):
+        if (
+            self.approval_continuation_heartbeat_seconds
+            >= self.approval_continuation_lease_seconds
+        ):
+            raise ValueError(
+                "approval_continuation_heartbeat_seconds must be shorter than the lease"
+            )
+        return self
+
 
 class DockerConfig(BaseModel):
     docker_managed_container_prefix: str
@@ -258,7 +285,6 @@ class FrontendConfig(BaseModel):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
-
 
 class LangSmithConfig(BaseModel):
     enabled: bool = False

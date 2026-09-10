@@ -739,6 +739,17 @@ def test_deep_agent_checkpoint_configuration_is_opt_in_and_schema_is_safe():
         DeepAgentsConfig(checkpoint_schema="public,other")
 
 
+def test_da_e5_approval_continuation_heartbeat_must_precede_lease_expiry():
+    from src.core.config import OrchestrConfig
+
+    assert OrchestrConfig().approval_continuation_heartbeat_seconds == 30
+    with pytest.raises(ValueError, match="heartbeat_seconds must be shorter"):
+        OrchestrConfig(
+            approval_continuation_lease_seconds=30,
+            approval_continuation_heartbeat_seconds=30,
+        )
+
+
 @pytest.mark.asyncio
 async def test_da_e4_duplicate_resolved_approval_does_not_reopen_completed_session():
     from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
@@ -766,6 +777,163 @@ async def test_da_e4_duplicate_resolved_approval_does_not_reopen_completed_sessi
     )
     assert (await store.get_session(session.id)).status == SessionStatus.completed
     assert service._approval_resume_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_da_e5_two_service_instances_schedule_one_approval_continuation():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import (
+        ApprovalDecisionRequest,
+        ToolApprovalRequest,
+        ToolApprovalStatus,
+    )
+
+    class RuntimeStub:
+        def __init__(self):
+            self.calls = 0
+
+        async def resume_after_approval(self, *_args, **_kwargs):
+            self.calls += 1
+            return None
+
+    store = InMemorySessionStore()
+    session = _runtime_session("concurrent-hitl-session")
+    session.status = SessionStatus.waiting_approval
+    session.metadata["pending_turn"] = {
+        "turn_id": "concurrent-hitl-turn",
+        "pending_approval_ids": ["concurrent-hitl-approval"],
+    }
+    await store.save_session(session)
+    approval = ToolApprovalRequest(
+        id="concurrent-hitl-approval",
+        session_id=session.id,
+        tool_key="cli-executor",
+        tool_name="CLI Executor",
+        reason="concurrent continuation acceptance",
+        status=ToolApprovalStatus.pending,
+        created_at=datetime.now(UTC),
+    )
+    await store.save_approval(session.id, approval)
+    runtime = RuntimeStub()
+
+    def service():
+        return SessionService(
+            store=store,
+            input_orchestrator_service=InputOrchestratorService(mode_registry=ModeRegistry()),
+            runtime_service=runtime,
+            mode_registry=ModeRegistry(),
+        )
+
+    first, second = service(), service()
+    payload = ApprovalDecisionRequest(decision=ToolApprovalStatus.approved)
+    await asyncio.gather(
+        first.resolve_approval(session.id, approval.id, payload),
+        second.resolve_approval(session.id, approval.id, payload),
+    )
+    for _ in range(20):
+        if not first._approval_resume_tasks and not second._approval_resume_tasks:
+            break
+        await asyncio.sleep(0)
+
+    assert runtime.calls == 1
+    events = await store.list_events(session.id)
+    assert [item.type for item in events].count("approval.resolved") == 1
+    assert [item.type for item in events].count("approval.continuation_already_claimed") == 1
+
+
+@pytest.mark.asyncio
+async def test_da_e5_lost_approval_continuation_lease_requests_runtime_interrupt():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+
+    class RuntimeStub:
+        def __init__(self):
+            self.interrupts = []
+
+        def request_interrupt(self, session_id, reason):
+            self.interrupts.append((session_id, reason))
+
+    class Store(InMemorySessionStore):
+        async def renew_approval_continuation(self, *_args, **_kwargs):
+            return False
+
+    runtime = RuntimeStub()
+    service = SessionService(
+        store=Store(),
+        input_orchestrator_service=InputOrchestratorService(mode_registry=ModeRegistry()),
+        runtime_service=runtime,
+        mode_registry=ModeRegistry(),
+        approval_continuation_heartbeat_seconds=0.1,
+    )
+    stop = asyncio.Event()
+    await service._keep_approval_continuation_alive(
+        session_id="lease-lost-session",
+        approval_id="lease-lost-approval",
+        continuation_token="lease-lost-token",
+        stop_event=stop,
+    )
+
+    assert runtime.interrupts == [
+        ("lease-lost-session", "Approval continuation lease was lost to another worker.")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_da_e5_cancelled_continuation_keeps_lease_recoverable_not_completed():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
+
+    entered = asyncio.Event()
+
+    class RuntimeStub:
+        async def resume_after_approval(self, *_args, **_kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+
+    store = InMemorySessionStore()
+    session = _runtime_session("cancelled-continuation-session")
+    session.status = SessionStatus.running
+    session.metadata["pending_turn"] = {"turn_id": "cancelled-continuation-turn"}
+    await store.save_session(session)
+    approval = ToolApprovalRequest(
+        id="cancelled-continuation-approval",
+        session_id=session.id,
+        tool_key="cli-executor",
+        tool_name="CLI Executor",
+        reason="shutdown recovery",
+        status=ToolApprovalStatus.approved,
+        created_at=datetime.now(UTC),
+    )
+    await store.save_approval(session.id, approval)
+    assert await store.claim_approval_continuation(
+        session.id, approval.id, "worker", "lease-token", 30
+    )
+    service = SessionService(
+        store=store,
+        input_orchestrator_service=InputOrchestratorService(mode_registry=ModeRegistry()),
+        runtime_service=RuntimeStub(),
+        mode_registry=ModeRegistry(),
+    )
+    task = asyncio.create_task(
+        service._resume_after_approval_async(
+            session_id=session.id,
+            approval=approval,
+            continuation_token="lease-token",
+        )
+    )
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    stored = (await store.list_approvals(session.id))[0]
+    assert stored.metadata["continuation_lease_token"] == "lease-token"
+    assert "continuation_completed_at" not in stored.metadata
 
 
 def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path):

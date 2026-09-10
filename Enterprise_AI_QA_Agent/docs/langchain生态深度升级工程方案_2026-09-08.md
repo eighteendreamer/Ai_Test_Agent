@@ -1517,7 +1517,7 @@ API / Session / TestRun 控制平面（系统保留）
 | DA-E2 只读文件与 Skills | 已完成 | 完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面、SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射，以及敏感文件/路径、符号链接、junction、循环、超大文件、二进制、并发读取和旧实现结果对账 | C4 已证明仅绑定 `read_file/ls/glob/grep`；官方 Agent 实链路、Windows reparse point 越界和符号链接循环均通过；主环境默认仍关闭 Deep Agents |
 | DA-E3 认知计划与同步子代理 | 已完成 | 启用可选 `write_todos`、映射现有 plan event；接入一个受控同步 `code-review-researcher`；补齐单轮取消/超时、本地 typed events 和 LangSmith 父子 Trace | todo 可视化、父子 Trace、一次委派、无嵌套 task、模型/工具调用限额、真实完成/中断均通过；`worker_dispatches=[]`，不进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 进行中 | Registry → LangChainToolAdapter → Permission/Safety/ApprovalScope → ToolRuntime；官方 `interrupt_on/Command(resume=...)` 负责暂停恢复；Approval API 负责裁决，保留真实工具历史和顺序 | 已完成真实 safe、批准、拒绝、等待审批时服务重启恢复、同 Job 推进、Artifact 与 Trace 对账；官方 Harness 批量反序批准/拒绝及 scope 变化回归通过；尚未提供 edit API，也未完成完整性能/灰度，阶段不关闭 |
-| DA-E5 Checkpoint 与长任务 | 进行中 | 为满足官方 HITL 的前置依赖，先接入官方 PostgreSQL Checkpointer，独立 schema、受限连接池；thread_id 使用原 turn_id | 等待审批时重启后的批准/拒绝已实测；仍须完成执行中崩溃、跨 Worker 租约、TestRun/Item/Attempt/Stage 映射、数小时性能、重复投递与副作用幂等、取消恢复和终态不可重领；不能用本批审批重启测试代替整个阶段验收 |
+| DA-E5 Checkpoint 与长任务 | 进行中 | 为满足官方 HITL 的前置依赖，先接入官方 PostgreSQL Checkpointer，独立 schema、受限连接池；thread_id 使用原 turn_id | 等待审批重启、ToolJob 单所有者/终态回放、审批续跑跨 Worker 租约已实测；仍须完成通用 Session/turn fencing、执行中 Stage 对账、TestRun 映射、数小时性能、取消恢复；不能用这些局部验收代替整个阶段验收 |
 | DA-E6 上下文与记忆 | 未进行 | 对账内置 summarization/offloading 与现有 Compaction/Memory；选定唯一所有者 | 不双重摘要；原始证据可追溯；token/延迟/质量不低于基线；敏感数据不进入虚拟文件或 Trace |
 | DA-E7 灰度替换 | 未进行 | code_review 5%→25%→50%→100%，稳定后再评估其他模式 | 成功率、P95、token、工具错误、恢复成功率、人工介入率满足门槛；一键回旧 Harness |
 
@@ -1681,6 +1681,24 @@ API / Session / TestRun 控制平面（系统保留）
 | 相同 call_id 的失败先行用例产生两个 ToolJob、handler 调用 2 次 | checkpoint 重放与 ToolJob 随机 ID 之间缺少稳定执行身份 | call identity → insert-if-absent → atomic claim → execute once → terminal replay |
 | 双进程 PostgreSQL claim 结果一成一败 | 条件更新可以作为跨 Worker 单所有者边界 | two workers → one `UPDATE ... RETURNING` winner → loser reads active/terminal state |
 | 失联 Job 首次未被 timeout=0 标记，改用数据库 `now()` 后通过 | 应用无时区时间不能可靠比较跨进程 `TIMESTAMPTZ` | database clock → stale classification → resume_requested → reconciliation required |
+
+### DA-E5 审批续跑跨 Worker 租约实施记录（进行中，2026-09-10）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 当前状态 | 已完成审批裁决后的 continuation 单所有者、续租、完成封存和崩溃后可重领；DA-E5 整体仍为进行中，通用 Session/turn fencing 尚未完成 |
+| 失败先行 | 两个独立 `SessionService` 实例并发提交同一 approved 决策，原实现实际调用 `resume_after_approval` 两次，回归得到 `runtime.calls == 2`。根因是 Approval CAS 只保护 pending → approved/denied，没有保护裁决后的后台续跑调度 |
+| 采用做法 | 在现有 Approval Store 的 `metadata` 上增加 continuation lease，不建新表/调度器：claim 写 owner/token/数据库到期时间；renew 和 complete 必须匹配 token；complete 删除活动租约并写 completed_at；已完成不可重领，到期租约可由新 Worker 接管 |
+| PostgreSQL 原子性 | claim 是单条条件 `UPDATE ... RETURNING`，要求审批已裁决、未完成且不存在有效租约；续租和完成均带 fencing token 条件。到期时间使用数据库 `now()`，不依赖 Worker 时钟。InMemory Store 用既有锁实现同一协议 |
+| 生命周期 | `SessionService` 只有领取成功才把 Session 置为 resuming 并创建后台任务；活动期间按配置心跳续租；租约丢失记录结构化 error 并调用现有 Runtime interrupt。正常终态或已持久化 interrupted 状态才封存 continuation；Task 被取消/进程退出不写 completed，保留租约等待到期恢复 |
+| 配置 | 新增 `ORCHESTRATION__APPROVAL_CONTINUATION_LEASE_SECONDS=120`、`ORCHESTRATION__APPROVAL_CONTINUATION_HEARTBEAT_SECONDS=30`，已写入本地 `.env` 与 `.env.example`；校验 heartbeat 必须大于 0 且严格短于 lease。未新增密钥或依赖 |
+| 事件与日志 | 只有领取者写 `approval.resolved` 和 `approval.continuation_scheduled`；竞争失败者写 `approval.continuation_already_claimed`。续租丢失和完成 token 失效分别记录可检索日志，不记录 token/owner 或审批参数 |
+| 自动化测试 | 双实例失败用例修复后只调用一次 Runtime，且 resolved/already_claimed 事件各一；覆盖 heartbeat 丢失触发 interrupt、任务取消不误标 completed、配置时序校验。Deep Agents/审批专项最终 `44 passed`；相关 Session/审批链曾以 `108 passed` 验证 |
+| 真实 PostgreSQL | `RUN_LIVE_POSTGRES_TESTS=1` 的完整 `test_live_postgres_concurrency.py`：`4 passed in 6.43s`。32 路审批决策只有一个最终值；8 个 Store 多连接争抢 continuation 只有一个成功；错误 token 无法 renew/complete，正确 token 可完成且终态不可重领；零秒测试租约可被新 Worker 接管 |
+| 最终全量 | C4 `835 passed, 14 skipped, 1 warning in 27.87s`；主环境 `815 passed, 34 skipped, 1 warning in 32.54s`；前端 `33 passed`；两环境编译/`src.main` 导入通过；C4 `pip check` 通过；启用 Deep Agents/Checkpoint 的 Uvicorn health 为 status=ok、postgres_ok=true |
+| 回滚 | 移除两项配置即使用安全默认值；Store 只在 Approval JSONB metadata 增加可选字段，无 schema migration；旧 Approval 缺字段视为未领取。Deep Agents/legacy 共用同一审批服务，因此修复的是既有控制面，不创建第二条恢复路径 |
+| 已知限制 | lease token 目前保护 Approval continuation 的 claim/renew/complete，但 Session、Snapshot、Event 的每一次写入尚未携带同一 fencing token；极端场景下失去租约的旧 Worker 在中断生效前仍可能与新 Worker 竞争写业务状态。因此本批没有自动扫描并重启到期 continuation，也不宣称通用跨 Worker exactly-once |
+| 下一步 | 把 continuation token 贯穿 Session/Snapshot 最终化 CAS，建立通用 turn execution owner 与服务启动恢复扫描；只有 fenced write 和 checkpoint/Approval/ToolJob 三方对账完成后，才允许自动接管到期 continuation |
 
 ## 15. 每次实施后的记录模板
 

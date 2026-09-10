@@ -551,6 +551,71 @@ async def test_live_postgres_approval_cas_has_one_final_decision():
         assert set(successes) == {final_status}
         assert len(errors) == 16
         assert all(isinstance(error, ValueError) for error in errors)
+
+        continuation_stores = [PostgresSessionStore(settings) for _ in range(8)]
+        claim_results = await asyncio.gather(*(
+            candidate.claim_approval_continuation(
+                session_id,
+                approval_id,
+                owner_id=f"continuation-worker-{index}",
+                lease_token=f"continuation-token-{index}",
+                lease_seconds=30,
+            )
+            for index, candidate in enumerate(continuation_stores)
+        ))
+        assert claim_results.count(True) == 1
+        winning_index = claim_results.index(True)
+        winning_token = f"continuation-token-{winning_index}"
+        assert not await store.renew_approval_continuation(
+            session_id, approval_id, "wrong-token", 30
+        )
+        assert await store.renew_approval_continuation(
+            session_id, approval_id, winning_token, 30
+        )
+        assert not await store.complete_approval_continuation(
+            session_id, approval_id, "wrong-token"
+        )
+        assert await store.complete_approval_continuation(
+            session_id, approval_id, winning_token
+        )
+        assert not await store.claim_approval_continuation(
+            session_id,
+            approval_id,
+            owner_id="late-worker",
+            lease_token="late-token",
+            lease_seconds=30,
+        )
+
+        expiring_approval_id = f"expiring-{suffix}"
+        with postgres_connect(settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO {approval_table} "
+                    "(id, session_id, tool_key, tool_name, reason, status, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, 'approved', %s)",
+                    (
+                        expiring_approval_id,
+                        session_id,
+                        "knowledge-rag",
+                        "Knowledge RAG",
+                        "lease expiry validation",
+                        now,
+                    ),
+                )
+        assert await store.claim_approval_continuation(
+            session_id,
+            expiring_approval_id,
+            owner_id="crashed-worker",
+            lease_token="expired-token",
+            lease_seconds=0,
+        )
+        assert await continuation_stores[0].claim_approval_continuation(
+            session_id,
+            expiring_approval_id,
+            owner_id="recovery-worker",
+            lease_token="recovery-token",
+            lease_seconds=30,
+        )
         print(
             "live_postgres_approval_cas "
             f"requests=32 final_status={final_status.value} "
