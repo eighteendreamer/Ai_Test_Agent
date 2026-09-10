@@ -1700,6 +1700,8 @@ API / Session / TestRun 控制平面（系统保留）
 | 已知限制 | 当前 fencing 已保护审批续跑路径中的 Session、Snapshot、Event 写入；其他普通 turn、TestRun Stage 和外部记忆写入仍未统一到通用 turn owner。因此本批没有自动扫描并重启到期 continuation，也不宣称通用跨 Worker exactly-once |
 | 下一步 | 把 continuation token 抽象为通用 turn execution owner，补齐执行中 Stage 对账、外部记忆写入边界和服务启动恢复扫描；只有 fenced write 和 checkpoint/Approval/ToolJob 三方对账完成后，才允许自动接管到期 continuation |
 
+补充可执行性验证：fencing 首次提交后的真实 PostgreSQL Session 创建触发 `IndeterminateDatatype`，根因是普通写入为 NULL 的可选 token 被直接放入 `ON CONFLICT WHERE`，数据库无法推断参数类型。修复为复用 Event/Snapshot 的同事务 `SELECT ... FOR UPDATE` token/expiry 校验，并恢复原 Session upsert。随后真实 Uvicorn health、Session 创建、数据库默认模型消息、Events、Flow 全部 200；模型返回 `DA_E5_FENCING_OK`，Session 为 completed，31 events、10 stages，服务正常关闭。该结果证明当前代码可执行，但不替代长时 soak。
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：

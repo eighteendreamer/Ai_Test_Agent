@@ -343,6 +343,9 @@ class PostgresSessionStore:
         session.updated_at = now
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._assert_continuation_lease_sync(
+                    cur, session.id, continuation_approval_id, continuation_lease_token
+                )
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_session_table} (
@@ -366,16 +369,7 @@ class PostgresSessionStore:
                         selected_agent = EXCLUDED.selected_agent,
                         metadata = EXCLUDED.metadata,
                         event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
-                         snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
-                    WHERE (
-                        %s IS NULL OR EXISTS (
-                            SELECT 1 FROM {self._settings.database.postgres_approval_table} a
-                            WHERE a.id = %s AND a.session_id = %s
-                              AND a.metadata->>'continuation_lease_token' = %s
-                              AND NOT (a.metadata ? 'continuation_completed_at')
-                              AND (a.metadata->>'continuation_lease_expires_at')::timestamptz > now()
-                        )
-                    )
+                        snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
                     RETURNING event_count, snapshot_count
                     """,
                     (
@@ -393,10 +387,6 @@ class PostgresSessionStore:
                         json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
                         int(session.event_count),
                         int(session.snapshot_count),
-                        continuation_approval_id,
-                        continuation_approval_id,
-                        session.id,
-                        continuation_lease_token,
                     ),
                 )
                 counts = cur.fetchone()

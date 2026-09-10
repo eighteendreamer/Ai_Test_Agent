@@ -158,3 +158,4 @@
 - 失去租约的写入抛出 `ContinuationLeaseLostError`，续跑任务停止最终化并记录结构化日志；普通会话写入契约保持兼容。
 - 验证：fencing 目标回归及既有审批续跑回归 `3 passed`；真实 PostgreSQL 并发文件 `4 passed`；代码编译通过。
 - 边界：该批只覆盖审批续跑的 Session/Snapshot/Event 写入；外部记忆、TestRun Stage 和通用 turn owner 尚未统一，未开启过期 continuation 自动扫描。
+- 真实运行补验：首次 PostgreSQL Session 创建暴露 `ON CONFLICT WHERE` 空参数类型无法推断，已改为同事务 `FOR UPDATE` 租约校验并恢复原 upsert；随后 health 200、Session 创建 200、数据库默认模型消息 200，返回 `DA_E5_FENCING_OK`，终态 completed，31 events、10 flow stages，服务正常关闭。
