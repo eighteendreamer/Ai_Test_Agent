@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.application.deep_agents import (
     DeepAgentRuntimeAdapter,
@@ -14,6 +15,7 @@ from src.application.deep_agents import (
 from src.application.deep_agents.runtime_adapter import _project_root_from_context
 from src.application.deep_agents.read_only_backend import build_read_only_filesystem_backend
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
+from src.core.config import DeepAgentsConfig
 from src.modes.code_review_mode.models import ProjectSource
 from src.registry.skills import SkillRegistry
 
@@ -95,6 +97,20 @@ def test_da_e2_resolves_only_explicit_local_project_root():
     assert _project_root_from_context(
         {"project_source": {"source_type": "ssh", "root_path": "/srv/repo"}}
     ) == ""
+
+
+def test_deep_agents_nested_env_uses_json_list(monkeypatch):
+    class DeepAgentsSettingsProbe(BaseSettings):
+        deep_agents: DeepAgentsConfig
+
+        model_config = SettingsConfigDict(env_nested_delimiter="__")
+
+    monkeypatch.setenv("DEEP_AGENTS__PILOT_MODE_KEYS", '["code_review"]')
+    settings = DeepAgentsSettingsProbe(
+        _env_file=None,
+        deep_agents=DeepAgentsConfig(),
+    )
+    assert settings.deep_agents.pilot_mode_keys == ["code_review"]
 
 
 async def _resolved_model():
@@ -314,3 +330,44 @@ def test_da_e2_rejects_escape_directory_junction(tmp_path: Path):
         )
         (outside / "secret.txt").unlink(missing_ok=True)
         outside.rmdir()
+
+
+def test_da_e2_rejects_escape_directory_symlink_and_accepts_in_root_directory_symlink(
+    tmp_path: Path,
+):
+    pytest.importorskip("deepagents")
+    outside = tmp_path.parent / f"{tmp_path.name}-symlink-outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("outside", encoding="utf-8")
+    inside = tmp_path / "inside-directory"
+    inside.mkdir()
+    (inside / "visible.txt").write_text("inside", encoding="utf-8")
+    link_out = tmp_path / "outside-directory-symlink"
+    link_in = tmp_path / "inside-directory-symlink"
+    try:
+        link_out.symlink_to(outside, target_is_directory=True)
+        link_in.symlink_to(inside, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"directory symbolic-link privilege is unavailable: {exc}")
+
+    backend = build_read_only_filesystem_backend(tmp_path, max_file_size_mb=1)
+    inside_result = backend.read("/inside-directory-symlink/visible.txt")
+    assert inside_result.error is None
+    outside_result = backend.read("/outside-directory-symlink/secret.txt")
+    assert outside_result.error and "outside root" in outside_result.error.lower()
+
+
+def test_da_e2_rejects_symbolic_link_loop(tmp_path: Path):
+    pytest.importorskip("deepagents")
+    first = tmp_path / "loop-first"
+    second = tmp_path / "loop-second"
+    try:
+        first.symlink_to(second)
+        second.symlink_to(first)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symbolic-link privilege is unavailable: {exc}")
+
+    backend = build_read_only_filesystem_backend(tmp_path, max_file_size_mb=1)
+    result = backend.read("/loop-first")
+    assert result.error
+    assert "symlink loop" in result.error.lower() or "cannot resolve" in result.error.lower()

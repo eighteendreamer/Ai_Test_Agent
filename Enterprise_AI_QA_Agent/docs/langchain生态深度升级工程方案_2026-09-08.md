@@ -1514,7 +1514,7 @@ API / Session / TestRun 控制平面（系统保留）
 | 批次 | 状态 | 工作 | 目标与验收 |
 |---|---|---|---|
 | DA-E1 边界适配 | 已完成 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag；用官方 HarnessProfile 隐藏内置文件/execute/task 工具 | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop`；真实 Deep Agents 不暴露未治理的默认工具 |
-| DA-E2 只读文件与 Skills | 进行中 | 已完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面及 SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射；待完成敏感文件/路径测试和旧实现结果对账 | 当前 C4 已证明仅绑定 `read_file/ls/glob/grep`，且只把选中的 skill 元数据放入 Prompt；完整阶段仍需路径穿越、`.env`/凭据、符号链接、超大文件、二进制、并发读取和新旧结果对账 |
+| DA-E2 只读文件与 Skills | 已完成 | 完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面、SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射，以及敏感文件/路径、符号链接、junction、循环、超大文件、二进制、并发读取和旧实现结果对账 | C4 已证明仅绑定 `read_file/ls/glob/grep`；官方 Agent 实链路、Windows reparse point 越界和符号链接循环均通过；主环境默认仍关闭 Deep Agents |
 | DA-E3 认知计划与同步子代理 | 未进行 | 启用 `write_todos` 和受控 subagents；映射 plan/subagent typed events | todo 状态可视化；父子 Trace 完整；并发/深度受限；同一任务不进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
 | DA-E5 Checkpoint 与长任务 | 未进行 | PostgreSQL checkpointer/store；映射 session/turn/test_run/item/attempt/stage | 进程重启、跨进程接管、数小时任务、重复投递、取消、超时、终态不可重领全部通过 |
@@ -1527,7 +1527,7 @@ API / Session / TestRun 控制平面（系统保留）
 
 预期收益是减少 Agent Harness 重复实现，同时利用 Deep Agents 的规划、上下文卸载、Skills、临时子代理和 LangSmith 原生 Trace；代价是需要一层明确的 Runtime/Tool/Checkpoint/Event Adapter。该适配层不是额外业务框架，而是防止 Deep Agents 的通用状态与本项目业务事实混在一起的必要边界。
 
-当前状态：考核已完成，DA-E1 已完成；DA-E2～DA-E7 尚未开始。C4 真实模型与本批隔离 Harness 验证只证明模型/消息边界和默认工具隔离可运行，不证明 Skills、治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛已通过。
+当前状态：考核已完成，DA-E1、DA-E2 已完成；DA-E3～DA-E7 尚未开始。C4 真实模型与 DA-E2 官方 Agent 实链路已证明当前试点边界可运行；治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛仍未通过，因此不得用于正式长任务。
 
 ### DA-E1 边界适配实施记录（2026-09-09）
 
@@ -1548,13 +1548,13 @@ API / Session / TestRun 控制平面（系统保留）
 | 回滚验证 | 删除/关闭 `DEEP_AGENTS__ENABLED` 即回到旧 RuntimeService 分支；本批未修改业务事实表、Worker 租约或正式测试状态机 |
 | 已知限制 | 当前只允许 OpenAI-compatible LangChain 模型；profile 仅用于 DA-E1 工具面隔离；未实现 PostgreSQL Checkpointer、HITL/Approval 映射、Skills/只读项目 backend、长任务恢复、完整 PromptAssembly/ContextCompaction 对账；因此不得用于数小时 TestRun |
 | 提交 | 待提交：`【feat】建立Deep Agents DA-E1边界适配` |
-| 下一步 | DA-E2：正式 project_id 根目录受限只读 FilesystemBackend + Skills 渐进加载；完成路径穿越、凭据、符号链接、超大文件和新旧实现结果对账后再启用 |
+| 下一步 | DA-E3：仅针对 Agent 内部认知计划与同步子代理做受控试点；不得接入正式业务工具、Coordinator 派发或长任务 |
 
-### DA-E2 实施记录（进行中，2026-09-09）
+### DA-E2 实施记录（已完成，2026-09-09～2026-09-10）
 
 | 项目 | 结果 |
 |---|---|
-| 当前状态 | 进行中；只读 FilesystemBackend 和受控 SkillsMiddleware 子目标已完成，路径安全/结果对账尚未完成 |
+| 当前状态 | 已完成；只读 FilesystemBackend、受控 SkillsMiddleware、路径安全、并发读取、结果对账和官方 Agent 实链路均已验证 |
 | 本批目标 | 仅在显式 `DEEP_AGENTS__READ_ONLY_FILESYSTEM_ENABLED=true` 且请求上下文提供本地 `project_root` 或 `project_source.root_path` 时，启用 Deep Agents 官方虚拟文件系统；只暴露 `read_file/ls/glob/grep` |
 | 依据 | 官方 Deep Agents Overview/Customization：`FilesystemBackend(root_dir=..., virtual_mode=True)`、自定义 `FilesystemMiddleware(tools=[...])`；现有 `project_source.py` 的本地 root 解析和路径约束 |
 | 实际修改文件 | `Agent_Server/src/application/deep_agents/runtime_adapter.py`、`Agent_Server/src/application/deep_agents/read_only_backend.py`、`Agent_Server/src/application/runtime/runtime_service.py`、`Agent_Server/src/core/config.py`、`Agent_Server/src/main.py`、`Agent_Server/.env.example`、`Agent_Server/tests/test_deep_agent_runtime_adapter.py` |
@@ -1562,16 +1562,16 @@ API / Session / TestRun 控制平面（系统保留）
 | 主环境验证 | 定向测试：`3 passed`；`compileall -q src`：通过；增加 Skills 映射后后端全量：`784 passed, 10 skipped, 1 warning in 48.48s` |
 | C4 验证 | C4 `deepagents==0.7.13` 实际调用只读适配器返回 `DA_E2_PROFILE_OK`，模型 `bound_tools=[['ls', 'read_file', 'glob', 'grep']]`；加入 `tdd-review` 后返回 `DA_E2_SKILLS_OK`、`skill_visible=True`，仍只绑定四个只读工具；模型尝试读取 `.env` 时得到权限拒绝并最终返回 `DA_E2_PERMISSION_OK`，没有泄露内容 |
 | Skills 治理 | Runtime 只传递请求已选择的 `skill_keys`；Adapter 仅接受现有 SkillRegistry 能解析且有合法 `SKILL.md` 的条目，把选中目录复制到单次调用临时 source，再通过 CompositeBackend `/skills/` 路由交给官方 SkillsMiddleware；调用结束立即清理，不暴露全部 `src/SKILLS`，未知 key 直接拒绝 |
-| 未完成 | 符号链接测试仍受当前 Windows 账号缺少 `SeCreateSymbolicLinkPrivilege` 限制（`WinError 1314`），因此 DA-E2 不能关闭；其余本批路径安全、并发读取和新旧结果对账已取得 C4 证据。现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，还需同步映射版本字段 |
+| 未完成 | 本阶段无未完成验收项。现有 Registry 只有运行期选择治理，若未来增加数据库版本状态，需在后续阶段同步映射版本字段；该事项不阻塞 DA-E2 |
 
 ### DA-E2 边界安全补充记录（2026-09-10）
 
 - C4 预检发现官方 `FilesystemBackend` 在 ripgrep 可用时会绕过 `max_file_size_mb` 的 Python 搜索限制，且 `read()` 默认可加载超大文本；这不是可以忽略的测试差异，而是会造成上下文/内存失控的真实根因。
 - 新增 `read_only_backend.py`，仅继承官方 Backend：强制走官方 Python 有界搜索、读取前拒绝超过 `DEEP_AGENTS__READ_ONLY_MAX_FILE_SIZE_MB` 的文件，并拒绝 NUL/非 UTF-8 二进制；官方 virtual root、路径解析和工具协议保持不变。
 - C4 结果：`large_read` 返回 DA-E2 read limit 错误；`large_grep` 返回空匹配且不返回超大行；`binary` 返回 binary reads disabled；`../outside.txt` 返回 Path traversal not allowed。
-- Windows C4 运行账号没有创建符号链接的权限（`WinError 1314`），因此符号链接测试尚未声称通过；需在具备符号链接权限的隔离环境完成同一用例后，才能关闭该门槛。
+- 初次 C4 运行账号没有创建符号链接的权限（`WinError 1314`）；用户开启 Windows 开发者模式后，权限探针成功，普通文件/目录符号链接、根外越界和符号链接循环用例全部通过。
 | 长任务边界 | 本批不增加 Checkpointer、租约、Worker 或后台任务能力；DA-E2 仍只能用于短的 code_review 认知步骤，不能用于数小时 TestRun |
-| 下一步 | 在具备符号链接权限的隔离 Windows 环境重跑根内/根外链接、链接目录和循环用例；通过后再复核 DA-E2 退出条件并决定是否标记已完成 |
+| 下一步 | DA-E2 退出条件已满足；进入 DA-E3 前必须保持正式业务工具、Coordinator、Checkpointer 和长任务开关关闭 |
 
 ### DA-E2 验证补充记录（2026-09-10）
 
@@ -1582,14 +1582,16 @@ API / Session / TestRun 控制平面（系统保留）
 | 输出边界依据 | 旧 reader 支持最多 120000 字符，但官方 backend 按行分页；为避免一个超长单行绕过行数限制并挤爆模型上下文，读取结果超过上限时显式返回错误，要求缩小行范围或先 grep，不静默截断 |
 | 新旧结果对账 | C4 真实 `FilesystemBackend` 与旧 `_read_local_project_file` 对同一文件、行区间的内容行、路径和行号对账通过；唯一差异是官方保留末尾换行、旧 reader 的 `splitlines()` 去掉末尾换行，已在测试中显式记录为展示格式差异 |
 | 并发只读 | C4 同一 backend 并发 12 次 `read` + 12 次 `grep` 全部通过；临时 Skills staging 两个并发请求分别只可见自己的 `/skills/<key>/`，无串租户/串请求 |
-| 路径安全 | `../` 和 `/../` 被官方 virtual root 拒绝；`~` 不展开到用户目录，仅按虚拟根下字面路径处理并返回不存在；Windows 目录联接（junction/reparse point）越界读取已实测拒绝；普通符号链接和链接循环用例已编写，但当前账号无法创建符号链接，未将 junction 结果冒充普通符号链接通过 |
-| C4 定向验证 | `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b\Scripts\python.exe -m pytest -q Agent_Server/tests/test_deep_agent_runtime_adapter.py`：加入 junction 用例后为 `12 passed, 1 skipped` |
+| 路径安全 | `../` 和 `/../` 被官方 virtual root 拒绝；`~` 不展开到用户目录，仅按虚拟根下字面路径处理并返回不存在；Windows junction/reparse point、根内/根外文件符号链接、根内/根外目录符号链接及符号链接循环均实测符合预期 |
+| C4 定向验证 | `C:\Users\32734\AppData\Local\Temp\enterprise-ai-qa-c4-20260909-b\Scripts\python.exe -m pytest -q Agent_Server/tests/test_deep_agent_runtime_adapter.py`：最终 `16 passed` |
 | C4 官方 Agent 实链路 | 新增用例使用实现 `bind_tools` 的离线模型，实际通过 `create_deep_agent`/官方工具循环读取 `/README.md`，返回 `DA_E2_AGENT_READ_OK`，并收到 `tool` 消息；证明不是只有 backend 单测通过 |
-| C4 全量回归 | 同一 C4 Python：`python -m pytest -q Agent_Server/tests`：`793 passed, 11 skipped, 1 warning`，耗时 `21.41s` |
-| 主环境验证 | `E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`：定向 `3 passed, 10 skipped`；全量 `784 passed, 20 skipped, 1 warning`，耗时 `24.91s`；`compileall -q Agent_Server/src` 通过。主环境未安装 `deepagents`，Deep Agents 专项用例按设计跳过 |
-| 当前状态 | 进行中；并发、对账、路径穿越、敏感/二进制、超大文件、输出字符边界和 Windows junction 越界已完成；普通符号链接/循环仍是未关闭门槛 |
+| C4 全量回归 | 同一 C4 Python：`python -m pytest -q Agent_Server/tests`：最终 `797 passed, 10 skipped, 1 warning`，耗时 `27.25s` |
+| 主环境验证 | `E:\PyThon\Anaconda_PyThon\envs\Python3.11\python.exe`：最终定向 `4 passed, 12 skipped`；全量 `785 passed, 22 skipped, 1 warning`，耗时 `42.82s`；`compileall -q Agent_Server/src` 通过。主环境未安装 `deepagents`，专项用例按设计跳过 |
+| 官方 Agent 实链路 | C4 通过真实 `create_deep_agent` 工具循环读取项目 `README.md`，返回 `DA_E2_AGENT_READ_OK` 并产生 `tool` 消息；随后开启真实服务并读取本项目 README，Session `completed`、消息 `2`、事件 `13`、Snapshot `1`，健康检查 `200` 且 `postgres_ok=True` |
+| 配置加载 | `.env` 和 `.env.example` 使用 Pydantic Settings 所需 JSON 数组 `DEEP_AGENTS__PILOT_MODE_KEYS=["code_review"]`；发现并修复裸字符串导致的 `SettingsError`，新增嵌套环境变量解析回归用例；本地 `.env` 写入全部 DA-E1/DA-E2 配置并保持默认关闭 |
+| 当前状态 | 已完成；并发、对账、路径穿越、敏感/二进制、超大文件、输出字符边界、junction、普通文件/目录符号链接和循环均已完成 |
 | 长任务边界 | 本批仍未接入 Checkpointer、租约、Worker 或后台任务；Deep Agents 只可用于短 code_review 认知步骤，不可用于数小时 TestRun |
-| 回滚验证 | 新增配置默认关闭/兼容旧默认值；关闭 `DEEP_AGENTS__ENABLED` 或只读开关即回到旧 RuntimeService 路径；未修改业务事实表和长任务状态机 |
+| 回滚验证 | 新增配置默认关闭/兼容旧默认值；关闭 `DEEP_AGENTS__ENABLED` 或只读开关即回到旧 RuntimeService 路径；真实服务已正常关闭；未修改业务事实表和长任务状态机 |
 
 ## 15. 每次实施后的记录模板
 
