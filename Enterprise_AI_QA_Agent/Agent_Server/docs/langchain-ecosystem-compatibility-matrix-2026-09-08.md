@@ -150,3 +150,11 @@
 - 配置统一为 `ORCHESTRATION__APPROVAL_CONTINUATION_LEASE_SECONDS=120` 和 `ORCHESTRATION__APPROVAL_CONTINUATION_HEARTBEAT_SECONDS=30`，心跳周期必须严格短于租约。
 - 真实 PostgreSQL 完整并发测试 `4 passed`；最终全量为主环境 `815 passed, 34 skipped`、C4 `835 passed, 14 skipped`、前端 `33 passed`，双环境入口/编译、C4 pip check 与真实 health 均通过。
 - 当前只完成 Approval continuation 的所有权。Session/Snapshot/Event 写入尚未用相同 token 做 fencing，因此暂不自动扫描/接管到期任务，也不宣称通用跨 Worker exactly-once。
+
+## 10. 2026-09-10 审批续跑写入 fencing 增量
+
+- 失败先行：旧 Worker 在租约被新 Worker 接管后仍可无条件覆盖 Session，内存回归复现 `new-owner -> stale-owner`。
+- 修复：Approval continuation 路径的 `save_session`、`save_snapshot`、`append_event` 显式携带 approval id 与 lease token；InMemory 使用既有锁校验，PostgreSQL 使用数据库时钟和带行锁的 token/expiry 校验。
+- 失去租约的写入抛出 `ContinuationLeaseLostError`，续跑任务停止最终化并记录结构化日志；普通会话写入契约保持兼容。
+- 验证：fencing 目标回归及既有审批续跑回归 `3 passed`；真实 PostgreSQL 并发文件 `4 passed`；代码编译通过。
+- 边界：该批只覆盖审批续跑的 Session/Snapshot/Event 写入；外部记忆、TestRun Stage 和通用 turn owner 尚未统一，未开启过期 continuation 自动扫描。

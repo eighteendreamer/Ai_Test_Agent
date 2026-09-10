@@ -19,7 +19,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
-from src.runtime.store import SessionStore
+from src.runtime.store import ContinuationLeaseLostError, SessionStore
 from src.registry.modes import ModeRegistry
 from src.schemas.observation import SessionObservationResponse
 from src.schemas.session import (
@@ -635,6 +635,8 @@ class SessionService:
                     session_id=session_id,
                     turn_id=str(session.metadata.get("pending_turn", {}).get("turn_id", "")),
                     assistant_message_id=assistant_message_id,
+                    continuation_approval_id=approval.id,
+                    continuation_lease_token=continuation_token,
                 )
                 continuation = await self._runtime_service.resume_after_approval(
                     session,
@@ -650,8 +652,15 @@ class SessionService:
                     runtime_result=continuation,
                     assistant_message_id=assistant_message_id,
                     user_message_override=str(continuation.state.get("user_message", "")),
+                    continuation_approval_id=approval.id,
+                    continuation_lease_token=continuation_token,
                 )
                 continuation_settled = True
+            except ContinuationLeaseLostError:
+                logger.warning(
+                    "approval_continuation_fenced_after_lease_loss",
+                    extra={"session_id": session_id, "approval_id": approval.id},
+                )
             except Exception as exc:
                 session.status = SessionStatus.interrupted
                 control = self._ensure_control_metadata(session)
@@ -1296,8 +1305,14 @@ class SessionService:
         runtime_result,
         assistant_message_id: str,
         user_message_override: str,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
     ) -> ConversationResponse:
         session_id = session.id
+        fenced_write = {
+            "continuation_approval_id": continuation_approval_id,
+            "continuation_lease_token": continuation_lease_token,
+        }
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
         # Graph events may already have been sent to SSE, but they still need to
@@ -1309,6 +1324,7 @@ class SessionService:
                 session_id,
                 event,
                 publish=index >= streamed_count,
+                **fenced_write,
             )
 
         for tool_message in runtime_result.tool_messages:
@@ -1331,9 +1347,12 @@ class SessionService:
                         "reason": approval.reason,
                     },
                 ),
+                **fenced_write,
             )
 
-        await self._store.save_snapshot(session_id, runtime_result.snapshot)
+        await self._store.save_snapshot(
+            session_id, runtime_result.snapshot, **fenced_write
+        )
         session.metadata["pending_turn"] = runtime_result.pending_turn
         await self._store.append_event(
             session_id,
@@ -1348,6 +1367,7 @@ class SessionService:
                     "snapshot_stage": runtime_result.snapshot.stage,
                 },
             ),
+            **fenced_write,
         )
 
         control = self._ensure_control_metadata(session)
@@ -1401,6 +1421,7 @@ class SessionService:
                         "failed_count": sum(1 for item in verification_results if item.status.value == "failed"),
                     },
                 ),
+                **fenced_write,
             )
         await self._persist_tool_observations(
             session=session,
@@ -1408,6 +1429,7 @@ class SessionService:
             trace_id=str(runtime_result.state.get("trace_id", "")),
             tool_results=list(runtime_result.state.get("tool_results", [])),
             context_bundle=dict(runtime_result.state.get("context_bundle", {})),
+            fenced_write=fenced_write,
         )
 
         assistant_message = ChatMessage(
@@ -1439,6 +1461,7 @@ class SessionService:
                         "response_length": len(runtime_result.output_text),
                     },
                 ),
+                **fenced_write,
             )
             await self._store.append_event(
                 session_id,
@@ -1456,6 +1479,7 @@ class SessionService:
                         "response_length": len(runtime_result.output_text),
                     },
                 ),
+                **fenced_write,
             )
             if response_mode == "ok":
                 await self._persist_turn_memory(
@@ -1466,6 +1490,7 @@ class SessionService:
                     assistant_message=runtime_result.output_text,
                     tool_results=list(runtime_result.state.get("tool_results", [])),
                     context_bundle=dict(runtime_result.state.get("context_bundle", {})),
+                    fenced_write=fenced_write,
                 )
 
         latest_session = await self._require_session(session_id)
@@ -1483,7 +1508,7 @@ class SessionService:
         if latest_control.get("last_control_source") and not control.get("last_control_source"):
             control["last_control_source"] = latest_control["last_control_source"]
         session.metadata["control"] = control
-        await self._store.save_session(session)
+        await self._store.save_session(session, **fenced_write)
         await self._store.append_event(
             session_id,
             self._make_event(
@@ -1498,6 +1523,7 @@ class SessionService:
                     "approval_count": len(runtime_result.approvals),
                 },
             ),
+            **fenced_write,
         )
         if session.status == SessionStatus.completed:
             await self._cleanup_session_resources_if_terminal(session)
@@ -1807,8 +1833,14 @@ class SessionService:
         session_id: str,
         turn_id: str,
         assistant_message_id: str,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
     ) -> Callable[[str], Awaitable[None]]:
         started = False
+        fenced_write = {
+            "continuation_approval_id": continuation_approval_id,
+            "continuation_lease_token": continuation_lease_token,
+        }
 
         async def emit_chunk(chunk: str) -> None:
             nonlocal started
@@ -1826,6 +1858,7 @@ class SessionService:
                             "message_id": assistant_message_id,
                         },
                     ),
+                    **fenced_write,
                 )
             await self._store.append_event(
                 session_id,
@@ -1838,6 +1871,7 @@ class SessionService:
                         "delta": chunk,
                     },
                 ),
+                **fenced_write,
             )
 
         return emit_chunk
@@ -1851,6 +1885,7 @@ class SessionService:
         assistant_message: str,
         tool_results: list[dict],
         context_bundle: dict,
+        fenced_write: dict[str, str | None] | None = None,
     ) -> None:
         if self._memory_runtime_service is None:
             return
@@ -1878,6 +1913,7 @@ class SessionService:
                     "memory_ids": memory_ids,
                 },
             ),
+            **(fenced_write or {}),
         )
 
     async def _persist_tool_observations(
@@ -1887,6 +1923,7 @@ class SessionService:
         trace_id: str,
         tool_results: list[dict],
         context_bundle: dict,
+        fenced_write: dict[str, str | None] | None = None,
     ) -> None:
         if self._memory_runtime_service is None or self._observation_runtime_service is None:
             return
@@ -1912,6 +1949,7 @@ class SessionService:
                     "observation_ids": observation_ids,
                 },
             ),
+            **(fenced_write or {}),
         )
 
     def _ensure_control_metadata(self, session: SessionRecord) -> dict:

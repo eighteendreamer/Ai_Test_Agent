@@ -21,6 +21,7 @@ from src.schemas.session import (
     ToolApprovalStatus,
 )
 from src.schemas.task_pool import TaskPoolSessionSummary
+from src.runtime.store import ContinuationLeaseLostError
 
 
 class PostgresSessionStore:
@@ -31,8 +32,19 @@ class PostgresSessionStore:
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
 
-    async def save_session(self, session: SessionRecord) -> SessionRecord:
-        return await asyncio.to_thread(self._save_session_sync, session)
+    async def save_session(
+        self,
+        session: SessionRecord,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> SessionRecord:
+        return await asyncio.to_thread(
+            self._save_session_sync,
+            session,
+            continuation_approval_id,
+            continuation_lease_token,
+        )
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return await asyncio.to_thread(self._get_session_sync, session_id, True)
@@ -79,8 +91,16 @@ class PostgresSessionStore:
         event: ExecutionEvent,
         *,
         publish: bool = True,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
     ) -> None:
-        await asyncio.to_thread(self._append_event_sync, session_id, event)
+        await asyncio.to_thread(
+            self._append_event_sync,
+            session_id,
+            event,
+            continuation_approval_id,
+            continuation_lease_token,
+        )
         if publish:
             await self._queues[session_id].put(event)
 
@@ -95,8 +115,21 @@ class PostgresSessionStore:
     def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]:
         return self._queues[session_id]
 
-    async def save_snapshot(self, session_id: str, snapshot: SessionSnapshot) -> None:
-        await asyncio.to_thread(self._save_snapshot_sync, session_id, snapshot)
+    async def save_snapshot(
+        self,
+        session_id: str,
+        snapshot: SessionSnapshot,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> None:
+        await asyncio.to_thread(
+            self._save_snapshot_sync,
+            session_id,
+            snapshot,
+            continuation_approval_id,
+            continuation_lease_token,
+        )
 
     async def list_snapshots(
         self,
@@ -300,7 +333,12 @@ class PostgresSessionStore:
                     f"ON {self._settings.database.postgres_session_table} (created_at DESC)"
                 )
 
-    def _save_session_sync(self, session: SessionRecord) -> SessionRecord:
+    def _save_session_sync(
+        self,
+        session: SessionRecord,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> SessionRecord:
         now = datetime.utcnow()
         session.updated_at = now
         with postgres_connect(self._settings) as conn:
@@ -328,7 +366,16 @@ class PostgresSessionStore:
                         selected_agent = EXCLUDED.selected_agent,
                         metadata = EXCLUDED.metadata,
                         event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
-                        snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
+                         snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
+                    WHERE (
+                        %s IS NULL OR EXISTS (
+                            SELECT 1 FROM {self._settings.database.postgres_approval_table} a
+                            WHERE a.id = %s AND a.session_id = %s
+                              AND a.metadata->>'continuation_lease_token' = %s
+                              AND NOT (a.metadata ? 'continuation_completed_at')
+                              AND (a.metadata->>'continuation_lease_expires_at')::timestamptz > now()
+                        )
+                    )
                     RETURNING event_count, snapshot_count
                     """,
                     (
@@ -346,9 +393,17 @@ class PostgresSessionStore:
                         json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
                         int(session.event_count),
                         int(session.snapshot_count),
+                        continuation_approval_id,
+                        continuation_approval_id,
+                        session.id,
+                        continuation_lease_token,
                     ),
                 )
-                counts = cur.fetchone() or {}
+                counts = cur.fetchone()
+                if counts is None:
+                    raise ContinuationLeaseLostError(
+                        "Continuation lease is no longer active for session write."
+                    )
                 session.event_count = int(counts.get("event_count") or 0)
                 session.snapshot_count = int(counts.get("snapshot_count") or 0)
                 for item in session.messages:
@@ -539,9 +594,18 @@ class PostgresSessionStore:
             for row in rows
         ]
 
-    def _append_event_sync(self, session_id: str, event: ExecutionEvent) -> None:
+    def _append_event_sync(
+        self,
+        session_id: str,
+        event: ExecutionEvent,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._assert_continuation_lease_sync(
+                    cur, session_id, continuation_approval_id, continuation_lease_token
+                )
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_event_table} (
@@ -653,10 +717,19 @@ class PostgresSessionStore:
             for row in rows
         ]
 
-    def _save_snapshot_sync(self, session_id: str, snapshot: SessionSnapshot) -> None:
+    def _save_snapshot_sync(
+        self,
+        session_id: str,
+        snapshot: SessionSnapshot,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> None:
         now = datetime.utcnow()
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._assert_continuation_lease_sync(
+                    cur, session_id, continuation_approval_id, continuation_lease_token
+                )
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_snapshot_table} (
@@ -687,6 +760,35 @@ class PostgresSessionStore:
                     """,
                     (snapshot.version, now, session_id),
                 )
+
+    def _assert_continuation_lease_sync(
+        self,
+        cur,
+        session_id: str,
+        approval_id: str | None,
+        lease_token: str | None,
+    ) -> None:
+        if not approval_id and not lease_token:
+            return
+        if not approval_id or not lease_token:
+            raise ContinuationLeaseLostError(
+                "Continuation fencing requires approval id and lease token."
+            )
+        cur.execute(
+            f"""
+            SELECT 1 FROM {self._settings.database.postgres_approval_table}
+            WHERE id = %s AND session_id = %s
+              AND metadata->>'continuation_lease_token' = %s
+              AND NOT (metadata ? 'continuation_completed_at')
+              AND (metadata->>'continuation_lease_expires_at')::timestamptz > now()
+            FOR UPDATE
+            """,
+            (approval_id, session_id, lease_token),
+        )
+        if cur.fetchone() is None:
+            raise ContinuationLeaseLostError(
+                "Continuation lease is no longer active for fenced write."
+            )
 
     def _list_snapshots_sync(
         self,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import os
 import subprocess
 from contextlib import asynccontextmanager, contextmanager, nullcontext
@@ -934,6 +935,56 @@ async def test_da_e5_cancelled_continuation_keeps_lease_recoverable_not_complete
     stored = (await store.list_approvals(session.id))[0]
     assert stored.metadata["continuation_lease_token"] == "lease-token"
     assert "continuation_completed_at" not in stored.metadata
+
+
+@pytest.mark.asyncio
+async def test_da_e5_expired_continuation_cannot_overwrite_new_owner_session_state():
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
+
+    store = InMemorySessionStore()
+    session_id = "fenced-continuation-session"
+    approval_id = "fenced-continuation-approval"
+    initial = _runtime_session(session_id)
+    await store.save_session(initial)
+    await store.save_approval(
+        session_id,
+        ToolApprovalRequest(
+            id=approval_id,
+            session_id=session_id,
+            tool_key="knowledge-rag",
+            tool_name="Knowledge RAG",
+            reason="continuation fencing validation",
+            status=ToolApprovalStatus.approved,
+            created_at=datetime.now(UTC),
+        ),
+    )
+    assert await store.claim_approval_continuation(
+        session_id, approval_id, "old-worker", "old-token", 0
+    )
+    assert await store.claim_approval_continuation(
+        session_id, approval_id, "new-worker", "new-token", 30
+    )
+
+    new_owner_state = deepcopy(initial)
+    new_owner_state.metadata["continuation_result"] = "new-owner"
+    await store.save_session(
+        new_owner_state,
+        continuation_approval_id=approval_id,
+        continuation_lease_token="new-token",
+    )
+    stale_state = deepcopy(initial)
+    stale_state.metadata["continuation_result"] = "stale-owner"
+    with pytest.raises(RuntimeError, match="lease"):
+        await store.save_session(
+            stale_state,
+            continuation_approval_id=approval_id,
+            continuation_lease_token="old-token",
+        )
+
+    stored = await store.get_session(session_id)
+    assert stored is not None
+    assert stored.metadata["continuation_result"] == "new-owner"
 
 
 def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path):

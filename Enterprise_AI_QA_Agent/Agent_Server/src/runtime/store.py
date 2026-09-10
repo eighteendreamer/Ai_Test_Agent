@@ -16,9 +16,19 @@ from src.schemas.session import (
 from src.schemas.task_pool import TaskPoolSessionSummary
 
 
+class ContinuationLeaseLostError(RuntimeError):
+    """Raised when a continuation worker no longer owns its fencing lease."""
+
+
 class SessionStore(Protocol):
     async def initialize(self) -> None: ...
-    async def save_session(self, session: SessionRecord) -> SessionRecord: ...
+    async def save_session(
+        self,
+        session: SessionRecord,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> SessionRecord: ...
     async def get_session(self, session_id: str) -> SessionRecord | None: ...
     async def list_sessions(
         self,
@@ -45,6 +55,8 @@ class SessionStore(Protocol):
         event: ExecutionEvent,
         *,
         publish: bool = True,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
     ) -> None: ...
     async def list_events(
         self,
@@ -53,7 +65,14 @@ class SessionStore(Protocol):
         after_event_id: str | None = None,
     ) -> list[ExecutionEvent]: ...
     def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]: ...
-    async def save_snapshot(self, session_id: str, snapshot: SessionSnapshot) -> None: ...
+    async def save_snapshot(
+        self,
+        session_id: str,
+        snapshot: SessionSnapshot,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> None: ...
     async def list_snapshots(
         self,
         session_id: str,
@@ -118,8 +137,18 @@ class InMemorySessionStore:
     async def initialize(self) -> None:
         return None
 
-    async def save_session(self, session: SessionRecord) -> SessionRecord:
+    async def save_session(
+        self,
+        session: SessionRecord,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> SessionRecord:
         async with self._lock:
+            if continuation_approval_id or continuation_lease_token:
+                self._assert_continuation_lease_locked(
+                    session.id, continuation_approval_id, continuation_lease_token
+                )
             session.updated_at = datetime.utcnow()
             self._sessions[session.id] = session
             return session
@@ -242,12 +271,19 @@ class InMemorySessionStore:
         event: ExecutionEvent,
         *,
         publish: bool = True,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
     ) -> None:
-        session = self._sessions.get(session_id)
-        if session is not None:
-            session.event_count += 1
-            session.updated_at = datetime.utcnow()
-        self._events[session_id].append(event)
+        async with self._lock:
+            if continuation_approval_id or continuation_lease_token:
+                self._assert_continuation_lease_locked(
+                    session_id, continuation_approval_id, continuation_lease_token
+                )
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.event_count += 1
+                session.updated_at = datetime.utcnow()
+            self._events[session_id].append(event)
         if publish:
             await self._queues[session_id].put(event)
 
@@ -275,12 +311,41 @@ class InMemorySessionStore:
     def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]:
         return self._queues[session_id]
 
-    async def save_snapshot(self, session_id: str, snapshot: SessionSnapshot) -> None:
-        session = self._sessions.get(session_id)
-        if session is not None:
-            session.snapshot_count = max(session.snapshot_count, snapshot.version)
-            session.updated_at = datetime.utcnow()
-        self._snapshots[session_id].append(snapshot)
+    async def save_snapshot(
+        self,
+        session_id: str,
+        snapshot: SessionSnapshot,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+    ) -> None:
+        async with self._lock:
+            if continuation_approval_id or continuation_lease_token:
+                self._assert_continuation_lease_locked(
+                    session_id, continuation_approval_id, continuation_lease_token
+                )
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.snapshot_count = max(session.snapshot_count, snapshot.version)
+                session.updated_at = datetime.utcnow()
+            self._snapshots[session_id].append(snapshot)
+
+    def _assert_continuation_lease_locked(
+        self,
+        session_id: str,
+        approval_id: str | None,
+        lease_token: str | None,
+    ) -> None:
+        if not approval_id or not lease_token:
+            raise ContinuationLeaseLostError("Continuation fencing requires approval id and lease token.")
+        approval = self._approvals.get(session_id, {}).get(approval_id)
+        if approval is None or approval.metadata.get("continuation_completed_at"):
+            raise ContinuationLeaseLostError("Continuation lease is no longer active.")
+        if approval.metadata.get("continuation_lease_token") != lease_token:
+            raise ContinuationLeaseLostError("Continuation lease token is no longer owned by this worker.")
+        expires_at = _parse_datetime(approval.metadata.get("continuation_lease_expires_at"))
+        if expires_at is None or expires_at <= datetime.utcnow():
+            raise ContinuationLeaseLostError("Continuation lease has expired.")
 
     async def list_snapshots(
         self,
