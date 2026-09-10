@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 from pathlib import Path
 import shutil
 import tempfile
@@ -33,6 +34,9 @@ class DeepAgentRuntimeRequest:
     subagent_model_call_limit: int = 6
     subagent_tool_call_limit: int = 12
     on_subagent_event: Callable[[dict[str, Any]], None] | None = None
+    business_tools: list[Any] = field(default_factory=list)
+    interrupt_on: dict[str, Any] = field(default_factory=dict)
+    resume: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,7 @@ class DeepAgentRuntimeResult:
     messages: list[dict[str, Any]] = field(default_factory=list)
     todos: list[dict[str, str]] = field(default_factory=list)
     subagent_events: list[dict[str, Any]] = field(default_factory=list)
+    interrupts: list[dict[str, Any]] = field(default_factory=list)
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
@@ -52,10 +57,10 @@ DEEP_AGENT_RUN_NAME = "enterprise_ai_qa_agent.deep_agent_turn"
 class DeepAgentRuntimeAdapter:
     """Small boundary around the official ``create_deep_agent`` harness.
 
-    This adapter deliberately does not expose business tools or execute them.
-    DA-E1 proves the model/message/state boundary.  DA-E2 adds an explicitly
-    scoped, read-only project filesystem and SkillRegistry-backed skills;
-    business tools, checkpoints and subagent dispatch remain future batches.
+    Framework-native filesystem and cognitive tools are configured here, while
+    business tools arrive only as application-owned LangChain wrappers. The
+    adapter never receives a Registry handler directly; ToolRuntime governance
+    remains the execution owner.
     """
 
     def __init__(
@@ -64,12 +69,27 @@ class DeepAgentRuntimeAdapter:
         model_resolver: ModelResolver,
         agent_factory: AgentFactory | None = None,
         skill_registry: Any | None = None,
+        checkpointer_factory: Callable | None = None,
     ) -> None:
         self._model_resolver = model_resolver
         self._agent_factory = agent_factory
         self._skill_registry = skill_registry
+        self._checkpointer_factory = checkpointer_factory
 
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
+        if (request.interrupt_on or request.resume) and self._checkpointer_factory is None:
+            raise DeepAgentRuntimeError("Governed Deep Agents HITL requires a checkpointer.")
+        checkpoint_context = (
+            self._checkpointer_factory()
+            if self._checkpointer_factory is not None
+            else nullcontext(None)
+        )
+        async with checkpoint_context as checkpointer:
+            return await self._execute(request, checkpointer=checkpointer)
+
+    async def _execute(
+        self, request: DeepAgentRuntimeRequest, *, checkpointer: Any
+    ) -> DeepAgentRuntimeResult:
         if not request.session_id or not request.turn_id or not request.model_key:
             raise DeepAgentRuntimeError(
                 "Deep Agents runtime requires session_id, turn_id and model_key."
@@ -95,16 +115,22 @@ class DeepAgentRuntimeAdapter:
             else:
                 harness_kwargs = {}
             factory = self._resolve_factory()
-            # ``tools=[]`` is intentional for DA-E1.  Business tools must not
-            # bypass ToolRuntimeService before the DA-E4 governance adapter.
+            # Business tools are already wrapped by LangChainToolAdapter and
+            # therefore enter the application's governance boundary.
             try:
                 agent = factory(
                     model=model,
-                    tools=[],
+                    tools=list(request.business_tools),
                     system_prompt=request.system_prompt,
+                    checkpointer=checkpointer,
+                    interrupt_on=request.interrupt_on or None,
                     **harness_kwargs,
                 )
                 invoke_input = {"messages": list(request.messages)}
+                if request.resume is not None:
+                    from langgraph.types import Command
+
+                    invoke_input = Command(resume=request.resume)
                 invoke_config = {
                     "configurable": {"thread_id": request.turn_id},
                     "run_name": DEEP_AGENT_RUN_NAME,
@@ -137,8 +163,12 @@ class DeepAgentRuntimeAdapter:
             ) from exc
 
         messages = _normalize_messages(result.get("messages") if isinstance(result, dict) else [])
-        output_text = _last_assistant_text(messages)
-        if not output_text:
+        interrupts = [
+            {"id": item.id, "value": item.value}
+            for item in result.get("__interrupt__", [])
+        ]
+        output_text = "" if interrupts else _last_assistant_text(messages)
+        if not output_text and not interrupts:
             raise DeepAgentRuntimeError(
                 "Deep Agents execution returned no assistant message."
             )
@@ -152,6 +182,7 @@ class DeepAgentRuntimeAdapter:
             messages=messages,
             todos=_normalize_todos(result.get("todos") if isinstance(result, dict) else []),
             subagent_events=subagent_events,
+            interrupts=interrupts,
         )
 
     def _resolve_factory(self) -> AgentFactory:
@@ -413,6 +444,8 @@ def _project_root_from_context(context: dict[str, Any]) -> str:
 
 
 def _pilot_stage(request: DeepAgentRuntimeRequest) -> str:
+    if request.business_tools or request.interrupt_on or request.resume:
+        return "DA-E4"
     if request.cognitive_planning_enabled or request.cognitive_subagents_enabled:
         return "DA-E3"
     if request.read_only_filesystem_enabled:
@@ -488,7 +521,13 @@ def _normalize_messages(value: Any) -> list[dict[str, Any]]:
             continue
         role = str(getattr(message, "type", "") or "")
         content = getattr(message, "content", "")
-        normalized.append({"role": role, "content": content})
+        item = {"role": {"ai": "assistant", "human": "user"}.get(role, role), "content": content}
+        if getattr(message, "tool_calls", None):
+            item["tool_calls"] = list(message.tool_calls)
+        if getattr(message, "tool_call_id", None):
+            item["tool_call_id"] = message.tool_call_id
+            item["name"] = getattr(message, "name", None)
+        normalized.append(item)
     return normalized
 
 

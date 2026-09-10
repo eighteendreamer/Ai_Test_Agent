@@ -188,6 +188,16 @@ def test_trace_scope_always_records_non_sensitive_business_outcome() -> None:
     }
 
 
+def test_trace_scope_records_waiting_approval_as_non_terminal_outcome() -> None:
+    fake = _FakeRun()
+    TraceScope(fake, OutputSafetyPolicy()).set_outcome(
+        termination_reason="waiting_approval",
+        control_state="waiting_approval",
+    )
+
+    assert fake.metadata["outcome"] == "waiting_approval"
+
+
 def test_trace_scope_exposes_only_external_run_reference_fields() -> None:
     fake = _FakeRun()
 

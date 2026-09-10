@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,8 +17,13 @@ from src.application.deep_agents import (
     DeepAgentRuntimeResult,
 )
 from src.application.deep_agents.runtime_adapter import _project_root_from_context
+from src.application.model_adapters.tool_adapter import LangChainToolAdapter
 from src.application.deep_agents.read_only_backend import build_read_only_filesystem_backend
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
+from src.application.runtime.tool_governance_service import (
+    GovernedToolCallContext,
+    ToolGovernanceService,
+)
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.sessions.session_service import SessionService
 from src.core.config import DeepAgentsConfig
@@ -27,6 +33,8 @@ from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.schemas.session import ExecutionRequest, RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import MessageKind
+from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 
 
 class _FakeAgent:
@@ -414,6 +422,369 @@ async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
         not ({"write_file", "edit_file", "delete", "execute", "task"} & set(names))
         for names in subagent_tool_sets
     )
+
+
+@pytest.mark.asyncio
+async def test_da_e4_business_tool_callback_is_wrapped_and_approval_stops_agent(tmp_path: Path):
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    class ToolCapableFake(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    model = ToolCapableFake(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "knowledge-rag",
+                        "args": {"query": "governed"},
+                        "id": "governed-call",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="MUST_NOT_RUN_AFTER_APPROVAL"),
+        ]
+    )
+    descriptor = ToolRegistry().get("knowledge-rag")
+
+    async def invoke(_descriptor, call_id, arguments):
+        pytest.fail("HITL must interrupt before the tool executes")
+
+    from langgraph.checkpoint.memory import InMemorySaver
+    saver = InMemorySaver()
+    tools = LangChainToolAdapter().to_governed_tools([descriptor], invoke=invoke)
+    adapter = DeepAgentRuntimeAdapter(
+        model_resolver=lambda _key: _async_value(model),
+        checkpointer_factory=lambda: nullcontext(saver),
+    )
+    result = await adapter.execute(
+        DeepAgentRuntimeRequest(
+            session_id="session-e4",
+            turn_id="turn-e4",
+            trace_id="trace-e4",
+            model_key="fake-tool-capable",
+            system_prompt="Use the governed tool.",
+            messages=[{"role": "user", "content": "Call the tool."}],
+            business_tools=tools,
+            interrupt_on={"knowledge-rag": {"allowed_decisions": ["approve", "reject"]}},
+        )
+    )
+    assert result.output_text == ""
+    assert result.interrupts[0]["value"]["action_requests"][0]["name"] == "knowledge-rag"
+    assert result.messages[-1]["tool_calls"][0]["id"] == "governed-call"
+
+
+@pytest.mark.asyncio
+async def test_da_e4_governance_allows_safe_runtime_and_blocks_ask_before_execution():
+    from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
+    from src.application.runtime.tool_runtime_service import ToolExecutionContext
+
+    class RuntimeStub:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, tool, call, context):
+            self.calls.append((tool.key, call.id, call.arguments, context.trace_id))
+            return ToolExecutionRecord(
+                call_id=call.id,
+                tool_key=tool.key,
+                tool_name=tool.name,
+                status="completed",
+                summary="governed",
+                trace_id=context.trace_id,
+                input=call.arguments,
+                output={"ok": True},
+            )
+
+    registry = ToolRegistry()
+    permission = PermissionService()
+    runtime_stub = RuntimeStub()
+    service = ToolGovernanceService(
+        tool_registry=registry,
+        permission_service=permission,
+        tool_runtime_service=runtime_stub,
+    )
+    execution = ToolExecutionContext(
+        session_id="session-e4-governance",
+        turn_id="turn-e4-governance",
+        trace_id="trace-e4-governance",
+        user_message="governed tools",
+        normalized_input="governed tools",
+        context_bundle={"safety_assessment": {"decision": "allow"}},
+    )
+    policy = PermissionPolicyContext(
+        session_mode=SessionMode.normal,
+        runtime_mode=RuntimeMode.interactive,
+        selected_agent_key="coordinator",
+        message_kind=MessageKind.user_input,
+        submit_mode="immediate",
+        execution_lane="conversation_turn",
+        active_mode_key="code_review",
+        workflow_mode_key="code_review",
+    )
+    safe = await service.execute(
+        ModelToolCall(id="safe-call", name="knowledge-rag", arguments={"query": "x"}),
+        GovernedToolCallContext(
+            execution=execution,
+            policy=policy,
+            active_mode_key="code_review",
+            available_tool_keys=frozenset({"knowledge-rag"}),
+        ),
+    )
+    ask = await service.execute(
+        ModelToolCall(id="ask-call", name="cli-executor", arguments={"command": "echo no-run"}),
+        GovernedToolCallContext(
+            execution=execution,
+            policy=policy,
+            active_mode_key="code_review",
+            available_tool_keys=frozenset({"cli-executor"}),
+        ),
+        prepare_approval=True,
+    )
+    assert safe.record.status == "completed"
+    assert ask.record.status == "waiting_approval"
+    assert ask.approval and ask.approval["metadata"]["approval_scope_hash"]
+    assert runtime_stub.calls == [
+        ("knowledge-rag", "safe-call", {"query": "x"}, "trace-e4-governance")
+    ]
+
+
+def test_da_e4_unknown_requested_skill_is_ignored_like_skill_registry_get_many():
+    from src.application.permissions.permission_service import PermissionService
+
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        deep_agent_governed_tools_enabled=True,
+        permission_service=PermissionService(),
+        skill_registry=SkillRegistry(),
+    )
+    session = _runtime_session("session-e4-unknown-skill")
+    request = ExecutionRequest(
+        turn_id="turn-e4-unknown-skill",
+        session_id=session.id,
+        user_message="Review this.",
+        normalized_input="Review this.",
+        mode_key="code_review",
+        skill_keys=["missing-skill"],
+    )
+    state = runtime._build_initial_state(session, request)
+
+    runtime._prepare_deep_agent_governed_tools(session, request, state)
+
+    assert state["available_tool_keys"] == []
+    assert state["model_visible_tool_keys"] == []
+
+
+def test_da_e4_latest_assistant_tool_call_ids_preserve_declared_order():
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call-b"},
+                {"id": "call-a"},
+                {"id": "call-b"},
+            ],
+        }
+    ]
+
+    assert RuntimeService._latest_assistant_tool_call_ids(messages) == [
+        "call-b",
+        "call-a",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decision", ["approved", "denied", "scope_changed", "batch_mixed"])
+async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage
+
+    from src.application.permissions.permission_service import PermissionService
+    from src.registry.agents import AgentRegistry
+    from src.registry.modes import ModeRegistry
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    class ToolCapableFake(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    model = ToolCapableFake(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "cli-executor",
+                        "args": {"command": "echo governed"},
+                        "id": "approval-call",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="DA_E4_RESUMED_OK"),
+        ]
+    )
+    if decision == "batch_mixed":
+        model.responses[0].tool_calls.append({
+            "name": "cli-executor", "args": {"command": "echo denied"},
+            "id": "second-call", "type": "tool_call",
+        })
+
+    class ToolRuntimeStub:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, tool, call, context):
+            self.calls.append(
+                (tool.key, call.id, dict(call.arguments), context.tool_job_id)
+            )
+            return ToolExecutionRecord(
+                call_id=call.id,
+                tool_key=tool.key,
+                tool_name=tool.name,
+                status="completed",
+                summary="approved execution",
+                trace_id=context.trace_id,
+                input=call.arguments,
+                output={"stdout": "governed"},
+            )
+
+    class ToolJobServiceStub:
+        def __init__(self):
+            self.statuses = []
+
+        async def create_job(self, **_kwargs):
+            return SimpleNamespace(id="approval-job")
+
+        async def mark_waiting_approval(self, job_id, summary):
+            self.statuses.append((job_id, "waiting_approval", summary))
+
+        async def mark_denied(self, job_id, summary, output_payload):
+            self.statuses.append((job_id, "denied", summary))
+
+    async def resolve_model(_key):
+        return model
+
+    tool_runtime = ToolRuntimeStub()
+    tool_jobs = ToolJobServiceStub()
+    saver = InMemorySaver()
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=tool_runtime,
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        deep_agent_runtime_adapter=DeepAgentRuntimeAdapter(
+            model_resolver=resolve_model, checkpointer_factory=lambda: nullcontext(saver),
+        ),
+        deep_agent_enabled=True,
+        deep_agent_pilot_mode_keys=["code_review"],
+        deep_agent_governed_tools_enabled=True,
+        permission_service=PermissionService(),
+        agent_registry=AgentRegistry(),
+        tool_job_service=tool_jobs,
+    )
+    session = _runtime_session("session-e4-resume")
+    request = ExecutionRequest(
+        turn_id="turn-e4-resume",
+        session_id=session.id,
+        user_message="Run the governed command.",
+        normalized_input="Run the governed command.",
+        mode_key="code_review",
+        agent_key="coordinator",
+        model_key="fake-model",
+        context={
+            "selected_mode": ModeRegistry().get("code_review").model_dump(mode="python"),
+            "requested_tool_keys": ["cli-executor"],
+            "safety_assessment": {"decision": "allow"},
+        },
+    )
+
+    pending = await runtime.execute_turn(session, request)
+    assert pending.snapshot.stage == "waiting_approval"
+    assert tool_runtime.calls == []
+
+    approval = dict(pending.approvals[0])
+    approval["status"] = "denied" if decision == "denied" else "approved"
+    if decision == "scope_changed":
+        approval["metadata"]["approval_scope_hash"] = "changed-scope"
+    session.metadata["pending_turn"] = pending.pending_turn
+    if decision == "batch_mixed":
+        second = dict(pending.approvals[1])
+        second["status"] = "denied"
+        intermediate = await runtime.resume_after_approval(session, second)
+        assert intermediate.snapshot.stage == "waiting_approval"
+        assert tool_runtime.calls == []
+        session.metadata["pending_turn"] = intermediate.pending_turn
+    resumed = await runtime.resume_after_approval(session, approval)
+
+    assert resumed is not None
+    assert resumed.output_text == "DA_E4_RESUMED_OK"
+    assert resumed.snapshot.stage == "completed"
+    if decision in {"approved", "batch_mixed"}:
+        assert len(tool_runtime.calls) == 1
+        assert tool_runtime.calls[0][0:2] == ("cli-executor", "approval-call")
+        assert tool_runtime.calls[0][3] == "approval-job"
+        assert resumed.state["tool_results"][-1]["status"] == "completed"
+        assert [
+            event.type for event in resumed.events
+            if event.type in {"tool.execution_requested", "tool.execution_completed"}
+        ] == ["tool.execution_requested", "tool.execution_completed"]
+        if decision == "batch_mixed":
+            assert {item["call_id"]: item["status"] for item in resumed.state["tool_results"]} == {
+                "approval-call": "completed", "second-call": "denied",
+            }
+    else:
+        assert tool_runtime.calls == []
+        assert resumed.state["tool_results"][-1]["status"] == "denied"
+        assert tool_jobs.statuses[-1][1] == "denied"
+
+
+def test_deep_agent_checkpoint_configuration_is_opt_in_and_schema_is_safe():
+    assert DeepAgentsConfig().checkpoint_enabled is False
+    assert DeepAgentsConfig(checkpoint_pool_size=2).checkpoint_pool_size == 2
+    with pytest.raises(ValueError):
+        DeepAgentsConfig(checkpoint_schema="public,other")
+
+
+@pytest.mark.asyncio
+async def test_da_e4_duplicate_resolved_approval_does_not_reopen_completed_session():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import ApprovalDecisionRequest, ToolApprovalRequest, ToolApprovalStatus
+
+    store = InMemorySessionStore()
+    session = _runtime_session("completed-hitl-session")
+    session.status = SessionStatus.completed
+    await store.save_session(session)
+    approval = ToolApprovalRequest(
+        id="resolved-hitl-approval", session_id=session.id,
+        tool_key="cli-executor", tool_name="CLI Executor", reason="acceptance",
+        status=ToolApprovalStatus.approved, created_at=datetime.now(UTC),
+        metadata={"deep_agent_interrupt_id": "interrupt-1"},
+    )
+    await store.save_approval(session.id, approval)
+    service = SessionService(
+        store=store, input_orchestrator_service=InputOrchestratorService(mode_registry=ModeRegistry()),
+        runtime_service=object(), mode_registry=ModeRegistry(),
+    )
+    await service.resolve_approval(
+        session.id, approval.id, ApprovalDecisionRequest(decision=ToolApprovalStatus.approved),
+    )
+    assert (await store.get_session(session.id)).status == SessionStatus.completed
+    assert service._approval_resume_tasks == {}
 
 
 def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path):

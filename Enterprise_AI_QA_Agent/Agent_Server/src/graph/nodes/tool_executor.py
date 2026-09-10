@@ -9,6 +9,7 @@ from src.application.security.approval_scope_service import ApprovalScopeService
 from src.application.security.execution_safety_policy import ExecutionSafetyPolicy
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.tool_input_validation import validate_tool_input as _validate_tool_input
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
@@ -921,44 +922,6 @@ def _permission_context_from_state(state: AgentGraphState) -> PermissionPolicyCo
         authorization_status=str(safety_assessment.get("authorization_status") or "not_required"),
         environment=str(safety_assessment.get("environment") or "unknown"),
     )
-
-
-def _validate_tool_input(schema: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-    properties = dict(schema.get("properties") or {})
-    for key in schema.get("required") or []:
-        value = arguments.get(key)
-        if key not in arguments or value is None or value == "":
-            errors.append(f"Missing required field: {key}")
-    for key, value in arguments.items():
-        rule = properties.get(key)
-        if not isinstance(rule, dict) or value is None:
-            continue
-        expected = rule.get("type")
-        if expected == "array" and not isinstance(value, list):
-            errors.append(f"Field '{key}' must be an array.")
-            continue
-        if expected == "string" and not isinstance(value, str):
-            errors.append(f"Field '{key}' must be a string.")
-            continue
-        if expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
-            errors.append(f"Field '{key}' must be an integer.")
-            continue
-        if expected == "boolean" and not isinstance(value, bool):
-            errors.append(f"Field '{key}' must be a boolean.")
-            continue
-        if expected == "array" and len(value) < int(rule.get("minItems") or 0):
-            errors.append(f"Field '{key}' must contain at least {rule.get('minItems')} item(s).")
-        item_rule = rule.get("items") if expected == "array" else None
-        if isinstance(item_rule, dict) and item_rule.get("format") == "email":
-            invalid = [item for item in value if not _is_email_address(item)]
-            if invalid:
-                errors.append(f"Field '{key}' contains invalid email address values.")
-    return errors
-
-
-def _is_email_address(value: Any) -> bool:
-    return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", str(value or "").strip()))
 
 
 def _build_unknown_tool_output(state: AgentGraphState, requested_name: str) -> dict[str, Any]:

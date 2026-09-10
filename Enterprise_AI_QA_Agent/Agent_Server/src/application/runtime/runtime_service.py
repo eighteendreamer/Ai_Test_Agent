@@ -20,6 +20,17 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.runtime.agent_loop import AgentLoop
 from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
+from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.tool_governance_service import (
+    GovernedToolCallContext,
+    ToolGovernanceService,
+)
+from src.application.model_adapters.tool_adapter import LangChainToolAdapter
+from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
+from src.application.capabilities.capability_resolver import CapabilityResolver
+from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
+from src.registry.agents import AgentRegistry
+from src.registry.skills import SkillRegistry
 from src.application.security.approval_scope_service import ApprovalScopeService
 from src.application.security.authorization import verified_grant_matches_target
 from src.application.security.execution_safety_policy import ExecutionSafetyPolicy
@@ -29,7 +40,16 @@ from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_logging import append_graph_event, truncate_text
 from src.schemas.model_config import ModelConfigRecord
-from src.schemas.session import ChatMessage, ExecutionEvent, ExecutionRequest, MessageRole, SessionSnapshot
+from src.schemas.session import (
+    ChatMessage,
+    ExecutionEvent,
+    ExecutionRequest,
+    MessageKind,
+    MessageRole,
+    RuntimeMode,
+    SessionMode,
+    SessionSnapshot,
+)
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 
 
@@ -73,6 +93,11 @@ class RuntimeService:
         deep_agent_max_subagent_calls_per_turn: int = 1,
         deep_agent_subagent_model_call_limit: int = 6,
         deep_agent_subagent_tool_call_limit: int = 12,
+        permission_service: PermissionService | None = None,
+        agent_registry: AgentRegistry | None = None,
+        skill_registry: SkillRegistry | None = None,
+        deep_agent_governed_tools_enabled: bool = False,
+        tool_job_service: ToolJobService | None = None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -99,6 +124,21 @@ class RuntimeService:
         self._deep_agent_max_subagent_calls_per_turn = max(1, int(deep_agent_max_subagent_calls_per_turn))
         self._deep_agent_subagent_model_call_limit = max(1, int(deep_agent_subagent_model_call_limit))
         self._deep_agent_subagent_tool_call_limit = max(1, int(deep_agent_subagent_tool_call_limit))
+        self._permission_service = permission_service
+        self._agent_registry = agent_registry
+        self._skill_registry = skill_registry
+        self._deep_agent_governed_tools_enabled = bool(deep_agent_governed_tools_enabled)
+        self._tool_job_service = tool_job_service
+        self._tool_governance_service = (
+            ToolGovernanceService(
+                tool_registry=tool_registry,
+                permission_service=permission_service,
+                tool_runtime_service=tool_runtime_service,
+                tool_job_service=tool_job_service,
+            )
+            if permission_service is not None
+            else None
+        )
         self._error_recovery = ErrorRecoveryCascade(
             context_compaction_service=context_compaction_service,
         )
@@ -129,6 +169,7 @@ class RuntimeService:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
             state = self._build_initial_state(session, request)
+            self._prepare_deep_agent_governed_tools(session, request, state)
             state["_event_queue"] = event_queue
             append_graph_event(
                 state,
@@ -205,6 +246,8 @@ class RuntimeService:
         )
 
     def _deep_agent_pilot_stage(self) -> str:
+        if self._deep_agent_governed_tools_enabled:
+            return "DA-E4"
         if (
             self._deep_agent_cognitive_planning_enabled
             or self._deep_agent_cognitive_subagents_enabled
@@ -247,6 +290,12 @@ class RuntimeService:
                 dispatch_owner="deepagents",
                 persistent_worker=False,
             )
+        approvals: list[dict[str, Any]] = []
+        tool_records: list[dict[str, Any]] = list(state.get("tool_results") or [])
+        business_tools, interrupt_on = self._build_deep_agent_business_tools(
+            state=state,
+            tool_records=tool_records,
+        )
         execution_task = asyncio.create_task(
             self._deep_agent_runtime_adapter.execute(
                 DeepAgentRuntimeRequest(
@@ -258,7 +307,8 @@ class RuntimeService:
                         "You are the Enterprise AI QA Agent code review pilot. "
                         "Return evidence-grounded review guidance. Use only the "
                         "read-only project and selected skill capabilities exposed "
-                        "by the current pilot stage. Do not execute business tools."
+                        "by the current pilot stage. Business tools visible to you are "
+                        "governed by the application's permission and approval controls."
                     ),
                     messages=list(state["runtime_messages"]),
                     context={**dict(request.context), "skill_keys": list(request.skill_keys)},
@@ -275,6 +325,9 @@ class RuntimeService:
                         if self._deep_agent_cognitive_subagents_enabled
                         else None
                     ),
+                    business_tools=business_tools,
+                    interrupt_on=interrupt_on,
+                    resume=state.pop("_deep_agent_resume", None),
                 )
             ),
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",
@@ -309,7 +362,42 @@ class RuntimeService:
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
+        if result.interrupts:
+            approvals = await self._record_deep_agent_interrupts(state, result)
+            tool_records.extend(state.pop("_deep_agent_waiting_records", []))
         state["plan_steps"] = [item["content"] for item in result.todos]
+        state["tool_results"] = tool_records
+        state["tool_messages"] = [self._build_tool_message(ToolExecutionRecord.model_validate(item)) for item in tool_records]
+        state["pending_approvals"] = approvals
+        if approvals:
+            state["context_bundle"] = {
+                **dict(state.get("context_bundle") or {}),
+                "deep_agent_harness": "deepagents",
+            }
+            state["control_state"] = "waiting_approval"
+            state["termination_reason"] = "waiting_approval"
+            state["final_response"] = ""
+            state["runtime_messages"] = result.messages
+            append_graph_event(
+                state,
+                "graph.waiting_for_approval",
+                "deepagents.tool_governance",
+                "Deep Agents business tools are paused for existing application approval.",
+                approval_count=len(approvals),
+                tool_keys=",".join(str(item.get("tool_key") or "") for item in approvals),
+                harness="deepagents",
+            )
+            state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
+            snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+            return RuntimeTurnResult(
+                output_text="",
+                events=self._events_from_log(session.id, state["event_log"]),
+                snapshot=snapshot,
+                approvals=approvals,
+                state=state,
+                tool_messages=self._to_chat_messages(state["turn_id"], tool_records),
+                pending_turn=state["pending_turn"],
+            )
         state["cognitive_subagent_events"] = list(result.subagent_events)
         if result.todos:
             append_graph_event(
@@ -351,7 +439,7 @@ class RuntimeService:
             snapshot=snapshot,
             approvals=[],
             state=state,
-            tool_messages=[],
+            tool_messages=self._to_chat_messages(state["turn_id"], tool_records),
             pending_turn={},
         )
 
@@ -366,9 +454,9 @@ class RuntimeService:
     ) -> RuntimeTurnResult:
         """Map a bounded Deep Agents stop to existing terminal runtime contracts.
 
-        DA-E3 has no durable Deep Agents checkpointer yet, so an interrupted
-        invocation is deliberately non-resumable instead of being resumed by
-        the legacy graph path.
+        Only approval interrupts currently expose checkpoint resume. A user
+        cancellation or timeout remains non-resumable until DA-E5 establishes
+        lease and idempotency semantics; never send it through the legacy graph.
         """
         logger.warning(
             "deep_agent_turn_stopped",
@@ -424,6 +512,12 @@ class RuntimeService:
         if not pending_turn:
             return None
 
+        if pending_turn.get("context_bundle", {}).get("deep_agent_harness") == "deepagents":
+            return await self._resume_deep_agent_after_approval(
+                session, pending_turn, approval,
+                on_model_chunk=on_model_chunk, event_queue=event_queue,
+            )
+
         state = self._state_from_pending_turn(session, pending_turn)
         state["_event_queue"] = event_queue
         await self._attach_session_resources(state)
@@ -445,6 +539,7 @@ class RuntimeService:
             context_bundle=dict(state["context_bundle"]),
             selected_agent_key=str(state["selected_agent_key"]),
             selected_model_key=str(state["selected_model_key"]),
+            tool_job_id=str(approval.get("metadata", {}).get("tool_job_id") or ""),
         )
 
         tool = self._tool_registry.get(approval["tool_key"])
@@ -484,9 +579,7 @@ class RuntimeService:
                 approval_id=approval["id"],
             )
             execution_record = await self._tool_runtime_service.execute(
-                tool=tool,
-                call=tool_call,
-                context=context,
+                tool=tool, call=tool_call, context=context,
             )
             append_graph_event(
                 state,
@@ -520,6 +613,15 @@ class RuntimeService:
                 output=denial_output,
                 approval_id=approval["id"],
             )
+            approval_job_id = str(
+                approval.get("metadata", {}).get("tool_job_id") or ""
+            )
+            if approval_job_id and self._tool_job_service is not None:
+                await self._tool_job_service.mark_denied(
+                    approval_job_id,
+                    summary=denial_summary,
+                    output_payload=denial_output,
+                )
             append_graph_event(
                 state,
                 "tool.execution_denied",
@@ -689,10 +791,15 @@ class RuntimeService:
         conversation_messages = list(pending_turn.get("conversation_messages", []))
         latest_tool_call_ids = self._latest_assistant_tool_call_ids(conversation_messages)
         if latest_tool_call_ids:
+            latest_by_call_id: dict[str, dict[str, Any]] = {}
+            for message in tool_messages:
+                call_id = str(message.get("tool_call_id") or "")
+                if call_id in latest_tool_call_ids:
+                    latest_by_call_id[call_id] = message
             resume_tool_messages = [
-                message
-                for message in tool_messages
-                if str(message.get("tool_call_id") or "") in latest_tool_call_ids
+                latest_by_call_id[key]
+                for key in latest_tool_call_ids
+                if key in latest_by_call_id
             ]
         else:
             resume_tool_messages = [approved_tool_message]
@@ -870,6 +977,335 @@ class RuntimeService:
         context_bundle = dict(state.get("context_bundle") or {})
         context_bundle["session_resources"] = await self._session_resource_service.build_context(session_id)
         state["context_bundle"] = context_bundle
+
+    def _prepare_deep_agent_governed_tools(
+        self,
+        session: SessionRecord,
+        request: ExecutionRequest,
+        state: dict[str, Any],
+    ) -> None:
+        """Resolve the pilot tool surface with the same Registry policy inputs."""
+        if not self._deep_agent_governed_tools_enabled or self._permission_service is None:
+            return
+        state["context_bundle"] = {
+            key: value for key, value in dict(state.get("context_bundle") or {}).items()
+            if key not in {"deep_agent_approval_batch", "deep_agent_harness"}
+        }
+        selected_mode = dict(request.context.get("selected_mode") or {})
+        mode_keys = [
+            str(item).strip()
+            for item in selected_mode.get("registered_tool_keys", [])
+            if str(item).strip()
+        ]
+        requested = [
+            str(item).strip()
+            for item in request.context.get("requested_tool_keys", [])
+            if str(item).strip()
+        ]
+        skill_keys = [str(item).strip() for item in request.skill_keys if str(item).strip()]
+        # Deep Agents' official SkillsMiddleware owns staged skill loading;
+        # the legacy graph-only ``skill`` dispatcher must not be exposed as a
+        # business tool with a non-existent ToolRuntime handler.
+        keys = list(dict.fromkeys([*mode_keys, *requested]))
+        if self._skill_registry is not None:
+            keys.extend(
+                tool_key
+                for skill in self._skill_registry.get_many(skill_keys)
+                for tool_key in skill.tool_keys
+            )
+        descriptors = self._tool_registry.get_many(keys)
+        agent = None
+        if self._agent_registry is not None:
+            agent = self._agent_registry.resolve_for_message(
+                request.user_message,
+                explicit_key=request.agent_key or None,
+            )
+            state["selected_agent_key"] = agent.key
+            state["selected_agent_name"] = agent.name
+            if self._skill_registry is not None:
+                descriptors.extend(
+                    self._tool_registry.get_many(
+                        tool_key
+                        for skill in self._skill_registry.get_many(agent.supported_skills)
+                        for tool_key in skill.tool_keys
+                    )
+                )
+                descriptors = list({item.key: item for item in descriptors}.values())
+        descriptors = CapabilityResolver().eligible_tools(
+            tools=descriptors,
+            active_mode_key=str(state.get("mode_key") or request.mode_key or "default"),
+            required_capabilities=[
+                str(item).strip()
+                for item in request.context.get("required_capabilities", [])
+                if str(item).strip()
+            ],
+            allowed_capabilities=[
+                item
+                for item in [
+                    *selected_mode.get("core_capability_keys", []),
+                    *selected_mode.get("on_demand_capability_keys", []),
+                ]
+                if item not in set(selected_mode.get("denied_capability_keys", []))
+            ],
+        )
+        if agent is not None:
+            descriptors = ToolExposurePolicy().filter_supported(tools=descriptors, agent=agent)
+        policy = self._build_permission_policy_context(
+            session_mode=session.session_mode,
+            runtime_mode=session.runtime_mode,
+            selected_agent_key=str(state.get("selected_agent_key") or ""),
+            mode_key=str(state.get("mode_key") or request.mode_key or "default"),
+            context=request.context,
+        )
+        evaluation = self._permission_service.evaluate(policy_context=policy, tools=descriptors)
+        state["available_tool_keys"] = [item.key for item in descriptors]
+        state["model_visible_tool_keys"] = list(evaluation.model_visible_tool_keys)
+        state["allowed_tool_keys"] = list(evaluation.allowed_tool_keys)
+        state["approval_required_tool_keys"] = list(evaluation.approval_required_tool_keys)
+        state["denied_tool_keys"] = list(evaluation.denied_tool_keys)
+        state["permission_decisions"] = [item.to_payload() for item in evaluation.decisions]
+        state["context_bundle"] = {
+            **dict(state.get("context_bundle") or {}),
+            "deep_agent_governed_tool_keys": list(state["model_visible_tool_keys"]),
+            "deep_agent_governed_tool_stage": "DA-E4",
+        }
+
+    def _build_deep_agent_business_tools(
+        self,
+        *,
+        state: dict[str, Any],
+        tool_records: list[dict[str, Any]],
+    ) -> tuple[list[Any], dict[str, Any]]:
+        if not self._deep_agent_governed_tools_enabled or self._tool_governance_service is None:
+            return [], {}
+        descriptors = self._tool_registry.get_many(list(state.get("model_visible_tool_keys") or []))
+        batch = state.get("context_bundle", {}).get("deep_agent_approval_batch", [])
+        by_call = {item["metadata"]["call_id"]: item for item in batch}
+
+        def when(request):
+            call = ModelToolCall(
+                id=request.tool_call["id"], name=request.tool_call["name"],
+                arguments=request.tool_call["args"],
+            )
+            # A resumed official interrupt must retain its original action order
+            # even when policy has changed. Execution still rechecks that policy.
+            return call.id in by_call or self._tool_governance_service.requires_approval(
+                call, self._deep_agent_governance_context(state)
+            )
+
+        async def invoke(descriptor, call_id: str, arguments: dict[str, Any]):
+            append_graph_event(
+                state, "tool.execution_requested", "deepagents.tool_governance",
+                "Deep Agents requested a governed business tool.",
+                tool_key=descriptor.key, call_id=call_id, harness="deepagents",
+            )
+            approved = by_call.get(call_id)
+            result = await self._tool_governance_service.execute(
+                ModelToolCall(id=call_id, name=descriptor.key, arguments=arguments),
+                self._deep_agent_governance_context(state),
+                approval=approved,
+            )
+            if approved:
+                result.record.approval_id = approved["id"]
+                result.record.job_id = approved["metadata"].get("tool_job_id")
+                if result.record.status == "denied" and self._tool_job_service is not None:
+                    await self._tool_job_service.mark_denied(
+                        result.record.job_id, summary=result.record.summary,
+                        output_payload=result.record.output,
+                    )
+            payload = result.record.model_dump(mode="python")
+            tool_records[:] = [item for item in tool_records if item.get("call_id") != call_id]
+            tool_records.append(payload)
+            event_type = {
+                "completed": "tool.execution_completed",
+                "denied": "tool.execution_denied",
+            }.get(result.record.status, "tool.execution_failed")
+            append_graph_event(
+                state, event_type, "deepagents.tool_governance", result.record.summary,
+                tool_key=result.record.tool_key, call_id=call_id,
+                tool_job_id=result.record.job_id, approval_id=result.record.approval_id,
+                status=result.record.status, harness="deepagents",
+            )
+            return json.dumps(make_json_safe({
+                "status": result.record.status, "summary": result.record.summary,
+                "output": result.record.output, "instruction_authority": "none",
+            }), ensure_ascii=False)
+
+        return LangChainToolAdapter().to_governed_tools(descriptors, invoke=invoke), {
+            item.key: {"allowed_decisions": ["approve", "reject"], "when": when}
+            for item in descriptors
+        }
+
+    def _deep_agent_governance_context(self, state: dict[str, Any]) -> GovernedToolCallContext:
+        execution = ToolExecutionContext(
+            session_id=str(state["session_id"]),
+            turn_id=str(state["turn_id"]),
+            trace_id=str(state["trace_id"]),
+            user_message=str(state["user_message"]),
+            normalized_input=str(state["normalized_input"]),
+            context_bundle=dict(state.get("context_bundle") or {}),
+            selected_agent_key=str(state.get("selected_agent_key") or ""),
+            selected_model_key=str(state.get("selected_model_key") or ""),
+        )
+        policy = self._build_permission_policy_context(
+            session_mode=SessionMode(state["session_mode"]),
+            runtime_mode=RuntimeMode(state["runtime_mode"]),
+            selected_agent_key=str(state.get("selected_agent_key") or ""),
+            mode_key=str(state.get("mode_key") or "default"),
+            context=dict(state.get("context_bundle") or {}),
+        )
+        return GovernedToolCallContext(
+            execution=execution, policy=policy,
+            active_mode_key=str(state.get("mode_key") or "default"),
+            available_tool_keys=frozenset(state.get("available_tool_keys") or []),
+        )
+
+    async def _record_deep_agent_interrupts(self, state: dict[str, Any], result) -> list[dict]:
+        """Project the official interrupt payload into existing approvals in order."""
+        calls = next(
+            (list(message.get("tool_calls") or []) for message in reversed(result.messages)
+             if message.get("role") == "assistant"), []
+        )
+        remaining = list(calls)
+        approvals = []
+        records = []
+        for interruption in result.interrupts:
+            for position, action in enumerate(interruption["value"]["action_requests"]):
+                matched = next(
+                    (call for call in remaining
+                     if call["name"] == action["name"] and call["args"] == action["args"]),
+                    None,
+                )
+                if matched is None:
+                    raise RuntimeError("Official HITL action does not match its tool-call checkpoint.")
+                remaining.remove(matched)
+                prepared = await self._tool_governance_service.execute(
+                    ModelToolCall(
+                        id=matched["id"], name=matched["name"], arguments=matched["args"],
+                    ),
+                    self._deep_agent_governance_context(state), prepare_approval=True,
+                )
+                if prepared.approval is None:
+                    raise RuntimeError("HITL approval policy changed during preparation.")
+                prepared.approval["metadata"].update({
+                    "deep_agent_interrupt_id": interruption["id"],
+                    "deep_agent_action_index": position,
+                })
+                approvals.append(prepared.approval)
+                records.append(prepared.record.model_dump(mode="python"))
+                append_graph_event(
+                    state, "tool.execution_blocked", "deepagents.hitl",
+                    prepared.record.summary, tool_key=matched["name"], call_id=matched["id"],
+                    approval_id=prepared.approval["id"], tool_job_id=prepared.record.job_id,
+                    status="waiting_approval", harness="deepagents",
+                )
+        state["context_bundle"]["deep_agent_approval_batch"] = approvals
+        state["_deep_agent_waiting_records"] = records
+        return approvals
+
+    async def _resume_deep_agent_after_approval(
+        self, session: SessionRecord, pending_turn: dict, approval: dict,
+        *, on_model_chunk=None, event_queue=None,
+    ) -> RuntimeTurnResult | None:
+        pending_ids = list(pending_turn.get("pending_approval_ids") or [])
+        if approval["id"] not in pending_ids:
+            return None
+        state = self._state_from_pending_turn(session, pending_turn)
+        persisted_events = len(state["event_log"])
+        state["_event_queue"] = event_queue
+        batch = list(state["context_bundle"].get("deep_agent_approval_batch") or [])
+        if not batch:
+            raise ValueError("This pilot approval predates official HITL checkpoints; start a new turn.")
+        batch = [dict(approval) if item["id"] == approval["id"] else item for item in batch]
+        state["context_bundle"]["deep_agent_approval_batch"] = batch
+        pending_ids.remove(approval["id"])
+        if approval["status"] == "denied":
+            job_id = approval["metadata"].get("tool_job_id")
+            if job_id and self._tool_job_service is not None:
+                await self._tool_job_service.mark_denied(
+                    job_id, summary="Human rejected the Deep Agents tool call.",
+                    output_payload={"approval_id": approval["id"]},
+                )
+            for record in state["tool_results"]:
+                if record.get("approval_id") == approval["id"]:
+                    record["status"] = "denied"
+                    record["summary"] = "Human rejected the tool call."
+                    record["output"] = {"decision_note": approval.get("decision_note")}
+        state["pending_approvals"] = [item for item in batch if item["id"] in pending_ids]
+        append_graph_event(
+            state, "approval.decision_applied", "deepagents.hitl",
+            "Application approval decision recorded for official HITL resume.",
+            approval_id=approval["id"], decision=approval["status"],
+            remaining_approval_count=len(pending_ids),
+        )
+        if pending_ids:
+            state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
+            return RuntimeTurnResult(
+                output_text="", approvals=[], state=state, tool_messages=[],
+                events=self._events_from_log(session.id, state["event_log"][persisted_events:]),
+                snapshot=self._build_snapshot(session, state, session.snapshot_count + 1),
+                pending_turn=state["pending_turn"],
+            )
+        resume: dict[str, Any] = {}
+        for item in batch:
+            interrupt_id = item["metadata"]["deep_agent_interrupt_id"]
+            decisions = resume.setdefault(interrupt_id, {"decisions": []})["decisions"]
+            decisions.append(
+                {"type": "approve"} if item["status"] == "approved" else
+                {"type": "reject", "message": str(item.get("decision_note") or "Human denied execution.")}
+            )
+        state["_deep_agent_resume"] = resume
+        state["pending_turn"] = {}
+        state["termination_reason"] = ""
+        state["control_state"] = "resuming"
+        request = ExecutionRequest(
+            turn_id=state["turn_id"], session_id=session.id,
+            user_message=state["user_message"], normalized_input=state["normalized_input"],
+            mode_key=state["mode_key"], agent_key=state["selected_agent_key"],
+            model_key=state["selected_model_key"], skill_keys=state["requested_skill_keys"],
+            context=dict(state["context_bundle"]),
+        )
+        self.clear_interrupt(session.id)
+        result = await self._execute_observed(
+            session, request, state,
+            lambda: self._execute_deep_agent_turn(
+                session, request, state=state, pilot_stage="DA-E4", on_model_chunk=on_model_chunk,
+            ),
+        )
+        result.events = result.events[persisted_events:]
+        return result
+
+    @staticmethod
+    def _build_permission_policy_context(
+        *,
+        session_mode: SessionMode,
+        runtime_mode: RuntimeMode,
+        selected_agent_key: str,
+        mode_key: str,
+        context: dict[str, Any],
+    ) -> PermissionPolicyContext:
+        input_envelope = dict(context.get("input_envelope") or {})
+        routing = dict(context.get("input_routing") or {})
+        safety = dict(context.get("safety_assessment") or {})
+        return PermissionPolicyContext(
+            session_mode=session_mode,
+            runtime_mode=runtime_mode,
+            selected_agent_key=selected_agent_key,
+            message_kind=MessageKind(
+                input_envelope.get("message_kind", MessageKind.user_input.value)
+            ),
+            submit_mode=str(input_envelope.get("submit_mode") or "immediate"),
+            execution_lane=str(routing.get("execution_lane") or "conversation_turn"),
+            source=str(input_envelope.get("source") or "session.send_message"),
+            active_mode_key=mode_key,
+            workflow_mode_key=mode_key,
+            safety_decision=str(safety.get("decision") or "allow"),
+            safety_risk_level=str(safety.get("risk_level") or "low"),
+            authorization_status=str(
+                safety.get("authorization_status") or "not_required"
+            ),
+            environment=str(safety.get("environment") or "unknown"),
+        )
 
     def _build_initial_state(self, session: SessionRecord, request: ExecutionRequest) -> dict[str, Any]:
         requested_model_key = request.model_key or session.preferred_model or ""
@@ -1663,11 +2099,16 @@ class RuntimeService:
             ),
         }
 
-    def _latest_assistant_tool_call_ids(self, messages: list[dict[str, Any]]) -> set[str]:
+    @staticmethod
+    def _latest_assistant_tool_call_ids(messages: list[dict[str, Any]]) -> list[str]:
         for message in reversed(messages):
             if message.get("role") != "assistant":
                 continue
             tool_calls = message.get("tool_calls") or []
-            ids = {str(item.get("id") or "") for item in tool_calls if isinstance(item, dict)}
-            return {item for item in ids if item}
-        return set()
+            ids = [
+                str(item.get("id") or "")
+                for item in tool_calls
+                if isinstance(item, dict)
+            ]
+            return list(dict.fromkeys(item for item in ids if item))
+        return []

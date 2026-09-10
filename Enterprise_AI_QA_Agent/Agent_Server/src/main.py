@@ -37,6 +37,7 @@ from src.api.routes.task_pool import router as task_pool_router
 from src.api.routes.mail import router as mail_router
 from src.application.mail.auth_monitor import TencentAuthMonitor
 from src.application.models.oauth_token_service import OAuthTokenService
+from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.compatibility import CompatibilityRunnerService
 from src.application.documents.api_docs_service import ApiDocsService
@@ -294,8 +295,17 @@ async def lifespan(app: FastAPI):
     )
     model_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_observability_service(observability_service)
+    deep_agent_checkpoint_provider = (
+        DeepAgentCheckpointProvider(settings)
+        if settings.deep_agents.enabled and settings.deep_agents.checkpoint_enabled
+        else None
+    )
     deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(
         model_resolver=model_runtime_service.resolve_langchain_chat_model,
+        checkpointer_factory=(
+            deep_agent_checkpoint_provider.open
+            if deep_agent_checkpoint_provider is not None else None
+        ),
         skill_registry=skill_registry,
     )
     graph = build_agent_graph(
@@ -344,6 +354,11 @@ async def lifespan(app: FastAPI):
         deep_agent_max_subagent_calls_per_turn=settings.deep_agents.max_subagent_calls_per_turn,
         deep_agent_subagent_model_call_limit=settings.deep_agents.subagent_model_call_limit,
         deep_agent_subagent_tool_call_limit=settings.deep_agents.subagent_tool_call_limit,
+        permission_service=permission_service,
+        agent_registry=agent_registry,
+        skill_registry=skill_registry,
+        deep_agent_governed_tools_enabled=settings.deep_agents.governed_tools_enabled,
+        tool_job_service=tool_job_service,
     )
 
     app.state.settings = settings
@@ -520,6 +535,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if deep_agent_checkpoint_provider is not None:
+            await deep_agent_checkpoint_provider.close()
         await test_run_service.stop_lease_reaper()
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()

@@ -59,9 +59,10 @@ class TraceScope:
         control_state: str,
     ) -> None:
         """Attach non-sensitive business outcome metadata to every root trace."""
-        outcome = "interrupted" if termination_reason == "interrupted" else (
-            "failed" if termination_reason == "failed" else "completed"
-        )
+        if termination_reason in {"interrupted", "failed", "waiting_approval"}:
+            outcome = termination_reason
+        else:
+            outcome = "completed"
         metadata = self._redactor.sanitize_for_audit(
             {
                 "outcome": outcome,

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Awaitable, Callable
 
+from langchain.tools import ToolRuntime
 from src.application.model_adapters.message_adapter import to_langchain_tools
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_runtime import ModelToolCall
 
 
 class LangChainToolAdapter:
-    """Expose selected Registry descriptors without creating an executor.
+    """Expose selected Registry descriptors and governed callbacks.
 
     LangChain receives schemas for model binding only.  All actual execution
     continues through the existing ToolRuntimeService, which owns permission,
@@ -45,3 +46,39 @@ class LangChainToolAdapter:
         if not isinstance(call.arguments, dict):
             raise ValueError(f"Tool '{call.name}' arguments must be an object.")
         return call
+
+    def to_governed_tools(
+        self,
+        tools: Iterable[ToolDescriptor],
+        *,
+        invoke: Callable[[ToolDescriptor, str, dict[str, Any]], Awaitable[str]],
+    ) -> list[Any]:
+        """Build LangChain tools whose execution callback is application-owned.
+
+        The wrapper extracts the framework-provided ``tool_call_id`` from
+        ``ToolRuntime`` for Approval/Snapshot correlation. No
+        Registry handler is exposed directly to Deep Agents.
+        """
+        from langchain_core.tools import StructuredTool
+
+        def bind(descriptor):
+            async def governed(runtime: ToolRuntime, **arguments):
+                return await invoke(descriptor, runtime.tool_call_id, dict(arguments))
+
+            return governed
+
+        result = []
+        for descriptor in tools:
+            result.append(
+                StructuredTool.from_function(
+                    coroutine=bind(descriptor),
+                    name=descriptor.key,
+                    description=descriptor.description,
+                    args_schema=descriptor.input_schema or {
+                        "type": "object",
+                        "properties": {},
+                    },
+                    infer_schema=False,
+                )
+            )
+        return result

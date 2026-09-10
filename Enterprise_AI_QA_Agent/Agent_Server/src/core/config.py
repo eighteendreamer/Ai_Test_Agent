@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
+import re
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -312,9 +313,20 @@ class DeepAgentsConfig(BaseModel):
     cognitive_planning_enabled: bool = False
     turn_timeout_seconds: float = 600.0
     cognitive_subagents_enabled: bool = False
+    governed_tools_enabled: bool = False
+    checkpoint_enabled: bool = False
+    checkpoint_schema: str = "deepagents_checkpoint"
+    checkpoint_pool_size: int = Field(default=4, ge=1, le=32)
     max_subagent_calls_per_turn: int = 1
     subagent_model_call_limit: int = 6
     subagent_tool_call_limit: int = 12
+
+    @field_validator("checkpoint_schema")
+    @classmethod
+    def validate_checkpoint_schema(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value):
+            raise ValueError("checkpoint_schema must be a lowercase PostgreSQL identifier")
+        return value
 
     @field_validator("read_only_max_file_size_mb")
     @classmethod

@@ -448,6 +448,22 @@ class SessionService:
             existing_approvals = await self._store.list_approvals(session_id)
             proxy_approval = next((item for item in existing_approvals if item.id == approval_id), None)
             proxy_metadata = proxy_approval.metadata if proxy_approval is not None else {}
+            if (
+                proxy_metadata.get("deep_agent_interrupt_id")
+                and proxy_approval.status != ToolApprovalStatus.pending
+                and approval_id not in session.metadata.get("pending_turn", {}).get("pending_approval_ids", [])
+            ):
+                if proxy_approval.status != payload.decision:
+                    raise ValueError(f"Approval already resolved: {approval_id}")
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(session_id, "approval.decision_replayed", {
+                        "approval_id": approval_id,
+                        "decision": payload.decision.value,
+                        "message": "Completed HITL decision returned without rescheduling execution.",
+                    }),
+                )
+                return proxy_approval
             if proxy_metadata.get("source") == "test_run_case_execution":
                 raise ValueError(
                     "Use the test run item approval endpoint for test-run approvals."

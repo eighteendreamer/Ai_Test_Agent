@@ -91,8 +91,8 @@
 | C0 | 当前 Python 3.11 + 当前四包锁定版本 | 保存可回归基线 | 已完成 | import、compileall、全量 pytest、前端测试/构建、真实默认模型会话 | 已通过；外部 LangSmith 除外 |
 | C1 | 干净 Python 3.11 + `pyproject.toml` 默认依赖 | 证明主服务可重复安装 | 已完成 | 安装、`pip check`、四包版本、`src.main` import、FastAPI 健康检查、真实默认模型会话和 Flow | 全部通过；生成 25 条事件和 1 个 Snapshot；运行时依赖已补齐 |
 | C2 | 隔离 Python 3.11 + Deep Agents 0.7.13 官方依赖 | 确认依赖解析、Provider 扩展和 Harness 最小执行 | 已完成（候选环境） | PyPI 解析、安装、`pip check`、`create_deep_agent` import/构造、工具可绑定离线调用 | 通过；候选快照已保存；不代表主服务已升级 |
-| C3 | C2 + 项目 Provider 适配 + `code_review` 受控工具 | 验证实际集成可行性 | 未进行 | 工具调用、权限、审批、路径隔离、事件、Trace、取消与恢复 | 不绕过现有治理，无第二套外层状态机 |
-| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选环境全量回归与真实默认模型冒烟通过，性能/回滚未进行 | 隔离 C4 环境安装候选生态及项目其余依赖，`pip check`、项目入口导入、Deep Agents 离线 Harness、LangChain/上下文专项、后端全量、真实 Uvicorn 健康检查、数据库默认 Qwen 的 LangChain 与 Deep Agents 调用均通过；长任务性能、LangSmith 外部上报和回滚演练仍待执行 | 质量不降、性能预算达标、可一键回滚 |
+| C3 | C2 + 项目 Provider 适配 + `code_review` 受控工具 | 验证实际集成可行性 | 进行中（实际集成工作在 C4 环境验收） | 工具调用、权限、批准/拒绝、路径隔离、事件、Trace、取消已验证；等待审批时重启恢复已通过，完整执行中恢复未完成 | 不绕过现有治理，无第二套外层状态机 |
+| C4 | C3 与当前主服务组合对账 | 决定生态包统一升级版本 | 候选全量与真实模型/官方 HITL/PostgreSQL 重启恢复通过；正式长任务性能与主环境升级回滚未完成 | 2026-09-10 追加两个官方 Checkpoint 包，未改动原 C4 其余依赖；最新全量 823 passed/13 skipped，实际默认模型 agnes-2.5-flash、真实 Uvicorn/PG/RustFS 与 LangSmith 工具节点已验证 | 不据此修改主环境锁定版本；继续补齐数小时任务、并发接管及性能预算 |
 
 ## 5. 可复现命令与本次结果
 
@@ -123,5 +123,13 @@
 ## 6. 当前剩余出口
 
 1. P0-07 仍阻塞：不得把 `deepagents` 写入主服务 optional extra；需先完成阶段 2—3 协调升级和 C4 回滚证据。
-2. 阶段 1 仍需用户配置 LangSmith Key 后完成真实云端上报、控制台父子树、外部 URL 与性能预算验证。
-3. C3/C4 必须在独立环境验证 Provider 适配、受控工具、权限、审批、路径隔离、全量回归和回滚后，才能决定统一生态版本。
+2. 阶段 1 已验收（以主工程方案最新台账为准），LangSmith Key 已配置；DA-E4 已补齐真实工具父子 Trace。不能把历史“未配 Key”的记录当作当前阻塞。
+3. C3/C4 的工具、权限、审批、路径隔离、全量及等待审批时重启恢复已有证据；尚需正式数小时任务、并发接管、依赖回滚演练，才可决定主环境统一升级。
+
+## 7. 2026-09-10 官方 HITL / PostgreSQL 增量
+
+- `pip install --dry-run --index-url https://pypi.org/simple langgraph-checkpoint-postgres` 只提出新增 `langgraph-checkpoint-postgres==3.1.2` 和 `psycopg-pool==3.3.1`，未升级 C4 现有 Provider 或框架包。
+- 上述两个包仅安装在 C4；`pip check` 通过，主 Python 3.11 环境未安装 Deep Agents。复现文件：`deepagents-c4-checkpoint-requirements-20260910.txt`，引用原 C4 freeze 后叠加两条固定依赖。
+- Windows psycopg 异步连接不支持 Proactor，实际使用官方同步 PostgresSaver 与项目既有线程 IO 模式；不改全局事件循环，不重写 checkpoint SQL 或序列化。
+- 当前全量：主环境 `803 passed, 33 skipped, 1 warning in 46.87s`；C4 `823 passed, 13 skipped, 1 warning in 33.65s`；两环境入口导入与编译通过。
+- 真实服务批准/拒绝验收都包含“等待审批后终止进程、重启再裁决”，同一个 ToolJob 到 completed/denied；快照、Artifact、模型结果和 Trace 已回读。执行中的副作用幂等、跨 Worker 与长时性能仍未验收。

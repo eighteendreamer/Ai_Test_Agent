@@ -583,7 +583,7 @@ Feature Flags：
 | 1 | LangSmith 非阻塞观测 | 进行中 | 98% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和短时 soak 已完成；正式业务阈值、直接队列深度和 30 分钟持续窗口仍未确认/完成 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯均通过；短时 soak 9/10 + 重试通过 |
 | 2 | LangChain 模型与消息适配 | 已完成 | 100% | 默认 Qwen Provider 已完成新旧适配器双跑、工具调用、结构化输出、错误/取消传播和限流契约验证 | 后端全量 781 passed，10 skipped，1 warning；compileall 通过；真实默认模型链路通过 |
 | 3 | LangChain 工具适配与 Middleware | 进行中 | 50% | P3-01～P3-03 已完成；P3-04～P3-08 已完成兼容性评估，其中 P3-04～P3-07 暂不迁移，P3-08 保留现有安全强制层 | 工具/Middleware/模型消息专项 18 passed；上下文压缩专项 10 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
-| 4 | Deep Agents code_review 试点 | 进行中 | 43% | DA-E1～DA-E3 已完成；DA-E4～DA-E7 未进行；主环境仍默认关闭且未安装 deepagents，C4 已完成真实服务、真实模型、取消和 LangSmith 父子 Trace 验证 | C4 隔离组合通过官方 Harness、只读边界、Skills、todo、同步认知子代理、超时/中断和外部 Trace 验证；尚未进入业务工具/HITL、Checkpoint、记忆和灰度 |
+| 4 | Deep Agents code_review 试点 | 进行中 | 50% | DA-E1～DA-E3 已完成；DA-E4 治理工具与官方 HITL 已实现并实测，DA-E5 的 PostgreSQL Checkpointer 前置能力已进入实施；主环境仍默认关闭 | 已验证真实 safe 工具、批准/拒绝、等待审批时重启恢复、ToolJob 原位推进及 LangSmith 工具父子 Trace；批量审批有官方 Harness 回归，完整长任务/跨 Worker/记忆/灰度尚未验收；百分比为工程估计，不代表通过率 |
 | 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
 | 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
 | 7 | 按模式灰度迁移 | 未进行 | 0% | 等待阶段 1—6 完成 | 未执行 |
@@ -1246,7 +1246,7 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 |---|---|---|---|---|
 | P4-01 | 安装可选 deepagents 依赖 | pyproject/lock | 进行中 | C4 隔离依赖已锁定并通过；主环境声明待阶段 0 依赖协调后处理，默认启动不强依赖 |
 | P4-02 | 实现 DeepAgentModeAdapter | application/deep_agents | 已完成 | 不泄漏框架类型 |
-| P4-03 | 桥接现有 Tools | tool adapter | 未进行 | 权限和审计仍生效 |
+| P4-03 | 桥接现有 Tools | tool adapter | 进行中 | Registry/Permission/Safety/ApprovalScope/ToolRuntime 已贯通；真实批准、拒绝、safe 工具和重启恢复通过；完整 HITL 与长任务退出条件尚未满足 |
 | P4-04 | 桥接现有 Skills | skill runtime | 已完成 | 渐进加载且版本可追踪 |
 | P4-05 | 限定文件系统后端 | project scope/artifact | 已完成 | 不越过项目目录 |
 | P4-06 | 建立 Subagent 配置 | deep_agents/runtime_adapter.py | 已完成 | 仅一个同步 `code-review-researcher`；只读工具、模型/工具/委派次数和父 Turn 总时限明确 |
@@ -1270,9 +1270,9 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 - 没有形成第二套外层 Agent Loop。
 - 试点连续稳定后才能讨论其他模式。
 
-当前测试结果：DA-E1、DA-E2、DA-E3 已完成；真实默认模型完成/中断、受控同步子代理、本地事件和 LangSmith 父子 Trace 均通过。详细证据见本节后续 DA-E1～DA-E3 实施记录。
+当前测试结果：DA-E1、DA-E2、DA-E3 已完成；DA-E4 官方 HITL 与业务工具、DA-E5 Checkpointer 前置能力进入真实验收。详细证据见后续实施记录，历史测试数量不作为最新代码的验收结果。
 当前阻塞：DA-E3 无阻塞；阶段 4 整体仍受主环境依赖协调、DA-E4 治理工具/HITL、DA-E5 Checkpoint、DA-E6 记忆对账和 DA-E7 灰度门槛约束。
-回滚点：关闭 DEEP_AGENTS_CODE_REVIEW_ENABLED。
+回滚点：关闭 `DEEP_AGENTS__ENABLED`；仅关闭 `DEEP_AGENTS__GOVERNED_TOOLS_ENABLED` 会关闭业务工具入口。正式环境全部默认关闭。
 最近提交：无。
 
 ### 14.8 阶段 5：Coordinator/Worker 与 Subagents 对齐
@@ -1516,8 +1516,8 @@ API / Session / TestRun 控制平面（系统保留）
 | DA-E1 边界适配 | 已完成 | 建立 `DeepAgentRuntimeAdapter`、消息/状态/Event 映射；仅 code_review Flag；用官方 HarnessProfile 隐藏内置文件/execute/task 工具 | Flag 关闭完全走旧链；开启后没有第二个 `AgentLoop`；真实 Deep Agents 不暴露未治理的默认工具 |
 | DA-E2 只读文件与 Skills | 已完成 | 完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面、SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射，以及敏感文件/路径、符号链接、junction、循环、超大文件、二进制、并发读取和旧实现结果对账 | C4 已证明仅绑定 `read_file/ls/glob/grep`；官方 Agent 实链路、Windows reparse point 越界和符号链接循环均通过；主环境默认仍关闭 Deep Agents |
 | DA-E3 认知计划与同步子代理 | 已完成 | 启用可选 `write_todos`、映射现有 plan event；接入一个受控同步 `code-review-researcher`；补齐单轮取消/超时、本地 typed events 和 LangSmith 父子 Trace | todo 可视化、父子 Trace、一次委派、无嵌套 task、模型/工具调用限额、真实完成/中断均通过；`worker_dispatches=[]`，不进入 Coordinator 双跑 |
-| DA-E4 治理工具和 HITL | 未进行 | 所有项目业务工具经 `LangChainToolAdapter -> ToolRuntimeService`；interrupt 映射现有审批 | allow/ask/deny、scope hash、批准后参数变化、拒绝重试、批量审批顺序、恢复测试通过 |
-| DA-E5 Checkpoint 与长任务 | 未进行 | PostgreSQL checkpointer/store；映射 session/turn/test_run/item/attempt/stage | 进程重启、跨进程接管、数小时任务、重复投递、取消、超时、终态不可重领全部通过 |
+| DA-E4 治理工具和 HITL | 进行中 | Registry → LangChainToolAdapter → Permission/Safety/ApprovalScope → ToolRuntime；官方 `interrupt_on/Command(resume=...)` 负责暂停恢复；Approval API 负责裁决，保留真实工具历史和顺序 | 已完成真实 safe、批准、拒绝、等待审批时服务重启恢复、同 Job 推进、Artifact 与 Trace 对账；官方 Harness 批量反序批准/拒绝及 scope 变化回归通过；尚未提供 edit API，也未完成完整性能/灰度，阶段不关闭 |
+| DA-E5 Checkpoint 与长任务 | 进行中 | 为满足官方 HITL 的前置依赖，先接入官方 PostgreSQL Checkpointer，独立 schema、受限连接池；thread_id 使用原 turn_id | 等待审批时重启后的批准/拒绝已实测；仍须完成执行中崩溃、跨 Worker 租约、TestRun/Item/Attempt/Stage 映射、数小时性能、重复投递与副作用幂等、取消恢复和终态不可重领；不能用本批审批重启测试代替整个阶段验收 |
 | DA-E6 上下文与记忆 | 未进行 | 对账内置 summarization/offloading 与现有 Compaction/Memory；选定唯一所有者 | 不双重摘要；原始证据可追溯；token/延迟/质量不低于基线；敏感数据不进入虚拟文件或 Trace |
 | DA-E7 灰度替换 | 未进行 | code_review 5%→25%→50%→100%，稳定后再评估其他模式 | 成功率、P95、token、工具错误、恢复成功率、人工介入率满足门槛；一键回旧 Harness |
 
@@ -1527,7 +1527,7 @@ API / Session / TestRun 控制平面（系统保留）
 
 预期收益是减少 Agent Harness 重复实现，同时利用 Deep Agents 的规划、上下文卸载、Skills、临时子代理和 LangSmith 原生 Trace；代价是需要一层明确的 Runtime/Tool/Checkpoint/Event Adapter。该适配层不是额外业务框架，而是防止 Deep Agents 的通用状态与本项目业务事实混在一起的必要边界。
 
-当前状态：考核已完成，DA-E1～DA-E3 已完成；DA-E4～DA-E7 尚未开始。C4 已证明只读/Skills、todo、受控同步认知子代理、真实取消和 LangSmith 父子 Trace 可运行。治理工具、长任务 Checkpoint、记忆对账和灰度替换门槛仍未通过，因此不得用于正式长任务。
+当前状态：考核已完成，DA-E1～DA-E3 已完成；DA-E4 与 DA-E5 前置能力进行中，DA-E6/DA-E7 未进行。治理工具与审批重启链路已有真实证据，但完整长任务、记忆对账和灰度门槛未通过，因此不得据此宣称正式数小时 TestRun 已迁移到 Deep Agents。
 
 ### DA-E1 边界适配实施记录（2026-09-09）
 
@@ -1615,6 +1615,37 @@ API / Session / TestRun 控制平面（系统保留）
 | 已知限制 | 同步认知子代理是父 Turn 内的临时执行，不具备独立持久化、重试或恢复；当前取消只能终止进程内活动 Turn。进程崩溃/重启、跨 Worker 接管和数小时 Stage 仍需 DA-E5 PostgreSQL Checkpointer/租约对齐；模型 SDK 若把不可取消同步工作放在线程中，Task 取消不能强杀线程 |
 | 回滚验证 | `DEEP_AGENTS__ENABLED=false` 继续走旧 Runtime；取消/超时注册只包围 Deep Agents 子任务，不改变 legacy `AgentLoop`；两套全量测试通过 |
 | 下一步 | 进入 DA-E4：所有业务工具必须通过 `LangChainToolAdapter -> ToolRuntimeService`，并把 Deep Agents interrupt/HITL 映射到现有 Approval Store、scope hash 和二次安全校验；不得直接把现有 Registry 工具裸传给 Deep Agents |
+
+### DA-E4 官方 HITL 与 DA-E5 Checkpointer 前置实施记录（2026-09-10）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 当前状态 | 进行中；主环境未升级依赖，开关默认关闭；本批仅 C4 实施与验收 |
+| 依据来源 → 采用做法 | 本地 `DeepAgents/deepagents_human_in_the_loop.md` 与 [官方 HITL 文档](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) → 使用 `interrupt_on`、条件 `when`、同 thread_id 的 `Command(resume=...)`；本地 ToolRuntime/Permission/ApprovalScope → 保留业务裁决与执行所有权 |
+| 顺序调整 | DA-E4 官方 HITL 必须依赖 Checkpointer，因此提前实施 DA-E5 的 PostgreSQL 前置能力；没有提前宣称执行中恢复、Worker 接管或数小时任务已完成 |
+| 删除过渡实现 | 已移除本轮未提交的 `DeepAgentApprovalRequired` 自定义异常及手工重建单个 assistant tool_call 的逻辑；该逻辑曾导致 LangSmith 子 Run 错误与工具历史丢失风险。最终暂停/恢复归官方 Middleware 管理 |
+| 治理边界 | 所有业务工具由受控 StructuredTool 调用治理服务；可见工具面由 Registry/Agent/Capability/Permission 决定，模型不能直接拿到 handler；HITL 谓词不执行业务或写数据库；批准后再次核对 Permission、Safety 与 scope hash |
+| 共享实现 | 旧工具执行器的参数校验提取为 `tool_input_validation.py`，旧路径与 Deep Agents 共用，保留原邮箱与数组边界验证；避免增加第二套校验规则 |
+| HITL 语义 | 保留完整官方 messages/tool_call_id/interrupt_id；批量审批按官方 action_requests 顺序投递，逐条裁决全部到齐前不执行工具；现有 API 只支持 approved/denied，因此只公开 approve/reject，edit 不伪装为已接入 |
+| ToolJob 修复 | 历史失败会话 `621e54e6-29a8-406a-9b91-48090904d85b` 曾出现旧 Job waiting、新 Job completed。根因是审批恢复未传递 tool_job_id；修复后同 Job 原位推进，拒绝推进 denied。保留历史失败证据，不修改旧失败记录冒充通过 |
+| 幂等复现与修复 | Store 对相同已决审批返回原记录，但 SessionService 又把 completed Session 改为 running；新增回归实际得到 `completed != running`。现已在官方 HITL 消费完成的审批入口直接返回原裁决并记录 replay 事件，避免再次调度 |
+| Windows 兼容 | [psycopg 官方说明](https://www.psycopg.org/psycopg3/docs/advanced/async.html) 与安装源码确认 AsyncConnection 不支持 Proactor；不改变系统事件循环，采用官方同步 PostgresSaver + 与现有 PostgresSessionStore 一致的 `asyncio.to_thread` 薄桥。SQL、序列化、checkpoint 版本均沿用官方实现 |
+| 依赖兼容 | 官方 PyPI dry-run：只新增 `langgraph-checkpoint-postgres==3.1.2`、`psycopg-pool==3.3.1`，不升级 C4 其余包；安装后 `pip check` 为 No broken requirements found。可复现候选组合见 `Agent_Server/docs/deepagents-c4-checkpoint-requirements-20260910.txt` |
+| 配置 | `.env` 与 `.env.example` 已同步 `GOVERNED_TOOLS_ENABLED=false`、`CHECKPOINT_ENABLED=false`、`CHECKPOINT_SCHEMA=deepagents_checkpoint`、`CHECKPOINT_POOL_SIZE=4`；均使用 `DEEP_AGENTS__` 前缀。数据库凭据复用 `DATABASE__POSTGRES_*`，未新增/输出明文 Key |
+| 真实批准恢复 | `9868bfb9-6c0e-4d65-b140-7585fae14e4c`：数据库模型生成 CLI 工具调用 → waiting_approval → 终止 Uvicorn 进程 → 重启 → 批准 → completed；同 Job `ab6ee086-1b21-4b84-aadf-4bff51d869af`，stdout=`DA_E4_DURABLE_HTTP_OK`，Artifact=1，事件=26，关联事件无重复 |
+| 真实拒绝恢复 | `e563ec13-5ea3-4a98-ba37-3f2abd95ee57`：等待审批后终止/重启服务 → 拒绝 → completed；Job `325160d2-dc1d-4c49-b843-f538305114a8` 为 denied、started_at=null，Artifact=0，事件=23 |
+| 真实 safe 工具 | `0ea013f1-31c9-44d2-9914-c0c5a807db81`：默认模型调用 session-history，无审批，Job completed，真实 tool 消息写入会话 |
+| LangSmith 回读 | 等待 run `01a08a3f-57eb-7891-acc7-a8375194423c`：9 个 Run、0 error、无执行工具节点；恢复 run `01a08a3f-9621-7be3-90bc-a84f95dd4cb2`：15 个 Run、0 error、outcome=completed，包含 cli-executor 与 `enterprise_ai_qa_agent.node.tool.cli-executor`。进程强制退出可能丢失 SDK 缓冲中的尾部 metadata；本次等待根 run outcome 未回读到，不能宣称外部 Trace 与 PostgreSQL 同等持久 |
+| 定向验证 | 官方 Harness + Observability + Session 契约 `69 passed`；覆盖批量反序裁决、拒绝不执行、scope 改变拒绝、工具调用关联以及已决审批不重开会话 |
+| 最终全量 | 在 Agent_Server 下运行 `python -m pytest -q`：主环境 `803 passed, 33 skipped, 1 warning in 46.87s`；C4 `823 passed, 13 skipped, 1 warning in 33.65s`。跳过项包括默认不运行的外部/容量验收，以及主环境未安装 Deep Agents 的官方 Harness 用例；各有 1 条既有第三方弃用 warning，无测试失败 |
+| 编译与入口 | 主环境 `python -m compileall -q src` exit=0；两环境 `import src.main` 分别返回 MAIN_IMPORT_OK/C4_IMPORT_OK；C4 `pip check` 通过。主共享环境此前 8 条附加工具依赖冲突未在本批修改 |
+| 最终真实批准/拒绝 | 默认模型实际解析为 `agnes-2.5-flash`。批准会话 `dbd21f47-fd72-49b4-8dfb-5f2dff41833e`、拒绝会话 `a7250851-2b78-4463-844e-d11175725e27`：重启恢复、同 Job 推进、Artifact 数量、Snapshot 阶段与重复审批保持 completed 均通过 |
+| 真实验收失败记录 | 最终三项首次组合运行结果 `2 passed, 1 failed in 216.60s`；safe 会话 `83baa2d0-e717-4e59-907f-236351790f93` 实际收到两个不同 call_id，参数分别为 list_questions/history_summary，两个 Job 均 completed。失败来自要求真实模型“必须恰好调用一次”的额外断言，不是同一个 call_id 重复执行；用例改为核对已暴露工具、每个 call_id 唯一、执行成功且结果回填，保留原失败证据 |
+| safe 最终复验 | 按上述契约调整后单独重跑 safe 用例：`1 passed, 2 deselected in 23.33s`；会话 `71128937-dd24-4c75-bd6c-0a40a8ffef50`，Job `4ebaf3e9-6a6b-4b9c-8476-de436c247517` completed；无需审批、tool 消息入库通过。批准/拒绝沿用同一最终运行版本已通过的结果，没有把分次复验伪记成整组重跑 |
+| 前端兼容 | `agent_web` 下运行 `npm test`：2 个测试文件、33 tests passed；本批没有改动 API DTO、既有 Event 字段、Flow 展示代码或前端依赖 |
+| 实测命令 | 在 Agent_Server 下用 C4 Python：`$env:RUN_LIVE_DEEP_AGENTS_HITL='1'` 后执行 `python -m pytest tests/test_live_deep_agents_hitl.py -q -s`；默认禁用，开启后调用数据库配置的模型并保留标记验收会话与证据，不删除业务数据 |
+| 未完成与风险 | DA-E4 edit API/完整批量 HTTP 验收未完成；DA-E5 尚无执行中崩溃后的副作用 exactly-once 保证、跨 Worker 锁/租约、任意取消恢复、长时容量与保留策略。当前 PostgresSaver 的数据库 IO 在线程中，取消父任务不能强杀已开始的数据库线程。原自定义异常产生的旧试点 pending turn 没有官方 checkpoint，不能按新协议恢复，需新建试点回合 |
+| 下一步 | 补全本批最终回归与真实验收记录并提交；继续 DA-E5 执行态/业务态对账、租约与幂等，再处理完整 HITL 与 DA-E6/DA-E7；各阶段按独立退出条件验收 |
 
 ## 15. 每次实施后的记录模板
 
