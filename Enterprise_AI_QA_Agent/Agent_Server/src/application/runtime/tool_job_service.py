@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.runtime.tool_job_store import ToolJobStore
 from src.schemas.agent import ToolDescriptor
@@ -42,10 +43,14 @@ class ToolJobService:
         input_payload: dict[str, Any],
         metadata: dict[str, Any] | None = None,
         attempt: int = 1,
+        once_per_call: bool = False,
     ) -> ToolJobRecord:
         now = datetime.utcnow()
         job = ToolJobRecord(
-            id=str(uuid4()),
+            id=(
+                str(uuid5(NAMESPACE_URL, json.dumps(["deepagents-tool", session_id, turn_id, call_id])))
+                if once_per_call else str(uuid4())
+            ),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -59,6 +64,8 @@ class ToolJobService:
             updated_at=now,
             metadata=metadata or {},
         )
+        if once_per_call:
+            return await self._store.create_job_if_absent(job)
         return await self._store.save_job(job)
 
     async def mark_running(self, job: ToolJobRecord) -> ToolJobRecord:
@@ -148,6 +155,10 @@ class ToolJobService:
         job.completed_at = datetime.utcnow()
         job.updated_at = job.completed_at
         return await self._store.save_job(job)
+
+    async def claim_execution(self, job_id: str) -> ToolJobRecord | None:
+        """Use the Store's atomic queued/waiting-to-running transition."""
+        return await self._store.claim_job_execution(job_id)
 
     async def cancel_job(self, job_id: str, reason: str | None = None) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.cancelled, summary=reason or "Cancelled by operator.")

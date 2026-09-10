@@ -641,43 +641,23 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
             "id": "second-call", "type": "tool_call",
         })
 
-    class ToolRuntimeStub:
-        def __init__(self):
-            self.calls = []
-
-        async def execute(self, tool, call, context):
-            self.calls.append(
-                (tool.key, call.id, dict(call.arguments), context.tool_job_id)
-            )
-            return ToolExecutionRecord(
-                call_id=call.id,
-                tool_key=tool.key,
-                tool_name=tool.name,
-                status="completed",
-                summary="approved execution",
-                trace_id=context.trace_id,
-                input=call.arguments,
-                output={"stdout": "governed"},
-            )
-
-    class ToolJobServiceStub:
-        def __init__(self):
-            self.statuses = []
-
-        async def create_job(self, **_kwargs):
-            return SimpleNamespace(id="approval-job")
-
-        async def mark_waiting_approval(self, job_id, summary):
-            self.statuses.append((job_id, "waiting_approval", summary))
-
-        async def mark_denied(self, job_id, summary, output_payload):
-            self.statuses.append((job_id, "denied", summary))
-
     async def resolve_model(_key):
         return model
 
-    tool_runtime = ToolRuntimeStub()
-    tool_jobs = ToolJobServiceStub()
+    from src.application.runtime.tool_job_service import ToolJobService
+    from src.runtime.tool_job_store import InMemoryToolJobStore
+
+    tool_jobs = ToolJobService(InMemoryToolJobStore())
+    tool_runtime = ToolRuntimeService(tool_job_service=tool_jobs)
+    tool_runtime.calls = []
+
+    async def execute_cli(arguments, context):
+        tool_runtime.calls.append(
+            ("cli-executor", context.call_id, dict(arguments), context.tool_job_id)
+        )
+        return {"status": "completed", "summary": "approved execution", "stdout": "governed"}
+
+    tool_runtime._handlers["cli-executor"] = execute_cli
     saver = InMemorySaver()
     runtime = RuntimeService(
         graph=None,
@@ -714,6 +694,7 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
     pending = await runtime.execute_turn(session, request)
     assert pending.snapshot.stage == "waiting_approval"
     assert tool_runtime.calls == []
+    approval_job_id = pending.approvals[0]["metadata"]["tool_job_id"]
 
     approval = dict(pending.approvals[0])
     approval["status"] = "denied" if decision == "denied" else "approved"
@@ -735,7 +716,7 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
     if decision in {"approved", "batch_mixed"}:
         assert len(tool_runtime.calls) == 1
         assert tool_runtime.calls[0][0:2] == ("cli-executor", "approval-call")
-        assert tool_runtime.calls[0][3] == "approval-job"
+        assert tool_runtime.calls[0][3] == approval_job_id
         assert resumed.state["tool_results"][-1]["status"] == "completed"
         assert [
             event.type for event in resumed.events
@@ -748,7 +729,7 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
     else:
         assert tool_runtime.calls == []
         assert resumed.state["tool_results"][-1]["status"] == "denied"
-        assert tool_jobs.statuses[-1][1] == "denied"
+        assert (await tool_jobs.get_job(approval_job_id)).status.value == "denied"
 
 
 def test_deep_agent_checkpoint_configuration_is_opt_in_and_schema_is_safe():

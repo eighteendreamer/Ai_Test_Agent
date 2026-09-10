@@ -10,6 +10,8 @@ from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatu
 class ToolJobStore(Protocol):
     async def initialize(self) -> None: ...
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord: ...
+    async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
+    async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
     async def get_job(self, job_id: str) -> ToolJobRecord | None: ...
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]: ...
     async def save_artifact(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord: ...
@@ -43,6 +45,23 @@ class InMemoryToolJobStore:
 
     async def get_job(self, job_id: str) -> ToolJobRecord | None:
         return self._jobs.get(job_id)
+
+    async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord:
+        async with self._lock:
+            stored = self._jobs.setdefault(job.id, job.model_copy(deep=True))
+            return stored.model_copy(deep=True)
+
+    async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.started_at is not None or job.status not in {
+                ToolJobStatus.queued, ToolJobStatus.waiting_approval,
+            }:
+                return None
+            now = datetime.utcnow()
+            job.status = ToolJobStatus.running
+            job.started_at = job.heartbeat_at = job.updated_at = now
+            return job.model_copy(deep=True)
 
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         values = list(self._jobs.values())

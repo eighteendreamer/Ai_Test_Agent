@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -22,6 +22,52 @@ class PostgresToolJobStore:
 
     async def get_job(self, job_id: str) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._get_job_sync, job_id)
+
+    async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord:
+        return await asyncio.to_thread(self._create_job_if_absent_sync, job)
+
+    async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None:
+        return await asyncio.to_thread(self._claim_job_execution_sync, job_id)
+
+    def _create_job_if_absent_sync(self, job: ToolJobRecord) -> ToolJobRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    INSERT INTO {self._settings.database.postgres_tool_job_table} (
+                        id, session_id, turn_id, trace_id, call_id, tool_key, tool_name,
+                        status, input_payload, metadata, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        job.id, job.session_id, job.turn_id, job.trace_id, job.call_id,
+                        job.tool_key, job.tool_name, job.status.value,
+                        json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
+                        json.dumps(make_json_safe(job.metadata), ensure_ascii=False),
+                        job.created_at, job.updated_at,
+                    ),
+                )
+                cur.execute(
+                    f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id = %s",
+                    (job.id,),
+                )
+                return _job_from_row(cur.fetchone())
+
+    def _claim_job_execution_sync(self, job_id: str) -> ToolJobRecord | None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_tool_job_table}
+                    SET status = 'running', started_at = now(), heartbeat_at = now(), updated_at = now()
+                    WHERE id = %s AND started_at IS NULL AND status IN ('queued', 'waiting_approval')
+                    RETURNING *
+                    """,
+                    (job_id,),
+                )
+                row = cur.fetchone()
+        return _job_from_row(row) if row else None
 
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         return await asyncio.to_thread(self._list_jobs_sync, session_id)
@@ -313,23 +359,22 @@ class PostgresToolJobStore:
         return [_artifact_from_row(row) for row in rows]
 
     def _mark_stale_running_jobs_sync(self, timeout_seconds: int) -> list[ToolJobRecord]:
-        threshold = datetime.utcnow() - timedelta(seconds=timeout_seconds)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
                     UPDATE {self._settings.database.postgres_tool_job_table}
-                    SET status = %s,
-                        updated_at = %s
+                        SET status = %s,
+                        updated_at = now()
                     WHERE status = %s
-                      AND COALESCE(heartbeat_at, updated_at) < %s
+                      AND COALESCE(heartbeat_at, updated_at)
+                          < now() - (%s * INTERVAL '1 second')
                     RETURNING *
                     """,
                     (
                         ToolJobStatus.resume_requested.value,
-                        datetime.utcnow(),
                         ToolJobStatus.running.value,
-                        threshold,
+                        timeout_seconds,
                     ),
                 )
                 rows = cur.fetchall() or []

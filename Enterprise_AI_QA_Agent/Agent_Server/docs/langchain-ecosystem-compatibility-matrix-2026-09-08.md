@@ -133,3 +133,12 @@
 - Windows psycopg 异步连接不支持 Proactor，实际使用官方同步 PostgresSaver 与项目既有线程 IO 模式；不改全局事件循环，不重写 checkpoint SQL 或序列化。
 - 当前全量：主环境 `803 passed, 33 skipped, 1 warning in 46.87s`；C4 `823 passed, 13 skipped, 1 warning in 33.65s`；两环境入口导入与编译通过。
 - 真实服务批准/拒绝验收都包含“等待审批后终止进程、重启再裁决”，同一个 ToolJob 到 completed/denied；快照、Artifact、模型结果和 Trace 已回读。执行中的副作用幂等、跨 Worker 与长时性能仍未验收。
+
+## 8. 2026-09-10 DA-E5 工具执行持久化增量
+
+- 未升级任何依赖、未修改数据库 schema、未新增环境变量；主环境依赖组合保持不变，C4 `pip check` 继续通过。
+- Deep Agents 治理路径为每个 `session_id + turn_id + call_id` 建立稳定 UUIDv5 ToolJob；PostgreSQL 使用 insert-if-absent 和条件 `UPDATE ... RETURNING` 原子领取。legacy 路径默认行为不变。
+- completed/partial/failed/denied/cancelled 终态结果直接从 PostgreSQL 回放；running/resume_requested 等无终态证据的执行不自动重跑，必须先对账外部副作用。
+- Windows 双进程真实 PostgreSQL 争抢测试通过：同一 Job 只有一个进程领取成功；进程退出后的未知结果转为 resume_requested 且不可再次领取。超时阈值改用数据库 `now()` 计算，避免无时区应用时间与 TIMESTAMPTZ 的解释偏差。
+- 最新全量（最终代码状态重跑）：主环境 `811 passed, 34 skipped, 1 warning in 39.46s`；C4 `831 passed, 14 skipped, 1 warning in 31.60s`；前端 `33 passed`；两环境编译和 `src.main` 入口导入通过；C4 启用 Deep Agents/PostgreSQL Checkpointer 的真实 health 启动检查通过。
+- 本批外部默认模型/HITL HTTP 复验因执行许可被安全审查拒绝，未执行且不沿用上一批结果冒充本批证据；DA-E5 仍需 Session/turn 跨 Worker 所有权、任意取消恢复、Stage 级对账以及 4/24 小时长时验证。

@@ -12,8 +12,11 @@ from uuid import uuid4
 import pytest
 
 from src.application.test_runs.run_store import PostgresTestRunStore
+from src.application.runtime.tool_job_service import ToolJobService
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.registry.tools import ToolRegistry
+from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.schemas.run_management import (
     TestRunItemRecord as _RunItemRecord,
@@ -81,6 +84,18 @@ def _create_claim_tables(settings: Settings) -> None:
 
 def _worker_settings(overrides: dict[str, object]) -> Settings:
     return _settings_with_database_overrides(**overrides)
+
+
+def _claim_tool_job_in_process(
+    overrides: dict[str, object], job_id: str, result_queue
+) -> None:
+    """Claim through an independent interpreter and PostgreSQL connection."""
+    try:
+        store = PostgresToolJobStore(_worker_settings(overrides))
+        claimed = asyncio.run(store.claim_job_execution(job_id))
+        result_queue.put({"claimed": claimed is not None})
+    except Exception as exc:
+        result_queue.put({"error": f"{type(exc).__name__}: {exc}"})
 
 
 def _claim_checkpoint_then_exit(
@@ -349,6 +364,109 @@ async def test_live_postgres_process_worker_takeover_restores_checkpoint():
         if result_queue is not None:
             result_queue.close()
         _drop_tables(settings, [result_table, attempt_table, item_table, run_table])
+
+
+@live_postgres
+@pytest.mark.asyncio
+async def test_live_postgres_tool_job_has_one_process_owner_and_terminal_is_not_reclaimed():
+    suffix = uuid4().hex[:10]
+    job_table = f"live_tool_job_{suffix}"
+    artifact_table = f"live_tool_artifact_{suffix}"
+    settings_overrides = {
+        "postgres_pool_size": 4,
+        "postgres_tool_job_table": job_table,
+        "postgres_tool_artifact_table": artifact_table,
+    }
+    settings = _settings_with_database_overrides(**settings_overrides)
+    store = PostgresToolJobStore(settings)
+    jobs = ToolJobService(store, heartbeat_timeout_seconds=0)
+    descriptor = ToolRegistry().get("knowledge-rag")
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue()
+    processes = []
+
+    try:
+        await jobs.initialize()
+        job = await jobs.create_job(
+            tool=descriptor,
+            call_id=f"process-call-{suffix}",
+            session_id=f"process-session-{suffix}",
+            turn_id=f"process-turn-{suffix}",
+            trace_id=f"process-trace-{suffix}",
+            input_payload={"query": "durable evidence"},
+            once_per_call=True,
+        )
+        for worker_number in range(2):
+            process = context.Process(
+                target=_claim_tool_job_in_process,
+                args=(settings_overrides, job.id, result_queue),
+                name=f"live-tool-worker-{worker_number}",
+            )
+            processes.append(process)
+            process.start()
+        for process in processes:
+            process.join(timeout=30)
+            assert not process.is_alive()
+            assert process.exitcode == 0
+        outcomes = []
+        for _ in processes:
+            try:
+                outcomes.append(result_queue.get(timeout=5))
+            except queue_module.Empty as exc:
+                raise AssertionError("tool worker returned no claim result") from exc
+        assert all("error" not in item for item in outcomes), outcomes
+        assert sorted(item["claimed"] for item in outcomes) == [False, True]
+
+        await jobs.mark_completed(
+            job.id,
+            summary="persisted process result",
+            output_payload={"status": "completed", "value": 42},
+        )
+        duplicate = await jobs.create_job(
+            tool=descriptor,
+            call_id=f"process-call-{suffix}",
+            session_id=f"process-session-{suffix}",
+            turn_id=f"process-turn-{suffix}",
+            trace_id=f"process-trace-{suffix}",
+            input_payload={"query": "durable evidence"},
+            once_per_call=True,
+        )
+        assert duplicate.id == job.id
+        assert duplicate.status.value == "completed"
+        assert duplicate.output_payload == {"status": "completed", "value": 42}
+        assert await jobs.claim_execution(job.id) is None
+
+        unknown = await jobs.create_job(
+            tool=descriptor,
+            call_id=f"unknown-call-{suffix}",
+            session_id=f"process-session-{suffix}",
+            turn_id=f"process-turn-{suffix}",
+            trace_id=f"process-trace-{suffix}",
+            input_payload={"query": "unknown side effect"},
+            once_per_call=True,
+        )
+        claimant = context.Process(
+            target=_claim_tool_job_in_process,
+            args=(settings_overrides, unknown.id, result_queue),
+            name="live-tool-crash-owner",
+        )
+        processes.append(claimant)
+        claimant.start()
+        claimant.join(timeout=30)
+        assert not claimant.is_alive()
+        assert claimant.exitcode == 0
+        assert result_queue.get(timeout=5) == {"claimed": True}
+        stale = await jobs.initialize()
+        assert [item.id for item in stale] == [unknown.id]
+        assert (await jobs.get_job(unknown.id)).status.value == "resume_requested"
+        assert await jobs.claim_execution(unknown.id) is None
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+        result_queue.close()
+        _drop_tables(settings, [artifact_table, job_table])
 
 
 @live_postgres

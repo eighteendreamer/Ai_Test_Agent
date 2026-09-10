@@ -1124,7 +1124,7 @@ class RuntimeService:
                 state, event_type, "deepagents.tool_governance", result.record.summary,
                 tool_key=result.record.tool_key, call_id=call_id,
                 tool_job_id=result.record.job_id, approval_id=result.record.approval_id,
-                status=result.record.status, harness="deepagents",
+                status=result.record.status, replayed=result.replayed, harness="deepagents",
             )
             return json.dumps(make_json_safe({
                 "status": result.record.status, "summary": result.record.summary,

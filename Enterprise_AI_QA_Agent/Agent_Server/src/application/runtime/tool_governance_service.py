@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 from src.application.permissions.permission_service import (
@@ -20,6 +21,10 @@ from src.registry.tools import ToolRegistry
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.intent import ToolSafetyDecision
+from src.schemas.tool_job import ToolJobStatus
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,7 @@ class GovernedToolCallContext:
 class GovernedToolCallResult:
     record: ToolExecutionRecord
     approval: dict[str, Any] | None = None
+    replayed: bool = False
 
 
 class ToolGovernanceService:
@@ -71,6 +77,7 @@ class ToolGovernanceService:
         approval: dict[str, Any] | None = None,
         prepare_approval: bool = False,
     ) -> GovernedToolCallResult:
+        original_arguments = dict(call.arguments)
         assessment = self._assess(call, context)
         if isinstance(assessment, GovernedToolCallResult):
             return assessment
@@ -114,6 +121,52 @@ class ToolGovernanceService:
                 summary="Concrete tool call requires an approved HITL decision.",
                 output={"error": "approval_required"},
             )
+        if self._tool_job_service is not None:
+            if context.execution.tool_job_id:
+                job = await self._tool_job_service.get_job(context.execution.tool_job_id)
+                if job is None:
+                    raise RuntimeError("Persisted approval ToolJob is missing; reconcile before recovery.")
+            else:
+                job = await self._tool_job_service.create_job(
+                    tool=tool, call_id=call.id, session_id=context.execution.session_id,
+                    turn_id=context.execution.turn_id, trace_id=context.execution.trace_id,
+                    input_payload=original_arguments, once_per_call=True,
+                )
+            if (
+                job.session_id != context.execution.session_id
+                or job.turn_id != context.execution.turn_id
+                or job.call_id != call.id or job.tool_key != call.name
+                or job.input_payload != original_arguments
+            ):
+                raise RuntimeError("ToolJob identity or arguments changed during checkpoint recovery.")
+            context.execution.tool_job_id = job.id
+            claimed = await self._tool_job_service.claim_execution(job.id)
+            if claimed is None:
+                latest = await self._tool_job_service.get_job(job.id)
+                if latest is not None and latest.status in {
+                    ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                    ToolJobStatus.denied, ToolJobStatus.cancelled,
+                }:
+                    logger.info(
+                        "deep_agent_tool_result_replayed",
+                        extra={"tool_job_id": job.id, "call_id": call.id},
+                    )
+                    return GovernedToolCallResult(
+                        record=await self._tool_runtime_service.record_from_job(latest), replayed=True,
+                    )
+                logger.warning(
+                    "deep_agent_tool_execution_requires_reconciliation",
+                    extra={
+                        "tool_job_id": job.id,
+                        "call_id": call.id,
+                        "status": str(latest.status) if latest else "missing",
+                    },
+                )
+                raise RuntimeError(
+                    f"ToolJob {job.id} has started without a terminal result; "
+                    "the prior execution may still be active or have an unknown outcome. "
+                    "Reconcile its evidence before any retry."
+                )
         return GovernedToolCallResult(
             record=await self._tool_runtime_service.execute(
                 tool=tool, call=call, context=context.execution,
@@ -260,6 +313,7 @@ class ToolGovernanceService:
                 turn_id=context.execution.turn_id,
                 trace_id=context.execution.trace_id,
                 input_payload=call.arguments,
+                once_per_call=True,
                 metadata={
                     "phase": "approval_pending",
                     "selected_agent_key": context.execution.selected_agent_key,
@@ -273,7 +327,13 @@ class ToolGovernanceService:
                 },
             )
             approval_job_id = job.id
-            await self._tool_job_service.mark_waiting_approval(job.id, summary=reason)
+            if job.status == ToolJobStatus.queued:
+                await self._tool_job_service.mark_waiting_approval(job.id, summary=reason)
+            elif job.status != ToolJobStatus.waiting_approval:
+                raise RuntimeError(
+                    f"ToolJob {job.id} is already {job.status.value}; "
+                    "a new approval cannot replace persisted execution state."
+                )
 
         approval_mode_key = context.active_mode_key
         if tool.key == "security-tool-bootstrap":

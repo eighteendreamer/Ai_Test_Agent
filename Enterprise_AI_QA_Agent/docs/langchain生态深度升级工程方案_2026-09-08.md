@@ -1251,7 +1251,7 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 | P4-05 | 限定文件系统后端 | project scope/artifact | 已完成 | 不越过项目目录 |
 | P4-06 | 建立 Subagent 配置 | deep_agents/runtime_adapter.py | 已完成 | 仅一个同步 `code-review-researcher`；只读工具、模型/工具/委派次数和父 Turn 总时限明确 |
 | P4-07 | 结果归一化 | runtime_adapter.py / runtime_service.py | 已完成 | 回到 AgentGraphState/RuntimeTurnResult |
-| P4-08 | 接入本地 Event 与 LangSmith | observability/flow | 已完成（DA-E3 范围） | 本地 start/completed 与 LangSmith root/deep-agent/task/subagent 父子树真实对账通过；DA-E4 业务工具 span 后续补充 |
+| P4-08 | 接入本地 Event 与 LangSmith | observability/flow | 已完成（DA-E4 范围） | 本地事件与 LangSmith root/deep-agent/task/subagent/业务工具父子树已对账；回放事件额外标记 replayed |
 | P4-09 | 建立新旧 code_review 对账 | tests/fixtures | 未进行 | 质量、稳定性、耗时有比较 |
 
 测试计划：
@@ -1270,8 +1270,8 @@ P3-08 兼容性评估（2026-09-09）：`SafetyGate`、`PermissionService`、App
 - 没有形成第二套外层 Agent Loop。
 - 试点连续稳定后才能讨论其他模式。
 
-当前测试结果：DA-E1、DA-E2、DA-E3 已完成；DA-E4 官方 HITL 与业务工具、DA-E5 Checkpointer 前置能力进入真实验收。详细证据见后续实施记录，历史测试数量不作为最新代码的验收结果。
-当前阻塞：DA-E3 无阻塞；阶段 4 整体仍受主环境依赖协调、DA-E4 治理工具/HITL、DA-E5 Checkpoint、DA-E6 记忆对账和 DA-E7 灰度门槛约束。
+当前测试结果：DA-E1、DA-E2、DA-E3 已完成；DA-E4 官方 HITL 与业务工具已完成批准/拒绝/重启范围验收；DA-E5 已完成 Checkpointer 前置、稳定工具身份、原子领取和终态回放，完整执行中恢复仍在进行。详细证据见后续实施记录，历史测试数量不作为最新代码的验收结果。
+当前阻塞：DA-E3 无阻塞；阶段 4 整体仍受主环境依赖协调、DA-E4 完整 HITL 退出项、DA-E5 Session/turn 所有权与执行中恢复、DA-E6 记忆对账和 DA-E7 灰度门槛约束。
 回滚点：关闭 `DEEP_AGENTS__ENABLED`；仅关闭 `DEEP_AGENTS__GOVERNED_TOOLS_ENABLED` 会关闭业务工具入口。正式环境全部默认关闭。
 最近提交：无。
 
@@ -1646,6 +1646,41 @@ API / Session / TestRun 控制平面（系统保留）
 | 实测命令 | 在 Agent_Server 下用 C4 Python：`$env:RUN_LIVE_DEEP_AGENTS_HITL='1'` 后执行 `python -m pytest tests/test_live_deep_agents_hitl.py -q -s`；默认禁用，开启后调用数据库配置的模型并保留标记验收会话与证据，不删除业务数据 |
 | 未完成与风险 | DA-E4 edit API/完整批量 HTTP 验收未完成；DA-E5 尚无执行中崩溃后的副作用 exactly-once 保证、跨 Worker 锁/租约、任意取消恢复、长时容量与保留策略。当前 PostgresSaver 的数据库 IO 在线程中，取消父任务不能强杀已开始的数据库线程。原自定义异常产生的旧试点 pending turn 没有官方 checkpoint，不能按新协议恢复，需新建试点回合 |
 | 下一步 | 补全本批最终回归与真实验收记录并提交；继续 DA-E5 执行态/业务态对账、租约与幂等，再处理完整 HITL 与 DA-E6/DA-E7；各阶段按独立退出条件验收 |
+
+### DA-E5 工具执行身份、原子领取与终态回放实施记录（进行中，2026-09-10）
+
+> 重要边界：本批实现的是 Deep Agents 业务工具的“同一 checkpoint tool call 不重复执行”基础，不是通用 exactly-once，也不代表任意执行中任务已经可自动恢复。已经开始但没有终态证据的外部副作用必须进入人工或模式级对账，禁止仅凭心跳超时自动重跑。
+
+| 项目 | 状态与证据 |
+|---|---|
+| 当前状态 | 进行中；稳定 ToolJob 身份、PostgreSQL 原子领取、终态结果回放与未知结果阻断已完成代码和本地/真实 PostgreSQL 验证。真实外部模型 HTTP 复验本批未执行，DA-E5 整体不关闭 |
+| 本批目标 | 同一 `session_id + turn_id + call_id` 只创建一个业务 ToolJob；多 Worker 只能有一个执行所有者；已有 completed/partial/failed/denied/cancelled 结果直接回放；已领取但无终态结果时保留事实并要求对账，不生成第二个 Job、不自动重复外部副作用 |
+| 依据来源 → 采用做法 | 现有 `PostgresTestRunStore` 的原子领取/Attempt 不复用已完成条目规则 → ToolJob Store 增加数据库条件更新；本地 LangGraph Persistence 文档的 checkpoint/thread 恢复边界 → checkpoint 负责恢复图状态、ToolJob 继续作为业务执行事实；`Agent测试专项.html` 与 `Agent轨迹与协议鲁棒性.html` 的重复执行、幂等、状态迁移、超时恢复和终态不可重领要求 → 增加失败先行回归和双进程 PostgreSQL 验收 |
+| 实际修改文件 | `tool_job_store.py`、`postgres_tool_job_store.py`、`tool_job_service.py`、`tool_governance_service.py`、`tool_runtime_service.py`、`runtime_service.py`；测试为 `test_deep_agent_tool_replay.py`、`test_deep_agent_runtime_adapter.py`、`test_live_postgres_concurrency.py` |
+| 稳定身份 | `ToolJobService.create_job(..., once_per_call=True)` 使用 UUIDv5 从 `session_id/turn_id/call_id` 生成稳定 ID；`create_job_if_absent` 采用 insert-if-absent，恢复时不会覆盖原 Job。工具、会话、回合、call_id 或原始参数不一致会明确失败，防止 checkpoint 参数漂移 |
+| 原子领取 | InMemory Store 通过单锁比较并更新；PostgreSQL Store 使用单条 `UPDATE ... WHERE started_at IS NULL AND status IN ('queued','waiting_approval') RETURNING *`。只有返回记录的调用方可进入 handler；活动或未知执行态由治理层抛出带 Job 上下文的对账错误，不会进入 ToolRuntime 后再污染原所有者状态 |
+| 终态回放 | completed/partial/failed/denied/cancelled 均不可再次领取；ToolRuntime 从持久化 Job 投影同一 `ToolExecutionRecord`，复用既有模型输出压缩和 Artifact 下载链接生成。cancelled 因现有模型侧状态契约没有该枚举，投影为 denied，并在输出保留 `tool_job_status=cancelled` |
+| 审批状态保护 | 重复准备同一审批只允许 queued → waiting_approval 或保持 waiting_approval；已有 running/终态 Job 不得被新审批回退覆盖。批准恢复仍复用审批 metadata 中原 ToolJob，并在领取前再次核对权限、安全策略、scope hash 和原始参数 |
+| 可观测性 | `tool.execution_completed/failed/denied` 事件新增向后兼容的 `replayed` 布尔字段；回放记录 `deep_agent_tool_result_replayed`，活动/未知冲突记录 `deep_agent_tool_execution_requires_reconciliation`，包含 tool_job_id/call_id/status，不记录参数和密钥 |
+| PostgreSQL 时间根因修复 | 首次双进程验收中，两个进程的原子领取已满足一成一败，但 `heartbeat_timeout_seconds=0` 未把失联 running Job 标为 stale。根因是应用生成的无时区 `datetime.utcnow()` 与 `TIMESTAMPTZ` 比较受数据库会话时区解释影响；现改为数据库端 `now() - interval` 计算阈值，同时消除跨 Worker 时钟偏差 |
+| 失败先行证据 | 初始回归在相同 call_id 连续执行时实际调用 handler 2 次，并产生两个不同 Job；修复后同一用例及参数漂移、并发双主、未知结果、失败/拒绝/取消终态全部通过。PostgreSQL stale 首次失败保留为上述根因证据，修改数据库时钟计算后同一测试通过 |
+| 专项测试 | C4：`test_deep_agent_tool_replay.py + test_deep_agent_runtime_adapter.py` 最终 `48 passed in 8.63s`；受影响 ToolRuntime/心跳/Artifact/CaseExecution/Deep Agents 组合 `97 passed, 1 skipped, 1 warning in 9.16s` |
+| 跨进程 PostgreSQL | `RUN_LIVE_POSTGRES_TESTS=1` 下，两个独立 spawn Python 进程争抢同一 Job，结果严格为一个成功、一个失败；完成结果 insert-if-absent 后保持原终态且不可重领。另一个进程领取后退出，初始化将其标为 `resume_requested`，后续领取仍返回空；最终 `1 passed in 3.09s` |
+| 最终全量 | 最终代码状态重跑：C4 后端 `831 passed, 14 skipped, 1 warning in 31.60s`；主环境 `811 passed, 34 skipped, 1 warning in 39.46s`。主环境未安装 Deep Agents，相关官方 Harness 按设计跳过；两边只有既有第三方弃用 warning |
+| 系统可执行性 | `agent_web` 为 `33 passed`；主/C4 `compileall -q src` 均 exit=0，`from src.main import app` 分别返回 `MAIN_IMPORT_OK FastAPI`/`C4_IMPORT_OK FastAPI`；C4 `pip check` 为 No broken requirements found；动态隔离端口启用 Deep Agents + PostgreSQL Checkpointer 启动 Uvicorn，health 返回 status=ok、postgres_ok=true、session/tool_job backend=postgres |
+| 未执行与失败披露 | 本批尝试运行 `RUN_LIVE_DEEP_AGENTS_HITL=1` 的外部模型 HTTP 验收，但执行许可因会读取数据库默认 API Key、向外部 Provider 发送提示并执行真实 CLI 而被安全审查拒绝；没有绕过，也未把上一批真实模型证据记成本批结果。两个环境均未安装 Ruff，`python -m ruff` 返回 No module named ruff，未擅自增加开发依赖。一次误写的顶层 `import main` 失败；仓库事实表明唯一入口为 `src.main`，按方案规定命令重跑通过，未修改代码迁就错误命令 |
+| 回滚验证 | 新逻辑只在 Deep Agents 治理路径调用 `once_per_call=True`；legacy ToolJob 创建默认仍为随机 ID，现有执行语义不变。关闭 `DEEP_AGENTS__GOVERNED_TOOLS_ENABLED` 或 `DEEP_AGENTS__ENABLED` 即回旧路径；无数据库 schema 变更、无依赖升级、无新增环境变量 |
+| 已知限制 | ToolRuntime 当前先写 Job 终态再保存 Artifact，极端崩溃窗口可能得到终态但 Artifact 不完整；未知外部副作用没有通用自动对账器；`resume_requested` 只是需处理事实，不授权重跑；本批未实现 Session/turn 跨 Worker 独占、任意取消后 `resume(None)`、Stage 级恢复、4/24 小时性能与保留策略。LangSmith 仍只做可观测旁路，不是业务恢复事实源 |
+| 提交 | 本批完成最终验证后按项目规范生成单一逻辑本地提交，不推送；提交信息使用 `【feat】...` 格式 |
+| 下一步 | 先建立 durable pending-turn 与 Session/turn 跨 Worker 所有权，再把官方 graph checkpoint、数据库 Approval 和 ToolJob 事实做恢复前对账；随后针对可证明幂等/有完整证据的模式实现 Stage 续跑，对未知副作用维持人工对账。完成真实外部模型复验、取消恢复、容量/保留策略后，才评估 DA-E5 退出 |
+
+本批 Evidence → Finding → Path：
+
+| Evidence | Finding | Path |
+|---|---|---|
+| 相同 call_id 的失败先行用例产生两个 ToolJob、handler 调用 2 次 | checkpoint 重放与 ToolJob 随机 ID 之间缺少稳定执行身份 | call identity → insert-if-absent → atomic claim → execute once → terminal replay |
+| 双进程 PostgreSQL claim 结果一成一败 | 条件更新可以作为跨 Worker 单所有者边界 | two workers → one `UPDATE ... RETURNING` winner → loser reads active/terminal state |
+| 失联 Job 首次未被 timeout=0 标记，改用数据库 `now()` 后通过 | 应用无时区时间不能可靠比较跨进程 `TIMESTAMPTZ` | database clock → stale classification → resume_requested → reconciliation required |
 
 ## 15. 每次实施后的记录模板
 

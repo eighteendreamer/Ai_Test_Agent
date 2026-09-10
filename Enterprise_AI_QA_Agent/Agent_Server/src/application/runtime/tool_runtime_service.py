@@ -58,6 +58,7 @@ from src.modes.security_testing_mode.runtime import SecurityTestingModeRuntime
 from src.runtime.store import SessionStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.model_config import ModelConfigRecord
+from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.session_resource import SessionResourceKind
 
@@ -376,15 +377,25 @@ class ToolRuntimeService:
         if handler is None and is_mcp_tool_key(tool.key):
             handler = self._handlers.get("mcp-bridge")
         if handler is None:
+            summary = f"No runtime handler is registered for tool '{tool.key}'."
+            job_id = context.tool_job_id or None
+            if job_id is not None and self._tool_job_service is not None:
+                await self._tool_job_service.mark_failed(
+                    job_id,
+                    summary=summary,
+                    error_message=summary,
+                    output_payload={"error": summary},
+                )
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
                 tool_name=tool.name,
                 status="failed",
-                summary=f"No runtime handler is registered for tool '{tool.key}'.",
+                summary=summary,
                 trace_id=context.trace_id,
+                job_id=job_id,
                 input=call.arguments,
-                output={},
+                output={"error": summary},
                 started_at=started_at,
                 completed_at=datetime.utcnow(),
             )
@@ -521,27 +532,13 @@ class ToolRuntimeService:
                         output_payload=result,
                         artifacts=result.get("artifacts", []) if isinstance(result, dict) else [],
                     )
-            record_output = self._compact_tool_output_for_model(tool.key, result)
-            if job is not None and self._tool_job_service is not None and resolved_status in {
-                "completed",
-                "partial",
-                "failed",
-            }:
-                saved_artifacts = await self._tool_job_service.list_artifacts(tool_job_id=job.id)
-                downloads = [
-                    {
-                        "artifact_id": artifact.id,
-                        "label": artifact.label or artifact.path,
-                        "artifact_type": artifact.artifact_type,
-                        "url": f"/api/v1/sessions/{context.session_id}/artifacts/{artifact.id}/content",
-                    }
-                    for artifact in saved_artifacts
-                ]
-                if downloads:
-                    record_output["download_urls"] = downloads
-                    record_output["download_markdown"] = "\n".join(
-                        f"[点击下载 {item['label']}]({item['url']})" for item in downloads
-                    )
+            record_output = await self._record_output(
+                tool_key=tool.key,
+                result=result,
+                session_id=context.session_id,
+                job_id=job.id if job is not None else None,
+                include_artifacts=resolved_status in {"completed", "partial", "failed"},
+            )
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
@@ -557,10 +554,11 @@ class ToolRuntimeService:
             )
         except Exception as exc:
             sanitized_error, _ = self._output_safety_policy.sanitize_text(str(exc))
+            failure_summary = f"Tool '{tool.key}' failed: {sanitized_error}"
             if job is not None and self._tool_job_service is not None:
                 await self._tool_job_service.mark_failed(
                     job.id,
-                    summary=f"Tool '{tool.key}' failed.",
+                    summary=failure_summary,
                     error_message=sanitized_error,
                     output_payload={"error": sanitized_error},
                 )
@@ -569,7 +567,7 @@ class ToolRuntimeService:
                 tool_key=tool.key,
                 tool_name=tool.name,
                 status="failed",
-                summary=f"Tool '{tool.key}' failed: {sanitized_error}",
+                summary=failure_summary,
                 trace_id=context.trace_id,
                 job_id=job.id if job is not None else None,
                 input=call.arguments,
@@ -585,6 +583,74 @@ class ToolRuntimeService:
                     await job_heartbeat_task
                 except asyncio.CancelledError:
                     pass
+
+    async def record_from_job(self, job: ToolJobRecord) -> ToolExecutionRecord:
+        """Project a persisted terminal ToolJob into the model-facing execution contract."""
+        if job.status not in {
+            ToolJobStatus.completed,
+            ToolJobStatus.partial,
+            ToolJobStatus.failed,
+            ToolJobStatus.denied,
+            ToolJobStatus.cancelled,
+        }:
+            raise ValueError(f"ToolJob {job.id} is not terminal and cannot be replayed.")
+        status = "denied" if job.status == ToolJobStatus.cancelled else job.status.value
+        result = dict(job.output_payload)
+        if job.status == ToolJobStatus.cancelled:
+            result.setdefault("tool_job_status", ToolJobStatus.cancelled.value)
+        record_output = await self._record_output(
+            tool_key=job.tool_key,
+            result=result,
+            session_id=job.session_id,
+            job_id=job.id,
+            include_artifacts=job.status in {
+                ToolJobStatus.completed,
+                ToolJobStatus.partial,
+                ToolJobStatus.failed,
+            },
+        )
+        return ToolExecutionRecord(
+            call_id=job.call_id,
+            tool_key=job.tool_key,
+            tool_name=job.tool_name,
+            status=status,
+            summary=job.summary,
+            trace_id=str(result.get("trace_id") or job.trace_id or ""),
+            job_id=job.id,
+            input=job.input_payload,
+            output=record_output,
+            started_at=job.started_at,
+            completed_at=job.completed_at or job.updated_at,
+        )
+
+    async def _record_output(
+        self,
+        *,
+        tool_key: str,
+        result: dict[str, Any],
+        session_id: str,
+        job_id: str | None,
+        include_artifacts: bool,
+    ) -> dict[str, Any]:
+        record_output = self._compact_tool_output_for_model(tool_key, result)
+        if not job_id or self._tool_job_service is None or not include_artifacts:
+            return record_output
+        saved_artifacts = await self._tool_job_service.list_artifacts(tool_job_id=job_id)
+        downloads = [
+            {
+                "artifact_id": artifact.id,
+                "label": artifact.label or artifact.path,
+                "artifact_type": artifact.artifact_type,
+                "url": f"/api/v1/sessions/{session_id}/artifacts/{artifact.id}/content",
+            }
+            for artifact in saved_artifacts
+        ]
+        if downloads:
+            record_output["download_urls"] = downloads
+            record_output["download_markdown"] = "\n".join(
+                f"[点击下载 {item['label']}]({item['url']})" for item in downloads
+            )
+        return record_output
 
     async def _keep_tool_job_alive(
         self,
