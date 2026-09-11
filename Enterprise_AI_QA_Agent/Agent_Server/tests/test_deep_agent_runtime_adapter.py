@@ -749,6 +749,12 @@ def test_da_e5_approval_continuation_heartbeat_must_precede_lease_expiry():
             approval_continuation_lease_seconds=30,
             approval_continuation_heartbeat_seconds=30,
         )
+    assert OrchestrConfig().turn_execution_heartbeat_seconds == 30
+    with pytest.raises(ValueError, match="turn_execution_heartbeat_seconds"):
+        OrchestrConfig(
+            turn_execution_lease_seconds=30,
+            turn_execution_heartbeat_seconds=30,
+        )
 
 
 @pytest.mark.asyncio
@@ -985,6 +991,118 @@ async def test_da_e5_expired_continuation_cannot_overwrite_new_owner_session_sta
     stored = await store.get_session(session_id)
     assert stored is not None
     assert stored.metadata["continuation_result"] == "new-owner"
+
+
+@pytest.mark.asyncio
+async def test_da_e5_expired_turn_owner_cannot_complete_lease():
+    from src.runtime.store import InMemorySessionStore
+
+    store = InMemorySessionStore()
+    session = _runtime_session("expired-turn-owner-session")
+    await store.save_session(session)
+    assert await store.claim_turn_execution(
+        session.id,
+        "expired-turn",
+        "old-worker",
+        "old-token",
+        0,
+    )
+
+    assert not await store.complete_turn_execution(session.id, "old-token")
+    stored = await store.get_session(session.id)
+    assert stored is not None
+    assert stored.metadata["turn_lease_token"] == "old-token"
+
+
+@pytest.mark.asyncio
+async def test_da_e5_two_workers_cannot_execute_the_same_new_turn():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.application.runtime.runtime_service import RuntimeTurnResult
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import SendMessageRequest, SessionSnapshot
+
+    class DetachedStore(InMemorySessionStore):
+        def __init__(self):
+            super().__init__()
+            self.initial_reads = 0
+            self.both_reading = asyncio.Event()
+
+        async def get_session(self, session_id):
+            value = await super().get_session(session_id)
+            if self.initial_reads < 2:
+                self.initial_reads += 1
+                if self.initial_reads == 2:
+                    self.both_reading.set()
+                await self.both_reading.wait()
+            return deepcopy(value) if value is not None else None
+
+    class RuntimeStub:
+        def __init__(self):
+            self.calls = 0
+            self.release = asyncio.Event()
+
+        async def execute_turn(self, session, request, **_kwargs):
+            self.calls += 1
+            await self.release.wait()
+            state = {
+                "turn_id": request.turn_id,
+                "trace_id": f"trace-{request.turn_id}",
+                "selected_agent_key": "default-agent",
+                "selected_agent_name": "Default Agent",
+                "selected_model_key": "fake-model",
+                "selected_model_name": "Fake Model",
+                "model_response_summary": {"mode": "ok"},
+            }
+            return RuntimeTurnResult(
+                output_text="done",
+                events=[],
+                snapshot=SessionSnapshot(
+                    id=f"snapshot-{request.turn_id}",
+                    session_id=session.id,
+                    version=1,
+                    stage="completed",
+                    created_at=datetime.now(UTC),
+                    graph_state=state,
+                ),
+                approvals=[],
+                tool_messages=[],
+                pending_turn={},
+                state=state,
+            )
+
+        def request_interrupt(self, *_args, **_kwargs):
+            return None
+
+    store = DetachedStore()
+    session = _runtime_session("concurrent-new-turn-session")
+    await store.save_session(session)
+    runtime = RuntimeStub()
+
+    def service():
+        registry = ModeRegistry()
+        return SessionService(
+            store=store,
+            input_orchestrator_service=InputOrchestratorService(mode_registry=registry),
+            runtime_service=runtime,
+            mode_registry=registry,
+        )
+
+    first_task = asyncio.create_task(
+        service().send_message(session.id, SendMessageRequest(content="first"))
+    )
+    second_task = asyncio.create_task(
+        service().send_message(session.id, SendMessageRequest(content="second"))
+    )
+    for _ in range(100):
+        if runtime.calls >= 2:
+            break
+        await asyncio.sleep(0)
+    runtime.release.set()
+    outcomes = await asyncio.gather(first_task, second_task, return_exceptions=True)
+
+    assert runtime.calls == 1
+    assert sum(isinstance(item, ValueError) for item in outcomes) == 1
 
 
 def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path):

@@ -28,6 +28,7 @@ class SessionStore(Protocol):
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> SessionRecord: ...
     async def get_session(self, session_id: str) -> SessionRecord | None: ...
     async def list_sessions(
@@ -57,6 +58,7 @@ class SessionStore(Protocol):
         publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None: ...
     async def list_events(
         self,
@@ -72,6 +74,7 @@ class SessionStore(Protocol):
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None: ...
     async def list_snapshots(
         self,
@@ -89,6 +92,25 @@ class SessionStore(Protocol):
         status: ToolApprovalStatus,
         reason: str | None = None,
     ) -> ToolApprovalRequest: ...
+    async def claim_turn_execution(
+        self,
+        session_id: str,
+        turn_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> SessionRecord | None: ...
+    async def renew_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool: ...
+    async def complete_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+    ) -> bool: ...
     async def claim_approval_continuation(
         self,
         session_id: str,
@@ -143,12 +165,15 @@ class InMemorySessionStore:
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> SessionRecord:
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(
                     session.id, continuation_approval_id, continuation_lease_token
                 )
+            if turn_lease_token:
+                self._assert_turn_lease_locked(session.id, turn_lease_token)
             session.updated_at = datetime.utcnow()
             self._sessions[session.id] = session
             return session
@@ -273,12 +298,15 @@ class InMemorySessionStore:
         publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(
                     session_id, continuation_approval_id, continuation_lease_token
                 )
+            if turn_lease_token:
+                self._assert_turn_lease_locked(session_id, turn_lease_token)
             session = self._sessions.get(session_id)
             if session is not None:
                 session.event_count += 1
@@ -318,17 +346,28 @@ class InMemorySessionStore:
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(
                     session_id, continuation_approval_id, continuation_lease_token
                 )
+            if turn_lease_token:
+                self._assert_turn_lease_locked(session_id, turn_lease_token)
             session = self._sessions.get(session_id)
             if session is not None:
                 session.snapshot_count = max(session.snapshot_count, snapshot.version)
                 session.updated_at = datetime.utcnow()
             self._snapshots[session_id].append(snapshot)
+
+    def _assert_turn_lease_locked(self, session_id: str, lease_token: str) -> None:
+        session = self._sessions.get(session_id)
+        if session is None or session.metadata.get("turn_lease_token") != lease_token:
+            raise ContinuationLeaseLostError("Turn execution lease is no longer owned by this worker.")
+        expires_at = _parse_datetime(session.metadata.get("turn_lease_expires_at"))
+        if expires_at is None or expires_at <= datetime.utcnow():
+            raise ContinuationLeaseLostError("Turn execution lease has expired.")
 
     def _assert_continuation_lease_locked(
         self,
@@ -396,6 +435,79 @@ class InMemorySessionStore:
             approval.resolved_at = datetime.utcnow()
             return approval
 
+    async def claim_turn_execution(
+        self,
+        session_id: str,
+        turn_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> SessionRecord | None:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return None
+            metadata = session.metadata
+            expires_at = _parse_datetime(metadata.get("turn_lease_expires_at"))
+            if expires_at is not None and expires_at > datetime.utcnow():
+                return None
+            if (
+                session.status.value in {"running", "waiting_approval"}
+                and metadata.get("turn_lease_turn_id") != turn_id
+            ):
+                return None
+            metadata.update({
+                "turn_lease_turn_id": turn_id,
+                "turn_lease_owner": owner_id,
+                "turn_lease_token": lease_token,
+                "turn_lease_expires_at": (
+                    datetime.utcnow() + timedelta(seconds=lease_seconds)
+                ).isoformat(),
+            })
+            session.status = type(session.status).running
+            session.updated_at = datetime.utcnow()
+            return session
+
+    async def renew_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None or session.metadata.get("turn_lease_token") != lease_token:
+                return False
+            expires_at = _parse_datetime(session.metadata.get("turn_lease_expires_at"))
+            if expires_at is None or expires_at <= datetime.utcnow():
+                return False
+            session.metadata["turn_lease_expires_at"] = (
+                datetime.utcnow() + timedelta(seconds=lease_seconds)
+            ).isoformat()
+            return True
+
+    async def complete_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None or session.metadata.get("turn_lease_token") != lease_token:
+                return False
+            expires_at = _parse_datetime(session.metadata.get("turn_lease_expires_at"))
+            if expires_at is None or expires_at <= datetime.utcnow():
+                return False
+            for key in (
+                "turn_lease_turn_id",
+                "turn_lease_owner",
+                "turn_lease_token",
+                "turn_lease_expires_at",
+            ):
+                session.metadata.pop(key, None)
+            session.updated_at = datetime.utcnow()
+            return True
+
     async def claim_approval_continuation(
         self,
         session_id: str,
@@ -452,6 +564,9 @@ class InMemorySessionStore:
             if approval is None:
                 return False
             if approval.metadata.get("continuation_lease_token") != lease_token:
+                return False
+            expires_at = _parse_datetime(approval.metadata.get("continuation_lease_expires_at"))
+            if expires_at is None or expires_at <= datetime.utcnow():
                 return False
             approval.metadata.pop("continuation_lease_owner", None)
             approval.metadata.pop("continuation_lease_token", None)

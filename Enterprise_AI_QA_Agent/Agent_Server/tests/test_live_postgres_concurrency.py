@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import math
 import multiprocessing
 import os
@@ -14,15 +15,17 @@ import pytest
 from src.application.test_runs.run_store import PostgresTestRunStore
 from src.application.runtime.tool_job_service import ToolJobService
 from src.core.config import Settings
+from src.domain.models import SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.registry.tools import ToolRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_session_store import PostgresSessionStore
+from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.run_management import (
     TestRunItemRecord as _RunItemRecord,
     TestRunRecord as _RunRecord,
 )
-from src.schemas.session import ToolApprovalStatus
+from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, ToolApprovalStatus
 from tests.live_postgres_config import LivePostgresTestConfig
 
 
@@ -624,3 +627,83 @@ async def test_live_postgres_approval_cas_has_one_final_decision():
         )
     finally:
         _drop_tables(settings, [approval_table, session_table])
+
+
+@live_postgres
+@pytest.mark.asyncio
+async def test_live_postgres_turn_owner_fences_stale_worker_writes():
+    suffix = uuid4().hex[:10]
+    table_names = {
+        "postgres_session_table": f"live_turn_session_{suffix}",
+        "postgres_message_table": f"live_turn_message_{suffix}",
+        "postgres_event_table": f"live_turn_event_{suffix}",
+        "postgres_snapshot_table": f"live_turn_snapshot_{suffix}",
+        "postgres_approval_table": f"live_turn_approval_{suffix}",
+    }
+    settings = _settings_with_database_overrides(**table_names)
+    store = PostgresSessionStore(settings)
+    session_id = f"turn-session-{suffix}"
+    turn_id = f"turn-{suffix}"
+    now = datetime.now(timezone.utc)
+    session = SessionRecord(
+        id=session_id,
+        title="live turn owner fencing",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.normal,
+        runtime_mode=RuntimeMode.interactive,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+    )
+
+    try:
+        await store.initialize()
+        await store.save_session(session)
+        stores = [PostgresSessionStore(settings) for _ in range(8)]
+        claims = await asyncio.gather(*(
+            candidate.claim_turn_execution(
+                session_id,
+                turn_id,
+                owner_id=f"turn-worker-{index}",
+                lease_token=f"turn-token-{index}",
+                lease_seconds=30,
+            )
+            for index, candidate in enumerate(stores)
+        ))
+        assert sum(item is not None for item in claims) == 1
+        winning_index = next(index for index, item in enumerate(claims) if item is not None)
+        winning_token = f"turn-token-{winning_index}"
+        assert not await store.renew_turn_execution(session_id, "wrong-token", 30)
+        assert await store.renew_turn_execution(session_id, winning_token, 0)
+        takeover = await store.claim_turn_execution(
+            session_id,
+            turn_id,
+            owner_id="recovery-worker",
+            lease_token="recovery-token",
+            lease_seconds=30,
+        )
+        assert takeover is not None
+
+        stale = deepcopy(takeover)
+        stale.metadata["turn_result"] = "stale-worker"
+        with pytest.raises(ContinuationLeaseLostError):
+            await store.save_session(stale, turn_lease_token=winning_token)
+        recovered = deepcopy(takeover)
+        recovered.metadata["turn_result"] = "recovery-worker"
+        await store.save_session(recovered, turn_lease_token="recovery-token")
+        assert await store.complete_turn_execution(session_id, "recovery-token")
+        persisted = await store.get_session(session_id)
+        assert persisted is not None
+        assert persisted.metadata["turn_result"] == "recovery-worker"
+        assert "turn_lease_token" not in persisted.metadata
+    finally:
+        _drop_tables(
+            settings,
+            [
+                table_names["postgres_approval_table"],
+                table_names["postgres_snapshot_table"],
+                table_names["postgres_event_table"],
+                table_names["postgres_message_table"],
+                table_names["postgres_session_table"],
+            ],
+        )

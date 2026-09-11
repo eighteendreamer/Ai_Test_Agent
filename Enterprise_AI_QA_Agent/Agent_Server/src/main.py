@@ -453,6 +453,10 @@ async def lifespan(app: FastAPI):
         approval_continuation_heartbeat_seconds=(
             settings.orchestration.approval_continuation_heartbeat_seconds
         ),
+        turn_execution_lease_seconds=settings.orchestration.turn_execution_lease_seconds,
+        turn_execution_heartbeat_seconds=(
+            settings.orchestration.turn_execution_heartbeat_seconds
+        ),
     )
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,

@@ -170,6 +170,8 @@ class OrchestrConfig(BaseModel):
     tool_job_heartbeat_timeout_seconds: int = 90
     approval_continuation_lease_seconds: int = 120
     approval_continuation_heartbeat_seconds: float = 30.0
+    turn_execution_lease_seconds: int = 120
+    turn_execution_heartbeat_seconds: float = 30.0
     test_run_lease_reaper_interval_seconds: float = 30.0
     compatibility_runner_heartbeat_timeout_seconds: int = 120
 
@@ -228,11 +230,25 @@ class OrchestrConfig(BaseModel):
             raise ValueError("approval_continuation_lease_seconds must be greater than zero")
         return value
 
+    @field_validator("turn_execution_lease_seconds")
+    @classmethod
+    def validate_turn_execution_lease_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("turn_execution_lease_seconds must be greater than zero")
+        return value
+
     @field_validator("approval_continuation_heartbeat_seconds")
     @classmethod
     def validate_approval_continuation_heartbeat_seconds(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("approval_continuation_heartbeat_seconds must be greater than zero")
+        return value
+
+    @field_validator("turn_execution_heartbeat_seconds")
+    @classmethod
+    def validate_turn_execution_heartbeat_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("turn_execution_heartbeat_seconds must be greater than zero")
         return value
 
     @model_validator(mode="after")
@@ -243,6 +259,10 @@ class OrchestrConfig(BaseModel):
         ):
             raise ValueError(
                 "approval_continuation_heartbeat_seconds must be shorter than the lease"
+            )
+        if self.turn_execution_heartbeat_seconds >= self.turn_execution_lease_seconds:
+            raise ValueError(
+                "turn_execution_heartbeat_seconds must be shorter than the lease"
             )
         return self
 

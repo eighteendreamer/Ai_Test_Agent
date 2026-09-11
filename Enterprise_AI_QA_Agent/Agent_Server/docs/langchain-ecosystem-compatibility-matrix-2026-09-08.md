@@ -159,3 +159,12 @@
 - 验证：fencing 目标回归及既有审批续跑回归 `3 passed`；真实 PostgreSQL 并发文件 `4 passed`；代码编译通过。
 - 边界：该批只覆盖审批续跑的 Session/Snapshot/Event 写入；外部记忆、TestRun Stage 和通用 turn owner 尚未统一，未开启过期 continuation 自动扫描。
 - 真实运行补验：首次 PostgreSQL Session 创建暴露 `ON CONFLICT WHERE` 空参数类型无法推断，已改为同事务 `FOR UPDATE` 租约校验并恢复原 upsert；随后 health 200、Session 创建 200、数据库默认模型消息 200，返回 `DA_E5_FENCING_OK`，终态 completed，31 events、10 flow stages，服务正常关闭。
+
+## 11. 2026-09-10 普通 Turn 跨 Worker 所有权增量
+
+- 两个 Service 同时读取 idle Session 的失败回归证明原进程内锁会双跑；新增 Session metadata 租约，PostgreSQL 条件 UPDATE 只允许一个 worker claim。
+- 普通 turn 的 Session/Snapshot/Event 写入携带 token；旧 token 在接管后不能落库。loser 复用既有 busy 策略，不新增调度器。
+- 配置新增 `ORCHESTRATION__TURN_EXECUTION_LEASE_SECONDS=120` 与 `ORCHESTRATION__TURN_EXECUTION_HEARTBEAT_SECONDS=30`；API 输出过滤 owner/token/expiry。
+- Deep Agents 专项 `27 passed, 20 skipped`（含内存 Store 过期完成拒绝）；真实 PostgreSQL 并发 `5 passed`；Session 回归 `20 passed`；真实默认模型返回 `DA_E5_TURN_OWNER_OK`，终态 completed、30 events、无租约字段泄露。
+- 最终全量：主环境 `818 passed, 35 skipped`，C4 `838 passed, 15 skipped`，前端 `33 passed`；主/C4 编译与入口导入、C4 `pip check` 全部通过。
+- 手工 resume、Coordinator、服务启动扫描、外部 Memory fencing 和 4/24 小时 soak 仍未完成，DA-E5 不关闭。

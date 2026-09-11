@@ -57,6 +57,14 @@ logger = logging.getLogger(__name__)
 SERVER_MANAGED_SESSION_METADATA_KEYS = frozenset(
     {"environment", "resource_scope", "security_authorization"}
 )
+INTERNAL_SESSION_METADATA_KEYS = frozenset(
+    {
+        "turn_lease_turn_id",
+        "turn_lease_owner",
+        "turn_lease_token",
+        "turn_lease_expires_at",
+    }
+)
 SNAPSHOT_DETAIL_GRAPH_KEYS = {
     "turn_id",
     "trace_id",
@@ -86,6 +94,8 @@ class SessionService:
         project_service: ProjectService | None = None,
         approval_continuation_lease_seconds: int = 120,
         approval_continuation_heartbeat_seconds: float = 30.0,
+        turn_execution_lease_seconds: int = 120,
+        turn_execution_heartbeat_seconds: float = 30.0,
     ) -> None:
         self._store = store
         self._input_orchestrator_service = input_orchestrator_service
@@ -103,7 +113,11 @@ class SessionService:
         self._approval_continuation_heartbeat_seconds = max(
             0.1, float(approval_continuation_heartbeat_seconds)
         )
-        self._continuation_owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4()}"
+        self._turn_execution_lease_seconds = max(1, int(turn_execution_lease_seconds))
+        self._turn_execution_heartbeat_seconds = max(
+            0.1, float(turn_execution_heartbeat_seconds)
+        )
+        self._worker_owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4()}"
         # UI 录制审批回调（方案 4.2 环节④/⑤，P0-8）：main.py 在 recorder 域初始化后注入
         self._recording_approval_service = None
         self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -557,7 +571,7 @@ class SessionService:
             continuation_claimed = await self._store.claim_approval_continuation(
                 session_id=session_id,
                 approval_id=approval.id,
-                owner_id=self._continuation_owner_id,
+                owner_id=self._worker_owner_id,
                 lease_token=continuation_token,
                 lease_seconds=self._approval_continuation_lease_seconds,
             )
@@ -675,7 +689,11 @@ class SessionService:
                     }
                 )
                 session.metadata["control"] = control
-                await self._store.save_session(session)
+                await self._store.save_session(
+                    session,
+                    continuation_approval_id=approval.id,
+                    continuation_lease_token=continuation_token,
+                )
                 await self._store.append_event(
                     session_id,
                     self._make_event(
@@ -688,6 +706,8 @@ class SessionService:
                             "error": str(exc),
                         },
                     ),
+                    continuation_approval_id=approval.id,
+                    continuation_lease_token=continuation_token,
                 )
                 continuation_settled = True
             finally:
@@ -741,6 +761,39 @@ class SessionService:
                 self._runtime_service.request_interrupt(
                     session_id,
                     "Approval continuation lease was lost to another worker.",
+                )
+                return
+
+    async def _keep_turn_execution_alive(
+        self,
+        *,
+        session_id: str,
+        lease_token: str,
+        stop_event: asyncio.Event,
+    ) -> None:
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=self._turn_execution_heartbeat_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                return
+            renewed = await self._store.renew_turn_execution(
+                session_id=session_id,
+                lease_token=lease_token,
+                lease_seconds=self._turn_execution_lease_seconds,
+            )
+            if not renewed:
+                logger.error(
+                    "turn_execution_heartbeat_lease_lost",
+                    extra={"session_id": session_id},
+                )
+                self._runtime_service.request_interrupt(
+                    session_id,
+                    "Turn execution lease was lost to another worker.",
                 )
                 return
 
@@ -828,7 +881,76 @@ class SessionService:
         *,
         allow_interrupted: bool = False,
     ) -> ConversationResponse:
+        turn_lease_token = str(uuid4())
+        claimed_session = await self._store.claim_turn_execution(
+            session_id=session.id,
+            turn_id=execution_request.turn_id,
+            owner_id=self._worker_owner_id,
+            lease_token=turn_lease_token,
+            lease_seconds=self._turn_execution_lease_seconds,
+        )
+        if claimed_session is None:
+            current = await self._require_session(session.id)
+            busy_response = await self._handle_busy_submission(
+                session=current,
+                payload=payload,
+                execution_request=execution_request,
+            )
+            if busy_response is not None:
+                return busy_response
+            raise ValueError("Session turn is owned by another worker.")
+        heartbeat_stop = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self._keep_turn_execution_alive(
+                session_id=session.id,
+                lease_token=turn_lease_token,
+                stop_event=heartbeat_stop,
+            )
+        )
+        settled = False
+        try:
+            response = await self._run_owned_submission_locked(
+                session=claimed_session,
+                payload=payload,
+                execution_request=execution_request,
+                allow_interrupted=allow_interrupted,
+                turn_lease_token=turn_lease_token,
+            )
+            settled = True
+            return response
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            settled = True
+            raise
+        finally:
+            heartbeat_stop.set()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            if settled:
+                completed = await self._store.complete_turn_execution(
+                    session.id, turn_lease_token
+                )
+                if not completed:
+                    logger.warning(
+                        "turn_execution_completion_lease_lost",
+                        extra={"session_id": session.id},
+                    )
+
+    async def _run_owned_submission_locked(
+        self,
+        session: SessionRecord,
+        payload: SendMessageRequest,
+        execution_request,
+        *,
+        allow_interrupted: bool,
+        turn_lease_token: str,
+    ) -> ConversationResponse:
         session_id = session.id
+        turn_fenced_write = {"turn_lease_token": turn_lease_token}
         superseded_turn_id = ""
 
         if session.status == SessionStatus.interrupted and allow_interrupted:
@@ -845,6 +967,7 @@ class SessionService:
                         "next_turn_id": execution_request.turn_id,
                     },
                 ),
+                **turn_fenced_write,
             )
 
         session.status = SessionStatus.running
@@ -917,7 +1040,7 @@ class SessionService:
             metadata=user_message_metadata,
         )
         session.messages.append(user_message)
-        await self._store.save_session(session)
+        await self._store.save_session(session, **turn_fenced_write)
         await self._store.append_event(
             session_id,
             self._make_event(
@@ -949,6 +1072,7 @@ class SessionService:
                     "input_summary": execution_request.input_summary,
                 },
             ),
+            **turn_fenced_write,
         )
         await self._store.append_event(
             session_id,
@@ -979,6 +1103,7 @@ class SessionService:
                     ),
                 },
             ),
+            **turn_fenced_write,
         )
         await self._store.append_event(
             session_id,
@@ -1002,6 +1127,7 @@ class SessionService:
                     ),
                 },
             ),
+            **turn_fenced_write,
         )
 
         assistant_message_id = str(uuid4())
@@ -1009,6 +1135,7 @@ class SessionService:
             session_id=session_id,
             turn_id=execution_request.turn_id,
             assistant_message_id=assistant_message_id,
+            turn_lease_token=turn_lease_token,
         )
         try:
             event_queue = self._store.get_queue(session_id)
@@ -1023,7 +1150,14 @@ class SessionService:
                 runtime_result=runtime_result,
                 assistant_message_id=assistant_message_id,
                 user_message_override=payload.content,
+                turn_lease_token=turn_lease_token,
             )
+        except ContinuationLeaseLostError:
+            logger.warning(
+                "turn_execution_fenced_after_lease_loss",
+                extra={"session_id": session_id, "turn_id": execution_request.turn_id},
+            )
+            raise
         except Exception as exc:
             session = await self._require_session(session_id)
             latest_snapshot = await self._store.get_latest_snapshot(session_id)
@@ -1042,7 +1176,7 @@ class SessionService:
                     "last_interrupt_reason": truncate_text(str(exc), 240),
                 }
             )
-            await self._store.save_session(session)
+            await self._store.save_session(session, **turn_fenced_write)
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -1056,6 +1190,7 @@ class SessionService:
                         "is_resumable": is_resumable,
                     },
                 ),
+                **turn_fenced_write,
             )
             self._maybe_schedule_pending_input_drain(session_id)
             raise
@@ -1307,11 +1442,13 @@ class SessionService:
         user_message_override: str,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> ConversationResponse:
         session_id = session.id
         fenced_write = {
             "continuation_approval_id": continuation_approval_id,
             "continuation_lease_token": continuation_lease_token,
+            "turn_lease_token": turn_lease_token,
         }
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
@@ -1774,7 +1911,11 @@ class SessionService:
                 item if hasattr(item, "model_dump") else item
                 for item in session.metadata.get("verification_results", [])
             ],
-            metadata=session.metadata,
+            metadata={
+                key: value
+                for key, value in session.metadata.items()
+                if key not in INTERNAL_SESSION_METADATA_KEYS
+            },
         )
 
     def _make_event(self, session_id: str, event_type: str, payload: dict[str, object]) -> ExecutionEvent:
@@ -1835,11 +1976,13 @@ class SessionService:
         assistant_message_id: str,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> Callable[[str], Awaitable[None]]:
         started = False
         fenced_write = {
             "continuation_approval_id": continuation_approval_id,
             "continuation_lease_token": continuation_lease_token,
+            "turn_lease_token": turn_lease_token,
         }
 
         async def emit_chunk(chunk: str) -> None:

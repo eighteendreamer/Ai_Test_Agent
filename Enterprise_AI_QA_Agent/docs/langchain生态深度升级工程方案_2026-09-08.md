@@ -1517,7 +1517,7 @@ API / Session / TestRun 控制平面（系统保留）
 | DA-E2 只读文件与 Skills | 已完成 | 完成显式本地 `project_root` 的官方 `FilesystemBackend(virtual_mode=True)`、只读工具面、SkillRegistry 选中项到官方 SkillsMiddleware 的隔离映射，以及敏感文件/路径、符号链接、junction、循环、超大文件、二进制、并发读取和旧实现结果对账 | C4 已证明仅绑定 `read_file/ls/glob/grep`；官方 Agent 实链路、Windows reparse point 越界和符号链接循环均通过；主环境默认仍关闭 Deep Agents |
 | DA-E3 认知计划与同步子代理 | 已完成 | 启用可选 `write_todos`、映射现有 plan event；接入一个受控同步 `code-review-researcher`；补齐单轮取消/超时、本地 typed events 和 LangSmith 父子 Trace | todo 可视化、父子 Trace、一次委派、无嵌套 task、模型/工具调用限额、真实完成/中断均通过；`worker_dispatches=[]`，不进入 Coordinator 双跑 |
 | DA-E4 治理工具和 HITL | 进行中 | Registry → LangChainToolAdapter → Permission/Safety/ApprovalScope → ToolRuntime；官方 `interrupt_on/Command(resume=...)` 负责暂停恢复；Approval API 负责裁决，保留真实工具历史和顺序 | 已完成真实 safe、批准、拒绝、等待审批时服务重启恢复、同 Job 推进、Artifact 与 Trace 对账；官方 Harness 批量反序批准/拒绝及 scope 变化回归通过；尚未提供 edit API，也未完成完整性能/灰度，阶段不关闭 |
-| DA-E5 Checkpoint 与长任务 | 进行中 | 为满足官方 HITL 的前置依赖，先接入官方 PostgreSQL Checkpointer，独立 schema、受限连接池；thread_id 使用原 turn_id；审批续跑的 Session/Snapshot/Event 写入携带 continuation fencing token | 等待审批重启、ToolJob 单所有者/终态回放、审批续跑跨 Worker 租约、旧 Worker 写入被拒绝已实测；仍须完成通用 Session/turn fencing、执行中 Stage 对账、TestRun 映射、数小时性能、取消恢复；不能用这些局部验收代替整个阶段验收 |
+| DA-E5 Checkpoint 与长任务 | 进行中 | 为满足官方 HITL 的前置依赖，先接入官方 PostgreSQL Checkpointer，独立 schema、受限连接池；thread_id 使用原 turn_id；Session turn 与审批续跑均使用 PostgreSQL 租约及 fenced write | 等待审批重启、ToolJob 单所有者/终态回放、普通 turn/审批续跑跨 Worker 租约、旧 Worker 写入被拒绝已实测；仍须完成手工恢复/Coordinator 的统一 owner、执行中 Stage 对账、数小时性能、取消恢复；不能用这些局部验收代替整个阶段验收 |
 | DA-E6 上下文与记忆 | 未进行 | 对账内置 summarization/offloading 与现有 Compaction/Memory；选定唯一所有者 | 不双重摘要；原始证据可追溯；token/延迟/质量不低于基线；敏感数据不进入虚拟文件或 Trace |
 | DA-E7 灰度替换 | 未进行 | code_review 5%→25%→50%→100%，稳定后再评估其他模式 | 成功率、P95、token、工具错误、恢复成功率、人工介入率满足门槛；一键回旧 Harness |
 
@@ -1701,6 +1701,19 @@ API / Session / TestRun 控制平面（系统保留）
 | 下一步 | 把 continuation token 抽象为通用 turn execution owner，补齐执行中 Stage 对账、外部记忆写入边界和服务启动恢复扫描；只有 fenced write 和 checkpoint/Approval/ToolJob 三方对账完成后，才允许自动接管到期 continuation |
 
 补充可执行性验证：fencing 首次提交后的真实 PostgreSQL Session 创建触发 `IndeterminateDatatype`，根因是普通写入为 NULL 的可选 token 被直接放入 `ON CONFLICT WHERE`，数据库无法推断参数类型。修复为复用 Event/Snapshot 的同事务 `SELECT ... FOR UPDATE` token/expiry 校验，并恢复原 Session upsert。随后真实 Uvicorn health、Session 创建、数据库默认模型消息、Events、Flow 全部 200；模型返回 `DA_E5_FENCING_OK`，Session 为 completed，31 events、10 stages，服务正常关闭。该结果证明当前代码可执行，但不替代长时 soak。
+
+### DA-E5 普通 Turn 跨 Worker 所有权实施记录（进行中，2026-09-10）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 失败先行 | 两个独立 `SessionService` 在同一时刻各自读取 idle Session，进程内锁互不相识，原实现实际进入 `execute_turn` 两次 |
+| 采用做法 | 复用现有 Store 与租约协议，在 Session JSONB metadata 保存 turn id/owner/token/数据库时钟到期时间；PostgreSQL 使用条件 UPDATE RETURNING 原子 claim；活动 turn 心跳续租；Session/Snapshot/Event 写入必须匹配未过期 token |
+| 竞争语义 | winner 获得数据库返回的最新 Session 后执行；loser 重新读取 Session 并走既有 busy 的 reject/enqueue/interrupt 策略，不建立第二套队列；同一 turn 租约过期后才允许接管 |
+| 配置与安全 | `.env`/`.env.example` 增加 `ORCHESTRATION__TURN_EXECUTION_LEASE_SECONDS=120`、`ORCHESTRATION__TURN_EXECUTION_HEARTBEAT_SECONDS=30`，heartbeat 必须短于 lease；API `SessionDetail.metadata` 剔除内部 turn lease 字段 |
+| 自动化证据 | 双 Service 同时提交只有一次 Runtime 调用；Deep Agents 专项 `27 passed, 20 skipped`，新增内存 Store 与 PostgreSQL 一致的“过期 token 不得完成租约”回归；真实 PostgreSQL 完整并发文件 `5 passed`，8 Store 只有一个 claim，过期后新 token 接管，旧 token 写 Session 被拒绝；Session 回归 `20 passed` |
+| 真实链路 | Uvicorn health 200、PostgreSQL 正常；创建 Session、数据库默认模型消息、Session/Events 查询全部 200；模型返回 `DA_E5_TURN_OWNER_OK`，终态 completed，30 events，含 turn.completed；API 未暴露 `turn_lease_*` 字段；服务正常关闭 |
+| 最终全量 | 2026-09-11 最终代码状态：主 Python 3.11 后端 `818 passed, 35 skipped, 1 warning in 50.66s`；C4 后端 `838 passed, 15 skipped, 1 warning in 29.51s`；前端 Vitest `2 files / 33 passed`；真实 PostgreSQL 并发 `5 passed in 6.33s`；主/C4 `compileall` 与 `src.main` 导入通过，C4 `pip check` 为 `No broken requirements found`。两条 warning 均为第三方弃用提示，无失败 |
+| 未完成 | 普通 `send_message`/队列 drain 已统一 owner；手工 resume、Coordinator 子会话、服务启动后的自动恢复扫描、外部 Memory 写入 fencing、4/24 小时 soak 尚未完成，DA-E5 保持进行中 |
 
 ## 15. 每次实施后的记录模板
 

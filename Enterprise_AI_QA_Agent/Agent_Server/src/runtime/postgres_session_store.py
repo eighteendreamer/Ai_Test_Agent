@@ -38,12 +38,14 @@ class PostgresSessionStore:
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> SessionRecord:
         return await asyncio.to_thread(
             self._save_session_sync,
             session,
             continuation_approval_id,
             continuation_lease_token,
+            turn_lease_token,
         )
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
@@ -93,6 +95,7 @@ class PostgresSessionStore:
         publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             self._append_event_sync,
@@ -100,6 +103,7 @@ class PostgresSessionStore:
             event,
             continuation_approval_id,
             continuation_lease_token,
+            turn_lease_token,
         )
         if publish:
             await self._queues[session_id].put(event)
@@ -122,6 +126,7 @@ class PostgresSessionStore:
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             self._save_snapshot_sync,
@@ -129,6 +134,7 @@ class PostgresSessionStore:
             snapshot,
             continuation_approval_id,
             continuation_lease_token,
+            turn_lease_token,
         )
 
     async def list_snapshots(
@@ -183,6 +189,47 @@ class PostgresSessionStore:
             owner_id,
             lease_token,
             lease_seconds,
+        )
+
+    async def claim_turn_execution(
+        self,
+        session_id: str,
+        turn_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> SessionRecord | None:
+        return await asyncio.to_thread(
+            self._claim_turn_execution_sync,
+            session_id,
+            turn_id,
+            owner_id,
+            lease_token,
+            lease_seconds,
+        )
+
+    async def renew_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._renew_turn_execution_sync,
+            session_id,
+            lease_token,
+            lease_seconds,
+        )
+
+    async def complete_turn_execution(
+        self,
+        session_id: str,
+        lease_token: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._complete_turn_execution_sync,
+            session_id,
+            lease_token,
         )
 
     async def renew_approval_continuation(
@@ -338,6 +385,7 @@ class PostgresSessionStore:
         session: SessionRecord,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> SessionRecord:
         now = datetime.utcnow()
         session.updated_at = now
@@ -346,6 +394,7 @@ class PostgresSessionStore:
                 self._assert_continuation_lease_sync(
                     cur, session.id, continuation_approval_id, continuation_lease_token
                 )
+                self._assert_turn_lease_sync(cur, session.id, turn_lease_token)
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_session_table} (
@@ -590,12 +639,14 @@ class PostgresSessionStore:
         event: ExecutionEvent,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 self._assert_continuation_lease_sync(
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
+                self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_event_table} (
@@ -713,6 +764,7 @@ class PostgresSessionStore:
         snapshot: SessionSnapshot,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> None:
         now = datetime.utcnow()
         with postgres_connect(self._settings) as conn:
@@ -720,6 +772,7 @@ class PostgresSessionStore:
                 self._assert_continuation_lease_sync(
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
+                self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_snapshot_table} (
@@ -778,6 +831,29 @@ class PostgresSessionStore:
         if cur.fetchone() is None:
             raise ContinuationLeaseLostError(
                 "Continuation lease is no longer active for fenced write."
+            )
+
+    def _assert_turn_lease_sync(
+        self,
+        cur,
+        session_id: str,
+        lease_token: str | None,
+    ) -> None:
+        if not lease_token:
+            return
+        cur.execute(
+            f"""
+            SELECT 1 FROM {self._settings.database.postgres_session_table}
+            WHERE id = %s
+              AND metadata->>'turn_lease_token' = %s
+              AND (metadata->>'turn_lease_expires_at')::timestamptz > now()
+            FOR UPDATE
+            """,
+            (session_id, lease_token),
+        )
+        if cur.fetchone() is None:
+            raise ContinuationLeaseLostError(
+                "Turn execution lease is no longer active for fenced write."
             )
 
     def _list_snapshots_sync(
@@ -924,6 +1000,104 @@ class PostgresSessionStore:
                 )
         return _approval_from_row(row)
 
+    def _claim_turn_execution_sync(
+        self,
+        session_id: str,
+        turn_id: str,
+        owner_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> SessionRecord | None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table}
+                    SET status = 'running',
+                        updated_at = now(),
+                        metadata = metadata || jsonb_build_object(
+                            'turn_lease_turn_id', %s::text,
+                            'turn_lease_owner', %s::text,
+                            'turn_lease_token', %s::text,
+                            'turn_lease_expires_at',
+                                to_jsonb(now() + (%s * INTERVAL '1 second'))
+                        )
+                    WHERE id = %s
+                      AND (
+                          status NOT IN ('running', 'waiting_approval')
+                          OR metadata->>'turn_lease_turn_id' = %s
+                      )
+                      AND (
+                          NOT (metadata ? 'turn_lease_expires_at')
+                          OR (metadata->>'turn_lease_expires_at')::timestamptz <= now()
+                      )
+                    RETURNING *
+                    """,
+                    (turn_id, owner_id, lease_token, lease_seconds, session_id, turn_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                cur.execute(
+                    f"""
+                    SELECT * FROM {self._settings.database.postgres_message_table}
+                    WHERE session_id = %s
+                    ORDER BY created_at ASC
+                    """,
+                    (session_id,),
+                )
+                messages = [_message_from_row(item) for item in (cur.fetchall() or [])]
+                return _session_from_row(row, messages=messages)
+
+    def _renew_turn_execution_sync(
+        self,
+        session_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table}
+                    SET metadata = metadata || jsonb_build_object(
+                        'turn_lease_expires_at',
+                            to_jsonb(now() + (%s * INTERVAL '1 second'))
+                    )
+                    WHERE id = %s
+                      AND metadata->>'turn_lease_token' = %s
+                      AND (metadata->>'turn_lease_expires_at')::timestamptz > now()
+                    RETURNING id
+                    """,
+                    (lease_seconds, session_id, lease_token),
+                )
+                return cur.fetchone() is not None
+
+    def _complete_turn_execution_sync(
+        self,
+        session_id: str,
+        lease_token: str,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table}
+                    SET metadata = metadata
+                        - 'turn_lease_turn_id'
+                        - 'turn_lease_owner'
+                        - 'turn_lease_token'
+                        - 'turn_lease_expires_at',
+                        updated_at = now()
+                    WHERE id = %s
+                      AND metadata->>'turn_lease_token' = %s
+                      AND (metadata->>'turn_lease_expires_at')::timestamptz > now()
+                    RETURNING id
+                    """,
+                    (session_id, lease_token),
+                )
+                return cur.fetchone() is not None
+
     def _claim_approval_continuation_sync(
         self,
         session_id: str,
@@ -1003,6 +1177,7 @@ class PostgresSessionStore:
                     WHERE id = %s
                       AND session_id = %s
                       AND metadata->>'continuation_lease_token' = %s
+                      AND (metadata->>'continuation_lease_expires_at')::timestamptz > now()
                     RETURNING id
                     """,
                     (approval_id, session_id, lease_token),
