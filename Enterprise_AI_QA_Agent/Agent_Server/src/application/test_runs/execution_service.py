@@ -23,6 +23,7 @@ from src.runtime.store import SessionStore
 from src.schemas.run_management import (
     RunItemApprovalDecisionRequest,
     RunItemCompleteRequest,
+    RunItemCheckpointRequest,
     RunItemApprovalPending,
     RunItemApprovalWaitRequest,
     RunItemExecuteRequest,
@@ -38,6 +39,34 @@ from src.schemas.session import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_run_item_checkpoint(snapshot, item_id: str):
+    """Return (snapshot_version, checkpoint) only for the requested run item."""
+    if snapshot is None:
+        return None
+    graph_state = getattr(snapshot, "graph_state", None)
+    if not isinstance(graph_state, dict):
+        return None
+    context_bundle = graph_state.get("context_bundle")
+    if not isinstance(context_bundle, dict):
+        return None
+    if str(context_bundle.get("run_item_id") or context_bundle.get("test_run_item_id") or "") != str(item_id):
+        return None
+    checkpoint = context_bundle.get("execution_checkpoint")
+    if not isinstance(checkpoint, dict):
+        for state_key in ("api_testing_state", "security_testing_state"):
+            mode_state = context_bundle.get(state_key)
+            if isinstance(mode_state, dict):
+                checkpoint = mode_state.get("execution_checkpoint")
+                if isinstance(checkpoint, dict):
+                    break
+    if not isinstance(checkpoint, dict):
+        return None
+    version = int(getattr(snapshot, "version", 0) or 0)
+    if version < 1:
+        return None
+    return version, deepcopy(checkpoint)
 
 
 class TestRunExecutionService:
@@ -88,6 +117,12 @@ class TestRunExecutionService:
             await get_latest_attempt(item.id)
             if get_latest_attempt is not None
             else None
+        )
+        latest_attempt = await self._reconcile_session_checkpoint(
+            run=run,
+            item=item,
+            lease_token=payload.lease_token,
+            latest_attempt=latest_attempt,
         )
         case = await self._cases.get_case(item.case_id)
         version = await self._cases.get_version(item.case_version_id)
@@ -279,6 +314,56 @@ class TestRunExecutionService:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+
+    async def _reconcile_session_checkpoint(
+        self,
+        *,
+        run,
+        item,
+        lease_token: str,
+        latest_attempt,
+    ):
+        """Project the latest durable mode checkpoint into the active Attempt.
+
+        Mode runtimes persist their stage checkpoint in the bound session snapshot;
+        the run store owns Attempt checkpoints.  Reconcile only when the snapshot
+        is explicitly bound to this run item and its version is newer, so a stale
+        session cannot overwrite a newer Attempt checkpoint.
+        """
+        if self._sessions is None or not getattr(run, "session_id", None):
+            return latest_attempt
+        get_snapshot = getattr(self._sessions, "get_latest_snapshot", None)
+        save_checkpoint = getattr(self._runs, "save_checkpoint", None)
+        if get_snapshot is None or save_checkpoint is None:
+            return latest_attempt
+        snapshot = await get_snapshot(run.session_id)
+        checkpoint = _extract_run_item_checkpoint(snapshot, item.id)
+        if checkpoint is None:
+            return latest_attempt
+        snapshot_version, payload = checkpoint
+        current_version = int(getattr(latest_attempt, "checkpoint_version", 0) or 0)
+        if snapshot_version <= current_version:
+            return latest_attempt
+        reconciled = await save_checkpoint(
+            item.id,
+            RunItemCheckpointRequest(
+                lease_token=lease_token,
+                checkpoint_key="session_execution_checkpoint",
+                checkpoint_payload=payload,
+                checkpoint_version=snapshot_version,
+            ),
+        )
+        logger.info(
+            "test_run_execution_checkpoint_reconciled",
+            extra={
+                "run_id": run.id,
+                "run_item_id": item.id,
+                "attempt_id": reconciled.id,
+                "checkpoint_version": reconciled.checkpoint_version,
+                "source_snapshot_version": snapshot_version,
+            },
+        )
+        return reconciled
 
     def _build_item_trace_context(self, *, run, item, attempt_id: str) -> TraceContext:
         return TraceContext(

@@ -12,7 +12,10 @@ from src.api.routes.run_management import router
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
 from src.application.test_runs.case_execution import CaseExecutionOutcome
-from src.application.test_runs.execution_service import TestRunExecutionService as _ExecutionService
+from src.application.test_runs.execution_service import (
+    TestRunExecutionService as _ExecutionService,
+    _extract_run_item_checkpoint,
+)
 from src.schemas.agent import ToolDescriptor
 from src.schemas.case_management import TestCaseRecord as _CaseRecord, TestCaseVersionRecord as _CaseVersionRecord
 from src.schemas.run_management import (
@@ -23,8 +26,33 @@ from src.schemas.run_management import (
     TestRunItemRecord as _RunItemRecord,
     TestRunRecord as _RunRecord,
 )
-from src.schemas.session import ToolApprovalStatus
+from src.schemas.session import SessionSnapshot, ToolApprovalStatus
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+
+
+def test_extract_run_item_checkpoint_requires_binding_and_supports_mode_state():
+    snapshot = SessionSnapshot(
+        id="snapshot-1",
+        session_id="session-1",
+        version=7,
+        stage="interrupted",
+        created_at=datetime.now(timezone.utc),
+        graph_state={
+            "context_bundle": {
+                "run_item_id": "item-1",
+                "api_testing_state": {
+                    "execution_checkpoint": {
+                        "last_event_type": "task_completed",
+                        "completed_task_ids": ["task-1"],
+                    }
+                },
+            }
+        },
+    )
+    version, payload = _extract_run_item_checkpoint(snapshot, "item-1")
+    assert version == 7
+    assert payload["last_event_type"] == "task_completed"
+    assert _extract_run_item_checkpoint(snapshot, "other-item") is None
 
 
 def _records():
