@@ -9,6 +9,7 @@ from uuid import uuid4
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, recent_day_buckets
+from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest
 
 
@@ -148,6 +149,21 @@ class PostgresVectorMemoryStore:
         metadata_json = json.dumps(stored_metadata, ensure_ascii=False)
         with self._connect() as conn:
             with conn.cursor() as cur:
+                if request.turn_lease_token:
+                    cur.execute(
+                        f"""
+                        SELECT 1 FROM {self._settings.database.postgres_session_table}
+                        WHERE id = %s
+                          AND metadata->>'turn_lease_token' = %s
+                          AND (metadata->>'turn_lease_expires_at')::timestamptz > now()
+                        FOR UPDATE
+                        """,
+                        (request.session_id, request.turn_lease_token),
+                    )
+                    if cur.fetchone() is None:
+                        raise ContinuationLeaseLostError(
+                            "Turn execution lease is no longer active for memory write."
+                        )
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_memory_table} (

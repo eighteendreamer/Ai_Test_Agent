@@ -119,6 +119,7 @@ class SessionStore(Protocol):
         owner_id: str,
     ) -> bool: ...
     async def recover_expired_turn_executions(self) -> list[str]: ...
+    async def assert_turn_execution(self, session_id: str, lease_token: str) -> None: ...
     async def claim_approval_continuation(
         self,
         session_id: str,
@@ -584,6 +585,10 @@ class InMemorySessionStore:
                 session.updated_at = now
                 recovered.append(session.id)
             return recovered
+
+    async def assert_turn_execution(self, session_id: str, lease_token: str) -> None:
+        async with self._lock:
+            self._assert_turn_lease_locked(session_id, lease_token)
 
     async def claim_approval_continuation(
         self,

@@ -250,6 +250,9 @@ class PostgresSessionStore:
     async def recover_expired_turn_executions(self) -> list[str]:
         return await asyncio.to_thread(self._recover_expired_turn_executions_sync)
 
+    async def assert_turn_execution(self, session_id: str, lease_token: str) -> None:
+        await asyncio.to_thread(self._assert_turn_execution_sync, session_id, lease_token)
+
     async def renew_approval_continuation(
         self,
         session_id: str,
@@ -1200,6 +1203,11 @@ class PostgresSessionStore:
                     """
                 )
                 return [str(row["id"]) for row in (cur.fetchall() or [])]
+
+    def _assert_turn_execution_sync(self, session_id: str, lease_token: str) -> None:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                self._assert_turn_lease_sync(cur, session_id, lease_token)
 
     def _claim_approval_continuation_sync(
         self,

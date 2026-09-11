@@ -2130,6 +2130,9 @@ class SessionService:
             return
         if not assistant_message.strip():
             return
+        turn_lease_token = str((fenced_write or {}).get("turn_lease_token") or "")
+        if turn_lease_token:
+            await self._store.assert_turn_execution(session.id, turn_lease_token)
         memory_ids = await self._memory_runtime_service.write_turn_memory(
             session_id=session.id,
             turn_id=turn_id,
@@ -2138,6 +2141,7 @@ class SessionService:
             assistant_message=assistant_message,
             tool_results=tool_results,
             context_bundle=context_bundle,
+            turn_lease_token=turn_lease_token or None,
         )
         await self._store.append_event(
             session.id,
@@ -2175,7 +2179,13 @@ class SessionService:
         )
         if not observations:
             return
-        observation_ids = await self._memory_runtime_service.write_observations(observations)
+        turn_lease_token = str((fenced_write or {}).get("turn_lease_token") or "")
+        if turn_lease_token:
+            await self._store.assert_turn_execution(session.id, turn_lease_token)
+        observation_ids = await self._memory_runtime_service.write_observations(
+            observations,
+            turn_lease_token=turn_lease_token or None,
+        )
         await self._store.append_event(
             session.id,
             self._make_event(

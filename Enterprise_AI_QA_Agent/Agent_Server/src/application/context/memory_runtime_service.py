@@ -340,6 +340,7 @@ class MemoryRuntimeService:
         assistant_message: str,
         tool_results: list[dict[str, Any]],
         context_bundle: dict[str, Any],
+        turn_lease_token: str | None = None,
     ) -> list[str]:
         write_ids: list[str] = []
         requests = self._build_turn_write_policy(
@@ -352,6 +353,8 @@ class MemoryRuntimeService:
             context_bundle=context_bundle,
         )
         requests = await self._attach_embeddings(requests)
+        if turn_lease_token:
+            requests = [item.model_copy(update={"turn_lease_token": turn_lease_token}) for item in requests]
         for request in requests:
             point = await self._memory_store.write(request)
             if point is not None:
@@ -403,7 +406,11 @@ class MemoryRuntimeService:
         point = await self._memory_store.write(request)
         return point.id if point is not None else None
 
-    async def write_observations(self, observations: Iterable[ObservationRecord]) -> list[str]:
+    async def write_observations(
+        self,
+        observations: Iterable[ObservationRecord],
+        turn_lease_token: str | None = None,
+    ) -> list[str]:
         write_ids: list[str] = []
         requests: list[MemoryWriteRequest] = []
         for observation in observations:
@@ -430,6 +437,8 @@ class MemoryRuntimeService:
                 )
             )
         for request in await self._attach_embeddings(requests):
+            if turn_lease_token:
+                request = request.model_copy(update={"turn_lease_token": turn_lease_token})
             point = await self._memory_store.write(request)
             if point is not None:
                 write_ids.append(point.id)

@@ -64,4 +64,5 @@ class MemoryWriteRequest(BaseModel):
     trace_id: str | None = None
     source: str | None = None
     stale: bool = False
+    turn_lease_token: str | None = Field(default=None, exclude=True)
     metadata: dict[str, Any] = Field(default_factory=dict)

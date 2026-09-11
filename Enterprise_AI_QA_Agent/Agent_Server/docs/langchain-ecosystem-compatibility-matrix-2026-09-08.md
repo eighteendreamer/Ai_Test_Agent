@@ -189,6 +189,13 @@
 - 期间修复 PostgreSQL 兼容性：使用 JSONB 空对象比较替代不可用函数，并按 SQLAlchemy 行列名读取 `id`。
 - Coordinator 子会话租约续租/恢复扫描、Memory fencing、Stage 对账和 4/24 小时 soak 仍未完成。
 
+## 15. 2026-09-11 外部 Memory 写入 fencing 增量
+
+- `MemoryWriteRequest` 增加不参与序列化的 turn lease token；SessionService 在 turn memory/observations 写入前校验 owner。
+- PostgreSQL Memory store 在同一写事务内锁定 Session 并校验 token/expiry，旧 Worker 接管后不能写入；token 不落入 Memory metadata。
+- Memory/Deep Agents 专项 `32 passed, 20 skipped`；真实 PostgreSQL 旧 token 写入拒绝、新 token 写入成功。
+- Coordinator 子会话租约续租/恢复扫描、Stage 对账和 4/24 小时 soak 仍未完成。
+
 ## 14. 2026-09-11 服务启动过期 Turn 恢复扫描增量
 
 - 新增启动时一次性 `recover_expired_turn_executions`：仅处理已过期且仍为 running 的 Session，原子清理 lease 并投影为 interrupted；不自动重跑未知副作用。

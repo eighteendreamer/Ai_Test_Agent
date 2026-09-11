@@ -17,6 +17,7 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.core.config import Settings
 from src.domain.models import SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
 from src.registry.tools import ToolRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_session_store import PostgresSessionStore
@@ -26,6 +27,7 @@ from src.schemas.run_management import (
     TestRunRecord as _RunRecord,
 )
 from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, ToolApprovalStatus
+from src.schemas.memory import MemoryWriteRequest
 from tests.live_postgres_config import LivePostgresTestConfig
 
 
@@ -639,9 +641,11 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
         "postgres_event_table": f"live_turn_event_{suffix}",
         "postgres_snapshot_table": f"live_turn_snapshot_{suffix}",
         "postgres_approval_table": f"live_turn_approval_{suffix}",
+        "postgres_memory_table": f"live_turn_memory_{suffix}",
     }
     settings = _settings_with_database_overrides(**table_names)
     store = PostgresSessionStore(settings)
+    memory_store = PostgresVectorMemoryStore(settings)
     session_id = f"turn-session-{suffix}"
     turn_id = f"turn-{suffix}"
     now = datetime.now(timezone.utc)
@@ -658,6 +662,7 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
 
     try:
         await store.initialize()
+        await memory_store.initialize()
         await store.save_session(session)
         stores = [PostgresSessionStore(settings) for _ in range(8)]
         claims = await asyncio.gather(*(
@@ -732,6 +737,36 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
         assert recovered_crashed is not None
         assert recovered_crashed.status == SessionStatus.interrupted
         assert recovered_crashed.metadata["control"]["is_resumable"] is True
+
+        memory_session = SessionRecord(
+            id=f"memory-{suffix}",
+            title="memory fencing",
+            status=SessionStatus.idle,
+            session_mode=SessionMode.normal,
+            runtime_mode=RuntimeMode.interactive,
+            mode_key="default",
+            created_at=now,
+            updated_at=now,
+        )
+        await store.save_session(memory_session)
+        assert await store.claim_turn_execution(
+            memory_session.id, "memory-turn", "memory-worker", "memory-token", 30
+        )
+        request = MemoryWriteRequest(
+            scope="session",
+            kind="episodic",
+            content="fenced memory",
+            session_id=memory_session.id,
+            turn_id="memory-turn",
+            turn_lease_token="memory-token",
+        )
+        await memory_store.write(request)
+        assert await store.renew_turn_execution(memory_session.id, "memory-token", 0) is True
+        assert await store.claim_turn_execution(
+            memory_session.id, "memory-turn", "memory-recovery", "memory-recovery-token", 30
+        )
+        with pytest.raises(ContinuationLeaseLostError):
+            await memory_store.write(request)
     finally:
         _drop_tables(
             settings,
@@ -741,5 +776,6 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
                 table_names["postgres_event_table"],
                 table_names["postgres_message_table"],
                 table_names["postgres_session_table"],
+                table_names["postgres_memory_table"],
             ],
         )

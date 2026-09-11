@@ -1744,6 +1744,15 @@ API / Session / TestRun 控制平面（系统保留）
 | 已知修复 | PostgreSQL 目标版本不支持 `jsonb_object_length`，改用 JSONB 空对象比较；SQLAlchemy 行对象按列名读取 `id`，避免位置索引错误 |
 | 未完成 | Coordinator 子会话租约续租/崩溃恢复扫描、外部 Memory fencing、Stage 对账与 4/24 小时 soak 仍未完成；DA-E5 保持进行中 |
 
+### DA-E5 外部 Memory 写入 fencing 实施记录（进行中，2026-09-11）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 本批目标 | 防止 turn lease 失效后，旧 Worker 将会话结果或工具观察写入外部 PostgreSQL Memory |
+| 采用做法 | `MemoryWriteRequest` 携带排除序列化的 turn token；SessionService 写 Memory 前复用 Store lease 校验；PostgreSQL Memory store 在同一写事务内对 Session 行执行 token/expiry `FOR UPDATE` 校验，token 不写入 Memory metadata |
+| 自动化与真实证据 | Memory/Deep Agents 专项 `32 passed, 20 skipped`；真实 PostgreSQL 验证新 token 写入成功、旧 token 在接管后写入抛出 `ContinuationLeaseLostError`；Memory 表独立初始化与清理通过 |
+| 未完成 | Coordinator 子会话租约续租/崩溃恢复扫描、执行中 Stage 对账与 4/24 小时 soak 仍未完成；DA-E5 保持进行中 |
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：
