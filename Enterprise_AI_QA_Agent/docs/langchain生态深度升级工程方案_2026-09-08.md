@@ -1816,6 +1816,14 @@ API / Session / TestRun 控制平面（系统保留）
 - 指标：完成 P50 `11.29ms`、P95 `16.84ms`、P99 `25.60ms`；首窗口 P95 `22.29ms`、末窗口 P95 `16.47ms`；RSS 增长 `774144` bytes；连接峰值 `4`。
 - 结论：5 分钟阶梯窗口稳定，可作为 4 小时正式窗口前的可执行性证据；不替代 4/24 小时正式 soak，也不证明 LangSmith Trace 队列无积压。
 
+#### PostgreSQL 10 分钟稳定性阶梯观察（2026-09-11）
+
+- 命令：`RUN_LIVE_POSTGRES_SOAK=1 RUN_LIVE_POSTGRES_SOAK_SECONDS=600 RUN_LIVE_POSTGRES_SOAK_SAMPLE_INTERVAL_SECONDS=30 RUN_LIVE_POSTGRES_SOAK_ITERATION_INTERVAL_SECONDS=0.25 RUN_LIVE_POSTGRES_SOAK_WORKERS=4 pytest tests/test_live_postgres_capacity.py::test_live_postgres_lifecycle_soak -q -s`。
+- 结果：`1 passed in 601.49s`；1969 次迭代全部完成，错误率 `0.000000`。
+- 指标：完成 P50 `11.22ms`、P95 `20.12ms`、P99 `38.00ms`；首窗口 P95 `33.08ms`、末窗口 P95 `13.97ms`；RSS 样本 `16236544 -> 111194112`，测试报告净差 `-24576000` bytes；连接峰值 `4`。
+- 采样限制：首个 RSS 样本发生在进程工作集完全建立前，净差为负不能解释为内存下降；后续正式窗口应增加预热并单独报告稳态 RSS。
+- 结论：10 分钟阶梯窗口稳定，可作为 4 小时正式窗口前的可执行性证据；不替代 4/24 小时正式 soak，也不证明 LangSmith Trace 队列无积压。
+
 ### DA-E5 Coordinator 子会话恢复对账实施记录（进行中，2026-09-11）
 
 | 项目 | 记录 |
