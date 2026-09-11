@@ -247,6 +247,9 @@ class PostgresSessionStore:
             owner_id,
         )
 
+    async def recover_expired_turn_executions(self) -> list[str]:
+        return await asyncio.to_thread(self._recover_expired_turn_executions_sync)
+
     async def renew_approval_continuation(
         self,
         session_id: str,
@@ -1154,6 +1157,49 @@ class PostgresSessionStore:
                     (turn_id, dispatch_key, owner_id, session_id, turn_id, dispatch_key),
                 )
                 return cur.fetchone() is not None
+
+    def _recover_expired_turn_executions_sync(self) -> list[str]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table}
+                    SET status = 'interrupted',
+                        metadata = jsonb_set(
+                            (
+                                metadata
+                                - 'turn_lease_turn_id'
+                                - 'turn_lease_owner'
+                                - 'turn_lease_token'
+                                - 'turn_lease_expires_at'
+                            ),
+                            '{{control}}',
+                            COALESCE(
+                                (
+                                    metadata
+                                    - 'turn_lease_turn_id'
+                                    - 'turn_lease_owner'
+                                    - 'turn_lease_token'
+                                    - 'turn_lease_expires_at'
+                                )->'control',
+                                '{{}}'::jsonb
+                            ) || jsonb_build_object(
+                                'control_state', 'interrupted',
+                                'is_interrupted', true,
+                                'is_resumable', COALESCE(metadata->'pending_turn', '{{}}'::jsonb) <> '{{}}'::jsonb,
+                                'preserve_resources', COALESCE(metadata->'pending_turn', '{{}}'::jsonb) <> '{{}}'::jsonb,
+                                'last_interrupt_reason', 'Turn execution lease expired while the service was unavailable.'
+                            ),
+                            true
+                        ),
+                        updated_at = now()
+                    WHERE status = 'running'
+                      AND (metadata->>'turn_lease_expires_at') IS NOT NULL
+                      AND (metadata->>'turn_lease_expires_at')::timestamptz <= now()
+                    RETURNING id
+                    """
+                )
+                return [str(row["id"]) for row in (cur.fetchall() or [])]
 
     def _claim_approval_continuation_sync(
         self,

@@ -118,6 +118,7 @@ class SessionStore(Protocol):
         dispatch_key: str,
         owner_id: str,
     ) -> bool: ...
+    async def recover_expired_turn_executions(self) -> list[str]: ...
     async def claim_approval_continuation(
         self,
         session_id: str,
@@ -547,6 +548,42 @@ class InMemorySessionStore:
             session.metadata["coordinator_dispatch_claims"] = claims
             session.updated_at = datetime.utcnow()
             return True
+
+    async def recover_expired_turn_executions(self) -> list[str]:
+        async with self._lock:
+            recovered: list[str] = []
+            now = datetime.utcnow()
+            for session in self._sessions.values():
+                if session.status.value != "running":
+                    continue
+                expires_at = _parse_datetime(session.metadata.get("turn_lease_expires_at"))
+                if expires_at is None or expires_at > now:
+                    continue
+                for key in (
+                    "turn_lease_turn_id",
+                    "turn_lease_owner",
+                    "turn_lease_token",
+                    "turn_lease_expires_at",
+                ):
+                    session.metadata.pop(key, None)
+                control = session.metadata.get("control", {})
+                if not isinstance(control, dict):
+                    control = {}
+                has_pending_turn = bool(session.metadata.get("pending_turn"))
+                control.update(
+                    {
+                        "control_state": "interrupted",
+                        "is_interrupted": True,
+                        "is_resumable": has_pending_turn,
+                        "preserve_resources": has_pending_turn,
+                        "last_interrupt_reason": "Turn execution lease expired while the service was unavailable.",
+                    }
+                )
+                session.metadata["control"] = control
+                session.status = type(session.status).interrupted
+                session.updated_at = now
+                recovered.append(session.id)
+            return recovered
 
     async def claim_approval_continuation(
         self,

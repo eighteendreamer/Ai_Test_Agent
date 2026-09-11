@@ -1021,6 +1021,40 @@ async def test_da_e5_expired_turn_owner_cannot_complete_lease():
 
 
 @pytest.mark.asyncio
+async def test_da_e5_startup_recovery_marks_expired_turn_interrupted():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+
+    store = InMemorySessionStore()
+    session = _runtime_session("startup-recovery-session")
+    await store.save_session(session)
+    assert await store.claim_turn_execution(
+        session.id,
+        "startup-turn",
+        "crashed-worker",
+        "expired-token",
+        0,
+    )
+    registry = ModeRegistry()
+    service = SessionService(
+        store=store,
+        input_orchestrator_service=InputOrchestratorService(mode_registry=registry),
+        runtime_service=SimpleNamespace(request_interrupt=lambda *_args, **_kwargs: None),
+        mode_registry=registry,
+    )
+
+    assert await service.recover_expired_turn_executions() == [session.id]
+    recovered = await store.get_session(session.id)
+    assert recovered is not None
+    assert recovered.status == SessionStatus.interrupted
+    assert "turn_lease_token" not in recovered.metadata
+    assert [event.type for event in await store.list_events(session.id)] == [
+        "turn.recovery_detected"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_da_e5_two_workers_cannot_execute_the_same_new_turn():
     from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
     from src.application.runtime.runtime_service import RuntimeTurnResult

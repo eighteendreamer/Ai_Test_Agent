@@ -201,6 +201,27 @@ class SessionService:
         )
         return await self._to_detail(session)
 
+    async def recover_expired_turn_executions(self) -> list[str]:
+        recovered_session_ids = await self._store.recover_expired_turn_executions()
+        for session_id in recovered_session_ids:
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "turn.recovery_detected",
+                    {
+                        "message": "An expired turn lease was detected during service startup; the session was preserved for manual resume.",
+                        "recovery_source": "service_startup",
+                        "is_resumable": True,
+                    },
+                ),
+            )
+            logger.warning(
+                "expired_turn_recovered_at_startup",
+                extra={"session_id": session_id},
+            )
+        return recovered_session_ids
+
     async def get_session(self, session_id: str) -> SessionDetail:
         session = await self._store.get_session(session_id)
         if session is None:

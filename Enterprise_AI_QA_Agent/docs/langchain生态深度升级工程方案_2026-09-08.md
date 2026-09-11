@@ -1734,6 +1734,16 @@ API / Session / TestRun 控制平面（系统保留）
 | 失败先行与回归 | 两个独立 Service 同时恢复同一 interrupted checkpoint，只有一次 `runtime.resume_turn`；回归 `1 passed`。恢复/中断/审批 continuation 相关筛选回归 `15 passed, 4 skipped` |
 | 未完成 | Coordinator 子会话、服务启动后的自动恢复扫描、外部 Memory 写入 fencing、执行中 Stage 对账、4/24 小时 soak 仍未完成；DA-E5 继续保持进行中 |
 
+### DA-E5 服务启动后的过期 Turn 恢复扫描（进行中，2026-09-11）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 本批目标 | 进程崩溃后不自动执行未知副作用；启动时发现已过期 turn lease，将 Session 原子转为 interrupted，并保留 pending checkpoint 供人工恢复 |
+| 采用做法 | SessionStore 增加 `recover_expired_turn_executions`；InMemory 使用 Store lock，PostgreSQL 使用数据库时钟条件 UPDATE；同步更新 control 投影、写入 `turn.recovery_detected` 事件；不新增常驻 reaper、不自动重跑 |
+| 自动化与真实证据 | InMemory 过期 Session 恢复回归 `1 passed`；真实 PostgreSQL 过期 Session 恢复、control `is_resumable` 与租约清理验证通过；服务 lifespan 已接入启动扫描；最终主后端 `821 passed, 35 skipped, 1 warning`，C4 `841 passed, 15 skipped, 1 warning`，前端 `33 passed` |
+| 已知修复 | PostgreSQL 目标版本不支持 `jsonb_object_length`，改用 JSONB 空对象比较；SQLAlchemy 行对象按列名读取 `id`，避免位置索引错误 |
+| 未完成 | Coordinator 子会话租约续租/崩溃恢复扫描、外部 Memory fencing、Stage 对账与 4/24 小时 soak 仍未完成；DA-E5 保持进行中 |
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：

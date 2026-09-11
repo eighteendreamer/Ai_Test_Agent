@@ -707,6 +707,31 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
             for index, candidate in enumerate(stores)
         ))
         assert sum(dispatch_claims) == 1
+
+        crashed = SessionRecord(
+            id=f"crashed-{suffix}",
+            title="startup recovery",
+            status=SessionStatus.running,
+            session_mode=SessionMode.normal,
+            runtime_mode=RuntimeMode.interactive,
+            mode_key="default",
+            created_at=now,
+            updated_at=now,
+            metadata={
+                "turn_lease_turn_id": "crashed-turn",
+                "turn_lease_owner": "crashed-worker",
+                "turn_lease_token": "crashed-token",
+                "turn_lease_expires_at": (now - timedelta(seconds=10)).isoformat(),
+                "pending_turn": {"turn_id": "crashed-turn"},
+                "control": {"control_state": "active_turn"},
+            },
+        )
+        await store.save_session(crashed)
+        assert await store.recover_expired_turn_executions() == [crashed.id]
+        recovered_crashed = await store.get_session(crashed.id)
+        assert recovered_crashed is not None
+        assert recovered_crashed.status == SessionStatus.interrupted
+        assert recovered_crashed.metadata["control"]["is_resumable"] is True
     finally:
         _drop_tables(
             settings,

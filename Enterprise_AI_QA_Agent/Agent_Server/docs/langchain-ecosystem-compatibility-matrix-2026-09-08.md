@@ -181,3 +181,18 @@
 - InMemory 使用 Store lock，PostgreSQL 使用条件 JSONB UPDATE；内部 claim 元数据不通过 SessionDetail 暴露。同步修正 WorkerPool 位置参数调用，真实 dispatch 路径可执行。
 - 主后端全量 `820 passed, 35 skipped`，C4 `840 passed, 15 skipped`，前端 `33 passed`；真实 PostgreSQL 8 claimant 仅 1 个成功。
 - Coordinator 子会话租约续租/崩溃恢复扫描、Stage 对账、外部 Memory fencing 和 4/24 小时 soak 仍未完成。
+
+## 14. 2026-09-11 服务启动过期 Turn 恢复扫描增量
+
+- 新增启动时一次性 `recover_expired_turn_executions`：仅处理已过期且仍为 running 的 Session，原子清理 lease 并投影为 interrupted；不自动重跑未知副作用。
+- InMemory 与 PostgreSQL 均更新 `control_state/is_interrupted/is_resumable/preserve_resources`，并记录 `turn.recovery_detected`；真实 PostgreSQL 验证通过。
+- 期间修复 PostgreSQL 兼容性：使用 JSONB 空对象比较替代不可用函数，并按 SQLAlchemy 行列名读取 `id`。
+- Coordinator 子会话租约续租/恢复扫描、Memory fencing、Stage 对账和 4/24 小时 soak 仍未完成。
+
+## 14. 2026-09-11 服务启动过期 Turn 恢复扫描增量
+
+- 新增启动时一次性 `recover_expired_turn_executions`：仅处理已过期且仍为 running 的 Session，原子清理 lease 并投影为 interrupted；不自动重跑未知副作用。
+- InMemory 与 PostgreSQL 均更新 `control_state/is_interrupted/is_resumable/preserve_resources`，并记录 `turn.recovery_detected`；真实 PostgreSQL 验证通过。
+- 期间修复 PostgreSQL 兼容性：使用 JSONB 空对象比较替代不可用函数，并按 SQLAlchemy 行列名读取 `id`。
+- 最终全量：主后端 `821 passed, 35 skipped, 1 warning`，C4 `841 passed, 15 skipped, 1 warning`，前端 `33 passed`；双环境编译与入口导入通过，C4 `pip check` 无 broken requirements。
+- Coordinator 子会话租约续租/恢复扫描、Memory fencing、Stage 对账和 4/24 小时 soak 仍未完成。
