@@ -1810,7 +1810,7 @@ API / Session / TestRun 控制平面（系统保留）
 | 依据 | Child session 已复用 SessionStore 通用 turn lease；启动扫描会把过期 child 标记为 `interrupted`，Coordinator 不应另建一套执行所有权事实源 |
 | 实施 | 新增 `CoordinatorRuntimeService.recover_orphaned_dispatches`，启动时扫描持久化 `worker_dispatches`：child 已完成/失败则投影真实终态；child 中断或缺失则标记 `recovery_required` 并记录 `worker.dispatches_reconciled`，不自动重放未知外部副作用 |
 | 接线 | 服务 lifespan 在 `recover_expired_turn_executions` 后调用 Coordinator 对账扫描 |
-| 测试 | Coordinator 专项 `51 passed`；主环境全量 `824 passed, 35 skipped`；真实 PostgreSQL 并发/接管 `5 passed` |
+| 测试 | Coordinator 专项 `51 passed`；主环境全量 `824 passed, 35 skipped`；真实 PostgreSQL 并发/接管与 Coordinator 恢复对账 `6 passed` |
 | 边界 | `recovery_required` 只表示需要人工或模式级副作用对账，不代表可以自动续跑；Coordinator 子任务的自动安全续跑仍未实现 |
 | 当前状态 | 代码与回归验证完成；4/24 小时 soak、真实服务重启后的 Coordinator PostgreSQL 对账仍未完成，DA-E5 保持进行中 |
 

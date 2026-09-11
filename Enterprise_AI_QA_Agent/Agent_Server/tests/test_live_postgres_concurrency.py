@@ -13,12 +13,14 @@ from uuid import uuid4
 import pytest
 
 from src.application.test_runs.run_store import PostgresTestRunStore
+from src.application.orchestration.coordinator_runtime_service import CoordinatorRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.core.config import Settings
 from src.domain.models import SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
 from src.registry.tools import ToolRegistry
+from src.registry.agents import AgentRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.store import ContinuationLeaseLostError
@@ -779,3 +781,69 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
                 table_names["postgres_memory_table"],
             ],
         )
+
+
+@live_postgres
+@pytest.mark.asyncio
+async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child():
+    suffix = uuid4().hex[:10]
+    table_names = {
+        "postgres_session_table": f"live_coord_session_{suffix}",
+        "postgres_message_table": f"live_coord_message_{suffix}",
+        "postgres_event_table": f"live_coord_event_{suffix}",
+        "postgres_snapshot_table": f"live_coord_snapshot_{suffix}",
+        "postgres_approval_table": f"live_coord_approval_{suffix}",
+        "postgres_memory_table": f"live_coord_memory_{suffix}",
+    }
+    settings = _settings_with_database_overrides(**table_names)
+    store = PostgresSessionStore(settings)
+    now = datetime.now(timezone.utc)
+    parent = SessionRecord(
+        id=f"coord-parent-{suffix}",
+        title="coordinator recovery parent",
+        status=SessionStatus.running,
+        session_mode=SessionMode.normal,
+        runtime_mode=RuntimeMode.interactive,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={
+            "worker_dispatches": [
+                {
+                    "task_id": "coord-task-1",
+                    "child_session_id": f"coord-child-{suffix}",
+                    "status": "running",
+                }
+            ]
+        },
+    )
+    child = SessionRecord(
+        id=f"coord-child-{suffix}",
+        title="interrupted coordinator child",
+        status=SessionStatus.interrupted,
+        session_mode=SessionMode.background_task,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+    )
+    try:
+        await store.initialize()
+        await store.save_session(parent)
+        await store.save_session(child)
+        service = CoordinatorRuntimeService(
+            settings=settings,
+            store=store,
+            session_service=None,
+            agent_registry=AgentRegistry(),
+        )
+        assert await service.recover_orphaned_dispatches() == 1
+        recovered = await store.get_session(parent.id)
+        assert recovered is not None
+        dispatch = recovered.metadata["worker_dispatches"][0]
+        assert dispatch["status"] == "recovery_required"
+        assert dispatch["recovery_reason"] == "child_session_interrupted_without_safe_replay"
+        events = await store.list_events(parent.id)
+        assert [event.type for event in events] == ["worker.dispatches_reconciled"]
+    finally:
+        _drop_tables(settings, list(table_names.values()))
