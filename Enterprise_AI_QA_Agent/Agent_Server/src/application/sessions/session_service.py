@@ -386,7 +386,19 @@ class SessionService:
                     "The interrupted runtime has no durable checkpoint and cannot be resumed."
                 )
 
-            session.status = SessionStatus.running
+            turn_id = str(snapshot.graph_state.get("turn_id", ""))
+            turn_lease_token = str(uuid4())
+            claimed_session = await self._store.claim_turn_execution(
+                session_id=session_id,
+                turn_id=turn_id,
+                owner_id=self._worker_owner_id,
+                lease_token=turn_lease_token,
+                lease_seconds=self._turn_execution_lease_seconds,
+            )
+            if claimed_session is None:
+                raise ValueError("Session turn is owned by another worker.")
+
+            session = claimed_session
             control = self._ensure_control_metadata(session)
             control.update(
                 {
@@ -398,27 +410,89 @@ class SessionService:
                 }
             )
             session.metadata["control"] = control
-            await self._store.save_session(session)
+            await self._store.save_session(session, turn_lease_token=turn_lease_token)
 
             assistant_message_id = str(uuid4())
             stream_chunk_handler = self._build_stream_chunk_handler(
                 session_id=session_id,
-                turn_id=str(snapshot.graph_state.get("turn_id", "")),
+                turn_id=turn_id,
                 assistant_message_id=assistant_message_id,
+                turn_lease_token=turn_lease_token,
             )
-            runtime_result = await self._runtime_service.resume_turn(
-                session,
-                snapshot,
-                resume_reason=payload.reason or "manual_resume",
-                on_model_chunk=stream_chunk_handler,
-                event_queue=self._store.get_queue(session_id),
+            heartbeat_stop = asyncio.Event()
+            heartbeat_task = asyncio.create_task(
+                self._keep_turn_execution_alive(
+                    session_id=session_id,
+                    lease_token=turn_lease_token,
+                    stop_event=heartbeat_stop,
+                )
             )
-            return await self._finalize_runtime_result(
-                session=session,
-                runtime_result=runtime_result,
-                assistant_message_id=assistant_message_id,
-                user_message_override=str(runtime_result.state.get("user_message", "")),
-            )
+            settled = False
+            try:
+                runtime_result = await self._runtime_service.resume_turn(
+                    session,
+                    snapshot,
+                    resume_reason=payload.reason or "manual_resume",
+                    on_model_chunk=stream_chunk_handler,
+                    event_queue=self._store.get_queue(session_id),
+                )
+                response = await self._finalize_runtime_result(
+                    session=session,
+                    runtime_result=runtime_result,
+                    assistant_message_id=assistant_message_id,
+                    user_message_override=str(runtime_result.state.get("user_message", "")),
+                    turn_lease_token=turn_lease_token,
+                )
+                settled = True
+                return response
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                settled = True
+                latest = await self._require_session(session_id)
+                latest.status = SessionStatus.interrupted
+                self._ensure_control_metadata(latest).update(
+                    {
+                        "control_state": "interrupted",
+                        "is_interrupted": True,
+                        "is_resumable": True,
+                        "preserve_resources": True,
+                        "last_interrupt_reason": truncate_text(str(exc), 240),
+                    }
+                )
+                await self._store.save_session(latest, turn_lease_token=turn_lease_token)
+                await self._store.append_event(
+                    session_id,
+                    self._make_event(
+                        session_id,
+                        "turn.interrupted",
+                        {
+                            "turn_id": turn_id,
+                            "message": "Manual resume was interrupted before the assistant response was produced.",
+                            "error_type": exc.__class__.__name__,
+                            "error": truncate_text(str(exc), 240),
+                            "is_resumable": True,
+                        },
+                    ),
+                    turn_lease_token=turn_lease_token,
+                )
+                raise
+            finally:
+                heartbeat_stop.set()
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+                if settled:
+                    completed = await self._store.complete_turn_execution(
+                        session_id, turn_lease_token
+                    )
+                    if not completed:
+                        logger.warning(
+                            "turn_execution_completion_lease_lost",
+                            extra={"session_id": session_id, "turn_id": turn_id},
+                        )
 
     async def replay_session(
         self,

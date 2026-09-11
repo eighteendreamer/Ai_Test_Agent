@@ -168,3 +168,9 @@
 - Deep Agents 专项 `27 passed, 20 skipped`（含内存 Store 过期完成拒绝）；真实 PostgreSQL 并发 `5 passed`；Session 回归 `20 passed`；真实默认模型返回 `DA_E5_TURN_OWNER_OK`，终态 completed、30 events、无租约字段泄露。
 - 最终全量：主环境 `818 passed, 35 skipped`，C4 `838 passed, 15 skipped`，前端 `33 passed`；主/C4 编译与入口导入、C4 `pip check` 全部通过。
 - 手工 resume、Coordinator、服务启动扫描、外部 Memory fencing 和 4/24 小时 soak 仍未完成，DA-E5 不关闭。
+
+## 12. 2026-09-11 手工 resume 跨 Worker 所有权增量
+
+- `resume_session` 现在从最新 Snapshot 读取原 `turn_id`，复用通用 turn lease、heartbeat 和 fenced finalize；取消不主动完成租约，允许到期后恢复 Worker 接管。
+- 双 Service 同时恢复同一 interrupted checkpoint 的失败先行回归通过，`runtime.resume_turn` 只调用一次；恢复/中断/审批 continuation 筛选回归 `15 passed, 4 skipped`。
+- Coordinator 子会话、服务启动扫描、外部 Memory fencing、执行中 Stage 对账与 4/24 小时 soak 仍未完成，DA-E5 不关闭。

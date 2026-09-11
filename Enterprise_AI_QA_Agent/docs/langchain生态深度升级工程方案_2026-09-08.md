@@ -1715,6 +1715,15 @@ API / Session / TestRun 控制平面（系统保留）
 | 最终全量 | 2026-09-11 最终代码状态：主 Python 3.11 后端 `818 passed, 35 skipped, 1 warning in 50.66s`；C4 后端 `838 passed, 15 skipped, 1 warning in 29.51s`；前端 Vitest `2 files / 33 passed`；真实 PostgreSQL 并发 `5 passed in 6.33s`；主/C4 `compileall` 与 `src.main` 导入通过，C4 `pip check` 为 `No broken requirements found`。两条 warning 均为第三方弃用提示，无失败 |
 | 未完成 | 普通 `send_message`/队列 drain 已统一 owner；手工 resume、Coordinator 子会话、服务启动后的自动恢复扫描、外部 Memory 写入 fencing、4/24 小时 soak 尚未完成，DA-E5 保持进行中 |
 
+### DA-E5 手工 resume 跨 Worker 所有权实施记录（进行中，2026-09-11）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 本批目标 | 将 `resume_session` 纳入普通 turn owner/fencing，避免多个 Worker 从同一 durable interrupted checkpoint 重复恢复 |
+| 采用做法 | 复用 `claim_turn_execution`、turn heartbeat 与 Session/Snapshot/Event fenced write；从最新 Snapshot 的 `turn_id` 作为恢复 owner key，取消时保留租约让其自然过期，正常/错误终止才完成租约 |
+| 失败先行与回归 | 两个独立 Service 同时恢复同一 interrupted checkpoint，只有一次 `runtime.resume_turn`；回归 `1 passed`。恢复/中断/审批 continuation 相关筛选回归 `15 passed, 4 skipped` |
+| 未完成 | Coordinator 子会话、服务启动后的自动恢复扫描、外部 Memory 写入 fencing、执行中 Stage 对账、4/24 小时 soak 仍未完成；DA-E5 继续保持进行中 |
+
 ## 15. 每次实施后的记录模板
 
 后续每完成一个开发批次，在对应阶段下追加：

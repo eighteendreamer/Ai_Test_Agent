@@ -33,7 +33,13 @@ from src.modes.code_review_mode.models import ProjectSource
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
-from src.schemas.session import ExecutionRequest, RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import (
+    ExecutionRequest,
+    ResumeSessionRequest,
+    RuntimeMode,
+    SessionMode,
+    SessionStatus,
+)
 from src.schemas.session import MessageKind
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 
@@ -1096,6 +1102,111 @@ async def test_da_e5_two_workers_cannot_execute_the_same_new_turn():
     )
     for _ in range(100):
         if runtime.calls >= 2:
+            break
+        await asyncio.sleep(0)
+    runtime.release.set()
+    outcomes = await asyncio.gather(first_task, second_task, return_exceptions=True)
+
+    assert runtime.calls == 1
+    assert sum(isinstance(item, ValueError) for item in outcomes) == 1
+
+
+@pytest.mark.asyncio
+async def test_da_e5_two_workers_cannot_resume_the_same_turn():
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.application.runtime.runtime_service import RuntimeTurnResult
+    from src.registry.modes import ModeRegistry
+    from src.runtime.store import InMemorySessionStore
+    from src.schemas.session import SessionSnapshot
+
+    class DetachedStore(InMemorySessionStore):
+        def __init__(self):
+            super().__init__()
+            self.initial_reads = 0
+            self.both_reading = asyncio.Event()
+
+        async def get_session(self, session_id):
+            value = await super().get_session(session_id)
+            if self.initial_reads < 2:
+                self.initial_reads += 1
+                if self.initial_reads == 2:
+                    self.both_reading.set()
+                await self.both_reading.wait()
+            return deepcopy(value) if value is not None else None
+
+    class RuntimeStub:
+        def __init__(self):
+            self.calls = 0
+            self.release = asyncio.Event()
+
+        async def resume_turn(self, session, snapshot, **_kwargs):
+            self.calls += 1
+            await self.release.wait()
+            state = {
+                "turn_id": snapshot.graph_state["turn_id"],
+                "trace_id": "resume-trace",
+                "user_message": "resume",
+                "selected_agent_key": "default-agent",
+                "selected_agent_name": "Default Agent",
+                "selected_model_key": "fake-model",
+                "selected_model_name": "Fake Model",
+                "model_response_summary": {"mode": "ok"},
+            }
+            return RuntimeTurnResult(
+                output_text="resumed",
+                events=[],
+                snapshot=SessionSnapshot(
+                    id="resume-snapshot",
+                    session_id=session.id,
+                    version=2,
+                    stage="completed",
+                    created_at=datetime.now(UTC),
+                    graph_state=state,
+                ),
+                approvals=[],
+                tool_messages=[],
+                pending_turn={},
+                state=state,
+            )
+
+        def request_interrupt(self, *_args, **_kwargs):
+            return None
+
+    store = DetachedStore()
+    session = _runtime_session("concurrent-resume-session")
+    session.status = SessionStatus.interrupted
+    session.metadata["pending_turn"] = {"turn_id": "resume-turn"}
+    await store.save_session(session)
+    await store.save_snapshot(
+        session.id,
+        SessionSnapshot(
+            id="resume-snapshot-v1",
+            session_id=session.id,
+            version=1,
+            stage="interrupted",
+            created_at=datetime.now(UTC),
+            graph_state={"turn_id": "resume-turn"},
+        ),
+    )
+    runtime = RuntimeStub()
+
+    def service():
+        registry = ModeRegistry()
+        return SessionService(
+            store=store,
+            input_orchestrator_service=InputOrchestratorService(mode_registry=registry),
+            runtime_service=runtime,
+            mode_registry=registry,
+        )
+
+    first_task = asyncio.create_task(
+        service().resume_session(session.id, ResumeSessionRequest(reason="manual"))
+    )
+    second_task = asyncio.create_task(
+        service().resume_session(session.id, ResumeSessionRequest(reason="manual"))
+    )
+    for _ in range(100):
+        if runtime.calls >= 1:
             break
         await asyncio.sleep(0)
     runtime.release.set()
