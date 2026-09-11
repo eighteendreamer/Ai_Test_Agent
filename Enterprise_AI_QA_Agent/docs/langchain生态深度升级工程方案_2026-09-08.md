@@ -1796,3 +1796,10 @@ API / Session / TestRun 控制平面（系统保留）
 | 测试 | 主环境 `tests/test_case_execution_service.py`：12 passed；新增绑定校验与模式状态提取回归用例；未宣称 PostgreSQL/长时 soak 已完成 |
 | 当前状态 | 代码与单元回归已完成；真实 PostgreSQL 对账、跨 Worker Stage 崩溃恢复和 4/24 小时 soak 仍未完成，DA-E5 保持进行中 |
 
+#### 真实 PostgreSQL 短时可执行性观察（2026-09-11）
+
+- 命令：`RUN_LIVE_POSTGRES_SOAK=1 RUN_LIVE_POSTGRES_SOAK_SECONDS=60 RUN_LIVE_POSTGRES_SOAK_WORKERS=2 pytest tests/test_live_postgres_capacity.py::test_live_postgres_lifecycle_soak -q -s`
+- 结果：`1 passed`；917 次迭代全部完成，错误 0，错误率 `0.000000`。
+- 指标：完成 P50 `12.07ms`、P95 `18.42ms`、P99 `22.82ms`；RSS `111022080 -> 111575040`（增长 `552960` bytes）；连接峰值 `2`。
+- 结论：证明当前 PostgreSQL 租约/checkpoint 生命周期在短时窗口内可执行；不替代 4 小时/24 小时正式 soak，也不替代真实跨 Worker Stage 崩溃恢复验收。
+
