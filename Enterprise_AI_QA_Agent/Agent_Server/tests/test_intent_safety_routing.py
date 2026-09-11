@@ -1353,6 +1353,44 @@ def test_coordinator_dispatch_duplicate_workers_is_deduplicated_by_persistence_c
     assert created == ["child-1"]
 
 
+def test_coordinator_restart_reconciles_orphaned_child_without_replaying_it():
+    async def scenario():
+        store = InMemorySessionStore()
+        parent = _session()
+        parent.id = "coordinator-recovery-parent"
+        child = _session()
+        child.id = "coordinator-recovery-child"
+        child.status = SessionStatus.interrupted
+        await store.save_session(child)
+        parent.metadata["worker_dispatches"] = [
+            {
+                "task_id": "task-recovery",
+                "child_session_id": child.id,
+                "agent_key": "qa-planner",
+                "status": "running",
+            }
+        ]
+        await store.save_session(parent)
+        service = CoordinatorRuntimeService(
+            settings=Settings(),
+            store=store,
+            session_service=None,
+            agent_registry=AgentRegistry(),
+        )
+        count = await service.recover_orphaned_dispatches()
+        updated = await store.get_session(parent.id)
+        events = await store.list_events(parent.id)
+        return count, updated, events
+
+    count, parent, events = asyncio.run(scenario())
+    assert count == 1
+    assert parent.metadata["worker_dispatches"][0]["status"] == "recovery_required"
+    assert parent.metadata["worker_dispatches"][0]["recovery_reason"] == (
+        "child_session_interrupted_without_safe_replay"
+    )
+    assert [event.type for event in events] == ["worker.dispatches_reconciled"]
+
+
 def test_shared_security_grant_matches_url_and_bare_host_targets():
     grant = {
         "status": "verified",

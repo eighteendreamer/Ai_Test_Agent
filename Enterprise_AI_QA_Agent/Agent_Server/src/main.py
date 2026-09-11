@@ -492,6 +492,7 @@ async def lifespan(app: FastAPI):
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
     await session_service.recover_expired_turn_executions()
+    await coordinator_runtime_service.recover_orphaned_dispatches()
 
     # UI 录制域（方案第 8 章）：PG 事件流 + Memgraph 固化 + embedded 桥 + 会话编排
     recording_store = PostgresRecordingStore(settings)

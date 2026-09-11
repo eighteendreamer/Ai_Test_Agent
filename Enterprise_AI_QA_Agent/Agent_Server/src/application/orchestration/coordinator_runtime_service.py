@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -29,6 +30,9 @@ from src.schemas.session import (
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -127,6 +131,78 @@ class CoordinatorRuntimeService:
                     payload={"reason": reason, "source": "security_coordinator"},
                 ),
             )
+
+    async def recover_orphaned_dispatches(self) -> int:
+        """Reconcile persisted worker records after a coordinator restart.
+
+        Child execution ownership is already governed by the normal SessionStore
+        turn lease.  This scan only projects the child session's durable status
+        into the parent dispatch record; it never replays a child with unknown
+        external side effects.
+        """
+        recovered = 0
+        sessions = await self._store.list_sessions(limit=None)
+        for parent in sessions:
+            records = parent.metadata.get("worker_dispatches", [])
+            if not isinstance(records, list):
+                continue
+            changed = False
+            reconciled: list[dict[str, Any]] = []
+            for record in records:
+                if not isinstance(record, dict) or str(record.get("status") or "") != "running":
+                    reconciled.append(record)
+                    continue
+                child_id = str(record.get("child_session_id") or "").strip()
+                if not child_id:
+                    reconciled.append(record)
+                    continue
+                child = await self._store.get_session(child_id)
+                if child is None:
+                    reconciled.append({
+                        **record,
+                        "status": "recovery_required",
+                        "recovery_reason": "child_session_missing",
+                        "recovered_at": datetime.utcnow().isoformat(),
+                    })
+                    changed = True
+                    recovered += 1
+                    continue
+                child_status = child.status.value
+                if child_status in {SessionStatus.completed.value, SessionStatus.failed.value}:
+                    reconciled.append({
+                        **record,
+                        "status": child_status,
+                        "completed_at": child.updated_at.isoformat(),
+                        "recovered_at": datetime.utcnow().isoformat(),
+                    })
+                    changed = True
+                    recovered += 1
+                elif child_status == SessionStatus.interrupted.value:
+                    reconciled.append({
+                        **record,
+                        "status": "recovery_required",
+                        "recovery_reason": "child_session_interrupted_without_safe_replay",
+                        "recovered_at": datetime.utcnow().isoformat(),
+                    })
+                    changed = True
+                    recovered += 1
+                else:
+                    reconciled.append(record)
+            if changed:
+                parent.metadata["worker_dispatches"] = reconciled
+                await self._store.save_session(parent)
+                await self._store.append_event(
+                    parent.id,
+                    ExecutionEvent(
+                        type="worker.dispatches_reconciled",
+                        session_id=parent.id,
+                        timestamp=datetime.utcnow(),
+                        payload={"recovered_count": sum(1 for item in reconciled if isinstance(item, dict) and item.get("recovered_at"))},
+                    ),
+                )
+        if recovered:
+            logger.warning("coordinator_orphaned_dispatches_reconciled", extra={"recovered_count": recovered})
+        return recovered
 
     async def dispatch(
         self,
