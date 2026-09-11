@@ -1803,6 +1803,12 @@ API / Session / TestRun 控制平面（系统保留）
 - 指标：完成 P50 `12.07ms`、P95 `18.42ms`、P99 `22.82ms`；RSS `111022080 -> 111575040`（增长 `552960` bytes）；连接峰值 `2`。
 - 结论：证明当前 PostgreSQL 租约/checkpoint 生命周期在短时窗口内可执行；不替代 4 小时/24 小时正式 soak，也不替代真实跨 Worker Stage 崩溃恢复验收。
 
+#### C4 默认模型真实 HTTP 复验（2026-09-11）
+
+- 命令：`RUN_LIVE_DEEP_AGENTS_HITL=1 python -m pytest tests/test_live_deep_agents_hitl.py -q -s`（C4 环境）。
+- 结果：`3 passed in 132.81s`；使用数据库默认模型 `agnes-2.5-flash`，批准、拒绝及安全业务工具场景均完成，Session/ToolJob 终态和事件链完整，并返回可关联的 LangSmith trace runs。
+- 边界：该批证明真实 HTTP/默认模型/ToolJob/LangSmith 链路可执行，不替代 DA-E5 的 4/24 小时长任务与跨 Worker 崩溃恢复门槛。
+
 ### DA-E5 Coordinator 子会话恢复对账实施记录（进行中，2026-09-11）
 
 | 项目 | 记录 |
