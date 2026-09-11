@@ -22,6 +22,7 @@ from src.schemas.run_management import (
     RunItemApprovalDecisionRequest,
     RunItemCompleteRequest,
     RunItemExecuteRequest,
+    TestRunAttemptRecord as _AttemptRecord,
     TestCaseResultRecord as _CaseResultRecord,
     TestRunItemRecord as _RunItemRecord,
     TestRunRecord as _RunRecord,
@@ -192,6 +193,113 @@ async def test_execution_service_starts_executes_and_completes_with_the_same_lea
     assert result.status == "passed"
     assert runs.completed_payload.lease_token == "lease-1"
     assert runs.completed_payload.tool_job_id == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_execution_service_reconciles_bound_session_stage_checkpoint_before_runner():
+    now, run, item, case, version = _records()
+    attempt = _AttemptRecord(
+        id="attempt-1",
+        run_id=run.id,
+        run_item_id=item.id,
+        attempt_no=1,
+        worker_id="worker-1",
+        lease_token=item.lease_token,
+        claimed_at=now,
+    )
+    snapshot = SessionSnapshot(
+        id="snapshot-stage-1",
+        session_id=run.session_id,
+        version=4,
+        stage="interrupted",
+        created_at=now,
+        graph_state={
+            "context_bundle": {
+                "run_item_id": item.id,
+                "api_testing_state": {
+                    "execution_checkpoint": {
+                        "last_event_type": "task_completed",
+                        "completed_task_ids": ["task-1"],
+                    }
+                },
+            }
+        },
+    )
+
+    class FakeRuns:
+        def __init__(self):
+            self.saved_checkpoint = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def get_latest_attempt(self, item_id):
+            return attempt
+
+        async def save_checkpoint(self, item_id, payload):
+            self.saved_checkpoint = payload
+            return attempt.model_copy(
+                update={
+                    "checkpoint_version": payload.checkpoint_version,
+                    "checkpoint_key": payload.checkpoint_key,
+                    "checkpoint_payload": payload.checkpoint_payload,
+                }
+            )
+
+        async def complete_item(self, item_id, payload):
+            return _CaseResultRecord(
+                id="result-stage-1",
+                run_id=run.id,
+                run_item_id=item.id,
+                case_id=case.id,
+                case_version_id=version.id,
+                attempt_id=attempt.id,
+                attempt_no=1,
+                status=payload.status,
+                summary=payload.summary,
+                payload_hash="e" * 64,
+                created_at=now,
+            )
+
+    class FakeSessions:
+        async def get_latest_snapshot(self, session_id):
+            return snapshot
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class FakeAdapter:
+        async def execute(self, **kwargs):
+            checkpoint = kwargs["trusted_context_bundle"]["execution_checkpoint"]
+            assert checkpoint["payload"]["last_event_type"] == "task_completed"
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=item.lease_token,
+                    status="passed",
+                    summary="checkpoint resumed",
+                ),
+                tool_record=None,
+                verification_results=[],
+            )
+
+    runs = FakeRuns()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=FakeAdapter(),
+        session_store=FakeSessions(),
+    )
+    result = await service.execute_item(item.id, RunItemExecuteRequest(lease_token=item.lease_token))
+    assert result.status == "passed"
+    assert runs.saved_checkpoint.checkpoint_version == 4
+    assert runs.saved_checkpoint.checkpoint_key == "session_execution_checkpoint"
 
 
 @pytest.mark.asyncio

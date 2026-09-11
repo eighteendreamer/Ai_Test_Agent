@@ -1793,7 +1793,7 @@ API / Session / TestRun 控制平面（系统保留）
 | 本批目标 | 对齐模式运行时写入的 SessionSnapshot checkpoint 与 TestRun Attempt checkpoint，避免恢复只读取 Attempt 而遗漏已持久化的 Stage 状态 |
 | 根因 | API/Security 模式通过 `context_bundle` 持久化 `execution_checkpoint`；TestRun Attempt 仅由 checkpoint API 写入，二者此前没有启动前对账 |
 | 实施 | `TestRunExecutionService.execute_item` 在启动后读取绑定 Session 的最新 Snapshot；仅当 `run_item_id/test_run_item_id` 明确匹配且 Snapshot 版本高于 Attempt 版本时，使用现有 `save_checkpoint` 写入 `session_execution_checkpoint`；不新增表或状态机，版本单调且旧快照不可覆盖新 Attempt |
-| 测试 | 主环境 `tests/test_case_execution_service.py`：12 passed；新增绑定校验与模式状态提取回归用例；未宣称 PostgreSQL/长时 soak 已完成 |
+| 测试 | 主环境 `tests/test_case_execution_service.py`：13 passed；新增绑定校验、模式状态提取及真实 `execute_item` 恢复上下文回归用例；未宣称 PostgreSQL/长时 soak 已完成 |
 | 当前状态 | 代码与单元回归已完成；真实 PostgreSQL 对账、跨 Worker Stage 崩溃恢复和 4/24 小时 soak 仍未完成，DA-E5 保持进行中 |
 
 #### 真实 PostgreSQL 短时可执行性观察（2026-09-11）
