@@ -1290,6 +1290,69 @@ def test_coordinator_cancel_workers_cancels_task_and_marks_child_interrupted():
     assert [event.type for event in events] == ["worker.interrupted"]
 
 
+def test_coordinator_dispatch_duplicate_workers_is_deduplicated_by_persistence_claim():
+    async def scenario():
+        store = InMemorySessionStore()
+        parent = _session()
+        parent.id = "coordinator-parent"
+        await store.save_session(parent)
+        created: list[str] = []
+        children: dict[str, SessionRecord] = {}
+
+        class FakeSessionService:
+            async def create_internal_session(self, request):
+                child = _session(request.mode_key)
+                child.id = f"child-{len(created) + 1}"
+                created.append(child.id)
+                children[child.id] = child
+                await store.save_session(child)
+                return child
+
+            async def send_message(self, session_id, _payload):
+                child = children[session_id]
+                return SimpleNamespace(
+                    session=child,
+                    output=SimpleNamespace(content="worker done"),
+                )
+
+        service = CoordinatorRuntimeService(
+            settings=Settings(),
+            store=store,
+            session_service=FakeSessionService(),
+            agent_registry=AgentRegistry(),
+        )
+        service._worker_pool.register_worker = lambda *_args, **_kwargs: None
+        payload = {
+            "workers": [
+                {
+                    "task_id": "duplicate-task",
+                    "description": "duplicate worker",
+                    "prompt": "perform worker task",
+                    "agent_key": "qa-planner",
+                }
+            ]
+        }
+        context = {
+            "session_id": parent.id,
+            "turn_id": "coordinator-turn",
+            "trace_id": "coordinator-trace",
+        }
+        first, second = await asyncio.gather(
+            service.dispatch(payload, context),
+            service.dispatch(payload, context),
+        )
+        for task in list(service._active_tasks.values()):
+            task.cancel()
+        await asyncio.gather(*service._active_tasks.values(), return_exceptions=True)
+        return first, second, created
+
+    first, second, created = asyncio.run(scenario())
+
+    assert first["ok"] and second["ok"]
+    assert {first["status"], second["status"]} == {"completed", "duplicate"}
+    assert created == ["child-1"]
+
+
 def test_shared_security_grant_matches_url_and_bare_host_targets():
     grant = {
         "status": "verified",

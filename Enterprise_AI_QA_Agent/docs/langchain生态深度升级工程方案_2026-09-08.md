@@ -1715,6 +1715,16 @@ API / Session / TestRun 控制平面（系统保留）
 | 最终全量 | 2026-09-11 最终代码状态：主 Python 3.11 后端 `818 passed, 35 skipped, 1 warning in 50.66s`；C4 后端 `838 passed, 15 skipped, 1 warning in 29.51s`；前端 Vitest `2 files / 33 passed`；真实 PostgreSQL 并发 `5 passed in 6.33s`；主/C4 `compileall` 与 `src.main` 导入通过，C4 `pip check` 为 `No broken requirements found`。两条 warning 均为第三方弃用提示，无失败 |
 | 未完成 | 普通 `send_message`/队列 drain 已统一 owner；手工 resume、Coordinator 子会话、服务启动后的自动恢复扫描、外部 Memory 写入 fencing、4/24 小时 soak 尚未完成，DA-E5 保持进行中 |
 
+### DA-E5 Coordinator 子会话 dispatch claim 实施记录（进行中，2026-09-11）
+
+| 项目 | 状态与证据 |
+|---|---|
+| 失败先行 | 两个并发 `CoordinatorRuntimeService.dispatch` 对同一 parent turn/task_id 原先都成功，并创建两个 child session；测试先复现该结果后再修复 |
+| 采用做法 | 在现有 SessionStore 增加原子 `claim_coordinator_dispatch`；以 parent session、parent turn 和稳定 task dispatch key 作为幂等事实，InMemory 使用 Store lock，PostgreSQL 使用条件 JSONB UPDATE；claim 失败返回 `status=duplicate`，不创建子会话 |
+| 兼容修复 | Coordinator 对 `WorkerPool.register_worker`/`complete_worker` 改为匹配现有位置参数契约，消除真实 dispatch 路径的 `TypeError` |
+| 自动化与真实证据 | 并发 dispatch 回归通过，最终只创建一个 child、另一调用返回 duplicate；真实 PostgreSQL 8 个 claimant 仅 1 个成功；主后端 `820 passed, 35 skipped`，C4 `840 passed, 15 skipped`，前端 `33 passed` |
+| 未完成 | Coordinator 子会话的租约续租/崩溃恢复扫描、外部 Memory fencing、Stage 对账与 4/24 小时 soak 仍未完成；DA-E5 保持进行中 |
+
 ### DA-E5 手工 resume 跨 Worker 所有权实施记录（进行中，2026-09-11）
 
 | 项目 | 状态与证据 |

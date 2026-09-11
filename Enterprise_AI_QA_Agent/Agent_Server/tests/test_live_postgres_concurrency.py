@@ -696,6 +696,17 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
         assert persisted is not None
         assert persisted.metadata["turn_result"] == "recovery-worker"
         assert "turn_lease_token" not in persisted.metadata
+
+        dispatch_claims = await asyncio.gather(*(
+            candidate.claim_coordinator_dispatch(
+                session_id,
+                turn_id,
+                "worker-task-1",
+                owner_id=f"coordinator-worker-{index}",
+            )
+            for index, candidate in enumerate(stores)
+        ))
+        assert sum(dispatch_claims) == 1
     finally:
         _drop_tables(
             settings,

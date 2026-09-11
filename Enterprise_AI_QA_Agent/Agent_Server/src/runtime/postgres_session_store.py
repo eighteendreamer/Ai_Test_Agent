@@ -232,6 +232,21 @@ class PostgresSessionStore:
             lease_token,
         )
 
+    async def claim_coordinator_dispatch(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._claim_coordinator_dispatch_sync,
+            session_id,
+            turn_id,
+            dispatch_key,
+            owner_id,
+        )
+
     async def renew_approval_continuation(
         self,
         session_id: str,
@@ -1095,6 +1110,48 @@ class PostgresSessionStore:
                     RETURNING id
                     """,
                     (session_id, lease_token),
+                )
+                return cur.fetchone() is not None
+
+    def _claim_coordinator_dispatch_sync(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table}
+                    SET metadata = jsonb_set(
+                        metadata,
+                        '{{coordinator_dispatch_claims}}',
+                        COALESCE(metadata->'coordinator_dispatch_claims', '[]'::jsonb)
+                            || jsonb_build_array(
+                                jsonb_build_object(
+                                    'turn_id', %s::text,
+                                    'dispatch_key', %s::text,
+                                    'owner_id', %s::text,
+                                    'claimed_at', now()
+                                )
+                            ),
+                        true
+                    ),
+                    updated_at = now()
+                    WHERE id = %s
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements(
+                              COALESCE(metadata->'coordinator_dispatch_claims', '[]'::jsonb)
+                          ) AS claim
+                          WHERE claim->>'turn_id' = %s
+                            AND claim->>'dispatch_key' = %s
+                      )
+                    RETURNING id
+                    """,
+                    (turn_id, dispatch_key, owner_id, session_id, turn_id, dispatch_key),
                 )
                 return cur.fetchone() is not None
 

@@ -63,6 +63,7 @@ INTERNAL_SESSION_METADATA_KEYS = frozenset(
         "turn_lease_owner",
         "turn_lease_token",
         "turn_lease_expires_at",
+        "coordinator_dispatch_claims",
     }
 )
 SNAPSHOT_DETAIL_GRAPH_KEYS = {

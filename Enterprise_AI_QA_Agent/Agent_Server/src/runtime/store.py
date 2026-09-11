@@ -111,6 +111,13 @@ class SessionStore(Protocol):
         session_id: str,
         lease_token: str,
     ) -> bool: ...
+    async def claim_coordinator_dispatch(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+    ) -> bool: ...
     async def claim_approval_continuation(
         self,
         session_id: str,
@@ -505,6 +512,39 @@ class InMemorySessionStore:
                 "turn_lease_expires_at",
             ):
                 session.metadata.pop(key, None)
+            session.updated_at = datetime.utcnow()
+            return True
+
+    async def claim_coordinator_dispatch(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            claims = session.metadata.get("coordinator_dispatch_claims", [])
+            if not isinstance(claims, list):
+                claims = []
+            if any(
+                isinstance(item, dict)
+                and item.get("turn_id") == turn_id
+                and item.get("dispatch_key") == dispatch_key
+                for item in claims
+            ):
+                return False
+            claims.append(
+                {
+                    "turn_id": turn_id,
+                    "dispatch_key": dispatch_key,
+                    "owner_id": owner_id,
+                    "claimed_at": datetime.utcnow().isoformat(),
+                }
+            )
+            session.metadata["coordinator_dispatch_claims"] = claims
             session.updated_at = datetime.utcnow()
             return True
 

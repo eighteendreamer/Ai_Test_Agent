@@ -65,6 +65,7 @@ class CoordinatorRuntimeService:
         self._message_bus = AgentMessageBus()
         self._watchers: dict[str, ChildSessionWatcher] = {}
         self._observability_service: LangSmithObservabilityAdapter | None = None
+        self._owner_id = f"coordinator:{uuid4()}"
 
     def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
         self._observability_service = service
@@ -73,7 +74,7 @@ class CoordinatorRuntimeService:
         watcher = self._watchers.pop(session_id, None)
         if watcher and not watcher.is_settled:
             watcher.notify_completed()
-        self._worker_pool.complete_worker(worker_id=task_id)
+        self._worker_pool.complete_worker(task_id, {})
 
     async def cancel_workers(
         self,
@@ -174,6 +175,30 @@ class CoordinatorRuntimeService:
             raise ValueError("subagent-dispatch requires at least one worker specification.")
         followup_workers = self._normalize_followup_workers(payload)
         completion_worker = self._normalize_completion_worker(payload)
+        dispatch_key = "|".join(
+            [
+                *(sorted(worker.task_id for worker in workers)),
+                *(sorted(worker.task_id for worker in followup_workers)),
+                f"completion:{completion_worker.task_id}" if completion_worker else "",
+            ]
+        )
+        claimed = await self._store.claim_coordinator_dispatch(
+            parent_session_id,
+            parent_turn_id,
+            dispatch_key,
+            self._owner_id,
+        )
+        if not claimed:
+            return {
+                "ok": True,
+                "status": "duplicate",
+                "trace_id": parent_trace_id,
+                "summary": "Coordinator dispatch was already claimed for this parent turn.",
+                "workers": [],
+                "artifacts": [],
+                "metrics": {"worker_count": 0, "duplicate": True},
+                "error": None,
+            }
 
         launch_records: list[dict[str, Any]] = []
         immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
@@ -248,9 +273,9 @@ class CoordinatorRuntimeService:
             self._active_tasks[worker.task_id] = task
             task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
             self._worker_pool.register_worker(
-                worker_id=worker.task_id,
-                session_id=child_session.id,
-                agent_key=worker.agent_key,
+                worker.task_id,
+                child_session.id,
+                worker.agent_key,
             )
             self._watchers[child_session.id] = ChildSessionWatcher(child_session.id)
             task.add_done_callback(
