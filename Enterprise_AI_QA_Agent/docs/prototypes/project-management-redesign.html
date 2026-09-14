@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试项目管理 · 交互方案</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface-subtle: #fafafa;
+      --text: #111827;
+      --muted: #667085;
+      --border: #e5e7eb;
+      --border-strong: #d0d5dd;
+      --accent: #111111;
+      --green: #087443;
+      --green-bg: #e8f7ef;
+      --amber: #9a5b00;
+      --amber-bg: #fff5df;
+      --red: #b42318;
+      --red-bg: #fff0ee;
+      --sidebar-width: 64px;
+      --topbar-height: 58px;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(17, 24, 39, .16);
+      outline-offset: 2px;
+    }
+
+    .sidebar {
+      position: fixed; inset: 0 auto 0 0; width: var(--sidebar-width);
+      display: flex; flex-direction: column; align-items: center;
+      border-right: 1px solid var(--border); background: var(--surface); z-index: 10;
+    }
+    .brand-mark { height: var(--topbar-height); display: grid; place-items: center; font-size: 23px; }
+    .side-nav { display: flex; flex-direction: column; gap: 7px; padding-top: 20px; }
+    .side-nav button, .side-bottom button {
+      width: 42px; height: 42px; border: 0; border-radius: 8px; background: transparent;
+      color: #697386; cursor: pointer;
+    }
+    .side-nav button.active { background: #f1f2f4; color: #111; }
+    .side-bottom { margin-top: auto; padding-bottom: 14px; display: grid; gap: 8px; }
+    .side-bottom button { border: 1px solid var(--border); }
+
+    .topbar {
+      position: fixed; top: 0; left: var(--sidebar-width); right: 0; height: var(--topbar-height);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 22px;
+      border-bottom: 1px solid var(--border); background: rgba(255,255,255,.96); z-index: 9;
+    }
+    .topbar-title { display: flex; align-items: center; gap: 10px; font-weight: 750; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .system-pill, .top-pill {
+      height: 34px; display: inline-flex; align-items: center; gap: 8px; padding: 0 13px;
+      border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+    }
+    .system-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a364; }
+
+    .shell { min-height: 100vh; margin-left: var(--sidebar-width); padding-top: var(--topbar-height); }
+    .prototype-switcher {
+      position: sticky; top: var(--topbar-height); z-index: 8;
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 10px 22px; border-bottom: 1px solid var(--border); background: #f1f3f5;
+    }
+    .switch-copy { color: var(--muted); font-size: 13px; }
+    .switch-group { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .switch-group button {
+      border: 0; border-radius: 6px; padding: 7px 12px; background: transparent; cursor: pointer;
+    }
+    .switch-group button.active { background: #111; color: #fff; }
+
+    main { max-width: 1500px; margin: 0 auto; padding: 26px 30px 56px; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .eyebrow { margin: 0 0 5px; color: var(--muted); font-size: 12px; }
+    h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: -.5px; }
+    .page-subtitle { margin: 8px 0 0; color: var(--muted); }
+    .primary, .secondary, .icon-btn {
+      min-height: 36px; border: 1px solid var(--border-strong); border-radius: 7px;
+      background: var(--surface); padding: 8px 12px; cursor: pointer;
+    }
+    .primary { border-color: #111; background: #111; color: #fff; font-weight: 650; }
+    .primary i, .secondary i { margin-right: 7px; }
+    .danger-text { color: var(--red); }
+
+    .summary-line { display: flex; gap: 22px; margin-top: 25px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .summary-item strong { font-size: 18px; }
+    .summary-item span { margin-left: 5px; color: var(--muted); }
+
+    .toolbar { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; }
+    .search-box { position: relative; flex: 1; max-width: 460px; }
+    .search-box i { position: absolute; left: 12px; top: 11px; color: #98a2b3; }
+    .search-box input, .toolbar select {
+      width: 100%; height: 38px; border: 1px solid var(--border-strong); border-radius: 7px;
+      background: var(--surface); color: var(--text); padding: 0 12px;
+    }
+    .search-box input { padding-left: 35px; }
+    .toolbar select { width: 138px; }
+    .segmented { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .segmented button { border: 0; border-radius: 5px; background: transparent; padding: 7px 11px; cursor: pointer; color: var(--muted); }
+    .segmented button.active { background: #f0f1f3; color: var(--text); font-weight: 650; }
+    .result-count { margin-left: auto; color: var(--muted); white-space: nowrap; }
+
+    .status { display: inline-flex; align-items: center; gap: 6px; width: max-content; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 650; }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status.active { color: var(--green); background: var(--green-bg); }
+    .status.archived { color: #667085; background: #f1f2f4; }
+    .status.attention { color: var(--amber); background: var(--amber-bg); }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; color: #475467; }
+    .muted { color: var(--muted); }
+
+    .table-surface { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; }
+    th { height: 40px; padding: 0 14px; text-align: left; background: #fafafa; color: var(--muted); font-size: 12px; font-weight: 650; border-bottom: 1px solid var(--border); }
+    td { padding: 13px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; transition: background .15s ease; }
+    tbody tr:hover { background: #f8f9fa; }
+    .project-cell { display: flex; align-items: center; gap: 11px; min-width: 250px; }
+    .monogram { width: 36px; height: 36px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 7px; background: #111; color: #fff; font-weight: 750; }
+    .project-name { display: block; font-weight: 700; margin-bottom: 3px; }
+    .row-arrow { text-align: right; color: #98a2b3; }
+
+    .catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 12px; }
+    .project-card {
+      min-height: 188px; display: flex; flex-direction: column; padding: 17px;
+      border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer;
+      transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+    .project-card:hover { transform: translateY(-2px); border-color: #b9bec7; box-shadow: 0 8px 24px rgba(16,24,40,.07); }
+    .card-head { display: flex; align-items: flex-start; gap: 11px; }
+    .card-head .status { margin-left: auto; }
+    .card-desc { min-height: 40px; margin: 14px 0; color: var(--muted); line-height: 1.45; }
+    .card-metrics { display: flex; gap: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .card-metrics b { display: block; font-size: 16px; }
+    .card-metrics small { color: var(--muted); }
+    .card-foot { margin-top: auto; display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; padding-top: 12px; }
+
+    .preview-layout { display: grid; grid-template-columns: minmax(520px, 1.7fr) minmax(320px, .9fr); gap: 14px; }
+    .project-list { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; }
+    .project-list-row {
+      width: 100%; display: grid; grid-template-columns: minmax(220px, 1fr) 110px 130px 36px;
+      align-items: center; gap: 12px; padding: 14px; border: 0; border-bottom: 1px solid var(--border);
+      background: var(--surface); text-align: left; cursor: pointer;
+    }
+    .project-list-row:last-child { border-bottom: 0; }
+    .project-list-row:hover, .project-list-row.selected { background: #f7f8fa; }
+    .preview-pane { position: sticky; top: 132px; align-self: start; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 19px; }
+    .preview-head { display: flex; align-items: flex-start; gap: 12px; }
+    .preview-head .icon-btn { margin-left: auto; width: 34px; height: 34px; padding: 0; }
+    .preview-desc { color: var(--muted); line-height: 1.55; }
+    .preview-facts { margin: 18px 0; }
+    .preview-fact { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+    .preview-fact span:first-child { color: var(--muted); }
+    .preview-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+    .preview-stats div { background: var(--surface); padding: 12px; }
+    .preview-stats b { display: block; font-size: 20px; }
+    .preview-stats small { color: var(--muted); }
+    .preview-actions { display: flex; gap: 8px; margin-top: 18px; }
+    .preview-actions .primary { flex: 1; }
+
+    .empty-state { border: 1px dashed var(--border-strong); border-radius: 9px; padding: 70px 24px; text-align: center; background: var(--surface); }
+    .empty-state i { font-size: 28px; color: #98a2b3; }
+    .empty-state h2 { margin: 14px 0 7px; font-size: 18px; }
+    .empty-state p { margin: 0 0 18px; color: var(--muted); }
+
+    .detail-view[hidden], .collection-view[hidden] { display: none; }
+    .detail-breadcrumb { display: flex; align-items: center; gap: 8px; color: var(--muted); margin-bottom: 18px; }
+    .detail-breadcrumb button { border: 0; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+    .detail-title-row { display: flex; align-items: flex-start; gap: 14px; }
+    .detail-title-copy { flex: 1; }
+    .detail-title-copy h1 { display: flex; align-items: center; gap: 10px; }
+    .detail-actions { display: flex; gap: 8px; }
+    .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .75fr); gap: 18px; margin-top: 22px; }
+    .overview-main, .overview-aside { min-width: 0; }
+    .metric-strip { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--border); border-radius: 9px; background: var(--surface); overflow: hidden; }
+    .metric-strip div { padding: 15px; border-right: 1px solid var(--border); }
+    .metric-strip div:last-child { border-right: 0; }
+    .metric-strip b { display: block; font-size: 22px; }
+    .metric-strip small { color: var(--muted); }
+    .section-block { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
+    .section-block h2 { margin: 0 0 12px; font-size: 16px; }
+    .detail-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border); margin-top: 24px; }
+    .detail-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 11px 1px; color: var(--muted); cursor: pointer; }
+    .detail-tabs button.active { border-bottom-color: #111; color: #111; font-weight: 700; }
+    .resource-content { padding-top: 18px; }
+    .resource-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .resource-head h2 { margin: 0; font-size: 18px; }
+    .aside-block { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 16px; margin-bottom: 12px; }
+    .aside-block h3 { margin: 0 0 12px; font-size: 14px; }
+    .aside-fact { display: grid; gap: 4px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+    .aside-fact:last-child { border-bottom: 0; }
+    .aside-fact small { color: var(--muted); }
+    .health-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
+    .health-row span { color: var(--muted); }
+
+    .modal-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(16,24,40,.42); }
+    .modal-backdrop[hidden] { display: none; }
+    .modal { width: min(520px, calc(100vw - 32px)); border-radius: 10px; background: var(--surface); box-shadow: 0 24px 70px rgba(16,24,40,.2); }
+    .modal header, .modal footer { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .modal footer { border-top: 1px solid var(--border); border-bottom: 0; justify-content: flex-end; gap: 8px; }
+    .modal h2 { margin: 0; font-size: 18px; }
+    .modal-body { padding: 16px 18px; }
+    .field { display: grid; gap: 6px; margin-bottom: 14px; }
+    .field label { font-weight: 650; }
+    .field input { height: 38px; border: 1px solid var(--border-strong); border-radius: 7px; padding: 0 11px; }
+
+    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 40; padding: 11px 14px; border-radius: 8px; background: #111; color: #fff; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .2s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1080px) {
+      .catalog-grid { grid-template-columns: repeat(2, minmax(250px, 1fr)); }
+      .preview-layout, .overview-grid { grid-template-columns: 1fr; }
+      .preview-pane { position: static; }
+      .metric-strip { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 760px) {
+      :root { --sidebar-width: 0px; }
+      .sidebar { display: none; }
+      .topbar { left: 0; padding: 0 14px; }
+      .topbar-actions .top-pill { display: none; }
+      .prototype-switcher { overflow-x: auto; padding: 9px 14px; }
+      .switch-copy { display: none; }
+      main { padding: 20px 14px 44px; }
+      .page-head, .toolbar, .detail-title-row { align-items: stretch; flex-direction: column; }
+      .search-box { max-width: none; }
+      .toolbar select { width: 100%; }
+      .segmented { width: 100%; }
+      .segmented button { flex: 1; }
+      .result-count { margin-left: 0; }
+      .catalog-grid { grid-template-columns: 1fr; }
+      .table-surface { overflow-x: auto; }
+      table { min-width: 920px; }
+      .project-list-row { grid-template-columns: 1fr 34px; }
+      .project-list-row > :nth-child(2), .project-list-row > :nth-child(3) { display: none; }
+      .metric-strip { grid-template-columns: repeat(2, 1fr); }
+      .metric-strip div { border-bottom: 1px solid var(--border); }
+      .detail-tabs { overflow-x: auto; }
+      .detail-tabs button { white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar" aria-label="主导航">
+    <div class="brand-mark"><i class="fa-solid fa-spider"></i></div>
+    <nav class="side-nav">
+      <button title="首页"><i class="fa-solid fa-house"></i></button>
+      <button title="任务池"><i class="fa-solid fa-list-check"></i></button>
+      <button class="active" title="测试项目"><i class="fa-solid fa-diagram-project"></i></button>
+      <button title="知识库"><i class="fa-solid fa-database"></i></button>
+      <button title="工具中心"><i class="fa-solid fa-toolbox"></i></button>
+      <button title="报告中心"><i class="fa-solid fa-file-waveform"></i></button>
+    </nav>
+    <div class="side-bottom">
+      <button title="切换主题"><i class="fa-solid fa-moon"></i></button>
+      <button title="系统设置"><i class="fa-solid fa-gear"></i></button>
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <div class="topbar-title"><i class="fa-solid fa-spider"></i><span>御策天检 / Test Projects</span></div>
+    <div class="topbar-actions">
+      <span class="top-pill">E-API</span>
+      <span class="top-pill"><i class="fa-solid fa-diagram-project"></i> 编排轨迹</span>
+      <span class="system-pill"><span class="system-dot"></span> 系统就绪 4/4</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <div class="prototype-switcher">
+      <span class="switch-copy">交互原型：切换方案后，点击任意项目进入统一详情页</span>
+      <div class="switch-group" aria-label="布局方案">
+        <button class="active" data-mode="table">方案 1 · 列表优先</button>
+        <button data-mode="cards">方案 2 · 项目目录</button>
+        <button data-mode="preview">方案 3 · 快速预览</button>
+      </div>
+    </div>
+
+    <main>
+      <section id="collectionView" class="collection-view">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">质量资产管理</p>
+            <h1>测试项目</h1>
+            <p class="page-subtitle">查找和管理测试项目，进入项目后查看完整资料与测试资源。</p>
+          </div>
+          <button class="primary" id="createProject"><i class="fa-solid fa-plus"></i>新建项目</button>
+        </header>
+
+        <div class="summary-line">
+          <div class="summary-item"><strong id="allCount">6</strong><span>全部项目</span></div>
+          <div class="summary-item"><strong id="activeCount">5</strong><span>启用中</span></div>
+          <div class="summary-item"><strong id="archivedCount">1</strong><span>已归档</span></div>
+        </div>
+
+        <section class="toolbar" aria-label="项目筛选">
+          <label class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="searchInput" type="search" placeholder="搜索项目名称或标识">
+          </label>
+          <div class="segmented" id="statusFilter">
+            <button class="active" data-status="all">全部</button>
+            <button data-status="active">启用中</button>
+            <button data-status="archived">已归档</button>
+          </div>
+          <select id="sortSelect" aria-label="项目排序">
+            <option value="updated">最近更新</option>
+            <option value="name">项目名称</option>
+            <option value="cases">用例数量</option>
+          </select>
+          <span class="result-count" id="resultCount">共 6 个项目</span>
+        </section>
+
+        <div id="projectSurface"></div>
+      </section>
+
+      <section id="detailView" class="detail-view" hidden>
+        <nav class="detail-breadcrumb" aria-label="面包屑">
+          <button id="backToProjects"><i class="fa-solid fa-arrow-left"></i> 返回项目列表</button>
+          <span>/</span><span id="crumbName">订单服务质量保障</span>
+        </nav>
+
+        <header class="detail-title-row">
+          <div class="monogram" id="detailMonogram">订</div>
+          <div class="detail-title-copy">
+            <h1><span id="detailName">订单服务质量保障</span><span class="status active" id="detailStatus">启用中</span></h1>
+            <p class="page-subtitle" id="detailDescription">覆盖订单创建、支付确认、退款与履约链路的 API 和回归测试。</p>
+          </div>
+          <div class="detail-actions">
+            <button class="secondary"><i class="fa-solid fa-pen"></i>编辑</button>
+            <button class="secondary danger-text"><i class="fa-solid fa-box-archive"></i>归档</button>
+          </div>
+        </header>
+
+        <div class="detail-tabs" id="detailTabs" role="tablist">
+          <button class="active" data-tab="overview">项目概览</button>
+          <button data-tab="cases">测试用例</button>
+          <button data-tab="suites">测试套件</button>
+          <button data-tab="runs">测试运行</button>
+          <button data-tab="legacy">旧冒烟历史</button>
+          <button data-tab="regressions">回归中心</button>
+        </div>
+
+        <div class="overview-grid">
+          <section class="overview-main">
+            <div class="metric-strip" id="metricStrip"></div>
+            <div class="resource-content" id="resourceContent"></div>
+          </section>
+          <aside class="overview-aside">
+            <section class="aside-block">
+              <h3>项目资料</h3>
+              <div class="aside-fact"><small>项目标识</small><span class="mono" id="asideKey"></span></div>
+              <div class="aside-fact"><small>Base URL</small><span class="mono" id="asideUrl"></span></div>
+              <div class="aside-fact"><small>图谱 Scope</small><span class="mono" id="asideScope"></span></div>
+              <div class="aside-fact"><small>最近更新</small><span id="asideUpdated"></span></div>
+            </section>
+            <section class="aside-block">
+              <h3>质量状态</h3>
+              <div class="health-row"><span>知识图谱</span><b class="status active">可用</b></div>
+              <div class="health-row"><span>最近运行</span><b>通过率 96.8%</b></div>
+              <div class="health-row"><span>待回归失败项</span><b class="danger-text">3</b></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="createModal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <header><h2 id="modalTitle">新建测试项目</h2><button class="icon-btn" id="closeModal" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button></header>
+      <div class="modal-body">
+        <div class="field"><label for="newKey">项目标识</label><input id="newKey" placeholder="orders-api"></div>
+        <div class="field"><label for="newName">项目名称</label><input id="newName" placeholder="订单服务质量保障"></div>
+        <div class="field"><label for="newUrl">Base URL</label><input id="newUrl" placeholder="https://api.example.com"></div>
+      </div>
+      <footer><button class="secondary" id="cancelModal">取消</button><button class="primary" id="saveProject">创建项目</button></footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast">交互已触发</div>
+
+  <script>
+    const projects = [
+      { id: "p1", key: "orders-api", name: "订单服务质量保障", desc: "覆盖订单创建、支付确认、退款与履约链路的 API 和回归测试。", status: "active", url: "https://orders.qa.internal", scope: "orders_service", docs: 8, cases: 126, suites: 12, runs: 48, updated: "今天 14:32", owner: "平台质量组" },
+      { id: "p2", key: "member-center", name: "会员中心", desc: "会员注册、权益、积分、等级与账户安全专项测试。", status: "active", url: "https://member.qa.internal", scope: "member_center", docs: 5, cases: 84, suites: 9, runs: 31, updated: "今天 11:08", owner: "用户质量组" },
+      { id: "p3", key: "ai-agent-runtime", name: "Agent 运行时", desc: "工具调用、轨迹状态、审批恢复和终态一致性验证。", status: "attention", url: "https://agent.qa.internal", scope: "agent_runtime", docs: 11, cases: 212, suites: 18, runs: 73, updated: "昨天 18:46", owner: "AI 质量组" },
+      { id: "p4", key: "payment-gateway", name: "支付网关", desc: "支付通道、幂等、退款、对账和异常补偿链路验证。", status: "active", url: "https://pay.qa.internal", scope: "payment_gateway", docs: 7, cases: 168, suites: 15, runs: 66, updated: "9 月 12 日", owner: "交易质量组" },
+      { id: "p5", key: "mobile-app", name: "移动端兼容性", desc: "Android 与 iOS 核心业务流、设备矩阵和版本回归。", status: "active", url: "app://qa-mobile", scope: "mobile_compat", docs: 3, cases: 96, suites: 8, runs: 29, updated: "9 月 11 日", owner: "终端质量组" },
+      { id: "p6", key: "legacy-smoke", name: "旧版冒烟归档", desc: "历史 Smoke catalog 与证据快照，仅保留查询和迁移核对。", status: "archived", url: "未设置", scope: "legacy_smoke", docs: 2, cases: 47, suites: 4, runs: 122, updated: "8 月 30 日", owner: "质量平台组" },
+    ];
+
+    const state = { mode: "table", status: "all", query: "", sort: "updated", selectedId: "p1", detailTab: "overview" };
+    const surface = document.getElementById("projectSurface");
+
+    function statusLabel(status) {
+      return status === "archived" ? "已归档" : status === "attention" ? "需关注" : "启用中";
+    }
+
+    function filteredProjects() {
+      const query = state.query.trim().toLowerCase();
+      const filtered = projects.filter(project => {
+        const statusMatch = state.status === "all" || (state.status === "active" ? project.status !== "archived" : project.status === "archived");
+        const queryMatch = !query || `${project.name} ${project.key} ${project.desc}`.toLowerCase().includes(query);
+        return statusMatch && queryMatch;
+      });
+      return filtered.sort((a, b) => state.sort === "name"
+        ? a.name.localeCompare(b.name, "zh-CN")
+        : state.sort === "cases" ? b.cases - a.cases : projects.indexOf(a) - projects.indexOf(b));
+    }
+
+    function projectIdentity(project) {
+      return `<div class="project-cell"><span class="monogram">${project.name.slice(0,1)}</span><span><span class="project-name">${project.name}</span><span class="mono">${project.key}</span></span></div>`;
+    }
+
+    function renderTable(items) {
+      return `<div class="table-surface"><table><thead><tr><th>项目</th><th>状态</th><th>Base URL</th><th>测试用例</th><th>测试运行</th><th>负责人</th><th>更新时间</th><th></th></tr></thead><tbody>${items.map(project => `<tr data-open="${project.id}" tabindex="0"> <td>${projectIdentity(project)}</td><td><span class="status ${project.status}">${statusLabel(project.status)}</span></td><td class="mono">${project.url}</td><td><b>${project.cases}</b></td><td><b>${project.runs}</b></td><td>${project.owner}</td><td class="muted">${project.updated}</td><td class="row-arrow"><i class="fa-solid fa-chevron-right"></i></td></tr>`).join("")}</tbody></table></div>`;
+    }
+
+    function renderCards(items) {
+      return `<div class="catalog-grid">${items.map(project => `<article class="project-card" data-open="${project.id}" tabindex="0"><div class="card-head"><span class="monogram">${project.name.slice(0,1)}</span><div><span class="project-name">${project.name}</span><span class="mono">${project.key}</span></div><span class="status ${project.status}">${statusLabel(project.status)}</span></div><p class="card-desc">${project.desc}</p><div class="card-metrics"><span><b>${project.cases}</b><small>测试用例</small></span><span><b>${project.suites}</b><small>测试套件</small></span><span><b>${project.runs}</b><small>测试运行</small></span></div><div class="card-foot"><span>${project.updated}</span><span>进入项目 <i class="fa-solid fa-arrow-right"></i></span></div></article>`).join("")}</div>`;
+    }
+
+    function renderPreview(items) {
+      const selected = items.find(item => item.id === state.selectedId) || items[0];
+      if (selected) state.selectedId = selected.id;
+      return `<div class="preview-layout"><section class="project-list">${items.map(project => `<button class="project-list-row ${project.id === state.selectedId ? "selected" : ""}" data-select="${project.id}" data-open-dbl="${project.id}">${projectIdentity(project)}<span class="status ${project.status}">${statusLabel(project.status)}</span><span class="muted">${project.updated}</span><i class="fa-solid fa-chevron-right muted"></i></button>`).join("")}</section>${selected ? `<aside class="preview-pane"><div class="preview-head"><span class="monogram">${selected.name.slice(0,1)}</span><div><span class="project-name">${selected.name}</span><span class="mono">${selected.key}</span></div><button class="icon-btn" aria-label="更多操作"><i class="fa-solid fa-ellipsis"></i></button></div><p class="preview-desc">${selected.desc}</p><div class="preview-facts"><div class="preview-fact"><span>状态</span><span class="status ${selected.status}">${statusLabel(selected.status)}</span></div><div class="preview-fact"><span>Base URL</span><span class="mono">${selected.url}</span></div><div class="preview-fact"><span>图谱 Scope</span><span class="mono">${selected.scope}</span></div></div><div class="preview-stats"><div><b>${selected.docs}</b><small>API 文档</small></div><div><b>${selected.cases}</b><small>测试用例</small></div><div><b>${selected.suites}</b><small>测试套件</small></div><div><b>${selected.runs}</b><small>测试运行</small></div></div><div class="preview-actions"><button class="primary" data-open="${selected.id}">进入项目 <i class="fa-solid fa-arrow-right"></i></button><button class="secondary">编辑</button></div></aside>` : ""}</div>`;
+    }
+
+    function bindSurfaceEvents() {
+      document.querySelectorAll("[data-open]").forEach(el => {
+        el.addEventListener("click", () => openProject(el.dataset.open));
+        el.addEventListener("keydown", event => { if (event.key === "Enter") openProject(el.dataset.open); });
+      });
+      document.querySelectorAll("[data-select]").forEach(el => {
+        el.addEventListener("click", () => { state.selectedId = el.dataset.select; renderCollection(); });
+        el.addEventListener("dblclick", () => openProject(el.dataset.openDbl));
+      });
+    }
+
+    function renderCollection() {
+      const items = filteredProjects();
+      document.getElementById("resultCount").textContent = `共 ${items.length} 个项目`;
+      if (!items.length) {
+        surface.innerHTML = `<section class="empty-state"><i class="fa-regular fa-folder-open"></i><h2>没有找到匹配的项目</h2><p>调整搜索条件，或创建一个新的测试项目。</p><button class="primary" id="emptyCreate"><i class="fa-solid fa-plus"></i>新建项目</button></section>`;
+        document.getElementById("emptyCreate").addEventListener("click", showCreateModal);
+        return;
+      }
+      surface.innerHTML = state.mode === "table" ? renderTable(items) : state.mode === "cards" ? renderCards(items) : renderPreview(items);
+      bindSurfaceEvents();
+    }
+
+    function openProject(projectId) {
+      const project = projects.find(item => item.id === projectId);
+      if (!project) return;
+      state.selectedId = project.id;
+      state.detailTab = "overview";
+      document.getElementById("collectionView").hidden = true;
+      document.getElementById("detailView").hidden = false;
+      document.getElementById("crumbName").textContent = project.name;
+      document.getElementById("detailMonogram").textContent = project.name.slice(0,1);
+      document.getElementById("detailName").textContent = project.name;
+      document.getElementById("detailDescription").textContent = project.desc;
+      const status = document.getElementById("detailStatus");
+      status.className = `status ${project.status}`;
+      status.textContent = statusLabel(project.status);
+      document.getElementById("asideKey").textContent = project.key;
+      document.getElementById("asideUrl").textContent = project.url;
+      document.getElementById("asideScope").textContent = project.scope;
+      document.getElementById("asideUpdated").textContent = project.updated;
+      document.querySelectorAll("#detailTabs button").forEach(button => button.classList.toggle("active", button.dataset.tab === "overview"));
+      renderDetailContent(project);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function renderDetailContent(project) {
+      document.getElementById("metricStrip").innerHTML = `<div><b>${project.docs}</b><small>API 文档</small></div><div><b>${project.cases}</b><small>测试用例</small></div><div><b>${project.suites}</b><small>测试套件</small></div><div><b>${project.runs}</b><small>测试运行</small></div><div><b>36</b><small>图谱节点</small></div>`;
+      const names = { overview: "项目概览", cases: "测试用例", suites: "测试套件", runs: "测试运行", legacy: "旧冒烟历史", regressions: "回归中心" };
+      const rows = state.detailTab === "cases"
+        ? [["订单创建基础流", "API", "P0", "已启用"], ["重复支付幂等校验", "API", "P0", "待评审"], ["退款超时补偿", "Agent", "P1", "已启用"]]
+        : state.detailTab === "suites"
+          ? [["订单主链路回归", "24 条", "启用中", "今天 10:21"], ["支付异常专项", "18 条", "启用中", "昨天 16:02"], ["历史兼容套件", "12 条", "已归档", "9 月 1 日"]]
+          : [["run-09f31a", "completed", "24 / 24", "今天 14:18"], ["run-0bd712", "completed", "22 / 24", "昨天 18:06"], ["run-75ac90", "cancelled", "8 / 24", "9 月 12 日"]];
+      if (state.detailTab === "overview") {
+        document.getElementById("resourceContent").innerHTML = `<section class="section-block"><h2>项目说明</h2><p class="preview-desc">${project.desc}</p></section><section class="section-block"><div class="resource-head"><h2>最近活动</h2><button class="secondary">查看全部</button></div><div class="table-surface"><table><tbody><tr><td><b>回归运行已完成</b><div class="muted">订单主链路回归通过 23 条，失败 1 条</div></td><td class="muted">今天 14:18</td></tr><tr><td><b>测试用例版本已启用</b><div class="muted">重复支付幂等校验 · v4</div></td><td class="muted">今天 11:42</td></tr><tr><td><b>知识图谱已更新</b><div class="muted">新增 3 个接口节点和 7 条关系</div></td><td class="muted">昨天 17:30</td></tr></tbody></table></div></section>`;
+        return;
+      }
+      document.getElementById("resourceContent").innerHTML = `<div class="resource-head"><h2>${names[state.detailTab]}</h2><button class="primary"><i class="fa-solid fa-plus"></i>${state.detailTab === "cases" ? "生成用例" : state.detailTab === "suites" ? "创建套件" : "新建运行"}</button></div><div class="table-surface"><table><thead><tr><th>名称 / 标识</th><th>类型 / 状态</th><th>范围 / 进度</th><th>更新时间</th><th></th></tr></thead><tbody>${rows.map(row => `<tr><td><b>${row[0]}</b></td><td>${row[1]}</td><td>${row[2]}</td><td class="muted">${row[3]}</td><td class="row-arrow"><i class="fa-solid fa-chevron-right"></i></td></tr>`).join("")}</tbody></table></div>`;
+    }
+
+    function showCreateModal() { document.getElementById("createModal").hidden = false; document.getElementById("newKey").focus(); }
+    function hideCreateModal() { document.getElementById("createModal").hidden = true; }
+    function showToast(message) { const toast = document.getElementById("toast"); toast.textContent = message; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 1800); }
+
+    document.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
+      state.mode = button.dataset.mode;
+      document.querySelectorAll("[data-mode]").forEach(item => item.classList.toggle("active", item === button));
+      renderCollection();
+    }));
+    document.querySelectorAll("#statusFilter button").forEach(button => button.addEventListener("click", () => {
+      state.status = button.dataset.status;
+      document.querySelectorAll("#statusFilter button").forEach(item => item.classList.toggle("active", item === button));
+      renderCollection();
+    }));
+    document.getElementById("searchInput").addEventListener("input", event => { state.query = event.target.value; renderCollection(); });
+    document.getElementById("sortSelect").addEventListener("change", event => { state.sort = event.target.value; renderCollection(); });
+    document.getElementById("backToProjects").addEventListener("click", () => { document.getElementById("detailView").hidden = true; document.getElementById("collectionView").hidden = false; renderCollection(); });
+    document.querySelectorAll("#detailTabs button").forEach(button => button.addEventListener("click", () => {
+      state.detailTab = button.dataset.tab;
+      document.querySelectorAll("#detailTabs button").forEach(item => item.classList.toggle("active", item === button));
+      renderDetailContent(projects.find(item => item.id === state.selectedId));
+    }));
+    document.getElementById("createProject").addEventListener("click", showCreateModal);
+    document.getElementById("closeModal").addEventListener("click", hideCreateModal);
+    document.getElementById("cancelModal").addEventListener("click", hideCreateModal);
+    document.getElementById("createModal").addEventListener("click", event => { if (event.target.id === "createModal") hideCreateModal(); });
+    document.getElementById("saveProject").addEventListener("click", () => { hideCreateModal(); showToast("原型：项目创建成功"); });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") hideCreateModal(); });
+
+    document.getElementById("allCount").textContent = projects.length;
+    document.getElementById("activeCount").textContent = projects.filter(project => project.status !== "archived").length;
+    document.getElementById("archivedCount").textContent = projects.filter(project => project.status === "archived").length;
+    renderCollection();
+  </script>
+</body>
+</html>
