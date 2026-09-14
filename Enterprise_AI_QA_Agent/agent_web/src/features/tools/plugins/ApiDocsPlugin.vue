@@ -754,15 +754,15 @@ onBeforeUnmount(() => {
   min-height: 220px;
   border: 1px dashed var(--border);
   border-radius: 18px;
-  background: rgba(248, 250, 252, 0.6);
-  color: var(--muted);
+  background: var(--surface-soft);
+  color: var(--text);
   text-align: center;
 }
 
 .api-doc-empty--error {
-  border-color: rgba(239, 68, 68, 0.22);
-  background: rgba(254, 242, 242, 0.8);
-  color: #991b1b;
+  border-color: color-mix(in srgb, var(--red) 32%, var(--border));
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+  color: var(--red);
 }
 
 .api-doc-empty i {
