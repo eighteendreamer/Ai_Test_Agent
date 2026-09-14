@@ -121,6 +121,17 @@ const isDetailRoute = computed(() => route.name === "project-detail");
 const routeProjectId = computed(() => String(route.params.projectId || ""));
 const activeProjectCount = computed(() => projects.value.filter(item => item.status === "active").length);
 const archivedProjectCount = computed(() => projects.value.filter(item => item.status === "archived").length);
+const hasGenerationSources = computed(() => {
+  const graph = overview.value?.graph;
+  return Boolean(
+    (overview.value?.api_doc_count ?? 0) > 0
+    || (overview.value?.session_count ?? 0) > 0
+    || (graph?.page_count ?? 0) > 0
+    || (graph?.element_count ?? 0) > 0
+    || (graph?.entity_count ?? 0) > 0
+    || (graph?.edge_count ?? 0) > 0
+  );
+});
 const generationModes = computed(() => modes.value.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt"));
 const selectedActiveCases = computed(() => Object.values(selectedCasesById.value));
 const selectedRegressionFailures = computed(() => Object.values(selectedRegressionResults.value));
@@ -1161,10 +1172,11 @@ watch(routeProjectId, async (projectId) => {
     <div v-if="generationOpen" class="modal-backdrop" @click.self="generationOpen = false">
       <section class="editor">
         <header><h2>生成测试用例草稿</h2><button @click="generationOpen = false">×</button></header>
+        <p v-if="overview && !hasGenerationSources" class="generation-warning">当前项目没有可追溯的 API 文档、知识图谱或测试会话。请先导入或绑定项目资料，再生成测试用例。</p>
         <label>生成目标<textarea v-model="generationForm.objective" rows="5" placeholder="描述本次需要覆盖的业务目标、范围与通过标准"></textarea></label>
         <label>测试模式<select v-model="generationForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
         <label>模型标识（可选）<input v-model="generationForm.model_key" placeholder="留空使用服务端默认模型"></label>
-        <footer><button @click="generationOpen = false">取消</button><button class="primary" :disabled="generating" @click="generateCases">{{ generating ? "生成中…" : "生成草稿" }}</button></footer>
+        <footer><button @click="generationOpen = false">取消</button><button class="primary" :disabled="generating || !hasGenerationSources" @click="generateCases">{{ generating ? "生成中…" : "生成草稿" }}</button></footer>
       </section>
     </div>
 
@@ -1735,6 +1747,17 @@ td small,
   border-radius: 8px;
   background: color-mix(in srgb, var(--red) 12%, var(--surface));
   color: var(--red);
+}
+
+.generation-warning {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  background: #fff8e6;
+  color: #8a5a00;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .resource-panel {
