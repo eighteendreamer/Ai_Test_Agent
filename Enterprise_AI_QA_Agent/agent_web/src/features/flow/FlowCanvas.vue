@@ -26,7 +26,7 @@ import {
   type FlowNodeStatus,
 } from "./stages";
 import { isWorkerNodeId, workerFlowStatus, workerLabel, workerNodeId, workerSourceStage } from "./workers";
-import { wheelViewportTransform } from "./wheelViewport";
+import { FLOW_MAX_ZOOM, FLOW_MIN_ZOOM, wheelViewportTransform } from "./wheelViewport";
 
 const props = defineProps<{
   sessionId: string;
@@ -235,7 +235,7 @@ function onWheel(event: WheelEvent) {
   event.stopPropagation();
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const viewport = flowStore.viewportHelper.value.getViewport();
-  const nextViewport = wheelViewportTransform(viewport, event, rect, 0.35, 1.6);
+  const nextViewport = wheelViewportTransform(viewport, event, rect, FLOW_MIN_ZOOM, FLOW_MAX_ZOOM);
   void flowStore.viewportHelper.value.setViewport(nextViewport);
 }
 
@@ -288,8 +288,8 @@ watch(
       :connect-on-click="false"
       :delete-key-code="null"
       :zoom-on-scroll="false"
-      :min-zoom="0.35"
-      :max-zoom="1.6"
+      :min-zoom="FLOW_MIN_ZOOM"
+      :max-zoom="FLOW_MAX_ZOOM"
       :fit-view-on-init="true"
       class="flow-canvas"
       @init="onInit"

@@ -7,6 +7,9 @@ export interface WheelViewportRect {
 
 const WHEEL_ZOOM_FACTOR = 0.002;
 
+export const FLOW_MIN_ZOOM = 0.35;
+export const FLOW_MAX_ZOOM = 1.6;
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
