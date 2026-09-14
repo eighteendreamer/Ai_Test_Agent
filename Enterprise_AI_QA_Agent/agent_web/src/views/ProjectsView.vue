@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
+import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../services/api";
 import { formatServerDateTime } from "../utils/datetime";
@@ -32,8 +33,10 @@ const REGRESSION_PAGE_SIZE = 20;
 const REGRESSION_BATCH_PAGE_SIZE = 20;
 
 const toast = useMessage();
+const route = useRoute();
+const router = useRouter();
 const projects = ref<ProjectRecord[]>([]);
-const selectedId = ref("");
+const selectedId = ref(String(route.params.projectId || ""));
 const overview = ref<ProjectOverview | null>(null);
 const loading = ref(false);
 const saving = ref(false);
@@ -114,6 +117,10 @@ const runSuite = ref<TestSuiteBundle | null>(null);
 const runForm = ref({ mode_key: "", session_id: "" });
 
 const selected = computed(() => projects.value.find(item => item.id === selectedId.value) ?? null);
+const isDetailRoute = computed(() => route.name === "project-detail");
+const routeProjectId = computed(() => String(route.params.projectId || ""));
+const activeProjectCount = computed(() => projects.value.filter(item => item.status === "active").length);
+const archivedProjectCount = computed(() => projects.value.filter(item => item.status === "archived").length);
 const generationModes = computed(() => modes.value.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt"));
 const selectedActiveCases = computed(() => Object.values(selectedCasesById.value));
 const selectedRegressionFailures = computed(() => Object.values(selectedRegressionResults.value));
@@ -159,11 +166,18 @@ async function loadProjects() {
       limit: 100,
     });
     projects.value = page.items;
-    if (!projects.value.some(item => item.id === selectedId.value)) {
-      selectedId.value = projects.value[0]?.id || "";
+    if (isDetailRoute.value) {
+      selectedId.value = routeProjectId.value;
+      if (!projects.value.some(item => item.id === selectedId.value)) {
+        resetProjectResources();
+        await router.replace({ name: "projects" });
+        return;
+      }
+      await loadProjectDetail();
+    } else {
+      selectedId.value = "";
       resetProjectResources();
     }
-    await loadProjectDetail();
   } catch (err) {
     error.value = err instanceof Error ? err.message : "项目加载失败";
   } finally {
@@ -218,10 +232,12 @@ async function loadProjectDetail() {
 }
 
 async function selectProject(projectId: string) {
-  if (selectedId.value === projectId) return;
-  selectedId.value = projectId;
-  resetProjectResources();
-  await loadProjectDetail();
+  if (isDetailRoute.value && selectedId.value === projectId) return;
+  await router.push({ name: "project-detail", params: { projectId } });
+}
+
+function backToProjects() {
+  void router.push({ name: "projects" });
 }
 
 async function loadOverview() {
@@ -805,19 +821,26 @@ async function loadMoreRegressionBatches() {
 onMounted(() => {
   void Promise.all([loadModes(), loadProjects()]);
 });
+
+watch(routeProjectId, async (projectId) => {
+  if (!isDetailRoute.value || !projectId || projectId === selectedId.value) return;
+  selectedId.value = projectId;
+  resetProjectResources();
+  await loadProjectDetail();
+});
 </script>
 
 <template>
   <main class="projects-page">
-    <header class="page-head">
+    <header v-if="!isDetailRoute" class="page-head">
       <div>
         <h1>测试项目</h1>
-        <p>统一管理 API 文档、测试用例、固定版本套件、知识图谱与跨模式测试历史。</p>
+        <p>查找和管理测试项目，进入项目后查看完整资料与测试资源。</p>
       </div>
       <button class="primary" @click="openCreate"><i class="fa-solid fa-plus"></i> 新建项目</button>
     </header>
 
-    <section class="toolbar">
+    <section v-if="!isDetailRoute" class="toolbar">
       <input v-model="query" placeholder="搜索项目名称或标识" @keyup.enter="loadProjects">
       <select v-model="statusFilter" @change="loadProjects">
         <option value="">全部状态</option>
@@ -828,28 +851,45 @@ onMounted(() => {
     </section>
 
     <div v-if="error" class="error-banner">{{ error }}</div>
-    <div class="project-grid">
-      <section class="project-list">
+    <section v-if="!isDetailRoute" class="catalog-summary" aria-label="项目统计">
+      <span><strong>{{ projects.length }}</strong> 个项目</span>
+      <span><i class="summary-dot active"></i>{{ activeProjectCount }} 个启用中</span>
+      <span><i class="summary-dot archived"></i>{{ archivedProjectCount }} 个已归档</span>
+    </section>
+
+    <section v-if="!isDetailRoute" class="project-catalog">
         <div v-if="loading" class="empty">正在加载项目…</div>
         <button
           v-for="project in projects"
           v-else
           :key="project.id"
-          class="project-row"
-          :class="{ active: project.id === selectedId }"
+          class="project-card"
           @click="selectProject(project.id)"
         >
-          <span class="project-monogram">{{ project.name.slice(0, 1).toUpperCase() }}</span>
-          <span class="project-copy">
-            <strong>{{ project.name }}</strong>
-            <small>{{ project.project_key }} · {{ formatServerDateTime(project.updated_at) }}</small>
+          <span class="project-card-head">
+            <span class="project-monogram">{{ project.name.slice(0, 1).toUpperCase() }}</span>
+            <span class="project-copy">
+              <strong>{{ project.name }}</strong>
+              <small>{{ project.project_key }}</small>
+            </span>
+            <span class="status" :class="project.status">{{ project.status === "active" ? "启用中" : "已归档" }}</span>
           </span>
-          <span class="status" :class="project.status">{{ project.status === "active" ? "启用中" : "已归档" }}</span>
+          <span class="project-card-description">{{ project.description || "暂无项目说明" }}</span>
+          <span class="project-card-meta">
+            <span><i class="fa-solid fa-globe"></i>{{ project.base_url || "未设置 Base URL" }}</span>
+            <span><i class="fa-regular fa-clock"></i>更新于 {{ formatServerDateTime(project.updated_at) }}</span>
+          </span>
+          <span class="project-card-action">查看项目详情 <i class="fa-solid fa-arrow-right"></i></span>
         </button>
         <div v-if="!loading && !projects.length" class="empty">暂无符合条件的测试项目</div>
-      </section>
+    </section>
 
-      <section v-if="selected" class="project-detail">
+      <section v-if="isDetailRoute && selected" class="project-detail">
+        <div class="detail-breadcrumb">
+          <button type="button" @click="backToProjects"><i class="fa-solid fa-arrow-left"></i> 返回项目目录</button>
+          <span>/</span>
+          <strong>{{ selected.name }}</strong>
+        </div>
         <div class="detail-head">
           <div><h2>{{ selected.name }}</h2><p>{{ selected.description || "暂无项目说明" }}</p></div>
           <div class="actions">
@@ -1104,8 +1144,7 @@ onMounted(() => {
           </template>
         </section>
       </section>
-      <section v-else class="project-detail empty">选择一个项目查看资源概览</section>
-    </div>
+      <section v-else-if="isDetailRoute" class="project-detail empty">项目不存在或已被移除</section>
 
     <div v-if="editorOpen" class="modal-backdrop" @click.self="editorOpen = false">
       <section class="editor">
@@ -1299,6 +1338,37 @@ onMounted(() => {
   min-width: 280px;
 }
 
+.catalog-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.catalog-summary strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.summary-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.summary-dot.active {
+  background: #16a34a;
+}
+
+.summary-dot.archived {
+  background: #94a3b8;
+}
+
 /* shadcn Input: G:\Code_UZIP\ui\apps\v4\registry\new-york-v4\ui\input.tsx */
 .projects-page input:not([type="checkbox"]):not([type="radio"]),
 .projects-page select,
@@ -1382,6 +1452,117 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(300px, 32%) 1fr;
   gap: 20px;
+}
+
+.project-catalog {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.project-card {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.project-card:hover,
+.project-card:focus-visible {
+  border-color: color-mix(in srgb, var(--text) 28%, var(--border));
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.project-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-card-head .project-copy {
+  min-width: 0;
+}
+
+.project-card-head .project-copy strong,
+.project-card-head .project-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-description {
+  min-height: 42px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.project-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-card-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-meta i {
+  width: 16px;
+  margin-right: 4px;
+  text-align: center;
+}
+
+.project-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.detail-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detail-breadcrumb button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.detail-breadcrumb button:hover,
+.detail-breadcrumb button:focus-visible {
+  color: var(--text);
+}
+
+.detail-breadcrumb strong {
+  color: var(--text);
 }
 
 .project-list,
@@ -1730,6 +1911,10 @@ button:disabled {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  .project-catalog {
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+  }
+
   .project-grid {
     grid-template-columns: minmax(280px, 34%) 1fr;
   }
@@ -1738,6 +1923,10 @@ button:disabled {
 @media (max-width: 900px) {
   .projects-page {
     padding: 16px;
+  }
+
+  .project-catalog {
+    grid-template-columns: 1fr;
   }
 
   .project-grid {
