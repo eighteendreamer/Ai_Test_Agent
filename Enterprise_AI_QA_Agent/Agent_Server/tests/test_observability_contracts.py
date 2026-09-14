@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -404,6 +405,25 @@ def test_configured_langsmith_api_key_is_used_without_process_secret(monkeypatch
 
     assert captured["api_key"] == "config-secret"
     assert captured["workspace_id"] == "workspace-from-config"
+
+
+def test_flush_waits_for_buffered_sdk_runs() -> None:
+    class _FlushClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def flush(self) -> None:
+            self.calls += 1
+
+    client = _FlushClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="full"),
+        client=client,
+    )
+
+    asyncio.run(adapter.flush())
+
+    assert client.calls == 1
 
 
 def test_errors_only_does_not_trace_successful_turn(monkeypatch: pytest.MonkeyPatch) -> None:

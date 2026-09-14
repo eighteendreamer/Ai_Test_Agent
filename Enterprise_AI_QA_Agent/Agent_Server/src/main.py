@@ -552,6 +552,7 @@ async def lifespan(app: FastAPI):
         await test_run_service.stop_lease_reaper()
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()
+        await observability_service.flush()
 
 
 settings = get_settings()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
@@ -276,6 +277,19 @@ class LangSmithObservabilityAdapter:
             thread_id=value.get("thread_id", ""),
             environment=self._environment,
         )
+
+    async def flush(self) -> None:
+        """Best-effort flush of buffered SDK runs during graceful shutdown."""
+        client = self._client
+        if client is None:
+            return
+        flush = getattr(client, "flush", None)
+        if not callable(flush):
+            return
+        try:
+            await asyncio.to_thread(flush)
+        except Exception:  # pragma: no cover - SDK/network specific
+            logger.exception("langsmith_trace_flush_failed")
 
     def _get_client(self, langsmith_module: Any) -> Any:
         if self._client is not None:
