@@ -183,6 +183,14 @@ function openWebsite(sponsor: SponsorRecord) {
 }
 
 .sponsor-modal {
+  --sponsor-bg: #ffffff;
+  --sponsor-bg-subtle: #f8fafc;
+  --sponsor-text-primary: #0f172a;
+  --sponsor-text-secondary: #475569;
+  --sponsor-text-tertiary: #64748b;
+  --sponsor-border: #e2e8f0;
+  --sponsor-border-hover: #cbd5e1;
+
   width: min(560px, 92vw);
   max-height: 84vh;
   overflow: auto;
@@ -190,6 +198,16 @@ function openWebsite(sponsor: SponsorRecord) {
   border-radius: 14px;
   background: var(--sponsor-bg, #fff);
   color: var(--sponsor-text-primary);
+}
+
+:global(:root[data-theme="dark"]) .sponsor-modal {
+  --sponsor-bg: #151515;
+  --sponsor-bg-subtle: #202020;
+  --sponsor-text-primary: #f5f5f5;
+  --sponsor-text-secondary: #c2c2c2;
+  --sponsor-text-tertiary: #929292;
+  --sponsor-border: #303030;
+  --sponsor-border-hover: #4a4a4a;
 }
 
 .sponsor-modal__header {
