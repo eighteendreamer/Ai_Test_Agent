@@ -244,6 +244,12 @@ class ModelTestCaseGenerator:
     def _resolve_model_key(self, requested: str | None) -> str:
         requested_key = str(requested or "").strip()
         if requested_key:
+            get_model_config = getattr(self._models, "get_model_config", None)
+            if callable(get_model_config) and get_model_config(requested_key) is None:
+                raise RuntimeError(
+                    f"No active model configuration found for '{requested_key}'. "
+                    "Leave the model identifier blank to use the configured default model."
+                )
             return requested_key
         default = self._models.get_default_model_config()
         default_key = str(getattr(default, "key", "") or "").strip()
@@ -254,12 +260,35 @@ class ModelTestCaseGenerator:
     @staticmethod
     def _parse_payload(text: str) -> _ModelGeneratedPayload:
         normalized = text.strip()
-        fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", normalized, re.I | re.S)
-        if fence:
-            normalized = fence.group(1).strip()
-        try:
-            return _ModelGeneratedPayload.model_validate_json(normalized)
-        except ValueError as exc:
-            raise ValueError(
-                "Model did not return valid JSON test cases; no fallback cases were created"
-            ) from exc
+        candidates = [normalized]
+        candidates.extend(
+            match.group(1).strip()
+            for match in re.finditer(
+                r"```(?:json)?\s*([\s\S]*?)```",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+        )
+        decoder = json.JSONDecoder()
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                parsed = None
+                for index, character in enumerate(candidate):
+                    if character != "{":
+                        continue
+                    try:
+                        parsed, _ = decoder.raw_decode(candidate[index:])
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            if not isinstance(parsed, dict):
+                continue
+            try:
+                return _ModelGeneratedPayload.model_validate(parsed)
+            except ValueError:
+                continue
+        raise ValueError(
+            "Model did not return valid JSON test cases; no fallback cases were created"
+        )

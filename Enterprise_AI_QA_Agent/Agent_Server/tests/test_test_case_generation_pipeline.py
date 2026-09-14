@@ -216,4 +216,12 @@ def test_model_generator_loads_skill_and_returns_validated_cases_without_fallbac
                 context=context,
             )
 
+        prefixed = generator_type._parse_payload(
+            "模型输出如下：\n```json\n" +
+            '{"cases":[{"case_key":"orders-smoke","title":"订单冒烟","case_type":"api",'
+            '"steps":[{"order":1,"action":"调用订单接口","expected":"返回成功"}],'
+            '"assertions":[{"kind":"status","operator":"equals","expected":200}]}]}\n```'
+        )
+        assert prefixed.cases[0].case_key == "orders-smoke"
+
     asyncio.run(scenario())
