@@ -82,6 +82,16 @@
 - MCP Python SDK 版本策略：<https://github.com/modelcontextprotocol/python-sdk/blob/main/VERSIONING.md>
 - FastAPI 发布记录：<https://fastapi.tiangolo.com/release-notes/>
 
+## 3.2 长任务观测边界（官方依据）
+
+LangSmith Python SDK 默认在后台线程处理 Trace，并将 Run 操作保存在内存缓冲区后批量上传；官方同时要求进程退出前调用 `client.flush()`，否则尾部 Trace 可能尚未提交。该行为与业务长任务生命周期是两个独立维度：Session、Snapshot、Event、TestRun/Attempt 和 ToolJob 仍是恢复事实源，LangSmith 只承担旁路观测。DA-E5 的长任务验收必须覆盖优雅关闭时的 flush、异常退出时的尾部丢失边界，以及 SDK 不可用时本地持久化链路不受影响；不得把 SDK 内存缓冲区当作业务检查点或恢复队列。
+
+官方依据：
+
+- <https://docs.langchain.com/langsmith/trace-with-langchain>
+- <https://docs.langchain.com/langsmith/mask-inputs-outputs>
+- <https://docs.langchain.com/langsmith/trace-with-api>
+
 最小组合 dry-run（2026-09-09）已通过：保留 `fastapi==0.140.0`、`uvicorn==0.34.0`、`mcp==1.28.0`、`pydantic==2.13.4`、`pydantic-settings==2.14.2`、`playwright==1.49.1`，只把 Deep Agents 强制链路固定为 `deepagents==0.7.13`、LangChain/Core/LangGraph/LangSmith 候选版本、`langchain-openai==1.6.1`、`openai==2.45.0`、`anthropic==0.120.0`、`google-genai==2.20.0`。该结果只证明依赖可解析；必须建立独立 C5 环境并重复全量、真实 Provider、长任务和回滚验证后才能修改主环境。
 
 ## 4. 后续兼容验证矩阵
