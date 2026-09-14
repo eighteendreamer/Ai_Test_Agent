@@ -1841,3 +1841,12 @@ API / Session / TestRun 控制平面（系统保留）
 | 边界 | `recovery_required` 只表示需要人工或模式级副作用对账，不代表可以自动续跑；Coordinator 子任务的自动安全续跑仍未实现 |
 | 当前状态 | 代码与回归验证完成；4/24 小时 soak、真实服务重启后的 Coordinator PostgreSQL 对账仍未完成，DA-E5 保持进行中 |
 
+#### LangSmith 优雅退出 Trace flush 补齐（2026-09-14）
+
+- 当前状态：已完成本批；不改变阶段 1 的整体状态。
+- 依据：LangChain 官方文档说明 Python SDK 使用后台线程和内存缓冲上传，进程退出前应调用 `client.flush()`；LangSmith 仍不是业务恢复事实源。
+- 实施：`LangSmithObservabilityAdapter` 新增幂等、best-effort 的异步 `flush()`，通过线程执行 SDK 的同步 `flush`；FastAPI lifespan 在后台组件停止后调用该方法。未新增队列、数据库表或自研上传器。
+- 降级：Client 未初始化、SDK 无 `flush` 方法或 flush 失败时只记录结构化错误，不阻断服务退出；业务 Session/Event/Snapshot/TestRun/ToolJob 不受影响。
+- 验证：`tests/test_observability_contracts.py` `24 passed`；观测模块与 `src.main` `compileall` 通过；`import src.main` 成功。未启动长时 soak。
+- 边界：`flush()` 只覆盖优雅退出；进程被强制终止时 SDK 内存缓冲仍可能丢失，不能把该机制当作 DA-E5 Checkpoint 或 exactly-once 保障。
+
