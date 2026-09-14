@@ -26,6 +26,7 @@ import {
   type FlowNodeStatus,
 } from "./stages";
 import { isWorkerNodeId, workerFlowStatus, workerLabel, workerNodeId, workerSourceStage } from "./workers";
+import { wheelViewportTransform } from "./wheelViewport";
 
 const props = defineProps<{
   sessionId: string;
@@ -226,6 +227,18 @@ function onInit(instance: VueFlowStore) {
   applyFitView();
 }
 
+function onWheel(event: WheelEvent) {
+  if (!flowStore) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const viewport = flowStore.viewportHelper.value.getViewport();
+  const nextViewport = wheelViewportTransform(viewport, event, rect, 0.35, 1.6);
+  void flowStore.viewportHelper.value.setViewport(nextViewport);
+}
+
 watch(
   () => [props.sessionId, props.turnId] as const,
   () => {
@@ -266,34 +279,37 @@ watch(
 </script>
 
 <template>
-  <VueFlow
-    v-model:nodes="nodes"
-    v-model:edges="edges"
-    :nodes-connectable="false"
-    :edges-updatable="false"
-    :connect-on-click="false"
-    :delete-key-code="null"
-    :min-zoom="0.35"
-    :max-zoom="1.6"
-    :fit-view-on-init="true"
-    class="flow-canvas"
-    @init="onInit"
-    @node-click="onNodeClick"
-    @node-double-click="onNodeDoubleClick"
-    @node-drag-stop="onNodeDragStop"
-  >
-    <template #node-stage="nodeProps">
-      <StageNode v-bind="nodeProps" />
-    </template>
-    <template #node-worker="nodeProps">
-      <WorkerNode v-bind="nodeProps" />
-    </template>
-    <Panel position="top-right" class="flow-canvas-panel">
-      <button type="button" class="flow-reset-btn" @click="resetLayout">
-        {{ t("flow.reset_layout") }}
-      </button>
-    </Panel>
-  </VueFlow>
+  <div class="flow-canvas-viewport" @wheel.capture="onWheel">
+    <VueFlow
+      v-model:nodes="nodes"
+      v-model:edges="edges"
+      :nodes-connectable="false"
+      :edges-updatable="false"
+      :connect-on-click="false"
+      :delete-key-code="null"
+      :zoom-on-scroll="false"
+      :min-zoom="0.35"
+      :max-zoom="1.6"
+      :fit-view-on-init="true"
+      class="flow-canvas"
+      @init="onInit"
+      @node-click="onNodeClick"
+      @node-double-click="onNodeDoubleClick"
+      @node-drag-stop="onNodeDragStop"
+    >
+      <template #node-stage="nodeProps">
+        <StageNode v-bind="nodeProps" />
+      </template>
+      <template #node-worker="nodeProps">
+        <WorkerNode v-bind="nodeProps" />
+      </template>
+      <Panel position="top-right" class="flow-canvas-panel">
+        <button type="button" class="flow-reset-btn" @click="resetLayout">
+          {{ t("flow.reset_layout") }}
+        </button>
+      </Panel>
+    </VueFlow>
+  </div>
 </template>
 
 <style scoped>
@@ -301,6 +317,12 @@ watch(
   width: 100%;
   height: 100%;
   background: var(--bg);
+}
+
+.flow-canvas-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .flow-canvas-panel {
