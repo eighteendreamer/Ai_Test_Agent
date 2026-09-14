@@ -928,9 +928,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   border-radius: 24px;
-  background: #ffffff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
 }
 
 .tools-modal-head {
@@ -940,7 +941,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   padding: 24px 28px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 
 .tools-modal-head h3 {
@@ -985,7 +986,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 10px;
   padding: 20px 28px 0;
-  color: #475569;
+  color: var(--muted);
 }
 
 .preview-inline-error,
@@ -1042,11 +1043,11 @@ onBeforeUnmount(() => {
 }
 
 .import-mode-tabs button {
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 8px 16px;
-  background: #ffffff;
-  color: #6B7280;
+  background: var(--surface);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -1054,14 +1055,14 @@ onBeforeUnmount(() => {
 }
 
 .import-mode-tabs button:hover {
-  background: #f9fafb;
-  color: #1F2937;
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 .import-mode-tabs button.active {
-  background: #111827;
-  color: #ffffff;
-  border-color: #111827;
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
 }
 
 .upload-drop {
@@ -1071,7 +1072,7 @@ onBeforeUnmount(() => {
   padding: 22px;
   border: 1px dashed rgba(37, 99, 235, 0.34);
   border-radius: 18px;
-  background: rgba(239, 246, 255, 0.8);
+  background: color-mix(in srgb, var(--blue) 10%, var(--surface));
   cursor: pointer;
 }
 
@@ -1081,11 +1082,11 @@ onBeforeUnmount(() => {
 }
 
 .upload-drop strong {
-  color: #0f172a;
+  color: var(--text);
 }
 
 .upload-drop span {
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -1109,7 +1110,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   font-size: 13px;
-  color: #1F2937;
+  color: var(--text);
 }
 
 .modal-field,
@@ -1124,12 +1125,12 @@ onBeforeUnmount(() => {
 .field-block > input,
 .field-block > select {
   width: 100%;
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
-  background: #ffffff;
-  color: #1F2937;
+  background: var(--surface);
+  color: var(--text);
   transition: all 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
@@ -1137,8 +1138,8 @@ onBeforeUnmount(() => {
 .field-block > input:focus,
 .field-block > select:focus {
   outline: none;
-  border-color: #111827;
-  box-shadow: 0 0 0 1px #111827;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .field-block > input::placeholder {
@@ -1146,26 +1147,26 @@ onBeforeUnmount(() => {
 }
 
 .field-hint {
-  color: #6B7280;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
 /* NSelect Custom Styles */
 :deep(.custom-select .n-base-selection) {
-  --n-border: 1px solid #E5E7EB !important;
-  --n-border-hover: 1px solid #111827 !important;
-  --n-border-focus: 1px solid #111827 !important;
-  --n-border-active: 1px solid #111827 !important;
-  --n-box-shadow-focus: 0 0 0 1px #111827 !important;
-  --n-box-shadow-active: 0 0 0 1px #111827 !important;
-  --n-caret-color: #111827 !important;
-  --n-text-color: #1F2937 !important;
-  --n-placeholder-color: #9CA3AF !important;
+  --n-border: 1px solid var(--border) !important;
+  --n-border-hover: 1px solid var(--accent) !important;
+  --n-border-focus: 1px solid var(--accent) !important;
+  --n-border-active: 1px solid var(--accent) !important;
+  --n-box-shadow-focus: 0 0 0 1px var(--accent) !important;
+  --n-box-shadow-active: 0 0 0 1px var(--accent) !important;
+  --n-caret-color: var(--text) !important;
+  --n-text-color: var(--text) !important;
+  --n-placeholder-color: var(--muted) !important;
   --n-border-radius: 8px !important;
   height: 42px !important;
   min-height: 42px !important;
-  background: #ffffff;
+  background: var(--surface);
   transition: all 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
   display: flex;
@@ -1184,7 +1185,7 @@ onBeforeUnmount(() => {
 
 :deep(.custom-select .n-base-selection-input) {
   font-size: 14px !important;
-  color: #1F2937 !important;
+  color: var(--text) !important;
   height: 100% !important;
   line-height: normal !important;
   display: flex !important;
@@ -1192,7 +1193,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.custom-select .n-base-selection-placeholder) {
-  color: #9CA3AF !important;
+  color: var(--muted) !important;
   font-size: 14px !important;
   height: 100% !important;
   display: flex !important;
@@ -1219,9 +1220,9 @@ onBeforeUnmount(() => {
   margin: 16px 28px 0;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.8);
-  color: #475569;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
   display: grid;
   gap: 8px;
   font-size: 13px;
