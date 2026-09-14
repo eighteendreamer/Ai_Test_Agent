@@ -1824,6 +1824,12 @@ API / Session / TestRun 控制平面（系统保留）
 - 采样限制：首个 RSS 样本发生在进程工作集完全建立前，净差为负不能解释为内存下降；后续正式窗口应增加预热并单独报告稳态 RSS。
 - 结论：10 分钟阶梯窗口稳定，可作为 4 小时正式窗口前的可执行性证据；不替代 4/24 小时正式 soak，也不证明 LangSmith Trace 队列无积压。
 
+#### 长时 soak 结果持久化能力（2026-09-14）
+
+- 新增测试配置 `RUN_LIVE_POSTGRES_SOAK_REPORT_PATH`，仅在显式设置时把最终指标写入 JSON；默认空值，不改变测试或生产运行路径。
+- JSON 包含 duration、iterations、completed/errors、error_rate、P50/P95/P99、首末窗口 P95、RSS 和 PostgreSQL 连接峰值，便于脱离 PTY 保存 4/24 小时验收证据。
+- 配置单测：`tests/test_live_postgres_config.py`，`1 passed`；30 秒真实 PostgreSQL 验证：205/205 完成、错误率 `0`，JSON 成功生成、读取并删除临时文件。
+
 ### DA-E5 Coordinator 子会话恢复对账实施记录（进行中，2026-09-11）
 
 | 项目 | 记录 |

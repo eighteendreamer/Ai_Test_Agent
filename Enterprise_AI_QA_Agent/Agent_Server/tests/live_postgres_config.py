@@ -23,6 +23,7 @@ class LivePostgresTestConfig(BaseSettings):
     run_live_postgres_soak_max_p95_growth_ratio: float = 0.0
     run_live_postgres_soak_max_rss_growth_bytes: int = 0
     run_live_postgres_soak_max_connections: int = 0
+    run_live_postgres_soak_report_path: str = ""
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

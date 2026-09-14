@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import platform
+from pathlib import Path
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -486,6 +487,28 @@ async def test_live_postgres_lifecycle_soak():
             f"rss_growth={rss_samples[-1] - rss_samples[0] if len(rss_samples) >= 2 else 'unavailable'} "
             f"connections_max={max(connection_samples) if connection_samples else 'unavailable'}"
         )
+        report_path = str(LIVE_CONFIG.run_live_postgres_soak_report_path or "").strip()
+        if report_path:
+            report = {
+                "duration_seconds": round(elapsed, 3),
+                "iterations": iterations,
+                "completed": completed,
+                "errors": len(errors),
+                "error_rate": error_rate,
+                "complete_p50_ms": _percentile(latencies, 0.50),
+                "complete_p95_ms": complete_p95_ms,
+                "complete_p99_ms": _percentile(latencies, 0.99),
+                "complete_first_p95_ms": first_p95_ms,
+                "complete_last_p95_ms": last_p95_ms,
+                "rss_min_bytes": min(rss_samples) if rss_samples else None,
+                "rss_max_bytes": max(rss_samples) if rss_samples else None,
+                "rss_growth_bytes": rss_samples[-1] - rss_samples[0] if len(rss_samples) >= 2 else None,
+                "connections_max": max(connection_samples) if connection_samples else None,
+            }
+            output_path = Path(report_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"postgres_soak_report={output_path}")
     finally:
         _tables(
             settings,
