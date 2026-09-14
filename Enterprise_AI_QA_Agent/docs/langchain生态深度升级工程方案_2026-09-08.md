@@ -580,10 +580,10 @@ Feature Flags：
 |---|---|---:|---:|---|---|
 | 准备项 | 官方文档归档 | 已完成 | 100% | 35 份官方资料已归档并建立索引 | 文档存在性已核对 |
 | 0 | 契约、依赖和可回滚基线 | 进行中 | 90% | P0-01～P0-06、P0-08～P0-10 已完成；P0-07 因 Deep Agents 与当前主服务生态版本不兼容而阻塞，阶段仍不能关闭 | 现有环境、干净 C1 环境、隔离 C2 候选 Harness、后端/前端契约回归和真实默认模型链路均通过；共享开发环境 pip check 仍受非主服务工具冲突影响 |
-| 1 | LangSmith 非阻塞观测 | 进行中 | 98% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和短时 soak 已完成；正式业务阈值、直接队列深度和 30 分钟持续窗口仍未确认/完成 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯均通过；短时 soak 9/10 + 重试通过 |
+| 1 | LangSmith 非阻塞观测 | 进行中 | 99% | 真实 LangSmith 上报、父子树、本地 Run 对账、敏感数据扫描、故障降级、开关基线、并发阶梯和 4 小时持续窗口已完成；直接队列深度受锁定 SDK 能力限制，正式业务阈值待确认 | 观测专项 19 项、前端 33 项、后端全量 747 项、真实默认模型链路、云端 Trace、并发 1/2/3/5 阶梯和 4 小时 soak 均通过；队列深度不伪造 |
 | 2 | LangChain 模型与消息适配 | 已完成 | 100% | 默认 Qwen Provider 已完成新旧适配器双跑、工具调用、结构化输出、错误/取消传播和限流契约验证 | 后端全量 781 passed，10 skipped，1 warning；compileall 通过；真实默认模型链路通过 |
 | 3 | LangChain 工具适配与 Middleware | 进行中 | 50% | P3-01～P3-03 已完成；P3-04～P3-08 已完成兼容性评估，其中 P3-04～P3-07 暂不迁移，P3-08 保留现有安全强制层 | 工具/Middleware/模型消息专项 18 passed；上下文压缩专项 10 passed；后端全量 781 passed，10 skipped，1 warning；compileall 通过 |
-| 4 | Deep Agents code_review 试点 | 进行中 | 50% | DA-E1～DA-E3 已完成；DA-E4 治理工具与官方 HITL 已实现并实测，DA-E5 的 PostgreSQL Checkpointer 前置能力已进入实施；主环境仍默认关闭 | 已验证真实 safe 工具、批准/拒绝、等待审批时重启恢复、ToolJob 原位推进及 LangSmith 工具父子 Trace；批量审批有官方 Harness 回归，完整长任务/跨 Worker/记忆/灰度尚未验收；百分比为工程估计，不代表通过率 |
+| 4 | Deep Agents code_review 试点 | 进行中 | 55% | DA-E1～DA-E3 已完成；DA-E4 治理工具与官方 HITL 已实现并实测，DA-E5 PostgreSQL Checkpointer、跨 Worker 恢复对账和 4 小时稳定窗口已有证据；主环境仍默认关闭，24 小时窗口与完整灰度尚未验收 | 已验证真实 safe 工具、批准/拒绝、等待审批时重启恢复、ToolJob 原位推进及 LangSmith 工具父子 Trace；批量审批有官方 Harness 回归，4 小时 PostgreSQL soak 通过；24 小时长任务、完整记忆/灰度尚未验收；百分比为工程估计，不代表通过率 |
 | 5 | Coordinator/Worker 与 Subagents 对齐 | 未进行 | 0% | 等待阶段 4 稳定 | 未执行 |
 | 6 | LangSmith 评测闭环 | 未进行 | 0% | 尚未建立 Dataset/Experiment 映射 | 未执行 |
 | 7 | 按模式灰度迁移 | 未进行 | 0% | 等待阶段 1—6 完成 | 未执行 |
@@ -1849,4 +1849,13 @@ API / Session / TestRun 控制平面（系统保留）
 - 降级：Client 未初始化、SDK 无 `flush` 方法或 flush 失败时只记录结构化错误，不阻断服务退出；业务 Session/Event/Snapshot/TestRun/ToolJob 不受影响。
 - 验证：`tests/test_observability_contracts.py` `24 passed`；观测模块与 `src.main` `compileall` 通过；`import src.main` 成功。未启动长时 soak。
 - 边界：`flush()` 只覆盖优雅退出；进程被强制终止时 SDK 内存缓冲仍可能丢失，不能把该机制当作 DA-E5 Checkpoint 或 exactly-once 保障。
+
+#### DA-E5 PostgreSQL 4 小时正式 soak（2026-09-14）
+
+- 当前状态：已完成本批；DA-E5 整体仍进行中。
+- 命令：在主 Python3.11 环境使用 `python -u -m pytest tests/test_live_postgres_capacity.py::test_live_postgres_lifecycle_soak -q -s`，运行时长配置为 `14400` 秒，4 Worker，错误率 `0`、P95 增长比例 `1.2`、RSS 增长上限约 `17MB`、连接上限 `12`。
+- 结果：退出码 `0`；实际持续 `14401.009s`（约 4 小时）；`13706/13706` 完成，错误 `0`，错误率 `0`；完成耗时 P50 `10.89ms`、P95 `17.59ms`、P99 `29.43ms`；首窗口 P95 `22.16ms`、末窗口 P95 `17.40ms`；RSS 采样净差 `-94,924,800` bytes；PostgreSQL 连接峰值 `4`。
+- 门槛：错误率、P95 增长、RSS 增长和连接峰值均通过；退出码与 JSON 报告一致。
+- 证据：[soak-4h-20260914-rerun.json](../Agent_Server/artifacts/soak-4h-20260914-rerun.json)。该报告为本地验收产物，不提交 API Key 或其他密钥。
+- 边界：本批证明 PostgreSQL 长时租约/Attempt 生命周期稳定，不等价于 24 小时窗口、完整 LangSmith Trace 队列深度或 Deep Agents 主环境启用已完成。
 
