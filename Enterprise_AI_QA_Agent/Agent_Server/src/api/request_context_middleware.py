@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
+import logging
 
 from src.core.request_context import (
     new_id,
@@ -14,6 +15,7 @@ from src.core.request_context import (
 Scope = dict[str, Any]
 Receive = Callable[[], Awaitable[dict[str, Any]]]
 Send = Callable[[dict[str, Any]], Awaitable[None]]
+LOGGER = logging.getLogger(__name__)
 
 
 class RequestContextMiddleware:
@@ -48,6 +50,14 @@ class RequestContextMiddleware:
             await send(message)
 
         try:
+            LOGGER.info(
+                "request_started",
+                extra={"request_id": request_id, "trace_id": trace_id, "http_path": scope.get("path")},
+            )
             await self.app(scope, receive, send_with_context)
         finally:
+            LOGGER.info(
+                "request_finished",
+                extra={"request_id": request_id, "trace_id": trace_id, "http_path": scope.get("path")},
+            )
             reset_request_context(token)
