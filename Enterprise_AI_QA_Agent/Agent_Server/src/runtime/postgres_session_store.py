@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime
 
@@ -24,11 +25,18 @@ from src.schemas.task_pool import TaskPoolSessionSummary
 from src.runtime.store import ContinuationLeaseLostError
 from src.core.request_context import get_request_context
 
+LOGGER = logging.getLogger(__name__)
+
 
 class PostgresSessionStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._queues: dict[str, asyncio.Queue[ExecutionEvent]] = defaultdict(asyncio.Queue)
+        self._hot_memory_store = None
+
+    def set_hot_memory_store(self, store) -> None:
+        """Attach the optional Redis staging store after startup initialization."""
+        self._hot_memory_store = store
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -108,6 +116,19 @@ class PostgresSessionStore:
         )
         if publish:
             await self._queues[session_id].put(event)
+        if self._hot_memory_store is not None:
+            try:
+                await self._hot_memory_store.append_event(
+                    session_id,
+                    event.model_dump(mode="json"),
+                )
+            except Exception:
+                # PostgreSQL has already committed the fact; Redis is only a
+                # rebuildable acceleration/compaction staging area.
+                LOGGER.exception(
+                    "session_hot_memory_write_failed",
+                    extra={"session_id": session_id, "event_id": event.id, "event_type": event.type},
+                )
 
     async def list_events(
         self,

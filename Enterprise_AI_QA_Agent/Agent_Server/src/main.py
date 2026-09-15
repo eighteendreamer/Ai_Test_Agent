@@ -161,6 +161,7 @@ async def lifespan(app: FastAPI):
 
     store = container.session_store()
     await store.initialize()
+    store.set_hot_memory_store(hot_memory_store)
 
     # Durable task intent is initialized independently of Redis delivery.
     # Business services can write the outbox in the same PostgreSQL transaction
