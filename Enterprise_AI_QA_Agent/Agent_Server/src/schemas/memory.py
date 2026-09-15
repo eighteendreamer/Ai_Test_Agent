@@ -42,6 +42,14 @@ class MemorySearchRequest(BaseModel):
     metadata_filters: dict[str, Any] = Field(default_factory=dict)
 
 
+class MemoryVectorRecord(BaseModel):
+    """Internal replica export; no messages, credentials or model API settings."""
+    id: str
+    embedding: list[float]
+    stale: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class MemorySearchResult(BaseModel):
     query: str
     hits: list[MemoryPoint] = Field(default_factory=list)

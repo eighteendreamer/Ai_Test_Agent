@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest
+from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest, MemoryVectorRecord
 
 
 class MemoryStoreProtocol(Protocol):
@@ -22,6 +22,12 @@ class MemoryStoreProtocol(Protocol):
     ) -> list[MemoryPoint]: ...
 
     async def list_points(self, request: MemorySearchRequest) -> list[MemoryPoint]: ...
+
+    async def vector_inventory(self, embedding_version: str) -> dict[int, int]: ...
+
+    async def list_vector_records(
+        self, embedding_version: str, *, after_id: str | None = None, limit: int = 64,
+    ) -> list[MemoryVectorRecord]: ...
 
     async def count_documents(self, request: MemorySearchRequest) -> int: ...
 

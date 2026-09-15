@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.context.memory_vector_rebuild_service import MemoryVectorRebuildService
 from src.containers import AppContainer
 from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -134,10 +135,34 @@ async def test_live_authoritative_retrieval_and_redis_outage():
         index = None
         missing_index = await service._search_memory(request)
         assert len(missing_index) == 2 and all(hit.id.startswith("valid-") for hit in missing_index)
+
+        recovery = MemoryVectorRebuildService(store, redis, batch_size=3)
+        with pytest.raises(ValueError, match="inconsistent dimensions"):
+            await recovery.rebuild(version, execute=True)
+        # Remove only this test's deliberately corrupt vector fixture.
+        with postgres_connect(settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"DELETE FROM {table} WHERE id = %s", ("wrong-dimension",))
+        preview = await recovery.rebuild(version)
+        assert preview.source_count == 18 and preview.dimension == len(vector)
+        index = redis.index_name("memory", version)
+        restored = await recovery.rebuild(version, execute=True)
+        assert restored.replicated == 18 and restored.status == "completed"
+        assert (await recovery.rebuild(version, execute=True)).replicated == 18
+        with pytest.raises(ValueError, match="contract"):
+            await redis.create_index(entity="memory", embedding_version=version, dimension=len(vector) + 1)
+        with pytest.raises(ValueError, match="contract"):
+            await redis.upsert(entity="memory", embedding_version=version, point_id="reject", vector=[1., 0.])
+        assert not await redis._client.exists(redis.prefix("memory", version) + "reject")
+        store.search.reset_mock()
+        rebuilt_hits = await service._search_memory(request)
+        assert len(rebuilt_hits) == 2 and all(p.id.startswith("valid-") for p in rebuilt_hits)
+        store.search.assert_not_awaited()
         print(f"live_memory_retrieval dimension={len(vector)} candidates={len(candidates)} "
-              "hydration=passed outage=passed missing_index=passed")
+              f"hydration=passed outage=passed missing_index=passed restored={restored.replicated} "
+              "retry=passed dimension_mismatch=blocked")
     finally:
-        if index is not None:
+        if index is not None and index.encode() in await redis._client.execute_command("FT._LIST"):
             await redis._client.execute_command("FT.DROPINDEX", index, "DD")
         await redis.close()
         # Exact table is generated above solely for this test; no CASCADE or business data.

@@ -3,20 +3,32 @@
 from __future__ import annotations
 
 import re
+import math
 import struct
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 
 
 class RedisVectorStore:
-    def __init__(self, redis_url: str, *, client: Redis | Any | None = None) -> None:
+    def __init__(
+        self, redis_url: str, *, client: Redis | Any | None = None,
+        socket_timeout_seconds: float = 5.0,
+    ) -> None:
         self._redis_url = redis_url
         self._client = client
+        if socket_timeout_seconds <= 0:
+            raise ValueError("Redis vector timeout must be positive")
+        self._socket_timeout_seconds = socket_timeout_seconds
 
     async def connect(self) -> None:
         if self._client is None:
-            self._client = Redis.from_url(self._redis_url, decode_responses=False)
+            self._client = Redis.from_url(
+                self._redis_url, decode_responses=False,
+                socket_timeout=self._socket_timeout_seconds,
+                socket_connect_timeout=self._socket_timeout_seconds,
+            )
         await self._client.ping()
 
     async def close(self) -> None:
@@ -38,10 +50,27 @@ class RedisVectorStore:
                 "project_id", "TAG", "case_version_id", "TAG", "status", "TAG",
                 "environment", "TAG",
             )
-        except Exception as exc:
+        except ResponseError as exc:
             if "Index already exists" not in str(exc):
                 raise
+        await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=dimension)
         return index
+
+    async def validate_index(self, *, entity: str, embedding_version: str, dimension: int) -> None:
+        """Verify FT.INFO (RESP2/RESP3), not a cached assumption about an index."""
+        info = _mapping(await self._client.execute_command("FT.INFO", self.index_name(entity, embedding_version)))
+        definition = _mapping(info.get("index_definition", {}))
+        prefixes = [_text(value) for value in definition.get("prefixes", [])]
+        vector_fields = [_mapping(value) for value in info.get("attributes", [])]
+        field = next((value for value in vector_fields if _text(value.get("attribute")) == "embedding"), {})
+        if (prefixes != [self.prefix(entity, embedding_version)]
+                or _text(definition.get("key_type")) != "HASH"
+                or _text(field.get("type")) != "VECTOR"
+                or _text(field.get("algorithm")) != "HNSW"
+                or _text(field.get("data_type")) != "FLOAT32"
+                or _text(field.get("distance_metric")) != "COSINE"
+                or int(field.get("dim", 0)) != dimension):
+            raise ValueError("Redis vector index contract does not match requested version/dimension")
 
     async def upsert(
         self,
@@ -52,10 +81,10 @@ class RedisVectorStore:
         vector: list[float],
         metadata: dict[str, str] | None = None,
     ) -> str:
-        if not vector or any(not isinstance(value, (int, float)) for value in vector):
-            raise ValueError("Vector must contain numeric values")
+        blob = self.pack_vector(vector)
+        await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=len(vector))
         key = f"{self.prefix(entity, embedding_version)}{point_id}"
-        fields: dict[str, Any] = {"embedding": struct.pack(f"<{len(vector)}f", *vector)}
+        fields: dict[str, Any] = {"embedding": blob}
         fields.update({name: str(value) for name, value in (metadata or {}).items() if name in {"project_id", "case_version_id", "status", "environment"}})
         await self._client.hset(key, mapping=fields)
         return key
@@ -69,8 +98,8 @@ class RedisVectorStore:
         top_k: int = 5,
         filters: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        if not vector:
-            raise ValueError("Query vector must not be empty")
+        blob = self.pack_vector(vector)
+        await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=len(vector))
         index = self.index_name(entity, embedding_version)
         query_filter = "*"
         if filters:
@@ -79,11 +108,24 @@ class RedisVectorStore:
         count = max(1, int(top_k))
         query = f"({query_filter})=>[KNN {count} @embedding $query AS vector_distance]"
         raw = await self._client.execute_command(
-            "FT.SEARCH", index, query, "PARAMS", "2", "query", struct.pack(f"<{len(vector)}f", *vector),
+            "FT.SEARCH", index, query, "PARAMS", "2", "query", blob,
             "SORTBY", "vector_distance", "LIMIT", "0", str(count),
             "RETURN", "5", "vector_distance", "project_id", "case_version_id", "status", "environment", "DIALECT", "2",
         )
         return self._decode_search(raw)
+
+    @staticmethod
+    def pack_vector(vector: list[float]) -> bytes:
+        if not vector or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                             or not math.isfinite(value) for value in vector):
+            raise ValueError("Vector must contain finite numeric values")
+        try:
+            blob = struct.pack(f"<{len(vector)}f", *vector)
+        except (OverflowError, struct.error) as exc:
+            raise ValueError("Vector is not representable as FLOAT32") from exc
+        if not any(value != 0 for (value,) in struct.iter_unpack("<f", blob)):
+            raise ValueError("Cosine vector must be nonzero after FLOAT32 encoding")
+        return blob
 
     @staticmethod
     def index_name(entity: str, embedding_version: str) -> str:
@@ -130,4 +172,18 @@ class RedisVectorStore:
 
 
 def _safe(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_:-]", "_", str(value))
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", str(value)):
+        raise ValueError("Vector entity/version must be a nonempty alphanumeric identifier")
+    return str(value)
+
+
+def _text(value: Any) -> str:
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {_text(key): item for key, item in value.items()}
+    if isinstance(value, (list, tuple)) and len(value) % 2 == 0:
+        return {_text(value[index]): value[index + 1] for index in range(0, len(value), 2)}
+    raise ValueError("Unexpected Redis index metadata response")

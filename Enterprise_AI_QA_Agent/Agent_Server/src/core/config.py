@@ -166,6 +166,8 @@ class OrchestrConfig(BaseModel):
     redis_hot_memory_max_events: int = 2000
     redis_compaction_compression_version: str = "v1"
     redis_vector_enabled: bool = True
+    redis_vector_socket_timeout_seconds: float = Field(default=5.0, gt=0)
+    redis_vector_rebuild_batch_size: int = Field(default=64, ge=1, le=1000)
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False

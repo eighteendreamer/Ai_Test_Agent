@@ -10,7 +10,7 @@ from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, recent_day_buckets
 from src.runtime.store import ContinuationLeaseLostError
-from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest
+from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest, MemoryVectorRecord
 
 
 class PostgresVectorMemoryStore:
@@ -47,6 +47,44 @@ class PostgresVectorMemoryStore:
 
     async def list_points(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         return await asyncio.to_thread(self._list_points_sync, request)
+
+    async def vector_inventory(self, embedding_version: str) -> dict[int, int]:
+        return await asyncio.to_thread(self._vector_inventory_sync, embedding_version)
+
+    async def list_vector_records(
+        self, embedding_version: str, *, after_id: str | None = None, limit: int = 64,
+    ) -> list[MemoryVectorRecord]:
+        return await asyncio.to_thread(self._list_vector_records_sync, embedding_version, after_id, limit)
+
+    def _vector_inventory_sync(self, embedding_version: str) -> dict[int, int]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT vector_dims(embedding) AS dimension, COUNT(*) AS total "
+                    f"FROM {self._settings.database.postgres_memory_table} "
+                    "WHERE embedding IS NOT NULL AND metadata->>'embedding_version' = %s "
+                    "GROUP BY vector_dims(embedding)", (embedding_version,),
+                )
+                return {int(row["dimension"]): int(row["total"]) for row in cur.fetchall()}
+
+    def _list_vector_records_sync(
+        self, embedding_version: str, after_id: str | None, limit: int,
+    ) -> list[MemoryVectorRecord]:
+        if limit <= 0:
+            raise ValueError("Vector export page size must be positive")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT id, embedding::text AS embedding, stale, metadata "
+                    f"FROM {self._settings.database.postgres_memory_table} "
+                    "WHERE embedding IS NOT NULL AND metadata->>'embedding_version' = %s "
+                    "AND (%s::text IS NULL OR id > %s) ORDER BY id LIMIT %s",
+                    (embedding_version, after_id, after_id, limit),
+                )
+                return [MemoryVectorRecord(
+                    id=row["id"], embedding=json.loads(row["embedding"]),
+                    stale=row["stale"], metadata=row["metadata"],
+                ) for row in cur.fetchall()]
 
     async def count_documents(self, request: MemorySearchRequest) -> int:
         return await asyncio.to_thread(self._count_documents_sync, request)

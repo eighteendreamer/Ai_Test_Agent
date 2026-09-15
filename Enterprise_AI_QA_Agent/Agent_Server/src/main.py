@@ -155,7 +155,10 @@ async def lifespan(app: FastAPI):
     )
     await hot_memory_store.connect()
     app.state.hot_memory_store = hot_memory_store
-    vector_store = RedisVectorStore(settings.database.redis_url) if settings.orchestration.redis_vector_enabled else None
+    vector_store = RedisVectorStore(
+        settings.database.redis_url,
+        socket_timeout_seconds=settings.orchestration.redis_vector_socket_timeout_seconds,
+    ) if settings.orchestration.redis_vector_enabled else None
     if vector_store is not None:
         await vector_store.connect()
     app.state.vector_store = vector_store
