@@ -54,22 +54,6 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail=str(exc))
 
 
-@router.post("/runs/{run_id}/dispatch")
-async def dispatch_test_run_items(run_id: str, payload: RunClaimRequest, request: Request):
-    dispatcher = getattr(request.app.state, "redis_execution_dispatcher", None)
-    if dispatcher is None:
-        raise HTTPException(status_code=503, detail="Redis execution dispatch is disabled")
-    try:
-        ids = await dispatcher.dispatch(
-            run_id,
-            payload,
-            **{key: str(value) for key, value in correlation_fields().items()},
-        )
-        return {"run_id": run_id, "message_ids": ids, "count": len(ids)}
-    except (KeyError, ValueError, RuntimeError) as exc:
-        raise _http_error(exc) from exc
-
-
 @router.post(
     "/suites/{suite_id}/runs",
     response_model=TestRunDetail,
