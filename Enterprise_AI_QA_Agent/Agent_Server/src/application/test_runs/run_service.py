@@ -703,6 +703,20 @@ class TestRunService:
     async def get_latest_attempt(self, item_id: str) -> TestRunAttemptRecord | None:
         return await self._store.get_latest_attempt(item_id)
 
+    async def mark_waiting_resource(
+        self, item_id: str, lease_token: str, reason: str,
+    ) -> TestRunItemRecord:
+        item = await self._store.mark_waiting_resource(
+            item_id, lease_token, reason, self._clock(),
+        )
+        logger.info("test_run_item_waiting_resource", extra={
+            "run_id": item.run_id,
+            "run_item_id": item.id,
+            "waiting_reason": item.waiting_reason,
+        })
+        await self._emit_for_item(item, "test_run.item_waiting_resource")
+        return item
+
     async def save_checkpoint(
         self,
         item_id: str,

@@ -101,6 +101,11 @@ class ToolJobService:
     ) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.waiting_approval, summary=summary, metadata=metadata)
 
+    async def mark_waiting_resource(
+        self, job_id: str, *, summary: str, metadata: dict[str, Any] | None = None,
+    ) -> ToolJobRecord:
+        return await self._mark(job_id, ToolJobStatus.waiting_resource, summary=summary, metadata=metadata)
+
     async def mark_completed(
         self,
         job_id: str,

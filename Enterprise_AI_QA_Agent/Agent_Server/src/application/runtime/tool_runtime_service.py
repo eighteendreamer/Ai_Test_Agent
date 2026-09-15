@@ -519,6 +519,12 @@ class ToolRuntimeService:
                         summary=summary,
                         metadata={"output_payload": result},
                     )
+                elif resolved_status == "waiting_resource":
+                    await self._tool_job_service.mark_waiting_resource(
+                        job.id,
+                        summary=summary,
+                        metadata={"output_payload": result},
+                    )
                 elif resolved_status == "denied":
                     await self._tool_job_service.mark_denied(
                         job.id,
@@ -684,7 +690,7 @@ class ToolRuntimeService:
         explicit_status = str(result.get("status") or "").strip().lower()
         if explicit_status == "interrupted":
             return "partial"
-        if explicit_status in {"completed", "partial", "failed", "waiting_approval", "denied"}:
+        if explicit_status in {"completed", "partial", "failed", "waiting_approval", "waiting_resource", "denied"}:
             return explicit_status
         if result.get("ok") is False:
             workers = result.get("workers")

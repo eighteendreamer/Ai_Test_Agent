@@ -97,6 +97,9 @@ class TestRunStore(Protocol):
         lease_token: str,
         now: datetime,
     ) -> TestRunItemRecord: ...
+    async def mark_waiting_resource(
+        self, item_id: str, lease_token: str, reason: str, now: datetime,
+    ) -> TestRunItemRecord: ...
     async def heartbeat_item(
         self,
         item_id: str,
@@ -454,7 +457,7 @@ class InMemoryTestRunStore:
                 (
                     self._items[item_id]
                     for item_id in self._item_ids_by_run[run_id]
-                    if self._items[item_id].status == "queued"
+                    if self._items[item_id].status in {"queued", "waiting_resource"}
                 ),
                 key=lambda item: (item.position, item.id),
             )[:limit]
@@ -532,6 +535,21 @@ class InMemoryTestRunStore:
                     "heartbeat_at": now,
                 },
             )
+            self._refresh_run(item.run_id, now)
+            return updated.model_copy(deep=True)
+
+    async def mark_waiting_resource(
+        self, item_id: str, lease_token: str, reason: str, now: datetime,
+    ) -> TestRunItemRecord:
+        async with self._lock:
+            item = self._require_active_lease(item_id, lease_token, now, {"running"})
+            updated = item.model_copy(deep=True, update={
+                "status": "waiting_resource",
+                "waiting_reason": str(reason or "resource_unavailable")[:240],
+                "waiting_started_at": now,
+                "updated_at": now,
+            })
+            self._items[item_id] = updated
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
 
@@ -926,7 +944,7 @@ class InMemoryTestRunStore:
                 item = self._items[item_id]
                 if item.status in TERMINAL_ITEM_STATUSES:
                     continue
-                if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval"}:
+                if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval", "waiting_resource"}:
                     attempt = self._active_attempt(item_id, item.lease_token)
                     self._attempts[attempt.id] = attempt.model_copy(
                         deep=True,
@@ -962,7 +980,7 @@ class InMemoryTestRunStore:
         for item_id in self._item_ids_by_run[run_id]:
             item = self._items[item_id]
             if (
-                item.status in ACTIVE_ITEM_STATUSES
+                item.status in ACTIVE_ITEM_STATUSES | {"waiting_resource"}
                 and item.lease_expires_at is not None
                 and item.lease_expires_at <= now
             ):
@@ -1303,6 +1321,13 @@ class PostgresTestRunStore:
             now,
         )
 
+    async def mark_waiting_resource(
+        self, item_id: str, lease_token: str, reason: str, now: datetime,
+    ) -> TestRunItemRecord:
+        return await asyncio.to_thread(
+            self._mark_waiting_resource_sync, item_id, lease_token, reason, now,
+        )
+
     async def heartbeat_item(
         self,
         item_id: str,
@@ -1470,7 +1495,7 @@ class PostgresTestRunStore:
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_lease_expiry "
                     f"ON {self._item_table} (run_id, lease_expires_at) "
-                    "WHERE status IN ('claimed', 'running')"
+                    "WHERE status IN ('claimed', 'running', 'waiting_resource')"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_approval_recovery "
@@ -1922,7 +1947,7 @@ class PostgresTestRunStore:
                     return []
                 cur.execute(
                     f"SELECT record FROM {self._item_table} "
-                    "WHERE run_id = %s AND status = 'queued' "
+                    "WHERE run_id = %s AND status IN ('queued', 'waiting_resource') "
                     "ORDER BY position ASC, id ASC "
                     "FOR UPDATE SKIP LOCKED LIMIT %s",
                     (run_id, limit),
@@ -2049,6 +2074,27 @@ class PostgresTestRunStore:
                     status_deltas=[("claimed", "running")],
                 )
         return item
+
+    def _mark_waiting_resource_sync(
+        self,
+        item_id: str,
+        lease_token: str,
+        reason: str,
+        now: datetime,
+    ) -> TestRunItemRecord:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                item = self._lock_item(cur, item_id)
+                self._validate_lease(item, lease_token, now, {"running"})
+                updated = item.model_copy(update={
+                    "status": "waiting_resource",
+                    "waiting_reason": str(reason or "resource_unavailable")[:240],
+                    "waiting_started_at": now,
+                    "updated_at": now,
+                })
+                self._write_item(cur, updated)
+                self._refresh_run_delta_in_cursor(cur, item.run_id, now, [("running", "waiting_resource")])
+        return updated
 
     def _heartbeat_item_sync(
         self,
@@ -2451,7 +2497,7 @@ class PostgresTestRunStore:
                 self._read_run(cur, run_id)
                 cur.execute(
                     f"SELECT record FROM {self._item_table} "
-                    "WHERE run_id = %s AND status IN ('claimed', 'running') "
+                    "WHERE run_id = %s AND status IN ('claimed', 'running', 'waiting_resource') "
                     "AND lease_expires_at <= %s FOR UPDATE SKIP LOCKED",
                     (run_id, now),
                 )
@@ -2495,7 +2541,7 @@ class PostgresTestRunStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT DISTINCT run_id FROM {self._item_table} "
-                    "WHERE status IN ('claimed', 'running') AND lease_expires_at <= %s",
+                    "WHERE status IN ('claimed', 'running', 'waiting_resource') AND lease_expires_at <= %s",
                     (now,),
                 )
                 run_ids = [str(row["run_id"]) for row in (cur.fetchall() or [])]
@@ -2537,7 +2583,7 @@ class PostgresTestRunStore:
                         raise KeyError(f"Test run not found: {run_id}")
                     return detail
                 for item in items:
-                    if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval"}:
+                    if item.lease_token and item.status in ACTIVE_ITEM_STATUSES | {"waiting_approval", "waiting_resource"}:
                         attempt = self._lock_attempt(cur, item.id, item.lease_token)
                         self._write_attempt(
                             cur,

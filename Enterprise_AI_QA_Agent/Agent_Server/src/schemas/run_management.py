@@ -16,6 +16,7 @@ RunItemStatus = Literal[
     "queued",
     "claimed",
     "running",
+    "waiting_resource",
     "waiting_approval",
     "passed",
     "failed",
@@ -45,6 +46,7 @@ class TestRunStats(BaseModel):
     queued: int = 0
     claimed: int = 0
     running: int = 0
+    waiting_resource: int = 0
     waiting_approval: int = 0
     passed: int = 0
     failed: int = 0
@@ -84,6 +86,7 @@ class TestRunItemRecord(BaseModel):
     case_version_id: str
     position: int = Field(ge=1)
     status: RunItemStatus = "queued"
+    waiting_reason: str | None = None
     attempt_no: int = Field(default=0, ge=0)
     lease_owner: str | None = None
     lease_token: str | None = None

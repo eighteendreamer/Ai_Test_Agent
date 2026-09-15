@@ -11,6 +11,7 @@ class ToolJobStatus(str, Enum):
     queued = "queued"
     running = "running"
     waiting_approval = "waiting_approval"
+    waiting_resource = "waiting_resource"
     resume_requested = "resume_requested"
     retry_requested = "retry_requested"
     completed = "completed"

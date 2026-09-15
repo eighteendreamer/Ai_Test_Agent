@@ -39,7 +39,7 @@ class RedisExecutionDispatcher:
             claimed = await self._runs.claim(run.id, RunClaimRequest(worker_id=worker_id, limit=1))
             if not claimed.claims:
                 run = await self._runs.get_record(run.id)
-                if run.stats.claimed or run.stats.running or run.stats.queued:
+                if run.stats.claimed or run.stats.running or run.stats.queued or getattr(run.stats, "waiting_resource", 0):
                     raise TaskDeferred("Run has outstanding work")
                 return
             claim = claimed.claims[0]

@@ -20,6 +20,7 @@ from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.test_runs.run_service import TestRunService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.runtime.store import SessionStore
+from src.runtime.task_deferred import TaskDeferred
 from src.schemas.run_management import (
     RunItemApprovalDecisionRequest,
     RunItemCompleteRequest,
@@ -225,6 +226,15 @@ class TestRunExecutionService:
                         tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
                         server_approval_granted=bool(payload.approval_id),
                     )
+                    if outcome is not None and outcome.tool_record is not None and outcome.tool_record.status == "waiting_resource":
+                        waiting_reason = str(
+                            (outcome.tool_record.output or {}).get("waiting_reason")
+                            or "resource_unavailable"
+                        )
+                        await self._runs.mark_waiting_resource(
+                            item.id, payload.lease_token, waiting_reason,
+                        )
+                        raise TaskDeferred(waiting_reason)
                     if item_trace is not None:
                         item_trace.set_outputs(
                             {
@@ -236,6 +246,8 @@ class TestRunExecutionService:
                 completion = outcome.completion.model_copy(
                     update={"lease_token": payload.lease_token}
                 )
+            except TaskDeferred:
+                raise
             except CaseExecutionBlockedError as exc:
                 logger.warning(
                     "test_run_case_execution_blocked",
