@@ -33,6 +33,7 @@ class RedisTaskQueue:
         self.group = group
         self._redis_url = redis_url
         self._client = client
+        self._reclaim_cursor = "0-0"
 
     async def connect(self) -> None:
         if self._client is None:
@@ -112,9 +113,11 @@ class RedisTaskQueue:
             self.group,
             consumer,
             min_idle_time=max(1, min_idle_ms),
-            start_id="0-0",
+            start_id=self._reclaim_cursor,
             count=max(1, count),
         )
+        if isinstance(rows, (list, tuple)) and rows and rows[0]:
+            self._reclaim_cursor = str(rows[0])
         messages = rows[1] if isinstance(rows, (list, tuple)) and len(rows) > 1 else []
         return self._decode_rows([(self.stream, messages)])
 
