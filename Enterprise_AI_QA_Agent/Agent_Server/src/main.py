@@ -130,6 +130,7 @@ from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.compaction_worker import CompactionWorker
+from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 from src.infrastructure.redis_vector_store import RedisVectorStore
@@ -163,6 +164,15 @@ async def lifespan(app: FastAPI):
     if vector_store is not None:
         await vector_store.connect()
     app.state.vector_store = vector_store
+    resource_lease_manager = RedisResourceLeaseManager(
+        settings.database.redis_url,
+        socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
+    )
+    await resource_lease_manager.connect()
+    await resource_lease_manager.configure_quota(
+        scope="global", identifier="all", limit=settings.orchestration.resource_global_limit,
+    )
+    app.state.resource_lease_manager = resource_lease_manager
 
     # ── Async initialization of stores ───────────────────────────────
     project_store = container.project_store()
@@ -603,6 +613,7 @@ async def lifespan(app: FastAPI):
         await hot_memory_store.close()
         if vector_store is not None:
             await vector_store.close()
+        await resource_lease_manager.close()
         if deep_agent_checkpoint_provider is not None:
             await deep_agent_checkpoint_provider.close()
         await test_run_service.stop_lease_reaper()
