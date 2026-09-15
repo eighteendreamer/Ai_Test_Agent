@@ -5,11 +5,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ResourceQuotaScope = Literal["project", "run"]
 ResourceQuotaType = Literal["agent", "browser", "docker", "test_account", "environment"]
 
 
 class ResourceQuotaRecord(BaseModel):
-    scope: Literal["project"] = "project"
+    scope: ResourceQuotaScope = "project"
     scope_id: str
     resource_type: ResourceQuotaType
     limit: int = Field(ge=0)

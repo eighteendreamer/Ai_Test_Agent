@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.schemas.resource_quota import ResourceQuotaRecord, ResourceQuotaType
+from src.schemas.resource_quota import ResourceQuotaRecord, ResourceQuotaScope, ResourceQuotaType
 
 
 class ResourceQuotaStore:
@@ -17,13 +17,22 @@ class ResourceQuotaStore:
         await asyncio.to_thread(self._initialize_sync)
 
     async def list_project(self, project_id: str) -> list[ResourceQuotaRecord]:
-        return await asyncio.to_thread(self._list_sync, project_id)
+        return await self.list_scope("project", project_id)
+
+    async def list_run(self, run_id: str) -> list[ResourceQuotaRecord]:
+        return await self.list_scope("run", run_id)
+
+    async def list_scope(self, scope: ResourceQuotaScope, scope_id: str) -> list[ResourceQuotaRecord]:
+        return await asyncio.to_thread(self._list_sync, scope, scope_id)
 
     async def list_all(self) -> list[ResourceQuotaRecord]:
         return await asyncio.to_thread(self._list_all_sync)
 
     async def upsert(self, project_id: str, resource_type: ResourceQuotaType, limit: int) -> ResourceQuotaRecord:
-        return await asyncio.to_thread(self._upsert_sync, project_id, resource_type, limit)
+        return await self.upsert_scope("project", project_id, resource_type, limit)
+
+    async def upsert_scope(self, scope: ResourceQuotaScope, scope_id: str, resource_type: ResourceQuotaType, limit: int) -> ResourceQuotaRecord:
+        return await asyncio.to_thread(self._upsert_sync, scope, scope_id, resource_type, limit)
 
     def _initialize_sync(self) -> None:
         with postgres_connect(self._settings) as conn:
@@ -40,10 +49,10 @@ class ResourceQuotaStore:
                 """)
             conn.commit()
 
-    def _list_sync(self, project_id: str) -> list[ResourceQuotaRecord]:
+    def _list_sync(self, scope: ResourceQuotaScope, scope_id: str) -> list[ResourceQuotaRecord]:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(f"SELECT * FROM {self._table} WHERE scope='project' AND scope_id=%s ORDER BY resource_type", (project_id,))
+                cur.execute(f"SELECT * FROM {self._table} WHERE scope=%s AND scope_id=%s ORDER BY resource_type", (scope, scope_id))
                 rows = cur.fetchall() or []
         return [self._from_row(row) for row in rows]
 
@@ -54,17 +63,17 @@ class ResourceQuotaStore:
                 rows = cur.fetchall() or []
         return [self._from_row(row) for row in rows]
 
-    def _upsert_sync(self, project_id: str, resource_type: ResourceQuotaType, limit: int) -> ResourceQuotaRecord:
+    def _upsert_sync(self, scope: ResourceQuotaScope, scope_id: str, resource_type: ResourceQuotaType, limit: int) -> ResourceQuotaRecord:
         now = datetime.now(timezone.utc)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"""
                     INSERT INTO {self._table} (scope, scope_id, resource_type, quota_limit, updated_at)
-                    VALUES ('project', %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (scope, scope_id, resource_type) DO UPDATE SET
                         quota_limit=EXCLUDED.quota_limit, updated_at=EXCLUDED.updated_at
                     RETURNING *
-                """, (project_id, resource_type, limit, now))
+                """, (scope, scope_id, resource_type, limit, now))
                 row = cur.fetchone()
             conn.commit()
         return self._from_row(row)
