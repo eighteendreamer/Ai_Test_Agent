@@ -21,6 +21,7 @@ from src.application.test_runs.run_service import TestRunService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.runtime.store import SessionStore
 from src.runtime.task_deferred import TaskDeferred
+from src.runtime.resource_lease_manager import ResourceLease, ResourceUnavailable
 from src.schemas.run_management import (
     RunItemApprovalDecisionRequest,
     RunItemCompleteRequest,
@@ -93,6 +94,8 @@ class TestRunExecutionService:
         self._permissions = permission_service
         self._jobs = tool_job_service
         self._security_risk_policy = SecurityRiskPolicy()
+        self._runtime_settings = security_settings
+        self._resource_lease_manager = None
         self._security_target_guard = SecurityTargetGuard(security_settings)
         self._security_environment = str(
             getattr(security_settings, "app_env", "testing") or "testing"
@@ -102,6 +105,9 @@ class TestRunExecutionService:
         self._approval_scope = ApprovalScopeService()
         self._lease_heartbeat_interval_seconds = lease_heartbeat_interval_seconds
         self._observability = observability_service
+
+    def set_resource_lease_manager(self, manager) -> None:
+        self._resource_lease_manager = manager
 
     async def execute_item(
         self,
@@ -128,6 +134,7 @@ class TestRunExecutionService:
         case = await self._cases.get_case(item.case_id)
         version = await self._cases.get_version(item.case_version_id)
         heartbeat_errors: list[str] = []
+        resource_leases: list[ResourceLease] = []
         heartbeat_stop = asyncio.Event()
         heartbeat_task = asyncio.create_task(
             self._keep_item_lease_alive(
@@ -197,6 +204,23 @@ class TestRunExecutionService:
                         raise RuntimeError(
                             f"Tool job not found for approved execution: {item.tool_job_id}"
                         )
+                try:
+                    resource_leases = await self._claim_execution_resources(
+                        run=run, item=item, version=version,
+                        attempt_id=str(getattr(latest_attempt, "id", "") or "") or None,
+                    )
+                except ResourceUnavailable as exc:
+                    await self._runs.mark_waiting_resource(item.id, payload.lease_token, exc.reason)
+                    raise TaskDeferred(exc.reason)
+                if resource_leases:
+                    trusted_context_bundle = {
+                        **trusted_context_bundle,
+                        "resource_leases": [
+                            {"resource_id": lease.resource_id, "resource_type": lease.resource_type,
+                             "fencing_token": lease.fencing_token}
+                            for lease in resource_leases
+                        ],
+                    }
                 trace_context = self._build_item_trace_context(
                     run=run,
                     item=item,
@@ -326,6 +350,57 @@ class TestRunExecutionService:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+            await self._release_execution_resources(resource_leases)
+
+    async def _claim_execution_resources(self, *, run, item, version, attempt_id: str | None = None) -> list[ResourceLease]:
+        manager = self._resource_lease_manager
+        if manager is None:
+            return []
+        arguments = version.test_data.get("runner_arguments", {})
+        arguments = arguments if isinstance(arguments, dict) else {}
+        settings = self._runtime_settings
+        owner = str(getattr(item, "lease_owner", None) or "worker")
+        common = {
+            "worker_id": owner, "lease_seconds": int(getattr(getattr(settings, "orchestration", None), "resource_default_lease_seconds", 300)),
+            "project_id": run.project_id, "session_id": run.session_id, "run_id": run.id,
+            "run_item_id": item.id, "attempt_id": attempt_id,
+        }
+        requirements: list[tuple[str, list[str]]] = []
+        account_id = arguments.get("test_account_id") or arguments.get("account_id")
+        if account_id:
+            requirements.append(("test_account", [str(account_id)]))
+        environment_id = arguments.get("environment_id")
+        if environment_id:
+            requirements.append(("environment", [str(environment_id)]))
+        mode = str(run.mode_key)
+        docker_backend = str(arguments.get("runner_backend") or "").lower() in {"docker", "container"}
+        if mode == "security_testing":
+            docker_backend = docker_backend or str(getattr(getattr(settings, "security", None), "security_runner_backend", "local")).lower() in {"docker", "container"}
+        if mode == "performance_testing":
+            docker_backend = docker_backend or str(getattr(getattr(settings, "orchestration", None), "performance_runner_backend", "auto")).lower() == "docker"
+        if docker_backend:
+            slots = int(getattr(getattr(settings, "orchestration", None), "resource_docker_slots", 10))
+            requirements.append(("docker", [f"docker-slot-{index}" for index in range(max(1, slots))]))
+        claimed: list[ResourceLease] = []
+        try:
+            for resource_type, resource_ids in requirements:
+                claimed.append(await manager.acquire_first_available(
+                    resource_type=resource_type, resource_ids=resource_ids, **common,
+                ))
+        except Exception:
+            await self._release_execution_resources(claimed)
+            raise
+        return claimed
+
+    async def _release_execution_resources(self, leases: list[ResourceLease]) -> None:
+        if self._resource_lease_manager is None:
+            return
+        for lease in reversed(leases):
+            try:
+                if not await self._resource_lease_manager.release(lease):
+                    logger.error("test_run_resource_release_rejected", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
+            except Exception:
+                logger.exception("test_run_resource_release_failed", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
 
     async def _reconcile_session_checkpoint(
         self,

@@ -1349,13 +1349,14 @@ export interface TestSuitePage {
 }
 
 export type TestRunStatus = "queued" | "running" | "completed" | "cancelled";
-export type RunItemStatus = "queued" | "claimed" | "running" | "waiting_approval" | "passed" | "failed" | "error" | "blocked" | "skipped" | "cancelled";
+export type RunItemStatus = "queued" | "claimed" | "running" | "waiting_resource" | "waiting_approval" | "passed" | "failed" | "error" | "blocked" | "skipped" | "cancelled";
 
 export interface TestRunStats {
   total: number;
   queued: number;
   claimed: number;
   running: number;
+  waiting_resource: number;
   waiting_approval: number;
   passed: number;
   failed: number;
@@ -1390,6 +1391,7 @@ export interface TestRunItemRecord {
   case_version_id: string;
   position: number;
   status: RunItemStatus;
+  waiting_reason?: string | null;
   attempt_no: number;
   lease_owner?: string | null;
   lease_token?: string | null;

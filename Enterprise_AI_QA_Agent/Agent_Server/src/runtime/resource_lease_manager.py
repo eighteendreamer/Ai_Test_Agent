@@ -117,6 +117,18 @@ class RedisResourceLeaseManager:
         )
         return bool(result)
 
+    async def acquire_first_available(self, *, resource_type: str, resource_ids: list[str], **kwargs) -> ResourceLease:
+        """Atomically claim the first free slot; all slots share normal quotas."""
+        if not resource_ids:
+            raise ResourceUnavailable(f"{resource_type}_capacity")
+        last_reason = f"{resource_type}_capacity"
+        for resource_id in resource_ids:
+            try:
+                return await self.acquire(resource_type=resource_type, resource_id=resource_id, **kwargs)
+            except ResourceUnavailable as exc:
+                last_reason = exc.reason
+        raise ResourceUnavailable(last_reason or f"{resource_type}_capacity")
+
     async def release(self, lease: ResourceLease) -> bool:
         quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", lease.resource_type)]
         if lease.project_id:

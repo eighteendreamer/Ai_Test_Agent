@@ -349,6 +349,7 @@ async def lifespan(app: FastAPI):
         security_settings=settings,
         observability_service=observability_service,
     )
+    test_run_execution_service.set_resource_lease_manager(resource_lease_manager)
     if task_queue is not None:
         app.state.redis_execution_dispatcher = RedisExecutionDispatcher(
             queue=task_queue,

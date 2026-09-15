@@ -174,6 +174,7 @@ class OrchestrConfig(BaseModel):
     redis_vector_rebuild_batch_size: int = Field(default=64, ge=1, le=1000)
     resource_global_limit: int = Field(default=20, ge=1)
     resource_default_lease_seconds: int = Field(default=300, gt=0)
+    resource_docker_slots: int = Field(default=10, ge=1)
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False

@@ -1274,12 +1274,12 @@ watch(routeProjectId, async (projectId) => {
         <header><div><h2>测试运行详情</h2><p v-if="runDetail">{{ shortId(runDetail.run.id) }} · {{ runDetail.run.status }}</p></div><button @click="runDetailOpen = false">×</button></header>
         <div v-if="runDetailLoading" class="empty">正在加载运行条目…</div>
         <template v-else-if="runDetail">
-          <div class="selection-summary"><strong>进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}</strong><small>通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}</small></div>
+          <div class="selection-summary"><strong>进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}</strong><small>通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }} · 等待资源 {{ runDetail.run.stats.waiting_resource }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}</small></div>
           <div class="table-wrap run-items-table">
             <table><thead><tr><th>位置</th><th>状态</th><th>租约</th><th>审批</th><th>补偿</th><th>结果</th><th>操作</th></tr></thead><tbody>
               <tr v-for="item in runDetail.items" :key="item.id">
                 <td>{{ item.position }}</td>
-                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small></td>
+                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small><small v-if="item.status === 'waiting_resource'">原因：{{ item.waiting_reason || '资源容量' }}</small></td>
                 <td><small v-if="item.lease_expires_at">到期 {{ formatServerDateTime(item.lease_expires_at) }}</small><small v-else>—</small></td>
                 <td><small v-if="item.status === 'waiting_approval'">待处理 {{ shortId(item.approval_id || '') }}</small><small v-else>{{ item.approval_id ? shortId(item.approval_id) : '—' }}</small></td>
                 <td><small v-if="item.status === 'cancelled'">{{ item.resource_cleanup_completed_at ? '已完成' : '待补偿' }}</small><small v-else>—</small></td>
@@ -1659,7 +1659,8 @@ td small,
 }
 
 .case-status.pending_review,
-.case-status.running {
+.case-status.running,
+.case-status.waiting_resource {
   background: #fef3c7;
   color: #92400e;
 }
