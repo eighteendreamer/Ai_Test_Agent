@@ -190,10 +190,16 @@ Vue 3、Vite 6、Naive UI、Pinia、Vue Router、TypeScript、Electron 31、Vite
 
 ### 1. 启动后端
 
+在仓库根目录同步 uv 工作区；后端与测试依赖会安装到根目录 `.venv`：
+
 ```bash
-cd Agent_Server
-uvicorn src.main:app --reload --port 1032
+uv sync --locked
+uv run --locked --directory Agent_Server uvicorn src.main:app --reload --port 1032
 ```
+
+IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 `Agent_Server/src/main.py`。也可以在根目录运行 `uv run --locked python Agent_Server/src/main.py`。
+
+工作区以根目录 `uv.lock` 为唯一生效锁文件；后端依赖仍在 `Agent_Server/pyproject.toml` 声明。不要仅逐个安装 LangChain/LangGraph 主包：`langgraph-prebuilt` 等传递依赖也必须按锁文件同步。旧组合 `langgraph==1.0.10` / `langgraph-prebuilt==1.0.10` 曾在导入 `ExecutionInfo` 时失败，即使 `uv pip check` 通过仍可能存在运行时不兼容。
 
 说明：
 
@@ -316,11 +322,10 @@ application/
 ## 测试
 
 ```bash
-cd Agent_Server
-pip install -e .[dev]      # dev extra 提供 pytest 与 pytest-asyncio
-pytest tests               # 92 个测试文件
+uv sync --locked
+uv run --locked --directory Agent_Server python -m pytest tests
 
-cd ../agent_web
+cd agent_web
 npm test                   # vitest run（含 tests/recorder/recorder.test.mjs）
 npm run build              # vite build（注意：脚本里没有 vue-tsc，类型检查需另行执行）
 ```
