@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 
 from src.infrastructure.redis_task_queue import QueuedTask, RedisTaskQueue
 from src.core.request_context import reset_request_context, set_request_context
+from src.runtime.task_deferred import TaskDeferred
 
 LOGGER = logging.getLogger(__name__)
 TaskHandler = Callable[[QueuedTask], Awaitable[None]]
@@ -62,6 +63,12 @@ class RedisTaskWorker:
                 await self._handler(task)
             except asyncio.CancelledError:
                 raise
+            except TaskDeferred:
+                LOGGER.info(
+                    "redis_task_deferred",
+                    extra={"task_id": payload.get("task_id"), "message_id": task.message_id},
+                )
+                continue
             except Exception:
                 LOGGER.exception(
                     "redis_task_handler_failed",

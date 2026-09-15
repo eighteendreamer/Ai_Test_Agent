@@ -52,6 +52,7 @@ from src.application.mcp.manager_service import MCPManagerService
 from src.application.mcp.runtime_manager import MCPRuntimeManager
 from src.application.mcp.server_store import PostgresMCPServerStore
 from src.application.orchestration.coordinator_runtime_service import CoordinatorRuntimeService
+from src.application.orchestration.redis_execution_dispatcher import RedisExecutionDispatcher
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
@@ -304,6 +305,12 @@ async def lifespan(app: FastAPI):
         security_settings=settings,
         observability_service=observability_service,
     )
+    if task_queue is not None:
+        app.state.redis_execution_dispatcher = RedisExecutionDispatcher(
+            queue=task_queue,
+            test_run_service=test_run_service,
+            execution_service=test_run_execution_service,
+        )
     model_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_observability_service(observability_service)
     deep_agent_checkpoint_provider = (
