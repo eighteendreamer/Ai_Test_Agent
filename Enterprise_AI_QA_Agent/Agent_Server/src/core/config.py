@@ -49,6 +49,7 @@ class DatabaseConfig(BaseModel):
     postgres_recording_table: str = "ui_recording"
     postgres_recording_event_table: str = "ui_recording_event"
     postgres_perf_runs_table: str = "agent_perf_runs"
+    postgres_task_outbox_table: str = "agent_task_outbox"
 
     memgraph_host: str = "127.0.0.1"
     memgraph_port: int = 7687

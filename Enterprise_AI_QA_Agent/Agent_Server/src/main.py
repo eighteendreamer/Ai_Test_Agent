@@ -128,6 +128,7 @@ from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 
 
@@ -152,6 +153,13 @@ async def lifespan(app: FastAPI):
 
     store = container.session_store()
     await store.initialize()
+
+    # Durable task intent is initialized independently of Redis delivery.
+    # Business services can write the outbox in the same PostgreSQL transaction
+    # before a relay publishes to Redis.
+    task_outbox = PostgresTaskOutbox(settings)
+    await task_outbox.initialize()
+    app.state.task_outbox = task_outbox
 
     task_pool_service = container.task_pool_service()
 
