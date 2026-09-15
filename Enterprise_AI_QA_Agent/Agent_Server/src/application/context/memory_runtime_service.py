@@ -10,7 +10,7 @@ from src.contracts.memory_store import MemoryStoreProtocol
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
 from src.runtime.execution_logging import truncate_text
 from src.schemas.observation import ObservationRecord
-from src.schemas.memory import MemorySearchRequest, MemorySearchResult, MemoryWriteRequest
+from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemorySearchResult, MemoryWriteRequest
 
 LOGGER = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class MemoryRuntimeService:
                 metadata_filters=memory_filters,
             )
             hits, total_docs = await asyncio.gather(
-                self._memory_store.search(request),
+                self._search_memory(request),
                 self._memory_store.count_documents(request),
             )
             prompt_blocks = [
@@ -183,9 +183,9 @@ class MemoryRuntimeService:
             total_historical_docs,
             total_global_docs,
         ) = await asyncio.gather(
-            self._memory_store.search(current_session_request),
-            self._memory_store.search(historical_request),
-            self._memory_store.search(global_request),
+            self._search_memory(current_session_request),
+            self._search_memory(historical_request),
+            self._search_memory(global_request),
             self._memory_store.count_documents(current_session_request),
             self._memory_store.count_documents(historical_request),
             self._memory_store.count_documents(global_request),
@@ -251,7 +251,7 @@ class MemoryRuntimeService:
                 metadata_filters=memory_filters,
             )
             hits, total_docs = await asyncio.gather(
-                self._memory_store.search(request),
+                self._search_memory(request),
                 self._memory_store.count_documents(request),
             )
             prompt_blocks: list[str] = []
@@ -303,8 +303,8 @@ class MemoryRuntimeService:
         )
         current_hits, historical_hits, total_current_docs, total_historical_docs = (
             await asyncio.gather(
-                self._memory_store.search(current_session_request),
-                self._memory_store.search(historical_request),
+                self._search_memory(current_session_request),
+                self._search_memory(historical_request),
                 self._memory_store.count_documents(current_session_request),
                 self._memory_store.count_documents(historical_request),
             )
@@ -478,6 +478,59 @@ class MemoryRuntimeService:
             LOGGER.exception("memory_vector_replica_write_failed", extra={"memory_id": point.id, "embedding_version": version})
         return point
 
+    async def _search_memory(self, request: MemorySearchRequest) -> list[MemoryPoint]:
+        """Redis supplies IDs only; PostgreSQL rechecks scope and computes scores."""
+        vector = request.metadata_filters.get("__query_embedding")
+        version = request.metadata_filters.get("__embedding_version")
+        if self._vector_store is None or not vector or not version:
+            return await self._memory_store.search(request)
+
+        filters = {
+            name: str(request.metadata_filters[name])
+            for name in ("project_id", "environment", "case_version_id")
+            if request.metadata_filters.get(name)
+        }
+        if not request.include_stale:
+            filters["status"] = "active"
+        try:
+            candidates = await self._vector_store.search(
+                entity="memory", embedding_version=version, vector=vector,
+                top_k=max(request.top_k * 8, 40), filters=filters,
+            )
+            prefix = self._vector_store.prefix("memory", version)
+            point_ids = list(dict.fromkeys(
+                item["id"][len(prefix):] for item in candidates
+                if isinstance(item.get("id"), str)
+                and item["id"].startswith(prefix) and len(item["id"]) > len(prefix)
+            ))
+        except Exception as exc:
+            # Do not log provider exception text: it may contain query content.
+            LOGGER.warning(
+                "memory_vector_retrieval_fallback",
+                extra={"session_id": request.session_id, "embedding_version": version,
+                       "reason": "redis_unavailable", "error_type": type(exc).__name__},
+            )
+            return await self._memory_store.search(request)
+
+        # Stale or forged Redis metadata is never sufficient to hydrate a hit.
+        authoritative_request = request.model_copy(update={"metadata_filters": {
+            **request.metadata_filters,
+            "embedding_version": version, "embedding_dimension": len(vector),
+        }})
+        hits = await self._memory_store.search_candidates(authoritative_request, point_ids)
+        if len(hits) >= request.top_k:
+            LOGGER.info("memory_vector_retrieval_succeeded", extra={
+                "session_id": request.session_id, "embedding_version": version,
+                "candidate_count": len(point_ids), "hit_count": len(hits),
+            })
+            return hits
+        # An incomplete Redis replica must not hide durable memories.
+        LOGGER.info("memory_vector_retrieval_fallback", extra={
+            "session_id": request.session_id, "embedding_version": version,
+            "reason": "insufficient_authoritative_candidates", "hit_count": len(hits),
+        })
+        return await self._memory_store.search(request)
+
     async def _build_search_filters(
         self,
         query: str,
@@ -488,13 +541,15 @@ class MemoryRuntimeService:
             return filters
         try:
             result = await self._embedding_runtime_service.embed_texts([query])
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning("memory_query_embedding_failed", extra={"error_type": type(exc).__name__})
             return filters
         return {
             **filters,
             "__query_embedding": result.vectors[0],
             "__embedding_model": result.model_name,
             "__embedding_provider": result.provider,
+            "__embedding_version": result.embedding_version,
         }
 
     async def _attach_embeddings(

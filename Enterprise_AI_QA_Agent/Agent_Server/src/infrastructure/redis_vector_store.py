@@ -76,10 +76,12 @@ class RedisVectorStore:
         if filters:
             clauses = [f"@{name}:{{{self._escape_tag(value)}}}" for name, value in filters.items() if name in {"project_id", "case_version_id", "status", "environment"}]
             query_filter = " ".join(clauses) if clauses else "*"
-        query = f"{query_filter}=>[KNN {max(1, int(top_k))} @embedding $query AS vector_distance]"
+        count = max(1, int(top_k))
+        query = f"({query_filter})=>[KNN {count} @embedding $query AS vector_distance]"
         raw = await self._client.execute_command(
             "FT.SEARCH", index, query, "PARAMS", "2", "query", struct.pack(f"<{len(vector)}f", *vector),
-            "SORTBY", "vector_distance", "RETURN", "5", "vector_distance", "project_id", "case_version_id", "status", "environment", "DIALECT", "2",
+            "SORTBY", "vector_distance", "LIMIT", "0", str(count),
+            "RETURN", "5", "vector_distance", "project_id", "case_version_id", "status", "environment", "DIALECT", "2",
         )
         return self._decode_search(raw)
 

@@ -21,3 +21,15 @@ def test_vector_index_uses_dynamic_dimension_and_versioned_names():
         assert "DIM" in client.commands[0] and "4096" in client.commands[0]
         assert client.commands[1][0] == "HSET"
     asyncio.run(run())
+
+
+def test_knn_limit_does_not_silently_use_redis_default_ten():
+    async def run():
+        client = FakeRedis()
+        store = RedisVectorStore("redis://unused", client=client)
+        await store.search(entity="memory", embedding_version="v1", vector=[1., 0.],
+                           top_k=40, filters={"project_id": "project-a", "environment": "qa"})
+        command = client.commands[0]
+        assert command[2].startswith("(@project_id:")
+        assert command[command.index("LIMIT") + 1:command.index("LIMIT") + 3] == ("0", "40")
+    asyncio.run(run())

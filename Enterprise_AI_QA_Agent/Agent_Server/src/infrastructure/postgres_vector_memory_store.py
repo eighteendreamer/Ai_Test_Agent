@@ -38,6 +38,13 @@ class PostgresVectorMemoryStore:
     async def search(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         return await asyncio.to_thread(self._search_sync, request)
 
+    async def search_candidates(
+        self, request: MemorySearchRequest, point_ids: list[str],
+    ) -> list[MemoryPoint]:
+        if not point_ids:
+            return []
+        return await asyncio.to_thread(self._search_sync, request, list(dict.fromkeys(point_ids)))
+
     async def list_points(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         return await asyncio.to_thread(self._list_points_sync, request)
 
@@ -217,8 +224,10 @@ class PostgresVectorMemoryStore:
                 )
         return point
 
-    def _search_sync(self, request: MemorySearchRequest) -> list[MemoryPoint]:
-        rows = self._select_rows(request, limit=max(request.top_k * 8, 40))
+    def _search_sync(
+        self, request: MemorySearchRequest, point_ids: list[str] | None = None,
+    ) -> list[MemoryPoint]:
+        rows = self._select_rows(request, limit=max(request.top_k * 8, 40), point_ids=point_ids)
         tokens = [token for token in re.split(r"\W+", request.query.lower()) if token]
         query_embedding = self._extract_query_embedding(request)
         hits: list[MemoryPoint] = []
@@ -371,28 +380,39 @@ class PostgresVectorMemoryStore:
                 updated = int(cur.rowcount or 0)
         return updated
 
-    def _select_rows(self, request: MemorySearchRequest, limit: int) -> list[dict]:
+    def _select_rows(
+        self, request: MemorySearchRequest, limit: int, point_ids: list[str] | None = None,
+    ) -> list[dict]:
         where_clause, params = self._build_where_clause(request)
+        if point_ids is not None:
+            where_clause = self._append_where_condition(where_clause, "id = ANY(%s)")
+            params.append(point_ids)
         query_embedding = self._extract_query_embedding(request)
+        version = request.metadata_filters.get("__embedding_version")
         with self._connect() as conn:
             with conn.cursor() as cur:
-                if query_embedding:
+                if query_embedding and version:
                     serialized_embedding = self._serialize_embedding(query_embedding)
                     vector_where = self._append_where_condition(
                         where_clause,
-                        "embedding IS NOT NULL",
+                        "embedding IS NOT NULL AND vector_dims(embedding) = %s "
+                        "AND metadata->>'embedding_version' = %s",
                     )
                     cur.execute(
                         f"""
                         SELECT id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
                                source, stale, metadata, created_at, updated_at,
-                               1 - (embedding <=> %s::vector) AS vector_similarity
+                               CASE WHEN vector_dims(embedding) = %s
+                                    AND metadata->>'embedding_version' = %s
+                                    THEN 1 - (embedding <=> %s::vector)
+                               END AS vector_similarity
                         FROM {self._settings.database.postgres_memory_table}
                         {vector_where}
-                        ORDER BY embedding <=> %s::vector
+                        ORDER BY vector_similarity DESC NULLS LAST
                         LIMIT %s
                         """,
-                        [serialized_embedding, *params, serialized_embedding, limit],
+                        [len(query_embedding), version, serialized_embedding,
+                         *params, len(query_embedding), version, limit],
                     )
                     vector_rows = list(cur.fetchall() or [])
                     fallback_where = self._append_where_condition(
