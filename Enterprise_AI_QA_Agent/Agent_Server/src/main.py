@@ -233,6 +233,7 @@ async def lifespan(app: FastAPI):
     memory_store = container.memory_store()
     memory_runtime_service = container.memory_runtime_service()
     await memory_runtime_service.initialize()
+    memory_runtime_service.set_vector_store(vector_store)
     app.state.compaction_worker = CompactionWorker(
         hot_memory_store=hot_memory_store,
         memory_runtime_service=memory_runtime_service,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from collections.abc import Iterable
 from typing import Any
 
@@ -11,6 +12,8 @@ from src.runtime.execution_logging import truncate_text
 from src.schemas.observation import ObservationRecord
 from src.schemas.memory import MemorySearchRequest, MemorySearchResult, MemoryWriteRequest
 
+LOGGER = logging.getLogger(__name__)
+
 
 class MemoryRuntimeService:
     def __init__(
@@ -18,10 +21,15 @@ class MemoryRuntimeService:
         memory_store: MemoryStoreProtocol,
         top_k: int = 6,
         embedding_runtime_service: EmbeddingRuntimeService | None = None,
+        vector_store: Any | None = None,
     ) -> None:
         self._memory_store = memory_store
         self._top_k = top_k
         self._embedding_runtime_service = embedding_runtime_service
+        self._vector_store = vector_store
+
+    def set_vector_store(self, vector_store: Any | None) -> None:
+        self._vector_store = vector_store
 
     async def initialize(self) -> None:
         await self._memory_store.initialize()
@@ -359,7 +367,7 @@ class MemoryRuntimeService:
         if turn_lease_token:
             requests = [item.model_copy(update={"turn_lease_token": turn_lease_token}) for item in requests]
         for request in requests:
-            point = await self._memory_store.write(request)
+            point = await self._write_point(request)
             if point is not None:
                 write_ids.append(point.id)
         return write_ids
@@ -406,7 +414,7 @@ class MemoryRuntimeService:
             },
         )
         request = (await self._attach_embeddings([request]))[0]
-        point = await self._memory_store.write(request)
+        point = await self._write_point(request)
         return point.id if point is not None else None
 
     async def write_observations(
@@ -442,10 +450,33 @@ class MemoryRuntimeService:
         for request in await self._attach_embeddings(requests):
             if turn_lease_token:
                 request = request.model_copy(update={"turn_lease_token": turn_lease_token})
-            point = await self._memory_store.write(request)
+            point = await self._write_point(request)
             if point is not None:
                 write_ids.append(point.id)
         return write_ids
+
+    async def _write_point(self, request: MemoryWriteRequest):
+        point = await self._memory_store.write(request)
+        if point is None or self._vector_store is None:
+            return point
+        vector = request.metadata.get("embedding")
+        version = str(request.metadata.get("embedding_version") or "")
+        if not vector or not version:
+            return point
+        try:
+            await self._vector_store.create_index(entity="memory", embedding_version=version, dimension=len(vector))
+            await self._vector_store.upsert(
+                entity="memory", embedding_version=version, point_id=point.id,
+                vector=list(vector), metadata={
+                    "project_id": str(request.metadata.get("project_id") or ""),
+                    "case_version_id": str(request.metadata.get("case_version_id") or ""),
+                    "status": "active" if not point.stale else "stale",
+                    "environment": str(request.metadata.get("environment") or ""),
+                },
+            )
+        except Exception:
+            LOGGER.exception("memory_vector_replica_write_failed", extra={"memory_id": point.id, "embedding_version": version})
+        return point
 
     async def _build_search_filters(
         self,
@@ -490,6 +521,9 @@ class MemoryRuntimeService:
                         "embedding_provider": result.provider,
                         "embedding_adapter": result.adapter,
                         "embedding_source_dimension": result.original_dimension,
+                        "embedding_dimension": result.stored_dimension,
+                        "embedding_version": result.embedding_version,
+                        "normalized": result.normalized,
                     }
                 }
             )
@@ -659,6 +693,10 @@ class MemoryRuntimeService:
 
     def _derive_memory_filters(self, context: dict[str, Any]) -> dict[str, Any]:
         filters: dict[str, Any] = {}
+        for key in ("project_id", "environment"):
+            value = str(context.get(key) or "").strip()
+            if value:
+                filters[key] = value
         mode_key = str(context.get("mode_key") or "").strip()
         if mode_key:
             filters["mode_key"] = mode_key
@@ -672,7 +710,7 @@ class MemoryRuntimeService:
 
     def _build_common_metadata(self, context: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
-        for key in ("mode_key", "target_fingerprint", "campaign_id", "platform_label"):
+        for key in ("mode_key", "target_fingerprint", "campaign_id", "platform_label", "project_id", "environment"):
             value = str(context.get(key) or "").strip()
             if value:
                 metadata[key] = value
