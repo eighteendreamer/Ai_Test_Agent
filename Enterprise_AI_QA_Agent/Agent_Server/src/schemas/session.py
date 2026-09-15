@@ -69,6 +69,14 @@ class ExecutionEvent(BaseModel):
     session_id: str
     timestamp: datetime
     payload: dict[str, Any] = Field(default_factory=dict)
+    request_id: str | None = None
+    trace_id: str | None = None
+    turn_id: str | None = None
+    run_id: str | None = None
+    run_item_id: str | None = None
+    attempt_id: str | None = None
+    worker_id: str | None = None
+    resource_id: str | None = None
 
 
 class SessionSnapshot(BaseModel):

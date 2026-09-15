@@ -22,6 +22,7 @@ from src.schemas.session import (
 )
 from src.schemas.task_pool import TaskPoolSessionSummary
 from src.runtime.store import ContinuationLeaseLostError
+from src.core.request_context import get_request_context
 
 
 class PostgresSessionStore:
@@ -668,6 +669,29 @@ class PostgresSessionStore:
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
                 self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+                event_payload = dict(event.payload)
+                context_fields = {
+                    name: getattr(event, name)
+                    for name in (
+                        "request_id",
+                        "trace_id",
+                        "turn_id",
+                        "run_id",
+                        "run_item_id",
+                        "attempt_id",
+                        "worker_id",
+                        "resource_id",
+                    )
+                    if getattr(event, name) is not None
+                }
+                request_context = get_request_context()
+                if request_context is not None:
+                    for name in context_fields.keys() | {"request_id", "trace_id"}:
+                        value = getattr(request_context, name, None)
+                        if value is not None:
+                            context_fields.setdefault(name, value)
+                if context_fields:
+                    event_payload["_harness_context"] = context_fields
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_event_table} (
@@ -679,7 +703,7 @@ class PostgresSessionStore:
                         session_id,
                         event.type,
                         event.timestamp,
-                        json.dumps(make_json_safe(event.payload), ensure_ascii=False),
+                        json.dumps(make_json_safe(event_payload), ensure_ascii=False),
                     ),
                 )
                 cur.execute(
@@ -768,16 +792,26 @@ class PostgresSessionStore:
                         (session_id,),
                     )
                 rows = cur.fetchall() or []
-        return [
-            ExecutionEvent(
-                id=str(row["id"]),
-                type=row["type"],
-                session_id=session_id,
-                timestamp=ensure_utc_datetime(row["timestamp"]) or datetime.utcnow(),
-                payload=dict(row.get("payload") or {}),
+        events: list[ExecutionEvent] = []
+        for row in rows:
+            payload = dict(row.get("payload") or {})
+            context = payload.pop("_harness_context", {})
+            if not isinstance(context, dict):
+                context = {}
+            events.append(
+                ExecutionEvent(
+                    id=str(row["id"]),
+                    type=row["type"],
+                    session_id=session_id,
+                    timestamp=ensure_utc_datetime(row["timestamp"]) or datetime.utcnow(),
+                    payload=payload,
+                    **{name: context.get(name) for name in (
+                        "request_id", "trace_id", "turn_id", "run_id",
+                        "run_item_id", "attempt_id", "worker_id", "resource_id",
+                    )},
+                )
             )
-            for row in rows
-        ]
+        return events
 
     def _save_snapshot_sync(
         self,
