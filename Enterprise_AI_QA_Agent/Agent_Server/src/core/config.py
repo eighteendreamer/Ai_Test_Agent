@@ -165,6 +165,7 @@ class OrchestrConfig(BaseModel):
     redis_hot_memory_ttl_seconds: int = 86400
     redis_hot_memory_max_events: int = 2000
     redis_compaction_compression_version: str = "v1"
+    redis_vector_enabled: bool = True
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False

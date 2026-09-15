@@ -132,6 +132,7 @@ from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.compaction_worker import CompactionWorker
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
+from src.infrastructure.redis_vector_store import RedisVectorStore
 
 
 @asynccontextmanager
@@ -154,6 +155,10 @@ async def lifespan(app: FastAPI):
     )
     await hot_memory_store.connect()
     app.state.hot_memory_store = hot_memory_store
+    vector_store = RedisVectorStore(settings.database.redis_url) if settings.orchestration.redis_vector_enabled else None
+    if vector_store is not None:
+        await vector_store.connect()
+    app.state.vector_store = vector_store
 
     # ── Async initialization of stores ───────────────────────────────
     project_store = container.project_store()
@@ -591,6 +596,8 @@ async def lifespan(app: FastAPI):
         if task_queue is not None:
             await task_queue.close()
         await hot_memory_store.close()
+        if vector_store is not None:
+            await vector_store.close()
         if deep_agent_checkpoint_provider is not None:
             await deep_agent_checkpoint_provider.close()
         await test_run_service.stop_lease_reaper()
