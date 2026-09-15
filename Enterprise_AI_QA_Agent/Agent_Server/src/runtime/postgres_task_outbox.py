@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,27 @@ class PostgresTaskOutbox:
 
     async def mark_failed(self, outbox_id: int, *, error: str) -> None:
         await asyncio.to_thread(self._mark_failed_sync, outbox_id, error)
+
+    async def relay_once(self, queue: Any, *, limit: int = 100) -> int:
+        """Publish a bounded batch and acknowledge only successful publishes."""
+        published = 0
+        for record in await self.claim(limit=limit):
+            try:
+                message_id = await queue.enqueue(record.payload)
+            except Exception as exc:
+                await self.mark_failed(record.id, error=f"{type(exc).__name__}: {exc}")
+                LOGGER.exception(
+                    "task_outbox_publish_failed",
+                    extra={"outbox_id": record.id, "event_key": record.event_key, "stream": record.stream},
+                )
+                continue
+            await self.mark_published(record.id)
+            published += 1
+            LOGGER.info(
+                "task_outbox_published",
+                extra={"outbox_id": record.id, "event_key": record.event_key, "stream": record.stream, "message_id": message_id},
+            )
+        return published
 
     def _table(self) -> str:
         return self._settings.database.postgres_task_outbox_table
