@@ -486,7 +486,108 @@ Recovery Worker → 创建新 Attempt 或人工处理
 
 本地 Session、Flow、SSE、测试执行、结果入库和恢复必须继续工作；LangSmith 只记录告警和待补偿状态。
 
-## 12. 监控与验收指标
+## 12. 贯穿式标识、日志和监控
+
+每个请求、任务、执行尝试和资源操作都必须贯穿以下标识：
+
+```text
+request_id
+trace_id
+session_id
+turn_id
+run_id
+run_item_id
+attempt_id
+worker_id
+resource_id
+```
+
+推荐关系：
+
+```text
+request_id → trace_id → session_id/turn_id
+                         → run_id/run_item_id/attempt_id
+                           → worker_id/resource_id
+```
+
+结构化日志必须能够回答：谁创建了任务、任务进入哪个队列、哪个 Worker 领取、领取了哪些资源、何时开始执行、调用了哪些工具、哪一步失败、是否重试、是否释放资源、最终结果是什么。
+
+关键日志至少包含 `timestamp`、`event_type`、上述关联 ID、`status`、`error_code`（如适用）和 `duration_ms`（如适用）。监控指标必须支持按 `project_id`、`run_id`、`worker_id` 和资源类型聚合。
+
+建议监控指标：
+
+```text
+API QPS
+API 错误率
+任务提交量
+任务积压量
+任务等待时间
+任务执行时间
+RunItem P50/P95/P99
+Worker 利用率
+浏览器占用率
+Docker 占用率
+资源租约超时数
+任务重试数
+死信任务数
+SSE 连接数
+Redis Stream Pending 数
+PostgreSQL 连接使用率
+```
+
+## 13. 并发控制和配额
+
+建议设置四级配额：
+
+```text
+全局配额
+  └── 项目配额
+        └── TestRun 配额
+              └── 资源类型配额
+```
+
+示例：
+
+```text
+全局 Agent 任务：20
+项目 A：5
+项目 B：8
+单次 TestRun：4
+浏览器：10
+Docker：10
+测试账号：每个账号 1
+```
+
+配额判断顺序为“全局 → 项目 → TestRun → 资源类型 → 指定资源租约”。资源不足时任务状态必须为：
+
+```text
+waiting_resource
+```
+
+并记录具体原因：
+
+```text
+等待浏览器资源
+等待测试账号
+等待 Docker 容量
+等待环境并发槽位
+等待项目配额
+```
+
+项目管理页面应显示：
+
+```text
+运行中：8
+排队中：12
+等待浏览器：3
+等待 Docker：2
+执行失败：1
+已完成：20
+```
+
+同时可下钻到 `run_id`、`run_item_id`、`attempt_id`、Worker、资源和等待原因。
+
+## 14. 监控与验收指标
 
 必须监控：
 
@@ -518,7 +619,7 @@ LangSmith 上报失败数和对账成功率
 10. 重复提交、取消、超时和重试；
 11. 测试结果、证据、Flow 和 LangSmith Trace 对账。
 
-## 13. 实施顺序
+## 15. 实施顺序
 
 ### P0：统一契约和主链
 
@@ -551,7 +652,7 @@ LangSmith 上报失败数和对账成功率
 - 分阶段并发压测；
 - LangSmith Trace 采样、对账和成本控制。
 
-## 14. 最终架构判断
+## 16. 最终架构判断
 
 本方案贴合项目当前实际，也符合 Harness Engineering 的核心要求：
 
