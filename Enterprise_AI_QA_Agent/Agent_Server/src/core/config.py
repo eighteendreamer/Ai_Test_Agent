@@ -156,6 +156,13 @@ class ModelConfig(BaseModel):
 
 
 class OrchestrConfig(BaseModel):
+    redis_task_dispatch_enabled: bool = False
+    redis_task_stream: str = "enterprise_ai_qa_agent:tasks"
+    redis_task_consumer_group: str = "enterprise_ai_qa_agent:workers"
+    redis_task_maxlen: int = 100000
+    redis_task_block_ms: int = 1000
+    redis_task_reclaim_idle_ms: int = 120000
+
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False
     intent_semantic_classifier_enabled: bool = True

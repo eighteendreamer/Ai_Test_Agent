@@ -127,12 +127,22 @@ from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.infrastructure.redis_task_queue import RedisTaskQueue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     container = AppContainer()
+    task_queue = None
+    if settings.orchestration.redis_task_dispatch_enabled:
+        task_queue = RedisTaskQueue(
+            settings.database.redis_url,
+            stream=settings.orchestration.redis_task_stream,
+            group=settings.orchestration.redis_task_consumer_group,
+        )
+        await task_queue.connect()
+    app.state.task_queue = task_queue
 
     # ── Async initialization of stores ───────────────────────────────
     project_store = container.project_store()
@@ -548,6 +558,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if task_queue is not None:
+            await task_queue.close()
         if deep_agent_checkpoint_provider is not None:
             await deep_agent_checkpoint_provider.close()
         await test_run_service.stop_lease_reaper()
