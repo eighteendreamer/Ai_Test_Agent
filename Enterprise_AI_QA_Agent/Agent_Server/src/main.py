@@ -220,6 +220,7 @@ async def lifespan(app: FastAPI):
     await session_resource_service.initialize()
 
     mcp_runtime_service = container.mcp_runtime_service()
+    mcp_runtime_service.set_resource_lease_manager(resource_lease_manager)
     session_resource_service.set_browser_cleanup(mcp_runtime_service.close_browser_session)
 
     artifact_storage_service = container.artifact_storage_service()

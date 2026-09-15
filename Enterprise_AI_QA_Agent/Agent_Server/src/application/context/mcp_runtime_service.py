@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import shlex
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,10 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.runtime.python_playwright_cli import PythonPlaywrightCliRuntime
 from src.registry.mcp import MCPRegistry
 from src.schemas.session_resource import SessionResourceKind
+from src.core.request_context import get_request_context
+from src.runtime.resource_lease_manager import ResourceUnavailable
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MCPRuntimeService:
@@ -34,6 +39,10 @@ class MCPRuntimeService:
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
         self._artifact_root.mkdir(parents=True, exist_ok=True)
         self._playwright_cli = PythonPlaywrightCliRuntime(settings)
+        self._resource_lease_manager = None
+
+    def set_resource_lease_manager(self, manager) -> None:
+        self._resource_lease_manager = manager
 
     async def close_browser_session(self, session_name: str) -> None:
         await self._playwright_cli.close_session(session_name)
@@ -65,19 +74,68 @@ class MCPRuntimeService:
         if capability not in server.capabilities:
             return {"status": "failed", "error": f"Capability '{capability}' is not exposed by {server.name}."}
 
-        if capability == "inspect-page":
-            return await self._inspect_page(payload, context)
-        if capability == "browser-automation":
-            return await self._run_browser_automation(payload, context)
-        if capability == "browser-control":
-            return await self._run_browser_control(payload, context)
-        if capability == "write-artifact":
-            return self._write_artifact(payload, context)
-        return {
-            "status": "success",
-            "summary": f"Capability '{capability}' acknowledged by {server.name}.",
-            "payload": payload,
-        }
+        lease = None
+        browser_capability = capability in {"inspect-page", "browser-automation", "browser-control"}
+        if browser_capability and self._resource_lease_manager is not None and context.get("session_id"):
+            request_context = get_request_context()
+            bundle = context.get("context_bundle") if isinstance(context.get("context_bundle"), dict) else {}
+            owner = str(
+                (request_context.worker_id if request_context else None)
+                or (request_context.request_id if request_context else None)
+                or context.get("turn_id") or context.get("session_id")
+            )
+            try:
+                lease = await self._resource_lease_manager.acquire(
+                    resource_type="browser",
+                    resource_id=f"browser:{context['session_id']}",
+                    worker_id=owner,
+                    lease_seconds=int(getattr(self._settings.orchestration, "resource_default_lease_seconds", 300)),
+                    project_id=str(bundle.get("project_id") or "") or None,
+                    session_id=str(context["session_id"]),
+                    run_id=str(bundle.get("test_run_id") or "") or None,
+                    run_item_id=str(bundle.get("run_item_id") or bundle.get("test_run_item_id") or "") or None,
+                    attempt_id=str(bundle.get("attempt_id") or "") or None,
+                )
+            except ResourceUnavailable as exc:
+                LOGGER.info("browser_resource_waiting", extra={
+                    "session_id": context.get("session_id"), "resource_id": f"browser:{context['session_id']}",
+                    "waiting_reason": exc.reason,
+                })
+                return {"status": "waiting_resource", "waiting_reason": exc.reason}
+            except Exception as exc:
+                LOGGER.exception("browser_resource_lease_unavailable", extra={
+                    "session_id": context.get("session_id"), "error_type": type(exc).__name__,
+                })
+                return {"status": "waiting_resource", "waiting_reason": "resource_harness_unavailable"}
+
+        try:
+            if capability == "inspect-page":
+                return await self._inspect_page(payload, context)
+            if capability == "browser-automation":
+                return await self._run_browser_automation(payload, context)
+            if capability == "browser-control":
+                return await self._run_browser_control(payload, context)
+            if capability == "write-artifact":
+                return self._write_artifact(payload, context)
+            return {
+                "status": "success",
+                "summary": f"Capability '{capability}' acknowledged by {server.name}.",
+                "payload": payload,
+            }
+        finally:
+            if lease is not None:
+                try:
+                    released = await self._resource_lease_manager.release(lease)
+                    if not released:
+                        LOGGER.error("browser_resource_release_rejected", extra={
+                            "session_id": context.get("session_id"), "resource_id": lease.resource_id,
+                            "fencing_token": lease.fencing_token,
+                        })
+                except Exception as exc:
+                    LOGGER.exception("browser_resource_release_failed", extra={
+                        "session_id": context.get("session_id"), "resource_id": lease.resource_id,
+                        "error_type": type(exc).__name__,
+                    })
 
     async def _inspect_page(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         target_url = self._resolve_target_url(payload, context)
