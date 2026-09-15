@@ -50,6 +50,13 @@ class RedisTaskWorker:
             context_token = set_request_context(
                 request_id=str(payload.get("request_id") or ""),
                 trace_id=str(payload.get("trace_id") or ""),
+                session_id=payload.get("session_id"),
+                turn_id=payload.get("turn_id"),
+                run_id=payload.get("run_id"),
+                run_item_id=payload.get("run_item_id"),
+                attempt_id=payload.get("attempt_id"),
+                worker_id=self._consumer,
+                resource_id=payload.get("resource_id"),
             )
             try:
                 LOGGER.info(
