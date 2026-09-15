@@ -10,6 +10,7 @@ for _, member in ipairs(expired) do
     local raw = redis.call('HGET', KEYS[6], member)
     if raw then
       local fields = cjson.decode(raw)
+      if fields['quota'] then fields = fields['quota'] end
       for _, field in ipairs(fields) do
         local current = tonumber(redis.call('HINCRBY', KEYS[3], field, -1))
         if current <= 0 then redis.call('HDEL', KEYS[3], field) end
@@ -31,8 +32,32 @@ for i = 1, quota_count do redis.call('HINCRBY', KEYS[3], ARGV[3 + i], 1) end
 redis.call('ZADD', KEYS[5], tostring(now + tonumber(ARGV[3])), KEYS[1])
 local fields = {}
 for i = 1, quota_count do fields[i] = ARGV[3 + i] end
-redis.call('HSET', KEYS[6], KEYS[1], cjson.encode(fields))
+redis.call('HSET', KEYS[6], KEYS[1], cjson.encode({quota = fields}))
 return {token, 'ok'}
+"""
+
+REAP = """
+local clock = redis.call('TIME')
+local now = clock[1] * 1000 + math.floor(clock[2] / 1000)
+local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', tostring(now), 'LIMIT', 0, ARGV[1])
+local result = {}
+for _, member in ipairs(expired) do
+  redis.call('ZREM', KEYS[1], member)
+  if redis.call('EXISTS', member) == 0 then
+    local raw = redis.call('HGET', KEYS[3], member)
+    if raw then
+      local fields = cjson.decode(raw)
+      if fields['quota'] then fields = fields['quota'] end
+      for _, field in ipairs(fields) do
+        local current = tonumber(redis.call('HINCRBY', KEYS[2], field, -1))
+        if current <= 0 then redis.call('HDEL', KEYS[2], field) end
+      end
+      redis.call('HDEL', KEYS[3], member)
+    end
+    table.insert(result, member)
+  end
+end
+return result
 """
 
 RENEW = """

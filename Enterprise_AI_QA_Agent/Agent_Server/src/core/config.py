@@ -175,6 +175,7 @@ class OrchestrConfig(BaseModel):
     resource_global_limit: int = Field(default=20, ge=1)
     resource_default_lease_seconds: int = Field(default=300, gt=0)
     resource_docker_slots: int = Field(default=10, ge=1)
+    resource_cleanup_interval_seconds: float = Field(default=30.0, gt=0)
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False

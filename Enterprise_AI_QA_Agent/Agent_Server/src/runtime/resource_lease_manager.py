@@ -11,7 +11,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from src.runtime.resource_lease_scripts import CLAIM, RELEASE, RENEW
+from src.runtime.resource_lease_scripts import CLAIM, REAP, RELEASE, RENEW
 
 
 @dataclass(frozen=True)
@@ -145,6 +145,21 @@ class RedisResourceLeaseManager:
     async def get(self, *, resource_type: str, resource_id: str) -> dict[str, Any] | None:
         raw = await self._client.get(self._lease_key(resource_type, resource_id))
         return json.loads(raw) if raw else None
+
+    async def reap_expired(self, *, limit: int = 100) -> list[tuple[str, str]]:
+        members = await self._client.eval(
+            REAP, 3, "qa:lease:registry", "qa:quota:usage", "qa:lease:metadata",
+            max(1, min(int(limit), 1000)),
+        )
+        results: list[tuple[str, str]] = []
+        for member in members or []:
+            key = member.decode() if isinstance(member, bytes) else str(member)
+            prefix = "qa:lease:"
+            if not key.startswith(prefix) or ":" not in key[len(prefix):]:
+                continue
+            resource_type, resource_id = key[len(prefix):].split(":", 1)
+            results.append((resource_type, resource_id))
+        return results
 
     @staticmethod
     def _lease_key(resource_type: str, resource_id: str) -> str:

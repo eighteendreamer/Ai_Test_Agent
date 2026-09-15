@@ -73,6 +73,12 @@ const runDetailOpen = ref(false);
 const runDetailLoading = ref(false);
 const runDetail = ref<TestRunDetail | null>(null);
 
+const runDashboard = computed(() => ({
+  running: testRuns.value.filter((run) => run.status === "running").length,
+  queued: testRuns.value.filter((run) => run.status === "queued").length,
+  waitingResource: testRuns.value.reduce((total, run) => total + (run.stats.waiting_resource ?? 0), 0),
+}));
+
 const legacySmokeRuns = ref<LegacySmokeRunSummary[]>([]);
 const legacySmokeBindings = ref<string[]>([]);
 const legacySmokeLoading = ref(false);
@@ -1043,7 +1049,7 @@ watch(routeProjectId, async (projectId) => {
                 <option value="cancelled">已取消</option>
               </select>
               <button @click="loadTestRuns">刷新</button>
-              <small>运行只保存调度状态；测试结论以 Runner 结果和证据为准。</small>
+              <small>当前页统计：运行中 {{ runDashboard.running }} · 排队中 {{ runDashboard.queued }} · 等待资源 {{ runDashboard.waitingResource }}。运行只保存调度状态；测试结论以 Runner 结果和证据为准。</small>
             </div>
             <div class="table-wrap">
               <table>
