@@ -129,6 +129,7 @@ from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.compaction_worker import CompactionWorker
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 
@@ -227,6 +228,11 @@ async def lifespan(app: FastAPI):
     memory_store = container.memory_store()
     memory_runtime_service = container.memory_runtime_service()
     await memory_runtime_service.initialize()
+    app.state.compaction_worker = CompactionWorker(
+        hot_memory_store=hot_memory_store,
+        memory_runtime_service=memory_runtime_service,
+        compression_version=settings.orchestration.redis_compaction_compression_version,
+    )
 
     tool_job_store = container.tool_job_store()
     security_bug_store = container.security_bug_store()

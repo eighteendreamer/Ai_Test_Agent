@@ -82,6 +82,17 @@ class PostgresVectorMemoryStore:
                     )
                     """
                 )
+                # The project has not entered production and no fixed-dimension
+                # compatibility branch is required.  Normalize an already
+                # initialized development table so the active Embedding model's
+                # detected dimension (for example 4096) is accepted.
+                cur.execute(
+                    f"ALTER TABLE {self._settings.database.postgres_memory_table} "
+                    "ALTER COLUMN embedding TYPE VECTOR USING embedding::vector"
+                )
+                cur.execute(
+                    f"DROP INDEX IF EXISTS idx_{self._settings.database.postgres_memory_table}_embedding"
+                )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_session_updated "
                     f"ON {self._settings.database.postgres_memory_table} (session_id, updated_at DESC)"

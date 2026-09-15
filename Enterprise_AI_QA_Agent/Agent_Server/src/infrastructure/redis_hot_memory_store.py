@@ -86,6 +86,17 @@ class RedisHotMemoryStore:
             self._key(session_id, "compaction"),
         )
 
+    async def acquire_compaction(self, session_id: str, key: str) -> bool:
+        self._require_session(session_id)
+        marker = self._key(session_id, f"compaction:{key}")
+        acquired = await self._client.set(marker, "running", ex=self._ttl_seconds, nx=True)
+        return bool(acquired)
+
+    async def complete_compaction(self, session_id: str, key: str) -> None:
+        self._require_session(session_id)
+        marker = self._key(session_id, f"compaction:{key}")
+        await self._client.set(marker, "completed", ex=self._ttl_seconds)
+
     @staticmethod
     def _require_session(session_id: str) -> None:
         if not str(session_id).strip():
