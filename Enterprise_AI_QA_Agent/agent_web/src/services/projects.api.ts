@@ -20,6 +20,8 @@ import type {
   RegressionContext,
   RegressionFailurePage,
   RegressionFailureStatus,
+  ResourceQuotaRecord,
+  ResourceQuotaType,
 } from "../types";
 import { request } from "./http";
 
@@ -59,6 +61,21 @@ export function archiveProject(projectId: string): Promise<ProjectRecord> {
 
 export function getProjectOverview(projectId: string): Promise<ProjectOverview> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/overview`);
+}
+
+export function listResourceQuotas(projectId: string): Promise<ResourceQuotaRecord[]> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/resource-quotas`);
+}
+
+export function upsertResourceQuota(
+  projectId: string,
+  resourceType: ResourceQuotaType,
+  limit: number,
+): Promise<ResourceQuotaRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/resource-quotas`, {
+    method: "PUT",
+    body: JSON.stringify({ resource_type: resourceType, limit }),
+  });
 }
 
 export function listLegacySmokeRuns(

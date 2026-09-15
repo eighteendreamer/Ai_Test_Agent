@@ -34,6 +34,7 @@ from src.api.routes.security_bugs import router as security_bugs_router
 from src.api.routes.settings import router as settings_router
 from src.api.routes.sponsors import router as sponsors_router
 from src.api.routes.task_pool import router as task_pool_router
+from src.api.routes.resource_quotas import router as resource_quotas_router
 from src.api.routes.mail import router as mail_router
 from src.api.request_context_middleware import RequestContextMiddleware
 from src.application.mail.auth_monitor import TencentAuthMonitor
@@ -131,6 +132,8 @@ from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
+from src.runtime.resource_quota_store import ResourceQuotaStore
+from src.application.resources.resource_quota_service import ResourceQuotaService
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 from src.infrastructure.redis_vector_store import RedisVectorStore
@@ -173,6 +176,9 @@ async def lifespan(app: FastAPI):
         scope="global", identifier="all", limit=settings.orchestration.resource_global_limit,
     )
     app.state.resource_lease_manager = resource_lease_manager
+    resource_quota_service = ResourceQuotaService(ResourceQuotaStore(settings), resource_lease_manager)
+    await resource_quota_service.initialize()
+    app.state.resource_quota_service = resource_quota_service
 
     # ── Async initialization of stores ───────────────────────────────
     project_store = container.project_store()
@@ -653,6 +659,7 @@ app.include_router(compatibility_router, prefix=settings.api_v1_prefix)
 app.include_router(integrations_router, prefix=settings.api_v1_prefix)
 app.include_router(reports_router, prefix=settings.api_v1_prefix)
 app.include_router(task_pool_router, prefix=settings.api_v1_prefix)
+app.include_router(resource_quotas_router, prefix=settings.api_v1_prefix)
 app.include_router(sessions_router, prefix=settings.api_v1_prefix)
 app.include_router(test_cases_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)

@@ -1408,6 +1408,16 @@ export interface TestRunItemRecord {
   resource_cleanup_completed_at?: string | null;
 }
 
+export type ResourceQuotaType = "agent" | "browser" | "docker" | "test_account" | "environment";
+
+export interface ResourceQuotaRecord {
+  scope: "project";
+  scope_id: string;
+  resource_type: ResourceQuotaType;
+  limit: number;
+  updated_at?: string | null;
+}
+
 export interface TestCaseResultRecord {
   id: string;
   run_id: string;

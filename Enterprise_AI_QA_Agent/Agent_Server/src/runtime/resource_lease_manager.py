@@ -81,6 +81,7 @@ class RedisResourceLeaseManager:
         quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", resource_type)]
         if project_id:
             quota_fields.append(_quota_field("project", project_id))
+            quota_fields.append(_quota_field("project_resource_type", f"{project_id}:{resource_type}"))
         if run_id:
             quota_fields.append(_quota_field("run", run_id))
         lease_token = uuid.uuid4().hex
@@ -133,6 +134,7 @@ class RedisResourceLeaseManager:
         quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", lease.resource_type)]
         if lease.project_id:
             quota_fields.append(_quota_field("project", lease.project_id))
+            quota_fields.append(_quota_field("project_resource_type", f"{lease.project_id}:{lease.resource_type}"))
         if lease.run_id:
             quota_fields.append(_quota_field("run", lease.run_id))
         result = await self._client.eval(
