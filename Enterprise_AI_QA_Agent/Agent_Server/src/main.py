@@ -35,6 +35,7 @@ from src.api.routes.settings import router as settings_router
 from src.api.routes.sponsors import router as sponsors_router
 from src.api.routes.task_pool import router as task_pool_router
 from src.api.routes.mail import router as mail_router
+from src.api.request_context_middleware import RequestContextMiddleware
 from src.application.mail.auth_monitor import TencentAuthMonitor
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
@@ -560,6 +561,10 @@ app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    RequestContextMiddleware,
 )
 
 app.add_middleware(

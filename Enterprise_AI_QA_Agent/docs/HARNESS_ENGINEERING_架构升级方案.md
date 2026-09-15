@@ -1,6 +1,6 @@
 # AI 测试系统 Harness Engineering 架构升级方案
 
-版本：v1.0  
+版本：v1.1
 适用范围：`Enterprise_AI_QA_Agent`  
 依据：当前后端 Session/Turn/Flow、TestRun/RunItem/Attempt、Worker、资源执行机制，以及项目已有《Harness Engineering 开发规范》和《LangChain 生态深度升级工程方案》。
 
@@ -673,3 +673,144 @@ Recovery    处理超时、崩溃和断点恢复
 ```
 
 在当前中等并发目标下，Redis 足以承担调度和事件职责；系统能否扛住，关键不在于是否引入更重的消息中间件，而在于是否完成任务化执行、资源租约、状态机、恢复机制、证据验证和 LangSmith 非阻塞观测这几个架构闭环。
+
+## 17. 工程实施基线
+
+本章将前面的目标架构转换为工程团队可执行的实施基线。实施时不得跳过契约、状态、恢复和验收中的任一项；如果某项暂未实现，必须明确标记为 `planned`，不能在产品页面显示为已完成。
+
+### 17.1 模块实施矩阵
+
+| 子系统 | 当前项目承载位置 | 目标职责 | 首批交付物 |
+|---|---|---|---|
+| Session/Turn | `src/application`、`src/api/routes/sessions.py` | 会话和轮次生命周期、取消、审批、租约 | Turn 状态机、ID 传播、错误终态 |
+| Flow | `src/application/flow/projection_service.py`、前端 Flow | 本地产品轨迹投影和回放 | 稳定 Event ID、Redis Stream 回补、多客户端订阅 |
+| TestRun | `src/application`、TestRun/RunItem/Attempt 服务 | 测试运行和用例状态事实 | RunItem 原子领取、Attempt 重试、项目状态汇总 |
+| Runtime/Worker | `src/runtime`、Coordinator | 长任务执行和 Worker 接管 | Redis Consumer、heartbeat、ACK、recovery |
+| Tool Runtime | 工具运行时和 ToolJob | 工具 Schema、超时、重试、审计 | Tool Gateway、统一 ToolResult、错误码 |
+| Resource | 新增 Resource Manager 边界 | 浏览器、Docker、账号、环境租约 | 原子 claim、续租、fencing、cleanup |
+| Observability | `src/application/observability`、LangSmith Adapter | 本地事件、指标、LangSmith Trace | Trace 对账、脱敏、旁路失败降级 |
+| Frontend Workbench | `agent_web/src/features/flow` 及项目管理页面 | 展示任务、资源、证据和 Trace | Run Dashboard、Resource Dashboard、Trace Link |
+
+### 17.2 实施约束
+
+- 不在领域模型或 API DTO 中直接暴露 LangSmith SDK 类型；
+- 不新建与 `TestRun/RunItem/Attempt` 重复的任务事实表；
+- Redis 任务消息丢失或重复时，必须以 PostgreSQL 状态和幂等键为准；
+- 所有状态写入必须验证当前 Attempt、租约 token 和版本；
+- LangSmith 上报失败只能影响观测状态，不能改变测试业务结果；
+- 前端不得直接连接 Redis 或 LangSmith；
+- 任何新 Agent 或 Tool 必须先接入 Harness，再进入主流程。
+
+## 18. 契约冻结与实现顺序
+
+### 18.1 第一批冻结的契约
+
+先冻结以下结构，再实现 Redis Worker，避免前后端和 Worker 各自定义格式：
+
+```text
+TaskEnvelope
+FlowEvent
+ToolResult
+ResourceLease
+Checkpoint
+VerificationResult
+EvaluationResult
+```
+
+所有结构都必须带 `schema_version`。新增字段向后兼容；删除或改变语义必须升级版本并同步所有消费者。
+
+### 18.2 任务提交事务
+
+任务提交采用“业务事实先落库、消息随后入队”的模式：
+
+```text
+开启数据库事务
+→ 创建/锁定 TestRun、RunItem、Attempt
+→ 写入 outbox/task record
+→ 提交事务
+→ 发布 Redis Stream
+→ 标记发布结果
+```
+
+如果 Redis 发布失败，任务不能被标记为执行中，应由 Outbox Relay 重试发布。Worker 领取前必须再次从 PostgreSQL 校验 Attempt 是否仍可执行。
+
+### 18.3 任务完成事务
+
+```text
+Worker 执行
+→ 写入 Artifact 和验证结果
+→ 使用 lease/fencing token 更新 Attempt
+→ 更新 RunItem/TestRun 汇总
+→ 写入终态事件
+→ ACK Redis 消息
+```
+
+写库失败时不得先 ACK；ACK 成功但最终结果未落库的异常由对账任务扫描并恢复。
+
+## 19. 配置、灰度与回滚
+
+所有新能力必须配置化，并提供关闭路径：
+
+```text
+TASK_DISPATCH_MODE=inline|redis
+REDIS_STREAM_ENABLED=true|false
+RESOURCE_LEASE_ENABLED=true|false
+CHECKPOINT_ENABLED=true|false
+LANGSMITH_ENABLED=true|false
+LANGSMITH_FAILURE_MODE=best_effort
+FLOW_EVENT_SOURCE=postgres|redis_stream
+```
+
+推荐灰度顺序：
+
+1. 先保持现有执行路径，开启 ID、日志和指标；
+2. 对非关键测试项目启用 Redis 任务调度；
+3. 启用浏览器和 Docker 资源租约；
+4. 启用 Worker 恢复和 Cleanup；
+5. 扩大项目范围并逐级增加并发；
+6. 最后启用 LangSmith 长任务分段 Trace 和 Dataset/Experiment 评测。
+
+每个阶段必须保留以下回滚能力：
+
+- 停止接收新 Redis 任务；
+- 等待或恢复已领取任务；
+- 将未执行任务回退为 `queued`；
+- 关闭新事件消费者但保留 PostgreSQL 历史；
+- 关闭 LangSmith 不影响本地 Flow 和测试执行。
+
+## 20. 当前已验证能力与验收边界
+
+以下能力已有项目专项文档或测试证据支撑：
+
+- Session/Flow/Event/Snapshot 的本地链路；
+- PostgreSQL RunItem/Attempt 领取和租约；
+- Session/Turn/Approval 的 fencing 和跨 Worker 竞争控制；
+- LangSmith Adapter、脱敏、父子 Trace 和旁路失败降级；
+- 部分真实模型、ToolJob 和 LangSmith 对账链路；
+- 短时并发阶梯和部分 PostgreSQL 容量验证。
+
+以下内容不能仅凭现有短时测试宣称完成，必须单独验收：
+
+- Redis 多实例任务调度的生产稳定性；
+- API 多进程下 SSE 的完整断线回补；
+- 浏览器池和 Docker 池的真实容量上限；
+- Worker 强杀后的完整资源回收和新 Attempt 接管；
+- 4 小时、24 小时长任务稳定性；
+- LangSmith 限流、断网、进程退出时的 Trace flush；
+- 项目配额、资源等待和前端管理页面的一致性。
+
+## 21. 上线前检查清单
+
+上线前必须逐项留存证据：
+
+- [ ] 所有请求和任务均可按九类 ID 串联；
+- [ ] PostgreSQL、Redis、Worker、SSE 和 LangSmith 能通过 `trace_id` 对账；
+- [ ] 同一个 RunItem 不会被两个有效 Attempt 同时执行；
+- [ ] 同一个账号、浏览器 Context、Docker 容器不会被两个租约同时持有；
+- [ ] Worker 崩溃后任务和资源都能进入恢复或清理流程；
+- [ ] Redis Pending、死信、租约超时和孤儿资源均有监控；
+- [ ] Flow 页面能显示成功、失败、取消、超时和恢复状态；
+- [ ] 项目管理页面能显示运行中、排队中、等待资源、失败和完成汇总；
+- [ ] LangSmith 不可用时，本地执行链仍通过；
+- [ ] 并发压测已记录 QPS、错误率、P50/P95/P99、连接数和资源利用率；
+- [ ] 所有失败样本均保留日志、事件、Artifact 和恢复结果。
