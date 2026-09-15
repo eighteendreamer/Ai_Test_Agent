@@ -25,12 +25,14 @@ class RedisTaskWorker:
         handler: TaskHandler,
         batch_size: int = 1,
         block_ms: int = 1000,
+        max_retries: int = 3,
     ) -> None:
         self._queue = queue
         self._consumer = consumer
         self._handler = handler
         self._batch_size = max(1, batch_size)
         self._block_ms = max(0, block_ms)
+        self._max_retries = max(0, max_retries)
         self._stop = asyncio.Event()
 
     def stop(self) -> None:
@@ -69,11 +71,20 @@ class RedisTaskWorker:
                     extra={"task_id": payload.get("task_id"), "message_id": task.message_id},
                 )
                 continue
-            except Exception:
+            except Exception as exc:
                 LOGGER.exception(
                     "redis_task_handler_failed",
                     extra={"task_id": task.payload.get("task_id"), "message_id": task.message_id},
                 )
+                retry_count = int(payload.get("retry_count") or 0)
+                if hasattr(self._queue, "ack") and hasattr(self._queue, "enqueue"):
+                    await self._queue.ack(task.message_id)
+                    if retry_count < self._max_retries:
+                        await self._queue.enqueue({**payload, "retry_count": retry_count + 1})
+                        LOGGER.warning("redis_task_requeued", extra={"task_id": payload.get("task_id"), "retry_count": retry_count + 1})
+                    elif hasattr(self._queue, "dead_letter"):
+                        await self._queue.dead_letter(payload, reason=type(exc).__name__)
+                        LOGGER.error("redis_task_dead_lettered", extra={"task_id": payload.get("task_id"), "retry_count": retry_count})
                 continue
             else:
                 await self._queue.ack(task.message_id)

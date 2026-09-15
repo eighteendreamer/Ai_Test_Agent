@@ -63,6 +63,19 @@ class RedisTaskQueue:
         message_id = await self._client.xadd(self.stream, fields, maxlen=maxlen, approximate=True)
         return str(message_id)
 
+    async def dead_letter(self, payload: dict[str, Any], *, reason: str) -> str:
+        """Persist a failed envelope in a separate stream for operator recovery."""
+        if self._client is None:
+            raise RuntimeError("RedisTaskQueue is not connected")
+        stream = f"{self.stream}:dead_letter"
+        body = {**payload, "dead_letter_reason": reason}
+        return str(
+            await self._client.xadd(
+                stream,
+                {"payload": json.dumps(body, ensure_ascii=False, separators=(",", ":"))},
+            )
+        )
+
     async def consume(
         self,
         *,
