@@ -44,6 +44,8 @@ async def test_queue_enqueues_consumes_ack_and_reclaims() -> None:
     assert await queue.ack(tasks[0].message_id) == 1
     assert (await queue.pending())[0]["message_id"] == "1-0"
     assert (await queue.reclaim(consumer="worker-2", min_idle_ms=100))[0].message_id == "1-0"
+    await queue.reclaim(consumer="worker-2", min_idle_ms=100)
+    assert client.calls[-1][2]["start_id"] == "2-0"
 
 
 @pytest.mark.asyncio
@@ -56,3 +58,22 @@ async def test_queue_rejects_malformed_payload() -> None:
     await queue.connect()
     with pytest.raises(ValueError, match="has no payload"):
         await queue.consume(consumer="worker-1")
+
+
+@pytest.mark.asyncio
+async def test_nonblocking_read_and_pending_safe_enqueue():
+    client = FakeRedis()
+    queue = RedisTaskQueue("unused", stream="test", group="workers", client=client)
+    await queue.consume(consumer="worker", block_ms=0)
+    assert client.calls[-1][1]["block"] is None
+    with pytest.raises(ValueError, match="MAXLEN"):
+        await queue.enqueue({"task_id": "t"}, maxlen=1)
+    assert not any(call[0] == "xadd" for call in client.calls)
+
+
+def test_delivery_metadata_is_separate_from_business_payload():
+    task = RedisTaskQueue._decode_rows([("test", [("1-0", {
+        "payload": '{"task_id":"t"}', "retry_count": "2", "not_before_ms": "123",
+    })])])[0]
+    assert task.payload == {"task_id": "t"}
+    assert task.retry_count == 2 and task.not_before_ms == 123

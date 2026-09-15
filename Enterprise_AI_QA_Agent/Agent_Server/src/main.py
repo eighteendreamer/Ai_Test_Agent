@@ -145,6 +145,7 @@ async def lifespan(app: FastAPI):
             settings.database.redis_url,
             stream=settings.orchestration.redis_task_stream,
             group=settings.orchestration.redis_task_consumer_group,
+            socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
         )
         await task_queue.connect()
     app.state.task_queue = task_queue

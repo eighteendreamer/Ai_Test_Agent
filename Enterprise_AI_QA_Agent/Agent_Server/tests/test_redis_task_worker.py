@@ -11,6 +11,12 @@ class QueueStub:
         self.tasks = list(tasks)
         self.acked = []
 
+    async def reclaim(self, **kwargs): return []
+    async def ready(self, task, **kwargs): return True
+    async def touch(self, task, **kwargs): return True
+    async def ack_owned(self, task, **kwargs): return await self.ack(task.message_id)
+    async def transfer(self, task, **kwargs): return None
+
     async def consume(self, **kwargs):
         return self.tasks
 
@@ -51,3 +57,16 @@ async def test_worker_propagates_cancellation() -> None:
     with pytest.raises(asyncio.CancelledError):
         await worker.run_once()
     assert queue.acked == []
+
+
+@pytest.mark.asyncio
+async def test_stop_finishes_current_and_does_not_start_next():
+    queue = QueueStub([QueuedTask("1-0", {"task_id": "first"}), QueuedTask("2-0", {"task_id": "next"})])
+    handled = []
+    async def handler(task):
+        handled.append(task.message_id)
+        worker.stop()
+    worker = RedisTaskWorker(queue, consumer="w", handler=handler)
+    assert await worker.run_once() == 1
+    assert handled == ["1-0"] and queue.acked == ["1-0"]
+    assert await worker.run_once() == 0

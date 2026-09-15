@@ -159,9 +159,13 @@ class OrchestrConfig(BaseModel):
     redis_task_dispatch_enabled: bool = False
     redis_task_stream: str = "enterprise_ai_qa_agent:tasks"
     redis_task_consumer_group: str = "enterprise_ai_qa_agent:workers"
-    redis_task_maxlen: int = 100000
     redis_task_block_ms: int = 1000
     redis_task_reclaim_idle_ms: int = 120000
+    redis_task_max_retries: int = Field(default=3, ge=0)
+    redis_task_retry_base_ms: int = Field(default=1000, gt=0)
+    redis_task_retry_max_ms: int = Field(default=60000, gt=0)
+    redis_task_timeout_seconds: float = Field(default=900, gt=0)
+    redis_task_socket_timeout_seconds: float = Field(default=5, gt=0)
     redis_hot_memory_ttl_seconds: int = 86400
     redis_hot_memory_max_events: int = 2000
     redis_compaction_compression_version: str = "v1"
