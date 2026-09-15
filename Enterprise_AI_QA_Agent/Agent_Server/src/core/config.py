@@ -162,6 +162,8 @@ class OrchestrConfig(BaseModel):
     redis_task_maxlen: int = 100000
     redis_task_block_ms: int = 1000
     redis_task_reclaim_idle_ms: int = 120000
+    redis_hot_memory_ttl_seconds: int = 86400
+    redis_hot_memory_max_events: int = 2000
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False
