@@ -259,6 +259,7 @@ class TestRunExecutionService:
                             item.id, payload.lease_token, waiting_reason,
                         )
                         raise TaskDeferred(waiting_reason)
+                    await self._bind_external_resources(resource_leases, outcome)
                     if item_trace is not None:
                         item_trace.set_outputs(
                             {
@@ -401,6 +402,29 @@ class TestRunExecutionService:
                     logger.error("test_run_resource_release_rejected", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
             except Exception:
                 logger.exception("test_run_resource_release_failed", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
+
+    async def _bind_external_resources(self, leases: list[ResourceLease], outcome) -> None:
+        if self._resource_lease_manager is None or not leases or outcome is None:
+            return
+        output = getattr(getattr(outcome, "tool_record", None), "output", {})
+        if not isinstance(output, dict):
+            return
+        external_id = next(
+            (str(output.get(key)).strip() for key in ("container_id", "container_name", "container_or_cluster")
+             if output.get(key)),
+            None,
+        )
+        if not external_id:
+            return
+        for lease in leases:
+            if lease.resource_type == "docker":
+                try:
+                    await self._resource_lease_manager.bind(lease, external_id)
+                except Exception:
+                    logger.exception("test_run_resource_binding_failed", extra={
+                        "resource_id": lease.resource_id, "resource_type": lease.resource_type,
+                        "error_type": "binding_error",
+                    })
 
     async def _reconcile_session_checkpoint(
         self,

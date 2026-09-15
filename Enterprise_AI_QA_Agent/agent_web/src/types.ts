@@ -1418,6 +1418,14 @@ export interface ResourceQuotaRecord {
   updated_at?: string | null;
 }
 
+export interface ResourceOccupancyResponse {
+  project_id?: string | null;
+  active_count: number;
+  by_type: Record<string, number>;
+  leases: Array<Record<string, unknown>>;
+  quota_usage: Record<string, number>;
+}
+
 export interface TestCaseResultRecord {
   id: string;
   run_id: string;

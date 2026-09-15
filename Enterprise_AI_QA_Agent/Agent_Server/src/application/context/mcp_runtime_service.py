@@ -125,6 +125,14 @@ class MCPRuntimeService:
         finally:
             if lease is not None:
                 try:
+                    session_tool = {
+                        "inspect-page": "dom-inspector",
+                        "browser-automation": "browser-automation",
+                        "browser-control": "browser-control",
+                    }.get(capability, capability)
+                    await self._resource_lease_manager.bind(
+                        lease, self._playwright_session_name(context, session_tool),
+                    )
                     released = await self._resource_lease_manager.release(lease)
                     if not released:
                         LOGGER.error("browser_resource_release_rejected", extra={

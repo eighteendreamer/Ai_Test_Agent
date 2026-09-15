@@ -11,7 +11,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from src.runtime.resource_lease_scripts import CLAIM, REAP, RELEASE, RENEW
+from src.runtime.resource_lease_scripts import BIND, CLAIM, REAP, RELEASE, RENEW
 
 
 @dataclass(frozen=True)
@@ -146,6 +146,14 @@ class RedisResourceLeaseManager:
         )
         return bool(result)
 
+    async def bind(self, lease: ResourceLease, external_resource_id: str) -> bool:
+        if not external_resource_id or len(str(external_resource_id)) > 240:
+            raise ValueError("external_resource_id must be a nonempty bounded string")
+        return bool(await self._client.eval(
+            BIND, 1, self._lease_key(lease.resource_type, lease.resource_id),
+            lease.lease_token, str(external_resource_id),
+        ))
+
     async def get(self, *, resource_type: str, resource_id: str) -> dict[str, Any] | None:
         raw = await self._client.get(self._lease_key(resource_type, resource_id))
         return json.loads(raw) if raw else None
@@ -164,6 +172,34 @@ class RedisResourceLeaseManager:
             resource_type, resource_id = key[len(prefix):].split(":", 1)
             results.append((resource_type, resource_id))
         return results
+
+    async def list_active(self, *, project_id: str | None = None) -> list[dict[str, Any]]:
+        active: list[dict[str, Any]] = []
+        async for key in self._client.scan_iter(match="qa:lease:*", count=100):
+            key_text = key.decode() if isinstance(key, bytes) else str(key)
+            if key_text in {"qa:lease:registry", "qa:lease:metadata"}:
+                continue
+            try:
+                raw = await self._client.get(key)
+            except Exception:
+                continue
+            if not raw:
+                continue
+            payload = json.loads(raw)
+            if project_id and payload.get("project_id") != project_id:
+                continue
+            payload["lease_key"] = key
+            payload["ttl_ms"] = await self._client.pttl(key)
+            payload["fencing_token"] = await self._client.get(
+                "qa:fencing:" + str(payload.get("resource_type") or "")
+            )
+            active.append(payload)
+        active.sort(key=lambda item: (str(item.get("resource_type")), str(item.get("resource_id"))))
+        return active
+
+    async def usage_snapshot(self) -> dict[str, int]:
+        values = await self._client.hgetall("qa:quota:usage")
+        return {str(key): int(value) for key, value in values.items()}
 
     @staticmethod
     def _lease_key(resource_type: str, resource_id: str) -> str:

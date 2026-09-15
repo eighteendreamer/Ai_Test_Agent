@@ -22,6 +22,7 @@ import type {
   RegressionFailureStatus,
   ResourceQuotaRecord,
   ResourceQuotaType,
+  ResourceOccupancyResponse,
 } from "../types";
 import { request } from "./http";
 
@@ -76,6 +77,11 @@ export function upsertResourceQuota(
     method: "PUT",
     body: JSON.stringify({ resource_type: resourceType, limit }),
   });
+}
+
+export function getResourceOccupancy(projectId?: string): Promise<ResourceOccupancyResponse> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return request(`/api/v1/resource-occupancy${query}`);
 }
 
 export function listLegacySmokeRuns(

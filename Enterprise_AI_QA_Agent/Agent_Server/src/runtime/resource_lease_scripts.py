@@ -88,3 +88,13 @@ for i = 1, #ARGV - 1 do
 end
 return 1
 """
+
+BIND = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local payload = cjson.decode(raw)
+if payload['lease_token'] ~= ARGV[1] then return 0 end
+payload['external_resource_id'] = ARGV[2]
+redis.call('SET', KEYS[1], cjson.encode(payload), 'KEEPTTL')
+return 1
+"""
