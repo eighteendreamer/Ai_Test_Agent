@@ -76,7 +76,7 @@ class PostgresVectorMemoryStore:
                         stale BOOLEAN NOT NULL DEFAULT FALSE,
                         mode_key TEXT NOT NULL DEFAULT 'default',
                         metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-                        embedding VECTOR({self._settings.database.postgres_vector_dimension}) NULL,
+                        embedding VECTOR NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL
                     )
@@ -109,10 +109,6 @@ class PostgresVectorMemoryStore:
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_metadata "
                     f"ON {self._settings.database.postgres_memory_table} USING GIN (metadata)"
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_memory_table}_embedding "
-                    f"ON {self._settings.database.postgres_memory_table} USING hnsw (embedding vector_cosine_ops)"
                 )
 
     def _healthcheck_sync(self) -> None:

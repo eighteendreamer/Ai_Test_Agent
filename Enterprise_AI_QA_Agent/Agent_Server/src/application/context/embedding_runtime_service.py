@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import hashlib
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ class EmbeddingBatchResult:
     original_dimension: int
     stored_dimension: int
     latency_ms: int
+    normalized: bool = True
+    embedding_version: str = ""
 
 
 class EmbeddingRuntimeService:
@@ -86,9 +89,10 @@ class EmbeddingRuntimeService:
                     "Embedding provider returned a different number of vectors than inputs."
                 )
             original_dimension = len(raw_vectors[0]) if raw_vectors else 0
-            normalized_vectors = [
-                self._normalize_dimension(vector) for vector in raw_vectors
-            ]
+            dimensions = {len(vector) for vector in raw_vectors}
+            if len(dimensions) != 1 or not dimensions or next(iter(dimensions)) <= 0:
+                raise ValueError("Embedding provider returned inconsistent vector dimensions.")
+            normalized_vectors = [self._normalize_vector(vector) for vector in raw_vectors]
             for index, vector in zip(missing_indexes, normalized_vectors):
                 cached[index] = vector
             if use_cache:
@@ -106,7 +110,8 @@ class EmbeddingRuntimeService:
             provider=resolved_config.provider,
             adapter=client.key,
             original_dimension=original_dimension or len(vectors[0]),
-            stored_dimension=self._settings.database.postgres_vector_dimension,
+            stored_dimension=len(vectors[0]),
+            embedding_version=self._embedding_version(resolved_config),
             latency_ms=int((perf_counter() - started_at) * 1000),
         )
 
@@ -127,15 +132,17 @@ class EmbeddingRuntimeService:
             )
         return token
 
-    def _normalize_dimension(self, vector: list[float]) -> list[float]:
-        target = self._settings.database.postgres_vector_dimension
-        values = [float(value) for value in vector[:target]]
-        if len(values) < target:
-            values.extend([0.0] * (target - len(values)))
+    def _normalize_vector(self, vector: list[float]) -> list[float]:
+        values = [float(value) for value in vector]
         norm = math.sqrt(sum(value * value for value in values))
         if norm <= 0:
             raise ValueError("Embedding provider returned a zero vector.")
         return [value / norm for value in values]
+
+    @staticmethod
+    def _embedding_version(config: ModelConfigRecord) -> str:
+        material = "|".join((config.key, config.provider, config.model_id, config.api_base_url))
+        return "emb_" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
     def _prepare_text(text: str) -> str:

@@ -66,6 +66,9 @@ class MemoryRuntimeService:
                 "embedding_provider": result.provider,
                 "embedding_adapter": result.adapter,
                 "embedding_source_dimension": result.original_dimension,
+                "embedding_dimension": result.stored_dimension,
+                "embedding_version": result.embedding_version,
+                "normalized": result.normalized,
             }
             updated += await self._memory_store.update_embeddings(
                 [

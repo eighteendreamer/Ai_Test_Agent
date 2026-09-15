@@ -14,7 +14,7 @@
 Agent              决定下一步做什么
 Harness            决定能不能做、怎么做、在哪里做、如何恢复
 Redis              调度任务、维护租约、广播实时事件
-PostgreSQL         保存最终业务事实和测试结果
+PostgreSQL         保存最终业务事实、压缩记忆和长期向量
 LangSmith          记录 LangChain/LangGraph/模型/工具调用 Trace，并支持评测
 对象存储           保存截图、视频、日志和测试报告
 ```
@@ -255,6 +255,14 @@ recovery_required
 状态迁移只能由后端状态机完成。每次迁移写入 PostgreSQL 和本地事件流。
 
 ## 6. Redis 任务与事件设计
+
+### 6.0 短期记忆、长期记忆与动态向量维度
+
+Redis 保存 Session/Turn 热消息、Agent 当前计划、工具结果、页面摘要、临时向量和待压缩片段；这些数据带 TTL，可重建，不作为最终事实。Session 切换、Turn/TestRun 完成、TTL/容量阈值触发 Compaction Worker：读取 Redis 事件，排序去重并脱敏，生成结构化摘要，使用当前 `embedding_retrieval` 模型生成向量，写入 PostgreSQL 后再清理已确认落库的数据。压缩以 `session_id + last_compacted_event_id + compression_version` 幂等，失败时保留 Redis 数据并进入 `compaction_failed`。
+
+Embedding 模型继续由现有模型设置的 `applications=["embedding_retrieval"]` 选择，不新增维度字段。删除 `POSTGRES_VECTOR_DIMENSION`；维度由 Embedding 健康检查和实际响应动态探测。禁止截断、补零或把不同维度写入同一索引。每条向量记录内部保存 `embedding_model_key`、`embedding_model_id`、`embedding_version`、`embedding_dimension`、`distance_metric`、`normalized` 和 `content_hash`。
+
+PostgreSQL 使用无固定维度的 `vector` 列，按 `embedding_version` 和实际维度创建表达式/条件索引；Redis RediSearch 索引使用同一版本和实际 `DIM`。模型切换必须创建新版本、异步重建、抽样验证后切换 `active_index`，旧索引延迟清理。Redis 向量是在线检索副本，丢失后从 PostgreSQL 重建。
 
 当前并发不大，不必先引入 Kafka 或 RabbitMQ。Redis 使用方式如下：
 
