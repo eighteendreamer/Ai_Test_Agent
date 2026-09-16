@@ -13,11 +13,18 @@ class Registry:
 
 
 class Manager:
-    def __init__(self, fail=False): self.fail = fail; self.acquired = []; self.released = []
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.acquired = []
+        self.bound = []
+        self.released = []
     async def acquire(self, **kwargs):
         if self.fail: raise ResourceUnavailable("global:all")
         self.acquired.append(kwargs)
         return SimpleNamespace(resource_id=kwargs["resource_id"], fencing_token=9)
+    async def bind(self, lease, external_resource_id):
+        self.bound.append((lease, external_resource_id))
+        return True
     async def release(self, lease): self.released.append(lease); return True
 
 
@@ -41,6 +48,7 @@ def test_browser_capability_claims_session_lease_and_releases():
         assert result["status"] == "success"
         assert manager.acquired[0]["resource_id"] == "browser:s1"
         assert manager.acquired[0]["project_id"] == "p1"
+        assert manager.bound[0][1] == "s1-t1-browser-automation"
         assert len(manager.released) == 1
     asyncio.run(run())
 

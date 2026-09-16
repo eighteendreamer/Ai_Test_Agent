@@ -55,6 +55,7 @@ def test_postgres_run_refresh_applies_status_delta_without_scanning_items():
         "queued": 0,
         "claimed": 2,
         "running": 0,
+        "waiting_resource": 0,
         "waiting_approval": 0,
         "passed": 0,
         "failed": 0,
