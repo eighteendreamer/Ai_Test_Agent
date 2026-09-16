@@ -232,6 +232,14 @@ uv run --locked --directory Agent_Server python -m src.cli.run_compaction_worker
 
 压缩 Worker 使用 Redis 热记忆的 event cursor 和稳定 `compaction_key`，只裁剪已成功落入 PostgreSQL 的事件；Worker 重试或并发重复投递不会删除截止点之后的新事件。
 
+测试用例通过评审并激活固定版本时，用例状态、Embedding Job 和 Outbox 意图在同一个 PostgreSQL 事务中提交。单独启动低优先级 Embedding Worker，使用模型设置中已启用的 `embedding_retrieval` 模型生成完整向量：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_embedding_worker
+```
+
+Worker 不读取独立模型配置，也不截断或补零向量。向量先写入 PostgreSQL 权威表，再写入 Redis 版本索引；Redis 候选进入 Agent 上下文前必须按项目、环境、模式、用例生命周期、活动版本和内容哈希回查 PostgreSQL。旧版本任务会以 `superseded` 终止，不会调用模型或反复重试。
+
 Redis 向量索引按 `embedding_version` 独立构建。恢复或模型版本切换时先预览 PostgreSQL 权威库存，再执行重建；只有 Redis 文档数对账和抽样召回都通过后，才允许原子切换在线索引：
 
 ```bash
@@ -246,9 +254,10 @@ uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vector
 ```bash
 uv run --locked --directory Agent_Server python -m src.cli.run_vector_rebuild_worker
 uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuild --embedding-version <version> --activate
+uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuild --entity test_case --embedding-version <version> --activate
 ```
 
-任务状态持久化在 `agent_vector_rebuild_jobs`，包含 Worker、租约、维度、权威数据量、已复制数量、失败类型和最终活动索引。Worker 只在 `index_activated`、`index_validated` 或空数据终态落库后 ACK；崩溃时由 Redis Pending 接管和 PostgreSQL 租约共同恢复。
+`memory` 和 `test_case` 使用独立的版本索引与活动指针。任务状态持久化在 `agent_vector_rebuild_jobs`，包含 Worker、租约、维度、权威数据量、已复制数量、失败类型和最终活动索引。Worker 只在 `index_activated`、`index_validated` 或空数据终态落库后 ACK；崩溃时由 Redis Pending 接管和 PostgreSQL 租约共同恢复。
 
 ### 2. 启动前端
 

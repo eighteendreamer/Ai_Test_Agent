@@ -10,7 +10,6 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from src.contracts.memory_store import MemoryStoreProtocol
 from src.infrastructure.redis_vector_store import RedisVectorStore
 
 LOGGER = logging.getLogger(__name__)
@@ -29,10 +28,11 @@ class VectorRebuildResult:
 
 class MemoryVectorRebuildService:
     def __init__(
-        self, memory_store: MemoryStoreProtocol, vector_store: RedisVectorStore,
+        self, memory_store, vector_store: RedisVectorStore,
         *, batch_size: int = 64,
         validation_timeout_seconds: float = 30.0,
         validation_poll_interval_seconds: float = 0.2,
+        entity: str = "memory",
     ) -> None:
         if not 1 <= batch_size <= 1000:
             raise ValueError("Vector rebuild batch size must be between 1 and 1000")
@@ -43,6 +43,8 @@ class MemoryVectorRebuildService:
         self._batch_size = batch_size
         self._validation_timeout_seconds = validation_timeout_seconds
         self._validation_poll_interval_seconds = validation_poll_interval_seconds
+        RedisVectorStore.index_name(entity, "contract_check")
+        self._entity = entity
 
     async def rebuild(
         self,
@@ -52,7 +54,10 @@ class MemoryVectorRebuildService:
         activate: bool = False,
         progress: ProgressCallback | None = None,
     ) -> VectorRebuildResult:
-        RedisVectorStore.index_name("memory", embedding_version)  # validate without connecting
+        RedisVectorStore.index_name(
+            self._entity,
+            embedding_version,
+        )  # validate without connecting
         if activate and not execute:
             raise ValueError("Vector index activation requires an executed rebuild")
         inventory = await self._memory.vector_inventory(embedding_version)
@@ -88,7 +93,11 @@ class MemoryVectorRebuildService:
                 replicated=0,
             )
             await self._vector.connect()
-            await self._vector.create_index(entity="memory", embedding_version=embedding_version, dimension=dimension)
+            await self._vector.create_index(
+                entity=self._entity,
+                embedding_version=embedding_version,
+                dimension=dimension,
+            )
             while True:
                 records = await self._memory.list_vector_records(
                     embedding_version, after_id=cursor, limit=self._batch_size,
@@ -105,20 +114,27 @@ class MemoryVectorRebuildService:
                         probe = record
                 for record in records:
                     await self._vector.upsert(
-                        entity="memory", embedding_version=embedding_version, point_id=record.id,
+                        entity=self._entity,
+                        embedding_version=embedding_version,
+                        point_id=record.id,
                         vector=record.embedding,
                         metadata={
                             "project_id": str(record.metadata.get("project_id") or ""),
                             "case_version_id": str(record.metadata.get("case_version_id") or ""),
                             "environment": str(record.metadata.get("environment") or ""),
-                            "status": "stale" if record.stale else "active",
+                            "status": (
+                                "stale"
+                                if bool(getattr(record, "stale", False))
+                                else str(record.metadata.get("status") or "active")
+                            ),
                         },
                     )
                     replicated += 1
                 cursor = records[-1].id
-                LOGGER.info("memory_vector_rebuild_batch", extra={
+                LOGGER.info("vector_rebuild_batch", extra={
+                    "entity": self._entity,
                     "embedding_version": embedding_version, "replicated": replicated,
-                    "last_memory_id": cursor,
+                    "last_vector_id": cursor,
                 })
                 await self._notify_progress(
                     progress,
@@ -140,7 +156,7 @@ class MemoryVectorRebuildService:
                 replicated=replicated,
             )
             await self._vector.validate_replica(
-                entity="memory",
+                entity=self._entity,
                 embedding_version=embedding_version,
                 dimension=dimension,
                 expected_count=total,
@@ -152,11 +168,12 @@ class MemoryVectorRebuildService:
             active_index = None
             if activate:
                 active_index = await self._vector.activate_index(
-                    entity="memory",
+                    entity=self._entity,
                     embedding_version=embedding_version,
                     dimension=dimension,
                 )
-            LOGGER.info("memory_vector_rebuild_completed", extra={
+            LOGGER.info("vector_rebuild_completed", extra={
+                "entity": self._entity,
                 "embedding_version": embedding_version, "replicated": replicated,
                 "dimension": dimension, "active_index": active_index,
             })
@@ -169,10 +186,16 @@ class MemoryVectorRebuildService:
                 active_index,
             )
         except Exception as exc:
-            LOGGER.error("memory_vector_rebuild_failed", extra={
+            LOGGER.error(
+                "memory_vector_rebuild_failed"
+                if self._entity == "memory"
+                else "test_case_vector_rebuild_failed",
+                extra={
+                "entity": self._entity,
                 "embedding_version": embedding_version, "replicated": replicated,
-                "last_memory_id": cursor, "error_type": type(exc).__name__,
-            })
+                "last_vector_id": cursor, "error_type": type(exc).__name__,
+                },
+            )
             raise
 
     @staticmethod

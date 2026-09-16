@@ -91,6 +91,7 @@ from src.application.test_cases.generation_pipeline import (
 )
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_cases.case_store import PostgresTestCaseStore
+from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_suites.suite_service import TestSuiteService
 from src.application.test_suites.suite_store import PostgresTestSuiteStore
 from src.application.test_runs.run_service import TestRunService
@@ -119,6 +120,9 @@ from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+from src.infrastructure.postgres_test_case_embedding_store import (
+    PostgresTestCaseEmbeddingStore,
+)
 from src.infrastructure.recording_store import PostgresRecordingStore
 from src.infrastructure.sponsor_config_store import MySQLSponsorConfigStore
 from src.modes.security_testing_mode.security_bug_service import SecurityBugService
@@ -139,6 +143,7 @@ from src.runtime.postgres_compaction_record_store import PostgresCompactionRecor
 from src.runtime.postgres_vector_rebuild_job_store import (
     PostgresVectorRebuildJobStore,
 )
+from src.runtime.postgres_embedding_job_store import PostgresEmbeddingJobStore
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.resource_quota_store import ResourceQuotaStore
 from src.application.resources.resource_quota_service import ResourceQuotaService
@@ -215,6 +220,12 @@ async def lifespan(app: FastAPI):
     )
     await vector_rebuild_job_store.initialize()
     app.state.vector_rebuild_job_store = vector_rebuild_job_store
+    embedding_job_store = PostgresEmbeddingJobStore(
+        settings,
+        lease_seconds=int(settings.orchestration.redis_task_timeout_seconds),
+    )
+    await embedding_job_store.initialize()
+    app.state.embedding_job_store = embedding_job_store
     configure_compaction_outbox = getattr(store, "set_compaction_task_outbox", None)
     compaction_stream = settings.orchestration.compaction_task_stream
     if callable(configure_compaction_outbox) and compaction_stream in settings.orchestration.task_stream_names:
@@ -334,6 +345,44 @@ async def lifespan(app: FastAPI):
     test_case_generator = container.test_case_generator()
     test_case_service = container.test_case_service()
     await test_case_service.initialize()
+    test_case_embedding_store = container.test_case_embedding_store()
+    test_case_embedding_service = container.test_case_embedding_service()
+    test_case_embedding_service.set_vector_store(vector_store)
+    await test_case_embedding_service.initialize()
+    embedding_stream = settings.orchestration.embedding_task_stream
+    if embedding_stream in settings.orchestration.task_stream_names:
+        test_case_service.set_embedding_task_outbox(
+            embedding_job_table=settings.database.postgres_embedding_job_table,
+            outbox_table=settings.database.postgres_task_outbox_table,
+            stream=embedding_stream,
+        )
+
+    test_case_vector_rebuild_service = (
+        MemoryVectorRebuildService(
+            test_case_embedding_store,
+            vector_store,
+            entity="test_case",
+            batch_size=settings.orchestration.redis_vector_rebuild_batch_size,
+            validation_timeout_seconds=(
+                settings.orchestration.redis_vector_validation_timeout_seconds
+            ),
+            validation_poll_interval_seconds=(
+                settings.orchestration.redis_vector_validation_poll_interval_seconds
+            ),
+        )
+        if vector_store is not None
+        else None
+    )
+    app.state.test_case_embedding_store = test_case_embedding_store
+    app.state.test_case_embedding_service = test_case_embedding_service
+    app.state.vector_rebuild_services = {
+        key: value
+        for key, value in {
+            "memory": memory_vector_rebuild_service,
+            "test_case": test_case_vector_rebuild_service,
+        }.items()
+        if value is not None
+    }
 
     test_suite_store = container.test_suite_store()
     test_suite_service = container.test_suite_service()
@@ -436,6 +485,7 @@ async def lifespan(app: FastAPI):
         skill_runtime_service=skill_runtime_service,
         mcp_runtime_service=mcp_runtime_service,
         memory_runtime_service=memory_runtime_service,
+        test_case_embedding_service=test_case_embedding_service,
         permission_service=permission_service,
         prompt_assembly_service=prompt_assembly_service,
         model_runtime_service=model_runtime_service,

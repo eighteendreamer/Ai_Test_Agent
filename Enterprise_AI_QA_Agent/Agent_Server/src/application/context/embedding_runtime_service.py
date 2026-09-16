@@ -35,6 +35,8 @@ class EmbeddingBatchResult:
     latency_ms: int
     normalized: bool = True
     embedding_version: str = ""
+    model_key: str = ""
+    model_id: str = ""
 
 
 class EmbeddingRuntimeService:
@@ -162,6 +164,8 @@ class EmbeddingRuntimeService:
             stored_dimension=len(vectors[0]),
             embedding_version=embedding_version,
             latency_ms=int((perf_counter() - started_at) * 1000),
+            model_key=resolved_config.key,
+            model_id=resolved_config.model_id,
         )
 
     async def close(self) -> None:

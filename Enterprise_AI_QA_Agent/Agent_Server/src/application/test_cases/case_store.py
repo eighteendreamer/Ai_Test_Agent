@@ -63,6 +63,16 @@ class TestCaseStore(Protocol):
         *,
         expected_statuses: set[TestCaseLifecycleStatus],
     ) -> TestCaseRecord: ...
+    async def activate_with_embedding_outbox(
+        self,
+        case: TestCaseRecord,
+        *,
+        expected_statuses: set[TestCaseLifecycleStatus],
+        embedding_job_table: str,
+        outbox_table: str,
+        stream: str,
+        task_payload: dict[str, object],
+    ) -> TestCaseRecord: ...
     async def count_by_project(self, project_id: str) -> int: ...
 
 
@@ -325,6 +335,26 @@ class PostgresTestCaseStore:
         expected_statuses: set[TestCaseLifecycleStatus],
     ) -> TestCaseRecord:
         return await asyncio.to_thread(self._replace_case_sync, case, expected_statuses)
+
+    async def activate_with_embedding_outbox(
+        self,
+        case: TestCaseRecord,
+        *,
+        expected_statuses: set[TestCaseLifecycleStatus],
+        embedding_job_table: str,
+        outbox_table: str,
+        stream: str,
+        task_payload: dict[str, object],
+    ) -> TestCaseRecord:
+        return await asyncio.to_thread(
+            self._activate_with_embedding_outbox_sync,
+            case,
+            expected_statuses,
+            embedding_job_table,
+            outbox_table,
+            stream,
+            task_payload,
+        )
 
     async def count_by_project(self, project_id: str) -> int:
         return await asyncio.to_thread(self._count_by_project_sync, project_id)
@@ -609,6 +639,77 @@ class PostgresTestCaseStore:
                         f"Illegal test case transition from {current_status} to {case.lifecycle_status}"
                     )
                 self._write_case(cur, case)
+        return case
+
+    def _activate_with_embedding_outbox_sync(
+        self,
+        case: TestCaseRecord,
+        expected_statuses: set[TestCaseLifecycleStatus],
+        embedding_job_table: str,
+        outbox_table: str,
+        stream: str,
+        task_payload: dict[str, object],
+    ) -> TestCaseRecord:
+        task_id = str(task_payload["task_id"])
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT lifecycle_status FROM {self._case_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (case.id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise KeyError(f"Test case not found: {case.id}")
+                current_status = str(row["lifecycle_status"])
+                if current_status not in expected_statuses:
+                    raise ValueError(
+                        f"Illegal test case transition from {current_status} "
+                        f"to {case.lifecycle_status}"
+                    )
+                self._write_case(cur, case)
+                cur.execute(
+                    f"""
+                    INSERT INTO {embedding_job_table} (
+                        task_id, source_type, source_id, source_version,
+                        project_id, case_id, case_version_id, content_hash, status
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued')
+                    ON CONFLICT (task_id) DO NOTHING
+                    """,
+                    (
+                        task_id,
+                        task_payload["source_type"],
+                        task_payload["source_id"],
+                        task_payload["source_version"],
+                        task_payload["project_id"],
+                        task_payload["case_id"],
+                        task_payload["case_version_id"],
+                        task_payload["content_hash"],
+                    ),
+                )
+                job_inserted = cur.rowcount == 1
+                cur.execute(
+                    f"""
+                    INSERT INTO {outbox_table} (event_key, stream, payload)
+                    VALUES (%s, %s, %s::jsonb)
+                    ON CONFLICT (event_key) DO NOTHING
+                    """,
+                    (
+                        f"embedding:{task_id}",
+                        stream,
+                        json.dumps(
+                            task_payload,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            default=str,
+                        ),
+                    ),
+                )
+                outbox_inserted = cur.rowcount == 1
+                if not job_inserted or not outbox_inserted:
+                    raise RuntimeError(
+                        "Test case activation Embedding job already exists"
+                    )
         return case
 
     def _write_case(self, cur, case: TestCaseRecord) -> None:

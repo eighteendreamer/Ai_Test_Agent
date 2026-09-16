@@ -52,6 +52,8 @@ class DatabaseConfig(BaseModel):
     postgres_task_outbox_table: str = "agent_task_outbox"
     postgres_compaction_table: str = "agent_compaction_records"
     postgres_vector_rebuild_job_table: str = "agent_vector_rebuild_jobs"
+    postgres_embedding_job_table: str = "agent_embedding_jobs"
+    postgres_test_case_embedding_table: str = "agent_test_case_embeddings"
     postgres_resource_quota_table: str = "agent_resource_quotas"
 
     memgraph_host: str = "127.0.0.1"
@@ -184,6 +186,8 @@ class OrchestrConfig(BaseModel):
     redis_vector_rebuild_batch_size: int = Field(default=64, ge=1, le=1000)
     redis_vector_validation_timeout_seconds: float = Field(default=30.0, gt=0)
     redis_vector_validation_poll_interval_seconds: float = Field(default=0.2, gt=0)
+    test_case_vector_top_k: int = Field(default=6, ge=1, le=50)
+    test_case_vector_candidate_multiplier: int = Field(default=8, ge=2, le=50)
     resource_global_limit: int = Field(default=20, ge=1)
     resource_default_lease_seconds: int = Field(default=300, gt=0)
     resource_docker_slots: int = Field(default=10, ge=1)
@@ -268,6 +272,14 @@ class OrchestrConfig(BaseModel):
             if stream.endswith(":compaction"):
                 return stream
         return "qa:tasks:compaction"
+
+    @property
+    def embedding_task_stream(self) -> str:
+        """Resolve the low-priority Redis embedding stream."""
+        for stream in self.task_stream_names:
+            if stream.endswith(":embedding"):
+                return stream
+        return "qa:tasks:embedding"
 
     @property
     def vector_rebuild_task_stream(self) -> str:

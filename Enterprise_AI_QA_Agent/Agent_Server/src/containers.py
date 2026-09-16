@@ -51,6 +51,7 @@ from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.task_pool_service import TaskPoolService
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_cases.case_store import PostgresTestCaseStore
+from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_cases.generation_pipeline import (
     ModelTestCaseGenerator,
     ProjectTestCaseContextProvider,
@@ -68,6 +69,9 @@ from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+from src.infrastructure.postgres_test_case_embedding_store import (
+    PostgresTestCaseEmbeddingStore,
+)
 from src.infrastructure.recording_store import PostgresRecordingStore
 from src.infrastructure.sponsor_config_store import MySQLSponsorConfigStore
 from src.modes.security_testing_mode.security_bug_store import PostgresSecurityBugStore
@@ -118,6 +122,10 @@ class AppContainer(containers.DeclarativeContainer):
     memory_store = providers.Singleton(PostgresVectorMemoryStore, settings=settings)
     api_doc_store = providers.Singleton(PostgresApiDocStore, settings=settings)
     test_case_store = providers.Singleton(PostgresTestCaseStore, settings=settings)
+    test_case_embedding_store = providers.Singleton(
+        PostgresTestCaseEmbeddingStore,
+        settings=settings,
+    )
     test_suite_store = providers.Singleton(PostgresTestSuiteStore, settings=settings)
     test_run_store = providers.Singleton(PostgresTestRunStore, settings=settings)
     mcp_server_store = providers.Singleton(PostgresMCPServerStore, settings=settings)
@@ -284,6 +292,20 @@ class AppContainer(containers.DeclarativeContainer):
         project_service=project_service,
         context_provider=test_case_context_provider,
         generator=test_case_generator,
+    )
+    test_case_embedding_service = providers.Singleton(
+        TestCaseEmbeddingService,
+        case_store=test_case_store,
+        embedding_store=test_case_embedding_store,
+        embedding_runtime=embedding_runtime_service,
+        top_k=providers.Callable(
+            lambda s: s.orchestration.test_case_vector_top_k,
+            settings,
+        ),
+        candidate_multiplier=providers.Callable(
+            lambda s: s.orchestration.test_case_vector_candidate_multiplier,
+            settings,
+        ),
     )
     test_suite_service = providers.Singleton(
         TestSuiteService,

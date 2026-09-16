@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from src.application.projects.project_service import ProjectService
 from src.application.test_cases.case_store import TestCaseStore
+from src.core.request_context import get_request_context, new_id
 from src.schemas.case_management import (
     GeneratedTestCaseBatch,
     TestCaseActivateRequest,
@@ -23,6 +24,7 @@ from src.schemas.case_management import (
     TestCaseVersionCreateRequest,
     TestCaseVersionRecord,
 )
+from src.schemas.embedding_task import TestCaseEmbeddingTask
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,20 @@ class TestCaseService:
         self._project_service = project_service
         self._context_provider = context_provider
         self._generator = generator
+        self._embedding_task_outbox: dict[str, str] | None = None
+
+    def set_embedding_task_outbox(
+        self,
+        *,
+        embedding_job_table: str,
+        outbox_table: str,
+        stream: str,
+    ) -> None:
+        self._embedding_task_outbox = {
+            "embedding_job_table": embedding_job_table,
+            "outbox_table": outbox_table,
+            "stream": stream,
+        }
 
     async def initialize(self) -> None:
         await self._store.initialize()
@@ -280,7 +296,50 @@ class TestCaseService:
                 "updated_at": _utc_now(),
             }
         )
-        stored = await self._store.replace_case(updated, expected_statuses={"pending_review"})
+        if self._embedding_task_outbox is None:
+            stored = await self._store.replace_case(
+                updated,
+                expected_statuses={"pending_review"},
+            )
+        else:
+            activate_with_outbox = getattr(
+                self._store,
+                "activate_with_embedding_outbox",
+                None,
+            )
+            if not callable(activate_with_outbox):
+                raise RuntimeError(
+                    "Configured test case store cannot atomically activate with Outbox"
+                )
+            context = get_request_context()
+            task = TestCaseEmbeddingTask(
+                task_id=f"embedding_test_case_{selected.id}",
+                source_id=selected.id,
+                source_version=str(selected.version),
+                content_hash=selected.content_hash,
+                request_id=(
+                    context.request_id if context is not None else new_id("req")
+                ),
+                trace_id=(
+                    context.trace_id if context is not None else new_id("trace")
+                ),
+                session_id=context.session_id if context is not None else None,
+                turn_id=context.turn_id if context is not None else None,
+                project_id=case.project_id,
+                run_id=context.run_id if context is not None else None,
+                run_item_id=context.run_item_id if context is not None else None,
+                attempt_id=context.attempt_id if context is not None else None,
+                worker_id=context.worker_id if context is not None else None,
+                resource_id=context.resource_id if context is not None else None,
+                case_id=case.id,
+                case_version_id=selected.id,
+            )
+            stored = await activate_with_outbox(
+                updated,
+                expected_statuses={"pending_review"},
+                task_payload=task.model_dump(mode="json"),
+                **self._embedding_task_outbox,
+            )
         logger.info(
             "test_case_activated",
             extra={"case_id": case_id, "version_id": selected.id},

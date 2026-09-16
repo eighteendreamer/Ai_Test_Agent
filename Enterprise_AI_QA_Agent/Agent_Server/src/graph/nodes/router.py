@@ -1,6 +1,9 @@
 ﻿from __future__ import annotations
 
+import logging
+
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.capabilities.capability_resolver import CapabilityResolver
 from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
@@ -14,6 +17,9 @@ from src.registry.tools import ToolRegistry
 from src.runtime.execution_logging import append_graph_event
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 def build_router_node(
     agent_registry: AgentRegistry,
     tool_registry: ToolRegistry,
@@ -22,6 +28,7 @@ def build_router_node(
     skill_runtime_service: SkillRuntimeService,
     mcp_runtime_service: MCPRuntimeService,
     memory_runtime_service: MemoryRuntimeService | None = None,
+    test_case_embedding_service: TestCaseEmbeddingService | None = None,
 ):
     capability_resolver = CapabilityResolver()
     tool_exposure_policy = ToolExposurePolicy()
@@ -133,6 +140,37 @@ def build_router_node(
             )
             state["memory_hits"] = [item.model_dump(mode="python") for item in memory_result.hits]
             state["memory_prompt_blocks"] = memory_result.prompt_blocks
+        state["test_case_hits"] = []
+        state["test_case_prompt_blocks"] = []
+        project_id = str(context_bundle.get("project_id") or "").strip()
+        if test_case_embedding_service is not None and project_id:
+            try:
+                test_case_result = await test_case_embedding_service.retrieve(
+                    project_id=project_id,
+                    query=state["normalized_input"] or state["user_message"],
+                    environment=str(context_bundle.get("environment") or "").strip()
+                    or None,
+                    mode_key=state["mode_key"] or None,
+                )
+                state["test_case_hits"] = [
+                    {
+                        "case_id": hit.case.id,
+                        "case_version_id": hit.version.id,
+                        "case_key": hit.case.case_key,
+                        "score": hit.score,
+                        "embedding_version": hit.embedding_version,
+                    }
+                    for hit in test_case_result.hits
+                ]
+                state["test_case_prompt_blocks"] = test_case_result.prompt_blocks
+            except Exception as exc:
+                LOGGER.warning(
+                    "test_case_retrieval_skipped",
+                    extra={
+                        "project_id": project_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
         state["active_mcp_servers"] = mcp_runtime_service.list_active_servers()
         state["mcp_prompt_blocks"] = mcp_runtime_service.build_prompt_blocks(state["active_mcp_servers"])
         retrieved_assessments = [
@@ -143,6 +181,10 @@ def build_router_node(
             *[
                 prompt_injection_policy.assess(block, "retrieved_document")
                 for block in state.get("mcp_prompt_blocks", [])
+            ],
+            *[
+                prompt_injection_policy.assess(block, "retrieved_document")
+                for block in state.get("test_case_prompt_blocks", [])
             ],
         ]
         safety_assessment = prompt_injection_policy.merge_into_safety(
@@ -200,6 +242,7 @@ def build_router_node(
             model_provider=selected_model.provider,
             resolved_skills=",".join(resolved_skills) or "none",
             memory_hit_count=len(state["memory_hits"]),
+            test_case_hit_count=len(state["test_case_hits"]),
             active_mcp_count=len(state["active_mcp_servers"]),
             available_tools=",".join(state["available_tool_keys"]) or "none",
             mode_registered_tools=",".join(mode_tool_keys) or "none",

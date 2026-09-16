@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.permissions.permission_service import PermissionService
@@ -38,6 +39,7 @@ def build_agent_graph(
     skill_runtime_service: SkillRuntimeService,
     mcp_runtime_service: MCPRuntimeService,
     memory_runtime_service: MemoryRuntimeService | None,
+    test_case_embedding_service: TestCaseEmbeddingService | None,
     permission_service: PermissionService,
     prompt_assembly_service: PromptAssemblyService,
     model_runtime_service: ModelRuntimeService,
@@ -84,6 +86,7 @@ def build_agent_graph(
             skill_runtime_service=skill_runtime_service,
             mcp_runtime_service=mcp_runtime_service,
             memory_runtime_service=memory_runtime_service,
+            test_case_embedding_service=test_case_embedding_service,
         )),
     )
     graph.add_node("planner", instrument("planner", planner))

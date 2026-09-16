@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from src.application.context.memory_vector_rebuild_service import (
@@ -23,12 +24,16 @@ LOGGER = logging.getLogger(__name__)
 class VectorRebuildTaskHandler:
     def __init__(
         self,
-        service: MemoryVectorRebuildService,
+        service: MemoryVectorRebuildService | Mapping[str, MemoryVectorRebuildService],
         job_store: PostgresVectorRebuildJobStore,
         *,
         worker_id: str,
     ) -> None:
-        self._service = service
+        self._services = (
+            dict(service)
+            if isinstance(service, Mapping)
+            else {"memory": service}
+        )
         self._jobs = job_store
         self._worker_id = worker_id
 
@@ -42,8 +47,11 @@ class VectorRebuildTaskHandler:
             raise ValueError(f"Vector rebuild message {task.message_id} is missing task_id")
         if task_type != "vector_rebuild_task":
             raise ValueError(f"Task {task_id} is not a vector_rebuild_task")
-        if entity != "memory":
-            raise ValueError(f"Vector rebuild task {task_id} has unsupported entity")
+        service = self._services.get(entity)
+        if service is None:
+            raise ValueError(
+                f"Vector rebuild task {task_id} has unsupported entity: {entity}"
+            )
         if not embedding_version:
             raise ValueError(f"Vector rebuild task {task_id} is missing embedding_version")
         context = get_request_context()
@@ -64,6 +72,7 @@ class VectorRebuildTaskHandler:
                 "task_id": task_id,
                 "worker_id": worker_id,
                 "embedding_version": embedding_version,
+                "entity": entity,
                 "activate": bool(payload.get("activate", False)),
             },
         )
@@ -95,7 +104,7 @@ class VectorRebuildTaskHandler:
             )
 
         try:
-            result = await self._service.rebuild(
+            result = await service.rebuild(
                 embedding_version,
                 execute=True,
                 activate=bool(payload.get("activate", False)),
@@ -129,6 +138,7 @@ class VectorRebuildTaskHandler:
                     "task_id": task_id,
                     "worker_id": worker_id,
                     "embedding_version": embedding_version,
+                    "entity": entity,
                     "status": terminal_status,
                     "active_index": result.active_index,
                 },
@@ -147,6 +157,7 @@ class VectorRebuildTaskHandler:
                         "task_id": task_id,
                         "worker_id": worker_id,
                         "embedding_version": embedding_version,
+                        "entity": entity,
                     },
                 )
             LOGGER.error(
@@ -155,6 +166,7 @@ class VectorRebuildTaskHandler:
                     "task_id": task_id,
                     "worker_id": worker_id,
                     "embedding_version": embedding_version,
+                    "entity": entity,
                     "error_type": type(exc).__name__,
                 },
             )

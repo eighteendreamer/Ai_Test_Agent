@@ -16,9 +16,9 @@ from src.runtime.postgres_vector_rebuild_job_store import (
 )
 
 
-async def _run(*, embedding_version: str, activate: bool) -> None:
+async def _run(*, entity: str, embedding_version: str, activate: bool) -> None:
     settings = get_settings()
-    RedisVectorStore.index_name("memory", embedding_version)
+    RedisVectorStore.index_name(entity, embedding_version)
     outbox = PostgresTaskOutbox(settings)
     jobs = PostgresVectorRebuildJobStore(
         settings,
@@ -46,7 +46,7 @@ async def _run(*, embedding_version: str, activate: bool) -> None:
         "resource_id": None,
         "priority": 10,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "entity": "memory",
+        "entity": entity,
         "embedding_version": embedding_version,
         "activate": activate,
         "payload": {},
@@ -58,6 +58,7 @@ async def _run(*, embedding_version: str, activate: bool) -> None:
         stream=stream,
         outbox_table=settings.database.postgres_task_outbox_table,
         payload=payload,
+        entity=entity,
     )
     print(
         json.dumps(
@@ -68,6 +69,7 @@ async def _run(*, embedding_version: str, activate: bool) -> None:
                 "trace_id": trace_id,
                 "stream": stream,
                 "embedding_version": embedding_version,
+                "entity": entity,
                 "activate": activate,
             },
             ensure_ascii=False,
@@ -81,6 +83,11 @@ def main() -> None:
     )
     parser.add_argument("--embedding-version", required=True)
     parser.add_argument(
+        "--entity",
+        choices=("memory", "test_case"),
+        default="memory",
+    )
+    parser.add_argument(
         "--activate",
         action="store_true",
         help="Switch the active index after rebuild validation succeeds.",
@@ -91,6 +98,7 @@ def main() -> None:
             _run(
                 embedding_version=args.embedding_version,
                 activate=args.activate,
+                entity=args.entity,
             )
         )
     except Exception as exc:

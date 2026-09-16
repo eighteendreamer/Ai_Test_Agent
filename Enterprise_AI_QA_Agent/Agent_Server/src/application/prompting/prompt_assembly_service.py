@@ -453,6 +453,29 @@ class PromptAssemblyService:
                 )
             )
 
+        test_case_blocks = list(state.get("test_case_prompt_blocks") or [])
+        if test_case_blocks:
+            sections.append(
+                PromptSection(
+                    key="active_test_cases",
+                    title="Relevant Active Test Cases",
+                    source="test_cases.vector_retrieval",
+                    cache_scope="dynamic",
+                    priority=85,
+                    content=self._wrap_untrusted_content(
+                        "retrieved_document",
+                        test_case_blocks,
+                    ),
+                    metadata={
+                        "test_case_hit_count": len(
+                            state.get("test_case_hits") or []
+                        ),
+                        "provenance": "retrieved_document",
+                        "trusted": False,
+                    },
+                )
+            )
+
         mcp_blocks = list(state.get("mcp_prompt_blocks") or [])
         if mcp_blocks:
             sections.append(

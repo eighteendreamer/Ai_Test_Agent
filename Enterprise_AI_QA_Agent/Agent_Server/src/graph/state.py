@@ -25,6 +25,8 @@ class AgentGraphState(TypedDict):
     skill_prompt_blocks: list[str]
     memory_hits: list[dict[str, Any]]
     memory_prompt_blocks: list[str]
+    test_case_hits: list[dict[str, Any]]
+    test_case_prompt_blocks: list[str]
     observation_hits: list[dict[str, Any]]
     observation_prompt_blocks: list[str]
     active_mcp_servers: list[dict[str, Any]]
