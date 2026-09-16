@@ -30,13 +30,16 @@ async def _run(args: argparse.Namespace) -> None:
         top_k=settings.orchestration.memory_top_k,
         embedding_runtime_service=embedding_service,
     )
-    await memory_service.initialize()
-    result = await memory_service.backfill_missing_embeddings(
-        limit=args.limit,
-        batch_size=args.batch_size,
-        execute=args.execute,
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    try:
+        await memory_service.initialize()
+        result = await memory_service.backfill_missing_embeddings(
+            limit=args.limit,
+            batch_size=args.batch_size,
+            execute=args.execute,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    finally:
+        await embedding_service.close()
 
 
 def main() -> None:

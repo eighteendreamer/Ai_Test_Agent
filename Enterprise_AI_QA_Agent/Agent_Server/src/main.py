@@ -647,6 +647,7 @@ async def lifespan(app: FastAPI):
         await resource_lease_manager.close()
         if deep_agent_checkpoint_provider is not None:
             await deep_agent_checkpoint_provider.close()
+        await embedding_runtime_service.close()
         await test_run_service.stop_lease_reaper()
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()
