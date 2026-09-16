@@ -19,6 +19,7 @@ from src.application.test_runs.case_execution import (
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.test_runs.run_service import TestRunService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
+from src.core.request_context import bind_request_context
 from src.runtime.store import SessionStore
 from src.runtime.task_deferred import TaskDeferred
 from src.runtime.resource_lease_manager import ResourceLease, ResourceUnavailable
@@ -239,17 +240,23 @@ class TestRunExecutionService:
                     thread_id=trace_context.thread_id,
                     inputs=trace_inputs,
                 )
-                with trace_scope as item_trace:
-                    outcome = await self._adapter.execute(
-                        case=case,
-                        version=version,
-                        run=run,
-                        item=item,
-                        trusted_context_bundle=trusted_context_bundle,
-                        attempt_id=str(getattr(latest_attempt, "id", "") or ""),
-                        tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
-                        server_approval_granted=bool(payload.approval_id),
-                    )
+                resource_context = (
+                    {"resource_id": resource_leases[0].resource_id}
+                    if resource_leases
+                    else {}
+                )
+                with bind_request_context(**resource_context):
+                    with trace_scope as item_trace:
+                        outcome = await self._adapter.execute(
+                            case=case,
+                            version=version,
+                            run=run,
+                            item=item,
+                            trusted_context_bundle=trusted_context_bundle,
+                            attempt_id=str(getattr(latest_attempt, "id", "") or ""),
+                            tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
+                            server_approval_granted=bool(payload.approval_id),
+                        )
                     if outcome is not None and outcome.tool_record is not None and outcome.tool_record.status == "waiting_resource":
                         waiting_reason = str(
                             (outcome.tool_record.output or {}).get("waiting_reason")

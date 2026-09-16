@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -63,6 +64,34 @@ def set_request_context(
 
 def reset_request_context(token: object) -> None:
     _context.reset(token)  # type: ignore[arg-type]
+
+
+@contextmanager
+def bind_request_context(**updates: str | None):
+    """Temporarily enrich the current correlation context for a child operation."""
+    current = get_request_context()
+    values = {
+        name: getattr(current, name, None)
+        for name in (
+            "request_id",
+            "trace_id",
+            "session_id",
+            "turn_id",
+            "run_id",
+            "run_item_id",
+            "attempt_id",
+            "worker_id",
+            "resource_id",
+        )
+    }
+    for name, value in updates.items():
+        if name in values and value is not None:
+            values[name] = value
+    token = set_request_context(**values)
+    try:
+        yield get_request_context()
+    finally:
+        reset_request_context(token)
 
 
 def correlation_fields(extra: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 from redis.exceptions import RedisError
-from src.core.request_context import get_request_context, new_id
+from src.core.request_context import bind_request_context, get_request_context, new_id
 from src.infrastructure.redis_task_queue import QueuedTask, RedisTaskQueue
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.run_dispatch import RunDispatchAccepted, RunDispatchTask
@@ -53,5 +53,18 @@ class RedisExecutionDispatcher:
                 return
             claim = claimed.claims[0]
             LOGGER.info("dispatch_item_execution_started", extra={"task_id": command.task_id, "request_id": command.request_id, "trace_id": command.trace_id, "project_id": command.project_id, "run_id": run.id, "run_item_id": claim.item.id, "attempt_id": claim.attempt.id, "worker_id": worker_id})
-            await self._execution.execute_item(claim.item.id, RunItemExecuteRequest(lease_token=claim.lease_token))
+            with bind_request_context(
+                request_id=command.request_id,
+                trace_id=command.trace_id,
+                session_id=command.session_id,
+                turn_id=f"test-run-item:{claim.item.id}:attempt:{claim.attempt.attempt_no}",
+                run_id=run.id,
+                run_item_id=claim.item.id,
+                attempt_id=claim.attempt.id,
+                worker_id=worker_id,
+            ):
+                await self._execution.execute_item(
+                    claim.item.id,
+                    RunItemExecuteRequest(lease_token=claim.lease_token),
+                )
             run = await self._runs.get_record(run.id)
