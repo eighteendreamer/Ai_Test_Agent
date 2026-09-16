@@ -57,6 +57,9 @@ from src.application.orchestration.coordinator_runtime_service import Coordinato
 from src.application.orchestration.redis_execution_dispatcher import RedisExecutionDispatcher
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.context.memory_vector_rebuild_service import (
+    MemoryVectorRebuildService,
+)
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.models.model_runtime_service import ModelRuntimeService
@@ -133,6 +136,9 @@ from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
+from src.runtime.postgres_vector_rebuild_job_store import (
+    PostgresVectorRebuildJobStore,
+)
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.resource_quota_store import ResourceQuotaStore
 from src.application.resources.resource_quota_service import ResourceQuotaService
@@ -203,6 +209,12 @@ async def lifespan(app: FastAPI):
     )
     await compaction_record_store.initialize()
     app.state.compaction_record_store = compaction_record_store
+    vector_rebuild_job_store = PostgresVectorRebuildJobStore(
+        settings,
+        lease_seconds=int(settings.orchestration.redis_task_timeout_seconds),
+    )
+    await vector_rebuild_job_store.initialize()
+    app.state.vector_rebuild_job_store = vector_rebuild_job_store
     configure_compaction_outbox = getattr(store, "set_compaction_task_outbox", None)
     compaction_stream = settings.orchestration.compaction_task_stream
     if callable(configure_compaction_outbox) and compaction_stream in settings.orchestration.task_stream_names:
@@ -270,6 +282,22 @@ async def lifespan(app: FastAPI):
     memory_runtime_service = container.memory_runtime_service()
     await memory_runtime_service.initialize()
     memory_runtime_service.set_vector_store(vector_store)
+    memory_vector_rebuild_service = (
+        MemoryVectorRebuildService(
+            memory_store,
+            vector_store,
+            batch_size=settings.orchestration.redis_vector_rebuild_batch_size,
+            validation_timeout_seconds=(
+                settings.orchestration.redis_vector_validation_timeout_seconds
+            ),
+            validation_poll_interval_seconds=(
+                settings.orchestration.redis_vector_validation_poll_interval_seconds
+            ),
+        )
+        if vector_store is not None
+        else None
+    )
+    app.state.memory_vector_rebuild_service = memory_vector_rebuild_service
     app.state.compaction_worker = CompactionWorker(
         hot_memory_store=hot_memory_store,
         memory_runtime_service=memory_runtime_service,

@@ -7,12 +7,14 @@ business changes are still rechecked in PostgreSQL by the retrieval path.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from src.contracts.memory_store import MemoryStoreProtocol
 from src.infrastructure.redis_vector_store import RedisVectorStore
 
 LOGGER = logging.getLogger(__name__)
+ProgressCallback = Callable[[str, dict[str, int | str | None]], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,7 @@ class MemoryVectorRebuildService:
         *,
         execute: bool = False,
         activate: bool = False,
+        progress: ProgressCallback | None = None,
     ) -> VectorRebuildResult:
         RedisVectorStore.index_name("memory", embedding_version)  # validate without connecting
         if activate and not execute:
@@ -57,6 +60,13 @@ class MemoryVectorRebuildService:
             raise ValueError("Stored embedding version has inconsistent dimensions; refusing replica rebuild")
         dimension = next(iter(inventory), None)
         total = sum(inventory.values())
+        await self._notify_progress(
+            progress,
+            "dimension_detected",
+            dimension=dimension,
+            source_count=total,
+            replicated=0,
+        )
         if not execute or dimension is None:
             return VectorRebuildResult(
                 embedding_version,
@@ -70,6 +80,13 @@ class MemoryVectorRebuildService:
         cursor = None
         probe = None
         try:
+            await self._notify_progress(
+                progress,
+                "index_building",
+                dimension=dimension,
+                source_count=total,
+                replicated=0,
+            )
             await self._vector.connect()
             await self._vector.create_index(entity="memory", embedding_version=embedding_version, dimension=dimension)
             while True:
@@ -103,11 +120,25 @@ class MemoryVectorRebuildService:
                     "embedding_version": embedding_version, "replicated": replicated,
                     "last_memory_id": cursor,
                 })
+                await self._notify_progress(
+                    progress,
+                    "index_building",
+                    dimension=dimension,
+                    source_count=total,
+                    replicated=replicated,
+                )
             final_inventory = await self._memory.vector_inventory(embedding_version)
             if final_inventory != inventory or replicated != total:
                 raise RuntimeError(
                     "PostgreSQL vector inventory changed during Redis replica rebuild"
                 )
+            await self._notify_progress(
+                progress,
+                "index_validating",
+                dimension=dimension,
+                source_count=total,
+                replicated=replicated,
+            )
             await self._vector.validate_replica(
                 entity="memory",
                 embedding_version=embedding_version,
@@ -143,3 +174,12 @@ class MemoryVectorRebuildService:
                 "last_memory_id": cursor, "error_type": type(exc).__name__,
             })
             raise
+
+    @staticmethod
+    async def _notify_progress(
+        callback: ProgressCallback | None,
+        status: str,
+        **details: int | str | None,
+    ) -> None:
+        if callback is not None:
+            await callback(status, details)

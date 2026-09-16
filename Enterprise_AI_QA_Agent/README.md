@@ -241,6 +241,15 @@ uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vector
 
 `--execute` 只重建并验证副本，`--activate` 进一步写入 `qa:vector:active:memory` 指针。验证失败时保留原指针和旧索引，检索自动回源 PostgreSQL。验证等待时间和轮询间隔由 `ORCHESTRATION__REDIS_VECTOR_VALIDATION_TIMEOUT_SECONDS`、`ORCHESTRATION__REDIS_VECTOR_VALIDATION_POLL_INTERVAL_SECONDS` 管理。
 
+生产环境通过低优先级 Stream 执行同一套重建与切换逻辑。先启动独立 Worker，再创建 PostgreSQL Job 与 Outbox 意图；Outbox Relay 会将任务投递到 `qa:tasks:vector_rebuild`：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_vector_rebuild_worker
+uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuild --embedding-version <version> --activate
+```
+
+任务状态持久化在 `agent_vector_rebuild_jobs`，包含 Worker、租约、维度、权威数据量、已复制数量、失败类型和最终活动索引。Worker 只在 `index_activated`、`index_validated` 或空数据终态落库后 ACK；崩溃时由 Redis Pending 接管和 PostgreSQL 租约共同恢复。
+
 ### 2. 启动前端
 
 ```bash
