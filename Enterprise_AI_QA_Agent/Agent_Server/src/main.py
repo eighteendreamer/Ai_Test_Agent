@@ -183,6 +183,7 @@ async def lifespan(app: FastAPI):
     resource_lease_manager = RedisResourceLeaseManager(
         settings.database.redis_url,
         socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
+        cleanup_stream=settings.orchestration.cleanup_task_stream,
     )
     await resource_lease_manager.connect()
     await resource_lease_manager.configure_quota(

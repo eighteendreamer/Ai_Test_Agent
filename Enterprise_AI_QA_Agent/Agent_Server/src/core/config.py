@@ -55,6 +55,7 @@ class DatabaseConfig(BaseModel):
     postgres_embedding_job_table: str = "agent_embedding_jobs"
     postgres_test_case_embedding_table: str = "agent_test_case_embeddings"
     postgres_resource_quota_table: str = "agent_resource_quotas"
+    postgres_resource_cleanup_table: str = "agent_resource_cleanup_jobs"
 
     memgraph_host: str = "127.0.0.1"
     memgraph_port: int = 7687
@@ -288,6 +289,14 @@ class OrchestrConfig(BaseModel):
             if stream.endswith(":vector_rebuild"):
                 return stream
         return "qa:tasks:vector_rebuild"
+
+    @property
+    def cleanup_task_stream(self) -> str:
+        """Resolve the resource compensation cleanup stream."""
+        for stream in self.task_stream_names:
+            if stream.endswith(":cleanup"):
+                return stream
+        return "qa:tasks:cleanup"
 
     @field_validator("mcp_stdio_command_allowlist", mode="before")
     @classmethod

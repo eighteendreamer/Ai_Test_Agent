@@ -11,7 +11,15 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from src.runtime.resource_lease_scripts import BIND, CLAIM, REAP, RELEASE, RENEW
+from src.core.request_context import get_request_context, new_id
+from src.runtime.resource_lease_scripts import (
+    BIND,
+    CLAIM,
+    REAP,
+    RECONCILE_QUOTA,
+    RELEASE,
+    RENEW,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +35,51 @@ class ResourceLease:
     lease_token: str
     fencing_token: int
     lease_expire_at: datetime
+    request_id: str | None = None
+    trace_id: str | None = None
+    turn_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ExpiredResourceLease:
+    resource_id: str
+    resource_type: str
+    external_resource_id: str | None
+    project_id: str | None
+    session_id: str | None
+    turn_id: str | None
+    run_id: str | None
+    run_item_id: str | None
+    attempt_id: str | None
+    worker_id: str
+    lease_token: str
+    fencing_token: int
+    request_id: str
+    trace_id: str
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "ExpiredResourceLease":
+        required = ("resource_id", "resource_type", "worker_id", "lease_token")
+        missing = [field for field in required if not str(payload.get(field) or "").strip()]
+        if missing:
+            raise ValueError(f"Expired resource lease is missing: {', '.join(missing)}")
+        lease_token = str(payload["lease_token"])
+        return cls(
+            resource_id=str(payload["resource_id"]),
+            resource_type=str(payload["resource_type"]),
+            external_resource_id=_optional_text(payload.get("external_resource_id")),
+            project_id=_optional_text(payload.get("project_id")),
+            session_id=_optional_text(payload.get("session_id")),
+            turn_id=_optional_text(payload.get("turn_id")),
+            run_id=_optional_text(payload.get("run_id")),
+            run_item_id=_optional_text(payload.get("run_item_id")),
+            attempt_id=_optional_text(payload.get("attempt_id")),
+            worker_id=str(payload["worker_id"]),
+            lease_token=lease_token,
+            fencing_token=int(payload.get("fencing_token") or 0),
+            request_id=str(payload.get("request_id") or f"req_cleanup_{lease_token}"),
+            trace_id=str(payload.get("trace_id") or f"trace_cleanup_{lease_token}"),
+        )
 
 
 class ResourceUnavailable(RuntimeError):
@@ -38,10 +91,21 @@ class ResourceUnavailable(RuntimeError):
 class RedisResourceLeaseManager:
     """One Redis-backed ownership contract shared by every resource type."""
 
-    def __init__(self, redis_url: str, *, socket_timeout_seconds: float = 5.0, client: Redis | Any | None = None) -> None:
+    def __init__(
+        self,
+        redis_url: str,
+        *,
+        socket_timeout_seconds: float = 5.0,
+        cleanup_stream: str = "qa:tasks:cleanup",
+        client: Redis | Any | None = None,
+        key_prefix: str = "qa",
+    ) -> None:
         self._redis_url = redis_url
         self._client = client
         self._socket_timeout_seconds = socket_timeout_seconds
+        self._cleanup_stream = cleanup_stream
+        _validate_part(key_prefix, "key_prefix")
+        self._prefix = key_prefix
         if socket_timeout_seconds <= 0:
             raise ValueError("Resource lease Redis timeout must be positive")
 
@@ -58,7 +122,7 @@ class RedisResourceLeaseManager:
 
     async def configure_quota(self, *, scope: str, identifier: str, limit: int) -> None:
         field = _quota_field(scope, identifier)
-        await self._client.hset("qa:quota:limits", field, max(0, int(limit)))
+        await self._client.hset(self._key("quota:limits"), field, max(0, int(limit)))
 
     async def acquire(
         self,
@@ -86,16 +150,22 @@ class RedisResourceLeaseManager:
             quota_fields.append(_quota_field("run", run_id))
             quota_fields.append(_quota_field("run_resource_type", f"{run_id}:{resource_type}"))
         lease_token = uuid.uuid4().hex
+        context = get_request_context()
+        request_id = context.request_id if context is not None else new_id("req")
+        trace_id = context.trace_id if context is not None else new_id("trace")
+        turn_id = context.turn_id if context is not None else None
         payload = json.dumps({
             "resource_id": resource_id, "resource_type": resource_type,
             "project_id": project_id, "session_id": session_id, "run_id": run_id,
             "run_item_id": run_item_id, "attempt_id": attempt_id, "worker_id": worker_id,
-            "lease_token": lease_token,
+            "lease_token": lease_token, "request_id": request_id,
+            "trace_id": trace_id, "turn_id": turn_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False, separators=(",", ":"))
         result = await self._client.eval(
-            CLAIM, 6, self._lease_key(resource_type, resource_id),
-            "qa:fencing:" + resource_type, "qa:quota:usage", "qa:quota:limits",
-            "qa:lease:registry", "qa:lease:metadata",
+            CLAIM, 7, self._lease_key(resource_type, resource_id),
+            self._key("fencing:" + resource_type), self._key("quota:usage"), self._key("quota:limits"),
+            self._key("lease:registry"), self._key("lease:metadata"), self._cleanup_stream,
             payload, lease_token, int(lease_seconds * 1000), *quota_fields,
         )
         if not result or int(result[0]) == 0:
@@ -110,11 +180,12 @@ class RedisResourceLeaseManager:
             attempt_id=attempt_id, worker_id=worker_id, lease_token=lease_token,
             fencing_token=fencing,
             lease_expire_at=datetime.now(timezone.utc) + timedelta(seconds=lease_seconds),
+            request_id=request_id, trace_id=trace_id, turn_id=turn_id,
         )
 
     async def renew(self, lease: ResourceLease, *, lease_seconds: int) -> bool:
         result = await self._client.eval(
-            RENEW, 2, self._lease_key(lease.resource_type, lease.resource_id), "qa:lease:registry",
+            RENEW, 2, self._lease_key(lease.resource_type, lease.resource_id), self._key("lease:registry"),
             lease.lease_token, int(lease_seconds * 1000),
         )
         return bool(result)
@@ -141,7 +212,7 @@ class RedisResourceLeaseManager:
             quota_fields.append(_quota_field("run_resource_type", f"{lease.run_id}:{lease.resource_type}"))
         result = await self._client.eval(
             RELEASE, 4, self._lease_key(lease.resource_type, lease.resource_id),
-            "qa:quota:usage", "qa:lease:registry", "qa:lease:metadata",
+            self._key("quota:usage"), self._key("lease:registry"), self._key("lease:metadata"),
             lease.lease_token, *quota_fields,
         )
         return bool(result)
@@ -150,7 +221,8 @@ class RedisResourceLeaseManager:
         if not external_resource_id or len(str(external_resource_id)) > 240:
             raise ValueError("external_resource_id must be a nonempty bounded string")
         return bool(await self._client.eval(
-            BIND, 1, self._lease_key(lease.resource_type, lease.resource_id),
+            BIND, 2, self._lease_key(lease.resource_type, lease.resource_id),
+            self._key("lease:metadata"),
             lease.lease_token, str(external_resource_id),
         ))
 
@@ -158,26 +230,34 @@ class RedisResourceLeaseManager:
         raw = await self._client.get(self._lease_key(resource_type, resource_id))
         return json.loads(raw) if raw else None
 
-    async def reap_expired(self, *, limit: int = 100) -> list[tuple[str, str]]:
+    async def reap_expired(self, *, limit: int = 100) -> list[ExpiredResourceLease]:
         members = await self._client.eval(
-            REAP, 3, "qa:lease:registry", "qa:quota:usage", "qa:lease:metadata",
+            REAP, 4, self._key("lease:registry"), self._key("quota:usage"), self._key("lease:metadata"),
+            self._cleanup_stream,
             max(1, min(int(limit), 1000)),
         )
-        results: list[tuple[str, str]] = []
+        results: list[ExpiredResourceLease] = []
         for member in members or []:
-            key = member.decode() if isinstance(member, bytes) else str(member)
-            prefix = "qa:lease:"
-            if not key.startswith(prefix) or ":" not in key[len(prefix):]:
-                continue
-            resource_type, resource_id = key[len(prefix):].split(":", 1)
-            results.append((resource_type, resource_id))
+            raw = member.decode() if isinstance(member, bytes) else str(member)
+            payload = json.loads(raw)
+            if payload:
+                results.append(ExpiredResourceLease.from_payload(payload))
         return results
+
+    async def reconcile_quota_usage(self) -> int:
+        """Rebuild usage from authoritative active-lease metadata."""
+        return int(await self._client.eval(
+            RECONCILE_QUOTA,
+            2,
+            self._key("lease:metadata"),
+            self._key("quota:usage"),
+        ))
 
     async def list_active(self, *, project_id: str | None = None) -> list[dict[str, Any]]:
         active: list[dict[str, Any]] = []
-        async for key in self._client.scan_iter(match="qa:lease:*", count=100):
+        async for key in self._client.scan_iter(match=self._key("lease:*"), count=100):
             key_text = key.decode() if isinstance(key, bytes) else str(key)
-            if key_text in {"qa:lease:registry", "qa:lease:metadata"}:
+            if key_text in {self._key("lease:registry"), self._key("lease:metadata")}:
                 continue
             try:
                 raw = await self._client.get(key)
@@ -190,20 +270,19 @@ class RedisResourceLeaseManager:
                 continue
             payload["lease_key"] = key
             payload["ttl_ms"] = await self._client.pttl(key)
-            payload["fencing_token"] = await self._client.get(
-                "qa:fencing:" + str(payload.get("resource_type") or "")
-            )
             active.append(payload)
         active.sort(key=lambda item: (str(item.get("resource_type")), str(item.get("resource_id"))))
         return active
 
     async def usage_snapshot(self) -> dict[str, int]:
-        values = await self._client.hgetall("qa:quota:usage")
+        values = await self._client.hgetall(self._key("quota:usage"))
         return {str(key): int(value) for key, value in values.items()}
 
-    @staticmethod
-    def _lease_key(resource_type: str, resource_id: str) -> str:
-        return f"qa:lease:{resource_type}:{resource_id}"
+    def _key(self, suffix: str) -> str:
+        return f"{self._prefix}:{suffix}"
+
+    def _lease_key(self, resource_type: str, resource_id: str) -> str:
+        return self._key(f"lease:{resource_type}:{resource_id}")
 
 
 def _quota_field(scope: str, identifier: str) -> str:
@@ -215,3 +294,8 @@ def _quota_field(scope: str, identifier: str) -> str:
 def _validate_part(value: str, label: str) -> None:
     if not value or not re.fullmatch(r"[A-Za-z0-9_.:-]+", str(value)):
         raise ValueError(f"{label} contains unsupported characters")
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None

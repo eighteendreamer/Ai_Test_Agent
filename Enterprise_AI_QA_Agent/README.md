@@ -259,6 +259,28 @@ uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuil
 
 `memory` 和 `test_case` 使用独立的版本索引与活动指针。任务状态持久化在 `agent_vector_rebuild_jobs`，包含 Worker、租约、维度、权威数据量、已复制数量、失败类型和最终活动索引。Worker 只在 `index_activated`、`index_validated` 或空数据终态落库后 ACK；崩溃时由 Redis Pending 接管和 PostgreSQL 租约共同恢复。
 
+资源清理 Worker 会回收过期 Redis 租约，并对已经绑定真实容器 ID 的 Docker
+租约调用受控的 `docker rm -f`。测试账号和环境是逻辑租约，过期时只释放占用；
+当前 Python Playwright 的会话保存在所属进程内，独立 Cleanup Worker 无法直接关闭它；
+带外部绑定但没有适配器的任务会失败并重试/进入死信，不能据此宣称浏览器已释放。
+后续独立 CDP/ego-lite Browser Worker 需要实现远程清理适配器：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_resource_cleanup_worker
+```
+
+资源清理进程会原子回收过期租约并写入 `qa:tasks:cleanup`，随后使用独立
+Consumer Group 按租约绑定的真实外部资源 ID 执行补偿清理。清理失败沿用通用
+Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 Stream 配置
+`MAXLEN` 裁剪。
+
+清理结果写入 PostgreSQL `agent_resource_cleanup_jobs` 后才 ACK，重复成功消息
+直接读取终态。自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；
+创建容器后应立即绑定此 ID，当前仅在执行结果返回后绑定的路径仍有崩溃窗口，
+后续需把绑定前移至各执行器创建点。本单元不代表 P4 的强杀恢复与浏览器治理全部完成。
+Redis 完全丢失时，尚未被消费并写入 PostgreSQL 的清理消息仍需外部资源清单对账恢复；
+生产必须配置 Redis 持久化，该清单恢复能力尚待后续实现。
+
 ### 2. 启动前端
 
 ```bash
