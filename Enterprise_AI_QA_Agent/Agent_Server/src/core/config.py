@@ -50,6 +50,7 @@ class DatabaseConfig(BaseModel):
     postgres_recording_event_table: str = "ui_recording_event"
     postgres_perf_runs_table: str = "agent_perf_runs"
     postgres_task_outbox_table: str = "agent_task_outbox"
+    postgres_compaction_table: str = "agent_compaction_records"
     postgres_resource_quota_table: str = "agent_resource_quotas"
 
     memgraph_host: str = "127.0.0.1"

@@ -17,10 +17,14 @@ class CompactionWorker:
         hot_memory_store: RedisHotMemoryStore,
         memory_runtime_service: Any,
         compression_version: str = "v1",
+        record_store: Any | None = None,
+        owner_id: str | None = None,
     ) -> None:
         self._hot = hot_memory_store
         self._memory = memory_runtime_service
         self._compression_version = compression_version
+        self._record_store = record_store
+        self._owner_id = owner_id
 
     async def compact_session(
         self,
@@ -79,6 +83,27 @@ class CompactionWorker:
         key = pending_key or f"{last_event_id}:{self._compression_version}"
         if not await self._hot.acquire_compaction(session_id, key):
             return False
+        if self._record_store is not None:
+            began = await self._record_store.begin(
+                compaction_key=f"{session_id}:{key}",
+                session_id=session_id,
+                last_event_id=last_event_id,
+                compression_version=self._compression_version,
+                owner_id=self._owner_id,
+            )
+            if not began:
+                await self._hot.complete_compaction(session_id, key)
+                existing = await self._record_store.get(f"{session_id}:{key}")
+                if existing is not None and existing.status == "completed":
+                    commit = getattr(self._hot, "commit_compaction", None)
+                    if callable(commit):
+                        await commit(
+                            session_id,
+                            key=key,
+                            last_event_id=last_event_id,
+                        )
+                    return True
+                return False
         pending_marker = getattr(self._hot, "mark_compaction_pending", None)
         if callable(pending_marker):
             try:
@@ -90,7 +115,7 @@ class CompactionWorker:
                 user_message = self._first_text(events, "user")
             if not assistant_message:
                 assistant_message = self._last_text(events, "assistant")
-            await self._memory.write_turn_memory(
+            memory_ids = await self._memory.write_turn_memory(
                 session_id=session_id,
                 turn_id=turn_id,
                 trace_id=trace_id,
@@ -117,6 +142,15 @@ class CompactionWorker:
             else:
                 await self._hot.complete_compaction(session_id, key)
                 await self._hot.clear_session(session_id)
+            if self._record_store is not None:
+                completed = await self._record_store.complete(
+                    f"{session_id}:{key}",
+                    [str(item) for item in (memory_ids or [])],
+                )
+                if not completed:
+                    existing = await self._record_store.get(f"{session_id}:{key}")
+                    if existing is None or existing.status != "completed":
+                        raise RuntimeError("Compaction record completion lost ownership")
             LOGGER.info("session_hot_memory_compacted", extra={"session_id": session_id, "last_event_id": last_event_id, "compression_version": self._compression_version})
             return True
         except Exception as exc:
@@ -127,6 +161,14 @@ class CompactionWorker:
                 except Exception:
                     LOGGER.exception(
                         "session_hot_memory_compaction_failure_marker_failed",
+                        extra={"session_id": session_id, "last_event_id": last_event_id},
+                    )
+            if self._record_store is not None:
+                try:
+                    await self._record_store.fail(f"{session_id}:{key}", str(exc))
+                except Exception:
+                    LOGGER.exception(
+                        "session_hot_memory_compaction_record_failed",
                         extra={"session_id": session_id, "last_event_id": last_event_id},
                     )
             LOGGER.exception("session_hot_memory_compaction_failed", extra={"session_id": session_id, "last_event_id": last_event_id, "error_type": type(exc).__name__})

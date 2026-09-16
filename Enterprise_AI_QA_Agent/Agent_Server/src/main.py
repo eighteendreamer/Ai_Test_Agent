@@ -132,6 +132,7 @@ from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.compaction_worker import CompactionWorker
+from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.resource_quota_store import ResourceQuotaStore
 from src.application.resources.resource_quota_service import ResourceQuotaService
@@ -196,6 +197,12 @@ async def lifespan(app: FastAPI):
     task_outbox = PostgresTaskOutbox(settings)
     await task_outbox.initialize()
     app.state.task_outbox = task_outbox
+    compaction_record_store = PostgresCompactionRecordStore(
+        settings,
+        lease_seconds=int(settings.orchestration.redis_task_timeout_seconds),
+    )
+    await compaction_record_store.initialize()
+    app.state.compaction_record_store = compaction_record_store
     configure_compaction_outbox = getattr(store, "set_compaction_task_outbox", None)
     compaction_stream = settings.orchestration.compaction_task_stream
     if callable(configure_compaction_outbox) and compaction_stream in settings.orchestration.task_stream_names:
@@ -267,6 +274,7 @@ async def lifespan(app: FastAPI):
         hot_memory_store=hot_memory_store,
         memory_runtime_service=memory_runtime_service,
         compression_version=settings.orchestration.redis_compaction_compression_version,
+        record_store=compaction_record_store,
     )
 
     tool_job_store = container.tool_job_store()
