@@ -14,15 +14,24 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 class RedisExecutionDispatcher:
-    def __init__(self, *, queue: RedisTaskQueue, test_run_service: TestRunService, execution_service: TestRunExecutionService) -> None:
-        self._queue, self._runs, self._execution = queue, test_run_service, execution_service
+    def __init__(self, *, queue: RedisTaskQueue, test_run_service: TestRunService, execution_service: TestRunExecutionService, outbox=None) -> None:
+        self._queue, self._runs, self._execution, self._outbox = queue, test_run_service, execution_service, outbox
 
     async def dispatch(self, run_id: str) -> RunDispatchAccepted:
         run = await self._runs.get_record(run_id)
         if run.status in {"completed", "cancelled"}:
             raise ValueError("Cannot dispatch a completed or cancelled test run")
         context = get_request_context()
-        task = RunDispatchTask(task_id=new_id("task"), request_id=context.request_id if context else new_id("req"), trace_id=context.trace_id if context else new_id("trace"), project_id=run.project_id, session_id=run.session_id, run_id=run.id)
+        task = RunDispatchTask(task_id=(new_id("task") if self._outbox is None else f"task_test_run_{run.id}"), request_id=context.request_id if context else new_id("req"), trace_id=context.trace_id if context else new_id("trace"), project_id=run.project_id, session_id=run.session_id, run_id=run.id)
+        if self._outbox is not None:
+            record = await self._outbox.ensure(
+                event_key=f"test_run_dispatch:{run.id}",
+                stream=self._queue.stream,
+                payload=task.model_dump(mode="json"),
+            )
+            message_id = f"outbox:{record.id}"
+            LOGGER.info("test_run_dispatch_outbox_recorded", extra={"task_id": task.task_id, "run_id": run.id, "outbox_id": record.id})
+            return RunDispatchAccepted(task_id=task.task_id, run_id=run.id, message_id=message_id)
         try:
             message_id = await self._queue.enqueue(task.model_dump(mode="json"))
         except RedisError as exc:

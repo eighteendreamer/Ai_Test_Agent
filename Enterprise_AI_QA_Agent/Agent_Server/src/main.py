@@ -362,6 +362,7 @@ async def lifespan(app: FastAPI):
             queue=task_queue,
             test_run_service=test_run_service,
             execution_service=test_run_execution_service,
+            outbox=task_outbox,
         )
     model_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_observability_service(observability_service)

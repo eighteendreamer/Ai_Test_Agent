@@ -206,6 +206,22 @@ IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 
 - 前端开发代理默认指向 `http://127.0.0.1:1032`（可用 `VITE_API_PROXY_TARGET` 覆盖）
 - API 统一前缀为 `/api/v1`，健康检查见 `/api/v1/health`
 
+### 1.1 启动 PostgreSQL Outbox Relay
+
+任务提交先写入 PostgreSQL Outbox，再由独立 Relay 投递到 Redis Streams。Relay 不应与 API 进程绑定，生产环境建议作为单独的进程或服务运行：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
+```
+
+只做一次有界投递（适合部署探针或手工恢复）：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay --once --batch-size 100
+```
+
+主 Stream 由 `ORCHESTRATION__REDIS_TASK_STREAM` 配置，额外 Stream 通过逗号分隔的 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS` 配置。Relay 会按 Outbox 记录中的 `stream` 精确投递；目标 Stream 不存在或不匹配时保留 Outbox 记录并等待重试，不会静默改投默认 Stream。租约和重试窗口分别由 `ORCHESTRATION__TASK_OUTBOX_LEASE_SECONDS`、`ORCHESTRATION__TASK_OUTBOX_RETRY_SECONDS` 管理。
+
 ### 2. 启动前端
 
 ```bash

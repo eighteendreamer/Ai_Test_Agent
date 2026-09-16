@@ -159,6 +159,11 @@ class ModelConfig(BaseModel):
 class OrchestrConfig(BaseModel):
     redis_task_dispatch_enabled: bool = False
     redis_task_stream: str = "enterprise_ai_qa_agent:tasks"
+    # Additional streams are consumed by the independent outbox relay.  Keep
+    # the primary stream separate so existing TestRun workers can continue to
+    # use the configured stream while lower-priority task classes are routed
+    # explicitly.
+    redis_task_outbox_streams: str = ""
     redis_task_consumer_group: str = "enterprise_ai_qa_agent:workers"
     redis_task_block_ms: int = 1000
     redis_task_reclaim_idle_ms: int = 120000
@@ -167,6 +172,8 @@ class OrchestrConfig(BaseModel):
     redis_task_retry_max_ms: int = Field(default=60000, gt=0)
     redis_task_timeout_seconds: float = Field(default=900, gt=0)
     redis_task_socket_timeout_seconds: float = Field(default=5, gt=0)
+    task_outbox_lease_seconds: int = Field(default=30, gt=0)
+    task_outbox_retry_seconds: int = Field(default=5, gt=0)
     redis_hot_memory_ttl_seconds: int = 86400
     redis_hot_memory_max_events: int = 2000
     redis_compaction_compression_version: str = "v1"
@@ -237,6 +244,18 @@ class OrchestrConfig(BaseModel):
     performance_max_duration_seconds: int = 1800
     performance_runner_docker_container_prefix: str = "qa-perf"
     performance_runner_docker_workdir: str = "/work"
+
+    @property
+    def task_stream_names(self) -> tuple[str, ...]:
+        """Return configured task streams once, preserving declaration order."""
+        values = [self.redis_task_stream]
+        values.extend(self.redis_task_outbox_streams.split(","))
+        result: list[str] = []
+        for value in values:
+            stream = value.strip()
+            if stream and stream not in result:
+                result.append(stream)
+        return tuple(result)
 
     @field_validator("mcp_stdio_command_allowlist", mode="before")
     @classmethod
