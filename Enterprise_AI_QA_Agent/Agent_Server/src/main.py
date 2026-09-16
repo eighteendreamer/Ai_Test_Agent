@@ -298,6 +298,12 @@ async def lifespan(app: FastAPI):
 
     test_run_store = container.test_run_store()
     test_run_service = container.test_run_service()
+    if task_queue is not None:
+        test_run_service.set_task_outbox(
+            task_outbox,
+            table_name=settings.database.postgres_task_outbox_table,
+            stream=task_queue.stream,
+        )
     await test_run_service.initialize()
 
     legacy_smoke_catalog = container.legacy_smoke_catalog()

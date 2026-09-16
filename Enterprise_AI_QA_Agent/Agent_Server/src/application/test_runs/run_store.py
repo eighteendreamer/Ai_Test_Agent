@@ -44,6 +44,16 @@ class TestRunStore(Protocol):
         run: TestRunRecord,
         items: list[TestRunItemRecord],
     ) -> TestRunDetail: ...
+    async def create_run_with_outbox(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+        *,
+        outbox_table: str,
+        event_key: str,
+        stream: str,
+        payload: dict[str, object],
+    ) -> TestRunDetail: ...
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
@@ -195,6 +205,21 @@ class InMemoryTestRunStore:
                 self._items[item.id] = item
             self._refresh_run(run.id, run.created_at)
             return self._detail(run.id)
+
+    async def create_run_with_outbox(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+        *,
+        outbox_table: str,
+        event_key: str,
+        stream: str,
+        payload: dict[str, object],
+    ) -> TestRunDetail:
+        # The in-memory store has no external transaction boundary.  Keeping
+        # this method in the protocol lets the service use one code path while
+        # PostgreSQL performs both writes on one connection.
+        return await self.create_run(run, items)
 
     async def get_run(self, run_id: str) -> TestRunDetail | None:
         if run_id not in self._runs:
@@ -1141,6 +1166,26 @@ class PostgresTestRunStore:
     ) -> TestRunDetail:
         return await asyncio.to_thread(self._create_run_sync, run, items)
 
+    async def create_run_with_outbox(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+        *,
+        outbox_table: str,
+        event_key: str,
+        stream: str,
+        payload: dict[str, object],
+    ) -> TestRunDetail:
+        return await asyncio.to_thread(
+            self._create_run_with_outbox_sync,
+            run,
+            items,
+            outbox_table,
+            event_key,
+            stream,
+            payload,
+        )
+
     async def get_run(self, run_id: str) -> TestRunDetail | None:
         return await asyncio.to_thread(self._get_run_sync, run_id)
 
@@ -1554,49 +1599,78 @@ class PostgresTestRunStore:
     ) -> TestRunDetail:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._insert_run_and_items(cur, run, items)
+        return TestRunDetail(run=run, items=items)
+
+    def _create_run_with_outbox_sync(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+        outbox_table: str,
+        event_key: str,
+        stream: str,
+        payload: dict[str, object],
+    ) -> TestRunDetail:
+        """Commit the run rows and its durable task intent atomically."""
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                self._insert_run_and_items(cur, run, items)
                 cur.execute(
-                    f"INSERT INTO {self._run_table} "
-                    "(id, project_id, suite_id, status, mode_key, session_id, parent_run_id, "
-                    "created_at, updated_at, record) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+                    f"INSERT INTO {outbox_table} (event_key, stream, payload) "
+                    "VALUES (%s, %s, %s::jsonb) "
+                    "ON CONFLICT (event_key) DO NOTHING",
                     (
-                        run.id,
-                        run.project_id,
-                        run.suite_id,
-                        run.status,
-                        run.mode_key,
-                        run.session_id,
-                        run.parent_run_id,
-                        run.created_at,
-                        run.updated_at,
-                        self._json(run),
+                        event_key,
+                        stream,
+                        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
                     ),
                 )
-                if items:
-                    cur.executemany(
-                        f"INSERT INTO {self._item_table} "
-                        "(id, run_id, case_id, case_version_id, position, status, attempt_no, "
-                        "lease_owner, lease_token, lease_expires_at, result_id, "
-                        "regression_source_result_id, updated_at, record) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, NULL, "
-                        "%s, %s, %s::jsonb)",
-                        [
-                            (
-                                item.id,
-                                item.run_id,
-                                item.case_id,
-                                item.case_version_id,
-                                item.position,
-                                item.status,
-                                item.attempt_no,
-                                item.regression_source_result_id,
-                                item.updated_at,
-                                self._json(item),
-                            )
-                            for item in items
-                        ],
-                    )
         return TestRunDetail(run=run, items=items)
+
+    def _insert_run_and_items(self, cur, run: TestRunRecord, items: list[TestRunItemRecord]) -> None:
+        cur.execute(
+            f"INSERT INTO {self._run_table} "
+            "(id, project_id, suite_id, status, mode_key, session_id, parent_run_id, "
+            "created_at, updated_at, record) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+            (
+                run.id,
+                run.project_id,
+                run.suite_id,
+                run.status,
+                run.mode_key,
+                run.session_id,
+                run.parent_run_id,
+                run.created_at,
+                run.updated_at,
+                self._json(run),
+            ),
+        )
+        if not items:
+            return
+        cur.executemany(
+            f"INSERT INTO {self._item_table} "
+            "(id, run_id, case_id, case_version_id, position, status, attempt_no, "
+            "lease_owner, lease_token, lease_expires_at, result_id, "
+            "regression_source_result_id, updated_at, record) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, NULL, "
+            "%s, %s, %s::jsonb)",
+            [
+                (
+                    item.id,
+                    item.run_id,
+                    item.case_id,
+                    item.case_version_id,
+                    item.position,
+                    item.status,
+                    item.attempt_no,
+                    item.regression_source_result_id,
+                    item.updated_at,
+                    self._json(item),
+                )
+                for item in items
+            ],
+        )
 
     def _get_run_sync(self, run_id: str) -> TestRunDetail | None:
         with postgres_connect(self._settings) as conn:

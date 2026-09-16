@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from src.application.projects.project_service import ProjectService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_runs.run_store import TestRunStore
+from src.core.request_context import get_request_context, new_id
 from src.application.test_suites.suite_service import TestSuiteService
 from src.runtime.store import SessionStore
 from src.schemas.run_management import (
@@ -49,6 +50,10 @@ from src.schemas.run_management import (
 )
 from src.schemas.session import ExecutionEvent, ToolApprovalStatus
 from src.schemas.tool_job import ToolJobStatus
+from src.schemas.run_dispatch import RunDispatchTask
+
+if TYPE_CHECKING:
+    from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 
 
 logger = logging.getLogger(__name__)
@@ -91,6 +96,23 @@ class TestRunService:
         )
         self._lease_reaper_stop: asyncio.Event | None = None
         self._lease_reaper_task: asyncio.Task | None = None
+        self._task_outbox: PostgresTaskOutbox | None = None
+        self._task_outbox_table: str | None = None
+        self._task_stream: str | None = None
+
+    def set_task_outbox(
+        self,
+        outbox: PostgresTaskOutbox,
+        *,
+        table_name: str,
+        stream: str,
+    ) -> None:
+        """Enable atomic run creation plus durable task publication intent."""
+        if not table_name.strip() or not stream.strip():
+            raise ValueError("Task outbox table and stream must be configured")
+        self._task_outbox = outbox
+        self._task_outbox_table = table_name
+        self._task_stream = stream
 
     async def initialize(self) -> None:
         await self._store.initialize()
@@ -224,7 +246,7 @@ class TestRunService:
             )
             for item in suite.items
         ]
-        stored = await self._store.create_run(run, items)
+        stored = await self._persist_run_with_task(run, items)
         logger.info(
             "test_run_created",
             extra={
@@ -239,6 +261,51 @@ class TestRunService:
             run,
             "test_run.created",
             {"run_id": run.id, "suite_id": suite_id, "item_count": len(items)},
+        )
+        return stored
+
+    async def _persist_run_with_task(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+    ) -> TestRunDetail:
+        """Persist a run and its first dispatch intent in one PG transaction."""
+        if self._task_outbox is None:
+            return await self._store.create_run(run, items)
+        if self._task_outbox_table is None or self._task_stream is None:
+            raise RuntimeError("Task outbox is enabled without table/stream configuration")
+        create_atomic = getattr(self._store, "create_run_with_outbox", None)
+        if create_atomic is None:
+            raise RuntimeError(
+                "The configured TestRun store does not support atomic outbox creation"
+            )
+        context = get_request_context()
+        task = RunDispatchTask(
+            task_id=f"task_test_run_{run.id}",
+            request_id=context.request_id if context else new_id("req"),
+            trace_id=context.trace_id if context else new_id("trace"),
+            project_id=run.project_id,
+            session_id=run.session_id,
+            run_id=run.id,
+        )
+        payload = task.model_dump(mode="json")
+        stored = await create_atomic(
+            run,
+            items,
+            outbox_table=self._task_outbox_table,
+            event_key=f"test_run_dispatch:{run.id}",
+            stream=self._task_stream,
+            payload=payload,
+        )
+        logger.info(
+            "test_run_created_with_outbox",
+            extra={
+                "task_id": task.task_id,
+                "request_id": task.request_id,
+                "trace_id": task.trace_id,
+                "run_id": run.id,
+                "stream": self._task_stream,
+            },
         )
         return stored
 
@@ -407,7 +474,7 @@ class TestRunService:
                     updated_at=now,
                 )
             )
-        stored = await self._store.create_run(run, items)
+        stored = await self._persist_run_with_task(run, items)
         source_result_ids = [
             candidate.result_id
             for candidate in selected_candidates[:REGRESSION_EVENT_SOURCE_ID_LIMIT]
