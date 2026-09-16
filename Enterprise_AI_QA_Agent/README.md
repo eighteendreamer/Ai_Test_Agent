@@ -232,6 +232,15 @@ uv run --locked --directory Agent_Server python -m src.cli.run_compaction_worker
 
 压缩 Worker 使用 Redis 热记忆的 event cursor 和稳定 `compaction_key`，只裁剪已成功落入 PostgreSQL 的事件；Worker 重试或并发重复投递不会删除截止点之后的新事件。
 
+Redis 向量索引按 `embedding_version` 独立构建。恢复或模型版本切换时先预览 PostgreSQL 权威库存，再执行重建；只有 Redis 文档数对账和抽样召回都通过后，才允许原子切换在线索引：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vectors --embedding-version <version>
+uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vectors --embedding-version <version> --execute --activate
+```
+
+`--execute` 只重建并验证副本，`--activate` 进一步写入 `qa:vector:active:memory` 指针。验证失败时保留原指针和旧索引，检索自动回源 PostgreSQL。验证等待时间和轮询间隔由 `ORCHESTRATION__REDIS_VECTOR_VALIDATION_TIMEOUT_SECONDS`、`ORCHESTRATION__REDIS_VECTOR_VALIDATION_POLL_INTERVAL_SECONDS` 管理。
+
 ### 2. 启动前端
 
 ```bash

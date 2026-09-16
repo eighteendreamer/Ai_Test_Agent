@@ -36,6 +36,9 @@ async def test_live_authoritative_retrieval_and_redis_outage():
         def prefix(self, entity, embedding_version):
             return f"qa:test:{suffix}:doc:{embedding_version}:"
 
+        def active_key(self, entity):
+            return f"qa:test:{suffix}:active:{entity}"
+
     store = PostgresVectorMemoryStore(settings)
     redis = IsolatedRedis(base.database.redis_url)
     embedding = AppContainer().embedding_runtime_service()
@@ -47,6 +50,9 @@ async def test_live_authoritative_retrieval_and_redis_outage():
         vector, version = result.vectors[0], result.embedding_version
         assert version and len(vector) == result.stored_dimension
         index = await redis.create_index(entity="memory", embedding_version=version, dimension=len(vector))
+        await redis.activate_index(
+            entity="memory", embedding_version=version, dimension=len(vector),
+        )
         service = MemoryRuntimeService(store, top_k=2, embedding_runtime_service=embedding, vector_store=redis)
         metadata = {"embedding": vector, "embedding_version": version,
                     "embedding_dimension": len(vector), "project_id": "project-a", "environment": "qa",
@@ -146,8 +152,8 @@ async def test_live_authoritative_retrieval_and_redis_outage():
         preview = await recovery.rebuild(version)
         assert preview.source_count == 18 and preview.dimension == len(vector)
         index = redis.index_name("memory", version)
-        restored = await recovery.rebuild(version, execute=True)
-        assert restored.replicated == 18 and restored.status == "completed"
+        restored = await recovery.rebuild(version, execute=True, activate=True)
+        assert restored.replicated == 18 and restored.status == "activated"
         assert (await recovery.rebuild(version, execute=True)).replicated == 18
         with pytest.raises(ValueError, match="contract"):
             await redis.create_index(entity="memory", embedding_version=version, dimension=len(vector) + 1)
@@ -162,6 +168,7 @@ async def test_live_authoritative_retrieval_and_redis_outage():
               f"hydration=passed outage=passed missing_index=passed restored={restored.replicated} "
               "retry=passed dimension_mismatch=blocked")
     finally:
+        await redis.deactivate_index(entity="memory")
         if index is not None and index.encode() in await redis._client.execute_command("FT._LIST"):
             await redis._client.execute_command("FT.DROPINDEX", index, "DD")
         await redis.close()

@@ -181,6 +181,8 @@ class OrchestrConfig(BaseModel):
     redis_vector_enabled: bool = True
     redis_vector_socket_timeout_seconds: float = Field(default=5.0, gt=0)
     redis_vector_rebuild_batch_size: int = Field(default=64, ge=1, le=1000)
+    redis_vector_validation_timeout_seconds: float = Field(default=30.0, gt=0)
+    redis_vector_validation_poll_interval_seconds: float = Field(default=0.2, gt=0)
     resource_global_limit: int = Field(default=20, ge=1)
     resource_default_lease_seconds: int = Field(default=300, gt=0)
     resource_docker_slots: int = Field(default=10, ge=1)

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-import re
+import asyncio
+import logging
 import math
+import re
 import struct
+from time import perf_counter
 from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class RedisVectorStore:
@@ -34,6 +40,142 @@ class RedisVectorStore:
     async def close(self) -> None:
         if self._client is not None and hasattr(self._client, "aclose"):
             await self._client.aclose()
+
+    async def get_active_version(self, *, entity: str) -> str | None:
+        """Read the version selected for online retrieval.
+
+        The pointer is deliberately separate from versioned RediSearch indexes.
+        A missing pointer means that no replica is ready and callers should use
+        their durable fallback instead of guessing a version.
+        """
+        raw = await self._client.get(self.active_key(entity))
+        if raw is None:
+            return None
+        version = _text(raw).strip()
+        if not version:
+            return None
+        _safe(version)
+        return version
+
+    async def get_active_index(self, *, entity: str) -> str | None:
+        version = await self.get_active_version(entity=entity)
+        return self.index_name(entity, version) if version else None
+
+    async def activate_index(
+        self,
+        *,
+        entity: str,
+        embedding_version: str,
+        dimension: int,
+    ) -> str:
+        """Atomically publish a fully validated version as the active index.
+
+        Index construction and population happen before this method.  Redis'
+        single-key ``SET`` is atomic, so readers observe either the previous
+        pointer or this complete version; they never observe a partially
+        written pointer.  The old index is intentionally retained for delayed
+        cleanup and rollback.
+        """
+        dimension = int(dimension)
+        if dimension <= 0:
+            raise ValueError("Vector index dimension must be greater than zero")
+        _safe(embedding_version)
+        await self.validate_index(
+            entity=entity,
+            embedding_version=embedding_version,
+            dimension=dimension,
+        )
+        await self._client.set(self.active_key(entity), embedding_version)
+        LOGGER.info(
+            "redis_vector_index_activated",
+            extra={
+                "entity": entity,
+                "embedding_version": embedding_version,
+                "dimension": dimension,
+            },
+        )
+        return self.index_name(entity, embedding_version)
+
+    async def validate_replica(
+        self,
+        *,
+        entity: str,
+        embedding_version: str,
+        dimension: int,
+        expected_count: int,
+        probe_id: str | None = None,
+        probe_vector: list[float] | None = None,
+        timeout_seconds: float = 30.0,
+        poll_interval_seconds: float = 0.2,
+    ) -> None:
+        """Wait for RediSearch indexing and verify one authoritative sample."""
+        if expected_count < 0:
+            raise ValueError("Expected Redis vector document count cannot be negative")
+        if timeout_seconds <= 0 or poll_interval_seconds <= 0:
+            raise ValueError("Redis vector validation timing must be positive")
+        if bool(probe_id) != bool(probe_vector):
+            raise ValueError("Redis vector validation probe id and vector are required together")
+        deadline = perf_counter() + timeout_seconds
+        last_count = -1
+        while True:
+            await self.validate_index(
+                entity=entity,
+                embedding_version=embedding_version,
+                dimension=dimension,
+            )
+            last_count = await self.document_count(
+                entity=entity,
+                embedding_version=embedding_version,
+            )
+            if last_count == expected_count:
+                break
+            if perf_counter() >= deadline:
+                raise TimeoutError(
+                    "Redis vector replica document count did not match PostgreSQL."
+                )
+            await asyncio.sleep(poll_interval_seconds)
+
+        if probe_id and probe_vector:
+            hits = await self.search(
+                entity=entity,
+                embedding_version=embedding_version,
+                vector=probe_vector,
+                top_k=1,
+            )
+            expected_key = f"{self.prefix(entity, embedding_version)}{probe_id}"
+            if not hits or hits[0].get("id") != expected_key:
+                raise ValueError(
+                    "Redis vector replica recall probe did not return the source record."
+                )
+        LOGGER.info(
+            "redis_vector_replica_validated",
+            extra={
+                "entity": entity,
+                "embedding_version": embedding_version,
+                "dimension": dimension,
+                "document_count": last_count,
+                "probe_id": probe_id,
+            },
+        )
+
+    async def document_count(self, *, entity: str, embedding_version: str) -> int:
+        info = _mapping(
+            await self._client.execute_command(
+                "FT.INFO", self.index_name(entity, embedding_version)
+            )
+        )
+        try:
+            count = int(info.get("num_docs", 0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Redis vector index returned an invalid document count") from exc
+        if count < 0:
+            raise ValueError("Redis vector index returned a negative document count")
+        return count
+
+    async def deactivate_index(self, *, entity: str) -> bool:
+        """Clear the active pointer without deleting any versioned index."""
+        deleted = await self._client.delete(self.active_key(entity))
+        return bool(deleted)
 
     async def create_index(self, *, entity: str, embedding_version: str, dimension: int) -> str:
         dimension = int(dimension)
@@ -130,6 +272,10 @@ class RedisVectorStore:
     @staticmethod
     def index_name(entity: str, embedding_version: str) -> str:
         return f"qa:vector:{_safe(entity)}:{_safe(embedding_version)}"
+
+    @staticmethod
+    def active_key(entity: str) -> str:
+        return f"qa:vector:active:{_safe(entity)}"
 
     @staticmethod
     def prefix(entity: str, embedding_version: str) -> str:

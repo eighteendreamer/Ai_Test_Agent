@@ -20,6 +20,7 @@ def harness(candidates=None, hits=None):
         search_candidates=AsyncMock(return_value=[point()] if hits is None else hits),
     )
     vector = SimpleNamespace(
+        get_active_version=AsyncMock(return_value="v1"),
         search=AsyncMock(return_value=candidates if candidates is not None else [{
             "id": RedisVectorStore.prefix("memory", "v1") + "stored",
             "content": "Untrusted Redis text",
@@ -94,5 +95,17 @@ async def test_no_embedding_version_skips_redis():
     service, store, vector, request = harness()
     request.metadata_filters.pop("__embedding_version")
     await service._search_memory(request)
+    vector.search.assert_not_awaited()
+    store.search.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_inactive_embedding_version_falls_back_without_querying_partial_index():
+    service, store, vector, request = harness()
+    vector.get_active_version.return_value = "v0"
+
+    result = await service._search_memory(request)
+
+    assert result[0].id == "fallback"
     vector.search.assert_not_awaited()
     store.search.assert_awaited_once_with(request)

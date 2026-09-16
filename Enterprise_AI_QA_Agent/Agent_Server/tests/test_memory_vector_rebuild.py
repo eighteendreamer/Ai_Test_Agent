@@ -28,6 +28,8 @@ class Vector:
         self.connect = AsyncMock()
         self.create_index = AsyncMock()
         self.upsert = AsyncMock(side_effect=self.write)
+        self.validate_replica = AsyncMock()
+        self.activate_index = AsyncMock(return_value="qa:vector:memory:v1")
         self.docs = {}
 
     async def write(self, **kwargs):
@@ -49,9 +51,10 @@ async def test_rebuild_keyset_pages_and_retry_is_idempotent():
     memory, vector = Memory(), Vector()
     service = MemoryVectorRebuildService(memory, vector, batch_size=2)
     first = await service.rebuild("v1", execute=True)
-    assert first.replicated == 5 and first.status == "completed"
+    assert first.replicated == 5 and first.status == "validated"
     assert memory.cursors == [None, "1", "3", "4"]
     assert vector.docs["2"]["metadata"]["status"] == "stale"
+    vector.validate_replica.assert_awaited_once()
     second = await service.rebuild("v1", execute=True)
     assert second.replicated == 5 and len(vector.docs) == 5
 
@@ -70,6 +73,34 @@ async def test_failure_is_not_reported_as_success_and_can_restart(caplog):
 
 
 @pytest.mark.asyncio
+async def test_activation_happens_only_after_replica_validation():
+    memory, vector = Memory(), Vector()
+    result = await MemoryVectorRebuildService(memory, vector).rebuild(
+        "v1", execute=True, activate=True,
+    )
+
+    assert result.status == "activated"
+    assert result.active_index == "qa:vector:memory:v1"
+    assert vector.validate_replica.await_count == 1
+    assert vector.validate_replica.await_args.kwargs["expected_count"] == 5
+    assert vector.validate_replica.await_args.kwargs["probe_id"] == "0"
+    assert vector.activate_index.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_validation_does_not_switch_active_index():
+    memory, vector = Memory(), Vector()
+    vector.validate_replica.side_effect = ValueError("recall probe failed")
+
+    with pytest.raises(ValueError, match="recall probe"):
+        await MemoryVectorRebuildService(memory, vector).rebuild(
+            "v1", execute=True, activate=True,
+        )
+
+    vector.activate_index.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_mixed_dimensions_block_before_index_creation():
     memory, vector = Memory(), Vector()
     memory.vector_inventory = AsyncMock(return_value={2: 4, 3: 1})
@@ -84,3 +115,11 @@ async def test_missing_version_is_empty_not_fake_rebuild():
     result = await MemoryVectorRebuildService(memory, vector).rebuild("missing", execute=True)
     assert result.status == "empty" and result.dimension is None
     vector.connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_activation_requires_execute():
+    with pytest.raises(ValueError, match="requires an executed rebuild"):
+        await MemoryVectorRebuildService(Memory(), Vector()).rebuild(
+            "v1", activate=True,
+        )

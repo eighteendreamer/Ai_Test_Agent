@@ -495,6 +495,20 @@ class MemoryRuntimeService:
         if not request.include_stale:
             filters["status"] = "active"
         try:
+            active_version = await self._vector_store.get_active_version(
+                entity="memory"
+            )
+            if active_version != version:
+                LOGGER.info(
+                    "memory_vector_retrieval_fallback",
+                    extra={
+                        "session_id": request.session_id,
+                        "embedding_version": version,
+                        "active_embedding_version": active_version,
+                        "reason": "embedding_version_not_active",
+                    },
+                )
+                return await self._memory_store.search(request)
             candidates = await self._vector_store.search(
                 entity="memory", embedding_version=version, vector=vector,
                 top_k=max(request.top_k * 8, 40), filters=filters,

@@ -21,10 +21,20 @@ async def _run(args: argparse.Namespace) -> None:
     service = MemoryVectorRebuildService(
         PostgresVectorMemoryStore(settings), redis,
         batch_size=settings.orchestration.redis_vector_rebuild_batch_size,
+        validation_timeout_seconds=(
+            settings.orchestration.redis_vector_validation_timeout_seconds
+        ),
+        validation_poll_interval_seconds=(
+            settings.orchestration.redis_vector_validation_poll_interval_seconds
+        ),
     )
     try:
         # Do not initialize the PG store here: recovery is read-only in the fact DB.
-        result = await service.rebuild(args.embedding_version, execute=args.execute)
+        result = await service.rebuild(
+            args.embedding_version,
+            execute=args.execute,
+            activate=args.activate,
+        )
         print(json.dumps(asdict(result), ensure_ascii=False))
     finally:
         await redis.close()
@@ -34,11 +44,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=(
         "Preview Redis memory replica recovery from PostgreSQL for one embedding version. "
         "--execute writes Redis only; no model calls, SQL schema changes or database writes. "
-        "A failed pass can safely restart; this command does not switch active model versions."
+        "A failed pass can safely restart. --activate switches the online pointer only after "
+        "document-count and recall validation pass."
     ))
     parser.add_argument("--embedding-version", required=True)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument(
+        "--activate",
+        action="store_true",
+        help="Atomically activate the validated index; requires --execute.",
+    )
     args = parser.parse_args()
+    if args.activate and not args.execute:
+        parser.error("--activate requires --execute")
     try:
         asyncio.run(_run(args))
     except Exception as exc:
