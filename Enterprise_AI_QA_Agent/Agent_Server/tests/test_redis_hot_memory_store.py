@@ -16,7 +16,11 @@ class FakeRedis:
     async def ltrim(self, key, start, end): self.data[key] = self.data.get(key, [])[start:]
     async def expire(self, key, ttl): return 1
     async def lrange(self, key, start, end): return self.data.get(key, [])
-    async def set(self, key, value, ex=None): self.data[key] = value
+    async def set(self, key, value, ex=None, nx=False):
+        if nx and key in self.data:
+            return False
+        self.data[key] = value
+        return True
     async def get(self, key): return self.data.get(key)
     async def delete(self, *keys):
         for key in keys: self.data.pop(key, None)
@@ -31,5 +35,44 @@ def test_hot_memory_is_session_isolated_and_cursorable():
         await store.append_event("s1", {"type": "three"})
         assert [item["type"] for item in await store.list_events("s1")] == ["two", "three"]
         assert await store.list_events("s1", after_id=event_id) == [{"type": "three", "id": "3", "hot_stored_at": (await store.list_events("s1"))[1]["hot_stored_at"]}]
+
+    asyncio.run(run())
+
+
+def test_hot_memory_compaction_commits_only_through_the_durable_cursor():
+    async def run():
+        store = RedisHotMemoryStore("redis://unused", client=FakeRedis())
+        await store.connect()
+        await store.append_event("s1", {"id": "e1", "type": "one"})
+        await store.append_event("s1", {"id": "e2", "type": "two"})
+        await store.append_event("s1", {"id": "e3", "type": "three"})
+
+        assert await store.commit_compaction(
+            "s1", key="e2:v1", last_event_id="e2"
+        )
+        remaining = await store.list_events("s1")
+        assert [item["id"] for item in remaining] == ["e3"]
+        state = await store.get_compaction_state("s1")
+        assert state == {
+            "status": "completed",
+            "last_event_id": "e2",
+            "key": "e2:v1",
+        }
+
+        # A retry after the cursor has already been committed is idempotent.
+        assert await store.commit_compaction(
+            "s1", key="e2:v1", last_event_id="e2"
+        )
+
+    asyncio.run(run())
+
+
+def test_failed_compaction_marker_can_be_reclaimed_for_retry():
+    async def run():
+        store = RedisHotMemoryStore("redis://unused", client=FakeRedis())
+        await store.connect()
+        assert await store.acquire_compaction("s1", "e1:v1")
+        await store.mark_compaction_failed("s1", key="e1:v1", error="embedding unavailable")
+        assert await store.acquire_compaction("s1", "e1:v1")
 
     asyncio.run(run())

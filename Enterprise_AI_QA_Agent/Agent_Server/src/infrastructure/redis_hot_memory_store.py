@@ -14,6 +14,42 @@ from typing import Any
 from redis.asyncio import Redis
 
 
+_COMMIT_COMPACTION_SCRIPT = """
+local rows = redis.call('LRANGE', KEYS[1], 0, -1)
+local target_index = -1
+for index, row in ipairs(rows) do
+  local ok, payload = pcall(cjson.decode, row)
+  if ok and tostring(payload['id'] or '') == ARGV[1] then
+    target_index = index - 1
+    break
+  end
+end
+if target_index < 0 then
+  if redis.call('GET', KEYS[2]) == ARGV[2] then return 1 end
+  return 0
+end
+redis.call('LTRIM', KEYS[1], target_index + 1, -1)
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+redis.call('SET', KEYS[3], ARGV[4], 'EX', ARGV[3])
+return 1
+"""
+
+_ACQUIRE_COMPACTION_SCRIPT = """
+local current = redis.call('GET', KEYS[1])
+if not current then
+  redis.call('SET', KEYS[1], 'running', 'EX', ARGV[1], 'NX')
+  return 1
+end
+if current == 'running' or current == 'completed' then return 0 end
+local ok, payload = pcall(cjson.decode, current)
+if ok and type(payload) == 'table' and payload['status'] == 'failed' then
+  redis.call('SET', KEYS[1], 'running', 'EX', ARGV[1])
+  return 1
+end
+return 0
+"""
+
+
 class RedisHotMemoryStore:
     def __init__(
         self,
@@ -69,12 +105,93 @@ class RedisHotMemoryStore:
         raw = await self._client.get(self._key(turn_id, "state", prefix="turn"))
         return json.loads(raw) if raw else None
 
-    async def mark_compaction_pending(self, session_id: str, *, last_event_id: str | None = None) -> None:
+    async def mark_compaction_pending(
+        self,
+        session_id: str,
+        *,
+        last_event_id: str | None = None,
+        key: str | None = None,
+    ) -> None:
         self._require_session(session_id)
-        payload = {"status": "pending", "last_event_id": last_event_id}
+        payload = {"status": "pending", "last_event_id": last_event_id, "key": key}
         await self._client.set(
-            self._key(session_id, "compaction"),
+            self._key(session_id, "compaction_state"),
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            ex=self._ttl_seconds,
+        )
+
+    async def get_compaction_state(self, session_id: str) -> dict[str, Any] | None:
+        self._require_session(session_id)
+        raw = await self._client.get(self._key(session_id, "compaction_state"))
+        if not raw:
+            return None
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else None
+
+    async def commit_compaction(
+        self,
+        session_id: str,
+        *,
+        key: str,
+        last_event_id: str,
+    ) -> bool:
+        """Commit durable compaction and retain events appended afterward.
+
+        The Lua path makes the cursor update and list trim one Redis operation.
+        A small command fallback keeps deterministic unit-test doubles useful;
+        production Redis 8 always takes the atomic path.
+        """
+        self._require_session(session_id)
+        if not last_event_id:
+            raise ValueError("last_event_id is required for compaction commit")
+        event_key = self._key(session_id, "events")
+        state_key = self._key(session_id, "compaction_state")
+        marker_key = self._key(session_id, f"compaction:{key}")
+        state = json.dumps(
+            {"status": "completed", "last_event_id": last_event_id, "key": key},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if hasattr(self._client, "eval"):
+            result = await self._client.eval(
+                _COMMIT_COMPACTION_SCRIPT,
+                3,
+                event_key,
+                state_key,
+                marker_key,
+                last_event_id,
+                state,
+                self._ttl_seconds,
+                "completed",
+            )
+            return bool(result)
+
+        rows = await self._client.lrange(event_key, 0, -1)
+        target_index = None
+        for index, row in enumerate(rows):
+            try:
+                value = json.loads(row)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if str(value.get("id") or "") == last_event_id:
+                target_index = index
+                break
+        if target_index is None:
+            return bool((await self.get_compaction_state(session_id) or {}).get("key") == key)
+        await self._client.ltrim(event_key, target_index + 1, -1)
+        await self._client.set(state_key, state, ex=self._ttl_seconds)
+        await self._client.set(marker_key, "completed", ex=self._ttl_seconds)
+        return True
+
+    async def mark_compaction_failed(self, session_id: str, *, key: str, error: str) -> None:
+        self._require_session(session_id)
+        await self._client.set(
+            self._key(session_id, f"compaction:{key}"),
+            json.dumps(
+                {"status": "failed", "error": str(error)[:1000]},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
             ex=self._ttl_seconds,
         )
 
@@ -84,11 +201,31 @@ class RedisHotMemoryStore:
             self._key(session_id, "events"),
             self._key(session_id, "event_seq"),
             self._key(session_id, "compaction"),
+            self._key(session_id, "compaction_state"),
         )
 
     async def acquire_compaction(self, session_id: str, key: str) -> bool:
         self._require_session(session_id)
         marker = self._key(session_id, f"compaction:{key}")
+        if hasattr(self._client, "eval"):
+            return bool(
+                await self._client.eval(
+                    _ACQUIRE_COMPACTION_SCRIPT,
+                    1,
+                    marker,
+                    self._ttl_seconds,
+                )
+            )
+        existing = await self._client.get(marker)
+        if existing:
+            try:
+                state = json.loads(existing)
+            except (TypeError, json.JSONDecodeError):
+                state = None
+            if not isinstance(state, dict) or state.get("status") != "failed":
+                return False
+            await self._client.set(marker, "running", ex=self._ttl_seconds)
+            return True
         acquired = await self._client.set(marker, "running", ex=self._ttl_seconds, nx=True)
         return bool(acquired)
 

@@ -224,6 +224,14 @@ uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
 
 启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED=true` 后，普通/回归 TestRun 的运行记录、RunItem 与首次 dispatch intent 会在同一个 PostgreSQL 事务中提交；Redis 暂时不可用时不会丢失任务意图。
 
+Session/Turn 完成事件也会在同一 PostgreSQL 事务中写入 `compaction_task` Outbox。配置额外 Stream 包含 `qa:tasks:compaction` 后，单独启动低优先级压缩 Worker：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_compaction_worker
+```
+
+压缩 Worker 使用 Redis 热记忆的 event cursor 和稳定 `compaction_key`，只裁剪已成功落入 PostgreSQL 的事件；Worker 重试或并发重复投递不会删除截止点之后的新事件。
+
 ### 2. 启动前端
 
 ```bash

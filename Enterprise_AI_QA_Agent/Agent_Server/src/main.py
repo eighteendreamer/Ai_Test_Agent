@@ -196,6 +196,13 @@ async def lifespan(app: FastAPI):
     task_outbox = PostgresTaskOutbox(settings)
     await task_outbox.initialize()
     app.state.task_outbox = task_outbox
+    configure_compaction_outbox = getattr(store, "set_compaction_task_outbox", None)
+    compaction_stream = settings.orchestration.compaction_task_stream
+    if callable(configure_compaction_outbox) and compaction_stream in settings.orchestration.task_stream_names:
+        configure_compaction_outbox(
+            table_name=settings.database.postgres_task_outbox_table,
+            stream=compaction_stream,
+        )
 
     task_pool_service = container.task_pool_service()
 

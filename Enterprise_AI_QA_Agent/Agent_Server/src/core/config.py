@@ -257,6 +257,14 @@ class OrchestrConfig(BaseModel):
                 result.append(stream)
         return tuple(result)
 
+    @property
+    def compaction_task_stream(self) -> str:
+        """Resolve the configured low-priority Session compaction stream."""
+        for stream in self.task_stream_names:
+            if stream.endswith(":compaction"):
+                return stream
+        return "qa:tasks:compaction"
+
     @field_validator("mcp_stdio_command_allowlist", mode="before")
     @classmethod
     def split_mcp_stdio_command_allowlist(cls, value):

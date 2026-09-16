@@ -33,10 +33,19 @@ class PostgresSessionStore:
         self._settings = settings
         self._queues: dict[str, asyncio.Queue[ExecutionEvent]] = defaultdict(asyncio.Queue)
         self._hot_memory_store = None
+        self._compaction_outbox_table: str | None = None
+        self._compaction_task_stream: str | None = None
 
     def set_hot_memory_store(self, store) -> None:
         """Attach the optional Redis staging store after startup initialization."""
         self._hot_memory_store = store
+
+    def set_compaction_task_outbox(self, *, table_name: str, stream: str) -> None:
+        """Enable atomic terminal-turn compaction intents in the PG outbox."""
+        if not table_name or not stream:
+            raise ValueError("Compaction outbox table and stream are required")
+        self._compaction_outbox_table = table_name
+        self._compaction_task_stream = stream
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -736,6 +745,44 @@ class PostgresSessionStore:
                     """,
                     (datetime.utcnow(), session_id),
                 )
+                if (
+                    getattr(self, "_compaction_outbox_table", None)
+                    and getattr(self, "_compaction_task_stream", None)
+                    and event.type in {"turn.completed", "turn.interrupted"}
+                ):
+                    task_id = f"task_compaction_{session_id}_{event.id}"
+                    task_payload = {
+                        "schema_version": 1,
+                        "task_id": task_id,
+                        "task_type": "compaction_task",
+                        "request_id": context_fields.get("request_id") or f"req_{event.id}",
+                        "trace_id": context_fields.get("trace_id") or f"trace_{event.id}",
+                        "session_id": session_id,
+                        "turn_id": context_fields.get("turn_id") or event_payload.get("turn_id"),
+                        "run_id": context_fields.get("run_id"),
+                        "run_item_id": context_fields.get("run_item_id"),
+                        "attempt_id": context_fields.get("attempt_id"),
+                        "worker_id": context_fields.get("worker_id"),
+                        "resource_id": context_fields.get("resource_id"),
+                        "created_at": event.timestamp.isoformat(),
+                        "payload": {
+                            "source_event_id": event.id,
+                            "source_event_type": event.type,
+                        },
+                    }
+                    cur.execute(
+                        f"""
+                        INSERT INTO {self._compaction_outbox_table} (
+                            event_key, stream, payload
+                        ) VALUES (%s, %s, %s::jsonb)
+                        ON CONFLICT (event_key) DO NOTHING
+                        """,
+                        (
+                            f"compaction:{session_id}:{event.id}",
+                            self._compaction_task_stream,
+                            json.dumps(task_payload, ensure_ascii=False, separators=(",", ":")),
+                        ),
+                    )
 
     def _list_events_sync(
         self,

@@ -352,6 +352,7 @@ class MemoryRuntimeService:
         tool_results: list[dict[str, Any]],
         context_bundle: dict[str, Any],
         turn_lease_token: str | None = None,
+        compaction_key: str | None = None,
     ) -> list[str]:
         write_ids: list[str] = []
         requests = self._build_turn_write_policy(
@@ -362,6 +363,7 @@ class MemoryRuntimeService:
             assistant_message=assistant_message,
             tool_results=tool_results,
             context_bundle=context_bundle,
+            compaction_key=compaction_key,
         )
         requests = await self._attach_embeddings(requests)
         if turn_lease_token:
@@ -644,6 +646,7 @@ class MemoryRuntimeService:
         assistant_message: str,
         tool_results: list[dict[str, Any]],
         context_bundle: dict[str, Any],
+        compaction_key: str | None = None,
     ) -> list[MemoryWriteRequest]:
         mode_key = str(context_bundle.get("mode_key") or "default").strip() or "default"
         metadata = self._build_common_metadata(context_bundle)
@@ -735,6 +738,16 @@ class MemoryRuntimeService:
                     },
                 )
             )
+        if compaction_key:
+            digest = hashlib.sha1(compaction_key.encode("utf-8")).hexdigest()[:24]
+            for index, request in enumerate(requests):
+                requests[index] = request.model_copy(update={
+                    "metadata": {
+                        **request.metadata,
+                        "compaction_key": compaction_key,
+                        "memory_id": f"cmp-{digest}-{index}",
+                    },
+                })
         return requests
 
     def _derive_read_tags(self, context: dict[str, Any]) -> list[str]:
