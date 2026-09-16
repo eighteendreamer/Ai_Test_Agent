@@ -29,6 +29,7 @@ from src.schemas.run_management import (
 )
 from src.schemas.session import SessionSnapshot, ToolApprovalStatus
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+from src.runtime.resource_lease_manager import ResourceLease
 
 
 def test_extract_run_item_checkpoint_requires_binding_and_supports_mode_state():
@@ -810,6 +811,128 @@ async def test_execution_service_heartbeat_failure_turns_result_into_error():
     assert runs.completed_payload.status == "error"
     assert "lease store unavailable" in (runs.completed_payload.error_message or "")
     assert runs.completed_payload.actual["lease_heartbeat_error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("renew_result", "expected_status"),
+    [(True, "passed"), (False, "error")],
+)
+async def test_execution_service_renews_resource_leases_and_rejects_failed_renewal(
+    renew_result,
+    expected_status,
+):
+    now, run, item, case, version = _records()
+    item = item.model_copy(update={"lease_expires_at": datetime.now(timezone.utc)})
+    version = version.model_copy(update={
+        "test_data": {"runner_arguments": {"runner_backend": "docker"}},
+    })
+
+    class FakeRuns:
+        def __init__(self):
+            self.heartbeats = []
+            self.completed_payload = None
+
+        async def start_item(self, item_id, payload):
+            return item.model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            return run
+
+        async def heartbeat_item(self, item_id, payload):
+            self.heartbeats.append(payload)
+            return item.model_copy(update={"status": "running"})
+
+        async def complete_item(self, item_id, payload):
+            self.completed_payload = payload
+            return SimpleNamespace(
+                id="result-resource-lease",
+                run_item_id=item.id,
+                status=payload.status,
+                tool_job_id=payload.tool_job_id,
+                actual=payload.actual,
+            )
+
+    class FakeCases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class ResourceManager:
+        def __init__(self):
+            self.renew_calls = []
+            self.released = []
+
+        async def acquire_first_available(self, **kwargs):
+            return ResourceLease(
+                resource_id=kwargs["resource_ids"][0],
+                resource_type=kwargs["resource_type"],
+                project_id=kwargs.get("project_id"),
+                session_id=kwargs.get("session_id"),
+                run_id=kwargs.get("run_id"),
+                run_item_id=kwargs.get("run_item_id"),
+                attempt_id=kwargs.get("attempt_id"),
+                worker_id=kwargs["worker_id"],
+                lease_token="resource-token",
+                fencing_token=11,
+                lease_expire_at=now,
+            )
+
+        async def renew(self, lease, *, lease_seconds):
+            self.renew_calls.append((lease.resource_id, lease_seconds))
+            return renew_result
+
+        async def release(self, lease):
+            self.released.append(lease.resource_id)
+            return True
+
+    class SlowAdapter:
+        async def execute(self, **kwargs):
+            await asyncio.sleep(0.04)
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=kwargs["item"].lease_token,
+                    status="passed",
+                    summary="资源租约续期测试",
+                ),
+                tool_record=None,
+                verification_results=[],
+            )
+
+    runs = FakeRuns()
+    resources = ResourceManager()
+    service = _ExecutionService(
+        run_service=runs,
+        test_case_service=FakeCases(),
+        adapter=SlowAdapter(),
+        security_settings=SimpleNamespace(
+            app_env="testing",
+            orchestration=SimpleNamespace(
+                resource_default_lease_seconds=30,
+                resource_docker_slots=1,
+            ),
+            security=SimpleNamespace(security_runner_backend="local"),
+        ),
+        lease_heartbeat_interval_seconds=0.005,
+    )
+    service.set_resource_lease_manager(resources)
+
+    result = await service.execute_item(
+        item.id,
+        RunItemExecuteRequest(lease_token="lease-1"),
+    )
+
+    assert result.status == expected_status
+    assert resources.renew_calls
+    assert all(seconds == 30 for _, seconds in resources.renew_calls)
+    assert resources.released == ["docker-slot-0"]
+    if renew_result:
+        assert runs.completed_payload.status == "passed"
+    else:
+        assert runs.completed_payload.status == "error"
+        assert "docker-slot-0" in runs.completed_payload.actual["resource_lease_heartbeat_error"]
 
 
 @pytest.mark.asyncio

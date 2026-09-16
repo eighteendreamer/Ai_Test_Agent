@@ -135,8 +135,11 @@ class TestRunExecutionService:
         case = await self._cases.get_case(item.case_id)
         version = await self._cases.get_version(item.case_version_id)
         heartbeat_errors: list[str] = []
+        resource_heartbeat_errors: list[str] = []
         resource_leases: list[ResourceLease] = []
         heartbeat_stop = asyncio.Event()
+        resource_heartbeat_stop = asyncio.Event()
+        resource_heartbeat_task: asyncio.Task | None = None
         heartbeat_task = asyncio.create_task(
             self._keep_item_lease_alive(
                 item=item,
@@ -222,6 +225,15 @@ class TestRunExecutionService:
                             for lease in resource_leases
                         ],
                     }
+                    resource_heartbeat_task = asyncio.create_task(
+                        self._keep_resource_leases_alive(
+                            run=run,
+                            item=item,
+                            leases=resource_leases,
+                            stop_event=resource_heartbeat_stop,
+                            errors=resource_heartbeat_errors,
+                        )
+                    )
                 trace_context = self._build_item_trace_context(
                     run=run,
                     item=item,
@@ -257,24 +269,24 @@ class TestRunExecutionService:
                             tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
                             server_approval_granted=bool(payload.approval_id),
                         )
-                    if outcome is not None and outcome.tool_record is not None and outcome.tool_record.status == "waiting_resource":
-                        waiting_reason = str(
-                            (outcome.tool_record.output or {}).get("waiting_reason")
-                            or "resource_unavailable"
-                        )
-                        await self._runs.mark_waiting_resource(
-                            item.id, payload.lease_token, waiting_reason,
-                        )
-                        raise TaskDeferred(waiting_reason)
-                    await self._bind_external_resources(resource_leases, outcome)
-                    if item_trace is not None:
-                        item_trace.set_outputs(
-                            {
-                                "status": outcome.completion.status,
-                                "summary": outcome.completion.summary,
-                                "tool_job_id": outcome.completion.tool_job_id,
-                            }
-                        )
+                        if outcome is not None and outcome.tool_record is not None and outcome.tool_record.status == "waiting_resource":
+                            waiting_reason = str(
+                                (outcome.tool_record.output or {}).get("waiting_reason")
+                                or "resource_unavailable"
+                            )
+                            await self._runs.mark_waiting_resource(
+                                item.id, payload.lease_token, waiting_reason,
+                            )
+                            raise TaskDeferred(waiting_reason)
+                        await self._bind_external_resources(resource_leases, outcome)
+                        if item_trace is not None:
+                            item_trace.set_outputs(
+                                {
+                                    "status": outcome.completion.status,
+                                    "summary": outcome.completion.summary,
+                                    "tool_job_id": outcome.completion.tool_job_id,
+                                }
+                            )
                 completion = outcome.completion.model_copy(
                     update={"lease_token": payload.lease_token}
                 )
@@ -317,16 +329,32 @@ class TestRunExecutionService:
                 )
                 outcome = None
 
-            if heartbeat_errors:
-                heartbeat_detail = "; ".join(heartbeat_errors[-3:])
+            if resource_heartbeat_task is not None:
+                resource_heartbeat_stop.set()
+                resource_heartbeat_task.cancel()
+                try:
+                    await resource_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+                resource_heartbeat_task = None
+
+            if heartbeat_errors or resource_heartbeat_errors:
+                heartbeat_detail = "; ".join(
+                    [*heartbeat_errors[-3:], *resource_heartbeat_errors[-3:]]
+                )
                 completion = completion.model_copy(
                     update={
                         "status": "error",
-                        "summary": "Test case lease heartbeat failed; result is not safe to pass.",
+                        "summary": "Test case or resource lease heartbeat failed; result is not safe to pass.",
                         "error_message": heartbeat_detail,
                         "actual": {
                             **completion.actual,
                             "lease_heartbeat_error": heartbeat_detail,
+                            **(
+                                {"resource_lease_heartbeat_error": "; ".join(resource_heartbeat_errors[-3:])}
+                                if resource_heartbeat_errors
+                                else {}
+                            ),
                         },
                     }
                 )
@@ -353,11 +381,18 @@ class TestRunExecutionService:
             return result
         finally:
             heartbeat_stop.set()
+            resource_heartbeat_stop.set()
             heartbeat_task.cancel()
             try:
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
+            if resource_heartbeat_task is not None:
+                resource_heartbeat_task.cancel()
+                try:
+                    await resource_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
             await self._release_execution_resources(resource_leases)
 
     async def _claim_execution_resources(self, *, run, item, version, attempt_id: str | None = None) -> list[ResourceLease]:
@@ -369,7 +404,7 @@ class TestRunExecutionService:
         settings = self._runtime_settings
         owner = str(getattr(item, "lease_owner", None) or "worker")
         common = {
-            "worker_id": owner, "lease_seconds": int(getattr(getattr(settings, "orchestration", None), "resource_default_lease_seconds", 300)),
+            "worker_id": owner, "lease_seconds": _resource_lease_seconds(settings),
             "project_id": run.project_id, "session_id": run.session_id, "run_id": run.id,
             "run_item_id": item.id, "attempt_id": attempt_id,
         }
@@ -409,6 +444,85 @@ class TestRunExecutionService:
                     logger.error("test_run_resource_release_rejected", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
             except Exception:
                 logger.exception("test_run_resource_release_failed", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
+
+    async def _keep_resource_leases_alive(
+        self,
+        *,
+        run,
+        item,
+        leases: list[ResourceLease],
+        stop_event: asyncio.Event,
+        errors: list[str],
+    ) -> None:
+        """Renew every resource lease while the RunItem owns the resources.
+
+        Resource leases are independent from the PostgreSQL RunItem lease.  A
+        long-running case must therefore renew both contracts; otherwise a
+        browser, Docker slot, account, or environment can be reclaimed while
+        the adapter is still using it.  Any rejected/failed renewal is kept in
+        the shared execution outcome so the run cannot be reported as passed.
+        """
+        manager = self._resource_lease_manager
+        if manager is None or not leases:
+            return
+        lease_seconds = _resource_lease_seconds(self._runtime_settings)
+        interval = self._lease_heartbeat_interval_seconds or min(
+            30.0,
+            max(1.0, lease_seconds / 3),
+        )
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+            if stop_event.is_set():
+                return
+
+            results = await asyncio.gather(
+                *(
+                    manager.renew(lease, lease_seconds=lease_seconds)
+                    for lease in leases
+                ),
+                return_exceptions=True,
+            )
+            for lease, renewed in zip(leases, results, strict=False):
+                context = {
+                    "project_id": getattr(run, "project_id", None),
+                    "run_id": getattr(run, "id", None),
+                    "run_item_id": getattr(item, "id", None),
+                    "attempt_id": lease.attempt_id,
+                    "worker_id": lease.worker_id,
+                    "resource_id": lease.resource_id,
+                    "resource_type": lease.resource_type,
+                    "fencing_token": lease.fencing_token,
+                    "lease_seconds": lease_seconds,
+                }
+                if isinstance(renewed, BaseException):
+                    if isinstance(renewed, asyncio.CancelledError):
+                        raise renewed
+                    detail = f"{lease.resource_type}:{lease.resource_id}: {renewed}"
+                    errors.append(detail)
+                    logger.error(
+                        "test_run_resource_lease_heartbeat_failed",
+                        extra={
+                            **context,
+                            "error_type": type(renewed).__name__,
+                            "error_message": str(renewed),
+                        },
+                    )
+                    continue
+                if renewed:
+                    logger.debug(
+                        "test_run_resource_lease_heartbeat",
+                        extra=context,
+                    )
+                    continue
+                detail = f"{lease.resource_type}:{lease.resource_id}: renewal rejected"
+                errors.append(detail)
+                logger.error(
+                    "test_run_resource_lease_heartbeat_rejected",
+                    extra=context,
+                )
 
     async def _bind_external_resources(self, leases: list[ResourceLease], outcome) -> None:
         if self._resource_lease_manager is None or not leases or outcome is None:
@@ -1005,3 +1119,14 @@ def _lease_seconds_from_item(item) -> int:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     return max(15, min(3600, int((expires_at - now).total_seconds())))
+
+
+def _resource_lease_seconds(settings) -> int:
+    """Return the same TTL used by resource acquisition and renewal."""
+    orchestration = getattr(settings, "orchestration", None)
+    configured = getattr(orchestration, "resource_default_lease_seconds", 300)
+    try:
+        value = int(configured)
+    except (TypeError, ValueError):
+        value = 300
+    return max(1, value)

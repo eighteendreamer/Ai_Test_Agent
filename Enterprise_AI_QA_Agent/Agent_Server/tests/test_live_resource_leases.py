@@ -65,3 +65,22 @@ async def test_expired_lease_can_be_reclaimed(manager):
                                          worker_id="w2", lease_seconds=10)
     assert second.fencing_token > first.fencing_token
     assert await lease_manager.release(second)
+
+
+@pytest.mark.asyncio
+async def test_renew_extends_live_resource_ttl_and_rejects_stale_token(manager):
+    lease_manager, resource_id = manager
+    lease = await lease_manager.acquire(
+        resource_type="browser",
+        resource_id=resource_id,
+        worker_id="w1",
+        lease_seconds=1,
+    )
+    assert await lease_manager.renew(lease, lease_seconds=3)
+    assert await lease_manager._client.pttl(
+        lease_manager._lease_key("browser", resource_id)
+    ) > 1500
+
+    stale = lease.__class__(**{**lease.__dict__, "lease_token": "stale-token"})
+    assert not await lease_manager.renew(stale, lease_seconds=3)
+    assert await lease_manager.release(lease)
