@@ -201,6 +201,26 @@ def _completed(*, returncode: int = 0, stdout: str = "", stderr: str = ""):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
+def test_parallel_security_calls_have_distinct_artifact_mounts(monkeypatch, tmp_path):
+    from datetime import datetime
+    from src.core.config import Settings
+
+    class FixedClock:
+        @staticmethod
+        def utcnow(): return datetime(2026, 9, 17, 12, 0, 0)
+
+    monkeypatch.setattr("src.application.runtime.tool_runtime_service.datetime", FixedClock)
+    runtime = object.__new__(ToolRuntimeService)
+    runtime._settings = Settings()
+    runtime._settings.storage.artifact_root_dir = str(tmp_path)
+    first = runtime._prepare_local_artifact_dir(_Context(), "web-scan-runner")
+    second = runtime._prepare_local_artifact_dir(_Context(), "web-scan-runner")
+    assert first != second
+    (first / "evidence.txt").write_text("first", encoding="utf-8")
+    (second / "evidence.txt").write_text("second", encoding="utf-8")
+    assert (first / "evidence.txt").read_text(encoding="utf-8") == "first"
+
+
 def _free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))

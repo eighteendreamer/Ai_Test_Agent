@@ -22,6 +22,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+from src.core.config import get_settings
+from src.core.request_context import bind_request_context
+from src.runtime.docker_resource_manager import DockerCommandTimeout, DockerResourceManager
+
 logger = logging.getLogger("uvicorn.error.security_testing_mode.execution_environment")
 
 
@@ -70,9 +74,11 @@ class SecurityExecutionEnvironmentService:
         *,
         settings: Any = None,
         workspace_root: Path | str | None = None,
+        docker_resources=None,
     ) -> None:
-        self._settings = settings
+        self._settings = settings or get_settings()
         self._workspace_root = Path(workspace_root or Path.cwd())
+        self._docker = docker_resources or DockerResourceManager(self._settings)
         self._detached_jobs: dict[str, _DetachedJobRecord] = {}
         self._detached_jobs_lock = threading.Lock()
 
@@ -101,9 +107,15 @@ class SecurityExecutionEnvironmentService:
             getattr(context, "session_id", "") or "",
             getattr(context, "turn_id", "") or "",
         )
-        if backend in {"docker", "container"}:
+        if self.owns_foreground_docker_lifecycle():
+            bundle = getattr(context, "context_bundle", None) or {}
+            with bind_request_context(session_id=getattr(context, "session_id", None),
+                turn_id=getattr(context, "turn_id", None), trace_id=getattr(context, "trace_id", None),
+                project_id=bundle.get("project_id")):
+                result = await self._run_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
+        elif backend in {"docker", "container"}:
             result = await asyncio.to_thread(
-                self._run_in_docker,
+                self._run_reusable_in_docker,
                 command,
                 command_args,
                 timeout_seconds,
@@ -371,7 +383,67 @@ class SecurityExecutionEnvironmentService:
             completed_at=_utc_now(),
         )
 
-    def _run_in_docker(
+    def owns_foreground_docker_lifecycle(self) -> bool:
+        """Whether this configured foreground path acquires its own Docker slot.
+
+        TestRun uses the same decision to avoid reserving capacity twice.
+        Reusable/persistent paths retain their existing admission until migrated.
+        """
+        backend = self._get_str("security_runner_backend", "SECURITY_RUNNER_BACKEND", "local").lower()
+        return backend in {"docker", "container"} and not self._container_reuse_enabled() and self._cleanup_after_run_enabled()
+
+    async def _run_in_docker(
+        self,
+        command: str,
+        command_args: list[str],
+        timeout_seconds: float,
+        artifact_dir: Path,
+        context: Any,
+    ) -> SecurityCommandExecutionResult:
+        if not command_args:
+            raise ValueError("Security command rendered an empty argv.")
+        docker = shutil.which("docker")
+        if docker is None:
+            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
+        image = self._get_str("security_runner_docker_image", "SECURITY_RUNNER_DOCKER_IMAGE", "vxcontrol/kali-linux")
+        workdir = self._get_str("security_runner_docker_workdir", "SECURITY_RUNNER_DOCKER_WORKDIR", "/work")
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        policy = self._get_str("security_runner_docker_pull_policy", "SECURITY_RUNNER_DOCKER_PULL_POLICY", "never").lower()
+        create_args = ["--workdir", workdir, "--pull", policy,
+                       "-v", f"{artifact_dir.resolve()}:{workdir}"]
+        if self._get_bool("security_runner_docker_net_raw", "SECURITY_RUNNER_DOCKER_NET_RAW", True):
+            create_args.extend(["--cap-add", "NET_RAW"])
+        if self._get_bool("security_runner_docker_net_admin", "SECURITY_RUNNER_DOCKER_NET_ADMIN", False):
+            create_args.extend(["--cap-add", "NET_ADMIN"])
+        network = self._get_str("security_runner_docker_network", "SECURITY_RUNNER_DOCKER_NETWORK", "")
+        if network:
+            create_args.extend(["--network", network])
+        create_args.extend([image, "tail", "-f", "/dev/null"])
+
+        async def execute(container):
+            code, _, stderr = await self._docker._command(["start", container.container_id],
+                timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
+            if code != 0:
+                raise RuntimeError(f"Security runner start failed: {stderr}")
+            started_at = _utc_now()
+            args = ["exec", "-w", workdir, container.container_id, "sh", "-lc",
+                    self._wrap_with_shell_timeout(command, timeout_seconds)]
+            try:
+                code, stdout, stderr = await self._docker._command(args, timeout=timeout_seconds + 5)
+                timed_out = code == 124
+            except DockerCommandTimeout as exc:
+                code, stdout, stderr, timed_out = -1, exc.stdout, exc.stderr, True
+            return SecurityCommandExecutionResult(
+                backend="docker", command=command, argv=[docker, *args], cwd=workdir,
+                stdout=stdout, stderr=stderr, exit_code=code, timed_out=timed_out,
+                started_at=started_at, completed_at=_utc_now(), container_name=container.container_name,
+            )
+
+        result = await self._docker.run(create_args, name_prefix=self._container_name(context), operation=execute)
+        result.output_artifacts = self._collect_output_artifacts(artifact_dir)
+        return result
+
+    def _run_reusable_in_docker(
         self,
         command: str,
         command_args: list[str],

@@ -25,6 +25,7 @@ from src.application.performance.perf_runner_service import PerfRunnerService
 from src.application.performance.http_probe_runner import HttpProbeRunner
 from src.application.performance.mock_target_runner import MockTargetRunner
 from src.application.security.tool_bootstrap_service import ToolBootstrapService
+from src.application.security.execution_environment_service import SecurityExecutionEnvironmentService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
@@ -663,6 +664,166 @@ async def test_tool_bootstrap_worker_kill_recovered_by_cleanup(manager, tmp_path
                     return
                 await asyncio.sleep(.05)
         await asyncio.wait_for(wait_for_readiness(), timeout=15)
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive()
+        assert (await m.usage_snapshot())["global:all"] == 1
+        await asyncio.sleep(2.2)
+        assert await ResourceCleanupWorker(m).run_once() == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if process.is_alive(): process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+
+
+def _security_foreground_settings():
+    settings = _bootstrap_settings()
+    settings.security.security_runner_backend = "docker"
+    settings.security.security_runner_container_reuse = False
+    settings.security.security_runner_docker_cleanup_after_run = True
+    settings.security.security_runner_docker_pull_policy = "never"
+    settings.security.security_runner_docker_net_raw = False
+    settings.security.security_runner_docker_net_admin = False
+    settings.security.security_runner_wrap_timeout = False
+    return settings
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["success", "nonzero", "timeout", "cancel", "lost_lease"])
+async def test_security_foreground_managed_container(manager, tmp_path, scenario):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    service = SecurityExecutionEnvironmentService(settings=settings,
+        docker_resources=DockerResourceManager(settings, lease_manager=m))
+    context = ToolExecutionContext(session_id="s-live-security", turn_id="t-live-security", trace_id="trace-security",
+        user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
+    command = "echo stdout-result; echo stderr-detail >&2; echo evidence > evidence.txt; "
+    command += "sleep 300" if scenario in {"timeout", "cancel", "lost_lease"} else "exit " + ("7" if scenario == "nonzero" else "0")
+    operation = None
+    try:
+        with bind_request_context(run_id="r-live-security", run_item_id="i-live-security", attempt_id="a-live-perf"):
+            operation = asyncio.create_task(service.execute(command=command, command_args=["sh", "-lc", command],
+                timeout_seconds=1 if scenario == "timeout" else 310, artifact_dir=tmp_path, context=context))
+            if scenario in {"cancel", "lost_lease"}:
+                await _wait_for_running_container(m)
+                if scenario == "cancel":
+                    operation.cancel()
+                    with pytest.raises(asyncio.CancelledError): await operation
+                else:
+                    async def rejected(*args, **kwargs): return False
+                    m.renew = rejected
+                    with pytest.raises(RuntimeError, match="heartbeat rejected"): await operation
+            else:
+                result = await operation
+                assert result.exit_code == {"success": 0, "nonzero": 7, "timeout": -1}[scenario]
+                assert result.timed_out == (scenario == "timeout")
+                assert "stdout-result" in result.stdout and "stderr-detail" in result.stderr
+                assert (tmp_path / "evidence.txt").read_text().strip() == "evidence"
+                assert any(artifact["label"] == "evidence.txt" for artifact in result.output_artifacts)
+        pending = await m.list_cleanup_pending()
+        assert len(pending) == 1
+        assert pending[0]["session_id"] == context.session_id and pending[0]["run_item_id"] == "i-live-security"
+        assert pending[0]["project_id"] == "p-live-security"
+        assert (await m.usage_snapshot())["global:all"] == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+    finally:
+        if operation is not None and not operation.done():
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capacity", [False, True])
+async def test_security_foreground_tool_real_profile(manager, tmp_path, monkeypatch, capacity):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    settings.security.security_runner_docker_network = ""
+    settings.security.security_target_allowlist = "host.docker.internal"
+    received = threading.Event()
+
+    class Target(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received.set()
+            self.send_response(200)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+        def log_message(self, *args): pass
+
+    server = ThreadingHTTPServer(("0.0.0.0", 0), Target)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    jobs = ToolJobService(InMemoryToolJobStore())
+    runtime = ToolRuntimeService(settings=settings, tool_job_service=jobs)
+    runtime._security_execution_environment = SecurityExecutionEnvironmentService(settings=settings,
+        docker_resources=DockerResourceManager(settings, lease_manager=m))
+    monkeypatch.setattr(runtime, "_prepare_local_artifact_dir", lambda *_: tmp_path)
+    tool = ToolDescriptor(key="web-scan-runner", name="headers", description="test", category="test")
+    context = ToolExecutionContext(session_id="s-live-security-tool", turn_id="t-live-security-tool", trace_id="trace-security",
+        user_message="headers", normalized_input="headers", context_bundle={"project_id": "p-live-security"})
+    try:
+        if capacity:
+            blocker = await m.acquire(resource_type="docker", resource_id="docker-slot-0", worker_id="busy", lease_seconds=60)
+        with bind_request_context(attempt_id="a-live-perf"):
+            record = await runtime.execute(tool, ModelToolCall(id="security-headers", name=tool.key, arguments={
+                "command_profile": "http_headers_probe", "target": f"http://host.docker.internal:{server.server_port}/",
+            }), context)
+        expected = "waiting_resource" if capacity else "completed"
+        assert record.status == expected, record.summary
+        assert (await jobs.get_job(record.job_id)).status.value == expected
+        if capacity:
+            assert record.output["waiting_reason"] == "global:all"
+            assert not received.is_set() and not await m.list_cleanup_pending()
+            assert await m.retire(blocker)
+        else:
+            assert received.is_set()
+            assert record.output["exit_code"] == 0
+            pending = await m.list_cleanup_pending()
+            assert len(pending) == 1 and pending[0]["session_id"] == context.session_id
+            await _complete_real_cleanup(m)
+    finally:
+        await runtime.close()
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        await asyncio.to_thread(thread.join, 5)
+
+
+def _run_security_foreground_until_killed(prefix, stream, artifact_dir):
+    async def run():
+        settings = _security_foreground_settings()
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
+        service = SecurityExecutionEnvironmentService(settings=settings,
+            docker_resources=DockerResourceManager(settings, lease_manager=manager))
+        with bind_request_context(session_id="s-live-security-kill", attempt_id="a-live-perf"):
+            command = "echo ready > started.txt; sleep 300"
+            await service.execute(command=command, command_args=["sh", "-lc", command],
+                timeout_seconds=310, artifact_dir=artifact_dir)
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+async def test_security_foreground_worker_kill_recovered_by_cleanup(manager, tmp_path):
+    m, _ = manager
+    process = multiprocessing.get_context("spawn").Process(target=_run_security_foreground_until_killed,
+        args=(m.namespace, m._cleanup_stream, tmp_path))
+    container_id = ""
+    try:
+        process.start()
+        container_id = await _wait_for_running_container(m)
+        async def wait_for_command():
+            while not (tmp_path / "started.txt").exists():
+                assert process.is_alive()
+                await asyncio.sleep(.05)
+        await asyncio.wait_for(wait_for_command(), timeout=15)
         process.terminate()
         await asyncio.to_thread(process.join, 10)
         assert not process.is_alive()

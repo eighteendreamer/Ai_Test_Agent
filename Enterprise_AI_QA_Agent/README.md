@@ -348,7 +348,20 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 `python -m pytest tests/test_live_resource_leases.py -k tool_bootstrap -q`，
 覆盖已安装工具检查、容量等待、未审批、超时、取消、清理失败补偿和执行进程强杀回收。
 测试只使用本机已有 Kali 镜像，不安装软件包、不运行扫描；安装失败路径另有模块回归。
-安全测试的其他前台/复用/后台容器和独立容器管理入口尚需接入同一生命周期。
+安全命令的默认临时前台容器也接入统一租约：配置为 Docker 后端、
+`SECURITY_RUNNER_CONTAINER_REUSE=false` 且执行后清理开启时，先领取容量并持久化创建意图，
+再创建、绑定完整 ID、启动和执行。TestRun 使用相同配置判定取消这条路径的重复 Docker 预占，
+账号和环境租约继续领取。容量不足贯通 ToolJob/RunItem 的 `waiting_resource`；
+配额原因沿用资源层返回值（例如 `global:all`），不会当作目标服务故障。
+输出、非零退出码、超时及挂载目录里的产物保留；取消和心跳失败会停止执行并进入统一清理。
+每次工具调用的产物目录增加随机后缀，避免同一 Session/Turn 同秒调用共享挂载目录。
+镜像拉取策略通过 `docker create --pull` 执行，创建和拉取受现有
+`ORCHESTRATION__RESOURCE_DOCKER_COMMAND_TIMEOUT_SECONDS` 限制；大镜像建议预拉取，
+或按需调整该超时。无新增配置、依赖或数据库结构。
+真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k security_foreground -q`，
+覆盖真实工具调用本机 HTTP 头探测、容量等待、输出与产物、超时、取消、失去租约及强杀回收；
+不调用外部目标或模型。复用/后台/持久安全容器、文件传输及独立容器管理入口尚需接入。
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
 后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对

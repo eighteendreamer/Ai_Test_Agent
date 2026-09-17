@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.security.approval_scope_service import ApprovalScopeService
+from src.application.security.execution_environment_service import SecurityExecutionEnvironmentService
 from src.application.security.target_guard import SecurityTargetGuard
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_runs.case_execution import (
@@ -419,6 +420,10 @@ class TestRunExecutionService:
         docker_backend = str(arguments.get("runner_backend") or "").lower() in {"docker", "container"}
         if mode == "security_testing":
             docker_backend = docker_backend or str(getattr(getattr(settings, "security", None), "security_runner_backend", "local")).lower() in {"docker", "container"}
+            if SecurityExecutionEnvironmentService(settings=settings).owns_foreground_docker_lifecycle():
+                # Reviewed security cases execute a single command profile through
+                # the foreground runner, which owns each actual container lease.
+                docker_backend = False
         if mode == "performance_testing":
             # Performance owns each actual container at creation, including auto
             # detection and separate smoke/load phases. Do not reserve twice.

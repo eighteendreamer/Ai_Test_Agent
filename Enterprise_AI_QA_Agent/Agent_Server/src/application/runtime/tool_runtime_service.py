@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -3022,6 +3023,16 @@ class ToolRuntimeService:
                 artifact_dir=artifact_dir,
                 context=context,
             )
+        except ResourceUnavailable as exc:
+            logger.info("security_runner_waiting_resource", extra={
+                "session_id": context.session_id, "runner_key": runner_key, "reason": exc.reason,
+            })
+            return {
+                "status": "waiting_resource", "ok": False, "success": False,
+                "summary": f"Security runner waiting for resource: {exc.reason}",
+                "runner_key": runner_key, "command_profile": profile.profile_key,
+                "tool_name": profile.tool_name, "waiting_reason": exc.reason, "error": exc.reason,
+            }
         except FileNotFoundError as exc:
             return {
                 "status": "failed",
@@ -4820,7 +4831,7 @@ class ToolRuntimeService:
         session_id = _slug(context.session_id or "session")
         turn_id = _slug(context.turn_id or datetime.utcnow().strftime("%Y%m%d%H%M%S"))
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        artifact_dir = artifact_root / session_id / turn_id / f"{tool_key}_{timestamp}"
+        artifact_dir = artifact_root / session_id / turn_id / f"{tool_key}_{timestamp}_{uuid4().hex[:12]}"
         artifact_dir.mkdir(parents=True, exist_ok=True)
         return artifact_dir
 

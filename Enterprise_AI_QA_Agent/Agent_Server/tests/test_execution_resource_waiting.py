@@ -86,3 +86,31 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
     leases = await service._claim_execution_resources(run=run, item=item, version=version, attempt_id="attempt-2")
     assert [call["resource_type"] for call in manager.calls] == ["test_account", "environment"]
     await service._release_execution_resources(leases)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reuse,cleanup,managed", [(False, None, True), (False, True, True),
+    (False, False, False), (True, None, False), (True, True, False)])
+async def test_security_foreground_admission_matches_container_lifecycle(reuse, cleanup, managed):
+    from src.core.config import Settings
+    from src.application.security.execution_environment_service import SecurityExecutionEnvironmentService
+
+    _, run, item, _, version = _records()
+    settings = Settings()
+    settings.security.security_runner_backend = "docker"
+    settings.security.security_runner_container_reuse = reuse
+    settings.security.security_runner_docker_cleanup_after_run = cleanup
+    environment = SecurityExecutionEnvironmentService(settings=settings)
+    assert environment.owns_foreground_docker_lifecycle() is managed
+    claimed = []
+
+    class Manager:
+        async def acquire_first_available(self, **kwargs):
+            claimed.append(kwargs["resource_type"])
+            return object()
+
+    service = _ExecutionService(run_service=object(), test_case_service=object(), adapter=object(), security_settings=settings)
+    service.set_resource_lease_manager(Manager())
+    await service._claim_execution_resources(run=run.model_copy(update={"mode_key": "security_testing"}),
+        item=item, version=version, attempt_id="security-attempt")
+    assert claimed == ([] if managed else ["docker"])
