@@ -24,6 +24,7 @@ from src.core.request_context import bind_request_context
 from src.application.performance.perf_runner_service import PerfRunnerService
 from src.application.performance.http_probe_runner import HttpProbeRunner
 from src.application.performance.mock_target_runner import MockTargetRunner
+from src.application.security.tool_bootstrap_service import ToolBootstrapService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
@@ -528,6 +529,144 @@ async def test_mock_target_worker_kill_recovered_by_cleanup(manager):
         process.terminate()
         await asyncio.to_thread(process.join, 10)
         assert not process.is_alive()
+        await asyncio.sleep(2.2)
+        assert await ResourceCleanupWorker(m).run_once() == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if process.is_alive(): process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+
+
+def _bootstrap_settings():
+    settings = get_settings().model_copy(deep=True)
+    settings.orchestration.resource_default_lease_seconds = 2
+    settings.security.security_tool_bootstrap_enabled = True
+    settings.security.security_tool_bootstrap_package_allowlist = "tcpdump"
+    settings.security.security_tool_bootstrap_image_allowlist = "vxcontrol/kali-linux:latest"
+    settings.security.security_tool_bootstrap_repository_allowlist = "kali-rolling"
+    settings.security.security_tool_bootstrap_cleanup_required = True
+    settings.security.security_runner_docker_image = "vxcontrol/kali-linux:latest"
+    settings.security.security_runner_docker_network = "none"
+    return settings
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["ready", "capacity", "unapproved", "timeout", "cancel", "cleanup_failure"])
+async def test_tool_bootstrap_managed_container(manager, tmp_path, scenario):
+    m, _ = manager
+    settings = _bootstrap_settings()
+    docker = DockerResourceManager(settings, lease_manager=m)
+    service = ToolBootstrapService(settings=settings, docker_resources=docker)
+    # Real readiness uses the installed image. Never install packages in this test.
+    service._install_command = lambda *_: "echo fixture_install_refused >&2; exit 100"
+    if scenario in {"timeout", "cancel"}:
+        service._readiness_command = lambda *_: "echo readiness_started; sleep 300"
+    original_command = docker._command
+    if scenario == "cleanup_failure":
+        async def failed_remove(args, *, timeout):
+            if args[0] == "rm": return 1, "", "injected Docker removal failure"
+            return await original_command(args, timeout=timeout)
+        docker._command = failed_remove
+    operation = None
+    try:
+        if scenario == "capacity":
+            blocker = await m.acquire(resource_type="docker", resource_id="docker-slot-0",
+                worker_id="busy", lease_seconds=60)
+        with bind_request_context(session_id="s-live-bootstrap", project_id="p-live-bootstrap", attempt_id="a-live-perf"):
+            operation = asyncio.create_task(service.run(campaign_id="test-bootstrap", target_allowlist=["127.0.0.1"],
+                profile_key="tcpdump_timed_capture", tool_name="tcpdump", approval_scope_hash="test-scope",
+                approval_granted=scenario != "unapproved", artifact_dir=tmp_path, timeout_seconds=1))
+            if scenario == "cancel":
+                await _wait_for_running_container(m)
+                operation.cancel()
+                with pytest.raises(asyncio.CancelledError): await operation
+                manifest = json.loads(next(tmp_path.glob("bootstrap_*.json")).read_text(encoding="utf-8"))
+                assert manifest["status"] == "cancelled" and manifest["cleanup_complete"]
+            else:
+                manifest = await operation
+                if scenario == "ready":
+                    assert manifest.status == "already_available", manifest.failure_reason
+                    assert manifest.readiness_exit_code == 0 and manifest.resolved_version
+                    assert manifest.cleanup_complete
+                elif scenario == "capacity":
+                    assert manifest.status == "waiting_resource" and not manifest.container_name
+                    assert await m.retire(blocker)
+                elif scenario == "unapproved":
+                    assert manifest.status == "waiting_approval" and not manifest.container_name
+                elif scenario == "timeout":
+                    assert manifest.status == "failed" and manifest.cleanup_complete
+                    assert "readiness_started" in manifest.stdout
+                else:
+                    assert manifest.status == "failed" and not manifest.cleanup_complete
+                    assert manifest.failure_category == "cleanup_failed"
+        if scenario in {"capacity", "unapproved"}:
+            assert not await m.list_cleanup_pending()
+            assert not await m.usage_snapshot()
+        else:
+            pending = await m.list_cleanup_pending()
+            assert len(pending) == 1 and pending[0]["project_id"] == "p-live-bootstrap"
+            assert (await m.usage_snapshot())["global:all"] == 1
+            docker._command = original_command
+            await _complete_real_cleanup(m)
+            inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]],
+                capture_output=True, timeout=15)
+            assert inspected.returncode != 0
+    finally:
+        docker._command = original_command
+        if operation is not None and not operation.done():
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+        # This exact namespace belongs to this test; leave no injected cleanup failure behind.
+        for pending in await m.list_cleanup_pending():
+            if pending.get("external_resource_id"):
+                await original_command(["rm", "--force", pending["external_resource_id"]], timeout=15)
+
+
+def _run_bootstrap_until_killed(prefix, stream, artifact_dir):
+    async def run():
+        settings = _bootstrap_settings()
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
+        service = ToolBootstrapService(settings=settings,
+            docker_resources=DockerResourceManager(settings, lease_manager=manager))
+        service._readiness_command = lambda *_: "touch /work/readiness-started; sleep 300"
+        service._install_command = lambda *_: "exit 100"
+        with bind_request_context(session_id="s-live-bootstrap-kill", attempt_id="a-live-perf"):
+            await service.run(campaign_id="bootstrap-kill", target_allowlist=["127.0.0.1"],
+                profile_key="tcpdump_timed_capture", tool_name="tcpdump", approval_scope_hash="test-scope",
+                approval_granted=True, artifact_dir=artifact_dir, timeout_seconds=310)
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+async def test_tool_bootstrap_worker_kill_recovered_by_cleanup(manager, tmp_path):
+    m, _ = manager
+    process = multiprocessing.get_context("spawn").Process(target=_run_bootstrap_until_killed,
+        args=(m.namespace, m._cleanup_stream, tmp_path))
+    container_id = ""
+    try:
+        process.start()
+        container_id = await _wait_for_running_container(m)
+        async def wait_for_readiness():
+            while True:
+                assert process.is_alive()
+                checked = await asyncio.to_thread(subprocess.run,
+                    ["docker", "exec", container_id, "test", "-f", "/work/readiness-started"],
+                    capture_output=True, timeout=15)
+                if checked.returncode == 0:
+                    return
+                await asyncio.sleep(.05)
+        await asyncio.wait_for(wait_for_readiness(), timeout=15)
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive()
+        assert (await m.usage_snapshot())["global:all"] == 1
         await asyncio.sleep(2.2)
         assert await ResourceCleanupWorker(m).run_once() == 1
         await _complete_real_cleanup(m)

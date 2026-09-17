@@ -335,7 +335,20 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 `python -m pytest tests/test_live_resource_leases.py -k mock_target -q`；需要镜像目录中的
 `helper_mock_target` 镜像，测试仅访问自动分配端口上的临时本机服务。
 
-安全测试的复用/后台容器和独立容器管理入口尚需接入同一生命周期。
+安全工具准备入口 `security-tool-bootstrap` 的临时容器也接入同一资源生命周期。
+原有审批、包/仓库/镜像白名单检查通过后，使用已核验的不可变镜像 digest 创建容器；
+启动、就绪检查、安装及复检仅操作已绑定的完整容器 ID。执行期间持续续租，
+超时或取消会终止 CLI 并回收容器，进程强杀后由租约过期与 Cleanup Worker 接管。
+容量不足返回 `waiting_resource`，不完成 Campaign、不生成终态完成时间。
+`cleanup_complete` 仅表示已通过 Docker 清单确认本地容器消失；Docker 不可达或清理失败
+不能报告清理成功，配额仍等待 PostgreSQL 清理回执确认后归还。
+此入口复用现有 `SECURITY_TOOL_BOOTSTRAP_*` 与
+`ORCHESTRATION__RESOURCE_*` 配置，无新增配置或依赖。
+真实回归使用 `RUN_LIVE_DOCKER_TESTS=1` 执行
+`python -m pytest tests/test_live_resource_leases.py -k tool_bootstrap -q`，
+覆盖已安装工具检查、容量等待、未审批、超时、取消、清理失败补偿和执行进程强杀回收。
+测试只使用本机已有 Kali 镜像，不安装软件包、不运行扫描；安装失败路径另有模块回归。
+安全测试的其他前台/复用/后台容器和独立容器管理入口尚需接入同一生命周期。
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
 后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对

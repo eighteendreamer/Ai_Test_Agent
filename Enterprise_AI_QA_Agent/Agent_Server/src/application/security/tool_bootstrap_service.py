@@ -22,6 +22,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.core.config import get_settings
+from src.runtime.docker_resource_manager import DockerCommandTimeout, DockerResourceManager
+from src.runtime.resource_lease_manager import ResourceUnavailable
+
 logger = logging.getLogger("uvicorn.error.security_testing_mode.tool_bootstrap")
 
 
@@ -105,9 +109,11 @@ class ToolBootstrapService:
         ),
     }
 
-    def __init__(self, *, settings: Any = None, workspace_root: Path | str | None = None) -> None:
-        self._settings = settings
+    def __init__(self, *, settings: Any = None, workspace_root: Path | str | None = None,
+                 docker_resources=None) -> None:
+        self._settings = settings or get_settings()
         self._workspace_root = Path(workspace_root or Path.cwd())
+        self._docker = docker_resources or DockerResourceManager(self._settings)
 
     def is_enabled(self) -> bool:
         return self._get_bool(
@@ -234,15 +240,21 @@ class ToolBootstrapService:
             self._log("security.tool_bootstrap.rejected", manifest)
             return manifest
 
-        manifest.container_name = self._container_name(manifest.bootstrap_id)
-        self._log("security.tool_bootstrap.started", manifest)
-        try:
-            await asyncio.to_thread(self._create_container, docker, manifest)
+        container_id = ""
+
+        async def prepare(container):
+            nonlocal container_id
+            container_id = container.container_id
+            manifest.container_name = container.container_name
+            self._persist_manifest(manifest)
+            self._log("security.tool_bootstrap.started", manifest)
+            code, _, stderr = await self._docker._command(["start", container_id],
+                timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
+            if code != 0:
+                raise RuntimeError(f"Failed to start tool bootstrap container: {stderr}")
             manifest.readiness_command = self._readiness_command(plan)
-            ready = await asyncio.to_thread(
-                self._exec,
-                docker,
-                manifest.container_name,
+            ready = await self._exec(
+                container_id,
                 manifest.readiness_command,
                 effective_timeout,
             )
@@ -258,10 +270,8 @@ class ToolBootstrapService:
                 manifest.status = "already_available"
             else:
                 manifest.install_command = self._install_command(plan, manifest.requested_version)
-                installed = await asyncio.to_thread(
-                    self._exec,
-                    docker,
-                    manifest.container_name,
+                installed = await self._exec(
+                    container_id,
                     manifest.install_command,
                     effective_timeout,
                 )
@@ -275,10 +285,8 @@ class ToolBootstrapService:
                         f"Fixed installation template returned exit code {installed.returncode}."
                     )
                 else:
-                    verified = await asyncio.to_thread(
-                        self._exec,
-                        docker,
-                        manifest.container_name,
+                    verified = await self._exec(
+                        container_id,
                         manifest.readiness_command,
                         effective_timeout,
                     )
@@ -306,30 +314,47 @@ class ToolBootstrapService:
                     else:
                         manifest.status = "completed"
 
-        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        try:
+            await self._docker.run(self._create_args(manifest),
+                name_prefix=self._container_name(manifest.bootstrap_id), operation=prepare)
+        except ResourceUnavailable as exc:
+            manifest.status = "waiting_resource"
+            manifest.failure_category = exc.reason
+            manifest.failure_reason = f"Tool bootstrap waiting for resource: {exc.reason}"
+        except asyncio.CancelledError:
+            manifest.status = "cancelled"
+            manifest.failure_category = "execution_cancelled"
+            manifest.failure_reason = "Tool bootstrap execution was cancelled."
+            raise
+        except Exception as exc:
+            # This boundary now owns PostgreSQL allocation and Redis lease errors
+            # as well as Docker failures. Always persist a terminal manifest;
+            # cancellation and capacity waiting have separate branches above.
+            logger.error("tool_bootstrap_execution_failed", extra={
+                "bootstrap_id": manifest.bootstrap_id, "campaign_id": manifest.campaign_id,
+                "error_type": type(exc).__name__,
+            })
             manifest.status = "failed"
             manifest.failure_category = "execution_environment_error"
             manifest.failure_reason = str(exc)
             manifest.stderr = _join_output(manifest.stderr, str(exc))
+            if isinstance(exc, DockerCommandTimeout):
+                manifest.stdout = _join_output(manifest.stdout, exc.stdout)
+                manifest.stderr = _join_output(manifest.stderr, exc.stderr)
         finally:
-            cleanup_error = await asyncio.to_thread(self._remove_container, docker, manifest.container_name)
-            manifest.cleanup_complete = not cleanup_error
-            if cleanup_error:
-                manifest.status = "failed"
+            manifest.cleanup_complete = bool(container_id) and await self._confirmed_removed(container_id)
+            if container_id and not manifest.cleanup_complete:
+                if manifest.status != "cancelled":
+                    manifest.status = "failed"
                 manifest.failure_category = manifest.failure_category or "cleanup_failed"
-                manifest.failure_reason = (
-                    f"{manifest.failure_reason}; {cleanup_error}".strip("; ")
-                )
-                manifest.stderr = _join_output(manifest.stderr, cleanup_error)
-            manifest.completed_at = _utc_now().isoformat()
+                manifest.failure_reason = f"{manifest.failure_reason}; Container cleanup pending verification.".strip("; ")
+            manifest.completed_at = "" if manifest.status == "waiting_resource" else _utc_now().isoformat()
             self._persist_manifest(manifest)
-            self._log(
-                "security.tool_bootstrap.completed"
-                if manifest.status in {"already_available", "completed"}
-                else "security.tool_bootstrap.failed",
-                manifest,
-            )
-            self._log("security.tool_bootstrap.cleaned", manifest)
+            event = ("completed" if manifest.status in {"already_available", "completed"}
+                     else manifest.status if manifest.status in {"waiting_resource", "cancelled"} else "failed")
+            self._log(f"security.tool_bootstrap.{event}", manifest)
+            self._log("security.tool_bootstrap.cleaned" if manifest.cleanup_complete
+                      else "security.tool_bootstrap.cleanup_unconfirmed", manifest)
         return manifest
 
     def _validate_request(
@@ -449,13 +474,8 @@ class ToolBootstrapService:
     def _repository_source_lines(cls, repository_id: str) -> tuple[str, ...]:
         return tuple(cls._REPOSITORY_SOURCE_LINES.get(str(repository_id or "").strip(), ()))
 
-    def _create_container(self, docker: str, manifest: ToolBootstrapManifest) -> None:
-        args = [
-            docker,
-            "run",
-            "-d",
-            "--name",
-            manifest.container_name,
+    def _create_args(self, manifest: ToolBootstrapManifest) -> list[str]:
+        return [
             "--network",
             manifest.network_name,
             "--cap-drop",
@@ -464,53 +484,30 @@ class ToolBootstrapService:
             "no-new-privileges:true",
             "--workdir",
             "/work",
-            manifest.image_ref,
+            manifest.image_digest,
             "tail",
             "-f",
             "/dev/null",
         ]
-        completed = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise RuntimeError(f"Failed to create P4 bootstrap container: {detail or 'unknown error'}")
 
-    def _exec(self, docker: str, container_name: str, command: str, timeout_seconds: float) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            [docker, "exec", "-w", "/work", container_name, "sh", "-lc", command],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=max(2.0, timeout_seconds + 5.0),
-        )
+    async def _exec(self, container_id: str, command: str, timeout_seconds: float) -> subprocess.CompletedProcess:
+        args = ["exec", "-w", "/work", container_id, "sh", "-lc", command]
+        code, stdout, stderr = await self._docker._command(args, timeout=max(2.0, timeout_seconds + 5.0))
+        return subprocess.CompletedProcess(args, code, stdout, stderr)
 
-    def _remove_container(self, docker: str, container_name: str) -> str:
-        if not container_name:
-            return ""
+    async def _confirmed_removed(self, container_id: str) -> bool:
         try:
-            completed = subprocess.run(
-                [docker, "rm", "-f", container_name],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            return f"Failed to remove P4 bootstrap container {container_name}: cleanup timed out."
-        if completed.returncode == 0:
-            return ""
-        detail = (completed.stderr or completed.stdout or "").strip()
-        if "No such container" in detail:
-            return ""
-        return f"Failed to remove P4 bootstrap container {container_name}: {detail or 'unknown error'}"
+            code, stdout, stderr = await self._docker._command(
+                ["ps", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}"],
+                timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
+            if code == 0 and not stdout.strip():
+                return True
+            logger.warning("tool_bootstrap_cleanup_unconfirmed", extra={"container_id": container_id,
+                "exit_code": code, "error_message": stderr[:2000]})
+        except Exception as exc:
+            logger.warning("tool_bootstrap_cleanup_check_failed", extra={"container_id": container_id,
+                "error_type": type(exc).__name__})
+        return False
 
     def _image_digest(self, docker: str, image_ref: str) -> str:
         completed = subprocess.run(

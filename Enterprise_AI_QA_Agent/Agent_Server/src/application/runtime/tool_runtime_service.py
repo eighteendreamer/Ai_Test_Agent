@@ -2608,21 +2608,23 @@ class ToolRuntimeService:
                 "error": "package_not_allowlisted",
             }
         artifact_dir = self._prepare_local_artifact_dir(context, "security-tool-bootstrap")
-        manifest = await self._security_tool_bootstrap_service.run(
-            campaign_id=campaign_id,
-            target_allowlist=target_allowlist,
-            profile_key=profile_key,
-            tool_name=tool_name,
-            requested_version=str(arguments.get("requested_version") or "").strip(),
-            approval_scope_hash=str(arguments.get("_p4_approval_scope_hash") or "").strip(),
-            approval_granted=bool(arguments.get("_server_approval_granted")),
-            artifact_dir=artifact_dir,
-            timeout_seconds=arguments.get("timeout_seconds"),
-        )
+        with bind_request_context(session_id=context.session_id, turn_id=context.turn_id,
+            trace_id=context.trace_id, project_id=context.context_bundle.get("project_id") or None):
+            manifest = await self._security_tool_bootstrap_service.run(
+                campaign_id=campaign_id,
+                target_allowlist=target_allowlist,
+                profile_key=profile_key,
+                tool_name=tool_name,
+                requested_version=str(arguments.get("requested_version") or "").strip(),
+                approval_scope_hash=str(arguments.get("_p4_approval_scope_hash") or "").strip(),
+                approval_granted=bool(arguments.get("_server_approval_granted")),
+                artifact_dir=artifact_dir,
+                timeout_seconds=arguments.get("timeout_seconds"),
+            )
         payload = manifest.to_dict()
         success = manifest.status in {"already_available", "completed"}
         result = {
-            "status": "completed" if success else "waiting_approval" if manifest.status == "waiting_approval" else "failed",
+            "status": "completed" if success else manifest.status if manifest.status in {"waiting_approval", "waiting_resource"} else "failed",
             "ok": success,
             "summary": (
                 f"P4 tool {manifest.tool_name} is {manifest.status}."
@@ -2643,6 +2645,9 @@ class ToolRuntimeService:
             manifest=manifest,
             context=context,
         )
+        if manifest.status == "waiting_resource":
+            # Capacity waiting is not a completed Campaign or a failed tool check.
+            return result
         campaign_state = self.record_security_tool_bootstrap_campaign(
             campaign_id=campaign_id,
             target_allowlist=target_allowlist,
