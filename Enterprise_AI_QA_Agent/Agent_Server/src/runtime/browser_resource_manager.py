@@ -34,7 +34,7 @@ class BrowserResourceManager:
         self._allocations = allocations or PostgresBrowserAllocationStore(settings)
         self._worker_id = f"browser-{os.getpid()}-{uuid4().hex[:12]}"
 
-    async def acquire(self, session_name):
+    async def acquire(self, session_name, *, recording_id=None):
         config = self._settings.orchestration
         context = get_request_context()
         fields = {key: getattr(context, key, None) for key in (
@@ -49,7 +49,7 @@ class BrowserResourceManager:
                 cleanup_stream=config.browser_cleanup_task_stream, **fields)
             allocation_id = uuid4().hex
             generation = await self._allocations.prepare(allocation_id, lease, namespace=self._manager.namespace,
-                host_id=config.resource_browser_host_id, session_name=session_name)
+                host_id=config.resource_browser_host_id, session_name=session_name, recording_id=recording_id)
             if not await self._manager.prepare_allocation(lease, allocation_id):
                 raise RuntimeError("Browser lease lost before allocation")
             if not await self._manager.bind(lease, allocation_id):

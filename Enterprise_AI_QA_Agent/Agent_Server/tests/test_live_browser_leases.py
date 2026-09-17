@@ -90,6 +90,8 @@ class Harness:
         await self.allocations.initialize()
         await self.receipts.initialize()
         await PostgresSessionResourceStore(self.settings).initialize()
+        from src.infrastructure.recording_store import PostgresRecordingStore
+        await PostgresRecordingStore(self.settings).initialize()
         await self.queue.connect()
 
     async def cleanup_all(self):
@@ -573,3 +575,212 @@ async def test_managed_recording_interrupted_startup_closes_browser(harness, rec
         if not launch.done():
             launch.cancel()
         await asyncio.gather(launch, return_exceptions=True)
+
+
+def child_recording(prefix, root, project_id, ready, phase):
+    from src.application.recorder.drivers import build_default_registry
+    from src.application.recorder.recorder_session_service import RecorderSessionService
+    from src.infrastructure.recording_store import PostgresRecordingStore
+    from src.runtime.browser_resource_manager import BrowserResourceManager
+    from src.schemas.recording import RecordingControlAction, RecordingStatus
+
+    async def run():
+        settings = configured_settings(prefix)
+        settings.storage.artifact_root_dir = root
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix,
+                                            cleanup_stream=prefix + ":cleanup")
+        await manager.connect()
+        resources = BrowserResourceManager(settings, lease_manager=manager)
+        registry = build_default_registry(settings=settings, resource_manager=resources)
+        create = registry.create
+
+        def headless(*args, **kwargs):
+            driver = create(*args, **kwargs)
+            driver._runtime._settings.orchestration.browser_headless = True
+            return driver
+
+        registry.create = headless
+        store = PostgresRecordingStore(settings)
+        await store.initialize()
+        service = RecorderSessionService(settings, store, None, registry=registry)
+
+        async def suspend(*args, **kwargs):
+            ready.set()
+            await asyncio.Event().wait()
+
+        if phase == "before_binding":
+            resources._allocations.bind = suspend
+        elif phase == "before_redis_binding":
+            manager.prepare_allocation = suspend
+        request = recording_request()
+        request.project_id = project_id
+        session = await service.launch(request)
+        await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.ready)
+        await service.control(session.id, RecordingControlAction.start)
+        ready.set()
+        await asyncio.Event().wait()
+
+    asyncio.run(run())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["active", "before_binding", "before_redis_binding"])
+async def test_killed_recorder_recovers_business_state_and_rejects_late_update(harness, phase):
+    from src.infrastructure.recording_store import PostgresRecordingStore
+    from src.schemas.recording import RecordingStatus
+
+    store = PostgresRecordingStore(harness.settings)
+    await store.initialize()
+    project_id = "p-recorder-kill-" + uuid4().hex
+    spawn = multiprocessing.get_context("spawn")
+    ready = spawn.Event()
+    child = spawn.Process(target=child_recording,
+        args=(harness.prefix, str(harness.root), project_id, ready, phase))
+    try:
+        child.start()
+        assert await asyncio.to_thread(ready.wait, 20)
+        sessions = await store.list_sessions(project_id=project_id)
+        assert len(sessions) == 1
+        session = sessions[0]
+        assert session.status.value == ("active" if phase == "active" else "launching")
+        owned_processes = psutil.Process(child.pid).children(recursive=True)
+        child.kill()
+        await asyncio.to_thread(child.join, 10)
+        assert not child.is_alive()
+        await asyncio.sleep(2.2)
+        await harness.cleanup.reconcile(harness.manager)
+        await harness.cleanup_all()
+        recovered = await store.get_session(session.id)
+        assert recovered.status == RecordingStatus.failed
+        assert recovered.ended_at is not None
+        assert recovered.finalize_metrics["failure_reason"] == "browser_resource_recovered"
+        assert recovered.metadata["browser_allocation_id"]
+        assert not await harness.manager.usage_snapshot()
+        await wait_until(lambda: all(not p.is_running() or p.status() == psutil.STATUS_ZOMBIE for p in owned_processes))
+        stale = await store.update_status(session.id, RecordingStatus.active)
+        assert stale.status == RecordingStatus.failed
+        assert stale.finalize_metrics == recovered.finalize_metrics
+    finally:
+        if child.is_alive():
+            child.kill()
+            await asyncio.to_thread(child.join, 10)
+        child.close()
+        for session in await store.list_sessions(project_id=project_id):
+            await store.delete_session(session.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["completed", "discarded"])
+async def test_recording_cleanup_preserves_terminal_result(harness, recorder, terminal):
+    from src.schemas.recording import RecordingStatus
+
+    service, drivers = recorder
+    session = await service.launch(recording_request())
+    await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.ready)
+    expected = await service._update(service._runtimes[session.id], RecordingStatus(terminal),
+                                     finalize_metrics={"verified_result": terminal})
+    await drivers[0].close()
+    await harness.cleanup_all()
+    result = await service._store.update_status(session.id, RecordingStatus.active,
+                                                finalize_metrics={"late": True})
+    assert result.status == expected.status
+    assert result.finalize_metrics == expected.finalize_metrics
+    assert result.ended_at == expected.ended_at
+
+
+@pytest.mark.asyncio
+async def test_recording_recovery_commit_failure_keeps_quota_for_retry(harness, recorder, monkeypatch):
+    from src.schemas.recording import RecordingStatus
+
+    service, drivers = recorder
+    session = await service.launch(recording_request())
+    await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.ready)
+    runtime = service._runtimes[session.id]
+    await service._cancel_task(runtime.closed_task)
+    await drivers[0].close()
+    original = harness.allocations.mark_session_released
+
+    async def fail_projection(*args):
+        raise RuntimeError("injected recording recovery database failure")
+
+    monkeypatch.setattr(harness.allocations, "mark_session_released", fail_projection)
+    await harness.cleanup_all()
+    assert (await service.get_session(session.id)).status == RecordingStatus.ready
+    assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 1
+    monkeypatch.setattr(harness.allocations, "mark_session_released", original)
+    await asyncio.sleep(1.1)
+    await harness.cleanup_all()
+    recovered = await service.get_session(session.id)
+    assert recovered.status == RecordingStatus.failed
+    assert recovered.finalize_metrics["failure_reason"] == "browser_resource_recovered"
+    assert not await harness.manager.usage_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_recording_inventory_cursor_passes_live_intents(harness):
+    from src.core.request_context import bind_request_context
+    from src.infrastructure.recording_store import PostgresRecordingStore
+    from src.schemas.recording import RecordingSession, RecordingDriverKind
+    from src.runtime.browser_resource_manager import BrowserResourceManager
+
+    settings = harness.settings
+    settings.orchestration.resource_browser_reconcile_batch_size = 1
+    settings.orchestration.resource_default_lease_seconds = 30
+    await harness.manager.configure_quota(scope="resource_type", identifier="browser", limit=3)
+    store = PostgresRecordingStore(settings)
+    await store.initialize()
+    resources = BrowserResourceManager(settings, lease_manager=harness.manager)
+    sessions, allocations = [], []
+    try:
+        for index in range(3):
+            session = RecordingSession(project_id="p-cursor-" + uuid4().hex, entry_url="about:blank",
+                driver_kind=RecordingDriverKind.playwright_managed)
+            sessions.append(await store.create_session(session))
+            with bind_request_context(project_id=session.project_id, session_id=session.id):
+                allocations.append(await resources.acquire("recording:" + session.id, recording_id=session.id))
+        await resources.retire(allocations[-1].lease)
+        assert [await harness.cleanup.reconcile(harness.manager) for _ in range(3)] == [0, 0, 1]
+        await harness.cleanup_all()
+        assert (await store.get_session(sessions[-1].id)).status.value == "failed"
+        assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 2
+    finally:
+        for allocation in allocations:
+            await resources.retire(allocation.lease)
+        await harness.cleanup_all()
+        for session in sessions:
+            await store.delete_session(session.id)
+
+
+@pytest.mark.asyncio
+async def test_inflight_recording_control_cannot_overwrite_recovery(harness, recorder, monkeypatch):
+    from src.schemas.recording import RecordingControlAction, RecordingStatus
+
+    service, drivers = recorder
+    session = await service.launch(recording_request())
+    await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.ready)
+    runtime = service._runtimes[session.id]
+    await service._cancel_task(runtime.closed_task)
+    original = drivers[0].set_capture_enabled
+    changed, proceed = asyncio.Event(), asyncio.Event()
+
+    async def delayed_control(enabled):
+        await original(enabled)
+        changed.set()
+        await proceed.wait()
+
+    monkeypatch.setattr(drivers[0], "set_capture_enabled", delayed_control)
+    control = asyncio.create_task(service.control(session.id, RecordingControlAction.start))
+    try:
+        await asyncio.wait_for(changed.wait(), 5)
+        allocation = next(iter(drivers[0]._runtime._sessions.values())).allocation
+        await harness.manager.retire(allocation.lease)
+        await harness.cleanup_all()
+        proceed.set()
+        with pytest.raises(ValueError, match="already failed"):
+            await asyncio.wait_for(control, 5)
+        assert service.runtime_status(session.id) == RecordingStatus.failed
+        assert runtime.consume_task is None
+        assert (await service.get_session(session.id)).finalize_metrics["failure_reason"] == "browser_resource_recovered"
+    finally:
+        proceed.set()
+        await asyncio.gather(control, return_exceptions=True)

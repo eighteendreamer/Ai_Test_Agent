@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import asdict
 
 from psycopg import sql
 
 from src.infrastructure.postgres_runtime import postgres_connect
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PostgresBrowserAllocationStore:
@@ -37,12 +40,14 @@ class PostgresBrowserAllocationStore:
             cur.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (lease_namespace, host_id, session_name)").format(
                 sql.Identifier(self._settings.database.postgres_browser_allocation_table + "_scope_idx"), self._table))
 
-    async def prepare(self, allocation_id, lease, *, namespace, host_id, session_name):
+    async def prepare(self, allocation_id, lease, *, namespace, host_id, session_name, recording_id=None):
         if not re.fullmatch(r"[a-f0-9]{32}", allocation_id) or lease.resource_type != "browser":
             raise ValueError("Invalid browser allocation")
         record = asdict(lease)
         record["lease_expire_at"] = lease.lease_expire_at.isoformat()
         record.update(allocation_id=allocation_id, external_resource_id=allocation_id)
+        if recording_id is not None:
+            record["recording_id"] = recording_id
         return await asyncio.to_thread(self._prepare_sync, allocation_id, namespace, host_id, session_name, record)
 
     def _prepare_sync(self, allocation_id, namespace, host_id, session_name, record):
@@ -56,6 +61,17 @@ class PostgresBrowserAllocationStore:
             if (row["lease_record"] != record or row["lease_namespace"] != namespace
                     or row["host_id"] != host_id or row["session_name"] != session_name):
                 raise ValueError("Browser allocation intent cannot be reassigned")
+            if record.get("recording_id"):
+                cur.execute(sql.SQL("""
+                    UPDATE {} SET metadata = metadata || %s::jsonb, updated_at = NOW()
+                    WHERE id = %s AND project_id = %s AND driver_kind = 'playwright-managed'
+                        AND status = 'launching'
+                        AND (metadata->>'browser_allocation_id' IS NULL OR metadata->>'browser_allocation_id' = %s)
+                """).format(sql.Identifier(self._settings.database.postgres_recording_table)),
+                    (json.dumps({"browser_allocation_id": allocation_id}), record["recording_id"],
+                     record["project_id"], allocation_id))
+                if cur.rowcount != 1:
+                    raise ValueError("Recording is missing, terminal or bound to another browser allocation")
             return int(row["generation"])
 
     async def bind(self, allocation_id, processes):
@@ -96,6 +112,7 @@ class PostgresBrowserAllocationStore:
         await asyncio.to_thread(self._mark_session_released_sync, allocation)
 
     def _mark_session_released_sync(self, allocation):
+        recording_changed = False
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("""
                 UPDATE {} SET status = 'released', released_at = NOW(), updated_at = NOW(),
@@ -105,3 +122,39 @@ class PostgresBrowserAllocationStore:
             """).format(sql.Identifier(self._settings.database.postgres_session_resource_table)),
                 (json.dumps({"release_reason": "browser_process_cleanup"}), allocation["lease_record"]["session_id"],
                  allocation["session_name"], allocation["allocation_id"]))
+            recording_id = allocation["lease_record"].get("recording_id")
+            if recording_id:
+                cur.execute(sql.SQL("""
+                    UPDATE {} SET status = 'failed', ended_at = NOW(), updated_at = NOW(),
+                        finalize_metrics = finalize_metrics || %s::jsonb
+                    WHERE id = %s AND metadata->>'browser_allocation_id' = %s
+                        AND status NOT IN ('completed', 'failed', 'discarded')
+                """).format(sql.Identifier(self._settings.database.postgres_recording_table)),
+                    (json.dumps({"failure_reason": "browser_resource_recovered",
+                                 "browser_allocation_id": allocation["allocation_id"]}),
+                     recording_id, allocation["allocation_id"]))
+                recording_changed = cur.rowcount == 1
+        if recording_changed:
+            LOGGER.warning("recording_resource_recovered", extra={
+                "recording_id": recording_id, "allocation_id": allocation["allocation_id"],
+                "session_id": allocation["lease_record"]["session_id"],
+                "project_id": allocation["lease_record"].get("project_id"),
+                "resource_id": allocation["lease_record"]["resource_id"],
+            })
+
+    async def pending_recordings(self, *, namespace, host_id, after_generation, limit):
+        return await asyncio.to_thread(self._pending_recordings_sync, namespace, host_id, after_generation, limit)
+
+    def _pending_recordings_sync(self, namespace, host_id, after_generation, limit):
+        # Include pre-launch intents with no PID: a killed owner may never have
+        # reached Redis allocation binding or OS process creation.
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("""
+                SELECT a.* FROM {} a JOIN {} r ON r.id = a.lease_record->>'recording_id'
+                WHERE a.lease_namespace = %s AND a.host_id = %s AND a.generation > %s
+                    AND r.metadata->>'browser_allocation_id' = a.allocation_id
+                    AND r.status NOT IN ('completed', 'failed', 'discarded')
+                ORDER BY a.generation LIMIT %s
+            """).format(self._table, sql.Identifier(self._settings.database.postgres_recording_table)),
+                (namespace, host_id, after_generation, limit))
+            return cur.fetchall()

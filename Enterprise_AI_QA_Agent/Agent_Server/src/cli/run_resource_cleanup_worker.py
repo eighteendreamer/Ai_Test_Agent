@@ -17,6 +17,7 @@ from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocat
 from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.infrastructure.redis_task_queue import RedisTaskQueue
+from src.infrastructure.recording_store import PostgresRecordingStore
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.postgres_resource_cleanup_store import PostgresResourceCleanupStore
 from src.runtime.resource_cleanup_worker import (
@@ -78,6 +79,7 @@ async def _run(*, once: bool, worker_id: str) -> None:
         await allocations.initialize()
         await browser_allocations.initialize()
         await PostgresSessionResourceStore(settings).initialize()
+        await PostgresRecordingStore(settings).initialize()
         await manager.connect()
         await queue.connect()
         await browser_queue.connect()

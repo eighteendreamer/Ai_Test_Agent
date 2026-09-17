@@ -303,9 +303,14 @@ class PostgresRecordingStore:
                     )
                 params.append(recording_id)
                 cur.execute(
-                    f"UPDATE {self._session_table} SET {', '.join(sets)} WHERE id = %s",
+                    f"UPDATE {self._session_table} SET {', '.join(sets)} WHERE id = %s "
+                    "AND status NOT IN ('completed', 'failed', 'discarded')",
                     tuple(params),
                 )
+                if cur.rowcount == 0:
+                    logger.info("recording_terminal_or_missing_update_ignored", extra={
+                        "recording_id": recording_id, "requested_status": status.value,
+                    })
         return self._get_session_sync(recording_id)
 
     def _get_session_sync(self, recording_id: str) -> RecordingSession | None:

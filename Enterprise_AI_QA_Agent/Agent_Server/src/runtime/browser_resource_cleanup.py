@@ -62,6 +62,7 @@ class BrowserResourceCleanup:
         self._allocations = allocations or PostgresBrowserAllocationStore(settings)
         self._namespace = namespace
         self._host_id = settings.orchestration.resource_browser_host_id
+        self._recording_cursor = 0
 
     async def __call__(self, lease):
         if lease.resource_type != "browser" or not lease.allocation_id:
@@ -137,4 +138,17 @@ class BrowserResourceCleanup:
                        "created_at": allocation["created_at"].isoformat()}
             if await manager.enqueue_orphan_cleanup(payload, stream=self._settings.orchestration.browser_cleanup_task_stream):
                 count += 1
+        batch_size = self._settings.orchestration.resource_browser_reconcile_batch_size
+        recordings = await self._allocations.pending_recordings(namespace=self._namespace, host_id=self._host_id,
+            after_generation=self._recording_cursor, limit=batch_size)
+        for allocation in recordings:
+            marker = allocation["allocation_id"]
+            payload = {**allocation["lease_record"], "schema_version": 1, "task_type": "cleanup_task",
+                       "task_id": f"task_browser_recording_{marker}", "cleanup_reason": "orphan_inventory",
+                       "created_at": allocation["created_at"].isoformat()}
+            if await manager.enqueue_orphan_cleanup(payload, stream=self._settings.orchestration.browser_cleanup_task_stream):
+                count += 1
+            self._recording_cursor = int(allocation["generation"])
+        if len(recordings) < batch_size:
+            self._recording_cursor = 0
         return count

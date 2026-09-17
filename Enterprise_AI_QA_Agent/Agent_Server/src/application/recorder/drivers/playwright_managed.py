@@ -73,7 +73,8 @@ class PlaywrightManagedDriver(PlaywrightBindingDriverBase):
             raise RuntimeError(f"playwright-managed driver already closed: {self._recording_id}")
         try:
             session = await self._runtime.open_context(self._scope, self._profile_root.parent,
-                url=url, open_args=["--persistent", "--profile", str(self._profile_root)])
+                url=url, open_args=["--persistent", "--profile", str(self._profile_root)],
+                recording_id=self._recording_id)
             self._context, self._page = session.context, session.page
             self._profile_dir = session.profile_dir
             self._context.on("close", lambda _: self._closed_event.set())

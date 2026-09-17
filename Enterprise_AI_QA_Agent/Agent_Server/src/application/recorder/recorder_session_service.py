@@ -301,7 +301,7 @@ class RecorderSessionService:
                 return await self._do_stop(runtime)
             return await self._do_destroy(runtime)
         except Exception:
-            runtime.status = current  # 回滚内存，PG 未变更（或已失败），指令可重试
+            runtime.status = runtime.session.status  # 保留数据库返回的恢复终态，禁止迟到操作复活。
             raise
 
     async def _do_start(self, runtime: _SessionRuntime) -> RecordingSession:
@@ -380,7 +380,7 @@ class RecorderSessionService:
         discarded = await self._store.discard_session(recording_id)
         if discarded is not None:
             runtime.session = discarded
-            runtime.status = RecordingStatus.discarded
+            runtime.status = discarded.status
         logger.info(
             "recording destroyed: recording_id=%s dropped_while_paused=%s dropped_on_db_error=%s",
             recording_id, runtime.dropped_while_paused, runtime.dropped_on_db_error,
@@ -492,9 +492,15 @@ class RecorderSessionService:
             else None,
             finalize_metrics=finalize_metrics,
         )
-        runtime.status = status
+        runtime.status = updated.status if updated is not None else status
         if updated is not None:
             runtime.session = updated
+            if updated.status != status:
+                logger.warning("recording_state_update_rejected", extra={
+                    "recording_id": runtime.session.id, "requested_status": status.value,
+                    "actual_status": updated.status.value,
+                })
+                raise ValueError(f"Recording is already {updated.status.value}; cannot change to {status.value}")
         return runtime.session
 
     async def _cancel_task(self, task: asyncio.Task[None] | None) -> None:

@@ -233,7 +233,8 @@ class PythonPlaywrightCliRuntime:
         async with self._session_scope(session_name):
             await self._close_session(session_name)
 
-    async def open_context(self, session_name: str, cwd: Path, *, url: str, open_args: list[str]) -> _BrowserSession:
+    async def open_context(self, session_name: str, cwd: Path, *, url: str, open_args: list[str],
+                           recording_id: str | None = None) -> _BrowserSession:
         """Open a native consumer through the same ownership and shutdown path."""
         if self._closed:
             raise RuntimeError("Browser runtime is shutting down")
@@ -241,7 +242,7 @@ class PythonPlaywrightCliRuntime:
         async def open_locked():
             async with self._session_scope(session_name, command=True):
                 try:
-                    session = await self._ensure_session(session_name, cwd, open_args)
+                    session = await self._ensure_session(session_name, cwd, open_args, recording_id=recording_id)
                     await session.page.goto(url, wait_until="domcontentloaded")
                     return session
                 except BaseException as exc:
@@ -270,7 +271,8 @@ class PythonPlaywrightCliRuntime:
             "allocation_generation": session.allocation.generation if session.allocation else None,
         }
 
-    async def _ensure_session(self, session_name: str, cwd: Path, open_args: list[str]) -> _BrowserSession:
+    async def _ensure_session(self, session_name: str, cwd: Path, open_args: list[str], *,
+                              recording_id: str | None = None) -> _BrowserSession:
         if session_name in self._closing:
             await self._close_session(session_name)
         if session_name in self._sessions:
@@ -300,7 +302,7 @@ class PythonPlaywrightCliRuntime:
         if browser_name == "edge":
             browser_type_name = "chromium"
             launch_options["channel"] = "msedge"
-        allocation = await self._resource_manager.acquire(session_name) if self._resource_manager else None
+        allocation = await self._resource_manager.acquire(session_name, recording_id=recording_id) if self._resource_manager else None
         if allocation is not None:
             launch_options["env"] = {**os.environ, **allocation.environment}
         session = _BrowserSession(

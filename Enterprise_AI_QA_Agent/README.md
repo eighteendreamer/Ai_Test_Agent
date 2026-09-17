@@ -483,6 +483,7 @@ ORCHESTRATION__RESOURCE_BROWSER_HOST_ID=local-browser-host
 ORCHESTRATION__RESOURCE_BROWSER_LIMIT=10
 ORCHESTRATION__RESOURCE_BROWSER_MAX_LIFETIME_SECONDS=900
 ORCHESTRATION__RESOURCE_BROWSER_CLEANUP_TIMEOUT_SECONDS=10
+ORCHESTRATION__RESOURCE_BROWSER_RECONCILE_BATCH_SIZE=100
 ```
 
 每个原生浏览器宿主机必须配置不同的 `RESOURCE_BROWSER_HOST_ID`，同机 API、Agent Worker、
@@ -526,8 +527,20 @@ Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
 受管录制真实回归包含在 `test_live_browser_leases.py`，通过同一浏览器 API 的 headless 选项抑制测试窗口，
 实际启动 Chromium 并连接 Redis/PostgreSQL，验证 profile/Cookie 隔离、共享配额、HTTP 409、
 导航失败、寿命终止、启动取消和服务退出。应用启动测试同时核对录制驱动的生产依赖接线。
-尚未完成活动浏览器命令和录制控制的跨 Worker 转发、录制进程强杀后的业务状态恢复、CDP 外部浏览器
-租约、Linux 实机回归与完整并发/soak 验收。录制回放执行器目前没有生产调用入口，也未接入 Harness。
+受管录制在启动浏览器前，将 `recording_id` 写入浏览器创建意图，并在同一个 PostgreSQL 事务中绑定
+录制 `metadata.browser_allocation_id`。Cleanup Worker 仅更新匹配分配的非终态录制：进程清理成功后，
+写入 `failed`、结束时间和 `finalize_metrics.failure_reason=browser_resource_recovered`，随后提交清理回执、
+释放配额。数据库写入失败保留配额重试。已完成/失败/丢弃的结果不可被迟到的状态更新覆盖。
+
+清单扫描还会按宿主机、namespace 和 generation 分页读取未结束的录制创建意图，覆盖进程未启动或
+尚未绑定 Redis 就被强杀的窗口；每批大小由 `RESOURCE_BROWSER_RECONCILE_BATCH_SIZE` 控制。
+活跃租约由既有 Lua 所有权校验保护，不会因扫描而终止。此改造复用既有 JSONB 元数据，不新增模型设置、
+依赖或表结构。真实测试覆盖录制中、PID 绑定前、Redis 分配绑定前三处强杀，以及恢复提交失败、
+终态保护、迟到控制写入和分页不饿死后续孤儿记录。
+
+尚未完成活动浏览器命令和录制控制的跨 Worker 转发、录制行创建后尚未写入浏览器分配意图时的
+业务恢复、CDP 外部浏览器租约、Linux 实机回归与完整并发/soak 验收。
+录制回放执行器目前没有生产调用入口，也未接入 Harness。
 
 ### 2. 启动前端
 
