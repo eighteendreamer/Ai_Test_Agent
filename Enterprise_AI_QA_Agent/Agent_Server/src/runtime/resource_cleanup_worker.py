@@ -67,9 +67,11 @@ class ResourceCleanupTaskHandler:
     """Execute external cleanup from an at-least-once Redis delivery."""
 
     def __init__(self, store: PostgresResourceCleanupStore,
-                 callbacks: dict[str, CleanupCallback] | None = None) -> None:
+                 callbacks: dict[str, CleanupCallback] | None = None,
+                 *, manager: RedisResourceLeaseManager) -> None:
         self._store = store
         self._callbacks = callbacks or {}
+        self._manager = manager
 
     async def __call__(self, task: QueuedTask) -> None:
         payload = task.payload
@@ -83,6 +85,9 @@ class ResourceCleanupTaskHandler:
         context = get_request_context()
         worker_id = str(context.worker_id if context else "cleanup")
         if not await self._store.begin(task_id, lease, worker_id=worker_id):
+            # Crash after PG commit but before Redis finalization/ACK: replay only
+            # the fenced finalization, never call the external adapter again.
+            await self._manager.complete_cleanup(lease)
             return
         try:
             if not lease.external_resource_id:
@@ -111,6 +116,7 @@ class ResourceCleanupTaskHandler:
                 "error_type": type(exc).__name__,
             })
             raise
+        await self._manager.complete_cleanup(lease)
         LOGGER.info("resource_lease_external_cleanup_completed", extra={
             "task_id": payload.get("task_id"),
             "resource_type": lease.resource_type,

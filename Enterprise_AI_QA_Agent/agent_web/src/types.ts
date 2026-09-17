@@ -1421,6 +1421,8 @@ export interface ResourceQuotaRecord {
 export interface ResourceOccupancyResponse {
   project_id?: string | null;
   active_count: number;
+  cleanup_pending_count: number;
+  cleanup_pending: Array<Record<string, unknown>>;
   by_type: Record<string, number>;
   leases: Array<Record<string, unknown>>;
   quota_usage: Record<string, number>;

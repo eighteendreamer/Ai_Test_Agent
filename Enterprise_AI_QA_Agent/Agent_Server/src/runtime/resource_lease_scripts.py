@@ -1,31 +1,52 @@
 """Redis Lua for lease ownership, fencing and hierarchical quota accounting."""
 
-CLAIM = """
+# Shared by bounded claim-time and background sweeps. Redis scripts serialize
+# ownership changes; an external process needs a separate confirmed cleanup.
+_REAP_ONE = """
+local function reap_one(member, registry, usage, metadata_key, stream, now)
+  if redis.call('EXISTS', member) == 1 then return nil end
+  local raw = redis.call('HGET', metadata_key, member)
+  if not raw then
+    redis.call('ZREM', registry, member)
+    return nil
+  end
+  local metadata = cjson.decode(raw)
+  local lease = metadata['lease'] or {}
+  if metadata['status'] == 'cleanup_pending' then
+    redis.call('ZREM', registry, member)
+    return nil
+  end
+  if lease['resource_id'] then
+    lease['schema_version'] = 1
+    lease['task_id'] = 'task_cleanup_' .. tostring(lease['lease_token'] or '')
+    lease['task_type'] = 'cleanup_task'
+    lease['cleanup_enqueued_at_ms'] = now
+    -- Publish before removing recovery state; failed XADD must keep the owner.
+    redis.call('XADD', stream, '*', 'payload', cjson.encode(lease))
+  end
+  local external = lease['external_resource_id']
+  if external and external ~= cjson.null and external ~= '' then
+    metadata['status'] = 'cleanup_pending'
+    metadata['lease'] = lease
+    redis.call('HSET', metadata_key, member, cjson.encode(metadata))
+  else
+    for _, field in ipairs(metadata['quota'] or metadata) do
+      local current = tonumber(redis.call('HINCRBY', usage, field, -1))
+      if current <= 0 then redis.call('HDEL', usage, field) end
+    end
+    redis.call('HDEL', metadata_key, member)
+  end
+  redis.call('ZREM', registry, member)
+  return cjson.encode(lease)
+end
+"""
+
+CLAIM = _REAP_ONE + """
 local clock = redis.call('TIME')
 local now = clock[1] * 1000 + math.floor(clock[2] / 1000)
 local expired = redis.call('ZRANGEBYSCORE', KEYS[5], '-inf', tostring(now), 'LIMIT', 0, 100)
 for _, member in ipairs(expired) do
-  if redis.call('EXISTS', member) == 0 then
-    local raw = redis.call('HGET', KEYS[6], member)
-    if raw then
-      local metadata = cjson.decode(raw)
-      local lease = metadata['lease'] or {}
-      if lease['resource_id'] then
-        lease['schema_version'] = 1
-        lease['task_id'] = 'task_cleanup_' .. tostring(lease['lease_token'] or '')
-        lease['task_type'] = 'cleanup_task'
-        lease['cleanup_enqueued_at_ms'] = now
-        redis.call('XADD', KEYS[7], '*', 'payload', cjson.encode(lease))
-      end
-      local fields = metadata['quota'] or metadata
-      for _, field in ipairs(fields) do
-        local current = tonumber(redis.call('HINCRBY', KEYS[3], field, -1))
-        if current <= 0 then redis.call('HDEL', KEYS[3], field) end
-      end
-      redis.call('HDEL', KEYS[6], member)
-    end
-    redis.call('ZREM', KEYS[5], member)
-  end
+  reap_one(member, KEYS[5], KEYS[3], KEYS[6], KEYS[7], now)
 end
 if redis.call('EXISTS', KEYS[1]) == 1 then return {0, 'resource_busy'} end
 -- A bounded sweep may not yet have reached this slot. Never overwrite the
@@ -51,36 +72,34 @@ redis.call('HSET', KEYS[6], KEYS[1], cjson.encode({quota = fields, lease = paylo
 return {token, 'ok'}
 """
 
-REAP = """
+REAP = _REAP_ONE + """
 local clock = redis.call('TIME')
 local now = clock[1] * 1000 + math.floor(clock[2] / 1000)
 local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', tostring(now), 'LIMIT', 0, ARGV[1])
 local result = {}
 for _, member in ipairs(expired) do
-  if redis.call('EXISTS', member) == 0 then
-    local raw = redis.call('HGET', KEYS[3], member)
-    if raw then
-      local metadata = cjson.decode(raw)
-      local lease = metadata['lease'] or {}
-      if lease['resource_id'] then
-        lease['schema_version'] = 1
-        lease['task_id'] = 'task_cleanup_' .. tostring(lease['lease_token'] or '')
-        lease['task_type'] = 'cleanup_task'
-        lease['cleanup_enqueued_at_ms'] = now
-        redis.call('XADD', KEYS[4], '*', 'payload', cjson.encode(lease))
-      end
-      local fields = metadata['quota'] or metadata
-      for _, field in ipairs(fields) do
-        local current = tonumber(redis.call('HINCRBY', KEYS[2], field, -1))
-        if current <= 0 then redis.call('HDEL', KEYS[2], field) end
-      end
-      redis.call('HDEL', KEYS[3], member)
-      table.insert(result, cjson.encode(lease))
-    end
-    redis.call('ZREM', KEYS[1], member)
-  end
+  local result_lease = reap_one(member, KEYS[1], KEYS[2], KEYS[3], KEYS[4], now)
+  if result_lease then table.insert(result, result_lease) end
 end
 return result
+"""
+
+COMPLETE_CLEANUP = """
+local raw = redis.call('HGET', KEYS[2], KEYS[1])
+if not raw then return 0 end
+local metadata = cjson.decode(raw)
+local lease = metadata['lease'] or {}
+if metadata['status'] ~= 'cleanup_pending' then return 0 end
+if lease['lease_token'] ~= ARGV[1]
+    or tonumber(lease['fencing_token']) ~= tonumber(ARGV[2])
+    or lease['external_resource_id'] ~= ARGV[3] then return 0 end
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+for _, field in ipairs(metadata['quota']) do
+  local current = tonumber(redis.call('HINCRBY', KEYS[3], field, -1))
+  if current <= 0 then redis.call('HDEL', KEYS[3], field) end
+end
+redis.call('HDEL', KEYS[2], KEYS[1])
+return 1
 """
 
 RENEW = """

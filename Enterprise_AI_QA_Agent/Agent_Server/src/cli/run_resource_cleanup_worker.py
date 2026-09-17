@@ -77,7 +77,7 @@ async def _run(*, once: bool, worker_id: str) -> None:
         queue,
         settings=settings,
         consumer=worker_id,
-        handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings)),
+        handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager),
     )
     try:
         await store.initialize()

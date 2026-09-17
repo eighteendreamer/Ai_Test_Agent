@@ -12,9 +12,12 @@ router = APIRouter(prefix="/resource-occupancy", tags=["resource-occupancy"])
 @router.get("", response_model=ResourceOccupancyResponse)
 async def get_resource_occupancy(request: Request, project_id: str | None = None):
     leases = await request.app.state.resource_lease_manager.list_active(project_id=project_id)
+    pending = await request.app.state.resource_lease_manager.list_cleanup_pending(project_id=project_id)
     return ResourceOccupancyResponse(
         project_id=project_id,
         active_count=len(leases),
+        cleanup_pending_count=len(pending),
+        cleanup_pending=pending,
         by_type=dict(Counter(str(item.get("resource_type") or "unknown") for item in leases)),
         leases=leases,
         quota_usage=await request.app.state.resource_lease_manager.usage_snapshot(),

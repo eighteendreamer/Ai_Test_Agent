@@ -13,6 +13,8 @@ class Manager:
     async def list_active(self, *, project_id=None):
         return [{"resource_type": "browser", "project_id": project_id, "external_resource_id": "browser-session"}]
     async def usage_snapshot(self): return {"global:all": 1}
+    async def list_cleanup_pending(self, *, project_id=None):
+        return [{"resource_type": "docker", "project_id": project_id, "status": "cleanup_pending"}]
 
 
 def test_occupancy_route_groups_active_leases():
@@ -23,4 +25,6 @@ def test_occupancy_route_groups_active_leases():
             assert response.status_code == 200
             body = response.json()
             assert body["active_count"] == 1 and body["by_type"]["browser"] == 1
+            assert body["cleanup_pending_count"] == 1
+            assert body["cleanup_pending"][0]["project_id"] == "p1"
     asyncio.run(run())

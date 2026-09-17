@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -15,11 +16,14 @@ from src.core.request_context import get_request_context, new_id
 from src.runtime.resource_lease_scripts import (
     BIND,
     CLAIM,
+    COMPLETE_CLEANUP,
     REAP,
     RECONCILE_QUOTA,
     RELEASE,
     RENEW,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -245,13 +249,47 @@ class RedisResourceLeaseManager:
         return results
 
     async def reconcile_quota_usage(self) -> int:
-        """Rebuild usage from authoritative active-lease metadata."""
+        """Count both live owners and external resources awaiting cleanup."""
         return int(await self._client.eval(
             RECONCILE_QUOTA,
             2,
             self._key("lease:metadata"),
             self._key("quota:usage"),
         ))
+
+    async def complete_cleanup(self, lease: ExpiredResourceLease) -> bool:
+        """Release quarantine after a durable success, fencing stale deliveries.
+
+        A false result is an idempotent no-op (already finalized or newer owner).
+        Transport errors propagate so the delivery cannot ACK before finalization.
+        """
+        released = bool(await self._client.eval(
+            COMPLETE_CLEANUP, 3,
+            self._lease_key(lease.resource_type, lease.resource_id),
+            self._key("lease:metadata"), self._key("quota:usage"),
+            lease.lease_token, lease.fencing_token, lease.external_resource_id or "",
+        ))
+        LOGGER.info("resource_cleanup_quota_released" if released else "resource_cleanup_finalize_noop", extra={
+            "resource_id": lease.resource_id, "resource_type": lease.resource_type,
+            "run_id": lease.run_id, "run_item_id": lease.run_item_id,
+            "attempt_id": lease.attempt_id, "fencing_token": lease.fencing_token,
+        })
+        return released
+
+    async def list_cleanup_pending(self, *, project_id: str | None = None) -> list[dict[str, Any]]:
+        records = await self._client.hgetall(self._key("lease:metadata"))
+        result = []
+        for raw in records.values():
+            metadata = json.loads(raw)
+            if not isinstance(metadata, dict) or metadata.get("status") != "cleanup_pending":
+                continue
+            lease = dict(metadata["lease"])
+            if project_id and lease.get("project_id") != project_id:
+                continue
+            lease.pop("lease_token", None)
+            lease["status"] = "cleanup_pending"
+            result.append(lease)
+        return sorted(result, key=lambda row: (row["resource_type"], row["resource_id"]))
 
     async def list_active(self, *, project_id: str | None = None) -> list[dict[str, Any]]:
         active: list[dict[str, Any]] = []

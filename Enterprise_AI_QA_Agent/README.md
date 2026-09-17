@@ -269,13 +269,20 @@ uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuil
 uv run --locked --directory Agent_Server python -m src.cli.run_resource_cleanup_worker
 ```
 
-资源清理进程会原子回收过期租约并写入 `qa:tasks:cleanup`，随后使用独立
+资源清理进程会将过期租约原子转交到 `qa:tasks:cleanup`，随后使用独立
 Consumer Group 按租约绑定的真实外部资源 ID 执行补偿清理。清理失败沿用通用
 Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 Stream 配置
 `MAXLEN` 裁剪。
 
-清理结果写入 PostgreSQL `agent_resource_cleanup_jobs` 后才 ACK，重复成功消息
-直接读取终态。自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；
+已绑定外部资源的过期租约保留为 `cleanup_pending`，继续占用原槽位和所有层级配额；
+清理失败、重试或进入死信均不释放容量。清理结果写入 PostgreSQL
+`agent_resource_cleanup_jobs` 后，通过 `lease_token + fencing_token + external_resource_id`
+核对旧租约并原子释放配额，最后 ACK。数据库提交后崩溃，重复投递只补做 Redis 收尾。
+`GET /api/v1/resource-occupancy` 的 `cleanup_pending_count/cleanup_pending` 单独展示
+待清理资源（支持项目过滤），`active_count` 仍只计有效执行租约。
+升级时同步重启 API 和 Cleanup Worker，避免旧消费者 ACK 后不执行新版本配额收尾；
+本次不新增环境变量或数据库结构，继续复用已有清理队列和重试配置。
+自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；
 创建容器后应立即绑定此 ID，当前仅在执行结果返回后绑定的路径仍有崩溃窗口，
 后续需把绑定前移至各执行器创建点。本单元不代表 P4 的强杀恢复与浏览器治理全部完成。
 Redis 完全丢失时，尚未被消费并写入 PostgreSQL 的清理消息仍需外部资源清单对账恢复；

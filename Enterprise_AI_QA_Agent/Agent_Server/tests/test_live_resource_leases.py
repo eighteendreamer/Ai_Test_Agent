@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import json
+import multiprocessing
 import shutil
 import subprocess
 from uuid import uuid4
+from dataclasses import replace
 
 import pytest
 import pytest_asyncio
@@ -22,8 +24,35 @@ from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
 )
-from src.runtime.resource_lease_manager import RedisResourceLeaseManager, ResourceUnavailable
+from src.runtime.resource_lease_manager import ExpiredResourceLease, RedisResourceLeaseManager, ResourceUnavailable
 from tests.test_resource_cleanup_worker import ReceiptStore
+
+
+def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):
+    """Real worker paused at the PG/Redis boundary; parent terminates this process."""
+    async def run():
+        settings = get_settings()
+        manager = RedisResourceLeaseManager(settings.database.redis_url,
+                                            cleanup_stream=stream, key_prefix=prefix)
+        queue = RedisTaskQueue(settings.database.redis_url, stream=stream, group=group)
+        store = PostgresResourceCleanupStore(settings)
+        await manager.connect()
+        await queue.connect()
+        finish = store.finish
+        async def finish_and_wait(*args, **kwargs):
+            await finish(*args, **kwargs)
+            if kwargs["status"] == "completed":
+                committed.set()
+                await asyncio.Event().wait()
+        store.finish = finish_and_wait
+        worker = RedisTaskWorker(queue, consumer="terminated-cleanup-worker", block_ms=0,
+            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager))
+        try:
+            await worker.run_once()
+        finally:
+            await queue.close()
+            await manager.close()
+    asyncio.run(run())
 
 
 @pytest_asyncio.fixture
@@ -119,6 +148,23 @@ async def _expire(manager, lease):
 
 
 @pytest.mark.asyncio
+async def test_expired_bound_resource_holds_slot_and_quota_until_cleanup(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+                            worker_id="old", lease_seconds=10)
+    await m.bind(lease, "a" * 64)
+    await _expire(m, lease)
+    await m.reap_expired()
+    assert (await m.usage_snapshot()).get("global:all") == 1
+    with pytest.raises(ResourceUnavailable):
+        await m.acquire(resource_type="docker", resource_id=resource_id,
+                        worker_id="new", lease_seconds=10)
+    with pytest.raises(ResourceUnavailable):
+        await m.acquire(resource_type="docker", resource_id="another-slot",
+                        worker_id="new", lease_seconds=10)
+
+
+@pytest.mark.asyncio
 async def test_reap_publish_failure_preserves_binding_and_quota(manager):
     m, resource_id = manager
     lease = await m.acquire(resource_type="docker", resource_id=resource_id,
@@ -139,6 +185,9 @@ async def test_reap_publish_failure_preserves_binding_and_quota(manager):
     assert expired[0].fencing_token == lease.fencing_token
     assert not await m.reap_expired()
     assert await client.xlen(m._cleanup_stream) == 1
+    assert await m.usage_snapshot() == before
+    assert await m.complete_cleanup(expired[0])
+    assert not await m.complete_cleanup(expired[0])
     assert not await m.usage_snapshot()
 
 
@@ -149,13 +198,28 @@ async def test_claim_reap_preserves_old_binding_and_per_lease_fencing(manager):
                             worker_id="old", lease_seconds=10)
     await m.bind(first, "a" * 64)
     await _expire(m, first)
-    second = await m.acquire(resource_type="docker", resource_id=resource_id,
-                             worker_id="new", lease_seconds=10)
+    with pytest.raises(ResourceUnavailable, match="resource_pending_reap"):
+        await m.acquire(resource_type="docker", resource_id=resource_id,
+                        worker_id="new", lease_seconds=10)
     messages = await m._client.xrange(m._cleanup_stream)
     payload = json.loads(messages[0][1]["payload"])
     assert payload["external_resource_id"] == "a" * 64
     assert payload["fencing_token"] == first.fencing_token
     assert not await m.bind(first, "b" * 64)
+    expired = ExpiredResourceLease.from_payload(payload)
+    assert not await m.complete_cleanup(replace(expired, fencing_token=999))
+    assert not await m.complete_cleanup(replace(expired, lease_token="wrong"))
+    assert not await m.complete_cleanup(replace(expired, external_resource_id="b" * 64))
+    assert (await m.usage_snapshot())["global:all"] == 1
+    pending = await m.list_cleanup_pending()
+    assert len(pending) == 1 and "lease_token" not in pending[0]
+    await m.reconcile_quota_usage()
+    assert (await m.usage_snapshot())["global:all"] == 1
+    assert await m.complete_cleanup(expired)
+    second = await m.acquire(resource_type="docker", resource_id=resource_id,
+                             worker_id="new", lease_seconds=10)
+    assert not await m.complete_cleanup(expired)
+    assert (await m.usage_snapshot())["global:all"] == 1
     assert (await m.list_active())[0]["fencing_token"] == second.fencing_token
     assert await m.release(second)
 
@@ -195,7 +259,7 @@ async def test_cleanup_pending_recovery_retry_and_dead_letter(manager):
         async def unavailable(_lease):
             raise ConnectionError("Docker daemon unavailable")
         worker = RedisTaskWorker(queue, consumer="replacement", block_ms=0,
-            handler=ResourceCleanupTaskHandler(store, {"docker": unavailable}),
+            handler=ResourceCleanupTaskHandler(store, {"docker": unavailable}, manager=m),
             reclaim_idle_ms=10, retry_base_ms=1, retry_max_ms=10, max_retries=1)
         await asyncio.sleep(.03)
         await worker.run_once()
@@ -207,6 +271,8 @@ async def test_cleanup_pending_recovery_retry_and_dead_letter(manager):
         assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
         assert not await queue.pending()
         assert store.statuses == ["failed", "failed"]
+        assert (await m.usage_snapshot())["global:all"] == 1
+        assert len(await m.list_cleanup_pending()) == 1
     finally:
         await queue.close()
 
@@ -216,7 +282,8 @@ async def test_cleanup_pending_recovery_retry_and_dead_letter(manager):
     reason="set RUN_LIVE_DOCKER_TESTS=1 to exercise real Redis and Docker cleanup",
 )
 @pytest.mark.asyncio
-async def test_expired_docker_slot_removes_bound_real_container() -> None:
+@pytest.mark.parametrize("kill_after_pg_commit", [False, True])
+async def test_expired_docker_slot_removes_bound_real_container(kill_after_pg_commit) -> None:
     if shutil.which("docker") is None:
         pytest.skip("Docker CLI is unavailable")
     settings = get_settings()
@@ -226,6 +293,7 @@ async def test_expired_docker_slot_removes_bound_real_container() -> None:
     group = f"qa:test:cleanup-workers:{suffix}"
     container_id = ""
     task_id = None
+    process = None
     store = PostgresResourceCleanupStore(settings)
     lease_manager = RedisResourceLeaseManager(
         settings.database.redis_url,
@@ -272,14 +340,39 @@ async def test_expired_docker_slot_removes_bound_real_container() -> None:
 
         reaper = ResourceCleanupWorker(lease_manager, interval_seconds=1)
         assert await reaper.run_once() == 1
+        assert (await lease_manager.usage_snapshot())["global:all"] == 1
+        if kill_after_pg_commit:
+            context = multiprocessing.get_context("spawn")
+            committed = context.Event()
+            process = context.Process(target=_cleanup_then_wait_after_pg_commit,
+                args=(cleanup_stream, group, lease_manager._prefix, committed))
+            process.start()
+            async def wait_for_commit():
+                while not committed.is_set():
+                    assert process.is_alive(), f"child exited: {process.exitcode}"
+                    await asyncio.sleep(.05)
+            await asyncio.wait_for(wait_for_commit(), timeout=40)
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+            assert not process.is_alive()
+            assert (await lease_manager.usage_snapshot())["global:all"] == 1
+            assert len(await queue.pending()) == 1
+            await asyncio.sleep(.05)
+        callbacks = build_cleanup_callbacks(settings)
+        if kill_after_pg_commit:
+            async def unexpected_cleanup(_lease):
+                raise AssertionError("Committed cleanup must not invoke Docker again")
+            callbacks = {"docker": unexpected_cleanup}
         delivery = RedisTaskWorker(
             queue,
             consumer=f"cleanup-{suffix}",
-            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings)),
+            handler=ResourceCleanupTaskHandler(store, callbacks, manager=lease_manager),
             block_ms=0,
-            reclaim_idle_ms=1000,
+            reclaim_idle_ms=10,
         )
         assert await delivery.run_once() == 1
+        assert not await queue.pending()
+        assert not await lease_manager.list_cleanup_pending()
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("SELECT status FROM {} WHERE task_id = %s").format(
                 sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
@@ -297,6 +390,10 @@ async def test_expired_docker_slot_removes_bound_real_container() -> None:
         usage = await lease_manager.usage_snapshot()
         assert not any(suffix in key for key in usage)
     finally:
+        if process is not None:
+            if process.is_alive():
+                process.terminate()
+            await asyncio.to_thread(process.join, 10)
         if container_id:
             subprocess.run(
                 ["docker", "rm", "--force", container_id],

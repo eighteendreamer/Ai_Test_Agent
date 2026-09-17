@@ -26,6 +26,11 @@ class ReceiptStore:
 class Manager:
     def __init__(self):
         self.reconciled = 0
+        self.finalized = []
+
+    async def complete_cleanup(self, lease):
+        self.finalized.append(lease.resource_id)
+        return True
 
     async def reap_expired(self, *, limit):
         return [expired_lease("docker", "docker-slot-1", "container-123")]
@@ -70,13 +75,15 @@ async def test_cleanup_task_handler_uses_external_resource_id():
         calls.append((lease.resource_id, lease.external_resource_id))
 
     store = ReceiptStore()
-    handler = ResourceCleanupTaskHandler(store, {"docker": docker})
+    manager = Manager()
+    handler = ResourceCleanupTaskHandler(store, {"docker": docker}, manager=manager)
     await handler(QueuedTask("1-0", {
         "task_type": "cleanup_task",
         **expired_lease("docker", "docker-slot-1", "container-123").__dict__,
     }))
     assert calls == [("docker-slot-1", "container-123")]
     assert store.statuses == ["completed"]
+    assert manager.finalized == ["docker-slot-1"]
 
 
 @pytest.mark.asyncio
@@ -85,19 +92,21 @@ async def test_cleanup_task_handler_propagates_failure_for_stream_retry():
         raise RuntimeError("docker unavailable")
 
     store = ReceiptStore()
-    handler = ResourceCleanupTaskHandler(store, {"docker": fail})
+    manager = Manager()
+    handler = ResourceCleanupTaskHandler(store, {"docker": fail}, manager=manager)
     with pytest.raises(RuntimeError, match="docker unavailable"):
         await handler(QueuedTask("1-0", {
             "task_type": "cleanup_task",
             **expired_lease("docker", "docker-slot-1", "container-123").__dict__,
         }))
     assert store.statuses == ["failed"]
+    assert manager.finalized == []
 
 
 @pytest.mark.asyncio
 async def test_missing_browser_adapter_is_failed_instead_of_acknowledged():
     store = ReceiptStore()
-    handler = ResourceCleanupTaskHandler(store)
+    handler = ResourceCleanupTaskHandler(store, manager=Manager())
     with pytest.raises(NotImplementedError):
         await handler(QueuedTask("1-0", {
             "task_type": "cleanup_task",
@@ -114,7 +123,7 @@ async def test_receipt_failure_is_retried_and_duplicate_success_is_idempotent():
     async def docker(lease):
         calls.append(lease.external_resource_id)
 
-    handler = ResourceCleanupTaskHandler(store, {"docker": docker})
+    handler = ResourceCleanupTaskHandler(store, {"docker": docker}, manager=Manager())
     task = QueuedTask("1-0", {
         "task_type": "cleanup_task",
         **expired_lease("docker", "slot-1", "container-1").__dict__,
@@ -134,6 +143,31 @@ async def test_receipt_failure_is_retried_and_duplicate_success_is_idempotent():
     await handler(task)
     assert calls == ["container-1", "container-1"]
     assert store.statuses == ["failed", "completed"]
+
+
+@pytest.mark.asyncio
+async def test_pg_commit_then_redis_failure_replays_only_finalization():
+    store = ReceiptStore()
+    manager = Manager()
+    calls = []
+    async def docker(lease):
+        calls.append(lease.external_resource_id)
+    async def unavailable(lease):
+        raise ConnectionError("Redis unavailable after PG commit")
+    finalize = manager.complete_cleanup
+    manager.complete_cleanup = unavailable
+    handler = ResourceCleanupTaskHandler(store, {"docker": docker}, manager=manager)
+    task = QueuedTask("1-0", {
+        "task_type": "cleanup_task",
+        **expired_lease("docker", "slot-1", "container-1").__dict__,
+    })
+    with pytest.raises(ConnectionError, match="after PG commit"):
+        await handler(task)
+    assert store.statuses == ["completed"]
+    manager.complete_cleanup = finalize
+    await handler(task)
+    assert calls == ["container-1"]
+    assert manager.finalized == ["slot-1"]
 
 
 def test_cleanup_interval_must_be_positive():
