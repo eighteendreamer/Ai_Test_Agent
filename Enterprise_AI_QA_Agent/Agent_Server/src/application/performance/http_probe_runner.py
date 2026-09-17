@@ -5,15 +5,12 @@ pre-check before load test.
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import subprocess
-import uuid
 from dataclasses import dataclass, asdict
 from typing import Any
 
 from src.application.images.image_resolver import ImageResolver
-from src.core.config import Settings
+from src.core.config import Settings, get_settings
+from src.runtime.docker_resource_manager import DockerCommandTimeout, DockerResourceManager
 
 
 @dataclass
@@ -38,9 +35,10 @@ class HttpProbeResult:
 class HttpProbeRunner:
     """Run connectivity probes via the helper_http_probe catalog image."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        self._settings = settings
+    def __init__(self, settings: Settings | None = None, *, docker_resources=None) -> None:
+        self._settings = settings or get_settings()
         self._resolver = ImageResolver()
+        self._docker_resources = docker_resources or DockerResourceManager(self._settings)
 
     async def probe(
         self,
@@ -63,7 +61,6 @@ class HttpProbeRunner:
                 reason=f"image_unavailable: {resolution.reason}",
             )
 
-        container_name = f"qa-perf-probe-{uuid.uuid4().hex[:8]}"
         cmd = self._build_curl_command(
             target_url=target_url,
             method=method,
@@ -72,31 +69,26 @@ class HttpProbeRunner:
         )
 
         docker_cmd = [
-            "docker", "run", "--rm",
-            "--name", container_name,
-            "--label", "enterprise-ai-qa-agent=performance",
+            "--entrypoint=",
+            "--add-host", "host.docker.internal:host-gateway",
             "--label", "performance-engine=helper",
             resolution.selected_image,
             *cmd,
         ]
 
         try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                docker_cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_seconds + 5,
+            proc = await self._docker_resources.execute(
+                docker_cmd, name_prefix="qa-perf-probe", timeout_seconds=timeout_seconds + 5,
             )
-        except subprocess.TimeoutExpired:
+        except DockerCommandTimeout as exc:
             return HttpProbeResult(
                 ok=False,
                 target_url=target_url,
                 selected_image_key=resolution.selected_image_key,
                 selected_image=resolution.selected_image,
                 reason="timeout: probe exceeded time limit",
+                stdout=exc.stdout[:2000],
+                stderr=exc.stderr[:2000],
                 next_recommendation="Check if target is reachable or increase timeout.",
             )
         except FileNotFoundError:
@@ -109,9 +101,20 @@ class HttpProbeRunner:
                 next_recommendation="Ensure Docker is running and helper image is available.",
             )
 
+        # curl documents exit 28 as timeout: https://curl.se/docs/manpage.html
+        if proc.timed_out or proc.exit_code == 28:
+            return HttpProbeResult(
+                ok=False, target_url=target_url,
+                selected_image_key=resolution.selected_image_key,
+                selected_image=resolution.selected_image,
+                reason="timeout: probe exceeded time limit",
+                stdout=proc.stdout[:2000], stderr=proc.stderr[:2000],
+                next_recommendation="Check if target is reachable or increase timeout.",
+            )
+
         status_code, response_time = self._parse_curl_output(proc.stdout)
 
-        ok = proc.returncode == 0 and 200 <= status_code < 400
+        ok = proc.exit_code == 0 and 200 <= status_code < 400
 
         if not ok and status_code == 0:
             error_category = self._classify_probe_error(proc.stderr, proc.stdout)
@@ -151,6 +154,7 @@ class HttpProbeRunner:
         cmd = [
             "curl",
             "-s",
+            "--show-error",
             "-o", "/dev/null",
             "-w", "%{http_code} %{time_total}",
             "-X", method.upper(),

@@ -48,6 +48,8 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.testing.ui_exploration_service import UIExplorationService
 from src.core.config import Settings
+from src.core.request_context import bind_request_context
+from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.application.mail import MailService
 from src.application.mail.contracts import MailSendRequest
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
@@ -3723,12 +3725,23 @@ class ToolRuntimeService:
             return {"status": "error", "ok": False, "summary": "target_url 必填"}
 
         runner = HttpProbeRunner(self._settings)
-        result = await runner.probe(
-            target_url=target_url,
-            method=str(arguments.get("method") or "GET"),
-            headers=arguments.get("headers") or {},
-            timeout_seconds=int(arguments.get("timeout_seconds") or 10),
-        )
+        try:
+            with bind_request_context(
+                session_id=context.session_id, turn_id=context.turn_id, trace_id=context.trace_id,
+                project_id=context.context_bundle.get("project_id") or None,
+            ):
+                result = await runner.probe(
+                    target_url=target_url,
+                    method=str(arguments.get("method") or "GET"),
+                    headers=arguments.get("headers") or {},
+                    timeout_seconds=int(arguments.get("timeout_seconds") or 10),
+                )
+        except ResourceUnavailable as exc:
+            logger.info("http_probe_waiting_resource", extra={
+                "session_id": context.session_id, "turn_id": context.turn_id, "reason": exc.reason,
+            })
+            return {"status": "waiting_resource", "ok": False, "reason": exc.reason,
+                    "summary": f"HTTP probe waiting for resource: {exc.reason}"}
         payload = result.model_dump()
         payload["status"] = "ok" if result.ok else "error"
         return payload

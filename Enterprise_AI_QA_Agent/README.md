@@ -311,7 +311,18 @@ PostgreSQL 意图写入失败时不创建容器；即使没有取得容器 ID，
 实际测试执行超时继续采用引擎的 `RunOptions.timeout_seconds`，租约时长仍由
 `ORCHESTRATION__RESOURCE_DEFAULT_LEASE_SECONDS` 管理。测试任务的容器为临时资源。
 
-安全测试、独立容器管理及其他 Docker 工具入口尚需接入同一生命周期。
+AI 工具 `http-probe-runner` 也通过同一 `DockerResourceManager` 创建临时 curl 容器，
+使用现有全局/项目/Run/资源类型配额及 Cleanup Worker，无额外配置。
+工具入口传递 Session/Turn/Project 上下文并保留父调用的 Run/Attempt 标识；资源不足时
+ToolJob 进入 `waiting_resource`，不会把容量不足判成目标 HTTP 服务故障。
+curl 自身超时和容器执行超时均返回失败并保留错误输出，取消执行仍回收容器。
+探测与清理进程需要访问同一 Docker daemon，并提前准备镜像目录中的 `helper_http_probe` 镜像。
+运行真实验证：`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k http_probe_tool -q`。
+该测试使用临时本机 HTTP 服务，覆盖 HTTP 200/503、超时、取消、容量不足和 PostgreSQL 清理回执；
+它不包含模型选工具或完整客户端会话链路的验收。
+
+安全测试的复用/后台容器、Mock Target 和独立容器管理入口尚需接入同一生命周期。
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
 后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对

@@ -7,6 +7,8 @@ import multiprocessing
 import shutil
 import subprocess
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 from dataclasses import replace
 
@@ -18,6 +20,12 @@ from redis.exceptions import ResponseError
 from src.core.config import get_settings
 from src.core.request_context import bind_request_context
 from src.application.performance.perf_runner_service import PerfRunnerService
+from src.application.performance.http_probe_runner import HttpProbeRunner
+from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
+from src.application.runtime.tool_job_service import ToolJobService
+from src.runtime.tool_job_store import InMemoryToolJobStore
+from src.schemas.agent import ToolDescriptor
+from src.schemas.tool_runtime import ModelToolCall
 from src.application.performance.engine_adapter import EngineCommand, ScriptArtifact
 from src.runtime.docker_resource_manager import DockerResourceManager
 from src.application.test_runs.execution_service import TestRunExecutionService as ExecutionService
@@ -319,6 +327,91 @@ async def test_durable_allocation_cannot_be_reassigned(manager):
     assert rows[allocation_id]["container_name"] == "intent-only"
     assert rows[allocation_id]["container_id"] == "a" * 64
     assert rows[allocation_id]["lease_record"]["worker_id"] == "creator"
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker curl image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["success", "http_error", "timeout", "cancel", "capacity"])
+async def test_http_probe_tool_with_real_resources(manager, monkeypatch, scenario):
+    m, _ = manager
+    settings = get_settings().model_copy(deep=True)
+    settings.orchestration.resource_default_lease_seconds = 2
+    received, release = threading.Event(), threading.Event()
+
+    class Target(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received.set()
+            if scenario in {"timeout", "cancel"}:
+                release.wait(15)
+            try:
+                self.send_response(503 if scenario == "http_error" else 200)
+                self.end_headers()
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # The test deliberately closes the client on timeout/cancel.
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("0.0.0.0", 0), Target)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    runner = HttpProbeRunner(settings, docker_resources=DockerResourceManager(settings, lease_manager=m))
+    monkeypatch.setattr("src.application.performance.http_probe_runner.HttpProbeRunner", lambda _settings: runner)
+    jobs = ToolJobService(InMemoryToolJobStore())
+    runtime = ToolRuntimeService(settings=settings, tool_job_service=jobs)
+    tool = ToolDescriptor(key="http-probe-runner", name="probe", description="probe", category="test")
+    context = ToolExecutionContext(session_id="s-live-probe", turn_id="t-live-probe", trace_id="trace-probe",
+        user_message="probe", normalized_input="probe", context_bundle={"project_id": "p-live-probe"})
+    call = ModelToolCall(id="probe-call", name=tool.key, arguments={
+        "target_url": f"http://host.docker.internal:{server.server_port}/health",
+        "timeout_seconds": 1 if scenario == "timeout" else 10,
+    })
+    execution = None
+    try:
+        if scenario == "capacity":
+            blocker = await m.acquire(resource_type="docker", resource_id="docker-slot-0",
+                worker_id="capacity-owner", lease_seconds=60)
+        with bind_request_context(run_id="r-live-probe", run_item_id="i-live-probe", attempt_id="a-live-perf"):
+            execution = asyncio.create_task(runtime.execute(tool, call, context))
+            if scenario == "cancel":
+                assert await asyncio.to_thread(received.wait, 10)
+                execution.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await execution
+            else:
+                record = await execution
+                expected = {"success": "completed", "http_error": "failed", "timeout": "failed",
+                            "capacity": "waiting_resource"}[scenario]
+                assert record.status == expected
+                assert (await jobs.get_job(record.job_id)).status.value == expected
+                if scenario == "success":
+                    assert record.output["status_code"] == 200
+                if scenario == "http_error":
+                    assert record.output["status_code"] == 503
+                if scenario == "timeout":
+                    assert record.output["reason"].startswith("timeout:")
+        if scenario == "capacity":
+            assert not received.is_set()
+            assert not await m.list_cleanup_pending()
+            assert await m.retire(blocker)
+        else:
+            pending = await m.list_cleanup_pending()
+            assert len(pending) == 1
+            assert pending[0]["session_id"] == context.session_id
+            assert pending[0]["project_id"] == "p-live-probe"
+            assert (await m.usage_snapshot())["global:all"] == 1
+            await _complete_real_cleanup(m)
+            inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]],
+                capture_output=True, timeout=15)
+            assert inspected.returncode != 0
+    finally:
+        release.set()
+        if execution is not None and not execution.done():
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        await asyncio.to_thread(thread.join, 5)
 
 
 def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):
