@@ -13,9 +13,6 @@ from src.application.images.image_resolver import ImageResolver
 from src.core.config import Settings, get_settings
 from src.core.request_context import get_request_context
 from src.runtime.docker_resource_manager import DockerCommandTimeout, DockerResourceManager
-from src.runtime.docker_resource_cleanup import DockerResourceCleanup
-from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
-from src.runtime.resource_lease_manager import ExpiredResourceLease, RedisResourceLeaseManager
 
 LOGGER = logging.getLogger(__name__)
 
@@ -151,26 +148,11 @@ class MockTargetRunner:
         session_id = session_id or getattr(context, "session_id", None)
         if not session_id or not container_name.startswith("qa-perf-mock-"):
             raise ValueError("Mock target requires its session and managed container name")
-        manager = self._lease_manager or RedisResourceLeaseManager(self._settings.database.redis_url,
-            socket_timeout_seconds=self._settings.orchestration.redis_task_socket_timeout_seconds,
-            cleanup_stream=self._settings.orchestration.cleanup_task_stream)
-        try:
-            allocations = PostgresResourceAllocationStore(self._settings)
-            allocation = await allocations.get_for_session(container_name, session_id=session_id, namespace=manager.namespace)
-            if allocation is None:
-                raise ValueError("Mock target does not belong to this session")
-            lease = ExpiredResourceLease.from_payload({**allocation["lease_record"],
-                "external_resource_id": allocation["container_id"]})
-            await manager.connect()
-            await DockerResourceCleanup(self._settings, allocations=allocations, namespace=manager.namespace)(lease)
-            await manager.retire(lease)
-            task = self._by_name.get(container_name)
-            if task is not None:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
-        finally:
-            if self._lease_manager is None:
-                await manager.close()
+        await self._docker.stop_for_session(container_name, session_id=session_id)
+        task = self._by_name.get(container_name)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         LOGGER.info("mock_target_stopped", extra={"container_name": container_name, "session_id": session_id})
         return MockTargetResult(
             ok=True,

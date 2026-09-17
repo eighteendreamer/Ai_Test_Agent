@@ -59,6 +59,7 @@ class SecurityShellSession:
         self.container_name = await self.environment.create_persistent_container(
             campaign_id=self.campaign_id,
             artifact_dir=self.artifact_dir,
+            context=self.context,
         )
         self.created_at = _utc_now()
         self.status = "active"
@@ -148,13 +149,13 @@ class SecurityShellSession:
     async def heartbeat(self) -> bool:
         if self.status != "active" or not self.container_name:
             return False
-        return await self.environment.container_heartbeat(self.container_name)
+        return await self.environment.container_heartbeat(self.container_name, context=self.context)
 
     async def close(self, reason: str = "completed") -> None:
         if self.status == "closed":
             return
         if self.container_name:
-            await self.environment.cleanup_container(self.container_name)
+            await self.environment.cleanup_container(self.container_name, context=self.context)
         self.status = "closed"
         self.closed_at = _utc_now()
         self.close_reason = str(reason or "completed")

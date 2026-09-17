@@ -23,6 +23,7 @@ from src.application.security.finding_normalizer import FindingNormalizer
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.security.target_guard import SecurityTargetGuard
 from src.application.security.tool_catalog import SecurityToolCatalog
+from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.modes.security_testing_mode.agent import (
     ATTACK_SURFACE_PLANNER_KEY,
     SECURITY_DOC_ANALYST_KEY,
@@ -583,6 +584,14 @@ class SecurityTestingModeRuntime:
         self._attach_runtime_context(state, context)
         try:
             state = await self._advance(state, context)
+        except ResourceUnavailable as exc:
+            state.execution_checkpoint["waiting_reason"] = exc.reason
+            self._persist_state(state, context)
+            logger.info("security_campaign_waiting_resource", extra={
+                "session_id": state.session_id, "reason": exc.reason, "phase": state.phase,
+            })
+            return {**self._build_output(state), "status": "waiting_resource",
+                    "waiting_reason": exc.reason, "summary": f"Security campaign waiting for resource: {exc.reason}"}
         except Exception as exc:
             # Any unexpected exception during phase advancement must still
             # leave the campaign in a reportable terminal state so the
@@ -622,6 +631,9 @@ class SecurityTestingModeRuntime:
         """Advance until a terminal phase or an external wait point."""
         if state.phase in TERMINAL_PHASES:
             return state
+
+        if "post_recon_stage" in state.execution_checkpoint:
+            return await self._complete_campaign(state, context)
 
         if state.phase == PHASE_REQUEST_RESOLVED:
             state = self._resolve_targets(state)
@@ -1280,19 +1292,22 @@ class SecurityTestingModeRuntime:
         state.campaign.updated_at = datetime.now(timezone.utc).isoformat()
         state.record_phase_transition(PHASE_RECON_COMPLETE, "Task execution complete.")
 
-        state = await self._run_persistent_attack_session(state, context)
-        if state.phase == PHASE_INTERRUPTED:
-            return state
+        state.execution_checkpoint["post_recon_stage"] = 0
+        return await self._complete_campaign(state, context)
 
-        state = await self._run_attack_chain(state, context)
-        if state.phase == PHASE_INTERRUPTED:
-            return state
-
-        state = await self._run_exploit_coder(state, context)
-        if state.phase == PHASE_INTERRUPTED:
-            return state
-
-        state = await self._run_callback_broker(state, context)
+    async def _complete_campaign(self, state: SecurityTestingState, context: Any) -> SecurityTestingState:
+        """Resume resource waiting at the unfinished stage, not at reconnaissance."""
+        completed_tasks = state.campaign.tasks
+        stages = (self._run_persistent_attack_session, self._run_attack_chain,
+                  self._run_exploit_coder, self._run_callback_broker)
+        first = int(state.execution_checkpoint.get("post_recon_stage", 0))
+        state.execution_checkpoint.pop("waiting_reason", None)
+        for index in range(first, len(stages)):
+            state = await stages[index](state, context)
+            if state.phase == PHASE_INTERRUPTED:
+                return state
+            state.execution_checkpoint["post_recon_stage"] = index + 1
+            self._persist_state(state, context)
         await self._cleanup_callback_leases(state)
 
         if self._security_bug_registry_enabled:
@@ -1407,6 +1422,7 @@ class SecurityTestingModeRuntime:
         if memory_ids:
             state.notes.append(f"Persisted {len(memory_ids)} security observation(s) to memory.")
         state.record_phase_transition(PHASE_REPORT_READY, "Security report generated.")
+        state.execution_checkpoint.pop("post_recon_stage", None)
         state = await self._deliver_report_if_requested(
             state=state,
             context=context,
@@ -2026,6 +2042,10 @@ class SecurityTestingModeRuntime:
                     tool_calls=["create", "exec", "heartbeat", "close"],
                 )
             )
+        except ResourceUnavailable as exc:
+            session_state.status = "waiting_resource"
+            session_state.close_reason = exc.reason
+            raise
         except Exception as exc:
             session_state.status = "failed"
             session_state.close_reason = str(exc)
@@ -3509,6 +3529,7 @@ class SecurityTestingModeRuntime:
                 state.task_events = state.task_events[-200:]
 
         state.execution_checkpoint = {
+            **state.execution_checkpoint,
             "phase": state.phase,
             "campaign_id": state.campaign.campaign_id if state.campaign else "",
             "execution_strategy": state.execution_strategy,

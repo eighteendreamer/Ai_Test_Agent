@@ -129,7 +129,7 @@ class _PersistentEnvironment:
         self.executed = []
         self.cleaned = []
 
-    async def create_persistent_container(self, *, campaign_id, artifact_dir):
+    async def create_persistent_container(self, *, campaign_id, artifact_dir, context=None):
         self.created.append((campaign_id, artifact_dir))
         return f"qa-security-runner-attack-{campaign_id}"
 
@@ -149,10 +149,10 @@ class _PersistentEnvironment:
             },
         )()
 
-    async def container_heartbeat(self, container_name):
+    async def container_heartbeat(self, container_name, *, context=None):
         return True
 
-    async def cleanup_container(self, container_name):
+    async def cleanup_container(self, container_name, *, context=None):
         self.cleaned.append(container_name)
 
     async def put_file(self, **kwargs):
@@ -366,6 +366,77 @@ def test_persistent_security_session_reuses_campaign_container_and_closes(tmp_pa
     assert session.status == "closed"
     assert environment.cleaned == ["qa-security-runner-attack-campaign-p1"]
     assert asyncio.run(session.heartbeat()) is False
+
+
+@pytest.mark.asyncio
+async def test_campaign_resource_wait_preserves_resume_stage_without_settlement(monkeypatch):
+    from src.modes.security_testing_mode.campaign_state import SecurityTestingState
+    from src.runtime.resource_lease_manager import ResourceUnavailable
+
+    runtime = SecurityTestingModeRuntime()
+    state = SecurityTestingState(session_id="resource-wait", campaign=SecurityCampaign(campaign_id="campaign-wait"),
+        execution_checkpoint={"post_recon_stage": 0})
+    calls = []
+    attempts = 0
+
+    async def persistent(current, context):
+        calls.append("persistent")
+        return current
+
+    async def chain(current, context):
+        nonlocal attempts
+        attempts += 1
+        calls.append("chain")
+        runtime._checkpoint_execution_state(state=current, context=context, event_type="chain_running")
+        if attempts == 1:
+            raise ResourceUnavailable("global:all")
+        return current
+
+    async def coder(current, context):
+        calls.append("coder")
+        return current
+
+    async def stop_after_stages(current, context):
+        current.phase = "interrupted"
+        return current
+
+    async def must_not_finalize(*args, **kwargs):
+        raise AssertionError("Resource waiting cannot produce terminal delivery")
+
+    monkeypatch.setattr(runtime, "_restore_state", lambda _: state)
+    monkeypatch.setattr(runtime, "_attach_runtime_context", lambda *_: None)
+    monkeypatch.setattr(runtime, "_persist_state", lambda *_: None)
+    monkeypatch.setattr(runtime, "_run_persistent_attack_session", persistent)
+    monkeypatch.setattr(runtime, "_run_attack_chain", chain)
+    monkeypatch.setattr(runtime, "_run_exploit_coder", coder)
+    monkeypatch.setattr(runtime, "_run_callback_broker", stop_after_stages)
+    monkeypatch.setattr(runtime, "_ensure_terminal_delivery", must_not_finalize)
+    context = ToolExecutionContext(session_id="resource-wait", turn_id="turn", trace_id="trace",
+        user_message="test", normalized_input="test", context_bundle={})
+    result = await runtime.handle({"objective": "test"}, context)
+    assert result["status"] == "waiting_resource" and result["waiting_reason"] == "global:all"
+    assert state.execution_checkpoint["post_recon_stage"] == 1
+    assert state.campaign.settlement is None or not state.campaign.settlement.finalized_at
+    await runtime._advance(state, context)
+    assert calls == ["persistent", "chain", "chain", "coder"]
+    assert "waiting_reason" not in state.execution_checkpoint
+
+
+@pytest.mark.asyncio
+async def test_exploit_workspace_capacity_is_not_a_verifier_failure(tmp_path):
+    from src.runtime.resource_lease_manager import ResourceUnavailable
+
+    class BusyEnvironment(_ExploitEnvironment):
+        async def create_persistent_container(self, **kwargs):
+            raise ResourceUnavailable("docker_capacity")
+
+    workspace = ExploitWorkspace(environment=BusyEnvironment(), campaign_id="campaign-wait", hypothesis_id="hyp-wait",
+        target="http://localhost:8089", artifact_dir=tmp_path)
+    with pytest.raises(ResourceUnavailable, match="docker_capacity"):
+        await workspace.run(source="import json, sys, urllib.request\n"
+            "response = urllib.request.urlopen(sys.argv[1], timeout=1)\n"
+            "print(json.dumps({'observed': 'fixture'}))\n")
+    assert not workspace.workspace_dir.exists()
 
 
 def test_persistent_security_session_rejects_out_of_scope_target_and_destructive_command(tmp_path: Path):

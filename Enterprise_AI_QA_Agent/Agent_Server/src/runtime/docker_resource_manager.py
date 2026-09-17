@@ -18,8 +18,9 @@ from typing import TypeVar
 from uuid import uuid4
 
 from src.core.request_context import get_request_context
-from src.runtime.resource_lease_manager import RedisResourceLeaseManager, ResourceUnavailable
+from src.runtime.resource_lease_manager import ExpiredResourceLease, RedisResourceLeaseManager, ResourceUnavailable
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
+from src.runtime.docker_resource_cleanup import DockerResourceCleanup
 
 LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -56,6 +57,25 @@ class DockerResourceManager:
         self._settings = settings
         self._lease_manager = lease_manager
         self._allocation_store = allocation_store
+
+    async def stop_for_session(self, container_name: str, *, session_id: str) -> None:
+        """Stop by durable ownership and full ID, including from another API worker."""
+        manager = self._lease_manager or RedisResourceLeaseManager(self._settings.database.redis_url,
+            socket_timeout_seconds=self._settings.orchestration.redis_task_socket_timeout_seconds,
+            cleanup_stream=self._settings.orchestration.cleanup_task_stream)
+        try:
+            allocations = self._allocation_store or PostgresResourceAllocationStore(self._settings)
+            allocation = await allocations.get_for_session(container_name, session_id=session_id, namespace=manager.namespace)
+            if allocation is None:
+                raise ValueError("Docker container does not belong to this session")
+            lease = ExpiredResourceLease.from_payload({**allocation["lease_record"],
+                "external_resource_id": allocation["container_id"]})
+            await manager.connect()
+            await DockerResourceCleanup(self._settings, allocations=allocations, namespace=manager.namespace)(lease)
+            await manager.retire(lease)
+        finally:
+            if self._lease_manager is None:
+                await manager.close()
 
     async def execute(self, create_args: list[str], *, name_prefix: str,
                       timeout_seconds: float) -> DockerExecutionResult:

@@ -150,6 +150,8 @@ export interface SecurityTestingErrorRecord {
 }
 
 export interface SecurityExecutionCheckpoint {
+  post_recon_stage?: number;
+  waiting_reason?: string;
   phase: string;
   campaign_id: string;
   last_event_type: string;

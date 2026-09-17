@@ -3768,6 +3768,7 @@ class ToolRuntimeService:
 
     async def close(self) -> None:
         await self._mock_target_runner.close()
+        await self._security_execution_environment.close()
 
     async def _cleanup_mock_target(self, resource) -> None:
         await self._mock_target_runner.stop(container_name=resource.resource_key, session_id=resource.session_id)

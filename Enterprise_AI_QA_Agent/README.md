@@ -361,7 +361,24 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
 `python -m pytest tests/test_live_resource_leases.py -k security_foreground -q`，
 覆盖真实工具调用本机 HTTP 头探测、容量等待、输出与产物、超时、取消、失去租约及强杀回收；
-不调用外部目标或模型。复用/后台/持久安全容器、文件传输及独立容器管理入口尚需接入。
+不调用外部目标或模型。复用前台、后台任务、独立文件传输容器及独立容器管理入口尚需接入。
+
+SecurityShellSession 和 ExploitWorkspace 的跨调用持久容器使用同一资源管理器，
+由 `DockerResourceSession` 持有启动、等待退出、租约续期和回收任务。
+执行与文件传输使用完整容器 ID，并校验所属 Session；执行请求需回到持有监督任务的 Worker，
+暂不支持跨 Worker 接管仍在运行的命令。关闭请求可通过 PostgreSQL 分配记录在另一实例处理，
+校验所属 Session、资源 labels 和完整 ID 后清理；重复关闭保持幂等。
+`SECURITY__SECURITY_ATTACK_SESSION_TIMEOUT_SECONDS=900` 是现有会话寿命配置的嵌套环境变量名，
+控制持久容器启动后的总存活时间（含空闲），不是单条命令超时，也不是租约 TTL。
+该期限到达、命令取消、命令超时或租约失效都会关闭整个容器，后续操作需创建新会话；
+进程强杀仍由 Cleanup Worker 接管。配额在 PostgreSQL 清理回执落库后释放。
+资源不足时保留 campaign 未完成阶段并返回 `waiting_resource`，不生成终态报告；
+再次推进时从该阶段恢复，不重跑已完成阶段。
+真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k 'security_persistent or mock_target' -q`，
+覆盖跨命令状态、文件往返、租约续期、容量等待、跨 Session 拒绝、跨实例关闭、总寿命、
+命令超时/取消、租约丢失、优雅关闭和进程强杀后的实际容器回收。
+
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
 后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对
