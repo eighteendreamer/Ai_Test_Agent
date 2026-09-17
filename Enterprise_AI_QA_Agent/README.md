@@ -361,7 +361,7 @@ TestRun 使用相同配置判定取消前台路径的重复 Docker 预占，
 真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
 `python -m pytest tests/test_live_resource_leases.py -k security_foreground -q`，
 覆盖真实工具调用本机 HTTP 头探测、容量等待、输出与产物、超时、取消、失去租约及强杀回收；
-不调用外部目标或模型。独立文件传输容器及独立容器管理入口尚需接入。
+不调用外部目标或模型。独立容器管理 API 尚需接入。
 
 `SECURITY__SECURITY_RUNNER_DOCKER_CLEANUP_AFTER_RUN=true` 时每条命令结束即清理；
 设为 false 时使用受监督的持久容器，仍受会话总寿命限制，不会无限保留。
@@ -391,6 +391,22 @@ SecurityShellSession 和 ExploitWorkspace 的跨调用持久容器使用同一�
 `python -m pytest tests/test_live_resource_leases.py -k 'security_persistent or mock_target' -q`，
 覆盖跨命令状态、文件往返、租约续期、容量等待、跨 Session 拒绝、跨实例关闭、总寿命、
 命令超时/取消、租约丢失、优雅关闭和进程强杀后的实际容器回收。
+
+独立文件传输已复用同一监督器。`put_file` 不传容器句柄时，先验证源文件和目标路径，
+再领取容量、建立创建意图并创建独立挂载目录；返回的句柄可供同一 Session 后续上传和下载。
+`get_file` 必须显式传入上传或执行返回的句柄，不再为下载创建空容器。
+指定句柄的文件操作只能在持有监督任务的 Worker 执行；关闭可通过数据库归属跨实例执行。
+禁止按任意名称直接复制或删除未登记容器，升级前的非受管容器需通过容器管理页面单独核对。
+首次上传失败会回收新容器，防止失败后无人持有句柄；既有会话中的普通复制错误保留会话，
+取消、超时或租约失效则关闭整个容器。下载目标仍限制在 artifact_dir 内。
+文件容器寿命复用 `SECURITY__SECURITY_ATTACK_SESSION_TIMEOUT_SECONDS`，复制命令超时复用
+`ORCHESTRATION__RESOURCE_DOCKER_COMMAND_TIMEOUT_SECONDS`，无新增配置、依赖或数据库结构。
+原 `RUN_SECURITY_DOCKER_INTEGRATION` 下的文件往返测试已迁移到统一真实资源测试：
+`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k 'security_file_transfer or security_persistent_worker' -q`。
+覆盖文件往返、前置路径/源文件检查、跨 Session 拒绝、容量不足、真实复制失败、生命周期到期、
+优雅关闭、租约丢失以及强杀 Worker 后的清理。取消和超时使用注入停顿的真实 Docker CLI
+操作验证监督器中断语义，不以本机小文件复制速度推断大文件传输性能。
 
 `execute_detached` 后台执行入口也使用统一租约，每个任务独占容器和挂载目录，
 不复用前台容器。服务持有后台监督任务，命令通过受控的 attached exec 执行；

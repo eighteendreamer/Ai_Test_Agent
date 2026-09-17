@@ -212,21 +212,24 @@ class SecurityExecutionEnvironmentService:
         return result
 
     async def put_file(
-        self,
-        *,
-        local_path: Path | str,
-        container_path: str,
-        artifact_dir: Path,
-        context: Any = None,
-        container_name: str = "",
+        self, *, local_path: Path | str, container_path: str, artifact_dir: Path,
+        context: Any = None, container_name: str = "",
     ) -> str:
-        """Copy a host file into the security container and return its name."""
-        if container_name.startswith("qa-security-session-"):
+        """Upload into an owned container, creating a leased one if needed."""
+        self._require_file_backend()
+        source = Path(local_path).expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(f"Security runner input file does not exist: {source}")
+        record = self._require_managed_container(container_name, context) if container_name else None
+        workdir = record.workdir if record else self._get_str(
+            "security_runner_docker_workdir", "SECURITY_RUNNER_DOCKER_WORKDIR", "/work")
+        destination = self._validated_container_path(container_path, workdir)
+        created = record is None
+        if created:
+            container_name = await self._start_managed_container(
+                artifact_dir / "_security_transfer" / uuid4().hex[:12], context)
             record = self._require_managed_container(container_name, context)
-            source = Path(local_path).expanduser().resolve()
-            if not source.is_file():
-                raise FileNotFoundError(f"Security runner input file does not exist: {source}")
-            destination = self._validated_container_path(container_path, record.workdir)
+        try:
             container_id = record.session.container.container_id
             for args in (["exec", container_id, "mkdir", "-p", str(PurePosixPath(destination).parent)],
                          ["cp", str(source), f"{container_id}:{destination}"]):
@@ -234,80 +237,64 @@ class SecurityExecutionEnvironmentService:
                     timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
                 if code != 0:
                     raise RuntimeError(f"Security runner file upload failed: {stderr}")
+            logger.info("security_file_uploaded", extra={"session_id": record.owner_session_id,
+                "container_id": container_id})
             return container_name
-        return await asyncio.to_thread(
-            self._put_file_in_docker,
-            Path(local_path),
-            container_path,
-            artifact_dir,
-            context,
-            container_name,
-        )
+        except BaseException as exc:
+            logger.warning("security_file_upload_failed", extra={"session_id": record.owner_session_id,
+                "error_type": type(exc).__name__, "container_id": record.session.container.container_id})
+            # A failed first upload never returns its handle, so nobody else can
+            # close it. Existing caller-owned sessions retain normal cp errors.
+            if created:
+                await record.session.close()
+            raise
 
     async def get_file(
-        self,
-        *,
-        container_path: str,
-        local_path: Path | str,
-        artifact_dir: Path,
-        context: Any = None,
-        container_name: str = "",
+        self, *, container_path: str, local_path: Path | str, artifact_dir: Path,
+        context: Any = None, container_name: str = "",
     ) -> Path:
-        """Copy a file out of the security container into ``artifact_dir``."""
-        if container_name.startswith("qa-security-session-"):
-            record = self._require_managed_container(container_name, context)
-            source = self._validated_container_path(container_path, record.workdir)
-            artifact_root = artifact_dir.expanduser().resolve()
-            destination = Path(local_path).expanduser()
-            if not destination.is_absolute():
-                destination = artifact_root / destination
-            destination = destination.resolve()
-            if destination != artifact_root and artifact_root not in destination.parents:
-                raise ValueError("Security runner output path must stay inside artifact_dir.")
-            destination.parent.mkdir(parents=True, exist_ok=True)
+        """Download from an explicitly owned container into artifact_dir."""
+        self._require_file_backend()
+        artifact_root = artifact_dir.expanduser().resolve()
+        destination = Path(local_path).expanduser()
+        if not destination.is_absolute():
+            destination = artifact_root / destination
+        destination = destination.resolve()
+        if destination != artifact_root and artifact_root not in destination.parents:
+            raise ValueError("Security runner output path must stay inside artifact_dir.")
+        if not container_name:
+            raise ValueError("Security file download requires the upload or execution container handle")
+        record = self._require_managed_container(container_name, context)
+        source = self._validated_container_path(container_path, record.workdir)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
             code, _, stderr = await record.session.command(
                 ["cp", f"{record.session.container.container_id}:{source}", str(destination)],
                 timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
             if code != 0:
                 raise RuntimeError(f"Security runner file download failed: {stderr}")
+            logger.info("security_file_downloaded", extra={"session_id": record.owner_session_id,
+                "container_id": record.session.container.container_id})
             return destination
-        return await asyncio.to_thread(
-            self._get_file_from_docker,
-            container_path,
-            Path(local_path),
-            artifact_dir,
-            context,
-            container_name,
-        )
+        except BaseException as exc:
+            logger.warning("security_file_download_failed", extra={"session_id": record.owner_session_id,
+                "error_type": type(exc).__name__, "container_id": record.session.container.container_id})
+            raise
+
+    def _require_file_backend(self) -> None:
+        backend = self._get_str("security_runner_backend", "SECURITY_RUNNER_BACKEND", "local").lower()
+        if backend not in {"docker", "container"}:
+            raise ValueError("Security runner file transfer requires the Docker runner backend.")
 
     async def cleanup_container(self, container_name: str, *, context: Any = None) -> None:
-        """Explicitly destroy a security runner container.
-
-        File-transfer callers that create a container without running a normal
-        foreground command use this method to satisfy the ephemeral-runner
-        lifecycle contract.
-        """
+        """Close only a durably owned container, including from another Worker."""
         normalized_name = str(container_name or "").strip()
         if not normalized_name:
             return
-        if normalized_name.startswith("qa-security-session-"):
-            # Stop works on another API instance too; it resolves durable owner
-            # and immutable ID rather than trusting a model-provided name.
-            await self._docker.stop_for_session(normalized_name, session_id=self._owner_session_id(context))
-            record = self._managed_containers.get(normalized_name)
-            if record is not None:
-                await record.session.close()
-            return
-        docker = shutil.which("docker")
-        if docker is None:
-            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
-        error = await asyncio.to_thread(
-            self._remove_container,
-            docker=docker,
-            container_name=normalized_name,
-        )
-        if error:
-            raise RuntimeError(error)
+        await self._docker.stop_for_session(normalized_name, session_id=self._owner_session_id(context))
+        record = self._managed_containers.get(normalized_name)
+        if record is not None:
+            await record.session.close()
 
     async def create_persistent_container(
         self,
@@ -784,126 +771,6 @@ class SecurityExecutionEnvironmentService:
             logger.error("security_background_supervisor_failed", extra={
                 "job_id": job_id, "error_type": type(task.exception()).__name__})
 
-    def _put_file_in_docker(
-        self,
-        local_path: Path,
-        container_path: str,
-        artifact_dir: Path,
-        context: Any,
-        container_name: str,
-    ) -> str:
-        docker, workdir, resolved_container_name = self._prepare_file_container(
-            artifact_dir=artifact_dir,
-            context=context,
-            container_name=container_name,
-        )
-        source = local_path.expanduser().resolve()
-        if not source.is_file():
-            raise FileNotFoundError(f"Security runner input file does not exist: {source}")
-        destination = self._validated_container_path(container_path, workdir)
-        mkdir = subprocess.run(
-            [docker, "exec", resolved_container_name, "mkdir", "-p", str(PurePosixPath(destination).parent)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        if mkdir.returncode != 0:
-            raise RuntimeError(mkdir.stderr.strip() or mkdir.stdout.strip() or "Failed to create container directory.")
-        copied = subprocess.run(
-            [docker, "cp", str(source), f"{resolved_container_name}:{destination}"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-        )
-        if copied.returncode != 0:
-            raise RuntimeError(copied.stderr.strip() or copied.stdout.strip() or "Failed to copy file into security container.")
-        return resolved_container_name
-
-    def _get_file_from_docker(
-        self,
-        container_path: str,
-        local_path: Path,
-        artifact_dir: Path,
-        context: Any,
-        container_name: str,
-    ) -> Path:
-        docker, workdir, resolved_container_name = self._prepare_file_container(
-            artifact_dir=artifact_dir,
-            context=context,
-            container_name=container_name,
-        )
-        source = self._validated_container_path(container_path, workdir)
-        artifact_root = artifact_dir.expanduser().resolve()
-        destination = local_path.expanduser()
-        if not destination.is_absolute():
-            destination = artifact_root / destination
-        destination = destination.resolve()
-        if destination != artifact_root and artifact_root not in destination.parents:
-            raise ValueError("Security runner output path must stay inside artifact_dir.")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        copied = subprocess.run(
-            [docker, "cp", f"{resolved_container_name}:{source}", str(destination)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-        )
-        if copied.returncode != 0:
-            raise RuntimeError(copied.stderr.strip() or copied.stdout.strip() or "Failed to copy file from security container.")
-        return destination
-
-    def _prepare_file_container(
-        self,
-        *,
-        artifact_dir: Path,
-        context: Any,
-        container_name: str,
-    ) -> tuple[str, str, str]:
-        backend = self._get_str("security_runner_backend", "SECURITY_RUNNER_BACKEND", "local").lower()
-        if backend not in {"docker", "container"}:
-            raise ValueError("Security runner file transfer requires the Docker runner backend.")
-        docker = shutil.which("docker")
-        if docker is None:
-            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
-        workdir = self._get_str(
-            "security_runner_docker_workdir",
-            "SECURITY_RUNNER_DOCKER_WORKDIR",
-            "/work",
-        )
-        resolved_container_name = str(container_name or "").strip() or self._container_name(context)
-        if not container_name:
-            image = self._get_str(
-                "security_runner_docker_image",
-                "SECURITY_RUNNER_DOCKER_IMAGE",
-                "vxcontrol/kali-linux",
-            )
-            artifact_dir.mkdir(parents=True, exist_ok=True)
-            host_workdir = self._host_workdir_for_container(artifact_dir)
-            host_workdir.mkdir(parents=True, exist_ok=True)
-            self._ensure_container(
-                docker=docker,
-                image=image,
-                container_name=resolved_container_name,
-                host_workdir=host_workdir,
-                container_workdir=workdir,
-            )
-        else:
-            inspect = subprocess.run(
-                [docker, "inspect", "-f", "{{.State.Running}}", resolved_container_name],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-            if inspect.returncode != 0 or (inspect.stdout or "").strip().lower() != "true":
-                raise RuntimeError(f"Security runner container is not running: {resolved_container_name}")
-        return docker, workdir, resolved_container_name
 
     def _validated_container_path(self, path: str, workdir: str) -> str:
         root = PurePosixPath(workdir)
@@ -930,122 +797,6 @@ class SecurityExecutionEnvironmentService:
     def _container_reuse_enabled(self) -> bool:
         return self._get_bool("security_runner_container_reuse", "SECURITY_RUNNER_CONTAINER_REUSE", False)
 
-    def _remove_container(self, *, docker: str, container_name: str) -> str:
-        try:
-            remove = subprocess.run(
-                [docker, "rm", "-f", container_name],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-            )
-        except subprocess.TimeoutExpired:
-            return f"Failed to remove security Docker container {container_name}: cleanup timed out."
-        if remove.returncode == 0:
-            return ""
-        detail = (remove.stderr or remove.stdout or "").strip()
-        return f"Failed to remove security Docker container {container_name}: {detail or 'unknown error'}"
-
-    def _ensure_container(
-        self,
-        *,
-        docker: str,
-        image: str,
-        container_name: str,
-        host_workdir: Path,
-        container_workdir: str,
-    ) -> None:
-        inspect = subprocess.run(
-            [docker, "inspect", "-f", "{{.State.Running}}", container_name],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-        )
-        if inspect.returncode == 0:
-            if (inspect.stdout or "").strip().lower() == "true":
-                return
-            if self._container_reuse_enabled():
-                start = subprocess.run(
-                    [docker, "start", container_name],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=30,
-                )
-                if start.returncode != 0:
-                    raise RuntimeError(
-                        start.stderr.strip() or start.stdout.strip() or "Failed to start security Docker container."
-                    )
-                return
-            self._remove_container(docker=docker, container_name=container_name)
-
-        self._pull_image_if_needed(docker, image)
-        run_args = [
-            docker,
-            "run",
-            "-d",
-            "--name",
-            container_name,
-            "--workdir",
-            container_workdir,
-        ]
-        if self._get_bool("security_runner_docker_net_raw", "SECURITY_RUNNER_DOCKER_NET_RAW", True):
-            run_args.extend(["--cap-add", "NET_RAW"])
-        if self._get_bool("security_runner_docker_net_admin", "SECURITY_RUNNER_DOCKER_NET_ADMIN", False):
-            run_args.extend(["--cap-add", "NET_ADMIN"])
-
-        network = self._get_str("security_runner_docker_network", "SECURITY_RUNNER_DOCKER_NETWORK", "")
-        if network:
-            run_args.extend(["--network", network])
-
-        mount_spec = f"{host_workdir.resolve()}:{container_workdir}"
-        run_args.extend(["-v", mount_spec, image, "tail", "-f", "/dev/null"])
-        run = subprocess.run(
-            run_args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-        if run.returncode != 0:
-            raise RuntimeError(run.stderr.strip() or run.stdout.strip() or "Failed to create security Docker container.")
-
-    def _pull_image_if_needed(self, docker: str, image: str) -> None:
-        policy = self._get_str(
-            "security_runner_docker_pull_policy",
-            "SECURITY_RUNNER_DOCKER_PULL_POLICY",
-            "never",
-        ).lower()
-        if policy == "never":
-            return
-        if policy == "missing":
-            inspect = subprocess.run(
-                [docker, "image", "inspect", image],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-            if inspect.returncode == 0:
-                return
-        if policy not in {"always", "missing"}:
-            return
-        pull = subprocess.run(
-            [docker, "pull", image],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=1800,
-        )
-        if pull.returncode != 0:
-            raise RuntimeError(pull.stderr.strip() or pull.stdout.strip() or f"Failed to pull Docker image {image}.")
 
     def _wrap_with_shell_timeout(self, command: str, timeout_seconds: float) -> str:
         if not self._get_bool("security_runner_wrap_timeout", "SECURITY_RUNNER_WRAP_TIMEOUT", True):
@@ -1067,10 +818,6 @@ class SecurityExecutionEnvironmentService:
             suffix = f"{suffix}-{_utc_now().strftime('%Y%m%d%H%M%S')}"
         return f"{_slug(prefix)}-{suffix}"[:120].strip("-") or "qa-security-runner"
 
-    def _host_workdir_for_container(self, artifact_dir: Path) -> Path:
-        if self._container_reuse_enabled():
-            return artifact_dir.parent / "_security_runner_work"
-        return artifact_dir
 
     def _collect_output_artifacts(self, artifact_dir: Path) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []
@@ -1129,9 +876,3 @@ def _slug(value: str) -> str:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _append_stderr(stderr_text: str, extra: str) -> str:
-    if not stderr_text:
-        return extra
-    return f"{stderr_text.rstrip()}\n{extra}"

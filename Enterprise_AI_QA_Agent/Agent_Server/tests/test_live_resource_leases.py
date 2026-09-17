@@ -1149,6 +1149,102 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
                     sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
 
 
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["round_trip", "failed_upload", "missing_download", "cancel", "timeout", "lost_lease", "lifetime", "shutdown"])
+async def test_security_file_transfer_managed_lifecycle(manager, tmp_path, monkeypatch, scenario):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    settings.security.security_attack_session_timeout_seconds = 2 if scenario == "lifetime" else 60
+    docker = DockerResourceManager(settings, lease_manager=m)
+    service = SecurityExecutionEnvironmentService(settings=settings, docker_resources=docker)
+    owner = ToolExecutionContext(session_id="s-transfer", turn_id="t-transfer", trace_id="trace-transfer",
+        user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
+    foreign = replace(owner, session_id="s-transfer-foreign")
+    source = tmp_path / "source.txt"
+    source.write_text("isolated-transfer", encoding="utf-8")
+    original_command = docker._command
+    copying = asyncio.Event()
+    operation = None
+
+    async def command(args, *, timeout):
+        if args[0] == "cp":
+            if scenario == "failed_upload":
+                source.unlink()  # Actual Docker cp fails after admission.
+            elif scenario in {"cancel", "timeout", "lost_lease"}:
+                container_id = args[-1].split(":", 1)[0]
+                copying.set()
+                # Hold a real CLI operation at the copy transport boundary.
+                return await original_command(["exec", container_id, "sleep", "300"],
+                    timeout=.2 if scenario == "timeout" else 310)
+        return await original_command(args, timeout=timeout)
+
+    monkeypatch.setattr(docker, "_command", command)
+    try:
+        with bind_request_context(attempt_id="a-live-perf"):
+            for bad in ("../escape", "/etc/escape"):
+                with pytest.raises(ValueError):
+                    await service.put_file(local_path=source, container_path=bad, artifact_dir=tmp_path, context=owner)
+            with pytest.raises(FileNotFoundError):
+                await service.put_file(local_path=tmp_path / "missing", container_path="input.txt", artifact_dir=tmp_path, context=owner)
+            with pytest.raises(ValueError, match="handle"):
+                await service.get_file(container_path="input.txt", local_path="out.txt", artifact_dir=tmp_path, context=owner)
+            assert not await m.list_active() and not await m.list_cleanup_pending()
+            operation = asyncio.create_task(service.put_file(local_path=source, container_path="inputs/source.txt",
+                artifact_dir=tmp_path, context=owner))
+            if scenario in {"cancel", "lost_lease"}:
+                await asyncio.wait_for(copying.wait(), 15)
+                if scenario == "cancel":
+                    operation.cancel()
+                    with pytest.raises(asyncio.CancelledError): await operation
+                else:
+                    async def rejected(*args, **kwargs): return False
+                    monkeypatch.setattr(m, "renew", rejected)
+                    with pytest.raises(RuntimeError, match="session ended"): await operation
+            elif scenario in {"timeout", "failed_upload"}:
+                with pytest.raises(TimeoutError if scenario == "timeout" else RuntimeError): await operation
+            else:
+                name = await operation
+                if scenario == "round_trip":
+                    await asyncio.sleep(2.2)
+                    assert len(await m.list_active()) == 1
+                    with pytest.raises(ResourceUnavailable):
+                        await service.put_file(local_path=source, container_path="input.txt", artifact_dir=tmp_path, context=foreign)
+                    with pytest.raises(ValueError, match="does not belong"):
+                        await service.get_file(container_path="inputs/source.txt", local_path="foreign.txt",
+                            artifact_dir=tmp_path, context=foreign, container_name=name)
+                    with pytest.raises(ValueError, match="does not belong"):
+                        await service.put_file(local_path=source, container_path="input.txt", artifact_dir=tmp_path,
+                            context=foreign, container_name=name)
+                    downloaded = await service.get_file(container_path="inputs/source.txt", local_path="downloads/result.txt",
+                        artifact_dir=tmp_path, context=owner, container_name=name)
+                    assert downloaded.read_text(encoding="utf-8") == "isolated-transfer"
+                    remote = SecurityExecutionEnvironmentService(settings=settings,
+                        docker_resources=DockerResourceManager(settings, lease_manager=m))
+                    await remote.cleanup_container(name, context=owner)
+                elif scenario == "missing_download":
+                    with pytest.raises(RuntimeError, match="download failed"):
+                        await service.get_file(container_path="missing.txt", local_path="out.txt", artifact_dir=tmp_path,
+                            context=owner, container_name=name)
+                    assert await service.container_heartbeat(name, context=owner)
+                elif scenario == "lifetime":
+                    async def wait_retired():
+                        while not await m.list_cleanup_pending(): await asyncio.sleep(.05)
+                    await asyncio.wait_for(wait_retired(), 10)
+            await service.close()
+            pending = await m.list_cleanup_pending()
+            assert len(pending) == 1
+            assert (await m.usage_snapshot())["global:all"] == 1
+            await _complete_real_cleanup(m)
+            inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]], capture_output=True, timeout=15)
+            assert inspected.returncode != 0
+    finally:
+        if operation is not None and not operation.done():
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+        await service.close()
+
+
 def _run_security_background_until_killed(prefix, stream, artifact_dir, identity):
     async def run():
         settings = _security_foreground_settings()
@@ -1210,14 +1306,19 @@ async def test_security_background_worker_kill_preserves_recovery_and_releases_c
                     sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
 
 
-def _run_security_persistent_until_killed(prefix, stream, artifact_dir, ready):
+def _run_security_persistent_until_killed(prefix, stream, artifact_dir, ready, transfer=False):
     async def run():
         settings = _security_foreground_settings()
         manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
         service = SecurityExecutionEnvironmentService(settings=settings,
             docker_resources=DockerResourceManager(settings, lease_manager=manager))
         with bind_request_context(session_id="s-persistent-kill", attempt_id="a-live-perf"):
-            await service.create_persistent_container(campaign_id="persistent-kill", artifact_dir=artifact_dir)
+            if transfer:
+                source = artifact_dir / "source.txt"
+                source.write_text("transfer-before-kill", encoding="utf-8")
+                await service.put_file(local_path=source, container_path="inputs/source.txt", artifact_dir=artifact_dir)
+            else:
+                await service.create_persistent_container(campaign_id="persistent-kill", artifact_dir=artifact_dir)
         ready.set()
         await asyncio.Event().wait()
     asyncio.run(run())
@@ -1225,12 +1326,13 @@ def _run_security_persistent_until_killed(prefix, stream, artifact_dir, ready):
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
 @pytest.mark.asyncio
-async def test_security_persistent_worker_kill_recovered_by_cleanup(manager, tmp_path):
+@pytest.mark.parametrize("transfer", [False, True], ids=["persistent", "file_transfer"])
+async def test_security_persistent_worker_kill_recovered_by_cleanup(manager, tmp_path, transfer):
     m, _ = manager
     context = multiprocessing.get_context("spawn")
     ready = context.Event()
     process = context.Process(target=_run_security_persistent_until_killed,
-        args=(m.namespace, m._cleanup_stream, tmp_path, ready))
+        args=(m.namespace, m._cleanup_stream, tmp_path, ready, transfer))
     container_id = ""
     try:
         process.start()

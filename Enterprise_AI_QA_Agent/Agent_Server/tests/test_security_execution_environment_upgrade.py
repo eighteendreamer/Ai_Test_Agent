@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import socket
 import subprocess
 from pathlib import Path
@@ -327,15 +326,9 @@ def test_container_file_paths_cannot_escape_workdir(tmp_path: Path):
 
 
 def test_get_file_rejects_host_destination_outside_artifact_dir(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
     service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
-    monkeypatch.setattr(
-        service,
-        "_prepare_file_container",
-        lambda **_: ("docker", "/work", "qa-security-test-container"),
-    )
 
     with pytest.raises(ValueError, match="inside artifact_dir"):
         asyncio.run(
@@ -1103,44 +1096,3 @@ def test_failed_tool_result_persists_manifest_artifact_and_exposes_download(tmp_
     assert saved[0].artifact_type == "security_tool_bootstrap_manifest"
     assert saved[0].path == str(manifest_path)
     assert result.output["download_urls"][0]["artifact_id"] == saved[0].id
-
-
-@pytest.mark.skipif(
-    os.getenv("RUN_SECURITY_DOCKER_INTEGRATION") != "1",
-    reason="Set RUN_SECURITY_DOCKER_INTEGRATION=1 to use vxcontrol/kali-linux.",
-)
-def test_real_kali_file_round_trip_is_ephemeral(tmp_path: Path):
-    settings = _Settings()
-    settings.security.security_runner_docker_container_prefix = "codex-security-upgrade-test"
-    service = SecurityExecutionEnvironmentService(settings=settings, workspace_root=tmp_path)
-    transfer_container = ""
-
-    try:
-        source = tmp_path / "dictionary.txt"
-        source.write_text("alpha\nbeta\n", encoding="utf-8")
-        transfer_container = asyncio.run(
-            service.put_file(
-                local_path=source,
-                container_path="inputs/dictionary.txt",
-                artifact_dir=tmp_path / "transfer",
-                context=_Context(),
-            )
-        )
-        downloaded = asyncio.run(
-            service.get_file(
-                container_path="inputs/dictionary.txt",
-                local_path="downloads/dictionary.txt",
-                artifact_dir=tmp_path / "transfer",
-                context=_Context(),
-                container_name=transfer_container,
-            )
-        )
-        assert downloaded.read_text(encoding="utf-8") == "alpha\nbeta\n"
-    finally:
-        # The file channel has an explicit lifecycle for multiple copies.
-        if transfer_container:
-            try:
-                asyncio.run(service.cleanup_container(transfer_container))
-            except RuntimeError as exc:
-                if "No such container" not in str(exc):
-                    raise
