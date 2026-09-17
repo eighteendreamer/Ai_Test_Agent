@@ -884,7 +884,7 @@ async def test_execution_service_renews_resource_leases_and_rejects_failed_renew
             self.renew_calls.append((lease.resource_id, lease_seconds))
             return renew_result
 
-        async def release(self, lease):
+        async def retire(self, lease):
             self.released.append(lease.resource_id)
             return True
 

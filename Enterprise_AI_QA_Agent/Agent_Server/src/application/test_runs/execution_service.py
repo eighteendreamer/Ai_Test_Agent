@@ -440,7 +440,7 @@ class TestRunExecutionService:
             return
         for lease in reversed(leases):
             try:
-                if not await self._resource_lease_manager.release(lease):
+                if not await self._resource_lease_manager.retire(lease):
                     logger.error("test_run_resource_release_rejected", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})
             except Exception:
                 logger.exception("test_run_resource_release_failed", extra={"resource_id": lease.resource_id, "resource_type": lease.resource_type})

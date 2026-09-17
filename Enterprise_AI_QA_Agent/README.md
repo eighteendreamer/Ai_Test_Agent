@@ -274,12 +274,19 @@ Consumer Group 按租约绑定的真实外部资源 ID 执行补偿清理。清�
 Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 Stream 配置
 `MAXLEN` 裁剪。
 
-已绑定外部资源的过期租约保留为 `cleanup_pending`，继续占用原槽位和所有层级配额；
+测试执行器在正常结束、异常结束或部分领取失败时统一调用 `retire()`：
+未绑定外部资源的逻辑租约直接释放；已绑定外部资源的租约原子写入清理队列后
+进入 `cleanup_pending`。过期回收复用同一个交接逻辑，继续占用原槽位和所有层级配额；
 清理失败、重试或进入死信均不释放容量。清理结果写入 PostgreSQL
 `agent_resource_cleanup_jobs` 后，通过 `lease_token + fencing_token + external_resource_id`
 核对旧租约并原子释放配额，最后 ACK。数据库提交后崩溃，重复投递只补做 Redis 收尾。
 `GET /api/v1/resource-occupancy` 的 `cleanup_pending_count/cleanup_pending` 单独展示
 待清理资源（支持项目过滤），`active_count` 仍只计有效执行租约。
+交接失败保留原租约、绑定和配额，由重试或过期回收继续处理；同一所有者重复交接
+只产生一条清理消息。绑定必须匹配 `lease_token + fencing_token`，且禁止将尚未清理的
+外部资源 ID 覆盖成另一个 ID。配额按 Redis 保存的领取范围结算，不信任调用方重传的范围。
+当前浏览器工具仍使用调用级 `release()`，其跨调用会话生命周期尚未迁移到 `retire()`；
+这条旧路径不能作为浏览器实例容量已受完整治理的证明。
 升级时同步重启 API 和 Cleanup Worker，避免旧消费者 ACK 后不执行新版本配额收尾；
 本次不新增环境变量或数据库结构，继续复用已有清理队列和重试配置。
 自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；

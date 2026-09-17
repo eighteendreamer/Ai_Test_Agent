@@ -65,7 +65,7 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
                                  run_id=kwargs.get("run_id"), run_item_id=kwargs.get("run_item_id"),
                                  attempt_id=kwargs.get("attempt_id"), worker_id=kwargs["worker_id"],
                                  lease_token="lease", fencing_token=1, lease_expire_at=now)
-        async def release(self, lease): return True
+        async def retire(self, lease): return True
 
     settings = type("Settings", (), {
         "app_env": "testing",

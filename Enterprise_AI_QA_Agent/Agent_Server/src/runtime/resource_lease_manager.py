@@ -20,6 +20,7 @@ from src.runtime.resource_lease_scripts import (
     REAP,
     RECONCILE_QUOTA,
     RELEASE,
+    RETIRE,
     RENEW,
 )
 
@@ -207,6 +208,7 @@ class RedisResourceLeaseManager:
         raise ResourceUnavailable(last_reason or f"{resource_type}_capacity")
 
     async def release(self, lease: ResourceLease) -> bool:
+        """Release a call-scoped lock; resource lifetimes must use retire()."""
         quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", lease.resource_type)]
         if lease.project_id:
             quota_fields.append(_quota_field("project", lease.project_id))
@@ -221,14 +223,49 @@ class RedisResourceLeaseManager:
         )
         return bool(result)
 
+    async def retire(self, lease: ResourceLease) -> bool:
+        """End execution ownership without forgetting pending external cleanup.
+
+        Unbound logical leases release immediately. Bound resources atomically
+        enter the cleanup stream and retain quota until its durable receipt.
+        A repeated retirement of the same pending owner is idempotent.
+        """
+        result = int(await self._client.eval(
+            RETIRE, 5, self._lease_key(lease.resource_type, lease.resource_id),
+            self._key("quota:usage"), self._key("lease:registry"),
+            self._key("lease:metadata"), self._cleanup_stream,
+            lease.lease_token, lease.fencing_token,
+        ))
+        event = ("resource_cleanup_handoff" if result == 2
+                 else "resource_lease_retired" if result == 1
+                 else "resource_lease_retire_rejected")
+        LOGGER.log(logging.INFO if result else logging.WARNING, event, extra={
+            "resource_id": lease.resource_id, "resource_type": lease.resource_type,
+            "project_id": lease.project_id, "session_id": lease.session_id,
+            "run_id": lease.run_id, "run_item_id": lease.run_item_id,
+            "attempt_id": lease.attempt_id, "worker_id": lease.worker_id,
+            "request_id": lease.request_id, "trace_id": lease.trace_id,
+            "turn_id": lease.turn_id, "fencing_token": lease.fencing_token,
+            "cleanup_stream": self._cleanup_stream if result == 2 else None,
+        })
+        return bool(result)
+
     async def bind(self, lease: ResourceLease, external_resource_id: str) -> bool:
         if not external_resource_id or len(str(external_resource_id)) > 240:
             raise ValueError("external_resource_id must be a nonempty bounded string")
-        return bool(await self._client.eval(
+        bound = bool(await self._client.eval(
             BIND, 2, self._lease_key(lease.resource_type, lease.resource_id),
             self._key("lease:metadata"),
-            lease.lease_token, str(external_resource_id),
+            lease.lease_token, str(external_resource_id), lease.fencing_token,
         ))
+        LOGGER.log(logging.INFO if bound else logging.WARNING,
+                   "resource_lease_bound" if bound else "resource_lease_binding_rejected", extra={
+            "resource_id": lease.resource_id, "resource_type": lease.resource_type,
+            "run_id": lease.run_id, "run_item_id": lease.run_item_id,
+            "attempt_id": lease.attempt_id, "worker_id": lease.worker_id,
+            "fencing_token": lease.fencing_token,
+        })
+        return bound
 
     async def get(self, *, resource_type: str, resource_id: str) -> dict[str, Any] | None:
         raw = await self._client.get(self._lease_key(resource_type, resource_id))

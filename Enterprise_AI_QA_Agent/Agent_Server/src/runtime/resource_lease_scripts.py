@@ -1,10 +1,9 @@
 """Redis Lua for lease ownership, fencing and hierarchical quota accounting."""
 
-# Shared by bounded claim-time and background sweeps. Redis scripts serialize
-# ownership changes; an external process needs a separate confirmed cleanup.
-_REAP_ONE = """
-local function reap_one(member, registry, usage, metadata_key, stream, now)
-  if redis.call('EXISTS', member) == 1 then return nil end
+# Shared by explicit execution retirement and expiry sweeps. Publishing cleanup
+# must precede releasing ownership: Redis scripts do not roll back command errors.
+_RETIRE_ONE = """
+local function retire_one(member, registry, usage, metadata_key, stream, now, reason)
   local raw = redis.call('HGET', metadata_key, member)
   if not raw then
     redis.call('ZREM', registry, member)
@@ -16,16 +15,18 @@ local function reap_one(member, registry, usage, metadata_key, stream, now)
     redis.call('ZREM', registry, member)
     return nil
   end
-  if lease['resource_id'] then
+  local external = lease['external_resource_id']
+  local has_external = external and external ~= cjson.null and external ~= ''
+  if lease['resource_id'] and (has_external or reason == 'lease_expired') then
     lease['schema_version'] = 1
     lease['task_id'] = 'task_cleanup_' .. tostring(lease['lease_token'] or '')
     lease['task_type'] = 'cleanup_task'
     lease['cleanup_enqueued_at_ms'] = now
+    lease['cleanup_reason'] = reason
     -- Publish before removing recovery state; failed XADD must keep the owner.
     redis.call('XADD', stream, '*', 'payload', cjson.encode(lease))
   end
-  local external = lease['external_resource_id']
-  if external and external ~= cjson.null and external ~= '' then
+  if has_external then
     metadata['status'] = 'cleanup_pending'
     metadata['lease'] = lease
     redis.call('HSET', metadata_key, member, cjson.encode(metadata))
@@ -38,6 +39,13 @@ local function reap_one(member, registry, usage, metadata_key, stream, now)
   end
   redis.call('ZREM', registry, member)
   return cjson.encode(lease)
+end
+"""
+
+_REAP_ONE = _RETIRE_ONE + """
+local function reap_one(member, registry, usage, metadata_key, stream, now)
+  if redis.call('EXISTS', member) == 1 then return nil end
+  return retire_one(member, registry, usage, metadata_key, stream, now, 'lease_expired')
 end
 """
 
@@ -131,11 +139,39 @@ end
 return 1
 """
 
+RETIRE = _RETIRE_ONE + """
+local metadata_raw = redis.call('HGET', KEYS[4], KEYS[1])
+if not metadata_raw then return 0 end
+local metadata = cjson.decode(metadata_raw)
+local owner = metadata['lease'] or {}
+if owner['lease_token'] ~= ARGV[1]
+    or tonumber(owner['fencing_token']) ~= tonumber(ARGV[2]) then return 0 end
+if metadata['status'] == 'cleanup_pending' then return 2 end
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local payload = cjson.decode(raw)
+  if payload['lease_token'] ~= ARGV[1]
+      or tonumber(payload['fencing_token']) ~= tonumber(ARGV[2]) then return 0 end
+end
+local clock = redis.call('TIME')
+local now = clock[1] * 1000 + math.floor(clock[2] / 1000)
+retire_one(KEYS[1], KEYS[3], KEYS[2], KEYS[4], KEYS[5], now, 'execution_finished')
+-- If publication fails, this DEL is never reached and expiry still recovers it.
+redis.call('DEL', KEYS[1])
+local external = owner['external_resource_id']
+if external and external ~= cjson.null and external ~= '' then return 2 end
+return 1
+"""
+
 BIND = """
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local payload = cjson.decode(raw)
 if payload['lease_token'] ~= ARGV[1] then return 0 end
+if tonumber(payload['fencing_token']) ~= tonumber(ARGV[3]) then return 0 end
+local external = payload['external_resource_id']
+-- A lease owns one external resource. Rebinding loses the first cleanup duty.
+if external and external ~= cjson.null and external ~= '' and external ~= ARGV[2] then return 0 end
 payload['external_resource_id'] = ARGV[2]
 redis.call('SET', KEYS[1], cjson.encode(payload), 'KEEPTTL')
 local metadata_raw = redis.call('HGET', KEYS[2], KEYS[1])

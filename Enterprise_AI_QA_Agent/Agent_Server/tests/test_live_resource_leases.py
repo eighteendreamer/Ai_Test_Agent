@@ -15,6 +15,7 @@ from psycopg import sql
 from redis.exceptions import ResponseError
 
 from src.core.config import get_settings
+from src.application.test_runs.execution_service import TestRunExecutionService as ExecutionService
 from src.cli.run_resource_cleanup_worker import build_cleanup_callbacks
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -165,6 +166,96 @@ async def test_expired_bound_resource_holds_slot_and_quota_until_cleanup(manager
 
 
 @pytest.mark.asyncio
+async def test_execution_finalizer_hands_bound_resource_to_cleanup(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+                            worker_id="owner", lease_seconds=10,
+                            project_id="p1", run_id="r1", attempt_id="a1")
+    assert await m.bind(lease, "a" * 64)
+    service = ExecutionService(run_service=object(), test_case_service=object(), adapter=object())
+    service.set_resource_lease_manager(m)
+    await service._release_execution_resources([lease])
+
+    assert (await m.usage_snapshot()).get("global:all") == 1
+    assert await m.get(resource_type="docker", resource_id=resource_id) is None
+    assert len(await m.list_cleanup_pending()) == 1
+    messages = await m._client.xrange(m._cleanup_stream)
+    assert len(messages) == 1
+    retired = ExpiredResourceLease.from_payload(json.loads(messages[0][1]["payload"]))
+    assert retired.external_resource_id == "a" * 64
+    assert retired.attempt_id == "a1"
+    with pytest.raises(ResourceUnavailable):
+        await m.acquire(resource_type="docker", resource_id=resource_id,
+                        worker_id="next", lease_seconds=10)
+    assert await m.complete_cleanup(retired)
+    assert not await m.usage_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_live_binding_cannot_overwrite_another_external_resource(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+                            worker_id="owner", lease_seconds=10)
+    assert await m.bind(lease, "a" * 64)
+    assert await m.bind(lease, "a" * 64)
+    assert not await m.bind(replace(lease, fencing_token=lease.fencing_token + 1), "a" * 64)
+    assert not await m.bind(lease, "b" * 64)
+    assert (await m.get(resource_type="docker", resource_id=resource_id))["external_resource_id"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_retire_publish_failure_keeps_owner_then_retries_idempotently(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+                            worker_id="owner", lease_seconds=10, project_id="p1", run_id="r1")
+    assert await m.bind(lease, "a" * 64)
+    before = await m.usage_snapshot()
+    await m._client.set(m._cleanup_stream, "wrong-type")
+    with pytest.raises(ResponseError, match="WRONGTYPE"):
+        await m.retire(lease)
+    assert (await m.get(resource_type="docker", resource_id=resource_id))["external_resource_id"] == "a" * 64
+    assert await m.usage_snapshot() == before
+    assert not await m.list_cleanup_pending()
+    await m._client.delete(m._cleanup_stream)
+
+    assert not await m.retire(replace(lease, lease_token="stale"))
+    assert not await m.retire(replace(lease, fencing_token=lease.fencing_token + 1))
+    assert await m._client.xlen(m._cleanup_stream) == 0
+    assert all(await asyncio.gather(*(m.retire(lease) for _ in range(12))))
+    assert not await m.renew(lease, lease_seconds=30)
+    assert not await m.reap_expired()
+    assert await m._client.xlen(m._cleanup_stream) == 1
+    assert await m.usage_snapshot() == before
+    pending = await m.list_cleanup_pending()
+    assert pending[0]["cleanup_reason"] == "execution_finished"
+
+
+@pytest.mark.asyncio
+async def test_retire_logical_resources_uses_persisted_quota_scope(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="test_account", resource_id=resource_id,
+                            worker_id="owner", lease_seconds=10, project_id="p1", run_id="r1")
+    assert await m.retire(replace(lease, project_id="not-the-owner-project", run_id=None))
+    assert not await m.usage_snapshot()
+    assert not await m.retire(lease)
+    assert not await m.list_cleanup_pending()
+    assert await m._client.xlen(m._cleanup_stream) == 0
+
+
+@pytest.mark.asyncio
+async def test_retire_after_expiry_preserves_cleanup_before_slot_reuse(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+                            worker_id="owner", lease_seconds=10)
+    assert await m.bind(lease, "a" * 64)
+    await _expire(m, lease)
+    assert await m.retire(lease)
+    assert not await m.reap_expired()
+    assert await m._client.xlen(m._cleanup_stream) == 1
+    assert (await m.usage_snapshot())["global:all"] == 1
+
+
+@pytest.mark.asyncio
 async def test_reap_publish_failure_preserves_binding_and_quota(manager):
     m, resource_id = manager
     lease = await m.acquire(resource_type="docker", resource_id=resource_id,
@@ -283,7 +374,8 @@ async def test_cleanup_pending_recovery_retry_and_dead_letter(manager):
 )
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kill_after_pg_commit", [False, True])
-async def test_expired_docker_slot_removes_bound_real_container(kill_after_pg_commit) -> None:
+@pytest.mark.parametrize("retirement", ["expiry", "execution_finished"])
+async def test_docker_slot_removes_bound_real_container(kill_after_pg_commit, retirement) -> None:
     if shutil.which("docker") is None:
         pytest.skip("Docker CLI is unavailable")
     settings = get_settings()
@@ -327,7 +419,7 @@ async def test_expired_docker_slot_removes_bound_real_container(kill_after_pg_co
             resource_type="docker",
             resource_id=f"docker-slot-{suffix}",
             worker_id=f"worker-{suffix}",
-            lease_seconds=1,
+            lease_seconds=1 if retirement == "expiry" else 60,
             project_id=f"project-{suffix}",
             session_id=f"session-{suffix}",
             run_id=f"run-{suffix}",
@@ -336,10 +428,15 @@ async def test_expired_docker_slot_removes_bound_real_container(kill_after_pg_co
         )
         assert await lease_manager.bind(lease, container_id)
         task_id = f"task_cleanup_{lease.lease_token}"
-        await asyncio.sleep(1.2)
-
-        reaper = ResourceCleanupWorker(lease_manager, interval_seconds=1)
-        assert await reaper.run_once() == 1
+        if retirement == "expiry":
+            await asyncio.sleep(1.2)
+            reaper = ResourceCleanupWorker(lease_manager, interval_seconds=1)
+            assert await reaper.run_once() == 1
+        else:
+            service = ExecutionService(run_service=object(), test_case_service=object(), adapter=object())
+            service.set_resource_lease_manager(lease_manager)
+            await service._release_execution_resources([lease])
+            assert len(await lease_manager.list_cleanup_pending()) == 1
         assert (await lease_manager.usage_snapshot())["global:all"] == 1
         if kill_after_pg_commit:
             context = multiprocessing.get_context("spawn")
