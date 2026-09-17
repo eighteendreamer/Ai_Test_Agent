@@ -42,6 +42,7 @@ from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_resource_cleanup_store import PostgresResourceCleanupStore
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
+from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
@@ -1030,6 +1031,183 @@ async def test_security_reusable_foreground_lifecycle(manager, tmp_path, scenari
                 operation.cancel()
         await asyncio.gather(*operations, return_exceptions=True)
         await service.close()
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["unpolled", "partial", "nonzero", "timeout", "lost_lease", "cancel", "settlement_cancel", "shutdown", "immediate_shutdown", "retained", "database_start_failure", "database_result_failure"])
+async def test_security_background_lifecycle_and_durable_result(manager, tmp_path, monkeypatch, scenario):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    settings.security.security_runner_detach_poll_interval_seconds = .1
+    settings.security.security_runner_docker_cleanup_after_run = scenario != "retained"
+    store = PostgresToolJobStore(settings)
+    await store.initialize()
+    jobs = ToolJobService(store)
+    service = SecurityExecutionEnvironmentService(settings=settings, tool_jobs=jobs,
+        docker_resources=DockerResourceManager(settings, lease_manager=m))
+    owner = ToolExecutionContext(session_id=f"s-background-{uuid4().hex}", turn_id="t-background", trace_id="trace-background",
+        user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
+    job_id = ""
+    operation = None
+    command = "echo ready > command-started; echo partial; echo diagnostic >&2; "
+    command += "sleep 1; echo done" if scenario in {"unpolled", "partial", "retained", "database_result_failure", "settlement_cancel"} else "sleep 300"
+    if scenario == "nonzero":
+        command = "echo ready > command-started; echo partial; exit 7 # preserve shell comments"
+    try:
+        if scenario == "database_start_failure":
+            async def unavailable(*args, **kwargs):
+                raise RuntimeError("injected_database_unavailable")
+            monkeypatch.setattr(jobs, "create_job", unavailable)
+        if scenario == "database_result_failure":
+            async def unavailable(*args, **kwargs):
+                raise RuntimeError("injected_result_store_unavailable")
+            monkeypatch.setattr(jobs, "finish_execution", unavailable)
+        if scenario == "settlement_cancel":
+            finish = jobs.finish_execution
+            async def cancel_before_finish(job_id, **kwargs):
+                if kwargs["status"].value == "completed":
+                    await jobs.cancel_job(job_id, reason="cancel at settlement boundary")
+                return await finish(job_id, **kwargs)
+            monkeypatch.setattr(jobs, "finish_execution", cancel_before_finish)
+        with bind_request_context(attempt_id="a-live-perf"):
+            if scenario == "database_start_failure":
+                with pytest.raises(RuntimeError, match="injected_database_unavailable"):
+                    await service.execute_detached(command=command, command_args=["sh", "-lc", command],
+                        timeout_seconds=30, artifact_dir=tmp_path, context=owner)
+                assert not list(tmp_path.rglob("command-started"))
+            else:
+                started = await service.execute_detached(command=command, command_args=["sh", "-lc", command],
+                    timeout_seconds=1 if scenario == "timeout" else 310, artifact_dir=tmp_path, context=owner)
+                job_id = started.job_id
+                operation = service._detached_jobs[job_id].task
+                assert started.is_running
+                if scenario == "immediate_shutdown":
+                    await service.close()
+                else:
+                    assert (await jobs.get_job(job_id)).status.value == "running"
+                    async def wait_marker():
+                        while not list(tmp_path.rglob("command-started")):
+                            assert not operation.done()
+                            await asyncio.sleep(.05)
+                    await asyncio.wait_for(wait_marker(), 15)
+                    if scenario == "partial":
+                        partial = await service.poll_execution(job_id, context=owner)
+                        assert partial.is_running and "partial" in partial.stdout
+                        with pytest.raises(ValueError, match="does not belong"):
+                            await service.poll_execution(job_id, context=replace(owner, session_id="foreign"))
+                        with pytest.raises(ResourceUnavailable):
+                            await service.execute_detached(command="echo blocked", command_args=["echo", "blocked"],
+                                timeout_seconds=10, artifact_dir=tmp_path / "other", context=owner)
+                    elif scenario == "lost_lease":
+                        async def rejected(*args, **kwargs): return False
+                        m.renew = rejected
+                    elif scenario == "cancel":
+                        await jobs.cancel_job(job_id, reason="test cancellation")
+                    elif scenario == "shutdown":
+                        await service.close()
+                    if scenario == "database_result_failure":
+                        with pytest.raises(RuntimeError, match="injected_result_store_unavailable"):
+                            await asyncio.wait_for(operation, 15)
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(sql.SQL("UPDATE {} SET heartbeat_at = now() - interval '10 seconds' WHERE id = %s").format(
+                                sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
+                        assert len(await store.mark_stale_running_jobs(1, job_ids=[job_id])) == 1
+                    else:
+                        await asyncio.wait_for(operation, 15)
+                remote = SecurityExecutionEnvironmentService(settings=settings, tool_jobs=ToolJobService(PostgresToolJobStore(settings)))
+                result = await remote.poll_execution(job_id, context=owner)
+                assert not result.is_running
+                saved = await jobs.get_job(job_id)
+                if scenario in {"unpolled", "partial", "retained"}:
+                    assert saved.status.value == "completed" and result.exit_code == 0
+                    assert "done" in result.stdout and "diagnostic" in result.stdout
+                elif scenario in {"cancel", "settlement_cancel", "shutdown", "immediate_shutdown"}:
+                    assert saved.status.value == "cancelled" and result.exit_code == 130
+                elif scenario == "database_result_failure":
+                    assert saved.status.value == "resume_requested" and result.exit_code == 255
+                else:
+                    assert saved.status.value == "failed" and result.exit_code != 0
+                    assert result.timed_out == (scenario == "timeout")
+                if scenario == "retained":
+                    assert len(await m.list_active()) == 1
+                    assert not await m.list_cleanup_pending()
+                    await service.cleanup_container(started.container_name, context=owner)
+        await service.close()
+        assert not service._detached_jobs and not service._managed_sessions
+        pending = await m.list_cleanup_pending()
+        assert len(pending) == 1
+        assert (await m.usage_snapshot())["global:all"] == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+    finally:
+        await service.close()
+        if job_id:
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE id = %s").format(
+                    sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
+
+
+def _run_security_background_until_killed(prefix, stream, artifact_dir, identity):
+    async def run():
+        settings = _security_foreground_settings()
+        settings.security.security_runner_detach_poll_interval_seconds = .1
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
+        service = SecurityExecutionEnvironmentService(settings=settings,
+            docker_resources=DockerResourceManager(settings, lease_manager=manager))
+        with bind_request_context(session_id="s-background-kill", attempt_id="a-live-perf"):
+            result = await service.execute_detached(command="echo ready > command-started; sleep 300",
+                command_args=["sh", "-lc", "sleep 300"], timeout_seconds=310, artifact_dir=artifact_dir)
+        identity.put(result.job_id)
+        await asyncio.Event().wait()
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+async def test_security_background_worker_kill_preserves_recovery_and_releases_container(manager, tmp_path):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    store = PostgresToolJobStore(settings)
+    await store.initialize()
+    context = multiprocessing.get_context("spawn")
+    identity = context.Queue()
+    process = context.Process(target=_run_security_background_until_killed,
+        args=(m.namespace, m._cleanup_stream, tmp_path, identity))
+    job_id = container_id = ""
+    try:
+        process.start()
+        job_id = await asyncio.to_thread(identity.get, True, 30)
+        container_id = await _wait_for_running_container(m)
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive()
+        await asyncio.sleep(2.2)
+        assert await ResourceCleanupWorker(m).run_once() == 1
+        await _complete_real_cleanup(m)
+        assert (await store.get_job(job_id)).status.value == "running"
+        recovered = await store.mark_stale_running_jobs(1, job_ids=[job_id])
+        assert [job.id for job in recovered] == [job_id]
+        remote = SecurityExecutionEnvironmentService(settings=settings)
+        with bind_request_context(session_id="s-background-kill"):
+            result = await remote.poll_execution(job_id)
+        assert not result.is_running and result.exit_code == 255
+        assert "recovery" in result.stderr
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if process.is_alive(): process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        identity.close()
+        identity.join_thread()
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+        if job_id:
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE id = %s").format(
+                    sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
 
 
 def _run_security_persistent_until_killed(prefix, stream, artifact_dir, ready):

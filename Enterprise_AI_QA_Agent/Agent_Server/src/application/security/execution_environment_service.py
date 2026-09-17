@@ -15,8 +15,7 @@ import re
 import shlex
 import shutil
 import subprocess
-import threading
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -24,8 +23,13 @@ from uuid import uuid4
 
 from src.core.config import get_settings
 from src.core.request_context import bind_request_context, get_request_context
+from src.application.runtime.tool_job_service import ToolJobService
+from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.runtime.docker_resource_manager import DockerCommandTimeout, DockerResourceManager
 from src.runtime.docker_resource_session import DockerResourceSession
+from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.schemas.agent import ToolDescriptor
+from src.schemas.tool_job import ToolJobStatus
 
 logger = logging.getLogger("uvicorn.error.security_testing_mode.execution_environment")
 
@@ -53,18 +57,12 @@ class SecurityCommandExecutionResult:
 
 @dataclass
 class _DetachedJobRecord:
-    job_id: str
-    container_name: str
-    command: str
-    argv: list[str]
-    cwd: str
-    host_workdir: Path
-    log_path: str
-    pid_path: str
-    exit_path: str
-    started_at: datetime
+    result: SecurityCommandExecutionResult
+    container: _ManagedSecurityContainer
+    log_path: Path
     cleanup_after_run: bool
-    completed_result: SecurityCommandExecutionResult | None = None
+    task: asyncio.Task | None = None
+    stopping: bool = False
 
 
 @dataclass
@@ -91,16 +89,20 @@ class SecurityExecutionEnvironmentService:
         settings: Any = None,
         workspace_root: Path | str | None = None,
         docker_resources=None,
+        tool_jobs: ToolJobService | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._workspace_root = Path(workspace_root or Path.cwd())
         self._docker = docker_resources or DockerResourceManager(self._settings)
+        self._background_jobs = tool_jobs or ToolJobService(PostgresToolJobStore(self._settings))
         self._detached_jobs: dict[str, _DetachedJobRecord] = {}
-        self._detached_jobs_lock = threading.Lock()
         self._managed_containers: dict[str, _ManagedSecurityContainer] = {}
         self._managed_sessions: set[DockerResourceSession] = set()
         self._reusable_scopes: dict[tuple[str, ...], _ReusableSecurityScope] = {}
         self._closed = False
+
+    def set_tool_job_service(self, service: ToolJobService) -> None:
+        self._background_jobs = service
 
     async def execute(
         self,
@@ -168,32 +170,46 @@ class SecurityExecutionEnvironmentService:
     ) -> SecurityCommandExecutionResult:
         """Start a Docker-backed command and return immediately with a job id.
 
-        The command writes its complete combined stdout/stderr and final exit
-        code beneath ``<container_workdir>/.jobs``. ``poll_execution`` reads
-        those files without losing partial output. Detached execution is kept
-        Docker-only because a host-side background process would escape the
-        security runner's isolation and cleanup contract.
+        The owned supervisor runs the command independently of client polling.
+        Partial output remains in the mounted log; ToolJob stores the result.
         """
         self._enforce_target_allowlist(command_args)
         backend = self._get_str("security_runner_backend", "SECURITY_RUNNER_BACKEND", "local").lower()
         if backend not in {"docker", "container"}:
             raise ValueError("Detached security execution requires the Docker runner backend.")
         command, command_args = self._rewrite_localhost_for_docker(command, command_args)
-        return await asyncio.to_thread(
-            self._start_detached_in_docker,
-            command,
-            command_args,
-            timeout_seconds,
-            artifact_dir,
-            context,
-        )
+        bundle = getattr(context, "context_bundle", None) or {}
+        with bind_request_context(session_id=getattr(context, "session_id", None),
+            turn_id=getattr(context, "turn_id", None), trace_id=getattr(context, "trace_id", None),
+            project_id=bundle.get("project_id")):
+            return await self._start_detached_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
 
-    async def poll_execution(self, job_id: str) -> SecurityCommandExecutionResult:
+    async def poll_execution(self, job_id: str, *, context: Any = None) -> SecurityCommandExecutionResult:
         """Return all output produced by a detached job and its running state."""
         normalized_job_id = str(job_id or "").strip()
         if not normalized_job_id:
             raise ValueError("Detached security execution job_id is required.")
-        return await asyncio.to_thread(self._poll_detached_execution, normalized_job_id)
+        job = await self._background_jobs.get_job(normalized_job_id)
+        if job is None or job.tool_key != "security-background-command":
+            raise KeyError(f"Unknown detached security execution job: {normalized_job_id}")
+        if job.session_id != self._owner_session_id(context):
+            raise ValueError("Detached security job does not belong to this session")
+        record = self._detached_jobs.get(normalized_job_id)
+        if record is not None and record.result.is_running and job.status == ToolJobStatus.running:
+            return replace(record.result, stdout=await asyncio.to_thread(record.log_path.read_text,
+                encoding="utf-8", errors="replace"), completed_at=_utc_now())
+        payload = job.output_payload or job.metadata.get("initial_result", {})
+        if not payload:
+            raise RuntimeError("Detached security job has no execution snapshot")
+        result = SecurityCommandExecutionResult(**{**payload,
+            "started_at": ensure_utc_datetime(payload["started_at"]),
+            "completed_at": ensure_utc_datetime(payload["completed_at"])})
+        if job.status not in {ToolJobStatus.queued, ToolJobStatus.running} and result.is_running:
+            # A dead Worker may leave only its initial snapshot. Recovery must
+            # never turn that into a successful result or repeat the command.
+            result = replace(result, is_running=False, exit_code=255,
+                stderr=job.error_message or f"Background job requires recovery: {job.status.value}")
+        return result
 
     async def put_file(
         self,
@@ -414,7 +430,24 @@ class SecurityExecutionEnvironmentService:
 
     async def close(self) -> None:
         self._closed = True
-        await asyncio.gather(*(session.close() for session in list(self._managed_sessions)))
+        records = list(self._detached_jobs.values())
+        tasks = [record.task for record in records if record.task is not None]
+        for record in records:
+            if record.task is not None and not record.task.done() and not record.stopping:
+                record.stopping = True
+                record.task.cancel()
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            for record in records:
+                if record.task is not None and record.task.cancelled():
+                    # Cancellation before the coroutine's first instruction
+                    # cannot run its finally block or persist its cancellation.
+                    result = replace(record.result, is_running=False, exit_code=130,
+                        stderr="Background supervisor stopped before execution", completed_at=_utc_now())
+                    await self._background_jobs.finish_execution(result.job_id, status=ToolJobStatus.cancelled,
+                        summary=result.stderr, error_message=result.stderr, output_payload=asdict(result))
+        finally:
+            await asyncio.gather(*(session.close() for session in list(self._managed_sessions)))
 
     def _enforce_target_allowlist(self, command_args: list[str]) -> None:
         """Reject commands targeting hosts outside the allowlist (S6).
@@ -620,227 +653,136 @@ class SecurityExecutionEnvironmentService:
             if reuse and scope.callers == 0 and scope.container_name not in self._managed_containers:
                 self._reusable_scopes.pop(key, None)
 
-    def _start_detached_in_docker(
-        self,
-        command: str,
-        command_args: list[str],
-        timeout_seconds: float,
-        artifact_dir: Path,
-        context: Any,
+    async def _start_detached_in_docker(
+        self, command: str, command_args: list[str], timeout_seconds: float,
+        artifact_dir: Path, context: Any,
     ) -> SecurityCommandExecutionResult:
-        docker = shutil.which("docker")
-        if docker is None:
-            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
         if not command_args:
             raise ValueError("Security command rendered an empty argv.")
-
-        image = self._get_str(
-            "security_runner_docker_image",
-            "SECURITY_RUNNER_DOCKER_IMAGE",
-            "vxcontrol/kali-linux",
-        )
-        workdir = self._get_str(
-            "security_runner_docker_workdir",
-            "SECURITY_RUNNER_DOCKER_WORKDIR",
-            "/work",
-        )
-        container_name = self._container_name(context)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        host_workdir = self._host_workdir_for_container(artifact_dir)
-        host_workdir.mkdir(parents=True, exist_ok=True)
-        cleanup_after_run = self._cleanup_after_run_enabled()
-        self._ensure_container(
-            docker=docker,
-            image=image,
-            container_name=container_name,
-            host_workdir=host_workdir,
-            container_workdir=workdir,
-        )
-
-        job_id = f"security-{uuid4().hex}"
-        jobs_dir = self._validated_container_path(".jobs", workdir)
-        log_path = self._validated_container_path(f".jobs/{job_id}.log", workdir)
-        pid_path = self._validated_container_path(f".jobs/{job_id}.pid", workdir)
-        exit_path = self._validated_container_path(f".jobs/{job_id}.exit", workdir)
-        wrapped_command = self._wrap_with_shell_timeout(command, timeout_seconds)
-        launch_script = (
-            f"mkdir -p {shlex.quote(jobs_dir)} && {{ "
-            f"( {wrapped_command}; rc=$?; printf '%s' \"$rc\" > {shlex.quote(exit_path)} ) "
-            f"> {shlex.quote(log_path)} 2>&1 & "
-            f"pid=$!; printf '%s' \"$pid\" > {shlex.quote(pid_path)}; }}"
-        )
-        docker_args = [
-            docker,
-            "exec",
-            "-d",
-            "-w",
-            workdir,
-            container_name,
-            "sh",
-            "-lc",
-            launch_script,
-        ]
-        started_at = _utc_now()
-        launch = subprocess.run(
-            docker_args,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        if launch.returncode != 0:
-            cleanup_error = ""
-            if cleanup_after_run:
-                cleanup_error = self._remove_container(docker=docker, container_name=container_name)
-            detail = (launch.stderr or launch.stdout or "Failed to start detached security command.").strip()
-            if cleanup_error:
-                detail = _append_stderr(detail, cleanup_error)
-            raise RuntimeError(detail)
-
-        record = _DetachedJobRecord(
-            job_id=job_id,
-            container_name=container_name,
-            command=command,
-            argv=docker_args,
-            cwd=workdir,
-            host_workdir=host_workdir,
-            log_path=log_path,
-            pid_path=pid_path,
-            exit_path=exit_path,
-            started_at=started_at,
-            cleanup_after_run=cleanup_after_run,
-        )
-        with self._detached_jobs_lock:
-            self._detached_jobs[job_id] = record
-        logger.info(
-            "security detached execution started: job=%s container=%s",
-            job_id,
-            container_name,
-        )
-        return SecurityCommandExecutionResult(
-            backend="docker",
-            command=command,
-            argv=docker_args,
-            cwd=workdir,
-            stdout="",
-            stderr=(launch.stderr or ""),
-            exit_code=-1,
-            timed_out=False,
-            started_at=started_at,
-            completed_at=_utc_now(),
-            container_name=container_name,
-            job_id=job_id,
-            detached=True,
-            is_running=True,
-        )
-
-    def _poll_detached_execution(self, job_id: str) -> SecurityCommandExecutionResult:
-        with self._detached_jobs_lock:
-            record = self._detached_jobs.get(job_id)
-        if record is None:
-            raise KeyError(f"Unknown detached security execution job: {job_id}")
-        if record.completed_result is not None:
-            return record.completed_result
-
-        docker = shutil.which("docker")
-        if docker is None:
-            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
-        status_script = (
-            f"if [ -f {shlex.quote(record.exit_path)} ]; then "
-            f"printf 'exit:'; cat {shlex.quote(record.exit_path)}; "
-            f"elif [ -f {shlex.quote(record.pid_path)} ] && "
-            f"kill -0 \"$(cat {shlex.quote(record.pid_path)})\" 2>/dev/null; then "
-            "printf 'running'; else printf 'lost'; fi"
-        )
-        status = subprocess.run(
-            [docker, "exec", record.container_name, "sh", "-lc", status_script],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        log_read = subprocess.run(
-            [docker, "exec", record.container_name, "sh", "-lc", f"cat {shlex.quote(record.log_path)} 2>/dev/null || true"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        stdout_text = log_read.stdout or ""
-        stderr_text = "\n".join(
-            item.strip()
-            for item in (status.stderr or "", log_read.stderr or "")
-            if item.strip()
-        )
-        status_text = (status.stdout or "").strip()
-        is_running = status.returncode == 0 and status_text == "running"
-        if is_running:
-            return SecurityCommandExecutionResult(
-                backend="docker",
-                command=record.command,
-                argv=record.argv,
-                cwd=record.cwd,
-                stdout=stdout_text,
-                stderr=stderr_text,
-                exit_code=-1,
-                timed_out=False,
-                started_at=record.started_at,
-                completed_at=_utc_now(),
-                container_name=record.container_name,
-                job_id=record.job_id,
-                detached=True,
-                is_running=True,
+        interval = float(self._get_str("security_runner_detach_poll_interval_seconds",
+            "SECURITY_RUNNER_DETACH_POLL_INTERVAL_SECONDS", "3"))
+        if interval <= 0 or timeout_seconds <= 0:
+            raise ValueError("Background command timeout and supervision interval must be positive")
+        stale_seconds = float(getattr(self._settings.orchestration, "tool_job_heartbeat_timeout_seconds", 90))
+        interval = min(interval, max(.1, stale_seconds / 3))
+        # Detached commands always own a container: sharing one would let one
+        # completion or timeout destroy another command's execution environment.
+        name = await self._start_managed_container(artifact_dir / "_security_background" / uuid4().hex[:12], context)
+        container = self._managed_containers[name]
+        job = None
+        try:
+            correlation = get_request_context()
+            job = await self._background_jobs.create_job(
+                ToolDescriptor(key="security-background-command", name="Security background command",
+                    description="Supervised Docker command", category="security"),
+                call_id=f"security-{uuid4().hex}", session_id=container.owner_session_id,
+                turn_id=getattr(correlation, "turn_id", None) or "",
+                trace_id=getattr(correlation, "trace_id", None) or "",
+                input_payload={"command": command, "timeout_seconds": timeout_seconds},
+                metadata={name: getattr(correlation, name, None) for name in
+                    ("request_id", "project_id", "run_id", "run_item_id", "attempt_id", "worker_id")},
             )
+            log_path = container.host_workdir / ".jobs" / f"{job.id}.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.touch()
+            command_log = str(PurePosixPath(container.workdir) / ".jobs" / f"{job.id}.log")
+            # Use an attached exec owned by the background coroutine, not a
+            # daemonized process whose lifecycle depends on polling a PID file.
+            script = f"(\n{self._wrap_with_shell_timeout(command, timeout_seconds)}\n) > {shlex.quote(command_log)} 2>&1"
+            args = ["exec", "-w", container.workdir, container.session.container.container_id, "sh", "-lc", script]
+            result = SecurityCommandExecutionResult(backend="docker", command=command, argv=["docker", *args],
+                cwd=container.workdir, stdout="", stderr="", exit_code=-1, timed_out=False,
+                started_at=_utc_now(), completed_at=_utc_now(), container_name=name,
+                job_id=job.id, detached=True, is_running=True)
+            job.metadata["initial_result"] = asdict(result)
+            job.metadata["container_id"] = container.session.container.container_id
+            await self._background_jobs.mark_running(job)
+            record = _DetachedJobRecord(result, container, log_path, self._cleanup_after_run_enabled())
+            self._detached_jobs[job.id] = record
+            record.task = asyncio.create_task(self._supervise_detached(record, args, timeout_seconds, interval))
+            record.task.add_done_callback(lambda task: self._detached_finished(job.id, task))
+            logger.info("security_background_started", extra={"job_id": job.id,
+                "session_id": container.owner_session_id, "container_id": container.session.container.container_id})
+            return result
+        except BaseException:
+            await container.session.close()
+            if job is not None:
+                await self._background_jobs.mark_failed(job.id, summary="Background command did not start",
+                    error_message="background_start_failed")
+            raise
 
-        if status.returncode != 0:
-            status_detail = status.stderr or status.stdout or "Detached runner container is unavailable."
-            stderr_text = _append_stderr(stderr_text, status_detail.strip())
-            exit_code = 255
-        elif status_text.startswith("exit:"):
+    async def _supervise_detached(self, record, args, timeout_seconds, interval) -> None:
+        operation = asyncio.create_task(record.container.session.command(args, timeout=timeout_seconds + 5))
+        code, stderr, timed_out, cancelled = 255, "", False, False
+        try:
             try:
-                exit_code = int(status_text.split(":", 1)[1].strip())
-            except ValueError:
-                exit_code = 255
-                stderr_text = _append_stderr(stderr_text, f"Invalid detached exit status: {status_text}")
-        else:
-            exit_code = 255
-            stderr_text = _append_stderr(
-                stderr_text,
-                "Detached security command is no longer running and did not write an exit status.",
-            )
+                while True:
+                    done, _ = await asyncio.wait({operation}, timeout=interval)
+                    if done:
+                        break
+                    job = await self._background_jobs.heartbeat_execution(record.result.job_id)
+                    if job is None:
+                        job = await self._background_jobs.get_job(record.result.job_id)
+                    if job is None:
+                        raise RuntimeError("Background ToolJob disappeared")
+                    if job.status == ToolJobStatus.cancelled:
+                        raise asyncio.CancelledError()
+                    if job.status != ToolJobStatus.running:
+                        raise RuntimeError("Background ToolJob is no longer running")
+                code, _, stderr = await operation
+                timed_out = code == 124
+            except DockerCommandTimeout as exc:
+                code, stderr, timed_out = -1, exc.stderr, True
+            except asyncio.CancelledError:
+                code, stderr, cancelled = 130, "Background command cancelled", True
+            except Exception as exc:
+                stderr = f"Background execution stopped: {type(exc).__name__}"
+                logger.error("security_background_execution_failed", extra={
+                    "job_id": record.result.job_id, "error_type": type(exc).__name__})
+            finally:
+                record.stopping = True
+                if not operation.done():
+                    operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+            stdout = await asyncio.to_thread(record.log_path.read_text, encoding="utf-8", errors="replace")
+            record.result = replace(record.result, stdout=stdout, stderr=stderr, exit_code=code,
+                timed_out=timed_out, is_running=False, completed_at=_utc_now(),
+                output_artifacts=[*self._collect_output_artifacts(record.container.host_workdir),
+                    {"type": "security_runner_log", "label": record.log_path.name, "path": str(record.log_path)}])
+            payload = asdict(record.result)
+            status = (ToolJobStatus.cancelled if cancelled else
+                ToolJobStatus.completed if code == 0 and not timed_out else ToolJobStatus.failed)
+            saved = await self._background_jobs.finish_execution(record.result.job_id, status=status,
+                summary=f"Background command {status.value}", output_payload=payload,
+                error_message=None if status == ToolJobStatus.completed else stderr or f"exit_code={code}")
+            if saved is None:
+                # Another instance may cancel after the last heartbeat but before
+                # settlement. Preserve that decision, stop the container, and
+                # save a cancelled snapshot only if cancellation still owns it.
+                code = 130
+                cancelled_result = replace(record.result, exit_code=130, stderr="Background settlement superseded")
+                await self._background_jobs.finish_execution(record.result.job_id, status=ToolJobStatus.cancelled,
+                    summary="Background cancellation preserved", output_payload=asdict(cancelled_result),
+                    error_message=cancelled_result.stderr)
+                logger.warning("security_background_settlement_superseded", extra={"job_id": record.result.job_id})
+            logger.info("security_background_completed", extra={"job_id": record.result.job_id,
+                "exit_code": code, "timed_out": timed_out, "cancelled": cancelled})
+        except Exception as exc:
+            # Persistence errors are visible; never publish an in-memory success
+            # as a durable result. The existing stale-ToolJob recovery owns this.
+            code = 255
+            logger.error("security_background_result_uncommitted", extra={
+                "job_id": record.result.job_id, "error_type": type(exc).__name__})
+            raise
+        finally:
+            if record.cleanup_after_run or code != 0 or timed_out:
+                await record.container.session.close()
 
-        if record.cleanup_after_run:
-            cleanup_error = self._remove_container(docker=docker, container_name=record.container_name)
-            if cleanup_error:
-                stderr_text = _append_stderr(stderr_text, cleanup_error)
-        result = SecurityCommandExecutionResult(
-            backend="docker",
-            command=record.command,
-            argv=record.argv,
-            cwd=record.cwd,
-            stdout=stdout_text,
-            stderr=stderr_text,
-            exit_code=exit_code,
-            timed_out=exit_code == 124,
-            started_at=record.started_at,
-            completed_at=_utc_now(),
-            container_name=record.container_name,
-            output_artifacts=self._collect_output_artifacts(record.host_workdir),
-            job_id=record.job_id,
-            detached=True,
-            is_running=False,
-        )
-        record.completed_result = result
-        logger.info(
-            "security detached execution completed: job=%s exit_code=%s container=%s",
-            job_id,
-            exit_code,
-            record.container_name,
-        )
-        return result
+    def _detached_finished(self, job_id: str, task: asyncio.Task) -> None:
+        self._detached_jobs.pop(job_id, None)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("security_background_supervisor_failed", extra={
+                "job_id": job_id, "error_type": type(task.exception()).__name__})
 
     def _put_file_in_docker(
         self,

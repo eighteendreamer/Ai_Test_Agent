@@ -148,6 +148,7 @@ class ToolRuntimeService:
         self._security_execution_environment = SecurityExecutionEnvironmentService(
             settings=settings,
             workspace_root=self._workspace_root,
+            tool_jobs=tool_job_service,
         )
         self._security_tool_bootstrap_service = ToolBootstrapService(
             settings=settings,
@@ -304,6 +305,7 @@ class ToolRuntimeService:
 
     def set_tool_job_service(self, tool_job_service: ToolJobService) -> None:
         self._tool_job_service = tool_job_service
+        self._security_execution_environment.set_tool_job_service(tool_job_service)
 
     def set_session_store(self, session_store: SessionStore) -> None:
         self._session_store = session_store

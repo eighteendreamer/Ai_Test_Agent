@@ -12,6 +12,9 @@ class ToolJobStore(Protocol):
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
+                                   summary: str, error_message: str | None) -> ToolJobRecord | None: ...
     async def get_job(self, job_id: str) -> ToolJobRecord | None: ...
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]: ...
     async def save_artifact(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord: ...
@@ -25,7 +28,7 @@ class ToolJobStore(Protocol):
         self,
         session_ids: list[str],
     ) -> list[ToolArtifactRecord]: ...
-    async def mark_stale_running_jobs(self, timeout_seconds: int) -> list[ToolJobRecord]: ...
+    async def mark_stale_running_jobs(self, timeout_seconds: int, *, job_ids: list[str] | None = None) -> list[ToolJobRecord]: ...
 
 
 class InMemoryToolJobStore:
@@ -63,11 +66,32 @@ class InMemoryToolJobStore:
             job.started_at = job.heartbeat_at = job.updated_at = now
             return job.model_copy(deep=True)
 
+    async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None and job.status == ToolJobStatus.running:
+                job.heartbeat_at = job.updated_at = datetime.utcnow()
+                return job.model_copy(deep=True)
+            return None
+
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         values = list(self._jobs.values())
         if session_id:
             values = [job for job in values if job.session_id == session_id]
         return sorted(values, key=lambda item: item.created_at, reverse=True)
+
+    async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
+                                   summary: str, error_message: str | None) -> ToolJobRecord | None:
+        if status not in {ToolJobStatus.completed, ToolJobStatus.failed, ToolJobStatus.cancelled}:
+            raise ValueError("Execution settlement requires a terminal status")
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or not (job.status == ToolJobStatus.running or
+                (job.status == status == ToolJobStatus.cancelled)):
+                return None
+            job.status, job.output_payload, job.summary, job.error_message = status, output_payload, summary, error_message
+            job.completed_at = job.updated_at = datetime.utcnow()
+            return job.model_copy(deep=True)
 
     async def save_artifact(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord:
         async with self._lock:
@@ -103,10 +127,12 @@ class InMemoryToolJobStore:
         ]
         return sorted(values, key=lambda item: item.created_at)
 
-    async def mark_stale_running_jobs(self, timeout_seconds: int) -> list[ToolJobRecord]:
+    async def mark_stale_running_jobs(self, timeout_seconds: int, *, job_ids: list[str] | None = None) -> list[ToolJobRecord]:
         threshold = datetime.utcnow() - timedelta(seconds=timeout_seconds)
         updated: list[ToolJobRecord] = []
         for job in self._jobs.values():
+            if job_ids is not None and job.id not in job_ids:
+                continue
             if job.status == ToolJobStatus.running and (job.heartbeat_at or job.updated_at) < threshold:
                 job.status = ToolJobStatus.resume_requested
                 job.updated_at = datetime.utcnow()

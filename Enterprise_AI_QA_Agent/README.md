@@ -361,7 +361,7 @@ TestRun 使用相同配置判定取消前台路径的重复 Docker 预占，
 真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
 `python -m pytest tests/test_live_resource_leases.py -k security_foreground -q`，
 覆盖真实工具调用本机 HTTP 头探测、容量等待、输出与产物、超时、取消、失去租约及强杀回收；
-不调用外部目标或模型。后台任务、独立文件传输容器及独立容器管理入口尚需接入。
+不调用外部目标或模型。独立文件传输容器及独立容器管理入口尚需接入。
 
 `SECURITY__SECURITY_RUNNER_DOCKER_CLEANUP_AFTER_RUN=true` 时每条命令结束即清理；
 设为 false 时使用受监督的持久容器，仍受会话总寿命限制，不会无限保留。
@@ -391,6 +391,27 @@ SecurityShellSession 和 ExploitWorkspace 的跨调用持久容器使用同一�
 `python -m pytest tests/test_live_resource_leases.py -k 'security_persistent or mock_target' -q`，
 覆盖跨命令状态、文件往返、租约续期、容量等待、跨 Session 拒绝、跨实例关闭、总寿命、
 命令超时/取消、租约丢失、优雅关闭和进程强杀后的实际容器回收。
+
+`execute_detached` 后台执行入口也使用统一租约，每个任务独占容器和挂载目录，
+不复用前台容器。服务持有后台监督任务，命令通过受控的 attached exec 执行；
+调用方停止轮询不会中止监督、心跳或自动清理。现有
+`SECURITY__SECURITY_RUNNER_DETACH_POLL_INTERVAL_SECONDS=3` 控制服务端监督/取消检查间隔，
+心跳间隔同时限制在现有 ToolJob 失联阈值的三分之一以内。
+`cleanup_after_run=false` 时仅成功任务允许保留容器，仍受总寿命限制；失败、取消、
+超时、失去租约和结果提交失败均回收容器。
+
+后台状态与最终结果复用 PostgreSQL ToolJob，不新增任务表；默认存储需随应用启动初始化。
+心跳仅更新 running，结果使用原子状态条件提交，避免覆盖并发取消或恢复标记。
+`poll_execution(job_id, context=...)` 校验所属 Session：运行中完整增量输出仅由所属 Worker
+读取挂载日志，另一实例可读取数据库状态和最终结果。命令输出合并保留 stdout/stderr，
+最终日志/产物引用写入结果；这一低层入口尚未接入用户可调用的工具或对象存储上传链路。
+Worker 强杀后的容器由既有资源清理 Worker 回收，未提交结果的 ToolJob 由既有失联检测标为
+`resume_requested`，不会推断执行成功或自动重跑非幂等命令；自动调度恢复仍需后续接入。
+本次新增的定向失联检测参数允许仅核对指定 job_id，真实测试不改动其他任务。
+真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k security_background -q`，
+覆盖无人轮询自动完成、输出和 Session 校验、容量不足、非零退出、超时、取消提交竞态、
+优雅关闭、租约丢失、数据库创建/结果写入故障、跨实例读取与进程强杀后的真实回收。
 
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。

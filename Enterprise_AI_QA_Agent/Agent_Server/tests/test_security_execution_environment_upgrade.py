@@ -4,7 +4,6 @@ import asyncio
 import os
 import socket
 import subprocess
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -241,57 +240,79 @@ class _GraphProvider:
         return []
 
 
-def test_detached_job_returns_partial_output_then_completes_and_cleans_up(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
-    monkeypatch.setattr("src.application.security.execution_environment_service.shutil.which", lambda _: "docker")
-    monkeypatch.setattr(service, "_ensure_container", lambda **_: None)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["cancelled", "resume_requested", "completed"])
+async def test_background_heartbeat_and_settlement_preserve_concurrent_status(terminal):
+    from src.schemas.tool_job import ToolJobStatus
 
-    status_polls = iter(["running", "exit:0"])
-    removed: list[str] = []
+    jobs = ToolJobService(InMemoryToolJobStore())
+    job = await jobs.create_job(ToolDescriptor(key="test", name="test", description="test", category="test"),
+        call_id="test", session_id="test", turn_id="test", trace_id="test", input_payload={})
+    await jobs.mark_running(job)
+    assert await jobs.heartbeat_execution(job.id) is not None
+    if terminal == "cancelled":
+        await jobs.cancel_job(job.id)
+    elif terminal == "resume_requested":
+        await jobs.request_resume(job.id)
+    else:
+        await jobs.mark_completed(job.id, summary="first result", output_payload={"original": True})
+    assert await jobs.heartbeat_execution(job.id) is None
+    assert await jobs.finish_execution(job.id, status=ToolJobStatus.completed,
+        output_payload={"late": True}, summary="late result") is None
+    assert (await jobs.get_job(job.id)).status.value == terminal
 
-    def fake_run(args, **kwargs):
-        if args[1:3] == ["exec", "-d"]:
-            return _completed()
-        if args[1:3] == ["rm", "-f"]:
-            removed.append(args[3])
-            return _completed(stdout=args[3])
-        if args[1] == "exec" and "if [ -f" in args[-1]:
-            return _completed(stdout=next(status_polls))
-        if args[1] == "exec" and args[-1].startswith("cat "):
-            return _completed(stdout="starting\ndone\n")
-        raise AssertionError(f"Unexpected subprocess invocation: {args}")
 
-    monkeypatch.setattr("src.application.security.execution_environment_service.subprocess.run", fake_run)
+@pytest.mark.asyncio
+async def test_detached_job_returns_partial_output_then_completes_and_cleans_up(tmp_path):
+    release, executing, closed = (asyncio.Event() for _ in range(3))
 
-    started = asyncio.run(
-        service.execute_detached(
-            command="sleep 1 && echo done",
-            command_args=["sh", "-lc", "sleep 1 && echo done"],
-            timeout_seconds=30,
-            artifact_dir=tmp_path / "artifacts",
-            context=_Context(),
-        )
-    )
-    assert started.detached is True
-    assert started.is_running is True
-    assert started.job_id.startswith("security-")
+    class Docker:
+        async def run(self, args, *, name_prefix, operation):
+            self.mount = Path(args[args.index("-v") + 1].rsplit(":", 1)[0])
+            try:
+                return await operation(SimpleNamespace(container_id="a" * 64, container_name="qa-security-session-test"))
+            finally:
+                closed.set()
 
-    running = asyncio.run(service.poll_execution(started.job_id))
-    assert running.is_running is True
-    assert running.stdout == "starting\ndone\n"
-    assert removed == []
+        async def _command(self, args, *, timeout):
+            if args[0] == "wait":
+                await asyncio.Event().wait()
+            if args[0] == "exec":
+                log = next((self.mount / ".jobs").glob("*.log"))
+                log.write_text("starting\n", encoding="utf-8")
+                executing.set()
+                await release.wait()
+                log.write_text("starting\ndone\n", encoding="utf-8")
+            return 0, "", ""
 
-    completed = asyncio.run(service.poll_execution(started.job_id))
-    assert completed.is_running is False
-    assert completed.exit_code == 0
-    assert completed.stdout == "starting\ndone\n"
-    assert removed == [started.container_name]
-
-    # Completion is cached because the ephemeral container has been destroyed.
-    assert asyncio.run(service.poll_execution(started.job_id)) is completed
+    settings = _Settings()
+    settings.orchestration = SimpleNamespace(resource_docker_command_timeout_seconds=5)
+    jobs = ToolJobService(InMemoryToolJobStore())
+    service = SecurityExecutionEnvironmentService(settings=settings, docker_resources=Docker(), tool_jobs=jobs)
+    try:
+        started = await service.execute_detached(command="sleep 1 && echo done",
+            command_args=["sh", "-lc", "sleep 1 && echo done"], timeout_seconds=30,
+            artifact_dir=tmp_path / "artifacts", context=_Context())
+        assert started.detached and started.is_running
+        await asyncio.wait_for(executing.wait(), 1)
+        running = await service.poll_execution(started.job_id, context=_Context())
+        assert running.is_running and running.stdout == "starting\n"
+        assert not closed.is_set()
+        with pytest.raises(ValueError, match="does not belong"):
+            await service.poll_execution(started.job_id, context=SimpleNamespace(session_id="foreign"))
+        release.set()
+        await asyncio.wait_for(service._detached_jobs[started.job_id].task, 1)
+        assert closed.is_set()
+        completed = await service.poll_execution(started.job_id, context=_Context())
+        assert not completed.is_running and completed.exit_code == 0
+        assert completed.stdout == "starting\ndone\n"
+        assert (await jobs.get_job(started.job_id)).status.value == "completed"
+        remote = SecurityExecutionEnvironmentService(settings=settings, tool_jobs=jobs)
+        restored = await remote.poll_execution(started.job_id, context=_Context())
+        assert restored.stdout == completed.stdout and restored.exit_code == 0
+    finally:
+        release.set()
+        await service.close()
 
 
 def test_container_file_paths_cannot_escape_workdir(tmp_path: Path):
@@ -1088,33 +1109,13 @@ def test_failed_tool_result_persists_manifest_artifact_and_exposes_download(tmp_
     os.getenv("RUN_SECURITY_DOCKER_INTEGRATION") != "1",
     reason="Set RUN_SECURITY_DOCKER_INTEGRATION=1 to use vxcontrol/kali-linux.",
 )
-def test_real_kali_detached_and_file_round_trip_is_ephemeral(tmp_path: Path):
+def test_real_kali_file_round_trip_is_ephemeral(tmp_path: Path):
     settings = _Settings()
     settings.security.security_runner_docker_container_prefix = "codex-security-upgrade-test"
     service = SecurityExecutionEnvironmentService(settings=settings, workspace_root=tmp_path)
-    detached_container = ""
     transfer_container = ""
 
     try:
-        started = asyncio.run(
-            service.execute_detached(
-                command="sleep 1 && echo done",
-                command_args=["sh", "-lc", "sleep 1 && echo done"],
-                timeout_seconds=20,
-                artifact_dir=tmp_path / "detached",
-                context=_Context(),
-            )
-        )
-        detached_container = started.container_name
-        deadline = time.monotonic() + 30
-        result = started
-        while result.is_running and time.monotonic() < deadline:
-            time.sleep(0.25)
-            result = asyncio.run(service.poll_execution(started.job_id))
-        assert result.is_running is False
-        assert result.exit_code == 0
-        assert "done" in result.stdout
-
         source = tmp_path / "dictionary.txt"
         source.write_text("alpha\nbeta\n", encoding="utf-8")
         transfer_container = asyncio.run(
@@ -1136,22 +1137,10 @@ def test_real_kali_detached_and_file_round_trip_is_ephemeral(tmp_path: Path):
         )
         assert downloaded.read_text(encoding="utf-8") == "alpha\nbeta\n"
     finally:
-        # The detached path removes itself after settlement. The file channel
-        # has an explicit lifecycle because callers may perform several copies.
+        # The file channel has an explicit lifecycle for multiple copies.
         if transfer_container:
             try:
                 asyncio.run(service.cleanup_container(transfer_container))
             except RuntimeError as exc:
                 if "No such container" not in str(exc):
                     raise
-        if detached_container:
-            inspect = subprocess.run(
-                ["docker", "inspect", detached_container],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=15,
-            )
-            if inspect.returncode == 0:
-                asyncio.run(service.cleanup_container(detached_container))

@@ -165,6 +165,15 @@ class ToolJobService:
         """Use the Store's atomic queued/waiting-to-running transition."""
         return await self._store.claim_job_execution(job_id)
 
+    async def finish_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict[str, Any],
+                               summary: str, error_message: str | None = None) -> ToolJobRecord | None:
+        """Settle atomically without overwriting a concurrent cancellation/recovery."""
+        return await self._store.finish_job_execution(job_id, status=status, output_payload=output_payload,
+                                                     summary=summary, error_message=error_message)
+
+    async def heartbeat_execution(self, job_id: str) -> ToolJobRecord | None:
+        return await self._store.heartbeat_job_execution(job_id)
+
     async def cancel_job(self, job_id: str, reason: str | None = None) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.cancelled, summary=reason or "Cancelled by operator.")
 
