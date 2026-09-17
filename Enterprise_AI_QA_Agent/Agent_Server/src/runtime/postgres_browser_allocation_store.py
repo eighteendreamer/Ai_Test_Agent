@@ -62,16 +62,22 @@ class PostgresBrowserAllocationStore:
                     or row["host_id"] != host_id or row["session_name"] != session_name):
                 raise ValueError("Browser allocation intent cannot be reassigned")
             if record.get("recording_id"):
+                # Lock first, then check real time: NOW() is transaction-start
+                # time and an UPDATE predicate can be evaluated before a wait.
+                cur.execute(sql.SQL("SELECT id FROM {} WHERE id = %s FOR UPDATE").format(
+                    sql.Identifier(self._settings.database.postgres_recording_table)), (record["recording_id"],))
                 cur.execute(sql.SQL("""
                     UPDATE {} SET metadata = metadata || %s::jsonb, updated_at = NOW()
                     WHERE id = %s AND project_id = %s AND driver_kind = 'playwright-managed'
                         AND status = 'launching'
+                        AND launch_expires_at > clock_timestamp()
+                        AND metadata->>'browser_lease_namespace' = %s AND metadata->>'browser_host_id' = %s
                         AND (metadata->>'browser_allocation_id' IS NULL OR metadata->>'browser_allocation_id' = %s)
                 """).format(sql.Identifier(self._settings.database.postgres_recording_table)),
                     (json.dumps({"browser_allocation_id": allocation_id}), record["recording_id"],
-                     record["project_id"], allocation_id))
+                     record["project_id"], namespace, host_id, allocation_id))
                 if cur.rowcount != 1:
-                    raise ValueError("Recording is missing, terminal or bound to another browser allocation")
+                    raise ValueError("Recording launch is expired, terminal, missing or owned by another browser allocation")
             return int(row["generation"])
 
     async def bind(self, allocation_id, processes):

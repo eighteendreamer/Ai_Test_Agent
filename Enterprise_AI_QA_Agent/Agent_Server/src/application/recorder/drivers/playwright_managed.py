@@ -67,6 +67,10 @@ class PlaywrightManagedDriver(PlaywrightBindingDriverBase):
 
     # ------------------------------------------------------------ BrowserDriver 契约
 
+    def launch_metadata(self) -> dict[str, str]:
+        manager = self._runtime._resource_manager
+        return manager.recording_launch_metadata() if manager is not None else {}
+
     async def open(self, url: str, *, viewport: tuple[int, int]) -> None:
         """自启受管浏览器（headed + persistent profile）→ 首页 → 导航到入口 URL。"""
         if self._closed:

@@ -169,11 +169,26 @@ class RecorderSessionService:
             status=RecordingStatus.launching,
             session_id=request.session_id,
             approval_id=request.approval_id,
-            metadata=dict(request.metadata),
+            metadata={key: value for key, value in request.metadata.items() if key not in (
+                "browser_allocation_id", "browser_lease_namespace", "browser_host_id")},
         )
-        created = await self._store.create_session(session)
+        driver = self._registry.create(request.driver, recording_id=session.id)
+        try:
+            session.metadata.update(driver.launch_metadata())
+            created = await self._store.create_session(session)
+        except BaseException:
+            logger.exception("recording_session_creation_failed", extra={"recording_id": session.id})
+            try:
+                await driver.close()
+            except Exception:
+                logger.exception("recording_unstarted_driver_close_failed", extra={"recording_id": session.id})
+            finally:
+                # No open/navigate command has been sent, so no client needs a
+                # delayed close receipt for this failed launch.
+                if driver.kind == "embedded":
+                    self._bridge.detach(session.id)
+            raise
 
-        driver = self._registry.create(request.driver, recording_id=created.id)
         runtime = _SessionRuntime(session=created, driver=driver, status=RecordingStatus.launching)
         self._runtimes[created.id] = runtime
 

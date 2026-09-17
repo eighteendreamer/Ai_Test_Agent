@@ -91,6 +91,33 @@ class PostgresRecordingStore:
     async def delete_session(self, recording_id: str) -> bool:
         return await asyncio.to_thread(self._delete_session_sync, recording_id)
 
+    async def recover_unbound_launches(self, *, namespace: str, host_id: str, limit: int) -> int:
+        return await asyncio.to_thread(self._recover_unbound_launches_sync, namespace, host_id, limit)
+
+    def _recover_unbound_launches_sync(self, namespace, host_id, limit):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""
+                WITH expired AS (
+                    SELECT id FROM {self._session_table}
+                    WHERE driver_kind = 'playwright-managed' AND status = 'launching'
+                        AND launch_expires_at <= clock_timestamp()
+                        AND metadata->>'browser_allocation_id' IS NULL
+                        AND metadata->>'browser_lease_namespace' = %s
+                        AND metadata->>'browser_host_id' = %s
+                    ORDER BY launch_expires_at, id FOR UPDATE SKIP LOCKED LIMIT %s
+                )
+                UPDATE {self._session_table} r SET status = 'failed', ended_at = NOW(), updated_at = NOW(),
+                    finalize_metrics = r.finalize_metrics || %s::jsonb
+                FROM expired WHERE r.id = expired.id RETURNING r.id, r.session_id, r.project_id
+            """, (namespace, host_id, max(1, limit), json.dumps({"failure_reason": "browser_launch_expired"})))
+            rows = cur.fetchall()
+        for row in rows:
+            logger.warning("recording_unbound_launch_expired", extra={
+                "recording_id": row["id"], "session_id": row["session_id"],
+                "project_id": row["project_id"], "host_id": host_id,
+            })
+        return len(rows)
+
     # ------------------------------------------------------------------
     # sync 实现
     # ------------------------------------------------------------------
@@ -125,11 +152,13 @@ class PostgresRecordingStore:
                         updated_at TIMESTAMPTZ NOT NULL,
                         started_at TIMESTAMPTZ NULL,
                         ended_at TIMESTAMPTZ NULL,
+                        launch_expires_at TIMESTAMPTZ NULL,
                         finalize_metrics JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                         metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb
                     )
                     """
                 )
+                cur.execute(f"ALTER TABLE {self._session_table} ADD COLUMN IF NOT EXISTS launch_expires_at TIMESTAMPTZ")
                 cur.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._event_table} (
@@ -160,6 +189,9 @@ class PostgresRecordingStore:
     def _create_session_sync(self, session: RecordingSession) -> RecordingSession:
         now = datetime.now(timezone.utc)
         session.updated_at = now
+        owned_browser = (session.driver_kind.value == "playwright-managed"
+                         and bool(session.metadata.get("browser_lease_namespace"))
+                         and bool(session.metadata.get("browser_host_id")))
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -168,12 +200,13 @@ class PostgresRecordingStore:
                         id, project_id, name, entry_url, driver_kind, status,
                         session_id, approval_id, step_count,
                         created_at, updated_at, started_at, ended_at,
-                        finalize_metrics, metadata
+                        finalize_metrics, metadata, launch_expires_at
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s, %s,
-                        %s::jsonb, %s::jsonb
+                        %s::jsonb, %s::jsonb,
+                        CASE WHEN %s THEN clock_timestamp() + %s * INTERVAL '1 second' ELSE NULL END
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
@@ -202,6 +235,8 @@ class PostgresRecordingStore:
                             make_json_safe(session.finalize_metrics), ensure_ascii=False
                         ),
                         json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
+                        owned_browser,
+                        self._settings.orchestration.resource_recording_launch_timeout_seconds,
                     ),
                 )
         return session

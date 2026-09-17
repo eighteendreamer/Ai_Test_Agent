@@ -28,6 +28,10 @@ class BrowserDriver(ABC):
 
     kind: str  # "embedded" | "cdp-attach" | "playwright-managed"
 
+    def launch_metadata(self) -> dict[str, str]:
+        """Trusted server ownership persisted before starting an owned driver."""
+        return {}
+
     @abstractmethod
     async def open(self, url: str, *, viewport: tuple[int, int]) -> None:
         """打开目标页面（embedded 语义为向客户端下发 navigate 指令）。"""

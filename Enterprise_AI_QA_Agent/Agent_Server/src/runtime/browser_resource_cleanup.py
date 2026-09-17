@@ -11,6 +11,7 @@ import re
 
 import psutil
 
+from src.infrastructure.recording_store import PostgresRecordingStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
 
 LOGGER = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class BrowserResourceCleanup:
         self._namespace = namespace
         self._host_id = settings.orchestration.resource_browser_host_id
         self._recording_cursor = 0
+        self._recordings = PostgresRecordingStore(settings)
 
     async def __call__(self, lease):
         if lease.resource_type != "browser" or not lease.allocation_id:
@@ -151,4 +153,6 @@ class BrowserResourceCleanup:
             self._recording_cursor = int(allocation["generation"])
         if len(recordings) < batch_size:
             self._recording_cursor = 0
+        count += await self._recordings.recover_unbound_launches(
+            namespace=self._namespace, host_id=self._host_id, limit=batch_size)
         return count

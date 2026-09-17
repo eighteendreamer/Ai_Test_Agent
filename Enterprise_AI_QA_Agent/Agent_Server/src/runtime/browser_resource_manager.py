@@ -34,6 +34,10 @@ class BrowserResourceManager:
         self._allocations = allocations or PostgresBrowserAllocationStore(settings)
         self._worker_id = f"browser-{os.getpid()}-{uuid4().hex[:12]}"
 
+    def recording_launch_metadata(self) -> dict[str, str]:
+        return {"browser_lease_namespace": self._manager.namespace,
+                "browser_host_id": self._settings.orchestration.resource_browser_host_id}
+
     async def acquire(self, session_name, *, recording_id=None):
         config = self._settings.orchestration
         context = get_request_context()

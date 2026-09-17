@@ -484,6 +484,7 @@ ORCHESTRATION__RESOURCE_BROWSER_LIMIT=10
 ORCHESTRATION__RESOURCE_BROWSER_MAX_LIFETIME_SECONDS=900
 ORCHESTRATION__RESOURCE_BROWSER_CLEANUP_TIMEOUT_SECONDS=10
 ORCHESTRATION__RESOURCE_BROWSER_RECONCILE_BATCH_SIZE=100
+ORCHESTRATION__RESOURCE_RECORDING_LAUNCH_TIMEOUT_SECONDS=120
 ```
 
 每个原生浏览器宿主机必须配置不同的 `RESOURCE_BROWSER_HOST_ID`，同机 API、Agent Worker、
@@ -538,8 +539,21 @@ Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
 依赖或表结构。真实测试覆盖录制中、PID 绑定前、Redis 分配绑定前三处强杀，以及恢复提交失败、
 终态保护、迟到控制写入和分页不饿死后续孤儿记录。
 
-尚未完成活动浏览器命令和录制控制的跨 Worker 转发、录制行创建后尚未写入浏览器分配意图时的
-业务恢复、CDP 外部浏览器租约、Linux 实机回归与完整并发/soak 验收。
+录制行已创建、浏览器分配意图尚未写入的崩溃窗口也由 Cleanup Worker 扫描恢复。
+服务端在创建受管录制时写入可信的 namespace、host 和数据库生成的 `launch_expires_at`；
+客户端 metadata 不能指定或覆盖浏览器归属。新增超时配置
+`ORCHESTRATION__RESOURCE_RECORDING_LAUNCH_TIMEOUT_SECONDS=120` 仅限制尚未绑定资源的启动阶段，
+不限制已绑定浏览器的录制时长，后者仍使用资源租约与总寿命配置。
+启动初始化会为录制表增加 nullable `launch_expires_at` 列；不回填或恢复缺少归属的历史记录。
+恢复按 namespace/host 分批执行，使用 `FOR UPDATE SKIP LOCKED` 避免多个清理 Worker 互相阻塞；
+过期未绑定记录写入 `failed` 和 `failure_reason=browser_launch_expired`。
+绑定事务先锁定录制行，再用数据库实时时钟复核期限，超时拒绝并回滚创建意图，防止迟到请求启动资源。
+数据库创建失败或调用取消时，已构造的驱动也会关闭；未打开的 embedded 桥接立即解除登记。
+测试覆盖领取资源前强杀、锁等待跨越期限、并行恢复、宿主机/namespace 隔离、客户端伪造归属、
+有效启动及已绑定录制不被误回收。时钟语义依据
+[PostgreSQL 当前时间函数](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT)。
+
+尚未完成活动浏览器命令和录制控制的跨 Worker 转发、CDP 外部浏览器租约、Linux 实机回归与完整并发/soak 验收。
 录制回放执行器目前没有生产调用入口，也未接入 Harness。
 
 ### 2. 启动前端

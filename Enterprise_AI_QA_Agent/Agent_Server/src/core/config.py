@@ -204,6 +204,7 @@ class OrchestrConfig(BaseModel):
     resource_browser_max_lifetime_seconds: float = Field(default=900, gt=0)
     resource_browser_cleanup_timeout_seconds: float = Field(default=10, gt=0)
     resource_browser_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
+    resource_recording_launch_timeout_seconds: float = Field(default=120, gt=0)
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False

@@ -198,6 +198,33 @@ def _request() -> RecordingCreateRequest:
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_failed_session_creation_releases_embedded_bridge(cancelled):
+    from src.application.recorder.drivers import build_default_registry
+
+    store, bridge = FakeStore(), EmbeddedBridge()
+    ids = []
+
+    async def fail_create(session):
+        ids.append(session.id)
+        assert bridge.session_stats(session.id)
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("injected session creation failure")
+
+    store.create_session = fail_create
+    service = RecorderSessionService(None, store, FakeGraphStore(), bridge=bridge,
+        registry=build_default_registry(bridge))
+    try:
+        with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+            await service.launch(_request())
+        assert not bridge.session_stats(ids[0])
+        assert not service._runtimes
+    finally:
+        await service.close()
+
+
 def _payload(seq: int) -> dict[str, Any]:
     return {
         "seq": seq,

@@ -585,6 +585,8 @@ def child_recording(prefix, root, project_id, ready, phase):
     from src.schemas.recording import RecordingControlAction, RecordingStatus
 
     async def run():
+        if phase == "before_acquire":
+            os.environ["ORCHESTRATION__RESOURCE_RECORDING_LAUNCH_TIMEOUT_SECONDS"] = "1"
         settings = configured_settings(prefix)
         settings.storage.artifact_root_dir = root
         manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix,
@@ -612,6 +614,8 @@ def child_recording(prefix, root, project_id, ready, phase):
             resources._allocations.bind = suspend
         elif phase == "before_redis_binding":
             manager.prepare_allocation = suspend
+        elif phase == "before_acquire":
+            resources.acquire = suspend
         request = recording_request()
         request.project_id = project_id
         session = await service.launch(request)
@@ -624,7 +628,7 @@ def child_recording(prefix, root, project_id, ready, phase):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["active", "before_binding", "before_redis_binding"])
+@pytest.mark.parametrize("phase", ["active", "before_binding", "before_redis_binding", "before_acquire"])
 async def test_killed_recorder_recovers_business_state_and_rejects_late_update(harness, phase):
     from src.infrastructure.recording_store import PostgresRecordingStore
     from src.schemas.recording import RecordingStatus
@@ -653,8 +657,9 @@ async def test_killed_recorder_recovers_business_state_and_rejects_late_update(h
         recovered = await store.get_session(session.id)
         assert recovered.status == RecordingStatus.failed
         assert recovered.ended_at is not None
-        assert recovered.finalize_metrics["failure_reason"] == "browser_resource_recovered"
-        assert recovered.metadata["browser_allocation_id"]
+        assert recovered.finalize_metrics["failure_reason"] == (
+            "browser_launch_expired" if phase == "before_acquire" else "browser_resource_recovered")
+        assert bool(recovered.metadata.get("browser_allocation_id")) is (phase != "before_acquire")
         assert not await harness.manager.usage_snapshot()
         await wait_until(lambda: all(not p.is_running() or p.status() == psutil.STATUS_ZOMBIE for p in owned_processes))
         stale = await store.update_status(session.id, RecordingStatus.active)
@@ -734,7 +739,7 @@ async def test_recording_inventory_cursor_passes_live_intents(harness):
     try:
         for index in range(3):
             session = RecordingSession(project_id="p-cursor-" + uuid4().hex, entry_url="about:blank",
-                driver_kind=RecordingDriverKind.playwright_managed)
+                driver_kind=RecordingDriverKind.playwright_managed, metadata=resources.recording_launch_metadata())
             sessions.append(await store.create_session(session))
             with bind_request_context(project_id=session.project_id, session_id=session.id):
                 allocations.append(await resources.acquire("recording:" + session.id, recording_id=session.id))
@@ -784,3 +789,127 @@ async def test_inflight_recording_control_cannot_overwrite_recovery(harness, rec
     finally:
         proceed.set()
         await asyncio.gather(control, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_recording_binding_rejects_deadline_elapsed_while_waiting_for_lock(harness):
+    from src.infrastructure.recording_store import PostgresRecordingStore
+    from src.schemas.recording import RecordingSession, RecordingDriverKind
+    from src.runtime.browser_resource_manager import BrowserResourceManager
+
+    settings = harness.settings
+    settings.orchestration.resource_recording_launch_timeout_seconds = 2
+    store = PostgresRecordingStore(settings)
+    resources = BrowserResourceManager(settings, lease_manager=harness.manager)
+    session = await store.create_session(RecordingSession(project_id="p-lock-" + uuid4().hex,
+        entry_url="about:blank", driver_kind=RecordingDriverKind.playwright_managed,
+        metadata=resources.recording_launch_metadata()))
+    lease = await harness.manager.acquire(resource_type="browser", resource_id="browser:" + session.id,
+        worker_id="late-launch", session_id=session.id, project_id=session.project_id, lease_seconds=30)
+    allocation_id = uuid4().hex
+    preparing = None
+    try:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("SELECT id FROM {} WHERE id = %s FOR UPDATE").format(
+                sql.Identifier(settings.database.postgres_recording_table)), (session.id,))
+            cur.execute("SELECT pg_backend_pid() AS pid")
+            locker_pid = cur.fetchone()["pid"]
+            preparing = asyncio.create_task(harness.allocations.prepare(allocation_id, lease,
+                namespace=harness.prefix, host_id=settings.orchestration.resource_browser_host_id,
+                session_name="recording:" + session.id, recording_id=session.id))
+
+            def binding_is_waiting():
+                with postgres_connect(settings) as probe, probe.cursor() as pc:
+                    pc.execute("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE %s = ANY(pg_blocking_pids(pid))) AS blocked",
+                               (locker_pid,))
+                    return pc.fetchone()["blocked"]
+
+            await wait_until(binding_is_waiting)
+
+            def deadline_has_elapsed():
+                cur.execute(sql.SQL("SELECT launch_expires_at <= clock_timestamp() AS expired FROM {} WHERE id = %s").format(
+                    sql.Identifier(settings.database.postgres_recording_table)), (session.id,))
+                return cur.fetchone()["expired"]
+
+            await wait_until(deadline_has_elapsed)
+        with pytest.raises(ValueError, match="expired"):
+            await asyncio.wait_for(asyncio.shield(preparing), 5)
+        assert not await harness.allocations.get_many([allocation_id], namespace=harness.prefix)
+        assert "browser_allocation_id" not in (await store.get_session(session.id)).metadata
+        assert await store.recover_unbound_launches(namespace=harness.prefix,
+            host_id=settings.orchestration.resource_browser_host_id, limit=10) == 1
+    finally:
+        if preparing is not None:
+            await asyncio.gather(preparing, return_exceptions=True)
+        await resources.retire(lease)
+        await harness.cleanup_all()
+        await store.delete_session(session.id)
+
+
+@pytest.mark.asyncio
+async def test_unbound_recovery_is_scoped_bounded_and_skips_locked_rows(harness):
+    from src.infrastructure.recording_store import PostgresRecordingStore
+    from src.schemas.recording import RecordingSession, RecordingDriverKind
+    from src.runtime.browser_resource_manager import BrowserResourceManager
+
+    settings = harness.settings
+    store = PostgresRecordingStore(settings)
+    resources = BrowserResourceManager(settings, lease_manager=harness.manager)
+    owner = resources.recording_launch_metadata()
+    table = sql.Identifier(settings.database.postgres_recording_table)
+    sessions = []
+    try:
+        for metadata in (owner, owner, owner, {**owner, "browser_host_id": "other-host"},
+                         {**owner, "browser_lease_namespace": harness.prefix + ":other"}, {}):
+            sessions.append(await store.create_session(RecordingSession(project_id="p-scope-" + uuid4().hex,
+                entry_url="about:blank", driver_kind=RecordingDriverKind.playwright_managed, metadata=metadata)))
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("UPDATE {} SET launch_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = ANY(%s)").format(table),
+                ([session.id for index, session in enumerate(sessions) if index != 2],))
+
+        async def recover():
+            return await store.recover_unbound_launches(namespace=harness.prefix,
+                host_id=settings.orchestration.resource_browser_host_id, limit=1)
+
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("SELECT id FROM {} WHERE id = %s FOR UPDATE").format(table), (sessions[0].id,))
+            results = await asyncio.wait_for(asyncio.gather(recover(), recover()), 5)
+            assert sum(results) == 1
+            assert (await store.get_session(sessions[0].id)).status.value == "launching"
+        assert await recover() == 1
+        assert await recover() == 0
+        for session in sessions[:2]:
+            persisted = await store.get_session(session.id)
+            assert persisted.status.value == "failed"
+            assert persisted.finalize_metrics["failure_reason"] == "browser_launch_expired"
+        for session in sessions[2:]:
+            assert (await store.get_session(session.id)).status.value == "launching"
+    finally:
+        for session in sessions:
+            await store.delete_session(session.id)
+
+
+@pytest.mark.asyncio
+async def test_bound_recording_ignores_launch_deadline_and_client_ownership(harness, recorder):
+    from src.schemas.recording import RecordingStatus
+
+    service, drivers = recorder
+    request = recording_request()
+    request.metadata = {"browser_allocation_id": "forged", "browser_host_id": "other-host",
+                        "browser_lease_namespace": "other-namespace", "label": "preserved"}
+    session = await service.launch(request)
+    await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.ready)
+    allocation = next(iter(drivers[0]._runtime._sessions.values())).allocation
+    persisted = await service.get_session(session.id)
+    assert persisted.metadata == {
+        "browser_allocation_id": allocation.allocation_id,
+        "browser_host_id": harness.settings.orchestration.resource_browser_host_id,
+        "browser_lease_namespace": harness.prefix, "label": "preserved",
+    }
+    with postgres_connect(harness.settings) as conn, conn.cursor() as cur:
+        cur.execute(sql.SQL("UPDATE {} SET launch_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = %s").format(
+            sql.Identifier(harness.settings.database.postgres_recording_table)), (session.id,))
+    assert await harness.cleanup.reconcile(harness.manager) == 0
+    assert (await service.get_session(session.id)).status == RecordingStatus.ready
+    assert await drivers[0]._page.evaluate("1 + 1") == 2
+    assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 1
