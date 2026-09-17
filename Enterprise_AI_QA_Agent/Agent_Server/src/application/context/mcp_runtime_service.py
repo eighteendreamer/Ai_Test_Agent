@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shlex
@@ -8,6 +9,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from src.core.config import Settings
 from src.application.resources.session_resource_service import SessionResourceService
@@ -46,6 +48,9 @@ class MCPRuntimeService:
 
     async def close_browser_session(self, session_name: str) -> None:
         await self._playwright_cli.close_session(session_name)
+
+    async def close(self) -> None:
+        await self._playwright_cli.close()
 
     def list_active_servers(self) -> list[dict[str, Any]]:
         return [server.model_dump() for server in self._mcp_registry.list_enabled()]
@@ -496,7 +501,7 @@ class MCPRuntimeService:
                 "artifacts": [*result.get("artifacts", []), {"type": "transcript", "path": str(transcript_path)}],
             }
         finally:
-            if args[0] in {"close", "delete-data"}:
+            if args[0] in {"close", "delete-data", "close-all", "kill-all"}:
                 await self._close_playwright_session(session_name, artifact_dir)
                 if self._session_resource_service is not None:
                     await self._session_resource_service.mark_released(
@@ -519,6 +524,9 @@ class MCPRuntimeService:
         session_id = str(context.get("session_id") or "").strip()
         if not session_id or verb in {"close", "close-all", "kill-all", "delete-data"}:
             return
+        session_info = self._playwright_cli.session_info(session_name)
+        if session_info is None:
+            return
         await self._session_resource_service.register(
             session_id=session_id,
             kind=SessionResourceKind.browser_session,
@@ -529,12 +537,12 @@ class MCPRuntimeService:
                 "runtime": "python-playwright-cli",
             },
         )
-        profile = self._option_value(args, "--profile")
-        if profile or "--persistent" in args:
+        profile = session_info.get("profile_dir")
+        if profile:
             await self._session_resource_service.register(
                 session_id=session_id,
                 kind=SessionResourceKind.browser_profile,
-                resource_key=profile or str(artifact_dir / ".playwright-cli" / session_name / "profile"),
+                resource_key=profile,
                 metadata={
                     "browser_session": session_name,
                     "artifact_dir": str(artifact_dir),
@@ -618,9 +626,12 @@ class MCPRuntimeService:
 
     async def _close_playwright_session(self, session_name: str, artifact_dir: Path) -> None:
         try:
-            await self._run_playwright_cli(session_name, ["close"], artifact_dir, timeout_seconds=15)
-        except Exception:
-            pass
+            await self._playwright_cli.close_session(session_name)
+        except Exception as exc:
+            LOGGER.error("browser_session_close_failed", extra={
+                "browser_session": session_name, "error_type": type(exc).__name__,
+            })
+            raise
 
     async def _run_playwright_cli(
         self,
@@ -669,9 +680,7 @@ class MCPRuntimeService:
         }
 
     def _prepare_artifact_dir(self, context: dict[str, Any], category: str) -> Path:
-        session_id = self._slug(str(context.get("session_id") or "session"))
-        turn_id = self._slug(str(context.get("turn_id") or "turn"))
-        artifact_dir = self._artifact_root / session_id / turn_id / category
+        artifact_dir = self._artifact_root / self._slug(category) / uuid4().hex
         artifact_dir.mkdir(parents=True, exist_ok=True)
         return artifact_dir
 
@@ -713,9 +722,19 @@ class MCPRuntimeService:
         return f"{self._settings.orchestration.browser_backend}:{self._settings.orchestration.browser_default_name}"
 
     def _playwright_session_name(self, context: dict[str, Any], tool_key: str) -> str:
-        session_id = self._slug(str(context.get("session_id") or "session"))
-        turn_id = self._slug(str(context.get("turn_id") or "turn"))
-        return self._slug(f"{session_id}-{turn_id}-{tool_key}")[:80]
+        bundle = context.get("context_bundle") if isinstance(context.get("context_bundle"), dict) else {}
+        request = get_request_context()
+        scope = []
+        for field, alias in (
+            ("project_id", "project_id"), ("session_id", "session_id"), ("turn_id", "turn_id"),
+            ("run_id", "test_run_id"), ("run_item_id", "test_run_item_id"), ("attempt_id", "attempt_id"),
+        ):
+            scope.append(str(context.get(field) or bundle.get(field) or bundle.get(alias)
+                             or getattr(request, field, None) or ""))
+        scope.append(tool_key)
+        digest = hashlib.sha256(json.dumps(scope, ensure_ascii=False).encode("utf-8")).hexdigest()[:32]
+        prefix = self._slug(f"{scope[1]}-{scope[2]}-{tool_key}")[:47]
+        return f"{prefix}-{digest}"
 
     def _slug(self, value: str) -> str:
         slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip("-")

@@ -445,6 +445,33 @@ Redis 完全丢失后可从 PostgreSQL 意图与 Docker 清单重新投递孤儿
 丢失期间的准入配额，也不保证跨 daemon 恢复。生产必须配置 Redis 持久化；全量丢失后应暂停
 新任务准入，完成资源对账和配额恢复后再开放。自动化准入恢复仍待补齐。
 
+原生 Playwright 浏览器已按会话分别加锁：同一浏览器串行执行，不同浏览器可并行。
+MCP 浏览器名称包含 Project/Session/Turn/Run/RunItem/Attempt/工具类别的完整标识摘要，
+避免长 ID 截断或字符替换导致复用错误。`list`、`close-all`、`kill-all` 工具命令仅作用于
+当前调用对应的浏览器；全局关闭仅保留在服务端生命周期 API。关闭不存在的会话不会启动浏览器。
+UI 探索每次调用独立创建浏览器，并仅关闭自己的实例。MCP 和 UI 探索产物按调用 UUID 分目录，
+会话归属仍由资源/产物记录维护；浏览器工作目录使用短摘要，避免重复拼接长标识触发 Windows 路径限制。
+
+浏览器启动、命令超时和取消均纳入清理；等待同会话锁时取消不会关闭正在执行的另一条命令。
+重复取消不会中断已启动的清理任务。清理依次尝试 Context、Browser、Playwright driver，
+失败记录阶段与错误类型并保留重试入口。服务关闭停止新命令，取消在途命令并等待清理。
+实现依据为 [Python asyncio.Lock](https://docs.python.org/3/library/asyncio-sync.html#asyncio.Lock)、
+[Playwright Browser.close](https://playwright.dev/python/docs/api/class-browser#browser-close)
+及已安装 Playwright 的 `async_api/_context_manager.py`（driver 在 `start()` 返回前已启动）。
+
+兼容性变化：`--profile` 现在表示 profile 根目录，实际目录追加当前浏览器作用域摘要，
+不同 Attempt 不读取同一 profile；资源记录使用运行时返回的实际目录。
+不迁移或删除原 profile。默认临时 profile 跟随首次调用的独立产物目录，关闭后重新创建不承诺恢复登录状态。
+没有新增模型设置、依赖或部署配置，沿用 `ORCHESTRATION__BROWSER_ACTION_TIMEOUT_SECONDS`。
+
+真实浏览器回归：在 `Agent_Server` 目录设置 `RUN_LIVE_BROWSER_TESTS=1` 后执行
+`uv run --no-sync python -m pytest tests/test_live_browser_lifecycle.py -q --tb=short`。
+需要已安装的 Chromium；使用本地页面验证并行、Cookie/profile 隔离、Attempt 隔离、
+产物保留、启动故障/取消、超时和关闭，不调用外部站点或模型。
+单元回归在 `tests/test_python_playwright_lifecycle.py`。
+本单元仍未完成持久浏览器完整租约、跨 Worker 关闭、Worker 强杀回收或录制/CDP 浏览器治理；
+现有 MCP 租约仍仅覆盖调用，不能据此宣称持久浏览器容量已经受控。
+
 ### 2. 启动前端
 
 ```bash

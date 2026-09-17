@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
@@ -36,6 +37,9 @@ class UIExplorationService:
         self._playwright_runtime = PythonPlaywrightCliRuntime(settings)
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
 
+    async def close(self) -> None:
+        await self._playwright_runtime.close()
+
     async def explore(self, arguments: dict[str, Any], context: ToolExecutionContext) -> dict[str, Any]:
         target_url = str(arguments.get("target_url") or arguments.get("url") or "").strip()
         if not target_url:
@@ -47,7 +51,9 @@ class UIExplorationService:
         max_interactions = max(0, min(max_interactions, 32))
         same_origin_only = bool(arguments.get("same_origin_only", True))
         login_credentials = arguments.get("login_credentials") if isinstance(arguments.get("login_credentials"), dict) else {}
-        output_dir = self._artifact_root / self._slug(context.session_id) / self._slug(context.turn_id) / "ui-page-explorer"
+        invocation_id = uuid4().hex
+        session_name = f"ui-explorer-{invocation_id}"
+        output_dir = self._artifact_root / "ui-page-explorer" / invocation_id
         output_dir.mkdir(parents=True, exist_ok=True)
         filename = "ui_explorer_graph.json"
         args = [
@@ -76,14 +82,14 @@ class UIExplorationService:
             base_timeout = int(self._settings.orchestration.browser_action_timeout_seconds or 15)
             per_page_budget = max(base_timeout, 8 + max_interactions * 4)
             command_result = await self._playwright_runtime.run(
-                session_name=f"ui-explorer-{context.session_id}",
+                session_name=session_name,
                 args=args,
                 cwd=output_dir,
                 raw=True,
                 timeout_seconds=max(45, max_pages * per_page_budget),
             )
         finally:
-            await self._playwright_runtime.close_all()
+            await self._playwright_runtime.close_session(session_name)
         artifacts = list(command_result.get("artifacts") or [])
         if int(command_result.get("exit_code") or 0) != 0:
             return {

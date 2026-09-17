@@ -48,7 +48,11 @@ def test_browser_capability_claims_session_lease_and_releases():
         assert result["status"] == "success"
         assert manager.acquired[0]["resource_id"] == "browser:s1"
         assert manager.acquired[0]["project_id"] == "p1"
-        assert manager.bound[0][1] == "s1-t1-browser-automation"
+        assert manager.bound[0][1] == runtime._playwright_session_name({
+            "session_id": "s1", "turn_id": "t1", "context_bundle": {
+                "project_id": "p1", "test_run_id": "r1", "run_item_id": "i1", "attempt_id": "a1",
+            },
+        }, "browser-automation")
         assert len(manager.released) == 1
     asyncio.run(run())
 

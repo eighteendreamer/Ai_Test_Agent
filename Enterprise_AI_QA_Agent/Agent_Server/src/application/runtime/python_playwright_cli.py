@@ -3,8 +3,10 @@
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import shutil
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +14,14 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
 from src.core.config import Settings
+
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class _SessionLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
 
 
 @dataclass
@@ -43,6 +53,8 @@ class _BrowserSession:
     page: Any
     output_dir: Path
     persistent: bool = False
+    profile_dir: Path | None = None
+    driver_start: asyncio.Task | None = None
     ref_map: dict[str, str] = field(default_factory=dict)
     console_messages: list[dict[str, Any]] = field(default_factory=list)
     network_events: list[dict[str, Any]] = field(default_factory=list)
@@ -80,7 +92,11 @@ class PythonPlaywrightCliRuntime:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._sessions: dict[str, _BrowserSession] = {}
-        self._lock = asyncio.Lock()
+        self._session_locks: dict[str, _SessionLock] = {}
+        self._commands: set[asyncio.Task] = set()
+        self._closing: dict[str, asyncio.Task] = {}
+        self._shutdown_task: asyncio.Task | None = None
+        self._closed = False
 
     async def run(
         self,
@@ -92,11 +108,15 @@ class PythonPlaywrightCliRuntime:
     ) -> dict[str, Any]:
         timeout = timeout_seconds or int(self._settings.orchestration.browser_action_timeout_seconds or 30)
         timeout = max(1, min(timeout, 1800))
+        if self._closed:
+            return PlaywrightCliCommandResult(
+                command=self._format_command(session_name, args, raw),
+                exit_code=1, stderr="Browser runtime is shutting down.",
+            ).model_dump()
+        operation = asyncio.create_task(self._run_locked(session_name, args, cwd, raw))
+        self._commands.add(operation)
         try:
-            return await asyncio.wait_for(
-                self._run_locked(session_name=session_name, args=args, cwd=cwd, raw=raw),
-                timeout=timeout,
-            )
+            return await asyncio.wait_for(operation, timeout=timeout)
         except asyncio.TimeoutError:
             return PlaywrightCliCommandResult(
                 command=self._format_command(session_name, args, raw),
@@ -104,15 +124,32 @@ class PythonPlaywrightCliRuntime:
                 stderr=f"python playwright-cli command timed out after {timeout}s",
                 timed_out=True,
             ).model_dump()
+        finally:
+            self._commands.discard(operation)
+
+    @asynccontextmanager
+    async def _session_scope(self, session_name: str):
+        # Keep the same lock while callers are queued, including during cleanup.
+        guard = self._session_locks.setdefault(session_name, _SessionLock())
+        guard.users += 1
+        try:
+            async with guard.lock:
+                yield
+        finally:
+            guard.users -= 1
+            if not guard.users and session_name not in self._sessions and session_name not in self._closing:
+                self._session_locks.pop(session_name, None)
 
     async def _run_locked(self, session_name: str, args: list[str], cwd: Path, raw: bool) -> dict[str, Any]:
-        async with self._lock:
+        async with self._session_scope(session_name):
             command = self._format_command(session_name, args, raw)
             if not args:
                 return self._success(command, self._help_text())
 
             normalized_args, global_raw = self._strip_global_options(args)
             raw = raw or global_raw
+            if not normalized_args:
+                return self._success(command, self._help_text())
             verb = normalized_args[0].strip().lower()
             rest = normalized_args[1:]
 
@@ -122,18 +159,25 @@ class PythonPlaywrightCliRuntime:
                 if verb in {"--version", "-v", "version"}:
                     return self._success(command, "0.1.7-python\n")
                 if verb == "list":
-                    return self._success(command, self._list_sessions(raw))
-                if verb == "close-all":
-                    await self.close_all()
-                    return self._success(command, "" if raw else "Closed all browser sessions.\n")
-                if verb == "kill-all":
-                    await self.close_all()
-                    return self._success(command, "" if raw else "Killed all browser sessions.\n")
+                    return self._success(command, self._list_sessions(raw, session_name))
+                if verb in {"close", "close-all", "kill-all", "delete-data"}:
+                    session = self._sessions.get(session_name)
+                    await self._close_session(session_name)
+                    if verb == "delete-data" and session and session.output_dir.exists():
+                        shutil.rmtree(session.output_dir)
+                    return self._success(command, "" if raw else f"Closed browser session '{session_name}'.\n")
 
                 session = await self._ensure_session(session_name, cwd, rest if verb == "open" else [])
                 stdout, artifacts = await self._execute(session, verb, rest, cwd, raw)
                 return self._success(command, stdout, artifacts)
+            except asyncio.CancelledError:
+                LOGGER.info("browser_command_cancelled", extra={"browser_session": session_name, "verb": verb})
+                await self._close_session(session_name)
+                raise
             except Exception as exc:
+                LOGGER.warning("browser_command_failed", extra={
+                    "browser_session": session_name, "verb": verb, "error_type": type(exc).__name__,
+                })
                 return PlaywrightCliCommandResult(
                     command=command,
                     exit_code=1,
@@ -141,13 +185,46 @@ class PythonPlaywrightCliRuntime:
                 ).model_dump()
 
     async def close_all(self) -> None:
-        for session_name in list(self._sessions):
-            await self._close_session(session_name)
+        results = await asyncio.gather(*(
+            self.close_session(name) for name in set(self._sessions) | set(self._session_locks) | set(self._closing)
+        ), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+
+    async def close(self) -> None:
+        """Stop admission and owned commands before disposing every browser."""
+        self._closed = True
+        if self._shutdown_task is None or (
+            self._shutdown_task.done() and self._shutdown_task.exception() is not None
+        ):
+            self._shutdown_task = asyncio.create_task(self._shutdown())
+        await asyncio.shield(self._shutdown_task)
+
+    async def _shutdown(self) -> None:
+        commands = list(self._commands)
+        for task in commands:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*commands, return_exceptions=True)
+        await self.close_all()
 
     async def close_session(self, session_name: str) -> None:
-        await self._close_session(session_name)
+        async with self._session_scope(session_name):
+            await self._close_session(session_name)
+
+    def session_info(self, session_name: str) -> dict[str, Any] | None:
+        session = self._sessions.get(session_name)
+        if session is None or session.page is None:
+            return None
+        return {
+            "output_dir": str(session.output_dir),
+            "profile_dir": str(session.profile_dir) if session.profile_dir else None,
+        }
 
     async def _ensure_session(self, session_name: str, cwd: Path, open_args: list[str]) -> _BrowserSession:
+        if session_name in self._closing:
+            await self._close_session(session_name)
         if session_name in self._sessions:
             return self._sessions[session_name]
 
@@ -164,10 +241,10 @@ class PythonPlaywrightCliRuntime:
         headed = "--headed" in open_args or not bool(self._settings.orchestration.browser_headless)
         persistent = "--persistent" in open_args or bool(self._option_value(open_args, "--profile"))
         profile = self._option_value(open_args, "--profile")
-        output_dir = cwd / ".playwright-cli" / self._slug(session_name)
+        scope_digest = hashlib.sha256(session_name.encode("utf-8")).hexdigest()[:32]
+        output_dir = cwd / ".playwright-cli" / scope_digest
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        playwright = await async_playwright().start()
         viewport = {
             "width": int(self._settings.orchestration.browser_window_width or 1440),
             "height": int(self._settings.orchestration.browser_window_height or 960),
@@ -180,33 +257,33 @@ class PythonPlaywrightCliRuntime:
         if browser_name == "edge":
             browser_type_name = "chromium"
             launch_options["channel"] = "msedge"
-        browser_type = getattr(playwright, browser_type_name, playwright.chromium)
-
-        if persistent:
-            profile_dir = Path(profile) if profile else output_dir / "profile"
-            context = await browser_type.launch_persistent_context(
-                str(profile_dir),
-                viewport=viewport,
-                **launch_options,
-            )
-            browser = None
-            page = context.pages[0] if context.pages else await context.new_page()
-        else:
-            browser = await browser_type.launch(**launch_options)
-            context = await browser.new_context(viewport=viewport)
-            page = await context.new_page()
-
         session = _BrowserSession(
-            name=session_name,
-            playwright=playwright,
-            browser=browser,
-            context=context,
-            page=page,
-            output_dir=output_dir,
-            persistent=persistent,
+            name=session_name, playwright=None, browser=None, context=None,
+            page=None, output_dir=output_dir, persistent=persistent,
+            driver_start=asyncio.create_task(async_playwright().start()),
         )
-        self._wire_session_events(session)
         self._sessions[session_name] = session
+        try:
+            # start() creates a subprocess before returning its handle. Preserve
+            # that future so cancellation can await the handle and stop it.
+            session.playwright = await asyncio.shield(session.driver_start)
+            browser_type = getattr(session.playwright, browser_type_name, session.playwright.chromium)
+            if persistent:
+                profile_dir = Path(profile) / scope_digest if profile else output_dir / "profile"
+                session.profile_dir = profile_dir
+                session.context = await browser_type.launch_persistent_context(
+                    str(profile_dir), viewport=viewport, **launch_options,
+                )
+                session.page = session.context.pages[0] if session.context.pages else await session.context.new_page()
+            else:
+                session.browser = await browser_type.launch(**launch_options)
+                session.context = await session.browser.new_context(viewport=viewport)
+                session.page = await session.context.new_page()
+            self._wire_session_events(session)
+        except BaseException:
+            await self._close_session(session_name)
+            raise
+        LOGGER.info("browser_session_started", extra={"browser_session": session_name, "persistent": persistent})
         return session
 
     def _wire_session_events(self, session: _BrowserSession) -> None:
@@ -259,15 +336,6 @@ class PythonPlaywrightCliRuntime:
             await page.goto(self._normalize_url(args[0]), wait_until="domcontentloaded")
             await self._wait_for_view_stable(session)
             return await self._page_output(session, raw)
-        if verb == "close":
-            await self._close_session(session.name)
-            return ("" if raw else f"Closed browser session '{session.name}'.\n", [])
-        if verb == "delete-data":
-            output_dir = session.output_dir
-            await self._close_session(session.name)
-            if output_dir.exists():
-                shutil.rmtree(output_dir, ignore_errors=True)
-            return ("" if raw else f"Deleted user data for {session.name}.\n", [])
         if verb == "resize":
             self._require_args(args, 2, "resize <width> <height>")
             width, height = int(args[0]), int(args[1])
@@ -1818,15 +1886,53 @@ class PythonPlaywrightCliRuntime:
         raise RuntimeError(f"Unsupported storage command '{storage_name}-{action}'.")
 
     async def _close_session(self, session_name: str) -> None:
-        session = self._sessions.pop(session_name, None)
-        if not session:
-            return
-        try:
-            await session.context.close()
-        finally:
-            if session.browser:
-                await session.browser.close()
-            await session.playwright.stop()
+        task = self._closing.get(session_name)
+        if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
+            session = self._sessions.get(session_name)
+            if session is None:
+                return
+            task = asyncio.create_task(self._dispose_session(session))
+            self._closing[session_name] = task
+            task.add_done_callback(lambda completed: self._cleanup_done(session_name, completed))
+        # A second cancellation must not interrupt context/browser/driver cleanup.
+        await asyncio.shield(task)
+
+    def _cleanup_done(self, session_name: str, task: asyncio.Task) -> None:
+        if task.cancelled() or task.exception() is not None:
+            LOGGER.error("browser_session_cleanup_failed", extra={"browser_session": session_name})
+            return  # Keep the session and failed task available for an explicit retry.
+        self._closing.pop(session_name, None)
+        guard = self._session_locks.get(session_name)
+        if guard is not None and not guard.users:
+            self._session_locks.pop(session_name, None)
+
+    async def _dispose_session(self, session: _BrowserSession) -> None:
+        errors: list[Exception] = []
+        if session.playwright is None and session.driver_start is not None:
+            try:
+                session.playwright = await session.driver_start
+            except Exception as exc:
+                LOGGER.warning("browser_driver_start_failed", extra={
+                    "browser_session": session.name, "error_type": type(exc).__name__,
+                })
+        for phase, handle, method in (
+            ("context", session.context, "close"),
+            ("browser", session.browser, "close"),
+            ("driver", session.playwright, "stop"),
+        ):
+            if handle is None:
+                continue
+            try:
+                await getattr(handle, method)()
+            except Exception as exc:
+                errors.append(exc)
+                LOGGER.error("browser_cleanup_phase_failed", extra={
+                    "browser_session": session.name, "phase": phase, "error_type": type(exc).__name__,
+                })
+        if errors:
+            raise errors[0]
+        self._sessions.pop(session.name, None)
+        LOGGER.info("browser_session_closed", extra={"browser_session": session.name})
 
     def _success(
         self,
@@ -1841,7 +1947,7 @@ class PythonPlaywrightCliRuntime:
             artifacts=artifacts or [],
         ).model_dump()
 
-    def _list_sessions(self, raw: bool) -> str:
+    def _list_sessions(self, raw: bool, session_name: str) -> str:
         data = [
             {
                 "name": name,
@@ -1850,6 +1956,7 @@ class PythonPlaywrightCliRuntime:
                 "persistent": session.persistent,
             }
             for name, session in sorted(self._sessions.items())
+            if name == session_name
         ]
         if raw:
             return json.dumps(data, ensure_ascii=False) + "\n"

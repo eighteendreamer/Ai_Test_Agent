@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -720,7 +721,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await tool_runtime_service.close()
+        execution_shutdown = await asyncio.gather(
+            tool_runtime_service.close(), mcp_runtime_service.close(), return_exceptions=True,
+        )
         if task_queue is not None:
             await task_queue.close()
         await hot_memory_store.close()
@@ -734,6 +737,9 @@ async def lifespan(app: FastAPI):
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()
         await observability_service.flush()
+        for result in execution_shutdown:
+            if isinstance(result, BaseException):
+                raise result
 
 
 settings = get_settings()

@@ -3769,8 +3769,13 @@ class ToolRuntimeService:
         return payload
 
     async def close(self) -> None:
-        await self._mock_target_runner.close()
-        await self._security_execution_environment.close()
+        operations = [self._mock_target_runner.close(), self._security_execution_environment.close()]
+        if self._ui_exploration_service is not None:
+            operations.append(self._ui_exploration_service.close())
+        results = await asyncio.gather(*operations, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
     async def _cleanup_mock_target(self, resource) -> None:
         await self._mock_target_runner.stop(container_name=resource.resource_key, session_id=resource.session_id)
