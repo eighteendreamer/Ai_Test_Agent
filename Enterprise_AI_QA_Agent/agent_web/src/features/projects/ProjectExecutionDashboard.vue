@@ -41,9 +41,8 @@ const resourceRows = computed(() => Object.entries(resourceLabels).map(([type, l
   active: occupancy.value?.by_type[type] ?? 0,
   cleanup: occupancy.value?.cleanup_pending.filter(item => item.resource_type === type).length ?? 0,
   occupied: occupancy.value?.quota_usage[`project_resource_type:${props.projectId}:${type}`] ?? 0,
-  limit: quotas.value?.find(item => item.resource_type === type && type !== "agent")?.limit,
+  limit: quotas.value?.find(item => item.resource_type === type)?.limit,
 })));
-const projectLimit = computed(() => quotas.value?.find(item => item.resource_type === "agent")?.limit);
 
 function limitLabel(limit?: number) {
   return limit ? String(limit) : "未单独设限";
@@ -123,8 +122,8 @@ onBeforeUnmount(stop);
     <small v-if="summary">执行统计更新于 {{ formatServerDateTime(summary.sampled_at) }}</small>
     <template v-if="occupancy">
       <p>本项目资源槽位占用 {{ occupancy.quota_usage[`project:${projectId}`] ?? 0 }}
-        / {{ quotas === null ? '配额未知' : limitLabel(projectLimit) }}，
-        其中活动资源 {{ occupancy.active_count }}，待清理 {{ occupancy.cleanup_pending_count }}。</p>
+        ，活动资源 {{ occupancy.active_count - (occupancy.by_type.agent ?? 0) }}，待清理 {{ occupancy.cleanup_pending_count }}。
+        Agent 任务占用独立计数，见下表。</p>
       <div class="table-scroll">
         <table aria-label="项目资源占用">
           <thead><tr><th>资源</th><th>活动</th><th>待清理</th><th>占用槽位</th><th>项目类型配额</th></tr></thead>

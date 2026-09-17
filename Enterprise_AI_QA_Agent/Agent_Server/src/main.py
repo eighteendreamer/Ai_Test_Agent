@@ -193,6 +193,9 @@ async def lifespan(app: FastAPI):
         scope="global", identifier="all", limit=settings.orchestration.resource_global_limit,
     )
     app.state.resource_lease_manager = resource_lease_manager
+    await resource_lease_manager.configure_quota(
+        scope="resource_type", identifier="agent", limit=settings.orchestration.agent_task_limit,
+    )
     await resource_lease_manager.configure_quota(scope="resource_type", identifier="browser",
         limit=settings.orchestration.resource_browser_limit)
     resource_quota_service = ResourceQuotaService(ResourceQuotaStore(settings), resource_lease_manager)

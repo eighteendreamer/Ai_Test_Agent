@@ -193,6 +193,7 @@ class OrchestrConfig(BaseModel):
     test_case_vector_top_k: int = Field(default=6, ge=1, le=50)
     test_case_vector_candidate_multiplier: int = Field(default=8, ge=2, le=50)
     resource_global_limit: int = Field(default=20, ge=1)
+    agent_task_limit: int = Field(default=20, ge=1)
     resource_default_lease_seconds: int = Field(default=300, gt=0)
     resource_docker_slots: int = Field(default=10, ge=1)
     resource_docker_command_timeout_seconds: float = Field(default=60.0, gt=0)

@@ -58,6 +58,20 @@ describe("project execution dashboard", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("shows Agent task limits separately from physical capacity", async () => {
+    api.getResourceOccupancy.mockResolvedValue({ active_count: 3, cleanup_pending_count: 0,
+      cleanup_pending: [], by_type: { agent: 2, browser: 1 }, leases: [],
+      quota_usage: { "project:p1": 1, "project_resource_type:p1:agent": 2 } });
+    api.listResourceQuotas.mockResolvedValue([{ resource_type: "agent", limit: 5 }]);
+    const wrapper = mount(ProjectExecutionDashboard, { props: { projectId: "p1" } });
+    try {
+      await flushPromises();
+      expect(wrapper.findAll("tbody tr")[0].findAll("td").map(td => td.text())).toEqual(["Agent", "2", "0", "2", "5"]);
+      expect(wrapper.text()).toContain("本项目资源槽位占用 1");
+      expect(wrapper.text()).toContain("活动资源 1");
+    } finally { wrapper.unmount(); }
+  });
+
   it("preserves known data with an explicit stale warning when Redis fails", async () => {
     const wrapper = mount(ProjectExecutionDashboard, { props: { projectId: "p1" } });
     try {

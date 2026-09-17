@@ -927,7 +927,7 @@ async def test_execution_service_renews_resource_leases_and_rejects_failed_renew
     assert result.status == expected_status
     assert resources.renew_calls
     assert all(seconds == 30 for _, seconds in resources.renew_calls)
-    assert resources.released == ["docker-slot-0"]
+    assert resources.released == ["docker-slot-0", "run-item:item-1"]
     if renew_result:
         assert runs.completed_payload.status == "passed"
     else:

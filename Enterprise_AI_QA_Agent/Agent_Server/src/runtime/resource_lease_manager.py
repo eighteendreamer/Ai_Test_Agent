@@ -174,13 +174,7 @@ class RedisResourceLeaseManager:
         _validate_part(worker_id, "worker_id")
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
-        quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", resource_type)]
-        if project_id:
-            quota_fields.append(_quota_field("project", project_id))
-            quota_fields.append(_quota_field("project_resource_type", f"{project_id}:{resource_type}"))
-        if run_id:
-            quota_fields.append(_quota_field("run", run_id))
-            quota_fields.append(_quota_field("run_resource_type", f"{run_id}:{resource_type}"))
+        quota_fields = _lease_quota_fields(resource_type, project_id, run_id)
         lease_token = uuid.uuid4().hex
         context = get_request_context()
         request_id = context.request_id if context is not None else new_id("req")
@@ -237,13 +231,7 @@ class RedisResourceLeaseManager:
 
     async def release(self, lease: ResourceLease) -> bool:
         """Release a call-scoped lock; resource lifetimes must use retire()."""
-        quota_fields = [_quota_field("global", "all"), _quota_field("resource_type", lease.resource_type)]
-        if lease.project_id:
-            quota_fields.append(_quota_field("project", lease.project_id))
-            quota_fields.append(_quota_field("project_resource_type", f"{lease.project_id}:{lease.resource_type}"))
-        if lease.run_id:
-            quota_fields.append(_quota_field("run", lease.run_id))
-            quota_fields.append(_quota_field("run_resource_type", f"{lease.run_id}:{lease.resource_type}"))
+        quota_fields = _lease_quota_fields(lease.resource_type, lease.project_id, lease.run_id)
         result = await self._client.eval(
             RELEASE, 4, self._lease_key(lease.resource_type, lease.resource_id),
             self._key("quota:usage"), self._key("lease:registry"), self._key("lease:metadata"),
@@ -384,6 +372,19 @@ class RedisResourceLeaseManager:
 
     def _lease_key(self, resource_type: str, resource_id: str) -> str:
         return self._key(f"lease:{resource_type}:{resource_id}")
+
+
+def _lease_quota_fields(resource_type: str, project_id: str | None, run_id: str | None) -> list[str]:
+    # A task owns an execution slot as well as its child resources. Charging
+    # both to physical capacity would let a task block its own browser/Docker.
+    fields = [] if resource_type == "agent" else [_quota_field("global", "all")]
+    fields.append(_quota_field("resource_type", resource_type))
+    for scope, identifier in (("project", project_id), ("run", run_id)):
+        if identifier:
+            if resource_type != "agent":
+                fields.append(_quota_field(scope, identifier))
+            fields.append(_quota_field(f"{scope}_resource_type", f"{identifier}:{resource_type}"))
+    return fields
 
 
 def _quota_field(scope: str, identifier: str) -> str:

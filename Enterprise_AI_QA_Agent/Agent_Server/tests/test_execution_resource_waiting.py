@@ -76,7 +76,7 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
     service = _ExecutionService(run_service=object(), test_case_service=object(), adapter=object(), security_settings=settings)
     service.set_resource_lease_manager(manager)
     leases = await service._claim_execution_resources(run=run, item=item, version=version, attempt_id="attempt-1")
-    assert [call["resource_type"] for call in manager.calls] == ["test_account", "environment", "docker"]
+    assert [call["resource_type"] for call in manager.calls] == ["agent", "test_account", "environment", "docker"]
     assert manager.calls[-1]["resource_ids"] == ["docker-slot-0", "docker-slot-1"]
     assert all(lease.attempt_id == "attempt-1" for lease in leases)
     await service._release_execution_resources(leases)
@@ -84,7 +84,7 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
     manager.calls.clear()
     run = run.model_copy(update={"mode_key": "performance_testing"})
     leases = await service._claim_execution_resources(run=run, item=item, version=version, attempt_id="attempt-2")
-    assert [call["resource_type"] for call in manager.calls] == ["test_account", "environment"]
+    assert [call["resource_type"] for call in manager.calls] == ["agent", "test_account", "environment"]
     await service._release_execution_resources(leases)
 
 
@@ -107,10 +107,11 @@ async def test_security_foreground_admission_matches_container_lifecycle(reuse, 
     class Manager:
         async def acquire_first_available(self, **kwargs):
             claimed.append(kwargs["resource_type"])
-            return object()
+            from types import SimpleNamespace
+            return SimpleNamespace(resource_type=kwargs["resource_type"], resource_id=kwargs["resource_ids"][0])
 
     service = _ExecutionService(run_service=object(), test_case_service=object(), adapter=object(), security_settings=settings)
     service.set_resource_lease_manager(Manager())
     await service._claim_execution_resources(run=run.model_copy(update={"mode_key": "security_testing"}),
         item=item, version=version, attempt_id="security-attempt")
-    assert claimed == ([] if managed else ["docker"])
+    assert claimed == (["agent"] if managed else ["agent", "docker"])

@@ -260,7 +260,8 @@ class TestRunExecutionService:
                 )
                 with bind_request_context(**resource_context):
                     with trace_scope as item_trace:
-                        outcome = await self._adapter.execute(
+                        outcome = await self._execute_with_lease_watch(
+                            monitors=[task for task in (heartbeat_task, resource_heartbeat_task) if task is not None],
                             case=case,
                             version=version,
                             run=run,
@@ -396,6 +397,36 @@ class TestRunExecutionService:
                     pass
             await self._release_execution_resources(resource_leases)
 
+    async def _execute_with_lease_watch(self, *, monitors: list[asyncio.Task], **kwargs):
+        # Same FIRST_COMPLETED ownership pattern as RedisTaskWorker._run_handler.
+        # Do not start a runner if ownership was lost during admission/approval.
+        if any(task.done() for task in monitors):
+            raise RuntimeError("Execution lease heartbeat stopped before runner admission")
+        execution = asyncio.create_task(self._adapter.execute(**kwargs))
+        try:
+            done, _ = await asyncio.wait({execution, *monitors}, return_when=asyncio.FIRST_COMPLETED)
+            if any(task in done for task in monitors):
+                logger.error("test_run_execution_ownership_lost", extra={
+                    "run_id": kwargs["run"].id, "run_item_id": kwargs["item"].id,
+                    "attempt_id": kwargs.get("attempt_id"),
+                })
+                raise RuntimeError("Execution lease heartbeat failed; runner cancelled")
+            return await execution
+        finally:
+            # Await runner cleanup before retiring its slots, including repeated
+            # Worker cancellation while a browser or container is closing.
+            if not execution.done():
+                execution.cancel()
+            settled = asyncio.gather(execution, return_exceptions=True)
+            cancelled = False
+            while not settled.done():
+                try:
+                    await asyncio.shield(settled)
+                except asyncio.CancelledError:
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
+
     async def _claim_execution_resources(self, *, run, item, version, attempt_id: str | None = None) -> list[ResourceLease]:
         manager = self._resource_lease_manager
         if manager is None:
@@ -409,7 +440,7 @@ class TestRunExecutionService:
             "project_id": run.project_id, "session_id": run.session_id, "run_id": run.id,
             "run_item_id": item.id, "attempt_id": attempt_id,
         }
-        requirements: list[tuple[str, list[str]]] = []
+        requirements: list[tuple[str, list[str]]] = [("agent", [f"run-item:{item.id}"])]
         account_id = arguments.get("test_account_id") or arguments.get("account_id")
         if account_id:
             requirements.append(("test_account", [str(account_id)]))
@@ -437,9 +468,15 @@ class TestRunExecutionService:
                 claimed.append(await manager.acquire_first_available(
                     resource_type=resource_type, resource_ids=resource_ids, **common,
                 ))
-        except Exception:
+        except BaseException:
             await self._release_execution_resources(claimed)
             raise
+        logger.info("test_run_execution_resources_acquired", extra={
+            "project_id": run.project_id, "run_id": run.id, "run_item_id": item.id,
+            "attempt_id": attempt_id, "worker_id": owner,
+            "resources": [{"resource_type": lease.resource_type, "resource_id": lease.resource_id}
+                          for lease in claimed],
+        })
         return claimed
 
     async def _release_execution_resources(self, leases: list[ResourceLease]) -> None:
@@ -466,8 +503,8 @@ class TestRunExecutionService:
         Resource leases are independent from the PostgreSQL RunItem lease.  A
         long-running case must therefore renew both contracts; otherwise a
         browser, Docker slot, account, or environment can be reclaimed while
-        the adapter is still using it.  Any rejected/failed renewal is kept in
-        the shared execution outcome so the run cannot be reported as passed.
+        the adapter is still using it. A rejected/failed renewal stops this
+        monitor so the execution race cancels the runner and records the error.
         """
         manager = self._resource_lease_manager
         if manager is None or not leases:
@@ -530,6 +567,8 @@ class TestRunExecutionService:
                     "test_run_resource_lease_heartbeat_rejected",
                     extra=context,
                 )
+            if errors:
+                return
 
     async def _bind_external_resources(self, leases: list[ResourceLease], outcome) -> None:
         if self._resource_lease_manager is None or not leases or outcome is None:
@@ -1030,6 +1069,7 @@ class TestRunExecutionService:
                         "lease_token_present": bool(lease_token),
                     },
                 )
+                return
 
     async def _trusted_case_context(self, *, run, version) -> dict:
         if run.mode_key != "security_testing":

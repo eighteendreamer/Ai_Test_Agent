@@ -567,7 +567,8 @@ Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
 资源占用和项目配额复用 `/api/v1/resource-occupancy?project_id=...` 与
 `/api/v1/projects/{project_id}/resource-quotas`。看板分列活动资源、待清理资源、占用槽位和项目类型配额。
 待清理资源仍计入槽位，过期尚未扫描的资源也可能保留占用；配额为 0 按现有执行器语义表示该级未单独设限。
-当前项目 `agent` 配额记录对应总资源槽位，页面明确显示为“本项目资源槽位”，不误标为 Agent 执行数。
+项目和运行的 `agent` 配额限制逻辑任务数，与浏览器、Docker、账号、环境槽位分别计数。
+页面“本项目资源槽位”只统计物理资源；Agent 行显示独立任务占用与项目任务配额。
 实际准入仍由 Redis 原子租约校验决定，页面快照不参与调度。公开接口不返回租约令牌、内含令牌的清理任务 ID
 或内部 Redis 路由字段；Redis 读取失败返回 503，页面保留上次快照并显示过期警告，不伪报空闲。
 
@@ -586,6 +587,38 @@ VITE_PROJECT_MONITOR_TIMEOUT_MS=10000
 `uv run --no-sync python -m pytest tests/test_project_execution_summary.py tests/test_resource_occupancy.py -q`，
 覆盖超过 20 个运行的全量计数、真实 PostgreSQL 状态变化、项目隔离、真实 Redis 占用和清理、故障可见性。
 前端执行 `npm test` 与 `npm run build`；组件测试覆盖迟到响应、资源查询失败、请求超时和卸载取消。
+
+### RunItem 任务准入与租约失效中断
+
+每个 RunItem 在审批通过后、调用执行器前领取 `agent:run-item:{item_id}` 逻辑租约；
+不使用浏览器/Docker 的条目同样受限。调用已有 Redis CLAIM Lua 一次校验并增加全局 Agent、
+项目 Agent、TestRun Agent 计数，再领取所需账号、环境或容器；部分领取失败释放已取得的租约。
+配额不足持久化 `waiting_resource` 和具体 quota 字段，Worker 延后投递；恢复时创建新 Attempt，
+不重置已完成条目。任务完成、异常、取消后释放任务槽位；外部资源仍按既有持久化清理回执释放容量。
+
+后端环境变量（实际 `.env` 与 `.env.example`）：
+
+```ini
+ORCHESTRATION__AGENT_TASK_LIMIT=20
+ORCHESTRATION__RESOURCE_GLOBAL_LIMIT=20
+```
+
+前者配置 `resource_type:agent`，后者仍限制物理资源槽位总数。逻辑任务不消耗物理槽位，
+因此任务配额为 1 时，它仍可领取自己的浏览器或 Docker。项目和运行的 Agent 配额由已有配额 API
+保存 PostgreSQL，映射为 `project_resource_type:{id}:agent` / `run_resource_type:{id}:agent`；
+启动时重新加载，并清除这些记录以前错误映射的资源总额限制。升级需协调重启 API 与 Worker，
+不能让新旧配额解释同时运行；模型设置与依赖不变，不需要业务表迁移。
+
+执行器与 PostgreSQL/Redis 心跳使用 `RedisTaskWorker._run_handler` 已有的 `FIRST_COMPLETED`
+监控方式。任一心跳拒绝续期或报错，即取消执行器并等待其清理，再尝试以原 PostgreSQL 令牌
+记录错误结果；旧令牌不能覆盖新 owner 的结果。重复 Worker 取消不会提前释放尚在清理的任务槽位。
+执行器必须遵循协作取消；失联/强杀进程继续由 TTL、Recovery 与外部资源 Cleanup 接管。
+
+验证：`RUN_LIVE_BROWSER_TESTS=1 uv run --no-sync python -m pytest tests/test_live_task_admission.py -q`
+（PowerShell 先设置 `$env:RUN_LIVE_BROWSER_TESTS='1'`），使用隔离的 PostgreSQL 表、Redis 前缀及真实 Chromium。
+覆盖三级任务配额、等待状态落库、新 Attempt 重试、任务满额下浏览器执行、心跳故障中断和重复取消清理顺序。
+测试依据项目课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、幂等与补偿原则；不以仅检查返回值替代资源和状态断言。
+当前准入覆盖 TestRun 执行链路；普通对话 Agent Turn 的队列化与同级准入仍需接入，不能据此宣称所有 Agent 已受控。
 
 ### 2. 启动前端
 
