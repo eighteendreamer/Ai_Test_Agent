@@ -49,6 +49,7 @@ def build_default_registry(
     bridge: EmbeddedBridge | None = None,
     *,
     settings: Settings | None = None,
+    resource_manager=None,
 ) -> DriverRegistry:
     """默认注册表：embedded（桌面端）+ cdp-attach（外部浏览器）+ playwright-managed（服务端自启）。"""
 
@@ -61,6 +62,6 @@ def build_default_registry(
     registry.register("embedded", _embedded_factory)
     registry.register("cdp-attach", cdp_attach_factory)
     registry.register(
-        "playwright-managed", partial(playwright_managed_factory, settings=settings)
+        "playwright-managed", partial(playwright_managed_factory, settings=settings, resource_manager=resource_manager)
     )
     return registry

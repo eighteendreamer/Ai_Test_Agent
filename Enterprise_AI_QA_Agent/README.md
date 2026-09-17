@@ -511,7 +511,23 @@ Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
 需要实际 Redis、PostgreSQL 和 Chromium；覆盖空闲续租、配额等待、两实例关闭、命令中断、
 失败重试、Worker 强杀（含 PID 绑定前）、清单补偿、旧资源清理竞态和真实应用启动/健康接口。
 测试使用独立 Redis namespace，并清除自己的数据库记录。
-尚未完成活动浏览器命令的跨 Worker 转发、录制/CDP 浏览器治理、Linux 实机回归与完整并发/soak 验收。
+受管录制 `playwright-managed` 也通过同一个原生浏览器运行时申请租约，和 Agent/UI 探索共用配额。
+每个 recording 使用独立 profile，旧的共享 `recorder-profile` 不迁移、不删除、不再复用其登录态。
+录制启动、导航失败、调用取消和服务退出均经过同一收尾路径；异常关闭或寿命到期会把活动录制
+标为 `failed`，原因写入 `finalize_metrics`。独立录制使用真实 recording ID 作为租约会话标识，
+由 Agent 发起的录制保留原 `session_id`；项目标识来自录制请求。
+
+手动 `POST /api/v1/recordings` 在浏览器配额不足时返回 HTTP 409，
+`detail={"status":"waiting_resource","waiting_reason":"resource_type:browser"}`；
+实际原因也可能是项目或全局配额。该接口拒绝本次启动，不代表已经自动排队；失败启动记录保留审计。
+此驱动仍在**后端宿主机**显示窗口，服务端部署时客户端交互录制继续使用 Electron embedded，
+并非通过受管驱动远程显示服务端桌面。无需增加配置，沿用上方浏览器配额、寿命和清理环境变量。
+
+受管录制真实回归包含在 `test_live_browser_leases.py`，通过同一浏览器 API 的 headless 选项抑制测试窗口，
+实际启动 Chromium 并连接 Redis/PostgreSQL，验证 profile/Cookie 隔离、共享配额、HTTP 409、
+导航失败、寿命终止、启动取消和服务退出。应用启动测试同时核对录制驱动的生产依赖接线。
+尚未完成活动浏览器命令和录制控制的跨 Worker 转发、录制进程强杀后的业务状态恢复、CDP 外部浏览器
+租约、Linux 实机回归与完整并发/soak 验收。录制回放执行器目前没有生产调用入口，也未接入 Harness。
 
 ### 2. 启动前端
 

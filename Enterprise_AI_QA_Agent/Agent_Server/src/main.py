@@ -682,7 +682,8 @@ async def lifespan(app: FastAPI):
         store=recording_store,
         graph_store=recording_graph_store,
         bridge=embedded_bridge,
-        registry=build_default_registry(embedded_bridge, settings=settings),
+        registry=build_default_registry(embedded_bridge, settings=settings,
+            resource_manager=mcp_runtime_service.browser_resources),
     )
     app.state.recording_store = recording_store
     app.state.recording_graph_store = recording_graph_store
@@ -726,7 +727,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         execution_shutdown = await asyncio.gather(
-            tool_runtime_service.close(), mcp_runtime_service.close(), return_exceptions=True,
+            tool_runtime_service.close(), mcp_runtime_service.close(), recorder_service.close(), return_exceptions=True,
         )
         if task_queue is not None:
             await task_queue.close()

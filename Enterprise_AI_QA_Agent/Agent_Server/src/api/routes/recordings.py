@@ -19,6 +19,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+from src.runtime.resource_lease_manager import ResourceUnavailable
 
 from src.schemas.recording import (
     RecordingControlRequest,
@@ -81,6 +82,8 @@ async def create_recording(payload: RecordingCreateRequest, request: Request) ->
     service = _recorder_service(request)
     try:
         session = await service.launch(payload)
+    except ResourceUnavailable as exc:
+        raise HTTPException(status_code=409, detail={"status": "waiting_resource", "waiting_reason": exc.reason}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RecordingPublic.from_session(session)

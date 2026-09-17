@@ -30,6 +30,7 @@ from src.application.recorder.drivers import (
     build_default_registry,
 )
 from src.core.config import Settings
+from src.core.request_context import bind_request_context
 from src.infrastructure.recording_store import PostgresRecordingStore
 from src.schemas.recording import (
     RecorderEvent,
@@ -75,6 +76,7 @@ class _SessionRuntime:
     status: RecordingStatus
     consume_task: asyncio.Task[None] | None = None
     ready_task: asyncio.Task[None] | None = None
+    closed_task: asyncio.Task[None] | None = None
     dropped_while_paused: int = 0
     dropped_on_db_error: int = 0
     buffered_events: int = 0  # 消费循环内未落库数（诊断用）
@@ -97,8 +99,11 @@ class RecorderSessionService:
         self._store = store
         self._graph_store = graph_store
         self._bridge = bridge or EmbeddedBridge()
-        self._registry = registry or build_default_registry(self._bridge)
+        self._registry = registry or build_default_registry(self._bridge, settings=settings)
         self._runtimes: dict[str, _SessionRuntime] = {}
+        self._launches: set[asyncio.Task] = set()
+        self._closed = False
+        self._shutdown_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------ 查询
 
@@ -136,6 +141,16 @@ class RecorderSessionService:
         *,
         ready_timeout: float = _LAUNCH_READY_TIMEOUT,
     ) -> RecordingSession:
+        if self._closed:
+            raise RuntimeError("Recorder service is shutting down")
+        operation = asyncio.create_task(self._launch(request, ready_timeout=ready_timeout))
+        self._launches.add(operation)
+        try:
+            return await operation
+        finally:
+            self._launches.discard(operation)
+
+    async def _launch(self, request: RecordingCreateRequest, *, ready_timeout: float) -> RecordingSession:
         """创建会话：PG 落 launching → 驱动 open(navigate 指令) → 后台等登记。"""
         # kind 解析兼容 enum 与裸 str（绕过 pydantic 校验的直赋值）
         kind_raw = request.driver.kind
@@ -163,22 +178,76 @@ class RecorderSessionService:
         self._runtimes[created.id] = runtime
 
         try:
-            await driver.open(created.entry_url, viewport=request.driver.viewport)
-            await driver.inject_recorder()
-        except Exception:
+            # Standalone recordings own their recording session ID; Agent-created
+            # recordings retain the originating Session/Turn/Attempt context.
+            with bind_request_context(project_id=created.project_id, session_id=created.session_id or created.id):
+                await driver.open(created.entry_url, viewport=request.driver.viewport)
+                await driver.inject_recorder()
+        except BaseException:
             logger.exception("recording launch failed on driver open: recording_id=%s", created.id)
-            await self._update(runtime, RecordingStatus.failed)
+            try:
+                await self._shutdown_driver(runtime)
+            finally:
+                await self._update(runtime, RecordingStatus.failed)
             raise
 
         runtime.ready_task = asyncio.create_task(
             self._await_ready(runtime, timeout=ready_timeout),
             name=f"recording-ready-{created.id}",
         )
+        if callable(getattr(driver, "wait_closed", None)):
+            runtime.closed_task = asyncio.create_task(self._watch_driver_closed(runtime),
+                name=f"recording-closed-{created.id}")
         logger.info(
             "recording launched: recording_id=%s project_id=%s url=%s driver=%s",
             created.id, created.project_id, created.entry_url, created.driver_kind.value,
         )
         return created
+
+    async def _watch_driver_closed(self, runtime: _SessionRuntime) -> None:
+        try:
+            await runtime.driver.wait_closed()
+            if runtime.status in (RecordingStatus.launching, RecordingStatus.ready,
+                                  RecordingStatus.active, RecordingStatus.paused):
+                await self._update(runtime, RecordingStatus.failed,
+                    finalize_metrics={"failure_reason": "browser_closed"})
+                await self._cancel_task(runtime.consume_task)
+                await self._cancel_task(runtime.ready_task)
+                await self._shutdown_driver(runtime)
+                logger.warning("recording_browser_closed", extra={"recording_id": runtime.session.id})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("recording_browser_close_recovery_failed", extra={"recording_id": runtime.session.id})
+
+    async def close(self) -> None:
+        """Stop all owned recording drivers before the shared Harness shuts down."""
+        self._closed = True
+        if self._shutdown_task is None or (self._shutdown_task.done() and self._shutdown_task.exception() is not None):
+            self._shutdown_task = asyncio.create_task(self._close())
+        await asyncio.shield(self._shutdown_task)
+
+    async def _close(self) -> None:
+        launches = list(self._launches)
+        for task in launches:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*launches, return_exceptions=True)
+
+        async def close_runtime(runtime):
+            await self._cancel_task(runtime.closed_task)
+            await self._cancel_task(runtime.ready_task)
+            await self._cancel_task(runtime.consume_task)
+            await self._shutdown_driver(runtime)
+            if runtime.status not in (RecordingStatus.completed, RecordingStatus.failed, RecordingStatus.discarded):
+                await self._update(runtime, RecordingStatus.failed,
+                    finalize_metrics={"failure_reason": "server_shutdown"})
+
+        results = await asyncio.gather(*(close_runtime(runtime) for runtime in self._runtimes.values()),
+                                       return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
     async def _await_ready(self, runtime: _SessionRuntime, timeout: float) -> None:
         """后台等待驱动就绪（embedded = Electron 登记）→ ready；超时 → failed。"""
@@ -195,7 +264,10 @@ class RecorderSessionService:
             logger.info("recording ready: recording_id=%s", recording_id)
         else:
             logger.error("recording launch timeout, marking failed: recording_id=%s", recording_id)
-            await self._update(runtime, RecordingStatus.failed)
+            try:
+                await self._update(runtime, RecordingStatus.failed)
+            finally:
+                await self._shutdown_driver(runtime)
 
     # ------------------------------------------------------------ control
 
@@ -440,11 +512,13 @@ class RecorderSessionService:
     async def _shutdown_driver(self, runtime: _SessionRuntime) -> None:
         """关驱动（embedded → close 指令）并延迟 detach（等 Electron 拉取指令）。"""
         recording_id = runtime.session.id
+        if runtime.closed_task is not asyncio.current_task():
+            await self._cancel_task(runtime.closed_task)
         try:
             await runtime.driver.close()
         except Exception:
             logger.exception("recording driver close error: recording_id=%s", recording_id)
-        if hasattr(self._bridge, "detach"):
+        if runtime.driver.kind == "embedded" and hasattr(self._bridge, "detach"):
             asyncio.create_task(
                 self._delayed_detach(recording_id),
                 name=f"recording-detach-{recording_id}",

@@ -1,6 +1,6 @@
 """playwright-managed 驱动契约单测（P1-2，不连真实浏览器/不真启动浏览器）。
 
-替身仅覆盖 ``_start_playwright``（驱动预留的测试注入口），``open``/
+替身仅覆盖共享运行时的 ``_start_playwright``，``open``/
 ``inject_recorder``/``close`` 全部真实执行。验证：launch_persistent_context
 以 headless=False + 配置 viewport 自启、profile 落 artifact 目录、复用
 context 首页导航、binding + init_script + 已开页 evaluate 注入（共用基类）、
@@ -32,6 +32,9 @@ class FakeManagedPage:
         self.goto_calls: list[str] = []
         self.evaluate_calls: list[tuple[Any, ...]] = []
 
+    def on(self, event, handler):
+        pass
+
     async def goto(self, url: str, wait_until: str | None = None) -> None:
         self.url = url
         self.goto_calls.append(url)
@@ -58,6 +61,9 @@ class FakeManagedContext:
         self.bindings: dict[str, Any] = {}
         self.init_scripts: list[str] = []
         self.close_calls = 0
+
+    def on(self, event, handler):
+        pass
 
     async def expose_binding(self, name: str, handler: Any) -> None:
         self.bindings[name] = handler
@@ -104,12 +110,12 @@ def _make_driver(tmp_path: Path, *, pages: list[FakeManagedPage] | None = None) 
         config=RecordingDriverConfig(kind=RecordingDriverKind.playwright_managed, viewport=(1280, 800)),
         recording_id="rec-1",
     )
-    driver._profile_dir = tmp_path / "artifacts" / "recorder-profile"  # 测试产物落临时目录
+    driver._profile_root = tmp_path / "artifacts" / "recorder-profile"
 
     async def fake_start() -> FakePlaywright:
         return pw
 
-    driver._start_playwright = fake_start  # type: ignore[method-assign]
+    driver._runtime._start_playwright = fake_start  # type: ignore[method-assign]
     return driver, pw, context
 
 
@@ -126,7 +132,8 @@ def test_open_launches_headed_persistent_context_with_config_viewport(tmp_path: 
         call = pw.launch_calls[0]
         assert call["headless"] is False  # 受管窗口必须可见
         assert call["viewport"] == {"width": 1280, "height": 800}
-        assert call["user_data_dir"].endswith("recorder-profile")
+        assert Path(call["user_data_dir"]).parent.name == "recorder-profile"
+        assert Path(call["user_data_dir"]) == driver._profile_dir
         assert initial.goto_calls == ["https://app.example.com/login"]
         assert driver._page is initial  # 复用 persistent context 初始页
 
@@ -247,3 +254,27 @@ def test_registry_creates_playwright_managed_driver() -> None:
 def test_default_registry_includes_all_three_kinds() -> None:
     registry = build_default_registry()
     assert registry.kinds() == ["cdp-attach", "embedded", "playwright-managed"]
+
+
+def test_recordings_do_not_share_persistent_profile() -> None:
+    config = RecordingDriverConfig(kind=RecordingDriverKind.playwright_managed)
+    first = PlaywrightManagedDriver(config=config, recording_id="rec-first")
+    second = PlaywrightManagedDriver(config=config, recording_id="rec-second")
+    assert first._profile_dir != second._profile_dir
+
+
+def test_failed_navigation_closes_started_browser(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        page = FakeManagedPage()
+        driver, pw, context = _make_driver(tmp_path, pages=[page])
+
+        async def unreachable(*args, **kwargs):
+            raise RuntimeError("entry navigation failed")
+
+        page.goto = unreachable
+        with pytest.raises(RuntimeError, match="entry navigation failed"):
+            await driver.open("https://app.example.com", viewport=(1280, 800))
+        assert context.close_calls == 1
+        assert pw.stopped == 1
+
+    asyncio.run(scenario())

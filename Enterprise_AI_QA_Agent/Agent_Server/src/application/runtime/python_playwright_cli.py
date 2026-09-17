@@ -233,6 +233,32 @@ class PythonPlaywrightCliRuntime:
         async with self._session_scope(session_name):
             await self._close_session(session_name)
 
+    async def open_context(self, session_name: str, cwd: Path, *, url: str, open_args: list[str]) -> _BrowserSession:
+        """Open a native consumer through the same ownership and shutdown path."""
+        if self._closed:
+            raise RuntimeError("Browser runtime is shutting down")
+
+        async def open_locked():
+            async with self._session_scope(session_name, command=True):
+                try:
+                    session = await self._ensure_session(session_name, cwd, open_args)
+                    await session.page.goto(url, wait_until="domcontentloaded")
+                    return session
+                except BaseException as exc:
+                    session = self._sessions.get(session_name)
+                    lease_error = getattr(session, "lease_error", None)
+                    await self._close_session(session_name)
+                    if isinstance(exc, asyncio.CancelledError) and lease_error:
+                        raise ResourceUnavailable(lease_error) from None
+                    raise
+
+        operation = asyncio.create_task(open_locked())
+        self._commands.add(operation)
+        try:
+            return await asyncio.wait_for(operation, timeout=self._settings.orchestration.browser_action_timeout_seconds)
+        finally:
+            self._commands.discard(operation)
+
     def session_info(self, session_name: str) -> dict[str, Any] | None:
         session = self._sessions.get(session_name)
         if session is None:
@@ -252,14 +278,6 @@ class PythonPlaywrightCliRuntime:
             if session.allocation is not None:
                 await self._resource_manager.validate(session.allocation)
             return session
-
-        try:
-            from playwright.async_api import async_playwright
-        except Exception as exc:
-            raise RuntimeError(
-                "Python Playwright is not installed in the Agent_Server Python environment. "
-                "Install it with: python -m pip install playwright && python -m playwright install"
-            ) from exc
 
         browser_name = self._option_value(open_args, "--browser") or self._settings.orchestration.browser_default_name or "chromium"
         browser_name = browser_name.lower()
@@ -288,7 +306,7 @@ class PythonPlaywrightCliRuntime:
         session = _BrowserSession(
             name=session_name, playwright=None, browser=None, context=None,
             page=None, output_dir=output_dir, persistent=persistent,
-            driver_start=asyncio.create_task(async_playwright().start()),
+            driver_start=asyncio.create_task(self._start_playwright()),
             allocation=allocation,
         )
         self._sessions[session_name] = session
@@ -318,6 +336,11 @@ class PythonPlaywrightCliRuntime:
             raise
         LOGGER.info("browser_session_started", extra={"browser_session": session_name, "persistent": persistent})
         return session
+
+    async def _start_playwright(self):
+        from playwright.async_api import async_playwright
+
+        return await async_playwright().start()
 
     async def _watch_lease(self, session):
         try:

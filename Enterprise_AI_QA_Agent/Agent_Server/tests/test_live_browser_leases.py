@@ -333,6 +333,10 @@ async def test_application_lifespan_wires_native_browser_harness():
         explorer = app.state.tool_runtime_service._ui_exploration_service
         assert mcp.browser_resources is not None
         assert explorer._playwright_runtime._resource_manager is mcp.browser_resources
+        from src.schemas.recording import RecordingDriverConfig, RecordingDriverKind
+        managed = app.state.recorder_service._registry.create(
+            RecordingDriverConfig(kind=RecordingDriverKind.playwright_managed), recording_id="wiring-check")
+        assert managed._runtime._resource_manager is mcp.browser_resources
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
             response = await client.get("/api/v1/health")
             assert response.status_code == 200
@@ -340,6 +344,7 @@ async def test_application_lifespan_wires_native_browser_harness():
             assert postgres_ok is True
     assert mcp._playwright_cli._closed
     assert explorer._playwright_runtime._closed
+    assert app.state.recorder_service._closed
 
 
 @pytest.mark.asyncio
@@ -425,3 +430,146 @@ async def test_other_host_close_waits_for_owner_queue_receipt(harness, monkeypat
             closing.cancel()
         await asyncio.gather(closing, return_exceptions=True)
         await remote.close()
+
+
+@pytest_asyncio.fixture
+async def recorder(harness):
+    from src.application.recorder.recorder_session_service import RecorderSessionService
+    from src.application.recorder.drivers import build_default_registry
+    from src.infrastructure.recording_store import PostgresRecordingStore
+
+    settings = harness.settings.model_copy(deep=True)
+    settings.storage.artifact_root_dir = str(harness.root / "recordings")
+    registry = build_default_registry(settings=settings, resource_manager=harness.service().browser_resources)
+    create = registry.create
+    drivers = []
+
+    def headless_driver(*args, **kwargs):
+        driver = create(*args, **kwargs)
+        # Only suppress the UI window in tests; retain the real persistent
+        # Chromium, driver lifecycle, Redis manager and PostgreSQL stores.
+        driver._runtime._settings.orchestration.browser_headless = True
+        drivers.append(driver)
+        return driver
+
+    registry.create = headless_driver
+    store = PostgresRecordingStore(settings)
+    await store.initialize()
+    service = RecorderSessionService(settings, store, None, registry=registry)
+    try:
+        yield service, drivers
+    finally:
+        await service.close()
+        await harness.cleanup_all()
+        for runtime in service._runtimes.values():
+            await store.delete_session(runtime.session.id)
+
+
+def recording_request():
+    from src.schemas.recording import RecordingCreateRequest, RecordingDriverConfig, RecordingDriverKind
+
+    return RecordingCreateRequest(project_id="p-recorder-harness-" + uuid4().hex,
+        entry_url="about:blank", driver=RecordingDriverConfig(kind=RecordingDriverKind.playwright_managed))
+
+
+@pytest.mark.asyncio
+async def test_managed_recordings_isolate_profiles_and_share_browser_capacity(harness, recorder):
+    service, drivers = recorder
+    await harness.manager.configure_quota(scope="resource_type", identifier="browser", limit=2)
+    first, second = await asyncio.gather(service.launch(recording_request()), service.launch(recording_request()))
+    assert len(drivers) == 2
+    assert drivers[0]._profile_dir != drivers[1]._profile_dir
+    await drivers[0]._context.add_cookies([{"name": "owned", "value": "first", "url": "https://recording.test"}])
+    assert not await drivers[1]._context.cookies("https://recording.test")
+    assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 2
+    assert (await command(harness.service()))["status"] == "waiting_resource"
+    assert {row["session_id"] for row in await harness.manager.list_active()} == {first.id, second.id}
+    await service.close()
+    assert all(not driver._runtime._sessions for driver in drivers)
+    await harness.cleanup_all()
+    assert not await harness.manager.usage_snapshot()
+    for session in (first, second):
+        persisted = await service.get_session(session.id)
+        assert persisted.status.value == "failed"
+        assert persisted.finalize_metrics["failure_reason"] == "server_shutdown"
+
+
+@pytest.mark.asyncio
+async def test_managed_recording_capacity_returns_conflict_without_browser(harness, recorder):
+    from fastapi import FastAPI
+    import httpx
+    from src.api.routes.recordings import router
+
+    service, drivers = recorder
+    await command(harness.service())
+    app = FastAPI()
+    app.state.recorder_service = service
+    app.include_router(router, prefix="/api/v1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        result = await client.post("/api/v1/recordings", json=recording_request().model_dump(mode="json"))
+    assert result.status_code == 409
+    assert result.json()["detail"] == {"status": "waiting_resource", "waiting_reason": "resource_type:browser"}
+    assert all(not driver._runtime._sessions for driver in drivers)
+    assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 1
+
+
+@pytest.mark.asyncio
+async def test_managed_recording_navigation_failure_retires_lease(harness, recorder):
+    service, drivers = recorder
+    request = recording_request()
+    request.entry_url = "http://127.0.0.1:1/blocked"
+    with pytest.raises(Exception, match="ERR_UNSAFE_PORT"):
+        await service.launch(request)
+    assert not drivers[0]._runtime._sessions
+    assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 1
+    await harness.cleanup_all()
+    assert not await harness.manager.usage_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_managed_recording_lifetime_expiry_updates_database(harness, recorder):
+    service, drivers = recorder
+    harness.settings.orchestration.resource_browser_max_lifetime_seconds = 2
+    session = await service.launch(recording_request())
+    from src.schemas.recording import RecordingStatus
+    await wait_until(lambda: service.runtime_status(session.id) == RecordingStatus.failed)
+    persisted = await service.get_session(session.id)
+    assert persisted.finalize_metrics["failure_reason"] == "browser_closed"
+    await wait_until(lambda: not drivers[0]._runtime._sessions)
+    await harness.cleanup_all()
+    assert not await harness.manager.usage_snapshot()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop", ["cancel", "shutdown"])
+async def test_managed_recording_interrupted_startup_closes_browser(harness, recorder, monkeypatch, stop):
+    from playwright.async_api import Page
+    from src.schemas.recording import RecordingStatus
+
+    service, drivers = recorder
+    navigating = asyncio.Event()
+
+    async def blocked_navigation(*args, **kwargs):
+        navigating.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(Page, "goto", blocked_navigation)
+    launch = asyncio.create_task(service.launch(recording_request()))
+    try:
+        await asyncio.wait_for(navigating.wait(), 10)
+        assert (await harness.manager.usage_snapshot())["resource_type:browser"] == 1
+        if stop == "cancel":
+            launch.cancel()
+        else:
+            await asyncio.wait_for(service.close(), 10)
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(launch, 10)
+        assert not drivers[0]._runtime._sessions
+        for runtime in service._runtimes.values():
+            assert (await service.get_session(runtime.session.id)).status == RecordingStatus.failed
+        await harness.cleanup_all()
+        assert not await harness.manager.usage_snapshot()
+    finally:
+        if not launch.done():
+            launch.cancel()
+        await asyncio.gather(launch, return_exceptions=True)
