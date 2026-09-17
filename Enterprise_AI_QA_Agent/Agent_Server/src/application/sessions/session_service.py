@@ -13,6 +13,7 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.runtime.runtime_service import RuntimeService
+from src.runtime.session_event_sink import SessionEventSink
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -97,8 +98,10 @@ class SessionService:
         approval_continuation_heartbeat_seconds: float = 30.0,
         turn_execution_lease_seconds: int = 120,
         turn_execution_heartbeat_seconds: float = 30.0,
+        event_buffer_capacity: int = 4096,
     ) -> None:
         self._store = store
+        self._event_buffer_capacity = max(1, int(event_buffer_capacity))
         self._input_orchestrator_service = input_orchestrator_service
         self._runtime_service = runtime_service
         self._mode_registry = mode_registry
@@ -451,12 +454,12 @@ class SessionService:
             )
             settled = False
             try:
-                runtime_result = await self._runtime_service.resume_turn(
+                runtime_result = await self._event_sink(session_id, turn_lease_token=turn_lease_token).run(
+                    self._runtime_service.resume_turn,
                     session,
                     snapshot,
                     resume_reason=payload.reason or "manual_resume",
                     on_model_chunk=stream_chunk_handler,
-                    event_queue=self._store.get_queue(session_id),
                 )
                 response = await self._finalize_runtime_result(
                     session=session,
@@ -748,11 +751,12 @@ class SessionService:
                     continuation_approval_id=approval.id,
                     continuation_lease_token=continuation_token,
                 )
-                continuation = await self._runtime_service.resume_after_approval(
+                continuation = await self._event_sink(session_id,
+                    continuation_approval_id=approval.id, continuation_lease_token=continuation_token).run(
+                    self._runtime_service.resume_after_approval,
                     session,
                     approval.model_dump(mode="python"),
                     on_model_chunk=stream_chunk_handler,
-                    event_queue=self._store.get_queue(session_id),
                 )
                 if continuation is None:
                     continuation_settled = True
@@ -966,8 +970,11 @@ class SessionService:
             ),
         )
 
-    def get_event_queue(self, session_id: str):
-        return self._store.get_queue(session_id)
+    def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
+        return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)
+
+    async def list_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None):
+        return await self._store.read_event_page(session_id, limit=limit, after_event_id=after_event_id)
 
     async def _run_submission_locked(
         self,
@@ -1234,12 +1241,11 @@ class SessionService:
             turn_lease_token=turn_lease_token,
         )
         try:
-            event_queue = self._store.get_queue(session_id)
-            runtime_result = await self._runtime_service.execute_turn(
+            runtime_result = await self._event_sink(session_id, **turn_fenced_write).run(
+                self._runtime_service.execute_turn,
                 session,
                 execution_request,
                 on_model_chunk=stream_chunk_handler,
-                event_queue=event_queue,
             )
             return await self._finalize_runtime_result(
                 session=session,
@@ -1548,15 +1554,12 @@ class SessionService:
         }
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
-        # Graph events may already have been sent to SSE, but they still need to
-        # be persisted for audit/replay. Avoid a second queue publish for the
-        # streamed prefix instead of dropping those events from storage.
-        streamed_count = runtime_result.state.get("_streamed_event_count", 0)
-        for index, event in enumerate(runtime_result.events):
+        # Live graph events are already durable. Stable IDs make this flush
+        # idempotent, including runtimes which only return a final event log.
+        for event in runtime_result.events:
             await self._store.append_event(
                 session_id,
                 event,
-                publish=index >= streamed_count,
                 **fenced_write,
             )
 

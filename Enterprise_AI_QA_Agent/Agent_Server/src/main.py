@@ -635,6 +635,7 @@ async def lifespan(app: FastAPI):
             settings.orchestration.approval_continuation_heartbeat_seconds
         ),
         turn_execution_lease_seconds=settings.orchestration.turn_execution_lease_seconds,
+        event_buffer_capacity=settings.orchestration.session_event_buffer_capacity,
         turn_execution_heartbeat_seconds=(
             settings.orchestration.turn_execution_heartbeat_seconds
         ),

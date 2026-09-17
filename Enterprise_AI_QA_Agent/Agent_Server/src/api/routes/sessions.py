@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
@@ -10,6 +11,8 @@ from fastapi.responses import Response, StreamingResponse
 
 from src.application.flow.projection_service import FlowProjectionService
 from src.runtime.streaming import format_sse
+from src.runtime.store import EventCursorNotFoundError
+from src.core.config import get_settings
 from src.schemas.flow import SessionFlowResponse
 from src.schemas.session import (
     ApprovalDecisionRequest,
@@ -24,6 +27,7 @@ from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecor
 
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 _ARTIFACT_MEDIA_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -375,7 +379,9 @@ async def stream_events(session_id: str, request: Request):
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
 
-    queue = request.app.state.session_service.get_event_queue(session_id)
+    service = request.app.state.session_service
+    config = getattr(request.app.state, "settings", None) or get_settings()
+    options = config.orchestration
     last_event_id = (
         request.headers.get("last-event-id")
         or request.query_params.get("last_event_id")
@@ -384,22 +390,38 @@ async def stream_events(session_id: str, request: Request):
     ).strip()
 
     async def event_generator():
-        if last_event_id:
-            events = await request.app.state.session_service.list_events(
-                session_id,
-                limit=1000,
-                after_event_id=last_event_id,
-            )
-            for event in events:
-                yield format_sse(event)
+        cursor = last_event_id
+        loop = asyncio.get_running_loop()
+        last_sent = loop.time()
+        logger.info("session_sse_connected", extra={"session_id": session_id})
+        try:
+            while not await request.is_disconnected():
+                try:
+                    events = await service.list_event_page(session_id,
+                        limit=options.session_sse_batch_size, after_event_id=cursor or None)
+                except EventCursorNotFoundError:
+                    logger.warning("session_event_cursor_reset", extra={"session_id": session_id})
+                    cursor = ""
+                    continue
+                for event in events:
+                    if await request.is_disconnected():
+                        return
+                    yield format_sse(event)
+                    cursor = event.id
+                    last_sent = loop.time()
+                if len(events) == options.session_sse_batch_size:
+                    continue
+                if loop.time() - last_sent >= options.session_sse_keepalive_seconds:
+                    yield ": keep-alive\n\n"
+                    last_sent = loop.time()
+                await asyncio.sleep(options.session_sse_poll_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("session_sse_read_failed", extra={"session_id": session_id})
+            raise
+        finally:
+            logger.info("session_sse_disconnected", extra={"session_id": session_id})
 
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=15)
-                yield format_sse(event)
-            except TimeoutError:
-                yield ": keep-alive\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -26,6 +26,9 @@ def test_terminal_session_event_writes_compaction_outbox_in_same_transaction(mon
         def execute(self, statement, parameters=None):
             calls.append((statement, parameters))
 
+        def fetchone(self):
+            return {"id": "event-1"}
+
     class Connection:
         def __enter__(self):
             return self

@@ -1365,7 +1365,6 @@ class RuntimeService:
             "worker_dispatches": [],
             "context_bundle": request.context,
             "event_log": [],
-            "_streamed_event_count": 0,
             "final_response": "",
             "pending_turn": {},
             "control_state": "active_turn",
@@ -2051,9 +2050,10 @@ class RuntimeService:
     def _events_from_log(self, session_id: str, event_log: list[dict[str, Any]]) -> list[ExecutionEvent]:
         return [
             ExecutionEvent(
+                id=entry.get("id") or str(uuid4()),
                 type=entry["type"],
                 session_id=session_id,
-                timestamp=datetime.utcnow(),
+                timestamp=entry.get("timestamp") or datetime.now(timezone.utc),
                 payload=entry["payload"],
             )
             for entry in event_log

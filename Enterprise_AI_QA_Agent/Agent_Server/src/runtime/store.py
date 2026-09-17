@@ -20,6 +20,10 @@ class ContinuationLeaseLostError(RuntimeError):
     """Raised when a continuation worker no longer owns its fencing lease."""
 
 
+class EventCursorNotFoundError(ValueError):
+    """The SSE cursor is absent from the requested session's durable history."""
+
+
 class SessionStore(Protocol):
     async def initialize(self) -> None: ...
     async def save_session(
@@ -55,7 +59,6 @@ class SessionStore(Protocol):
         session_id: str,
         event: ExecutionEvent,
         *,
-        publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
@@ -66,7 +69,7 @@ class SessionStore(Protocol):
         limit: int | None = None,
         after_event_id: str | None = None,
     ) -> list[ExecutionEvent]: ...
-    def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]: ...
+    async def read_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None) -> list[ExecutionEvent]: ...
     async def save_snapshot(
         self,
         session_id: str,
@@ -160,7 +163,6 @@ class InMemorySessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, SessionRecord] = {}
         self._events: dict[str, list[ExecutionEvent]] = defaultdict(list)
-        self._queues: dict[str, asyncio.Queue[ExecutionEvent]] = defaultdict(asyncio.Queue)
         self._snapshots: dict[str, list[SessionSnapshot]] = defaultdict(list)
         self._approvals: dict[str, dict[str, ToolApprovalRequest]] = defaultdict(dict)
         self._lock = asyncio.Lock()
@@ -304,7 +306,6 @@ class InMemorySessionStore:
         session_id: str,
         event: ExecutionEvent,
         *,
-        publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
@@ -316,13 +317,13 @@ class InMemorySessionStore:
                 )
             if turn_lease_token:
                 self._assert_turn_lease_locked(session_id, turn_lease_token)
+            if any(item.id == event.id for item in self._events[session_id]):
+                return
             session = self._sessions.get(session_id)
             if session is not None:
                 session.event_count += 1
                 session.updated_at = datetime.utcnow()
             self._events[session_id].append(event)
-        if publish:
-            await self._queues[session_id].put(event)
 
     async def list_events(
         self,
@@ -345,8 +346,16 @@ class InMemorySessionStore:
             events = events[:size] if has_cursor else events[-size:]
         return events
 
-    def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]:
-        return self._queues[session_id]
+    async def read_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None) -> list[ExecutionEvent]:
+        events = self._events.get(session_id, [])
+        start = 0
+        if after_event_id:
+            index = next((index for index, item in enumerate(events) if item.id == after_event_id), None)
+            if index is None:
+                raise EventCursorNotFoundError(session_id)
+            else:
+                start = index + 1
+        return list(events[start:start + max(0, limit)])
 
     async def save_snapshot(
         self,
@@ -662,7 +671,6 @@ class InMemorySessionStore:
                 return False
             del self._sessions[session_id]
             self._events.pop(session_id, None)
-            self._queues.pop(session_id, None)
             self._snapshots.pop(session_id, None)
             self._approvals.pop(session_id, None)
             return True
@@ -712,7 +720,6 @@ class InMemorySessionStore:
             for sid in ids:
                 del self._sessions[sid]
                 self._events.pop(sid, None)
-                self._queues.pop(sid, None)
                 self._snapshots.pop(sid, None)
                 self._approvals.pop(sid, None)
             return len(ids)

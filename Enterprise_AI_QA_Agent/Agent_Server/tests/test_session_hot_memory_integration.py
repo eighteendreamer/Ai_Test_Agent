@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from datetime import datetime, timezone
 
 from src.runtime.postgres_session_store import PostgresSessionStore
@@ -17,9 +16,8 @@ def test_postgres_session_store_writes_hot_memory_after_fact_commit(monkeypatch)
 
     store = PostgresSessionStore.__new__(PostgresSessionStore)
     store._settings = object()
-    store._queues = defaultdict(asyncio.Queue)
     store._hot_memory_store = HotStore()
-    store._append_event_sync = lambda *args: None
+    store._append_event_sync = lambda *args: True
 
     async def run():
         event = ExecutionEvent(type="test.started", session_id="s1", timestamp=datetime.now(timezone.utc))

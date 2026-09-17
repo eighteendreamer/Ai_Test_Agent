@@ -620,6 +620,48 @@ ORCHESTRATION__RESOURCE_GLOBAL_LIMIT=20
 测试依据项目课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、幂等与补偿原则；不以仅检查返回值替代资源和状态断言。
 当前准入覆盖 TestRun 执行链路；普通对话 Agent Turn 的队列化与同级准入仍需接入，不能据此宣称所有 Agent 已受控。
 
+### 跨进程编排事件与 SSE 回补
+
+SSE 不再消费 SessionStore 的进程内单消费者队列。每个连接拥有独立的持久化游标，
+按 `session_id` 分页读取 PostgreSQL 已提交事件，因此同一会话的多个客户端都可收到完整事件，
+写入 Worker 与连接 API 无须处于同一进程。前端 URL、事件 JSON 和 `Last-Event-ID` 均保持原契约。
+首次连接从本会话开头分页回放；重连从最后事件 ID 后继续，无单次 1000 条补读上限。
+游标不存在或属于其他会话时，记录 `session_event_cursor_reset` 并只回放当前会话；客户端继续按事件 ID 去重。
+读取失败断开连接并记录错误，由客户端重连，不伪造空闲或完成事件。代理禁用 SSE 缓冲。
+
+事件表新增内部 `event_sequence BIGSERIAL` 与 `(session_id, event_sequence)` 唯一索引。
+追加事件先锁定所属 Session 行，再分配序号并与计数/Compaction Outbox 一起提交，
+避免“序号已分配但事务尚未提交”被后续游标越过。事件时间戳保留作展示，不再作为回补位置。
+启动初始化会为已有事件补上内部序号，不删除数据；旧记录无法据此还原当时的事务提交顺序。
+部署前应停止旧 API/Worker，允许初始化执行 ALTER/CREATE INDEX，再启动新进程；本次真实环境已验证初始化。
+
+图事件在产生时固定 ID 和时间戳。SessionEventSink 使用有界缓冲，在普通执行、手动恢复、
+审批续跑期间持续调用既有带租约校验的 `append_event`，成功提交后才对 SSE 可见；
+最终事件汇总按相同 ID 幂等写入，不重复增加 event_count，也不重复投递压缩 Outbox。
+移除了无人消费仍无限增长的本地 Session 队列。写库失败会中断执行；缓冲区满明确报错，禁止静默丢事件；
+取消执行时等待写入收尾，避免回收租约后还有后台写入。Redis 热记忆仍为提交后的副本。
+
+运行参数写入后端 `.env` 与模板：
+
+```ini
+ORCHESTRATION__SESSION_EVENT_BUFFER_CAPACITY=4096
+ORCHESTRATION__SESSION_SSE_POLL_SECONDS=0.5
+ORCHESTRATION__SESSION_SSE_KEEPALIVE_SECONDS=15
+ORCHESTRATION__SESSION_SSE_BATCH_SIZE=200
+```
+
+本阶段使用数据库轮询保证正确回补；延迟与数据库读取量受连接数和轮询周期影响。
+Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表中高并发容量验收。
+实现依据 PostgreSQL 官方[行锁语义](https://www.postgresql.org/docs/current/explicit-locking.html)
+与[序列类型](https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL)，
+以及 WHATWG 的 [Last-Event-ID 规范](https://html.spec.whatwg.org/multipage/server-sent-events.html#the-last-event-id-header)。
+
+设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
+`uv run --no-sync python -m pytest tests/test_session_event_delivery.py -q`：
+覆盖独立 Worker 进程与两个真实 HTTP 客户端、1004 条断线补读、晚到时间戳、未提交事务、
+执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。该链路是 Agent Turn 队列化的前置能力，
+普通对话本身仍由现有入口执行，尚未完成 Outbox/Agent Worker 调度改造。
+
 ### 2. 启动前端
 
 ```bash

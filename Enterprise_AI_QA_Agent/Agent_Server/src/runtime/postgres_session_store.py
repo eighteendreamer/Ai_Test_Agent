@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import defaultdict
 from datetime import datetime
 
 from src.core.config import Settings
@@ -22,7 +21,7 @@ from src.schemas.session import (
     ToolApprovalStatus,
 )
 from src.schemas.task_pool import TaskPoolSessionSummary
-from src.runtime.store import ContinuationLeaseLostError
+from src.runtime.store import ContinuationLeaseLostError, EventCursorNotFoundError
 from src.core.request_context import get_request_context
 
 LOGGER = logging.getLogger(__name__)
@@ -31,7 +30,6 @@ LOGGER = logging.getLogger(__name__)
 class PostgresSessionStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._queues: dict[str, asyncio.Queue[ExecutionEvent]] = defaultdict(asyncio.Queue)
         self._hot_memory_store = None
         self._compaction_outbox_table: str | None = None
         self._compaction_task_stream: str | None = None
@@ -110,12 +108,11 @@ class PostgresSessionStore:
         session_id: str,
         event: ExecutionEvent,
         *,
-        publish: bool = True,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
     ) -> None:
-        await asyncio.to_thread(
+        inserted = await asyncio.to_thread(
             self._append_event_sync,
             session_id,
             event,
@@ -123,8 +120,8 @@ class PostgresSessionStore:
             continuation_lease_token,
             turn_lease_token,
         )
-        if publish:
-            await self._queues[session_id].put(event)
+        if not inserted:
+            return
         if self._hot_memory_store is not None:
             try:
                 await self._hot_memory_store.append_event(
@@ -147,8 +144,8 @@ class PostgresSessionStore:
     ) -> list[ExecutionEvent]:
         return await asyncio.to_thread(self._list_events_sync, session_id, limit, after_event_id)
 
-    def get_queue(self, session_id: str) -> asyncio.Queue[ExecutionEvent]:
-        return self._queues[session_id]
+    async def read_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None) -> list[ExecutionEvent]:
+        return await asyncio.to_thread(self._list_events_sync, session_id, limit, after_event_id, True)
 
     async def save_snapshot(
         self,
@@ -355,6 +352,7 @@ class PostgresSessionStore:
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_event_table} (
                         id TEXT PRIMARY KEY,
+                        event_sequence BIGSERIAL NOT NULL,
                         session_id TEXT NOT NULL,
                         type TEXT NOT NULL,
                         timestamp TIMESTAMPTZ NOT NULL,
@@ -402,6 +400,14 @@ class PostgresSessionStore:
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_message_table}_session_created "
                     f"ON {self._settings.database.postgres_message_table} (session_id, created_at ASC)"
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._settings.database.postgres_event_table} "
+                    "ADD COLUMN IF NOT EXISTS event_sequence BIGSERIAL NOT NULL"
+                )
+                cur.execute(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_event_table}_session_sequence "
+                    f"ON {self._settings.database.postgres_event_table} (session_id, event_sequence)"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_event_table}_session_timestamp "
@@ -692,13 +698,21 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> None:
+    ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 self._assert_continuation_lease_sync(
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
                 self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+                # Serialize each session BEFORE allocating its sequence value.
+                # A bare sequence does not guarantee transaction commit order.
+                cur.execute(
+                    f"SELECT id FROM {self._settings.database.postgres_session_table} WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                if cur.fetchone() is None:
+                    raise KeyError(session_id)
                 event_payload = dict(event.payload)
                 context_fields = {
                     name: getattr(event, name)
@@ -727,6 +741,7 @@ class PostgresSessionStore:
                     INSERT INTO {self._settings.database.postgres_event_table} (
                         id, session_id, type, timestamp, payload
                     ) VALUES (%s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (id) DO NOTHING RETURNING id
                     """,
                     (
                         event.id,
@@ -736,6 +751,8 @@ class PostgresSessionStore:
                         json.dumps(make_json_safe(event_payload), ensure_ascii=False),
                     ),
                 )
+                if cur.fetchone() is None:
+                    return False
                 cur.execute(
                     f"""
                     UPDATE {self._settings.database.postgres_session_table}
@@ -783,12 +800,14 @@ class PostgresSessionStore:
                             json.dumps(task_payload, ensure_ascii=False, separators=(",", ":")),
                         ),
                     )
+        return True
 
     def _list_events_sync(
         self,
         session_id: str,
         limit: int | None = None,
         after_event_id: str | None = None,
+        from_start: bool = False,
     ) -> list[ExecutionEvent]:
         limit_value = _normalize_optional_limit(limit)
         with postgres_connect(self._settings) as conn:
@@ -796,7 +815,7 @@ class PostgresSessionStore:
                 if after_event_id:
                     cur.execute(
                         f"""
-                        SELECT timestamp, id FROM {self._settings.database.postgres_event_table}
+                        SELECT event_sequence FROM {self._settings.database.postgres_event_table}
                         WHERE session_id = %s AND id = %s
                         LIMIT 1
                         """,
@@ -804,61 +823,37 @@ class PostgresSessionStore:
                     )
                     cursor = cur.fetchone()
                     if not cursor:
-                        return []
+                        if not from_start:
+                            return []
+                        raise EventCursorNotFoundError(session_id)
+                    params = [session_id, cursor["event_sequence"] if cursor else 0]
+                    query = (f"SELECT * FROM {self._settings.database.postgres_event_table} "
+                             "WHERE session_id = %s AND event_sequence > %s ORDER BY event_sequence ASC")
                     if limit_value is not None:
-                        cur.execute(
-                            f"""
-                            SELECT * FROM {self._settings.database.postgres_event_table}
-                            WHERE session_id = %s
-                              AND (timestamp > %s OR (timestamp = %s AND id > %s))
-                            ORDER BY timestamp ASC, id ASC
-                            LIMIT %s
-                            """,
-                            (
-                                session_id,
-                                cursor["timestamp"],
-                                cursor["timestamp"],
-                                cursor["id"],
-                                limit_value,
-                            ),
-                        )
-                    else:
-                        cur.execute(
-                            f"""
-                            SELECT * FROM {self._settings.database.postgres_event_table}
-                            WHERE session_id = %s
-                              AND (timestamp > %s OR (timestamp = %s AND id > %s))
-                            ORDER BY timestamp ASC, id ASC
-                            """,
-                            (
-                                session_id,
-                                cursor["timestamp"],
-                                cursor["timestamp"],
-                                cursor["id"],
-                            ),
-                        )
-                elif limit_value is not None:
+                        query += " LIMIT %s"
+                        params.append(limit_value)
+                    cur.execute(query, tuple(params))
+                elif limit_value is not None and not from_start:
                     cur.execute(
                         f"""
                         SELECT * FROM (
                             SELECT * FROM {self._settings.database.postgres_event_table}
                             WHERE session_id = %s
-                            ORDER BY timestamp DESC, id DESC
+                            ORDER BY event_sequence DESC
                             LIMIT %s
                         ) recent_events
-                        ORDER BY timestamp ASC, id ASC
+                        ORDER BY event_sequence ASC
                         """,
                         (session_id, limit_value),
                     )
                 else:
-                    cur.execute(
-                        f"""
-                        SELECT * FROM {self._settings.database.postgres_event_table}
-                        WHERE session_id = %s
-                        ORDER BY timestamp ASC, id ASC
-                        """,
-                        (session_id,),
-                    )
+                    query = (f"SELECT * FROM {self._settings.database.postgres_event_table} "
+                             "WHERE session_id = %s ORDER BY event_sequence ASC")
+                    params = [session_id]
+                    if limit_value is not None:
+                        query += " LIMIT %s"
+                        params.append(limit_value)
+                    cur.execute(query, tuple(params))
                 rows = cur.fetchall() or []
         events: list[ExecutionEvent] = []
         for row in rows:
