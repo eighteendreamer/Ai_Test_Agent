@@ -25,6 +25,7 @@ from src.cli.run_resource_cleanup_worker import build_cleanup_callbacks
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_resource_cleanup_store import PostgresResourceCleanupStore
+from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
@@ -34,13 +35,20 @@ from src.runtime.resource_lease_manager import ExpiredResourceLease, RedisResour
 from tests.test_resource_cleanup_worker import ReceiptStore
 
 
-def _run_performance_until_killed(prefix, stream, temp_root):
+def _run_performance_until_killed(prefix, stream, temp_root, before_bind=None):
     async def run():
         tempfile.tempdir = temp_root
         settings = get_settings().model_copy(deep=True)
         settings.orchestration.resource_default_lease_seconds = 2
         manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
-        runner = PerfRunnerService(settings, docker_resources=DockerResourceManager(settings, lease_manager=manager))
+        allocations = PostgresResourceAllocationStore(settings)
+        if before_bind is not None:
+            async def wait_before_binding(*args):
+                before_bind.set()
+                await asyncio.Event().wait()
+            allocations.bind = wait_before_binding
+        runner = PerfRunnerService(settings, docker_resources=DockerResourceManager(
+            settings, lease_manager=manager, allocation_store=allocations))
         with bind_request_context(project_id="p-live-perf", session_id="s-live-perf", run_id="r-live-perf",
                                   run_item_id="i-live-perf", attempt_id="a-live-perf", worker_id="perf-child"):
             await runner._run_in_docker(
@@ -66,7 +74,7 @@ async def _wait_for_running_container(manager):
     return await asyncio.wait_for(wait(), timeout=30)
 
 
-async def _complete_real_cleanup(manager):
+async def _complete_real_cleanup(manager, *, retain_receipt=False):
     settings = get_settings()
     store = PostgresResourceCleanupStore(settings)
     queue = RedisTaskQueue(settings.database.redis_url, stream=manager._cleanup_stream, group="live-perf-cleanup")
@@ -78,7 +86,7 @@ async def _complete_real_cleanup(manager):
         task_ids = [payload["task_id"] for payload in payloads]
         assert len(task_ids) == 1
         worker = RedisTaskWorker(queue, consumer="live-perf-cleanup", block_ms=0,
-            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager))
+            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings, manager=manager), manager=manager))
         assert await worker.run_once() == 1
         assert not await queue.pending()
         assert not await manager.usage_snapshot()
@@ -90,7 +98,7 @@ async def _complete_real_cleanup(manager):
             assert row["record"]["attempt_id"] == "a-live-perf"
     finally:
         await queue.close()
-        if task_ids:
+        if task_ids and not retain_receipt:
             with postgres_connect(settings) as conn, conn.cursor() as cur:
                 cur.execute(sql.SQL("DELETE FROM {} WHERE task_id = ANY(%s)").format(
                     sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_ids,))
@@ -152,14 +160,37 @@ async def test_performance_container_lifecycle_with_real_resources(manager, scen
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker")
 @pytest.mark.asyncio
-async def test_performance_worker_kill_recovers_running_container(manager, tmp_path):
+@pytest.mark.parametrize("before_binding", [False, True])
+async def test_performance_worker_kill_recovers_container(manager, tmp_path, before_binding):
     m, _ = manager
-    process = multiprocessing.get_context("spawn").Process(target=_run_performance_until_killed,
-        args=(m._prefix, m._cleanup_stream, str(tmp_path)))
+    context = multiprocessing.get_context("spawn")
+    created = context.Event() if before_binding else None
+    process = context.Process(target=_run_performance_until_killed,
+        args=(m._prefix, m._cleanup_stream, str(tmp_path), created))
     container_id = ""
     try:
         process.start()
-        container_id = await _wait_for_running_container(m)
+        if before_binding:
+            async def wait_for_create():
+                while not created.is_set():
+                    assert process.is_alive()
+                    await asyncio.sleep(.05)
+            await asyncio.wait_for(wait_for_create(), timeout=30)
+            active = (await m.list_active())[0]
+            assert not active.get("external_resource_id")
+            found = subprocess.run(["docker", "ps", "--all", "--no-trunc", "--filter",
+                f"label=qa.allocation_id={active['allocation_id']}", "--format", "{{.ID}}"],
+                capture_output=True, text=True, check=True, timeout=15)
+            container_id = found.stdout.strip()
+            assert len(container_id) == 64
+            inspected = subprocess.run(["docker", "inspect", "--format", "{{.State.Status}}", container_id],
+                capture_output=True, text=True, check=True, timeout=15)
+            assert inspected.stdout.strip() == "created"
+            records = await PostgresResourceAllocationStore(get_settings()).get_many(
+                [active["allocation_id"]], namespace=m.namespace)
+            assert records[active["allocation_id"]]["container_id"] is None
+        else:
+            container_id = await _wait_for_running_container(m)
         assert process.is_alive()
         bound = (await m.list_active())[0]
         assert bound["run_item_id"] == "i-live-perf" and bound["attempt_id"] == "a-live-perf"
@@ -180,6 +211,114 @@ async def test_performance_worker_kill_recovers_running_container(manager, tmp_p
         await asyncio.to_thread(process.join, 10)
         if container_id:
             subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["redis_loss", "late_create"])
+async def test_durable_inventory_recovers_late_or_lost_container(manager, scenario):
+    m, resource_id = manager
+    settings = get_settings()
+    allocation_id = uuid4().hex
+    container_name = f"qa-intent-{allocation_id[:12]}"
+    container_id = ""
+    store = PostgresResourceAllocationStore(settings)
+    receipts = PostgresResourceCleanupStore(settings)
+    await receipts.initialize()
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+        worker_id="creator", lease_seconds=60, attempt_id="a-live-perf")
+    await store.prepare(allocation_id, lease, namespace=m.namespace, container_name=container_name)
+    assert await m.prepare_allocation(lease, allocation_id)
+    cleanup = build_cleanup_callbacks(settings, manager=m, allocations=store)["docker"]
+    new_owner = None
+    task_id = f"task_cleanup_orphan_{allocation_id}_"
+    queue = RedisTaskQueue(settings.database.redis_url, stream=m._cleanup_stream, group="inventory-test")
+    try:
+        if scenario == "late_create":
+            await _expire(m, lease)
+            await m.reap_expired()
+            await _complete_real_cleanup(m, retain_receipt=True)  # Keep the successful empty-scan receipt too.
+            new_owner = await m.acquire(resource_type="docker", resource_id=resource_id,
+                worker_id="new-owner", lease_seconds=60)
+        args = ["docker", "create", "--name", container_name]
+        labels = {"enterprise-ai-qa-agent": "managed", "qa.allocation_id": allocation_id,
+                  "qa.lease_namespace": m.namespace, "qa.resource_id": resource_id,
+                  "qa.fencing_token": str(lease.fencing_token)}
+        for key, value in labels.items():
+            args.extend(["--label", f"{key}={value}"])
+        created = subprocess.run([*args, "busybox", "sleep", "300"],
+            capture_output=True, text=True, check=True, timeout=30)
+        container_id = created.stdout.strip()
+        task_id += container_id
+        if scenario == "redis_loss":
+            assert await cleanup.reconcile(m) == 0  # A valid owner is never cleaned.
+            await store.bind(allocation_id, container_id)
+            assert await m.bind(lease, container_id)
+            await _clear_test_namespace(m, m._cleanup_stream)  # Only this test's Redis data.
+            # A broken Stream must not leave a dedup marker that prevents recovery.
+            await m._client.set(m._cleanup_stream, "simulate_wrong_stream_type")
+            with pytest.raises(ResponseError, match="WRONGTYPE"):
+                await cleanup.reconcile(m)
+            assert not await m._client.hgetall(m._key("cleanup:inventory_deliveries"))
+            await m._client.delete(m._cleanup_stream)
+        await queue.connect()
+        assert await cleanup.reconcile(m) == 1
+        assert await cleanup.reconcile(m) == 0  # Stable task id / pending inventory dedup.
+        # A different consumer group can see an old ordinary cleanup delivery too.
+        handler = ResourceCleanupTaskHandler(receipts, {"docker": cleanup}, manager=m)
+        worker = RedisTaskWorker(queue, consumer="inventory-worker", block_ms=0, handler=handler)
+        while await worker.run_once():
+            pass
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("SELECT status FROM {} WHERE task_id = %s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+            assert cur.fetchone()["status"] == "completed"
+        assert not await queue.pending()
+        assert not await m._client.hgetall(m._key("cleanup:inventory_deliveries"))
+        assert await cleanup.reconcile(m) == 0
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+        assert allocation_id in await store.get_many([allocation_id], namespace=m.namespace)
+        if new_owner:
+            assert (await m.get(resource_type="docker", resource_id=resource_id))["lease_token"] == new_owner.lease_token
+            assert (await m.usage_snapshot())["global:all"] == 1
+            assert await m.retire(new_owner)
+        assert not await m.usage_snapshot()
+    finally:
+        await queue.close()
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id = ANY(%s)").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)),
+                ([task_id, f"task_cleanup_{lease.lease_token}"],))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live allocation database")
+@pytest.mark.asyncio
+async def test_durable_allocation_cannot_be_reassigned(manager):
+    m, resource_id = manager
+    store = PostgresResourceAllocationStore(get_settings())
+    allocation_id = uuid4().hex
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id,
+        worker_id="creator", lease_seconds=60)
+    await store.prepare(allocation_id, lease, namespace=m.namespace, container_name="intent-only")
+    await store.prepare(allocation_id, lease, namespace=m.namespace, container_name="intent-only")
+    with pytest.raises(ValueError, match="cannot be reassigned"):
+        await store.prepare(allocation_id, lease, namespace=m.namespace, container_name="changed-name")
+    with pytest.raises(ValueError, match="cannot be reassigned"):
+        await store.prepare(allocation_id, replace(lease, worker_id="different-owner"),
+                            namespace=m.namespace, container_name="intent-only")
+    await store.bind(allocation_id, "a" * 64)
+    await store.bind(allocation_id, "a" * 64)
+    with pytest.raises(ValueError, match="already assigned"):
+        await store.bind(allocation_id, "b" * 64)
+    assert not await store.get_many([allocation_id], namespace=m.namespace + ":other")
+    rows = await store.get_many([allocation_id], namespace=m.namespace)
+    assert rows[allocation_id]["container_name"] == "intent-only"
+    assert rows[allocation_id]["container_id"] == "a" * 64
+    assert rows[allocation_id]["lease_record"]["worker_id"] == "creator"
 
 
 def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):
@@ -219,6 +358,8 @@ async def manager():
         key_prefix=f"qa:test:lease:{suffix}",
     )
     await manager.connect()
+    if os.environ.get("RUN_LIVE_DOCKER_TESTS") == "1":
+        await PostgresResourceAllocationStore(get_settings()).initialize()
     resource_id = f"browser-{suffix}"
     await manager.configure_quota(scope="global", identifier="all", limit=1)
     await manager.configure_quota(scope="resource_type", identifier="browser", limit=1)
@@ -227,6 +368,11 @@ async def manager():
     finally:
         await _clear_test_namespace(manager, cleanup_stream)
         await manager.close()
+        if os.environ.get("RUN_LIVE_DOCKER_TESTS") == "1":
+            settings = get_settings()
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE lease_namespace = %s").format(
+                    sql.Identifier(settings.database.postgres_resource_allocation_table)), (manager.namespace,))
 
 
 async def _clear_test_namespace(manager, stream):
@@ -354,6 +500,24 @@ async def test_live_binding_cannot_overwrite_another_external_resource(manager):
     assert not await m.bind(replace(lease, fencing_token=lease.fencing_token + 1), "a" * 64)
     assert not await m.bind(lease, "b" * 64)
     assert (await m.get(resource_type="docker", resource_id=resource_id))["external_resource_id"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_prepared_allocation_keeps_quota_without_a_container_id(manager):
+    m, resource_id = manager
+    lease = await m.acquire(resource_type="docker", resource_id=resource_id, worker_id="w", lease_seconds=10)
+    allocation_id = uuid4().hex
+    assert not await m.prepare_allocation(replace(lease, fencing_token=999), allocation_id)
+    assert await m.prepare_allocation(lease, allocation_id)
+    assert not await m.prepare_allocation(lease, uuid4().hex)
+    assert await m.retire(lease)
+    assert (await m.usage_snapshot())["global:all"] == 1
+    messages = await m._client.xrange(m._cleanup_stream)
+    retired = ExpiredResourceLease.from_payload(json.loads(messages[0][1]["payload"]))
+    assert retired.allocation_id == allocation_id and retired.external_resource_id is None
+    assert not await m.complete_cleanup(replace(retired, allocation_id=uuid4().hex))
+    assert await m.complete_cleanup(retired)
+    assert not await m.usage_snapshot()
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,9 @@ local function retire_one(member, registry, usage, metadata_key, stream, now, re
     return nil
   end
   local external = lease['external_resource_id']
-  local has_external = external and external ~= cjson.null and external ~= ''
+  local allocation = lease['allocation_id']
+  local has_external = (external and external ~= cjson.null and external ~= '')
+      or (allocation and allocation ~= cjson.null and allocation ~= '')
   if lease['resource_id'] and (has_external or reason == 'lease_expired') then
     lease['schema_version'] = 1
     lease['task_id'] = 'task_cleanup_' .. tostring(lease['lease_token'] or '')
@@ -98,9 +100,14 @@ if not raw then return 0 end
 local metadata = cjson.decode(raw)
 local lease = metadata['lease'] or {}
 if metadata['status'] ~= 'cleanup_pending' then return 0 end
+local allocation = lease['allocation_id']
+if not allocation or allocation == cjson.null then allocation = '' end
+local external = lease['external_resource_id']
+if not external or external == cjson.null then external = '' end
 if lease['lease_token'] ~= ARGV[1]
     or tonumber(lease['fencing_token']) ~= tonumber(ARGV[2])
-    or lease['external_resource_id'] ~= ARGV[3] then return 0 end
+    or allocation ~= ARGV[4] then return 0 end
+if external ~= ARGV[3] and not (allocation ~= '' and external == '') then return 0 end
 if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
 for _, field in ipairs(metadata['quota']) do
   local current = tonumber(redis.call('HINCRBY', KEYS[3], field, -1))
@@ -160,6 +167,8 @@ retire_one(KEYS[1], KEYS[3], KEYS[2], KEYS[4], KEYS[5], now, 'execution_finished
 redis.call('DEL', KEYS[1])
 local external = owner['external_resource_id']
 if external and external ~= cjson.null and external ~= '' then return 2 end
+local allocation = owner['allocation_id']
+if allocation and allocation ~= cjson.null and allocation ~= '' then return 2 end
 return 1
 """
 
@@ -169,17 +178,34 @@ if not raw then return 0 end
 local payload = cjson.decode(raw)
 if payload['lease_token'] ~= ARGV[1] then return 0 end
 if tonumber(payload['fencing_token']) ~= tonumber(ARGV[3]) then return 0 end
-local external = payload['external_resource_id']
+local field = ARGV[4]
+if field ~= 'external_resource_id' and field ~= 'allocation_id' then return 0 end
+local external = payload[field]
 -- A lease owns one external resource. Rebinding loses the first cleanup duty.
 if external and external ~= cjson.null and external ~= '' and external ~= ARGV[2] then return 0 end
-payload['external_resource_id'] = ARGV[2]
-redis.call('SET', KEYS[1], cjson.encode(payload), 'KEEPTTL')
 local metadata_raw = redis.call('HGET', KEYS[2], KEYS[1])
+if not metadata_raw then return 0 end
+payload[field] = ARGV[2]
+redis.call('SET', KEYS[1], cjson.encode(payload), 'KEEPTTL')
 if metadata_raw then
   local metadata = cjson.decode(metadata_raw)
   metadata['lease'] = payload
   redis.call('HSET', KEYS[2], KEYS[1], cjson.encode(metadata))
 end
+return 1
+"""
+
+ENQUEUE_ORPHAN = """
+local payload = cjson.decode(ARGV[1])
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local owner = cjson.decode(raw)
+  if owner['lease_token'] == payload['lease_token']
+      and tonumber(owner['fencing_token']) == tonumber(payload['fencing_token']) then return 0 end
+end
+if redis.call('HEXISTS', KEYS[3], payload['task_id']) == 1 then return 0 end
+local message = redis.call('XADD', KEYS[2], '*', 'payload', ARGV[1])
+redis.call('HSET', KEYS[3], payload['task_id'], message)
 return 1
 """
 

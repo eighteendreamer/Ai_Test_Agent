@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import pytest
 
@@ -84,6 +85,20 @@ async def test_cleanup_task_handler_uses_external_resource_id():
     assert calls == [("docker-slot-1", "container-123")]
     assert store.statuses == ["completed"]
     assert manager.finalized == ["docker-slot-1"]
+
+
+@pytest.mark.asyncio
+async def test_prepared_allocation_without_container_id_requires_cleanup():
+    calls = []
+    async def docker(lease): calls.append(lease.allocation_id)
+    store = ReceiptStore()
+    manager = Manager()
+    lease = replace(expired_lease("docker", "slot"), allocation_id="a" * 32)
+    handler = ResourceCleanupTaskHandler(store, {"docker": docker}, manager=manager)
+    await handler(QueuedTask("1-0", {"task_type": "cleanup_task", **lease.__dict__}))
+    assert calls == ["a" * 32]
+    assert store.statuses == ["completed"]
+    assert manager.finalized == ["slot"]
 
 
 @pytest.mark.asyncio

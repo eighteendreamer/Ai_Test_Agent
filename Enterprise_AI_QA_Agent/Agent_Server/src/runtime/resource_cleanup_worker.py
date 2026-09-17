@@ -25,12 +25,14 @@ class ResourceCleanupWorker:
         manager: RedisResourceLeaseManager,
         *,
         interval_seconds: float = 30.0,
+        docker_reconciler=None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Resource cleanup interval must be positive")
         self._manager = manager
         self._interval_seconds = interval_seconds
         self._stop = asyncio.Event()
+        self._docker_reconciler = docker_reconciler
 
     def stop(self) -> None:
         self._stop.set()
@@ -38,6 +40,8 @@ class ResourceCleanupWorker:
     async def run_once(self, *, limit: int = 100) -> int:
         expired = await self._manager.reap_expired(limit=limit)
         await self._manager.reconcile_quota_usage()
+        if self._docker_reconciler is not None:
+            await self._docker_reconciler.reconcile(self._manager)
         for lease in expired:
             LOGGER.info("resource_cleanup_task_enqueued", extra={
                 "resource_type": lease.resource_type,
@@ -57,6 +61,8 @@ class ResourceCleanupWorker:
                 LOGGER.warning("resource_cleanup_redis_unavailable", extra={
                     "error_type": type(exc).__name__,
                 })
+            except Exception as exc:
+                LOGGER.exception("resource_cleanup_inventory_failed", extra={"error_type": type(exc).__name__})
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval_seconds)
             except asyncio.TimeoutError:
@@ -88,9 +94,11 @@ class ResourceCleanupTaskHandler:
             # Crash after PG commit but before Redis finalization/ACK: replay only
             # the fenced finalization, never call the external adapter again.
             await self._manager.complete_cleanup(lease)
+            if payload.get("cleanup_reason") == "orphan_inventory":
+                await self._manager.complete_orphan_delivery(task_id)
             return
         try:
-            if not lease.external_resource_id:
+            if not lease.external_resource_id and not lease.allocation_id:
                 await self._store.finish(task_id, worker_id=worker_id, status="skipped")
                 LOGGER.info("resource_cleanup_skipped", extra={
                     "task_id": task_id, "resource_id": lease.resource_id,
@@ -117,6 +125,8 @@ class ResourceCleanupTaskHandler:
             })
             raise
         await self._manager.complete_cleanup(lease)
+        if payload.get("cleanup_reason") == "orphan_inventory":
+            await self._manager.complete_orphan_delivery(task_id)
         LOGGER.info("resource_lease_external_cleanup_completed", extra={
             "task_id": payload.get("task_id"),
             "resource_type": lease.resource_type,

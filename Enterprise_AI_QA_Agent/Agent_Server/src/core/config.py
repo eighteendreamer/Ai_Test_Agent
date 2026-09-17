@@ -56,6 +56,7 @@ class DatabaseConfig(BaseModel):
     postgres_test_case_embedding_table: str = "agent_test_case_embeddings"
     postgres_resource_quota_table: str = "agent_resource_quotas"
     postgres_resource_cleanup_table: str = "agent_resource_cleanup_jobs"
+    postgres_resource_allocation_table: str = "agent_resource_allocations"
 
     memgraph_host: str = "127.0.0.1"
     memgraph_port: int = 7687
@@ -193,6 +194,7 @@ class OrchestrConfig(BaseModel):
     resource_default_lease_seconds: int = Field(default=300, gt=0)
     resource_docker_slots: int = Field(default=10, ge=1)
     resource_docker_command_timeout_seconds: float = Field(default=60.0, gt=0)
+    resource_docker_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
     resource_cleanup_interval_seconds: float = Field(default=30.0, gt=0)
 
     langchain_middleware_enabled: bool = False

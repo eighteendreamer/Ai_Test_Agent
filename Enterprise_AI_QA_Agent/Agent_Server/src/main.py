@@ -138,6 +138,7 @@ from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
 from src.runtime.postgres_vector_rebuild_job_store import (
@@ -208,6 +209,7 @@ async def lifespan(app: FastAPI):
     # before a relay publishes to Redis.
     task_outbox = PostgresTaskOutbox(settings)
     await task_outbox.initialize()
+    await PostgresResourceAllocationStore(settings).initialize()
     app.state.task_outbox = task_outbox
     compaction_record_store = PostgresCompactionRecordStore(
         settings,

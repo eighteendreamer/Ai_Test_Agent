@@ -275,7 +275,7 @@ Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 S
 `MAXLEN` 裁剪。
 
 测试执行器在正常结束、异常结束或部分领取失败时统一调用 `retire()`：
-未绑定外部资源的逻辑租约直接释放；已绑定外部资源的租约原子写入清理队列后
+未绑定外部资源且没有创建意图的逻辑租约直接释放；已绑定外部资源或分配标识的租约原子写入清理队列后
 进入 `cleanup_pending`。过期回收复用同一个交接逻辑，继续占用原槽位和所有层级配额；
 清理失败、重试或进入死信均不释放容量。清理结果写入 PostgreSQL
 `agent_resource_cleanup_jobs` 后，通过 `lease_token + fencing_token + external_resource_id`
@@ -288,10 +288,19 @@ Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 S
 当前浏览器工具仍使用调用级 `release()`，其跨调用会话生命周期尚未迁移到 `retire()`；
 这条旧路径不能作为浏览器实例容量已受完整治理的证明。
 升级时同步重启 API 和 Cleanup Worker，避免旧消费者 ACK 后不执行新版本配额收尾；
-清理队列和重试继续使用已有配置，无新增数据库结构。
+清理队列和重试继续使用已有配置。API 与 Cleanup Worker 启动时初始化新的
+`agent_resource_allocations` 表，数据库账号需要建表权限；表名配置为
+`DATABASE__POSTGRES_RESOURCE_ALLOCATION_TABLE`。
 自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；
 性能测试的冒烟和正式执行已接入 `DockerResourceManager`：实际选择 Docker（包括
-`auto` 后端）时领取独立租约，使用 `docker create → 绑定完整 ID → docker start --attach`。
+`auto` 后端）时领取独立租约，使用以下顺序：
+
+```text
+PostgreSQL 提交创建意图 → Redis 绑定 allocation_id → docker create
+  → PostgreSQL 绑定完整 ID → Redis 绑定完整 ID → docker start --attach
+```
+
+PostgreSQL 意图写入失败时不创建容器；即使没有取得容器 ID，已准备分配的租约仍保留清理责任。
 容器名称含 Run/RunItem/Attempt 的安全片段和随机后缀，labels 保存完整归属标识，
 不写入租约凭证。绑定失败不启动；运行中续期失败会取消执行并按完整 ID 清理。
 取消和超时会终止 Docker CLI 客户端，保留已捕获的 stdout/stderr（超时结果）并清理容器；
@@ -303,11 +312,21 @@ Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 S
 `ORCHESTRATION__RESOURCE_DEFAULT_LEASE_SECONDS` 管理。测试任务的容器为临时资源。
 
 安全测试、独立容器管理及其他 Docker 工具入口尚需接入同一生命周期。
-创建成功但尚未绑定 ID 时进程被强杀，仍可能留下**未启动**的容器；需后续通过
-持久化创建意图与标签清单对账补齐这个窗口，不能将当前实现当作全部强杀边界已覆盖。
+创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
+核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
+后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对
+`ORCHESTRATION__RESOURCE_DOCKER_RECONCILE_BATCH_SIZE=100` 个容器，并推进扫描游标。
+同一有效所有者的容器不会入队；失去所有者的容器进入原有 cleanup Stream。
+清单任务使用 allocation_id 与完整容器 ID 组成独立幂等键：之前“未发现容器”的成功回执
+不会跳过随后才创建成功的容器，也不会释放已被新所有者领取的配额。
+创建意图在清理后继续保留以识别迟到的容器，不配置自动 TTL；后续归档需先证明无在途创建请求。
+意图中的租约凭证仅供内部恢复，禁止写入日志或暴露到管理接口。
+清单投递失败时下一轮重新扫描；死信任务保留投递去重标记，处理故障后需重放原任务，
+不能靠重复扫描绕过最大重试次数。对账仅覆盖 Cleanup Worker 当前连接的 Docker daemon。
 本单元也不代表 P4 的浏览器治理与并发验收全部完成。
-Redis 完全丢失时，尚未被消费并写入 PostgreSQL 的清理消息仍需外部资源清单对账恢复；
-生产必须配置 Redis 持久化，该清单恢复能力尚待后续实现。
+Redis 完全丢失后可从 PostgreSQL 意图与 Docker 清单重新投递孤儿容器清理；这不等于恢复了
+丢失期间的准入配额，也不保证跨 daemon 恢复。生产必须配置 Redis 持久化；全量丢失后应暂停
+新任务准入，完成资源对账和配额恢复后再开放。自动化准入恢复仍待补齐。
 
 ### 2. 启动前端
 

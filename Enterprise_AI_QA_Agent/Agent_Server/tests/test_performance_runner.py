@@ -180,10 +180,16 @@ async def test_docker_never_starts_if_binding_is_rejected():
     lease = SimpleNamespace(resource_id="docker-slot-0", fencing_token=3, worker_id="w1")
 
     class Manager:
+        namespace = "qa:test"
         async def connect(self): pass
         async def acquire_first_available(self, **kwargs): return lease
+        async def prepare_allocation(self, *args): return True
         async def bind(self, *args): return False
         async def retire(self, *args): calls.append("retire"); return True
+
+    class Allocations:
+        async def prepare(self, *args, **kwargs): calls.append("prepare")
+        async def bind(self, *args): calls.append("persist_binding")
 
     class Docker(DockerResourceManager):
         async def _command(self, args, *, timeout):
@@ -194,10 +200,30 @@ async def test_docker_never_starts_if_binding_is_rejected():
         resource_docker_slots=1, resource_default_lease_seconds=30,
         resource_docker_command_timeout_seconds=60,
     ))
-    docker = Docker(settings, lease_manager=Manager())
+    docker = Docker(settings, lease_manager=Manager(), allocation_store=Allocations())
     with pytest.raises(RuntimeError, match="ownership lost"):
         await docker.execute(["busybox", "true"], name_prefix="qa-test", timeout_seconds=10)
-    assert calls == ["create", "rm", "retire"]
+    assert calls == ["prepare", "create", "persist_binding", "rm", "retire"]
+
+
+@pytest.mark.asyncio
+async def test_docker_never_creates_without_durable_intent():
+    calls = []
+    class Manager:
+        namespace = "qa:test"
+        async def connect(self): pass
+        async def acquire_first_available(self, **kwargs): return object()
+        async def retire(self, lease): calls.append("retire"); return True
+    class Allocations:
+        async def prepare(self, *args, **kwargs): raise ConnectionError("intent database unavailable")
+    class Docker(DockerResourceManager):
+        async def _command(self, *args, **kwargs): raise AssertionError("Docker must not be called")
+    settings = SimpleNamespace(orchestration=SimpleNamespace(
+        resource_docker_slots=1, resource_default_lease_seconds=30, resource_docker_command_timeout_seconds=60))
+    with pytest.raises(ConnectionError, match="intent database"):
+        await Docker(settings, lease_manager=Manager(), allocation_store=Allocations()).execute(
+            ["busybox", "true"], name_prefix="qa-test", timeout_seconds=10)
+    assert calls == ["retire"]
 
 
 @pytest.mark.asyncio

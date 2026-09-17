@@ -11,6 +11,8 @@ import re
 from src.core.config import get_settings
 from src.core.request_context import new_id
 from src.application.docker_management_service import DockerManagementService
+from src.runtime.docker_resource_cleanup import DockerResourceCleanup
+from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.postgres_resource_cleanup_store import PostgresResourceCleanupStore
@@ -27,32 +29,9 @@ def _default_worker_id() -> str:
     return f"cleanup_{host}_{os.getpid()}_{suffix}"
 
 
-def build_cleanup_callbacks(settings):
-    docker = DockerManagementService(settings)
-
-    async def cleanup_docker(lease) -> None:
-        if lease.resource_type != "docker":
-            raise ValueError(
-                f"Unexpected Docker cleanup resource type: {lease.resource_type}"
-            )
-        if not lease.external_resource_id:
-            return
-        if not re.fullmatch(r"[a-f0-9]{64}", lease.external_resource_id):
-            raise ValueError("Automatic Docker cleanup requires an immutable full container ID")
-        containers = await docker.list_containers()
-        target = next(
-            (
-                item
-                for item in containers
-                if lease.external_resource_id == item.get("id")
-            ),
-            None,
-        )
-        if target is None:
-            return
-        await docker.remove_container(lease.external_resource_id, force=True)
-
-    return {"docker": cleanup_docker}
+def build_cleanup_callbacks(settings, *, manager=None, allocations=None):
+    return {"docker": DockerResourceCleanup(settings, allocations=allocations,
+        namespace=manager.namespace if manager is not None else "qa", docker=DockerManagementService(settings))}
 
 
 async def _run(*, once: bool, worker_id: str) -> None:
@@ -69,18 +48,22 @@ async def _run(*, once: bool, worker_id: str) -> None:
         socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
     )
     store = PostgresResourceCleanupStore(settings)
+    allocations = PostgresResourceAllocationStore(settings)
+    callbacks = build_cleanup_callbacks(settings, manager=manager, allocations=allocations)
     reaper = ResourceCleanupWorker(
         manager,
         interval_seconds=settings.orchestration.resource_cleanup_interval_seconds,
+        docker_reconciler=callbacks["docker"],
     )
     cleanup_worker = RedisTaskWorker.from_settings(
         queue,
         settings=settings,
         consumer=worker_id,
-        handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager),
+        handler=ResourceCleanupTaskHandler(store, callbacks, manager=manager),
     )
     try:
         await store.initialize()
+        await allocations.initialize()
         await manager.connect()
         await queue.connect()
         if once:

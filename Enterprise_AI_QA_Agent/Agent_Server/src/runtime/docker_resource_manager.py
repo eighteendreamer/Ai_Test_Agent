@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from src.core.request_context import get_request_context
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager, ResourceUnavailable
+from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +42,10 @@ class DockerCommandTimeout(TimeoutError):
 class DockerResourceManager:
     """Own one container per lease, including auto-selected Docker backends."""
 
-    def __init__(self, settings, *, lease_manager=None) -> None:
+    def __init__(self, settings, *, lease_manager=None, allocation_store=None) -> None:
         self._settings = settings
         self._lease_manager = lease_manager
+        self._allocation_store = allocation_store
 
     async def execute(self, create_args: list[str], *, name_prefix: str,
                       timeout_seconds: float) -> DockerExecutionResult:
@@ -64,6 +66,7 @@ class DockerResourceManager:
         name = f"{name[:90]}-{allocation_id[:12]}"
         lease = None
         container_id = ""
+        creation_requested = False
         operation = heartbeat = None
         command_timeout = config.resource_docker_command_timeout_seconds
         try:
@@ -83,13 +86,23 @@ class DockerResourceManager:
                 raise ResourceUnavailable("resource_harness_unavailable") from exc
 
             async def run():
-                nonlocal container_id
+                nonlocal container_id, creation_requested
+                allocations = self._allocation_store or PostgresResourceAllocationStore(self._settings)
+                await allocations.prepare(allocation_id, lease, namespace=manager.namespace, container_name=name)
+                if not await manager.prepare_allocation(lease, allocation_id):
+                    raise RuntimeError("Docker lease ownership lost before allocation")
+                LOGGER.info("docker_allocation_prepared", extra={
+                    **fields, "allocation_id": allocation_id, "resource_id": lease.resource_id,
+                    "worker_id": lease.worker_id,
+                })
                 labels = {"enterprise-ai-qa-agent": "managed", "qa.allocation_id": allocation_id,
+                          "qa.lease_namespace": manager.namespace,
                           "qa.resource_id": lease.resource_id, "qa.fencing_token": str(lease.fencing_token)}
                 labels.update({f"qa.{key}": value for key, value in fields.items() if value})
                 args = ["create", "--name", name]
                 for key, value in labels.items():
                     args.extend(["--label", f"{key}={value}"])
+                creation_requested = True
                 created = await self._command([*args, *create_args], timeout=command_timeout)
                 if created[0] != 0:
                     raise RuntimeError(f"Docker create failed (exit_code={created[0]}): {created[2]}")
@@ -97,6 +110,7 @@ class DockerResourceManager:
                 if not re.fullmatch(r"[a-f0-9]{64}", container_id):
                     container_id = ""
                     raise RuntimeError("Docker create did not return an immutable full container ID")
+                await allocations.bind(allocation_id, container_id)
                 if not await manager.bind(lease, container_id):
                     raise RuntimeError("Docker lease ownership lost before container start")
                 LOGGER.info("docker_resource_execution_started", extra={
@@ -128,7 +142,7 @@ class DockerResourceManager:
                                  return_exceptions=True)
             if lease is not None:
                 try:
-                    if not container_id:
+                    if creation_requested and not container_id:
                         # Creation can finish before the CLI response is delivered. Only
                         # this allocation's UUID label may resolve an unknown result.
                         code, stdout, stderr = await self._command(

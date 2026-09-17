@@ -17,6 +17,7 @@ from src.runtime.resource_lease_scripts import (
     BIND,
     CLAIM,
     COMPLETE_CLEANUP,
+    ENQUEUE_ORPHAN,
     REAP,
     RECONCILE_QUOTA,
     RELEASE,
@@ -61,6 +62,7 @@ class ExpiredResourceLease:
     fencing_token: int
     request_id: str
     trace_id: str
+    allocation_id: str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "ExpiredResourceLease":
@@ -84,6 +86,7 @@ class ExpiredResourceLease:
             fencing_token=int(payload.get("fencing_token") or 0),
             request_id=str(payload.get("request_id") or f"req_cleanup_{lease_token}"),
             trace_id=str(payload.get("trace_id") or f"trace_cleanup_{lease_token}"),
+            allocation_id=_optional_text(payload.get("allocation_id")),
         )
 
 
@@ -120,6 +123,29 @@ class RedisResourceLeaseManager:
                                           socket_timeout=self._socket_timeout_seconds,
                                           socket_connect_timeout=self._socket_timeout_seconds)
         await self._client.ping()
+
+    @property
+    def namespace(self) -> str:
+        return self._prefix
+
+    async def prepare_allocation(self, lease: ResourceLease, allocation_id: str) -> bool:
+        if not re.fullmatch(r"[a-f0-9]{32}", allocation_id):
+            raise ValueError("Invalid resource allocation ID")
+        return bool(await self._client.eval(
+            BIND, 2, self._lease_key(lease.resource_type, lease.resource_id), self._key("lease:metadata"),
+            lease.lease_token, allocation_id, lease.fencing_token, "allocation_id",
+        ))
+
+    async def enqueue_orphan_cleanup(self, payload: dict[str, Any]) -> bool:
+        lease = ExpiredResourceLease.from_payload(payload)
+        return bool(await self._client.eval(
+            ENQUEUE_ORPHAN, 3, self._lease_key(lease.resource_type, lease.resource_id),
+            self._cleanup_stream, self._key("cleanup:inventory_deliveries"),
+            json.dumps(payload, ensure_ascii=False),
+        ))
+
+    async def complete_orphan_delivery(self, task_id: str) -> None:
+        await self._client.hdel(self._key("cleanup:inventory_deliveries"), task_id)
 
     async def close(self) -> None:
         if self._client is not None and hasattr(self._client, "aclose"):
@@ -256,7 +282,7 @@ class RedisResourceLeaseManager:
         bound = bool(await self._client.eval(
             BIND, 2, self._lease_key(lease.resource_type, lease.resource_id),
             self._key("lease:metadata"),
-            lease.lease_token, str(external_resource_id), lease.fencing_token,
+            lease.lease_token, str(external_resource_id), lease.fencing_token, "external_resource_id",
         ))
         LOGGER.log(logging.INFO if bound else logging.WARNING,
                    "resource_lease_bound" if bound else "resource_lease_binding_rejected", extra={
@@ -305,6 +331,7 @@ class RedisResourceLeaseManager:
             self._lease_key(lease.resource_type, lease.resource_id),
             self._key("lease:metadata"), self._key("quota:usage"),
             lease.lease_token, lease.fencing_token, lease.external_resource_id or "",
+            lease.allocation_id or "",
         ))
         LOGGER.info("resource_cleanup_quota_released" if released else "resource_cleanup_finalize_noop", extra={
             "resource_id": lease.resource_id, "resource_type": lease.resource_type,
