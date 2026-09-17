@@ -662,6 +662,21 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。该链路是 Agent Turn 队列化的前置能力，
 普通对话本身仍由现有入口执行，尚未完成 Outbox/Agent Worker 调度改造。
 
+普通执行、手动恢复与审批续跑现在共同监控实际执行和数据库租约心跳，沿用
+`RedisTaskWorker._run_handler` / `TestRunExecutionService._execute_with_lease_watch` 的
+`FIRST_COMPLETED` 生命周期。续租返回失效或抛出连接异常时，取消正在等待的运行任务，
+等待工具清理及事件落库收尾；最终结果持久化阶段也受同一心跳监控。
+失去租约时不尝试把 Session 改成成功/中断终态，也不完成租约，交给现有过期恢复流程；
+`session_execution_ownership_lost` 和 `session_lease_left_for_recovery` 记录异常类型与会话。
+外部重复取消不会绕过清理，停止心跳时等待正在进行的续租调用返回，避免其数据库线程在租约释放后继续运行。
+这里解决已检测到的续租失败；数据库调用长期无响应的期限控制、普通对话的持久任务调度仍需接续完成。
+
+设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
+`uv run --no-sync python -m pytest tests/test_session_execution_ownership.py -q`，
+覆盖三条执行入口、续租失效/连接异常/实际接管，以及清理期间的重复取消；
+真实 PostgreSQL 测试检查旧执行停止且新所有者的租约仍被保留。
+测试注入阻塞运行时以确定性验证所有权，不能替代真实模型、工具和整个平台的容量验收。
+
 ### 2. 启动前端
 
 ```bash

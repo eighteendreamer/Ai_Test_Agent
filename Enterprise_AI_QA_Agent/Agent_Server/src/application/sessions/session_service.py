@@ -454,14 +454,17 @@ class SessionService:
             )
             settled = False
             try:
-                runtime_result = await self._event_sink(session_id, turn_lease_token=turn_lease_token).run(
+                runtime_result = await self._await_owned_execution(
+                    session_id, heartbeat_task,
+                    self._event_sink(session_id, turn_lease_token=turn_lease_token).run,
                     self._runtime_service.resume_turn,
                     session,
                     snapshot,
                     resume_reason=payload.reason or "manual_resume",
                     on_model_chunk=stream_chunk_handler,
                 )
-                response = await self._finalize_runtime_result(
+                response = await self._await_owned_execution(
+                    session_id, heartbeat_task, self._finalize_runtime_result,
                     session=session,
                     runtime_result=runtime_result,
                     assistant_message_id=assistant_message_id,
@@ -471,6 +474,9 @@ class SessionService:
                 settled = True
                 return response
             except asyncio.CancelledError:
+                raise
+            except ContinuationLeaseLostError:
+                logger.warning("turn_resume_fenced_after_lease_loss", extra={"session_id": session_id})
                 raise
             except Exception as exc:
                 settled = True
@@ -503,13 +509,8 @@ class SessionService:
                 )
                 raise
             finally:
-                heartbeat_stop.set()
-                heartbeat_task.cancel()
-                try:
-                    await heartbeat_task
-                except asyncio.CancelledError:
-                    pass
-                if settled:
+                healthy = await self._stop_lease_heartbeat(session_id, heartbeat_stop, heartbeat_task)
+                if settled and healthy:
                     completed = await self._store.complete_turn_execution(
                         session_id, turn_lease_token
                     )
@@ -751,8 +752,10 @@ class SessionService:
                     continuation_approval_id=approval.id,
                     continuation_lease_token=continuation_token,
                 )
-                continuation = await self._event_sink(session_id,
-                    continuation_approval_id=approval.id, continuation_lease_token=continuation_token).run(
+                continuation = await self._await_owned_execution(
+                    session_id, heartbeat_task,
+                    self._event_sink(session_id, continuation_approval_id=approval.id,
+                        continuation_lease_token=continuation_token).run,
                     self._runtime_service.resume_after_approval,
                     session,
                     approval.model_dump(mode="python"),
@@ -761,7 +764,8 @@ class SessionService:
                 if continuation is None:
                     continuation_settled = True
                     return
-                await self._finalize_runtime_result(
+                await self._await_owned_execution(
+                    session_id, heartbeat_task, self._finalize_runtime_result,
                     session=session,
                     runtime_result=continuation,
                     assistant_message_id=assistant_message_id,
@@ -811,13 +815,8 @@ class SessionService:
                 )
                 continuation_settled = True
             finally:
-                heartbeat_stop.set()
-                heartbeat_task.cancel()
-                try:
-                    await heartbeat_task
-                except asyncio.CancelledError:
-                    pass
-                if continuation_settled:
+                healthy = await self._stop_lease_heartbeat(session_id, heartbeat_stop, heartbeat_task)
+                if continuation_settled and healthy:
                     completed = await self._store.complete_approval_continuation(
                         session_id=session_id,
                         approval_id=approval.id,
@@ -836,7 +835,7 @@ class SessionService:
         approval_id: str,
         continuation_token: str,
         stop_event: asyncio.Event,
-    ) -> None:
+    ) -> bool | None:
         while not stop_event.is_set():
             try:
                 await asyncio.wait_for(
@@ -862,7 +861,7 @@ class SessionService:
                     session_id,
                     "Approval continuation lease was lost to another worker.",
                 )
-                return
+                return False
 
     async def _keep_turn_execution_alive(
         self,
@@ -870,7 +869,7 @@ class SessionService:
         session_id: str,
         lease_token: str,
         stop_event: asyncio.Event,
-    ) -> None:
+    ) -> bool | None:
         while not stop_event.is_set():
             try:
                 await asyncio.wait_for(
@@ -895,7 +894,7 @@ class SessionService:
                     session_id,
                     "Turn execution lease was lost to another worker.",
                 )
-                return
+                return False
 
     async def _append_approval_resolved_event(
         self,
@@ -973,6 +972,55 @@ class SessionService:
     def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
         return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)
 
+    async def _await_owned_execution(self, session_id: str, heartbeat: asyncio.Task, operation, *args, **kwargs):
+        """Use the TestRun/Redis worker FIRST_COMPLETED ownership pattern."""
+        execution = None
+        try:
+            if not heartbeat.done():
+                execution = asyncio.create_task(operation(*args, **kwargs))
+                await asyncio.wait({execution, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+            if heartbeat.done():
+                error = None if heartbeat.cancelled() else heartbeat.exception()
+                logger.error("session_execution_ownership_lost", extra={
+                    "session_id": session_id,
+                    "error_type": type(error).__name__ if error else "LeaseLost",
+                })
+                raise ContinuationLeaseLostError("Session execution heartbeat cannot confirm ownership") from error
+            return await execution
+        finally:
+            if execution is not None:
+                if not execution.done():
+                    execution.cancel()
+                # External resources and accepted event writes must settle before
+                # the caller stops heartbeats or completes the lease.
+                await self._settle_execution_tasks(execution)
+
+    @staticmethod
+    async def _settle_execution_tasks(*tasks):
+        settled = asyncio.gather(*tasks, return_exceptions=True)
+        cancelled = False
+        while not settled.done():
+            try:
+                await asyncio.shield(settled)
+            except asyncio.CancelledError:
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
+        return settled.result()
+
+    async def _stop_lease_heartbeat(self, session_id, stop, heartbeat) -> bool:
+        # Let any in-flight database renewal finish instead of cancelling its
+        # to_thread waiter while the transaction is still running.
+        stop.set()
+        result = (await self._settle_execution_tasks(heartbeat))[0]
+        if isinstance(result, BaseException) or result is False:
+            logger.warning("session_lease_left_for_recovery", extra={
+                "session_id": session_id,
+                "error_type": type(result).__name__ if isinstance(result, BaseException) else "LeaseLost",
+            })
+            return False
+        return True
+
     async def list_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None):
         return await self._store.read_event_page(session_id, limit=limit, after_event_id=after_event_id)
 
@@ -1012,7 +1060,8 @@ class SessionService:
         )
         settled = False
         try:
-            response = await self._run_owned_submission_locked(
+            response = await self._await_owned_execution(
+                session.id, heartbeat_task, self._run_owned_submission_locked,
                 session=claimed_session,
                 payload=payload,
                 execution_request=execution_request,
@@ -1023,17 +1072,14 @@ class SessionService:
             return response
         except asyncio.CancelledError:
             raise
+        except ContinuationLeaseLostError:
+            raise
         except Exception:
             settled = True
             raise
         finally:
-            heartbeat_stop.set()
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-            if settled:
+            healthy = await self._stop_lease_heartbeat(session.id, heartbeat_stop, heartbeat_task)
+            if settled and healthy:
                 completed = await self._store.complete_turn_execution(
                     session.id, turn_lease_token
                 )
