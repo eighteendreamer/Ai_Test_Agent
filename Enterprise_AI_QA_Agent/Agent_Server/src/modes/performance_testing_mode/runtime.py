@@ -17,6 +17,8 @@ from src.application.performance.perf_metrics_store import PerfMetricsStore
 from src.application.performance.perf_runner_service import PerfRunnerService
 from src.application.performance.perf_target_guard import PerfTargetGuard
 from src.core.config import Settings
+from src.core.request_context import bind_request_context
+from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.modes.performance_testing_mode.contracts import (
     PHASE_ANALYZED,
     PHASE_DOC_RESOLUTION,
@@ -136,9 +138,22 @@ class PerformanceTestingModeRuntime:
     async def handle(self, arguments: dict[str, Any], context: Any) -> dict[str, Any]:
         """Main entry point — restore state, advance phases, persist, return."""
         state = self._restore_state(context)
+        bundle = getattr(context, "context_bundle", {}) or {}
 
         try:
-            result = await self._advance(state, arguments, context)
+            with bind_request_context(
+                project_id=bundle.get("project_id"), session_id=getattr(context, "session_id", None),
+                turn_id=getattr(context, "turn_id", None),
+                run_id=bundle.get("test_run_id"), run_item_id=bundle.get("run_item_id"),
+                attempt_id=bundle.get("attempt_id"),
+            ):
+                result = await self._advance(state, arguments, context)
+        except ResourceUnavailable as exc:
+            logger.info("performance_waiting_resource", extra={
+                "session_id": getattr(context, "session_id", None), "waiting_reason": exc.reason,
+            })
+            result = {"status": "waiting_resource", "ok": False, "phase": state.phase,
+                      "waiting_reason": exc.reason, "summary": "等待性能测试执行资源"}
         except Exception as e:
             logger.exception("Performance testing runtime error")
             state.record_phase_transition(PHASE_FAILED)
@@ -513,7 +528,13 @@ class PerformanceTestingModeRuntime:
             timeout_seconds=state.plan.workload.hold_seconds + 120,
         )
 
-        run = await self._runner.execute(state.plan, script, run_opts, engine_adapter)
+        try:
+            run = await self._runner.execute(state.plan, script, run_opts, engine_adapter)
+        except ResourceUnavailable:
+            # No container started. Resume execution, not result collection, once
+            # capacity becomes available; the completed smoke phase stays valid.
+            state.record_phase_transition(PHASE_SMOKE_VALIDATED)
+            raise
         state.run = run
 
         if run.status != "completed" and not run.raw_metrics:

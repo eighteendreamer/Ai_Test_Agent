@@ -80,3 +80,9 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
     assert manager.calls[-1]["resource_ids"] == ["docker-slot-0", "docker-slot-1"]
     assert all(lease.attempt_id == "attempt-1" for lease in leases)
     await service._release_execution_resources(leases)
+
+    manager.calls.clear()
+    run = run.model_copy(update={"mode_key": "performance_testing"})
+    leases = await service._claim_execution_resources(run=run, item=item, version=version, attempt_id="attempt-2")
+    assert [call["resource_type"] for call in manager.calls] == ["test_account", "environment"]
+    await service._release_execution_resources(leases)

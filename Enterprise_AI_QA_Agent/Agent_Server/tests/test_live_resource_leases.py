@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import shutil
 import subprocess
+import tempfile
 from uuid import uuid4
 from dataclasses import replace
 
@@ -15,6 +16,10 @@ from psycopg import sql
 from redis.exceptions import ResponseError
 
 from src.core.config import get_settings
+from src.core.request_context import bind_request_context
+from src.application.performance.perf_runner_service import PerfRunnerService
+from src.application.performance.engine_adapter import EngineCommand, ScriptArtifact
+from src.runtime.docker_resource_manager import DockerResourceManager
 from src.application.test_runs.execution_service import TestRunExecutionService as ExecutionService
 from src.cli.run_resource_cleanup_worker import build_cleanup_callbacks
 from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -27,6 +32,154 @@ from src.runtime.resource_cleanup_worker import (
 )
 from src.runtime.resource_lease_manager import ExpiredResourceLease, RedisResourceLeaseManager, ResourceUnavailable
 from tests.test_resource_cleanup_worker import ReceiptStore
+
+
+def _run_performance_until_killed(prefix, stream, temp_root):
+    async def run():
+        tempfile.tempdir = temp_root
+        settings = get_settings().model_copy(deep=True)
+        settings.orchestration.resource_default_lease_seconds = 2
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
+        runner = PerfRunnerService(settings, docker_resources=DockerResourceManager(settings, lease_manager=manager))
+        with bind_request_context(project_id="p-live-perf", session_id="s-live-perf", run_id="r-live-perf",
+                                  run_item_id="i-live-perf", attempt_id="a-live-perf", worker_id="perf-child"):
+            await runner._run_in_docker(
+                EngineCommand(image="busybox", command=["sleep", "300"]),
+                ScriptArtifact(engine="k6", filename="test.js", script_content=""), "qa-perf-kill", 310,
+            )
+    asyncio.run(run())
+
+
+async def _wait_for_running_container(manager):
+    async def wait():
+        while True:
+            for lease in await manager.list_active():
+                container_id = lease.get("external_resource_id")
+                if not container_id:
+                    continue
+                inspected = await asyncio.to_thread(subprocess.run,
+                    ["docker", "inspect", "--format", "{{.State.Running}}", container_id],
+                    capture_output=True, text=True, timeout=15)
+                if inspected.returncode == 0 and inspected.stdout.strip() == "true":
+                    return container_id
+            await asyncio.sleep(.05)
+    return await asyncio.wait_for(wait(), timeout=30)
+
+
+async def _complete_real_cleanup(manager):
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    queue = RedisTaskQueue(settings.database.redis_url, stream=manager._cleanup_stream, group="live-perf-cleanup")
+    task_ids = []
+    try:
+        await store.initialize()
+        await queue.connect()
+        payloads = [json.loads(fields["payload"]) for _, fields in await manager._client.xrange(manager._cleanup_stream)]
+        task_ids = [payload["task_id"] for payload in payloads]
+        assert len(task_ids) == 1
+        worker = RedisTaskWorker(queue, consumer="live-perf-cleanup", block_ms=0,
+            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager))
+        assert await worker.run_once() == 1
+        assert not await queue.pending()
+        assert not await manager.usage_snapshot()
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("SELECT status, record FROM {} WHERE task_id = %s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_ids[0],))
+            row = cur.fetchone()
+            assert row["status"] == "completed"
+            assert row["record"]["attempt_id"] == "a-live-perf"
+    finally:
+        await queue.close()
+        if task_ids:
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE task_id = ANY(%s)").format(
+                    sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_ids,))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["success", "nonzero", "timeout", "cancel", "lost_lease"])
+async def test_performance_container_lifecycle_with_real_resources(manager, scenario):
+    m, _ = manager
+    settings = get_settings().model_copy(deep=True)
+    settings.orchestration.resource_default_lease_seconds = 2
+    runner = PerfRunnerService(settings, docker_resources=DockerResourceManager(settings, lease_manager=m))
+    command = ["sleep", "300"] if scenario in {"timeout", "cancel", "lost_lease"} else ["sh", "-c", "echo result; echo detail >&2; exit " + ("7" if scenario == "nonzero" else "0")]
+    if scenario == "timeout":
+        command = ["sh", "-c", "echo result; echo detail >&2; sleep 300"]
+    execution = None
+    container_id = ""
+    try:
+        with bind_request_context(project_id="p-live-perf", session_id="s-live-perf", run_id="r-live-perf",
+                                  run_item_id="i-live-perf", attempt_id="a-live-perf", worker_id="perf-live"):
+            execution = asyncio.create_task(runner._run_in_docker(
+                EngineCommand(image="busybox", command=command),
+                ScriptArtifact(engine="k6", filename="test.js", script_content=""), "qa-perf-live",
+                1.5 if scenario == "timeout" else 60,
+            ))
+            if scenario in {"cancel", "lost_lease"}:
+                container_id = await _wait_for_running_container(m)
+                assert (await m.usage_snapshot())["project:p-live-perf"] == 1
+                if scenario == "cancel":
+                    execution.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await execution
+                else:
+                    async def reject_renewal(*args, **kwargs): return False
+                    m.renew = reject_renewal
+                    with pytest.raises(RuntimeError, match="heartbeat rejected"):
+                        await execution
+            else:
+                result = await execution
+                container_id = result.container_id
+                assert result.exit_code == ({"success": 0, "nonzero": 7, "timeout": -1}[scenario])
+                assert result.timed_out == (scenario == "timeout")
+                assert "result" in result.stdout and "detail" in result.stderr
+        assert (await m.usage_snapshot())["global:all"] == 1
+        pending = await m.list_cleanup_pending()
+        assert pending[0]["external_resource_id"] == container_id
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if execution is not None and not execution.done():
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker")
+@pytest.mark.asyncio
+async def test_performance_worker_kill_recovers_running_container(manager, tmp_path):
+    m, _ = manager
+    process = multiprocessing.get_context("spawn").Process(target=_run_performance_until_killed,
+        args=(m._prefix, m._cleanup_stream, str(tmp_path)))
+    container_id = ""
+    try:
+        process.start()
+        container_id = await _wait_for_running_container(m)
+        assert process.is_alive()
+        bound = (await m.list_active())[0]
+        assert bound["run_item_id"] == "i-live-perf" and bound["attempt_id"] == "a-live-perf"
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive()
+        await asyncio.sleep(2.2)
+        reaper = ResourceCleanupWorker(m, interval_seconds=1)
+        assert await reaper.run_once() == 1
+        assert (await m.usage_snapshot())["global:all"] == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if process.is_alive():
+            process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
 
 
 def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):

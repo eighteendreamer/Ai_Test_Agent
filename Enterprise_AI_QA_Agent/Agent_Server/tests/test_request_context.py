@@ -5,6 +5,7 @@ def test_context_carries_harness_identifiers():
     token = set_request_context(
         request_id="req-1",
         trace_id="trace-1",
+        project_id="project-1",
         session_id="session-1",
         turn_id="turn-1",
         run_id="run-1",
@@ -17,6 +18,7 @@ def test_context_carries_harness_identifiers():
         assert correlation_fields() == {
             "request_id": "req-1",
             "trace_id": "trace-1",
+            "project_id": "project-1",
             "session_id": "session-1",
             "turn_id": "turn-1",
             "run_id": "run-1",

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -18,8 +19,12 @@ from pathlib import Path
 from typing import Any
 
 from src.core.config import Settings
+from src.runtime.docker_resource_manager import DockerResourceManager
+from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfRun, SmokeResult
 from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -29,17 +34,18 @@ class ExecutionResult:
     stderr: str
     summary_json: str = ""
     timed_out: bool = False
+    container_id: str = ""
 
 
 class PerfRunnerService:
     """Orchestrates performance test execution with backend detection and safety gates."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, docker_resources=None):
         self._settings = settings
         self._semaphore = asyncio.Semaphore(settings.orchestration.performance_max_concurrent_runs)
         self._container_prefix = settings.orchestration.performance_runner_docker_container_prefix
         self._workdir = settings.orchestration.performance_runner_docker_workdir
-        self._ephemeral = settings.orchestration.performance_runner_ephemeral
+        self._docker_resources = docker_resources or DockerResourceManager(settings)
 
     def detect_backend(self, engine_key: str = "k6") -> str:
         configured = self._settings.orchestration.performance_runner_backend
@@ -89,6 +95,8 @@ class PerfRunnerService:
                     result = await self._run_local(cmd, script, run_opts.timeout_seconds)
 
                 run.exit_code = result.exit_code
+                if result.container_id:
+                    run.container_or_cluster = result.container_id
                 run.stdout_tail = result.stdout[-2000:] if result.stdout else ""
                 run.status = "timed_out" if result.timed_out else ("completed" if result.exit_code == 0 else "failed")
 
@@ -98,13 +106,14 @@ class PerfRunnerService:
                     run.raw_metrics = asdict(raw_metrics)
                     run.engine_thresholds = raw_metrics.thresholds
 
+            except ResourceUnavailable:
+                raise
             except Exception as e:
+                LOGGER.exception("performance_execution_failed", extra={"perf_run_id": run_id, "backend": backend})
                 run.status = "failed"
                 run.stdout_tail = str(e)
             finally:
                 run.completed_at = datetime.utcnow().isoformat()
-                if backend == "docker" and self._ephemeral:
-                    await self._cleanup_container(container_name)
 
         return run
 
@@ -126,11 +135,11 @@ class PerfRunnerService:
                 result = await self._run_local(cmd, script, smoke_opts.timeout_seconds)
 
             return self._validate_smoke(result, plan)
+        except ResourceUnavailable:
+            raise
         except Exception as e:
+            LOGGER.exception("performance_smoke_failed", extra={"backend": backend})
             return SmokeResult(passed=False, detail=f"冒烟执行异常: {e}")
-        finally:
-            if backend == "docker" and self._ephemeral:
-                await self._cleanup_container(container_name)
 
     def _validate_smoke(self, result: ExecutionResult, plan: PerfPlan) -> SmokeResult:
         if result.timed_out:
@@ -230,10 +239,9 @@ class PerfRunnerService:
             summary_path = Path(tmpdir) / "summary.json"
 
             docker_cmd = [
-                "docker", "run", "--rm",
                 "--entrypoint=",
-                "--name", container_name,
                 "--add-host", "host.docker.internal:host-gateway",
+                "--workdir", cmd.workdir,
                 "-v", f"{tmpdir}:{cmd.workdir}",
             ]
 
@@ -248,27 +256,14 @@ class PerfRunnerService:
             docker_cmd.append(cmd.image)
             docker_cmd.extend(cmd.command)
 
-            try:
-                proc = await asyncio.to_thread(
-                    subprocess.run,
-                    docker_cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=timeout_seconds,
-                )
-                summary_json = self._read_summary_artifact(Path(tmpdir), summary_path)
-
-                return ExecutionResult(
-                    exit_code=proc.returncode,
-                    stdout=proc.stdout or "",
-                    stderr=proc.stderr or "",
-                    summary_json=summary_json,
-                )
-            except subprocess.TimeoutExpired:
-                await self._cleanup_container(container_name)
-                return ExecutionResult(exit_code=-1, stdout="", stderr="timeout", timed_out=True)
+            result = await self._docker_resources.execute(
+                docker_cmd, name_prefix=container_name, timeout_seconds=timeout_seconds,
+            )
+            return ExecutionResult(
+                exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr,
+                summary_json=self._read_summary_artifact(Path(tmpdir), summary_path),
+                timed_out=result.timed_out, container_id=result.container_id,
+            )
 
     async def _run_local(
         self,
@@ -311,17 +306,6 @@ class PerfRunnerService:
                 )
             except subprocess.TimeoutExpired:
                 return ExecutionResult(exit_code=-1, stdout="", stderr="timeout", timed_out=True)
-
-    async def _cleanup_container(self, container_name: str) -> None:
-        try:
-            await asyncio.to_thread(
-                subprocess.run,
-                ["docker", "rm", "-f", container_name],
-                capture_output=True,
-                timeout=15,
-            )
-        except Exception:
-            pass
 
     @staticmethod
     def _read_summary_artifact(tmpdir: Path, summary_path: Path) -> str:

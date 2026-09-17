@@ -420,7 +420,9 @@ class TestRunExecutionService:
         if mode == "security_testing":
             docker_backend = docker_backend or str(getattr(getattr(settings, "security", None), "security_runner_backend", "local")).lower() in {"docker", "container"}
         if mode == "performance_testing":
-            docker_backend = docker_backend or str(getattr(getattr(settings, "orchestration", None), "performance_runner_backend", "auto")).lower() == "docker"
+            # Performance owns each actual container at creation, including auto
+            # detection and separate smoke/load phases. Do not reserve twice.
+            docker_backend = False
         if docker_backend:
             slots = int(getattr(getattr(settings, "orchestration", None), "resource_docker_slots", 10))
             requirements.append(("docker", [f"docker-slot-{index}" for index in range(max(1, slots))]))

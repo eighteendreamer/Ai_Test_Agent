@@ -13,6 +13,7 @@ from uuid import uuid4
 class RequestContext:
     request_id: str
     trace_id: str
+    project_id: str | None = None
     session_id: str | None = None
     turn_id: str | None = None
     run_id: str | None = None
@@ -39,6 +40,7 @@ def set_request_context(
     *,
     request_id: str | None = None,
     trace_id: str | None = None,
+    project_id: str | None = None,
     session_id: str | None = None,
     turn_id: str | None = None,
     run_id: str | None = None,
@@ -51,6 +53,7 @@ def set_request_context(
         RequestContext(
             request_id=(request_id or new_id("req")),
             trace_id=(trace_id or new_id("trace")),
+            project_id=project_id,
             session_id=session_id,
             turn_id=turn_id,
             run_id=run_id,
@@ -75,6 +78,7 @@ def bind_request_context(**updates: str | None):
         for name in (
             "request_id",
             "trace_id",
+            "project_id",
             "session_id",
             "turn_id",
             "run_id",
@@ -100,6 +104,7 @@ def correlation_fields(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     if context is not None:
         fields.update(request_id=context.request_id, trace_id=context.trace_id)
         for name in (
+            "project_id",
             "session_id",
             "turn_id",
             "run_id",

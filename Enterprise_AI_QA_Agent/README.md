@@ -288,10 +288,24 @@ Redis Worker 的指数退避、Pending 接管和死信机制；不要对任务 S
 当前浏览器工具仍使用调用级 `release()`，其跨调用会话生命周期尚未迁移到 `retire()`；
 这条旧路径不能作为浏览器实例容量已受完整治理的证明。
 升级时同步重启 API 和 Cleanup Worker，避免旧消费者 ACK 后不执行新版本配额收尾；
-本次不新增环境变量或数据库结构，继续复用已有清理队列和重试配置。
+清理队列和重试继续使用已有配置，无新增数据库结构。
 自动删除仅接受完整且不可复用的 Docker container ID（不接受容器名）；
-创建容器后应立即绑定此 ID，当前仅在执行结果返回后绑定的路径仍有崩溃窗口，
-后续需把绑定前移至各执行器创建点。本单元不代表 P4 的强杀恢复与浏览器治理全部完成。
+性能测试的冒烟和正式执行已接入 `DockerResourceManager`：实际选择 Docker（包括
+`auto` 后端）时领取独立租约，使用 `docker create → 绑定完整 ID → docker start --attach`。
+容器名称含 Run/RunItem/Attempt 的安全片段和随机后缀，labels 保存完整归属标识，
+不写入租约凭证。绑定失败不启动；运行中续期失败会取消执行并按完整 ID 清理。
+取消和超时会终止 Docker CLI 客户端，保留已捕获的 stdout/stderr（超时结果）并清理容器；
+客户端使用线程内 `Popen`，兼容 Windows Uvicorn 的 Selector/Proactor 两种事件循环。
+清理失败转交原有 Cleanup Worker，已本地删除的容器也经 PostgreSQL 清理回执确认后释放配额。
+因此冒烟结束后若剩余容量不足，正式执行显示 `waiting_resource`，保留冒烟已完成的阶段。
+创建/检查/删除命令超时配置为 `ORCHESTRATION__RESOURCE_DOCKER_COMMAND_TIMEOUT_SECONDS=60`；
+实际测试执行超时继续采用引擎的 `RunOptions.timeout_seconds`，租约时长仍由
+`ORCHESTRATION__RESOURCE_DEFAULT_LEASE_SECONDS` 管理。测试任务的容器为临时资源。
+
+安全测试、独立容器管理及其他 Docker 工具入口尚需接入同一生命周期。
+创建成功但尚未绑定 ID 时进程被强杀，仍可能留下**未启动**的容器；需后续通过
+持久化创建意图与标签清单对账补齐这个窗口，不能将当前实现当作全部强杀边界已覆盖。
+本单元也不代表 P4 的浏览器治理与并发验收全部完成。
 Redis 完全丢失时，尚未被消费并写入 PostgreSQL 的清理消息仍需外部资源清单对账恢复；
 生产必须配置 Redis 持久化，该清单恢复能力尚待后续实现。
 
