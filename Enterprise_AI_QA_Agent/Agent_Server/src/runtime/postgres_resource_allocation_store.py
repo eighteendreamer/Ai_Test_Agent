@@ -20,6 +20,7 @@ class PostgresResourceAllocationStore:
     def __init__(self, settings) -> None:
         self._settings = settings
         self._table = sql.Identifier(settings.database.postgres_resource_allocation_table)
+        self._container_index = sql.Identifier(settings.database.postgres_resource_allocation_table + "_container_idx")
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -37,6 +38,24 @@ class PostgresResourceAllocationStore:
                     bound_at TIMESTAMPTZ
                 )
             """).format(self._table))
+            cur.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (lease_namespace, container_name)").format(
+                self._container_index, self._table))
+
+    async def get_for_session(self, container_name: str, *, session_id: str, namespace: str) -> dict | None:
+        if not session_id:
+            raise ValueError("Docker session ownership is required")
+        return await asyncio.to_thread(self._get_for_session_sync, container_name, session_id, namespace)
+
+    def _get_for_session_sync(self, container_name, session_id, namespace):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("""
+                SELECT * FROM {} WHERE container_name = %s AND lease_namespace = %s
+                AND lease_record->>'session_id' = %s
+            """).format(self._table), (container_name, namespace, session_id))
+            rows = cur.fetchall()
+            if len(rows) > 1:
+                raise ValueError("Docker session allocation is ambiguous")
+            return rows[0] if rows else None
 
     async def prepare(self, allocation_id, lease, *, namespace, container_name) -> None:
         if not re.fullmatch(r"[a-f0-9]{32}", allocation_id):

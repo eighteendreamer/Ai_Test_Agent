@@ -12,7 +12,9 @@ import logging
 import os
 import re
 import subprocess
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TypeVar
 from uuid import uuid4
 
 from src.core.request_context import get_request_context
@@ -20,6 +22,14 @@ from src.runtime.resource_lease_manager import RedisResourceLeaseManager, Resour
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 
 LOGGER = logging.getLogger(__name__)
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class DockerContainer:
+    container_id: str
+    container_name: str
+    allocation_id: str
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,25 @@ class DockerResourceManager:
 
     async def execute(self, create_args: list[str], *, name_prefix: str,
                       timeout_seconds: float) -> DockerExecutionResult:
+        async def attached(container: DockerContainer) -> DockerExecutionResult:
+            try:
+                code, stdout, stderr = await self._command(
+                    ["start", "--attach", container.container_id], timeout=timeout_seconds)
+                return DockerExecutionResult(container.container_id, container.container_name, code, stdout, stderr)
+            except DockerCommandTimeout as exc:
+                LOGGER.warning("docker_resource_execution_timeout", extra={"container_id": container.container_id})
+                return DockerExecutionResult(container.container_id, container.container_name, -1,
+                                             exc.stdout, exc.stderr or "timeout", timed_out=True)
+
+        return await self.run(create_args, name_prefix=name_prefix, operation=attached)
+
+    async def run(self, create_args: list[str], *, name_prefix: str,
+                  operation: Callable[[DockerContainer], Awaitable[T]]) -> T:
+        """Run an operation only while its container lease remains valid.
+
+        Attached commands and multi-call sessions share allocation, fencing,
+        heartbeat cancellation and retirement, rather than duplicating them.
+        """
         config = self._settings.orchestration
         manager = self._lease_manager or RedisResourceLeaseManager(
             self._settings.database.redis_url,
@@ -67,7 +96,7 @@ class DockerResourceManager:
         lease = None
         container_id = ""
         creation_requested = False
-        operation = heartbeat = None
+        operation_task = heartbeat = None
         command_timeout = config.resource_docker_command_timeout_seconds
         try:
             try:
@@ -117,28 +146,19 @@ class DockerResourceManager:
                     **fields, "resource_id": lease.resource_id, "container_id": container_id,
                     "worker_id": lease.worker_id, "fencing_token": lease.fencing_token,
                 })
-                try:
-                    code, stdout, stderr = await self._command(["start", "--attach", container_id],
-                                                              timeout=timeout_seconds)
-                    return DockerExecutionResult(container_id, name, code, stdout, stderr)
-                except DockerCommandTimeout as exc:
-                    LOGGER.warning("docker_resource_execution_timeout", extra={
-                        "resource_id": lease.resource_id, "container_id": container_id,
-                    })
-                    return DockerExecutionResult(container_id, name, -1, exc.stdout,
-                                                 exc.stderr or "timeout", timed_out=True)
+                return await operation(DockerContainer(container_id, name, allocation_id))
 
-            operation = asyncio.create_task(run())
+            operation_task = asyncio.create_task(run())
             heartbeat = asyncio.create_task(self._heartbeat(manager, lease))
-            await asyncio.wait({operation, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait({operation_task, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
             if heartbeat.done():
                 await heartbeat  # A lost lease stops the external execution, never reports success.
-            return await operation
+            return await operation_task
         finally:
-            for task in (operation, heartbeat):
+            for task in (operation_task, heartbeat):
                 if task is not None and not task.done():
                     task.cancel()
-            await asyncio.gather(*(task for task in (operation, heartbeat) if task is not None),
+            await asyncio.gather(*(task for task in (operation_task, heartbeat) if task is not None),
                                  return_exceptions=True)
             if lease is not None:
                 try:

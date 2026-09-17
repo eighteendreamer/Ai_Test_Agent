@@ -720,6 +720,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await tool_runtime_service.close()
         if task_queue is not None:
             await task_queue.close()
         await hot_memory_store.close()

@@ -322,7 +322,20 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 该测试使用临时本机 HTTP 服务，覆盖 HTTP 200/503、超时、取消、容量不足和 PostgreSQL 清理回执；
 它不包含模型选工具或完整客户端会话链路的验收。
 
-安全测试的复用/后台容器、Mock Target 和独立容器管理入口尚需接入同一生命周期。
+`mock-target-runner` 的跨调用容器复用同一个租约执行入口：ToolRuntime 持有后台监督任务，
+从启动到停止持续续租，工具调用返回不会释放容器容量。另一个 API 实例可凭当前 Session
+和容器名称查询 PostgreSQL 创建意图，校验归属后仅删除绑定的完整容器 ID；不接受跨会话停止。
+会话结束清理复用该入口，资源登记失败也会停止刚创建的容器。API/Worker 正常退出取消监督任务，
+强杀后交给过期租约与 Cleanup Worker；删除之后仍等待 PostgreSQL 清理回执才归还配额。
+`ORCHESTRATION__RESOURCE_MOCK_TARGET_MAX_LIFETIME_SECONDS=3600` 限制最长存活时间，
+与租约 TTL 分开管理；超时销毁后，原目标需重新创建。初始化为分配表补建 namespace/name 索引。
+升级前没有持久化分配意图的旧 Mock Target 不支持新入口按名称停止，需在容器管理中核对后清理。
+会话资源列表的异常退出实时投影仍待完善，当前以 Redis 租约、清理回执和容器实际状态判断占用。
+真实回归使用 `RUN_LIVE_DOCKER_TESTS=1` 执行
+`python -m pytest tests/test_live_resource_leases.py -k mock_target -q`；需要镜像目录中的
+`helper_mock_target` 镜像，测试仅访问自动分配端口上的临时本机服务。
+
+安全测试的复用/后台容器和独立容器管理入口尚需接入同一生命周期。
 创建成功但尚未绑定 ID 时进程被强杀，Cleanup Worker 使用持久化意图及容器 labels
 核对 allocation_id、namespace、资源 ID、fencing token 和原始名称，只按完整容器 ID 删除。
 后台扫描复用 `ORCHESTRATION__RESOURCE_CLEANUP_INTERVAL_SECONDS`，每批最多核对

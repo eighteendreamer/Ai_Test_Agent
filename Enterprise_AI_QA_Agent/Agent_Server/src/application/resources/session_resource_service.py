@@ -14,6 +14,7 @@ from src.schemas.session_resource import (
 )
 
 BrowserCleanup = Callable[[str], Awaitable[None]]
+DockerCleanup = Callable[[SessionResourceRecord], Awaitable[None]]
 
 
 class SessionResourceService:
@@ -24,12 +25,16 @@ class SessionResourceService:
     ) -> None:
         self._store = store
         self._browser_cleanup = browser_cleanup
+        self._docker_cleanup: DockerCleanup | None = None
 
     async def initialize(self) -> None:
         await self._store.initialize()
 
     def set_browser_cleanup(self, cleanup: BrowserCleanup) -> None:
         self._browser_cleanup = cleanup
+
+    def set_docker_cleanup(self, cleanup: DockerCleanup) -> None:
+        self._docker_cleanup = cleanup
 
     async def register(
         self,
@@ -101,7 +106,13 @@ class SessionResourceService:
     async def _cleanup_one(self, resource: SessionResourceRecord, reason: str) -> SessionResourceRecord:
         try:
             if resource.kind == SessionResourceKind.docker_container:
-                status = await self._cleanup_docker_container(resource.resource_key)
+                if resource.metadata.get("tool_key") == "mock-target-runner":
+                    if self._docker_cleanup is None:
+                        raise RuntimeError("Managed mock target cleanup is not configured")
+                    await self._docker_cleanup(resource)
+                    status = SessionResourceStatus.released
+                else:
+                    status = await self._cleanup_docker_container(resource.resource_key)
             elif resource.kind == SessionResourceKind.browser_session and self._browser_cleanup is not None:
                 await self._browser_cleanup(resource.resource_key)
                 status = SessionResourceStatus.released

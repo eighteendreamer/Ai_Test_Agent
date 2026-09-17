@@ -49,6 +49,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.testing.ui_exploration_service import UIExplorationService
 from src.core.config import Settings
 from src.core.request_context import bind_request_context
+from src.application.performance.mock_target_runner import MockTargetRunner
 from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.application.mail import MailService
 from src.application.mail.contracts import MailSendRequest
@@ -136,6 +137,9 @@ class ToolRuntimeService:
         self._mcp_connection_manager = mcp_connection_manager
         self._compatibility_runner_service = compatibility_runner_service
         self._session_resource_service = session_resource_service
+        self._mock_target_runner = MockTargetRunner(settings)
+        if session_resource_service is not None:
+            session_resource_service.set_docker_cleanup(self._cleanup_mock_target)
         self._model_registry = None
         self._email_config_store = MySQLEmailConfigStore(settings) if settings is not None else None
         self._mail_service = MailService(self._email_config_store)
@@ -3746,46 +3750,57 @@ class ToolRuntimeService:
         payload["status"] = "ok" if result.ok else "error"
         return payload
 
+    async def close(self) -> None:
+        await self._mock_target_runner.close()
+
+    async def _cleanup_mock_target(self, resource) -> None:
+        await self._mock_target_runner.stop(container_name=resource.resource_key, session_id=resource.session_id)
+
     async def _run_mock_target_runner(
         self,
         arguments: dict[str, Any],
         context: ToolExecutionContext,
     ) -> dict[str, Any]:
-        from src.application.performance.mock_target_runner import MockTargetRunner
-
         action = str(arguments.get("action") or "").lower().strip()
-        runner = MockTargetRunner(self._settings)
+        runner = self._mock_target_runner
 
         if action == "start":
-            result = await runner.start(
-                port=int(arguments.get("port") or 18080),
-                response_text=str(arguments.get("response_text") or "ok"),
-            )
+            try:
+                with bind_request_context(session_id=context.session_id, turn_id=context.turn_id,
+                    trace_id=context.trace_id, project_id=context.context_bundle.get("project_id") or None):
+                    result = await runner.start(
+                        port=int(arguments.get("port") or 18080),
+                        response_text=str(arguments.get("response_text") or "ok"),
+                    )
+            except ResourceUnavailable as exc:
+                logger.info("mock_target_waiting_resource", extra={"session_id": context.session_id, "reason": exc.reason})
+                return {"status": "waiting_resource", "ok": False, "reason": exc.reason,
+                        "summary": f"Mock target waiting for resource: {exc.reason}"}
         elif action == "stop":
             container_name = str(arguments.get("container_name") or "").strip()
             if not container_name:
                 return {"status": "error", "ok": False, "summary": "stop 需要 container_name"}
-            result = await runner.stop(container_name=container_name)
+            result = await runner.stop(container_name=container_name, session_id=context.session_id)
         else:
             return {"status": "error", "ok": False, "summary": f"不支持的动作: {action}"}
 
         payload = result.model_dump()
         payload["status"] = "ok" if result.ok else "error"
         if action == "start" and result.ok and self._session_resource_service is not None:
-            await self._session_resource_service.register(
-                session_id=context.session_id,
-                kind=SessionResourceKind.docker_container,
-                resource_key=result.container_name,
-                metadata={
-                    "engine": "helper",
-                    "image": result.selected_image,
-                    "tool_key": context.tool_key or "mock-target-runner",
-                    "call_id": context.call_id,
-                    "tool_job_id": context.tool_job_id,
-                    "turn_id": context.turn_id,
-                    "port": result.port,
-                },
-            )
+            try:
+                await self._session_resource_service.register(
+                    session_id=context.session_id,
+                    kind=SessionResourceKind.docker_container,
+                    resource_key=result.container_name,
+                    metadata={
+                        "engine": "helper", "image": result.selected_image,
+                        "tool_key": "mock-target-runner", "call_id": context.call_id,
+                        "tool_job_id": context.tool_job_id, "turn_id": context.turn_id, "port": result.port,
+                    },
+                )
+            except BaseException:
+                await runner.stop(container_name=result.container_name, session_id=context.session_id)
+                raise
         elif action == "stop" and result.ok and self._session_resource_service is not None:
             await self._session_resource_service.mark_released(
                 session_id=context.session_id,

@@ -195,6 +195,7 @@ class OrchestrConfig(BaseModel):
     resource_docker_slots: int = Field(default=10, ge=1)
     resource_docker_command_timeout_seconds: float = Field(default=60.0, gt=0)
     resource_docker_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
+    resource_mock_target_max_lifetime_seconds: float = Field(default=3600, gt=0)
     resource_cleanup_interval_seconds: float = Field(default=30.0, gt=0)
 
     langchain_middleware_enabled: bool = False

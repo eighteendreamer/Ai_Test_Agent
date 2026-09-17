@@ -8,11 +8,13 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 from dataclasses import replace
 
 import pytest
+import httpx
 import pytest_asyncio
 from psycopg import sql
 from redis.exceptions import ResponseError
@@ -21,6 +23,9 @@ from src.core.config import get_settings
 from src.core.request_context import bind_request_context
 from src.application.performance.perf_runner_service import PerfRunnerService
 from src.application.performance.http_probe_runner import HttpProbeRunner
+from src.application.performance.mock_target_runner import MockTargetRunner
+from src.application.resources.session_resource_service import SessionResourceService
+from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.runtime.tool_job_store import InMemoryToolJobStore
@@ -412,6 +417,128 @@ async def test_http_probe_tool_with_real_resources(manager, monkeypatch, scenari
         await asyncio.to_thread(server.shutdown)
         server.server_close()
         await asyncio.to_thread(thread.join, 5)
+
+
+def _unused_mock_port():
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def _run_mock_until_killed(prefix, stream, port, ready):
+    async def run():
+        settings = get_settings().model_copy(deep=True)
+        settings.orchestration.resource_default_lease_seconds = 2
+        manager = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, cleanup_stream=stream)
+        runner = MockTargetRunner(settings, lease_manager=manager)
+        with bind_request_context(session_id="s-live-mock", attempt_id="a-live-perf"):
+            await runner.start(port=port)
+        ready.set()
+        await asyncio.Event().wait()
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker mock image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["remote_stop", "session_end", "shutdown", "lifetime", "registration_failure"])
+async def test_mock_target_tool_session_lifecycle(manager, scenario):
+    m, _ = manager
+    settings = get_settings().model_copy(deep=True)
+    settings.orchestration.resource_default_lease_seconds = 2
+    settings.orchestration.resource_mock_target_max_lifetime_seconds = 2 if scenario == "lifetime" else 60
+    resources = SessionResourceService(InMemorySessionResourceStore())
+    runtime = ToolRuntimeService(settings=settings, session_resource_service=resources)
+    runner = MockTargetRunner(settings, lease_manager=m)
+    runtime._mock_target_runner = runner
+    tool = ToolDescriptor(key="mock-target-runner", name="mock", description="mock", category="test")
+    context = ToolExecutionContext(session_id="s-live-mock", turn_id="t-live-mock", trace_id="trace-mock",
+        user_message="mock", normalized_input="mock", context_bundle={"project_id": "p-live-mock"})
+    port = _unused_mock_port()
+    if scenario == "registration_failure":
+        async def unavailable(**kwargs): raise ConnectionError("test resource registry unavailable")
+        resources.register = unavailable
+    try:
+        with bind_request_context(attempt_id="a-live-perf"):
+            record = await runtime.execute(tool, ModelToolCall(id="mock-start", name=tool.key,
+                arguments={"action": "start", "port": port, "response_text": "mock-owned"}), context)
+        if scenario == "registration_failure":
+            assert record.status == "failed"
+        else:
+            assert record.status == "completed"
+            name = record.output["container_name"]
+            active = await m.list_active()
+            assert active[0]["session_id"] == context.session_id
+            assert active[0]["project_id"] == "p-live-mock"
+            assert (await resources.list_active(context.session_id))[0].resource_key == name
+            async with httpx.AsyncClient(trust_env=False) as client:
+                response = await client.get(f"http://127.0.0.1:{port}/", timeout=5)
+                assert response.status_code == 200 and response.text.strip() == "mock-owned"
+            if scenario == "remote_stop":
+                waiting = await runtime.execute(tool, ModelToolCall(id="mock-capacity", name=tool.key,
+                    arguments={"action": "start", "port": _unused_mock_port()}), context)
+                assert waiting.status == "waiting_resource"
+                assert len(await m.list_active()) == 1
+                # A second runner models a request routed to another API process.
+                remote = MockTargetRunner(settings, lease_manager=m)
+                with pytest.raises(ValueError, match="does not belong"):
+                    await remote.stop(container_name=name, session_id="other-session")
+                assert len(await m.list_active()) == 1
+                # Lease must survive beyond its initial TTL while idle between tools.
+                await asyncio.sleep(2.2)
+                assert len(await m.list_active()) == 1
+                assert (await remote.stop(container_name=name, session_id=context.session_id)).ok
+                assert (await remote.stop(container_name=name, session_id=context.session_id)).ok
+            elif scenario == "session_end":
+                cleaned = await resources.cleanup_session(context.session_id, reason="session_complete")
+                assert len(cleaned) == 1 and cleaned[0].status.value == "released"
+            elif scenario == "shutdown":
+                await runtime.close()
+                with pytest.raises(RuntimeError, match="closed"):
+                    await runner.start(port=_unused_mock_port())
+            await asyncio.wait_for(asyncio.gather(*list(runner._tasks), return_exceptions=True), timeout=15)
+        pending = await m.list_cleanup_pending()
+        assert len(pending) == 1
+        assert (await m.usage_snapshot())["global:all"] == 1
+        await _complete_real_cleanup(m)
+        assert not runner._tasks and not runner._by_name
+        inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]],
+            capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Docker mock image")
+@pytest.mark.asyncio
+async def test_mock_target_worker_kill_recovered_by_cleanup(manager):
+    m, _ = manager
+    context = multiprocessing.get_context("spawn")
+    ready = context.Event()
+    process = context.Process(target=_run_mock_until_killed,
+        args=(m.namespace, m._cleanup_stream, _unused_mock_port(), ready))
+    container_id = ""
+    try:
+        process.start()
+        async def wait_ready():
+            while not ready.is_set():
+                assert process.is_alive()
+                await asyncio.sleep(.05)
+        await asyncio.wait_for(wait_ready(), timeout=30)
+        container_id = await _wait_for_running_container(m)
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive()
+        await asyncio.sleep(2.2)
+        assert await ResourceCleanupWorker(m).run_once() == 1
+        await _complete_real_cleanup(m)
+        inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
+        assert inspected.returncode != 0
+        container_id = ""
+    finally:
+        if process.is_alive(): process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        if container_id:
+            subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
 
 
 def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):

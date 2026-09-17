@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -119,6 +120,47 @@ def test_mock_target_result_model_dump():
     assert payload["ok"] is True
     assert payload["action"] == "start"
     assert payload["port"] == 18080
+
+
+@pytest.mark.asyncio
+async def test_mock_start_cancellation_waits_for_supervisor_cleanup():
+    from src.core.config import Settings
+    from src.core.request_context import bind_request_context
+    entered, cleaned = asyncio.Event(), asyncio.Event()
+
+    class Docker:
+        async def run(self, *args, **kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleaned.set()
+
+    runner = MockTargetRunner(Settings(), docker_resources=Docker())
+    with bind_request_context(session_id="mock-cancel"):
+        caller = asyncio.create_task(runner.start())
+        await asyncio.wait_for(entered.wait(), 1)
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+    assert cleaned.is_set()
+    assert not runner._tasks and not runner._by_name
+
+
+@pytest.mark.asyncio
+async def test_mock_start_failure_is_propagated_without_background_task():
+    from src.core.config import Settings
+    from src.core.request_context import bind_request_context
+
+    class Docker:
+        async def run(self, *args, **kwargs):
+            raise ConnectionError("allocation database unavailable")
+
+    runner = MockTargetRunner(Settings(), docker_resources=Docker())
+    with bind_request_context(session_id="mock-failed"):
+        with pytest.raises(ConnectionError, match="allocation database"):
+            await runner.start()
+    assert not runner._tasks
 
 
 def test_performance_engine_runner_select_k6():
