@@ -348,9 +348,9 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 `python -m pytest tests/test_live_resource_leases.py -k tool_bootstrap -q`，
 覆盖已安装工具检查、容量等待、未审批、超时、取消、清理失败补偿和执行进程强杀回收。
 测试只使用本机已有 Kali 镜像，不安装软件包、不运行扫描；安装失败路径另有模块回归。
-安全命令的默认临时前台容器也接入统一租约：配置为 Docker 后端、
-`SECURITY_RUNNER_CONTAINER_REUSE=false` 且执行后清理开启时，先领取容量并持久化创建意图，
-再创建、绑定完整 ID、启动和执行。TestRun 使用相同配置判定取消这条路径的重复 Docker 预占，
+安全命令的临时和复用前台容器均接入统一租约：配置为 Docker 后端时，
+先领取容量并持久化创建意图，再创建、绑定完整 ID、启动和执行。
+TestRun 使用相同配置判定取消前台路径的重复 Docker 预占，
 账号和环境租约继续领取。容量不足贯通 ToolJob/RunItem 的 `waiting_resource`；
 配额原因沿用资源层返回值（例如 `global:all`），不会当作目标服务故障。
 输出、非零退出码、超时及挂载目录里的产物保留；取消和心跳失败会停止执行并进入统一清理。
@@ -361,7 +361,20 @@ curl 自身超时和容器执行超时均返回失败并保留错误输出，取
 真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
 `python -m pytest tests/test_live_resource_leases.py -k security_foreground -q`，
 覆盖真实工具调用本机 HTTP 头探测、容量等待、输出与产物、超时、取消、失去租约及强杀回收；
-不调用外部目标或模型。复用前台、后台任务、独立文件传输容器及独立容器管理入口尚需接入。
+不调用外部目标或模型。后台任务、独立文件传输容器及独立容器管理入口尚需接入。
+
+`SECURITY__SECURITY_RUNNER_DOCKER_CLEANUP_AFTER_RUN=true` 时每条命令结束即清理；
+设为 false 时使用受监督的持久容器，仍受会话总寿命限制，不会无限保留。
+同时开启 `SECURITY__SECURITY_RUNNER_CONTAINER_REUSE=true` 才会复用容器：
+复用键包含 project/session/turn/run/run_item/attempt，同一范围的并发命令串行执行，
+不同范围独立申请容量，每个容器使用独立挂载目录。同一范围在不同 Worker 上不会共享容器，
+需要保持工具调用的 Worker 归属；仅显式关闭支持跨实例。
+复用关闭但执行后清理也关闭时，每次调用创建新的有期限容器。
+等待串行执行的调用被取消不影响当前命令；正在执行的命令取消或超时则回收其整个容器。
+重复关闭只等待同一次清理完成，不能再次取消已开始的清理交接。
+真实回归：`RUN_LIVE_DOCKER_TESTS=1` 下执行
+`python -m pytest tests/test_live_resource_leases.py -k security_reusable -q`，
+覆盖状态保留、并发串行、等待者取消、Session/Attempt 隔离、保留/清理配置、超时和租约丢失。
 
 SecurityShellSession 和 ExploitWorkspace 的跨调用持久容器使用同一资源管理器，
 由 `DockerResourceSession` 持有启动、等待退出、租约续期和回收任务。

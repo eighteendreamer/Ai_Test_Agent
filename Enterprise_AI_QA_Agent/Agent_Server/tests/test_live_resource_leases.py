@@ -928,6 +928,110 @@ async def test_security_persistent_container_lifecycle(manager, tmp_path, scenar
         await service.close()
 
 
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["reuse", "concurrent", "cancel_waiter", "timeout", "cancel", "lost_lease", "no_reuse", "cleanup"])
+async def test_security_reusable_foreground_lifecycle(manager, tmp_path, scenario):
+    m, _ = manager
+    settings = _security_foreground_settings()
+    settings.security.security_runner_container_reuse = scenario != "no_reuse"
+    settings.security.security_runner_docker_cleanup_after_run = scenario == "cleanup"
+    service = SecurityExecutionEnvironmentService(settings=settings,
+        docker_resources=DockerResourceManager(settings, lease_manager=m))
+    owner = ToolExecutionContext(session_id="s-reusable", turn_id="t-reusable", trace_id="trace-reusable",
+        user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
+    foreign = replace(owner, session_id="s-reusable-other")
+    operations = []
+
+    async def execute(command, context=owner, timeout=20):
+        return await service.execute(command=command, command_args=["sh", "-lc", command],
+            timeout_seconds=timeout, artifact_dir=tmp_path, context=context)
+
+    async def wait_marker(operation):
+        while not list(tmp_path.rglob("command-started")):
+            assert not operation.done()
+            await asyncio.sleep(.05)
+
+    try:
+        with bind_request_context(run_id="r-reusable", run_item_id="i-reusable", attempt_id="a-live-perf"):
+            if scenario in {"concurrent", "cancel_waiter"}:
+                first = asyncio.create_task(execute("echo ready > command-started; sleep 1; echo first > state.txt; cat state.txt"))
+                operations.append(first)
+                await asyncio.wait_for(wait_marker(first), timeout=15)
+                second = asyncio.create_task(execute("cat state.txt; echo second > state.txt"))
+                operations.append(second)
+                if scenario == "cancel_waiter":
+                    await asyncio.sleep(.05)
+                    assert not second.done()
+                    second.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await second
+                    result = await first
+                    assert (await execute("cat state.txt")).stdout.strip() == "first"
+                else:
+                    result, next_result = await asyncio.gather(first, second)
+                    assert result.container_name == next_result.container_name
+                    assert next_result.stdout.strip() == "first"
+                    assert (await execute("cat state.txt")).stdout.strip() == "second"
+            elif scenario in {"timeout", "cancel", "lost_lease"}:
+                operation = asyncio.create_task(execute("echo ready > command-started; echo partial; sleep 300",
+                    timeout=1 if scenario == "timeout" else 310))
+                operations.append(operation)
+                await asyncio.wait_for(wait_marker(operation), timeout=15)
+                if scenario == "cancel":
+                    operation.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await operation
+                elif scenario == "lost_lease":
+                    async def rejected(*args, **kwargs): return False
+                    m.renew = rejected
+                    with pytest.raises(RuntimeError, match="session ended"):
+                        await operation
+                else:
+                    result = await operation
+                    assert result.timed_out and "partial" in result.stdout
+            else:
+                result = await execute("echo saved > state.txt; echo stdout-result; echo stderr-detail >&2")
+                assert result.exit_code == 0 and "stdout-result" in result.stdout and "stderr-detail" in result.stderr
+                assert any(artifact["label"] == "state.txt" for artifact in result.output_artifacts)
+                if scenario == "reuse":
+                    await asyncio.sleep(2.2)
+                    assert len(await m.list_active()) == 1
+                    assert (await execute("cat state.txt")).stdout.strip() == "saved"
+                    settings.security.security_target_allowlist = "127.0.0.1"
+                    rewritten = await service.execute(command="printf http://127.0.0.1/",
+                        command_args=["printf", "http://127.0.0.1/"], timeout_seconds=10,
+                        artifact_dir=tmp_path, context=owner)
+                    assert rewritten.stdout == "http://host.docker.internal/"
+                    # One slot is occupied: each changed identity must request a
+                    # new lease rather than execute in the existing container.
+                    with pytest.raises(ResourceUnavailable):
+                        await execute("echo forbidden", foreign)
+                    with bind_request_context(attempt_id="a-different"):
+                        with pytest.raises(ResourceUnavailable):
+                            await execute("echo forbidden")
+                elif scenario == "no_reuse":
+                    with pytest.raises(ResourceUnavailable):
+                        await execute("echo new-container")
+            if scenario in {"reuse", "concurrent", "cancel_waiter", "no_reuse"}:
+                assert len(await m.list_active()) == 1
+                await service.cleanup_container(result.container_name, context=owner)
+            await service.close()
+            assert not service._managed_containers and not service._managed_sessions and not service._reusable_scopes
+            pending = await m.list_cleanup_pending()
+            assert len(pending) == 1
+            assert (await m.usage_snapshot())["global:all"] == 1
+            await _complete_real_cleanup(m)
+            inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]], capture_output=True, timeout=15)
+            assert inspected.returncode != 0
+    finally:
+        for operation in operations:
+            if not operation.done():
+                operation.cancel()
+        await asyncio.gather(*operations, return_exceptions=True)
+        await service.close()
+
+
 def _run_security_persistent_until_killed(prefix, stream, artifact_dir, ready):
     async def run():
         settings = _security_foreground_settings()

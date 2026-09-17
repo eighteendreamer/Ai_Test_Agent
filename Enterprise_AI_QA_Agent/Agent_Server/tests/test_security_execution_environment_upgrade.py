@@ -369,6 +369,46 @@ def test_persistent_security_session_reuses_campaign_container_and_closes(tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("trigger", ["container_exit", "explicit_close"])
+async def test_docker_session_repeated_close_does_not_interrupt_cleanup(trigger):
+    from src.runtime.docker_resource_session import DockerResourceSession
+
+    exited, cleanup_started, finish_cleanup, retired = (asyncio.Event() for _ in range(4))
+
+    class Manager:
+        async def _command(self, args, *, timeout):
+            if args[0] == "wait":
+                await exited.wait()
+            return 0, "0", ""
+
+        async def run(self, args, *, name_prefix, operation):
+            try:
+                return await operation(SimpleNamespace(container_id="a" * 64, container_name="test"))
+            finally:
+                cleanup_started.set()
+                await finish_cleanup.wait()
+                retired.set()
+
+    session = DockerResourceSession(Manager(), command_timeout=1)
+    closers = []
+    try:
+        await session.start([], name_prefix="test", lifetime_seconds=10)
+        if trigger == "container_exit":
+            exited.set()
+        else:
+            closers.append(asyncio.create_task(session.close()))
+        await asyncio.wait_for(cleanup_started.wait(), 1)
+        closers.append(asyncio.create_task(session.close()))
+        await asyncio.sleep(0)
+        finish_cleanup.set()
+        await asyncio.wait_for(asyncio.gather(*closers), 1)
+        assert retired.is_set()
+    finally:
+        finish_cleanup.set()
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_campaign_resource_wait_preserves_resume_stage_without_settlement(monkeypatch):
     from src.modes.security_testing_mode.campaign_state import SecurityTestingState
     from src.runtime.resource_lease_manager import ResourceUnavailable

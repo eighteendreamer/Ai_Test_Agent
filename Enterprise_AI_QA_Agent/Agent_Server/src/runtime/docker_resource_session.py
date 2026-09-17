@@ -98,8 +98,10 @@ class DockerResourceSession:
                 self._operations.discard(operation)
 
     async def close(self) -> None:
+        # serve() sets _stopping before the manager's cleanup begins. A second
+        # cancellation here would interrupt that cleanup and its queue handoff.
+        if self._task is not None and not self._task.done() and not self._stopping:
+            self._task.cancel()
         self._stopping = True
         if self._task is not None:
-            if not self._task.done():
-                self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+            await asyncio.shield(asyncio.gather(self._task, return_exceptions=True))

@@ -90,7 +90,7 @@ async def test_execution_resource_requirements_claim_account_environment_and_doc
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reuse,cleanup,managed", [(False, None, True), (False, True, True),
-    (False, False, False), (True, None, False), (True, True, False)])
+    (False, False, True), (True, None, True), (True, True, True)])
 async def test_security_foreground_admission_matches_container_lifecycle(reuse, cleanup, managed):
     from src.core.config import Settings
     from src.application.security.execution_environment_service import SecurityExecutionEnvironmentService

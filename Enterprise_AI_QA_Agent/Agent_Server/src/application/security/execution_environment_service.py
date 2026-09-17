@@ -75,6 +75,13 @@ class _ManagedSecurityContainer:
     workdir: str
 
 
+@dataclass
+class _ReusableSecurityScope:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    container_name: str = ""
+    callers: int = 0
+
+
 class SecurityExecutionEnvironmentService:
     """Run security commands in a configured execution environment."""
 
@@ -92,6 +99,7 @@ class SecurityExecutionEnvironmentService:
         self._detached_jobs_lock = threading.Lock()
         self._managed_containers: dict[str, _ManagedSecurityContainer] = {}
         self._managed_sessions: set[DockerResourceSession] = set()
+        self._reusable_scopes: dict[tuple[str, ...], _ReusableSecurityScope] = {}
         self._closed = False
 
     async def execute(
@@ -124,16 +132,10 @@ class SecurityExecutionEnvironmentService:
             with bind_request_context(session_id=getattr(context, "session_id", None),
                 turn_id=getattr(context, "turn_id", None), trace_id=getattr(context, "trace_id", None),
                 project_id=bundle.get("project_id")):
-                result = await self._run_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
-        elif backend in {"docker", "container"}:
-            result = await asyncio.to_thread(
-                self._run_reusable_in_docker,
-                command,
-                command_args,
-                timeout_seconds,
-                artifact_dir,
-                context,
-            )
+                if self._cleanup_after_run_enabled():
+                    result = await self._run_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
+                else:
+                    result = await self._run_reusable_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
         elif backend in {"local", "host"}:
             result = await asyncio.to_thread(
                 self._run_local,
@@ -303,10 +305,17 @@ class SecurityExecutionEnvironmentService:
             raise RuntimeError("Security execution environment is closed")
         if not str(campaign_id or "").strip():
             raise ValueError("Persistent security container requires campaign_id.")
+        name = await self._start_managed_container(artifact_dir / "_security_attack_session_work", context)
+        logger.info("security_persistent_container_ready", extra={"session_id": self._owner_session_id(context),
+            "campaign_id": campaign_id, "container_id": self._managed_containers[name].session.container.container_id})
+        return name
+
+    async def _start_managed_container(self, host_workdir: Path, context: Any) -> str:
+        if self._closed:
+            raise RuntimeError("Security execution environment is closed")
         owner = self._owner_session_id(context)
         if not owner:
             raise ValueError("Persistent security container requires a session owner")
-        host_workdir = artifact_dir / "_security_attack_session_work"
         host_workdir.mkdir(parents=True, exist_ok=True)
         workdir, create_args = self._managed_create_args(host_workdir)
         lifetime = float(self._get_str("security_attack_session_timeout_seconds", "SECURITY_ATTACK_SESSION_TIMEOUT_SECONDS", "900"))
@@ -323,8 +332,8 @@ class SecurityExecutionEnvironmentService:
                 await session.start(create_args, name_prefix="qa-security-session", lifetime_seconds=lifetime)
             name = session.container.container_name
             self._managed_containers[name] = _ManagedSecurityContainer(session, owner, host_workdir, workdir)
-            logger.info("security_persistent_container_ready", extra={"session_id": owner,
-                "campaign_id": campaign_id, "container_id": session.container.container_id})
+            logger.info("security_managed_container_ready", extra={"session_id": owner,
+                "container_id": session.container.container_id})
             return name
         except BaseException:
             self._managed_sessions.discard(session)
@@ -346,6 +355,12 @@ class SecurityExecutionEnvironmentService:
         command, command_args = self._rewrite_localhost_for_docker(command, command_args)
         if not command_args:
             raise ValueError("Security command rendered an empty argv.")
+        return await self._execute_managed_command(container_name=container_name, command=command,
+            timeout_seconds=timeout_seconds, context=context)
+
+    async def _execute_managed_command(self, *, container_name: str, command: str,
+                                       timeout_seconds: float, context: Any) -> SecurityCommandExecutionResult:
+        """Execute after the public entry point validates and translates the target."""
         record = self._require_managed_container(container_name, context)
         started_at = _utc_now()
         args = ["exec", "-w", record.workdir, record.session.container.container_id, "sh", "-lc",
@@ -393,6 +408,9 @@ class SecurityExecutionEnvironmentService:
         self._managed_sessions.discard(session)
         if session.container is not None:
             self._managed_containers.pop(session.container.container_name, None)
+            for key, scope in list(self._reusable_scopes.items()):
+                if scope.container_name == session.container.container_name and scope.callers == 0:
+                    self._reusable_scopes.pop(key, None)
 
     async def close(self) -> None:
         self._closed = True
@@ -505,10 +523,10 @@ class SecurityExecutionEnvironmentService:
         """Whether this configured foreground path acquires its own Docker slot.
 
         TestRun uses the same decision to avoid reserving capacity twice.
-        Reusable/persistent paths retain their existing admission until migrated.
+        Temporary and reusable foreground containers both own their admission.
         """
         backend = self._get_str("security_runner_backend", "SECURITY_RUNNER_BACKEND", "local").lower()
-        return backend in {"docker", "container"} and not self._container_reuse_enabled() and self._cleanup_after_run_enabled()
+        return backend in {"docker", "container"}
 
     async def _run_in_docker(
         self,
@@ -563,7 +581,7 @@ class SecurityExecutionEnvironmentService:
             args.extend(["--network", network])
         return workdir, [*args, image, "tail", "-f", "/dev/null"]
 
-    def _run_reusable_in_docker(
+    async def _run_reusable_in_docker(
         self,
         command: str,
         command_args: list[str],
@@ -571,86 +589,36 @@ class SecurityExecutionEnvironmentService:
         artifact_dir: Path,
         context: Any,
     ) -> SecurityCommandExecutionResult:
-        docker = shutil.which("docker")
-        if docker is None:
-            raise FileNotFoundError("Docker CLI is not installed or not on PATH.")
-
-        image = self._get_str(
-            "security_runner_docker_image",
-            "SECURITY_RUNNER_DOCKER_IMAGE",
-            "vxcontrol/kali-linux",
-        )
-        workdir = self._get_str(
-            "security_runner_docker_workdir",
-            "SECURITY_RUNNER_DOCKER_WORKDIR",
-            "/work",
-        )
-        container_name = self._container_name(context)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        host_workdir = self._host_workdir_for_container(artifact_dir)
-        host_workdir.mkdir(parents=True, exist_ok=True)
-        cleanup_after_run = self._cleanup_after_run_enabled()
-
-        self._ensure_container(
-            docker=docker,
-            image=image,
-            container_name=container_name,
-            host_workdir=host_workdir,
-            container_workdir=workdir,
-        )
-
-        started_at = _utc_now()
-        shell_command = self._wrap_with_shell_timeout(command, timeout_seconds)
-        docker_args = [
-            docker,
-            "exec",
-            "-w",
-            workdir,
-            container_name,
-            "sh",
-            "-lc",
-            shell_command,
-        ]
-        cleanup_error = ""
+        # The existing DockerResourceSession owns the whole lifetime. Keep only
+        # a scoped handle here; unrelated Attempts never share it or its mount.
+        if not command_args:
+            raise ValueError("Security command rendered an empty argv.")
+        current = get_request_context()
+        key = tuple(str(getattr(current, name, None) or "") for name in
+            ("project_id", "session_id", "turn_id", "run_id", "run_item_id", "attempt_id"))
+        reuse = self._container_reuse_enabled()
+        scope = self._reusable_scopes.setdefault(key, _ReusableSecurityScope()) if reuse else _ReusableSecurityScope()
+        scope.callers += 1
         try:
-            try:
-                completed = subprocess.run(
-                    docker_args,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=timeout_seconds + 5,
-                )
-                stdout_text = completed.stdout or ""
-                stderr_text = completed.stderr or ""
-                exit_code = completed.returncode
-                timed_out = exit_code == 124
-            except subprocess.TimeoutExpired as exc:
-                stdout_text = exc.stdout or ""
-                stderr_text = exc.stderr or ""
-                exit_code = -1
-                timed_out = True
+            # Include creation in serialization so concurrent calls cannot both
+            # allocate for one scope. Other scopes have independent locks.
+            async with scope.lock:
+                if self._closed:
+                    raise RuntimeError("Security execution environment is closed")
+                record = self._managed_containers.get(scope.container_name)
+                if record is None or not record.session.active:
+                    workdir = artifact_dir / "_security_runner_work" / uuid4().hex[:12]
+                    scope.container_name = await self._start_managed_container(workdir, context)
+                else:
+                    logger.info("security_container_reused", extra={"session_id": record.owner_session_id,
+                        "container_id": record.session.container.container_id,
+                        "attempt_id": getattr(current, "attempt_id", None)})
+                return await self._execute_managed_command(container_name=scope.container_name,
+                    command=command, timeout_seconds=timeout_seconds, context=context)
         finally:
-            if cleanup_after_run:
-                cleanup_error = self._remove_container(docker=docker, container_name=container_name)
-        if cleanup_error:
-            stderr_text = _append_stderr(stderr_text, cleanup_error)
-
-        return SecurityCommandExecutionResult(
-            backend="docker",
-            command=command,
-            argv=docker_args,
-            cwd=workdir,
-            stdout=stdout_text,
-            stderr=stderr_text,
-            exit_code=exit_code,
-            timed_out=timed_out,
-            started_at=started_at,
-            completed_at=_utc_now(),
-            container_name=container_name,
-            output_artifacts=self._collect_output_artifacts(host_workdir),
-        )
+            scope.callers -= 1
+            if reuse and scope.callers == 0 and scope.container_name not in self._managed_containers:
+                self._reusable_scopes.pop(key, None)
 
     def _start_detached_in_docker(
         self,
