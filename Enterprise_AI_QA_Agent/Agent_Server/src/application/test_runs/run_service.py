@@ -20,6 +20,7 @@ from src.core.request_context import get_request_context, new_id
 from src.application.test_suites.suite_service import TestSuiteService
 from src.runtime.store import SessionStore
 from src.schemas.run_management import (
+    ProjectExecutionSummary,
     LeaseRecoveryResponse,
     RegressionArtifactLink,
     RegressionBatchPage,
@@ -511,6 +512,12 @@ class TestRunService:
     async def get_record(self, run_id: str) -> TestRunRecord:
         """读取运行头，供 Worker 热路径使用，避免加载完整运行明细。"""
         return await self._get_run_record(run_id)
+
+    async def execution_summary(self, project_id: str) -> ProjectExecutionSummary:
+        await self._projects.get(project_id)
+        stats, waiting_reasons = await self._store.project_execution_counts(project_id)
+        return ProjectExecutionSummary(project_id=project_id, stats=stats,
+            waiting_reasons=waiting_reasons, sampled_at=self._clock())
 
     async def list(
         self,

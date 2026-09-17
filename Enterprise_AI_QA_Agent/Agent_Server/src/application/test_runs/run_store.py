@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
@@ -39,6 +40,7 @@ ACTIVE_ITEM_STATUSES = {"claimed", "running"}
 
 class TestRunStore(Protocol):
     async def initialize(self) -> None: ...
+    async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]: ...
     async def create_run(
         self,
         run: TestRunRecord,
@@ -186,6 +188,19 @@ class InMemoryTestRunStore:
 
     async def initialize(self) -> None:
         return None
+
+    async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]:
+        async with self._lock:
+            run_ids = {run.id for run in self._runs.values() if run.project_id == project_id}
+            counts: Counter[str] = Counter()
+            reasons: Counter[str] = Counter()
+            for item in self._items.values():
+                if item.run_id not in run_ids:
+                    continue
+                counts[item.status] += 1
+                if item.status == "waiting_resource":
+                    reasons[item.waiting_reason or "resource_unavailable"] += 1
+            return TestRunStats(total=sum(counts.values()), **counts), dict(reasons)
 
     async def create_run(
         self,
@@ -1158,6 +1173,32 @@ class PostgresTestRunStore:
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
+
+    async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]:
+        return await asyncio.to_thread(self._project_execution_counts_sync, project_id)
+
+    def _project_execution_counts_sync(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]:
+        # Same grouped status aggregation as _refresh_run_in_cursor, scoped to
+        # the entire project and read in one PostgreSQL statement snapshot.
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT item.status,
+                    CASE WHEN item.status = 'waiting_resource'
+                        THEN COALESCE(NULLIF(item.record->>'waiting_reason', ''), 'resource_unavailable')
+                        ELSE NULL END AS reason,
+                    COUNT(*) AS total
+                FROM {self._item_table} item JOIN {self._run_table} run ON run.id = item.run_id
+                WHERE run.project_id = %s
+                GROUP BY item.status, reason
+            """, (project_id,))
+            rows = cur.fetchall()
+        counts: Counter[str] = Counter()
+        reasons: Counter[str] = Counter()
+        for row in rows:
+            counts[row["status"]] += int(row["total"])
+            if row["reason"] is not None:
+                reasons[row["reason"]] += int(row["total"])
+        return TestRunStats(total=sum(counts.values()), **counts), dict(reasons)
 
     async def create_run(
         self,

@@ -1410,8 +1410,15 @@ export interface TestRunItemRecord {
 
 export type ResourceQuotaType = "agent" | "browser" | "docker" | "test_account" | "environment";
 
+export interface ProjectExecutionSummary {
+  project_id: string;
+  stats: TestRunStats;
+  waiting_reasons: Record<string, number>;
+  sampled_at: string;
+}
+
 export interface ResourceQuotaRecord {
-  scope: "project";
+  scope: "project" | "run";
   scope_id: string;
   resource_type: ResourceQuotaType;
   limit: number;

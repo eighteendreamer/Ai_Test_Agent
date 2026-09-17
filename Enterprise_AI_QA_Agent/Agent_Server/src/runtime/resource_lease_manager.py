@@ -363,10 +363,7 @@ class RedisResourceLeaseManager:
             key_text = key.decode() if isinstance(key, bytes) else str(key)
             if key_text in {self._key("lease:registry"), self._key("lease:metadata")}:
                 continue
-            try:
-                raw = await self._client.get(key)
-            except Exception:
-                continue
+            raw = await self._client.get(key)
             if not raw:
                 continue
             payload = json.loads(raw)

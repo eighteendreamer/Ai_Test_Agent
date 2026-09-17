@@ -556,6 +556,37 @@ Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
 尚未完成活动浏览器命令和录制控制的跨 Worker 转发、CDP 外部浏览器租约、Linux 实机回归与完整并发/soak 验收。
 录制回放执行器目前没有生产调用入口，也未接入 Harness。
 
+### 项目执行与资源看板
+
+项目详情页的“执行与资源”使用 `GET /api/v1/projects/{project_id}/execution-summary`，
+按 PostgreSQL 中本项目所有 RunItem 汇总状态和资源等待原因，不从当前页 TestRun 推算。
+统计单位是执行条目：同一个用例在不同运行中执行多次会分别计数，已结束历史也包含在内。
+运行历史和条目详情继续保留，等待原因显示为浏览器、Docker、账号、环境、项目或运行配额等中文说明。
+接口沿用 TestRunStore 既有 `GROUP BY status` 聚合，在单条 SQL 快照中按项目读取；内存存储实现相同契约。
+
+资源占用和项目配额复用 `/api/v1/resource-occupancy?project_id=...` 与
+`/api/v1/projects/{project_id}/resource-quotas`。看板分列活动资源、待清理资源、占用槽位和项目类型配额。
+待清理资源仍计入槽位，过期尚未扫描的资源也可能保留占用；配额为 0 按现有执行器语义表示该级未单独设限。
+当前项目 `agent` 配额记录对应总资源槽位，页面明确显示为“本项目资源槽位”，不误标为 Agent 执行数。
+实际准入仍由 Redis 原子租约校验决定，页面快照不参与调度。公开接口不返回租约令牌、内含令牌的清理任务 ID
+或内部 Redis 路由字段；Redis 读取失败返回 503，页面保留上次快照并显示过期警告，不伪报空闲。
+
+刷新参数统一放在 `agent_web/.env`，模板为 `agent_web/.env.example`：
+
+```ini
+VITE_PROJECT_MONITOR_POLL_MS=5000
+VITE_PROJECT_MONITOR_TIMEOUT_MS=10000
+```
+
+轮询间隔 0 表示仅手动刷新，其他有效值最小为 1000 毫秒。请求超时最小为 1000 毫秒。
+页面隐藏时暂停自动查询；每轮请求结束后再计时，不重叠轮询。切换项目会取消旧请求并丢弃迟到结果，
+卸载组件时取消请求和定时器。Vite 变量在构建时生效，修改后需重启开发服务或重新打包客户端。
+
+验证命令：在 `Agent_Server` 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后执行
+`uv run --no-sync python -m pytest tests/test_project_execution_summary.py tests/test_resource_occupancy.py -q`，
+覆盖超过 20 个运行的全量计数、真实 PostgreSQL 状态变化、项目隔离、真实 Redis 占用和清理、故障可见性。
+前端执行 `npm test` 与 `npm run build`；组件测试覆盖迟到响应、资源查询失败、请求超时和卸载取消。
+
 ### 2. 启动前端
 
 ```bash

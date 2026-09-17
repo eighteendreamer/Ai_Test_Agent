@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from src.schemas.run_management import (
+    ProjectExecutionSummary,
     LeaseRecoveryResponse,
     RegressionBatchPage,
     RegressionContext,
@@ -67,6 +68,14 @@ async def create_test_run(
     try:
         return await request.app.state.test_run_service.create_run(suite_id, payload)
     except (KeyError, ValueError, RuntimeError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/projects/{project_id}/execution-summary", response_model=ProjectExecutionSummary)
+async def get_project_execution_summary(project_id: str, request: Request):
+    try:
+        return await request.app.state.test_run_service.execution_summary(project_id)
+    except KeyError as exc:
         raise _http_error(exc) from exc
 
 

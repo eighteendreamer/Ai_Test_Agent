@@ -2,6 +2,7 @@ import type {
   ProjectRecord,
   ProjectPage,
   ProjectOverview,
+  ProjectExecutionSummary,
   LegacySmokeRunPage,
   LegacySmokeScopeBinding,
   TestCasePage,
@@ -64,8 +65,12 @@ export function getProjectOverview(projectId: string): Promise<ProjectOverview> 
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/overview`);
 }
 
-export function listResourceQuotas(projectId: string): Promise<ResourceQuotaRecord[]> {
-  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/resource-quotas`);
+export function getProjectExecutionSummary(projectId: string, signal?: AbortSignal): Promise<ProjectExecutionSummary> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/execution-summary`, { signal });
+}
+
+export function listResourceQuotas(projectId: string, signal?: AbortSignal): Promise<ResourceQuotaRecord[]> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/resource-quotas`, { signal });
 }
 
 export function upsertResourceQuota(
@@ -79,9 +84,9 @@ export function upsertResourceQuota(
   });
 }
 
-export function getResourceOccupancy(projectId?: string): Promise<ResourceOccupancyResponse> {
+export function getResourceOccupancy(projectId?: string, signal?: AbortSignal): Promise<ResourceOccupancyResponse> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-  return request(`/api/v1/resource-occupancy${query}`);
+  return request(`/api/v1/resource-occupancy${query}`, { signal });
 }
 
 export function listLegacySmokeRuns(

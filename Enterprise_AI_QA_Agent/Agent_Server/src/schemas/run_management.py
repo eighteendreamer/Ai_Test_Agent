@@ -79,6 +79,13 @@ class TestRunRecord(BaseModel):
     wall_clock_duration_ms: int = Field(default=0, ge=0)
 
 
+class ProjectExecutionSummary(BaseModel):
+    project_id: str
+    stats: TestRunStats = Field(default_factory=TestRunStats)
+    waiting_reasons: dict[str, int] = Field(default_factory=dict)
+    sampled_at: datetime
+
+
 class TestRunItemRecord(BaseModel):
     id: str
     run_id: str

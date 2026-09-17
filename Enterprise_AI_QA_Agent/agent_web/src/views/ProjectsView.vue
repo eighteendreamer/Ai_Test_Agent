@@ -4,6 +4,8 @@ import { useMessage } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../services/api";
+import ProjectExecutionDashboard from "../features/projects/ProjectExecutionDashboard.vue";
+import { waitingReasonLabel } from "../features/projects/executionLabels";
 import { formatServerDateTime } from "../utils/datetime";
 import type {
   ModeDescriptor,
@@ -72,12 +74,6 @@ const regressionRunId = ref("");
 const runDetailOpen = ref(false);
 const runDetailLoading = ref(false);
 const runDetail = ref<TestRunDetail | null>(null);
-
-const runDashboard = computed(() => ({
-  running: testRuns.value.filter((run) => run.status === "running").length,
-  queued: testRuns.value.filter((run) => run.status === "queued").length,
-  waitingResource: testRuns.value.reduce((total, run) => total + (run.stats.waiting_resource ?? 0), 0),
-}));
 
 const legacySmokeRuns = ref<LegacySmokeRunSummary[]>([]);
 const legacySmokeBindings = ref<string[]>([]);
@@ -930,6 +926,8 @@ watch(routeProjectId, async (projectId) => {
         </dl>
         <p v-if="overview && !overview.graph.available" class="graph-warning">图谱暂不可用：{{ overview.graph.error }}</p>
 
+        <ProjectExecutionDashboard :project-id="selected.id" />
+
         <section class="resource-panel">
           <header class="resource-head">
             <div class="tabs" role="tablist" aria-label="项目测试资源">
@@ -1049,7 +1047,7 @@ watch(routeProjectId, async (projectId) => {
                 <option value="cancelled">已取消</option>
               </select>
               <button @click="loadTestRuns">刷新</button>
-              <small>当前页统计：运行中 {{ runDashboard.running }} · 排队中 {{ runDashboard.queued }} · 等待资源 {{ runDashboard.waitingResource }}。运行只保存调度状态；测试结论以 Runner 结果和证据为准。</small>
+              <small>运行只保存调度状态；测试结论以 Runner 结果和证据为准。项目执行条目统计见上方“执行与资源”。</small>
             </div>
             <div class="table-wrap">
               <table>
@@ -1285,7 +1283,7 @@ watch(routeProjectId, async (projectId) => {
             <table><thead><tr><th>位置</th><th>状态</th><th>租约</th><th>审批</th><th>补偿</th><th>结果</th><th>操作</th></tr></thead><tbody>
               <tr v-for="item in runDetail.items" :key="item.id">
                 <td>{{ item.position }}</td>
-                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small><small v-if="item.status === 'waiting_resource'">原因：{{ item.waiting_reason || '资源容量' }}</small></td>
+                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small><small v-if="item.status === 'waiting_resource'">{{ waitingReasonLabel(item.waiting_reason || 'resource_unavailable') }}</small></td>
                 <td><small v-if="item.lease_expires_at">到期 {{ formatServerDateTime(item.lease_expires_at) }}</small><small v-else>—</small></td>
                 <td><small v-if="item.status === 'waiting_approval'">待处理 {{ shortId(item.approval_id || '') }}</small><small v-else>{{ item.approval_id ? shortId(item.approval_id) : '—' }}</small></td>
                 <td><small v-if="item.status === 'cancelled'">{{ item.resource_cleanup_completed_at ? '已完成' : '待补偿' }}</small><small v-else>—</small></td>
