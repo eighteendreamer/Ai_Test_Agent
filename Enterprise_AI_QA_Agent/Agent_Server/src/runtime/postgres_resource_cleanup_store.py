@@ -47,6 +47,17 @@ class PostgresResourceCleanupStore:
         record.pop("lease_token")
         return await asyncio.to_thread(self._begin_sync, task_id, record, worker_id)
 
+    async def completed(self, task_id: str, *, allocation_id: str) -> bool:
+        return await asyncio.to_thread(self._completed_sync, task_id, allocation_id)
+
+    def _completed_sync(self, task_id, allocation_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("""
+                SELECT 1 FROM {} WHERE task_id = %s AND status = 'completed'
+                AND record->>'allocation_id' = %s
+            """).format(self._table), (task_id, allocation_id))
+            return cur.fetchone() is not None
+
     def _begin_sync(self, task_id: str, record: dict, worker_id: str) -> bool:
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("""

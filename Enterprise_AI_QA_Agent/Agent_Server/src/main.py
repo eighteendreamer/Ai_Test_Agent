@@ -140,6 +140,7 @@ from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
+from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
 from src.runtime.postgres_vector_rebuild_job_store import (
@@ -192,6 +193,8 @@ async def lifespan(app: FastAPI):
         scope="global", identifier="all", limit=settings.orchestration.resource_global_limit,
     )
     app.state.resource_lease_manager = resource_lease_manager
+    await resource_lease_manager.configure_quota(scope="resource_type", identifier="browser",
+        limit=settings.orchestration.resource_browser_limit)
     resource_quota_service = ResourceQuotaService(ResourceQuotaStore(settings), resource_lease_manager)
     await resource_quota_service.initialize()
     app.state.resource_quota_service = resource_quota_service
@@ -211,6 +214,7 @@ async def lifespan(app: FastAPI):
     task_outbox = PostgresTaskOutbox(settings)
     await task_outbox.initialize()
     await PostgresResourceAllocationStore(settings).initialize()
+    await PostgresBrowserAllocationStore(settings).initialize()
     app.state.task_outbox = task_outbox
     compaction_record_store = PostgresCompactionRecordStore(
         settings,

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
 from src.core.config import Settings
+from src.runtime.resource_lease_manager import ResourceUnavailable
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +57,9 @@ class _BrowserSession:
     persistent: bool = False
     profile_dir: Path | None = None
     driver_start: asyncio.Task | None = None
+    allocation: Any = field(default=None, repr=False)
+    lease_watch: asyncio.Task | None = None
+    lease_error: str | None = None
     ref_map: dict[str, str] = field(default_factory=dict)
     console_messages: list[dict[str, Any]] = field(default_factory=list)
     network_events: list[dict[str, Any]] = field(default_factory=list)
@@ -89,14 +94,16 @@ class PythonPlaywrightCliRuntime:
     inside the Agent_Server Python process.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, resource_manager=None) -> None:
         self._settings = settings
+        self._resource_manager = resource_manager
         self._sessions: dict[str, _BrowserSession] = {}
         self._session_locks: dict[str, _SessionLock] = {}
         self._commands: set[asyncio.Task] = set()
         self._closing: dict[str, asyncio.Task] = {}
         self._shutdown_task: asyncio.Task | None = None
         self._closed = False
+        self._session_commands: dict[str, asyncio.Task] = {}
 
     async def run(
         self,
@@ -128,20 +135,26 @@ class PythonPlaywrightCliRuntime:
             self._commands.discard(operation)
 
     @asynccontextmanager
-    async def _session_scope(self, session_name: str):
+    async def _session_scope(self, session_name: str, *, command: bool = False):
         # Keep the same lock while callers are queued, including during cleanup.
         guard = self._session_locks.setdefault(session_name, _SessionLock())
         guard.users += 1
         try:
             async with guard.lock:
-                yield
+                if command:
+                    self._session_commands[session_name] = asyncio.current_task()
+                try:
+                    yield
+                finally:
+                    if command:
+                        self._session_commands.pop(session_name, None)
         finally:
             guard.users -= 1
             if not guard.users and session_name not in self._sessions and session_name not in self._closing:
                 self._session_locks.pop(session_name, None)
 
     async def _run_locked(self, session_name: str, args: list[str], cwd: Path, raw: bool) -> dict[str, Any]:
-        async with self._session_scope(session_name):
+        async with self._session_scope(session_name, command=True):
             command = self._format_command(session_name, args, raw)
             if not args:
                 return self._success(command, self._help_text())
@@ -172,6 +185,13 @@ class PythonPlaywrightCliRuntime:
                 return self._success(command, stdout, artifacts)
             except asyncio.CancelledError:
                 LOGGER.info("browser_command_cancelled", extra={"browser_session": session_name, "verb": verb})
+                stopped = self._sessions.get(session_name)
+                lease_error = getattr(stopped, "lease_error", None)
+                await self._close_session(session_name)
+                if lease_error:
+                    raise ResourceUnavailable(lease_error) from None
+                raise
+            except ResourceUnavailable:
                 await self._close_session(session_name)
                 raise
             except Exception as exc:
@@ -215,18 +235,23 @@ class PythonPlaywrightCliRuntime:
 
     def session_info(self, session_name: str) -> dict[str, Any] | None:
         session = self._sessions.get(session_name)
-        if session is None or session.page is None:
+        if session is None:
             return None
         return {
             "output_dir": str(session.output_dir),
             "profile_dir": str(session.profile_dir) if session.profile_dir else None,
+            "allocation_id": session.allocation.allocation_id if session.allocation else None,
+            "allocation_generation": session.allocation.generation if session.allocation else None,
         }
 
     async def _ensure_session(self, session_name: str, cwd: Path, open_args: list[str]) -> _BrowserSession:
         if session_name in self._closing:
             await self._close_session(session_name)
         if session_name in self._sessions:
-            return self._sessions[session_name]
+            session = self._sessions[session_name]
+            if session.allocation is not None:
+                await self._resource_manager.validate(session.allocation)
+            return session
 
         try:
             from playwright.async_api import async_playwright
@@ -257,12 +282,18 @@ class PythonPlaywrightCliRuntime:
         if browser_name == "edge":
             browser_type_name = "chromium"
             launch_options["channel"] = "msedge"
+        allocation = await self._resource_manager.acquire(session_name) if self._resource_manager else None
+        if allocation is not None:
+            launch_options["env"] = {**os.environ, **allocation.environment}
         session = _BrowserSession(
             name=session_name, playwright=None, browser=None, context=None,
             page=None, output_dir=output_dir, persistent=persistent,
             driver_start=asyncio.create_task(async_playwright().start()),
+            allocation=allocation,
         )
         self._sessions[session_name] = session
+        if allocation is not None:
+            session.lease_watch = asyncio.create_task(self._watch_lease(session))
         try:
             # start() creates a subprocess before returning its handle. Preserve
             # that future so cancellation can await the handle and stop it.
@@ -280,11 +311,34 @@ class PythonPlaywrightCliRuntime:
                 session.context = await session.browser.new_context(viewport=viewport)
                 session.page = await session.context.new_page()
             self._wire_session_events(session)
+            if allocation is not None:
+                await self._resource_manager.started(allocation)
         except BaseException:
             await self._close_session(session_name)
             raise
         LOGGER.info("browser_session_started", extra={"browser_session": session_name, "persistent": persistent})
         return session
+
+    async def _watch_lease(self, session):
+        try:
+            await self._resource_manager.watch(session.allocation)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            session.lease_error = getattr(exc, "reason", "resource_harness_unavailable")
+            LOGGER.warning("browser_resource_lease_stopped", extra={
+                "browser_session": session.name, "resource_id": session.allocation.lease.resource_id,
+                "error_type": type(exc).__name__, "reason": getattr(exc, "reason", "heartbeat_failed"),
+            })
+            operation = self._session_commands.get(session.name)
+            if operation is not None and not operation.done() and not operation.cancelling():
+                operation.cancel()
+            try:
+                await self.close_session(session.name)
+            except Exception as cleanup_error:
+                LOGGER.error("browser_lease_cleanup_deferred", extra={
+                    "browser_session": session.name, "error_type": type(cleanup_error).__name__,
+                })
 
     def _wire_session_events(self, session: _BrowserSession) -> None:
         def on_console(message: Any) -> None:
@@ -1908,6 +1962,9 @@ class PythonPlaywrightCliRuntime:
 
     async def _dispose_session(self, session: _BrowserSession) -> None:
         errors: list[Exception] = []
+        if session.lease_watch is not None and not session.lease_watch.done():
+            session.lease_watch.cancel()
+            await asyncio.gather(session.lease_watch, return_exceptions=True)
         if session.playwright is None and session.driver_start is not None:
             try:
                 session.playwright = await session.driver_start
@@ -1929,6 +1986,8 @@ class PythonPlaywrightCliRuntime:
                 LOGGER.error("browser_cleanup_phase_failed", extra={
                     "browser_session": session.name, "phase": phase, "error_type": type(exc).__name__,
                 })
+        if session.allocation is not None:
+            await self._resource_manager.retire(session.allocation.lease)
         if errors:
             raise errors[0]
         self._sessions.pop(session.name, None)

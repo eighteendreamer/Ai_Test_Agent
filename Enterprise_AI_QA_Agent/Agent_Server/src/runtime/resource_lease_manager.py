@@ -136,11 +136,11 @@ class RedisResourceLeaseManager:
             lease.lease_token, allocation_id, lease.fencing_token, "allocation_id",
         ))
 
-    async def enqueue_orphan_cleanup(self, payload: dict[str, Any]) -> bool:
+    async def enqueue_orphan_cleanup(self, payload: dict[str, Any], *, stream: str | None = None) -> bool:
         lease = ExpiredResourceLease.from_payload(payload)
         return bool(await self._client.eval(
             ENQUEUE_ORPHAN, 3, self._lease_key(lease.resource_type, lease.resource_id),
-            self._cleanup_stream, self._key("cleanup:inventory_deliveries"),
+            stream or self._cleanup_stream, self._key("cleanup:inventory_deliveries"),
             json.dumps(payload, ensure_ascii=False),
         ))
 
@@ -167,6 +167,7 @@ class RedisResourceLeaseManager:
         run_id: str | None = None,
         run_item_id: str | None = None,
         attempt_id: str | None = None,
+        cleanup_stream: str | None = None,
     ) -> ResourceLease:
         _validate_part(resource_type, "resource_type")
         _validate_part(resource_id, "resource_id")
@@ -191,6 +192,7 @@ class RedisResourceLeaseManager:
             "run_item_id": run_item_id, "attempt_id": attempt_id, "worker_id": worker_id,
             "lease_token": lease_token, "request_id": request_id,
             "trace_id": trace_id, "turn_id": turn_id,
+            "cleanup_stream": cleanup_stream or self._cleanup_stream,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False, separators=(",", ":"))
         result = await self._client.eval(

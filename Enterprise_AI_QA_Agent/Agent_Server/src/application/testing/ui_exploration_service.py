@@ -11,6 +11,8 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.exploration.ui_graph_store import UIGraphStore
 from src.application.runtime.python_playwright_cli import PythonPlaywrightCliRuntime
 from src.core.config import Settings
+from src.core.request_context import bind_request_context
+from src.runtime.resource_lease_manager import ResourceUnavailable
 
 if TYPE_CHECKING:
     from src.application.runtime.tool_runtime_service import ToolExecutionContext
@@ -34,7 +36,8 @@ class UIExplorationService:
         self._mcp_runtime_service = mcp_runtime_service
         self._memory_runtime_service = memory_runtime_service
         self._ui_graph_store = ui_graph_store
-        self._playwright_runtime = PythonPlaywrightCliRuntime(settings)
+        self._playwright_runtime = PythonPlaywrightCliRuntime(settings,
+            resource_manager=mcp_runtime_service.browser_resources if mcp_runtime_service else None)
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
 
     async def close(self) -> None:
@@ -81,13 +84,17 @@ class UIExplorationService:
         try:
             base_timeout = int(self._settings.orchestration.browser_action_timeout_seconds or 15)
             per_page_budget = max(base_timeout, 8 + max_interactions * 4)
-            command_result = await self._playwright_runtime.run(
-                session_name=session_name,
-                args=args,
-                cwd=output_dir,
-                raw=True,
-                timeout_seconds=max(45, max_pages * per_page_budget),
-            )
+            with bind_request_context(session_id=context.session_id, turn_id=context.turn_id, trace_id=context.trace_id,
+                project_id=context.context_bundle.get("project_id"),
+                run_id=context.context_bundle.get("run_id") or context.context_bundle.get("test_run_id"),
+                run_item_id=context.context_bundle.get("run_item_id") or context.context_bundle.get("test_run_item_id"),
+                attempt_id=context.context_bundle.get("attempt_id")):
+                command_result = await self._playwright_runtime.run(
+                    session_name=session_name, args=args, cwd=output_dir, raw=True,
+                    timeout_seconds=max(45, max_pages * per_page_budget),
+                )
+        except ResourceUnavailable as exc:
+            return {"status": "waiting_resource", "waiting_reason": exc.reason}
         finally:
             await self._playwright_runtime.close_session(session_name)
         artifacts = list(command_result.get("artifacts") or [])

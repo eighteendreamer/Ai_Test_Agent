@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
+import platform
 import re
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -57,6 +58,7 @@ class DatabaseConfig(BaseModel):
     postgres_resource_quota_table: str = "agent_resource_quotas"
     postgres_resource_cleanup_table: str = "agent_resource_cleanup_jobs"
     postgres_resource_allocation_table: str = "agent_resource_allocations"
+    postgres_browser_allocation_table: str = "agent_browser_allocations"
 
     memgraph_host: str = "127.0.0.1"
     memgraph_port: int = 7687
@@ -197,6 +199,10 @@ class OrchestrConfig(BaseModel):
     resource_docker_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
     resource_mock_target_max_lifetime_seconds: float = Field(default=3600, gt=0)
     resource_cleanup_interval_seconds: float = Field(default=30.0, gt=0)
+    resource_browser_host_id: str = Field(default_factory=lambda: re.sub(r"[^A-Za-z0-9_.-]", "_", platform.node()) or "localhost")
+    resource_browser_limit: int = Field(default=10, ge=1)
+    resource_browser_max_lifetime_seconds: float = Field(default=900, gt=0)
+    resource_browser_cleanup_timeout_seconds: float = Field(default=10, gt=0)
 
     langchain_middleware_enabled: bool = False
     langchain_tool_adapter_enabled: bool = False
@@ -301,6 +307,17 @@ class OrchestrConfig(BaseModel):
             if stream.endswith(":cleanup"):
                 return stream
         return "qa:tasks:cleanup"
+
+    @property
+    def browser_cleanup_task_stream(self) -> str:
+        return f"{self.cleanup_task_stream}:browser:{self.resource_browser_host_id}"
+
+    @field_validator("resource_browser_host_id")
+    @classmethod
+    def validate_browser_host_id(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", value):
+            raise ValueError("resource_browser_host_id must identify one host using ASCII letters, digits, _, . or -")
+        return value
 
     @field_validator("mcp_stdio_command_allowlist", mode="before")
     @classmethod

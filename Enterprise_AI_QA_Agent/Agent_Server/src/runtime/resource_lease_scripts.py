@@ -26,7 +26,7 @@ local function retire_one(member, registry, usage, metadata_key, stream, now, re
     lease['cleanup_enqueued_at_ms'] = now
     lease['cleanup_reason'] = reason
     -- Publish before removing recovery state; failed XADD must keep the owner.
-    redis.call('XADD', stream, '*', 'payload', cjson.encode(lease))
+    redis.call('XADD', lease['cleanup_stream'] or stream, '*', 'payload', cjson.encode(lease))
   end
   if has_external then
     metadata['status'] = 'cleanup_pending'

@@ -16,7 +16,8 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.runtime.python_playwright_cli import PythonPlaywrightCliRuntime
 from src.registry.mcp import MCPRegistry
 from src.schemas.session_resource import SessionResourceKind
-from src.core.request_context import get_request_context
+from src.core.request_context import bind_request_context, get_request_context
+from src.runtime.browser_resource_manager import BrowserResourceManager
 from src.runtime.resource_lease_manager import ResourceUnavailable
 
 LOGGER = logging.getLogger(__name__)
@@ -41,16 +42,26 @@ class MCPRuntimeService:
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
         self._artifact_root.mkdir(parents=True, exist_ok=True)
         self._playwright_cli = PythonPlaywrightCliRuntime(settings)
-        self._resource_lease_manager = None
+        self.browser_resources = None
 
     def set_resource_lease_manager(self, manager) -> None:
-        self._resource_lease_manager = manager
+        self.browser_resources = BrowserResourceManager(self._settings, lease_manager=manager)
+        self._playwright_cli._resource_manager = self.browser_resources
 
-    async def close_browser_session(self, session_name: str) -> None:
-        await self._playwright_cli.close_session(session_name)
+    async def close_browser_session(self, session_name: str, *, allocation_id: str | None = None) -> None:
+        info = self._playwright_cli.session_info(session_name)
+        if allocation_id is None or (info or {}).get("allocation_id") == allocation_id:
+            await self._playwright_cli.close_session(session_name)
+        if self.browser_resources is not None:
+            await self.browser_resources.request_close(session_name,
+                allocation_id=allocation_id or (info or {}).get("allocation_id"))
 
     async def close(self) -> None:
-        await self._playwright_cli.close()
+        try:
+            await self._playwright_cli.close()
+        finally:
+            if self.browser_resources is not None:
+                await self.browser_resources.close()
 
     def list_active_servers(self) -> list[dict[str, Any]]:
         return [server.model_dump() for server in self._mcp_registry.list_enabled()]
@@ -79,76 +90,31 @@ class MCPRuntimeService:
         if capability not in server.capabilities:
             return {"status": "failed", "error": f"Capability '{capability}' is not exposed by {server.name}."}
 
-        lease = None
-        browser_capability = capability in {"inspect-page", "browser-automation", "browser-control"}
-        if browser_capability and self._resource_lease_manager is not None and context.get("session_id"):
-            request_context = get_request_context()
-            bundle = context.get("context_bundle") if isinstance(context.get("context_bundle"), dict) else {}
-            owner = str(
-                (request_context.worker_id if request_context else None)
-                or (request_context.request_id if request_context else None)
-                or context.get("turn_id") or context.get("session_id")
-            )
+        bundle = context.get("context_bundle") if isinstance(context.get("context_bundle"), dict) else {}
+        fields = {key: context.get(key) or bundle.get(key) for key in (
+            "project_id", "session_id", "turn_id", "run_id", "run_item_id", "attempt_id")}
+        fields["run_id"] = fields["run_id"] or bundle.get("test_run_id")
+        fields["run_item_id"] = fields["run_item_id"] or bundle.get("test_run_item_id")
+        with bind_request_context(**fields):
             try:
-                lease = await self._resource_lease_manager.acquire(
-                    resource_type="browser",
-                    resource_id=f"browser:{context['session_id']}",
-                    worker_id=owner,
-                    lease_seconds=int(getattr(self._settings.orchestration, "resource_default_lease_seconds", 300)),
-                    project_id=str(bundle.get("project_id") or "") or None,
-                    session_id=str(context["session_id"]),
-                    run_id=str(bundle.get("test_run_id") or "") or None,
-                    run_item_id=str(bundle.get("run_item_id") or bundle.get("test_run_item_id") or "") or None,
-                    attempt_id=str(bundle.get("attempt_id") or "") or None,
-                )
+                if capability == "inspect-page":
+                    return await self._inspect_page(payload, context)
+                if capability == "browser-automation":
+                    return await self._run_browser_automation(payload, context)
+                if capability == "browser-control":
+                    return await self._run_browser_control(payload, context)
+                if capability == "write-artifact":
+                    return self._write_artifact(payload, context)
+                return {
+                    "status": "success",
+                    "summary": f"Capability '{capability}' acknowledged by {server.name}.",
+                    "payload": payload,
+                }
             except ResourceUnavailable as exc:
                 LOGGER.info("browser_resource_waiting", extra={
-                    "session_id": context.get("session_id"), "resource_id": f"browser:{context['session_id']}",
-                    "waiting_reason": exc.reason,
+                    **fields, "waiting_reason": exc.reason,
                 })
                 return {"status": "waiting_resource", "waiting_reason": exc.reason}
-            except Exception as exc:
-                LOGGER.exception("browser_resource_lease_unavailable", extra={
-                    "session_id": context.get("session_id"), "error_type": type(exc).__name__,
-                })
-                return {"status": "waiting_resource", "waiting_reason": "resource_harness_unavailable"}
-
-        try:
-            if capability == "inspect-page":
-                return await self._inspect_page(payload, context)
-            if capability == "browser-automation":
-                return await self._run_browser_automation(payload, context)
-            if capability == "browser-control":
-                return await self._run_browser_control(payload, context)
-            if capability == "write-artifact":
-                return self._write_artifact(payload, context)
-            return {
-                "status": "success",
-                "summary": f"Capability '{capability}' acknowledged by {server.name}.",
-                "payload": payload,
-            }
-        finally:
-            if lease is not None:
-                try:
-                    session_tool = {
-                        "inspect-page": "dom-inspector",
-                        "browser-automation": "browser-automation",
-                        "browser-control": "browser-control",
-                    }.get(capability, capability)
-                    await self._resource_lease_manager.bind(
-                        lease, self._playwright_session_name(context, session_tool),
-                    )
-                    released = await self._resource_lease_manager.release(lease)
-                    if not released:
-                        LOGGER.error("browser_resource_release_rejected", extra={
-                            "session_id": context.get("session_id"), "resource_id": lease.resource_id,
-                            "fencing_token": lease.fencing_token,
-                        })
-                except Exception as exc:
-                    LOGGER.exception("browser_resource_release_failed", extra={
-                        "session_id": context.get("session_id"), "resource_id": lease.resource_id,
-                        "error_type": type(exc).__name__,
-                    })
 
     async def _inspect_page(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         target_url = self._resolve_target_url(payload, context)
@@ -481,13 +447,17 @@ class MCPRuntimeService:
         artifact_dir = self._prepare_artifact_dir(context, "browser-control-command")
         session_name = self._playwright_session_name(context, "browser-control-command")
         command_log: list[dict[str, Any]] = []
+        command_completed = False
         try:
+            if args[0] in {"close", "delete-data", "close-all", "kill-all"} and self._playwright_cli.session_info(session_name) is None:
+                await self.close_browser_session(session_name)
             result = await self._run_playwright_cli(
                 session_name=session_name,
                 args=args,
                 cwd=artifact_dir,
                 raw=bool(payload.get("raw", False)),
             )
+            command_completed = True
             await self._register_browser_resources(context, session_name, args, artifact_dir)
             command_log.append(result)
             transcript_path = self._write_transcript(artifact_dir, command_log)
@@ -501,9 +471,8 @@ class MCPRuntimeService:
                 "artifacts": [*result.get("artifacts", []), {"type": "transcript", "path": str(transcript_path)}],
             }
         finally:
-            if args[0] in {"close", "delete-data", "close-all", "kill-all"}:
-                await self._close_playwright_session(session_name, artifact_dir)
-                if self._session_resource_service is not None:
+            if command_completed and args[0] in {"close", "delete-data", "close-all", "kill-all"}:
+                if self._session_resource_service is not None and self.browser_resources is None:
                     await self._session_resource_service.mark_released(
                         session_id=str(context.get("session_id") or ""),
                         kind=SessionResourceKind.browser_session,
@@ -535,6 +504,8 @@ class MCPRuntimeService:
                 "artifact_dir": str(artifact_dir),
                 "last_command": args,
                 "runtime": "python-playwright-cli",
+                "allocation_id": session_info.get("allocation_id"),
+                "allocation_generation": session_info.get("allocation_generation"),
             },
         )
         profile = session_info.get("profile_dir")

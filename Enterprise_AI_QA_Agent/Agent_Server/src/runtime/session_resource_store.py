@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime
 from typing import Protocol
@@ -15,6 +16,8 @@ from src.schemas.session_resource import (
     SessionResourceRecord,
     SessionResourceStatus,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class SessionResourceStore(Protocol):
@@ -40,6 +43,18 @@ class InMemorySessionResourceStore:
 
     async def save(self, resource: SessionResourceRecord) -> SessionResourceRecord:
         async with self._lock:
+            if resource.kind == SessionResourceKind.browser_session:
+                for existing in self._resources.values():
+                    if (existing.session_id == resource.session_id and existing.kind == resource.kind
+                            and existing.resource_key == resource.resource_key
+                            and existing.metadata.get("allocation_generation") is not None):
+                        old_generation = int(existing.metadata["allocation_generation"])
+                        generation = int(resource.metadata.get("allocation_generation") or 0)
+                        if generation < old_generation or (generation == old_generation and existing.status != SessionResourceStatus.active):
+                            LOGGER.info("session_resource_stale_registration_ignored", extra={"resource_id": existing.id})
+                            return existing
+                        resource = resource.model_copy(update={"id": existing.id, "created_at": existing.created_at})
+                        break
             resource.updated_at = datetime.utcnow()
             if resource.id not in self._resources:
                 self._by_session[resource.session_id].append(resource.id)
@@ -135,6 +150,12 @@ class PostgresSessionResourceStore:
                         updated_at = EXCLUDED.updated_at,
                         released_at = EXCLUDED.released_at,
                         metadata = {table}.metadata || EXCLUDED.metadata
+                    WHERE {table}.kind <> 'browser_session'
+                        OR {table}.metadata->>'allocation_generation' IS NULL
+                        OR COALESCE((EXCLUDED.metadata->>'allocation_generation')::bigint, 0)
+                            > ({table}.metadata->>'allocation_generation')::bigint
+                        OR ((EXCLUDED.metadata->>'allocation_generation')::bigint
+                            = ({table}.metadata->>'allocation_generation')::bigint AND {table}.status = 'active')
                     RETURNING *
                     """,
                     (
@@ -151,6 +172,13 @@ class PostgresSessionResourceStore:
                     ),
                 )
                 row = cur.fetchone()
+                if row is None:
+                    LOGGER.info("session_resource_stale_registration_ignored", extra={
+                        "session_id": resource.session_id, "resource_key": resource.resource_key,
+                    })
+                    cur.execute(f"SELECT * FROM {table} WHERE session_id = %s AND kind = %s AND resource_key = %s",
+                                (resource.session_id, resource.kind.value, resource.resource_key))
+                    row = cur.fetchone()
         return _resource_from_row(row)
 
     def _list_sync(self, session_id: str, active_only: bool) -> list[SessionResourceRecord]:

@@ -462,15 +462,56 @@ UI 探索每次调用独立创建浏览器，并仅关闭自己的实例。MCP �
 兼容性变化：`--profile` 现在表示 profile 根目录，实际目录追加当前浏览器作用域摘要，
 不同 Attempt 不读取同一 profile；资源记录使用运行时返回的实际目录。
 不迁移或删除原 profile。默认临时 profile 跟随首次调用的独立产物目录，关闭后重新创建不承诺恢复登录状态。
-没有新增模型设置、依赖或部署配置，沿用 `ORCHESTRATION__BROWSER_ACTION_TIMEOUT_SECONDS`。
+模型设置保持不变，命令超时沿用 `ORCHESTRATION__BROWSER_ACTION_TIMEOUT_SECONDS`。
 
 真实浏览器回归：在 `Agent_Server` 目录设置 `RUN_LIVE_BROWSER_TESTS=1` 后执行
 `uv run --no-sync python -m pytest tests/test_live_browser_lifecycle.py -q --tb=short`。
 需要已安装的 Chromium；使用本地页面验证并行、Cookie/profile 隔离、Attempt 隔离、
 产物保留、启动故障/取消、超时和关闭，不调用外部站点或模型。
 单元回归在 `tests/test_python_playwright_lifecycle.py`。
-本单元仍未完成持久浏览器完整租约、跨 Worker 关闭、Worker 强杀回收或录制/CDP 浏览器治理；
-现有 MCP 租约仍仅覆盖调用，不能据此宣称持久浏览器容量已经受控。
+原生 MCP 和 UI 探索浏览器已接入 `BrowserResourceManager`。创建前领取 Redis 租约并在
+PostgreSQL `agent_browser_allocations` 写入意图；浏览器进程使用独立 allocation/namespace/host
+环境标识，启动成功后记录 PID 与创建时间。租约持续覆盖命令间空闲期，每个命令开始前复核所有权，
+心跳失败或超过总寿命会停止命令并关闭浏览器。每个浏览器持续计入全局、项目、Run 和浏览器类型配额。
+物理关闭后进入 cleanup 队列，PostgreSQL 清理回执提交后才释放配额。
+
+新增配置均在 `Agent_Server/.env.example`（本地实际值同时写入 `.env`）：
+
+```ini
+DATABASE__POSTGRES_BROWSER_ALLOCATION_TABLE=agent_browser_allocations
+ORCHESTRATION__RESOURCE_BROWSER_HOST_ID=local-browser-host
+ORCHESTRATION__RESOURCE_BROWSER_LIMIT=10
+ORCHESTRATION__RESOURCE_BROWSER_MAX_LIFETIME_SECONDS=900
+ORCHESTRATION__RESOURCE_BROWSER_CLEANUP_TIMEOUT_SECONDS=10
+```
+
+每个原生浏览器宿主机必须配置不同的 `RESOURCE_BROWSER_HOST_ID`，同机 API、Agent Worker、
+Cleanup Worker 使用同一个值和同一操作系统账号。`run_resource_cleanup_worker` 同时消费通用
+cleanup 队列与 `qa:tasks:cleanup:browser:{host_id}`，避免其他宿主机领取本机进程清理任务。
+Docker 与浏览器清单独立执行，一种清单失败不会阻止另一种清单尝试。
+清理先核对 PostgreSQL 意图、宿主机、租约和 fencing，再按进程标识及 PID 创建时间操作；
+不按浏览器名称批量终止。创建后尚未绑定 PID 就被强杀的资源可从进程标识和数据库意图恢复。
+同机其他 API 实例可按指定 allocation 关闭浏览器；跨宿主机关闭通过所属宿主机队列办理，
+超时未取得清理回执时返回未完成，不伪报已释放。
+
+浏览器 Session 资源投影只接受对应 allocation 的关闭回执。数据库生成单调递增的内部 generation，
+防止旧注册覆盖新实例，或迟到注册把已经释放的实例重新标成 active；它不是模型设置项。
+API/清理 Worker 启动会初始化新增浏览器意图表及其序列，不删除既有数据。
+原始 profile 目录暂不自动删除。Redis 租约登记丢失时可依据 PostgreSQL 与进程标识补投清理；
+Redis 整体丢失后的队列重建、配额与准入恢复仍未完成。
+
+进程适配器新增锁定依赖 `psutil==7.2.2`（BSD-3-Clause），未升级其他依赖。
+技术来源：[Playwright BrowserType.launch 的 env 参数](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch)、
+[psutil 7.2.2 进程 API 源码](https://github.com/giampaolo/psutil/blob/release-7.2.2/psutil/__init__.py)
+及项目已有 Docker 创建意图/清理回执实现。
+进程环境信息仅用于内部匹配，不写日志；读取权限不足的已绑定进程会让清理失败并保留配额。
+
+真实 Harness 回归：设置 `RUN_LIVE_BROWSER_TESTS=1` 后执行
+`uv run --no-sync python -m pytest tests/test_live_browser_leases.py -q --tb=short`，
+需要实际 Redis、PostgreSQL 和 Chromium；覆盖空闲续租、配额等待、两实例关闭、命令中断、
+失败重试、Worker 强杀（含 PID 绑定前）、清单补偿、旧资源清理竞态和真实应用启动/健康接口。
+测试使用独立 Redis namespace，并清除自己的数据库记录。
+尚未完成活动浏览器命令的跨 Worker 转发、录制/CDP 浏览器治理、Linux 实机回归与完整并发/soak 验收。
 
 ### 2. 启动前端
 

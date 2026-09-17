@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -13,8 +14,9 @@ from src.schemas.session_resource import (
     SessionResourceStatus,
 )
 
-BrowserCleanup = Callable[[str], Awaitable[None]]
+BrowserCleanup = Callable[..., Awaitable[None]]
 DockerCleanup = Callable[[SessionResourceRecord], Awaitable[None]]
+LOGGER = logging.getLogger(__name__)
 
 
 class SessionResourceService:
@@ -104,6 +106,21 @@ class SessionResourceService:
         return cleaned
 
     async def _cleanup_one(self, resource: SessionResourceRecord, reason: str) -> SessionResourceRecord:
+        if (resource.kind == SessionResourceKind.browser_session and resource.metadata.get("allocation_id")
+                and self._browser_cleanup is not None):
+            # The browser adapter commits a fenced projection. A generic update
+            # by row ID here could overwrite a replacement allocation's status.
+            try:
+                await self._browser_cleanup(resource.resource_key, allocation_id=resource.metadata["allocation_id"])
+            except Exception as exc:
+                LOGGER.error("session_browser_cleanup_failed", extra={
+                    "session_id": resource.session_id, "allocation_id": resource.metadata["allocation_id"],
+                    "error_type": type(exc).__name__, "cleanup_reason": reason,
+                })
+                return resource.model_copy(update={"status": SessionResourceStatus.error,
+                    "metadata": {**resource.metadata, "cleanup_error_type": type(exc).__name__, "cleanup_reason": reason}})
+            return next((current for current in await self._store.list(resource.session_id)
+                         if current.id == resource.id), resource)
         try:
             if resource.kind == SessionResourceKind.docker_container:
                 if resource.metadata.get("tool_key") == "mock-target-runner":

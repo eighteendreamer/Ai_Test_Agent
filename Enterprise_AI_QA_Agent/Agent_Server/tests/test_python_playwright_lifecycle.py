@@ -30,6 +30,7 @@ class ControlledRuntime(PythonPlaywrightCliRuntime):
                 name=session_name, output_dir=cwd, persistent=False,
                 page=SimpleNamespace(url="about:blank"),
                 context=SimpleNamespace(close=AsyncMock()),
+                allocation=None, lease_watch=None,
                 browser=SimpleNamespace(close=AsyncMock()),
                 playwright=SimpleNamespace(stop=AsyncMock()),
             )

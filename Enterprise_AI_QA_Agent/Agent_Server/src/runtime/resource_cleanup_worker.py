@@ -25,14 +25,14 @@ class ResourceCleanupWorker:
         manager: RedisResourceLeaseManager,
         *,
         interval_seconds: float = 30.0,
-        docker_reconciler=None,
+        reconcilers=(),
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Resource cleanup interval must be positive")
         self._manager = manager
         self._interval_seconds = interval_seconds
         self._stop = asyncio.Event()
-        self._docker_reconciler = docker_reconciler
+        self._reconcilers = tuple(reconcilers)
 
     def stop(self) -> None:
         self._stop.set()
@@ -40,8 +40,11 @@ class ResourceCleanupWorker:
     async def run_once(self, *, limit: int = 100) -> int:
         expired = await self._manager.reap_expired(limit=limit)
         await self._manager.reconcile_quota_usage()
-        if self._docker_reconciler is not None:
-            await self._docker_reconciler.reconcile(self._manager)
+        results = await asyncio.gather(*(reconciler.reconcile(self._manager) for reconciler in self._reconcilers),
+                                       return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
         for lease in expired:
             LOGGER.info("resource_cleanup_task_enqueued", extra={
                 "resource_type": lease.resource_type,
