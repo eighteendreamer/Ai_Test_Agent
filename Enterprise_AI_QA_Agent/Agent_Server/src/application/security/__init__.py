@@ -1,17 +1,10 @@
-"""Security application layer."""
+"""Security application layer.
+
+Consumers import the concrete modules directly; this package stays import-light
+because eager re-exports here pull the Docker/runtime layer into every
+``src.application.security.*`` import and create an import cycle with
+``src.runtime.resource_lease_manager``.
+"""
 from __future__ import annotations
 
-from src.application.security.execution_environment_service import (
-    SecurityCommandExecutionResult,
-    SecurityExecutionEnvironmentService,
-)
-from src.application.security.execution_monitor import SecurityExecutionMonitor
-from src.application.security.target_guard import SecurityTargetGuard, TargetGuardResult
-
-__all__ = [
-    "SecurityCommandExecutionResult",
-    "SecurityExecutionEnvironmentService",
-    "SecurityExecutionMonitor",
-    "SecurityTargetGuard",
-    "TargetGuardResult",
-]
+__all__: list[str] = []
