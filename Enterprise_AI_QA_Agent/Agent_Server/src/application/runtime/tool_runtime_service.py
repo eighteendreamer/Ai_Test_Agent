@@ -14,12 +14,17 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+from time import monotonic
 from uuid import uuid4
 
 import httpx
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.observability import LangSmithObservabilityAdapter
+from src.application.observability.business_metrics import (
+    tool_call_seconds,
+    tool_calls_total,
+)
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.documents.api_docs_service import ApiDocsService
@@ -373,6 +378,24 @@ class ToolRuntimeService:
         )
 
     async def execute(
+        self,
+        tool: ToolDescriptor,
+        call: ModelToolCall,
+        context: ToolExecutionContext,
+    ) -> ToolExecutionRecord:
+        """Count and time every tool call at the one place handlers are entered."""
+        started = monotonic()
+        status = "aborted"
+        tool_key = _metric_tool_key(tool.key)
+        try:
+            record = await self._dispatch(tool, call, context)
+            status = record.status
+        finally:
+            tool_calls_total().labels(tool_key=tool_key, status=status).inc()
+            tool_call_seconds().labels(tool_key=tool_key).observe(monotonic() - started)
+        return record
+
+    async def _dispatch(
         self,
         tool: ToolDescriptor,
         call: ModelToolCall,
@@ -5626,3 +5649,8 @@ def _format_object_list(items: list[Any]) -> str:
             continue
         lines.append(f"- {item}")
     return "\n".join(lines)
+
+
+def _metric_tool_key(tool_key: str) -> str:
+    """Keep the label set bounded: MCP tool names arrive from remote servers."""
+    return "mcp" if is_mcp_tool_key(tool_key) else tool_key

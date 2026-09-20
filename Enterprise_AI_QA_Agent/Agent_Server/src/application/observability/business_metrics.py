@@ -61,6 +61,11 @@ REDIS_SLOWLOG_MAX_DURATION_MICROSECONDS = "qa_redis_slowlog_max_duration_microse
 STREAM_LENGTH = "qa_stream_length"
 STREAM_PENDING = "qa_stream_pending"
 COLLECTOR_ERRORS_TOTAL = "qa_collector_errors_total"
+DB_COMMITS_TOTAL = "qa_db_commits_total"
+DB_COMMIT_ERRORS_TOTAL = "qa_db_commit_errors_total"
+DB_COMMIT_SECONDS = "qa_db_commit_duration_seconds"
+TOOL_CALLS_TOTAL = "qa_tool_calls_total"
+TOOL_CALL_SECONDS = "qa_tool_call_seconds"
 
 REDIS_VECTOR_STORE = "redis"
 POSTGRES_VECTOR_STORE = "postgres_memory"
@@ -219,4 +224,23 @@ stream_pending = _gauge(
 )
 collector_errors_total = _counter(
     COLLECTOR_ERRORS_TOTAL, "Metrics collector passes that could not read a source.", "item"
+)
+
+db_commits_total = _counter(
+    DB_COMMITS_TOTAL, "Database transactions committed, by engine.", "database"
+)
+db_commit_errors_total = _counter(
+    DB_COMMIT_ERRORS_TOTAL, "Database commits that raised, by engine.", "database"
+)
+db_commit_seconds = _histogram(
+    DB_COMMIT_SECONDS, "Database commit duration at the connection chokepoint.", "database"
+)
+
+# ``tool_key`` must be a registry key; dynamically discovered MCP tool names are
+# folded into one bucket by the call site so the exposition stays bounded.
+tool_calls_total = _counter(
+    TOOL_CALLS_TOTAL, "Tool invocations dispatched by the tool runtime.", "tool_key", "status"
+)
+tool_call_seconds = _histogram(
+    TOOL_CALL_SECONDS, "Tool invocation duration from dispatch to terminal record.", "tool_key"
 )

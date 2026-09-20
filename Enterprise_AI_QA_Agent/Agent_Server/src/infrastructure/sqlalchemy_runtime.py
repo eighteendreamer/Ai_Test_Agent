@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from threading import Lock
+from time import monotonic
 from typing import Any, Iterator, Literal
 
 from sqlalchemy import URL, create_engine
@@ -118,14 +119,15 @@ def postgres_raw_connection(settings: Settings) -> Iterator[SQLAlchemyCursorConn
 
 
 class SQLAlchemyCursorConnection:
-    def __init__(self, connection) -> None:
+    def __init__(self, connection, database: DatabaseKind) -> None:
         self._connection = connection
+        self._database = database
 
     def cursor(self) -> SQLAlchemyCursor:
         return SQLAlchemyCursor(self._connection)
 
     def commit(self) -> None:
-        self._connection.commit()
+        _commit(self._connection, self._database)
 
     def rollback(self) -> None:
         self._connection.rollback()
@@ -256,7 +258,7 @@ def _session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
     session = factory()
     try:
         yield session
-        session.commit()
+        _commit(session, _database_kind(session.get_bind()))
     except Exception:
         session.rollback()
         raise
@@ -267,9 +269,10 @@ def _session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
 @contextmanager
 def _cursor_connection(engine: Engine) -> Iterator[SQLAlchemyCursorConnection]:
     conn = engine.connect()
+    database = _database_kind(engine)
     try:
-        yield SQLAlchemyCursorConnection(conn)
-        conn.commit()
+        yield SQLAlchemyCursorConnection(conn, database)
+        _commit(conn, database)
     except Exception:
         conn.rollback()
         raise
@@ -306,3 +309,37 @@ def _postgres_engine_key(settings: Settings) -> tuple[Any, ...]:
         settings.database.postgres_pool_size,
         settings.database.postgres_connect_timeout_seconds,
     )
+
+
+def _database_kind(bind: Engine) -> DatabaseKind:
+    """Label a commit with the same two-value key this module caches engines under."""
+    return "mysql" if bind.url.drivername.startswith("mysql") else "postgres"
+
+
+def _commit(connection: Any, database: DatabaseKind) -> None:
+    """Commit every store transaction through one observable chokepoint.
+
+    ``in_transaction`` gates the export because ``_cursor_connection`` also commits on
+    exit after a store has already committed explicitly; that second call is a no-op
+    and must not be reported as a durable write.
+    """
+    # Lazy import: the observability package __init__ pulls in the LangSmith adapter,
+    # which must not end up on the configuration import path.
+    from src.application.observability.business_metrics import (
+        db_commit_errors_total,
+        db_commit_seconds,
+        db_commits_total,
+    )
+
+    if not connection.in_transaction():
+        connection.commit()
+        return
+    started = monotonic()
+    try:
+        connection.commit()
+    except BaseException:
+        db_commit_errors_total().labels(database=database).inc()
+        db_commit_seconds().labels(database=database).observe(monotonic() - started)
+        raise
+    db_commits_total().labels(database=database).inc()
+    db_commit_seconds().labels(database=database).observe(monotonic() - started)

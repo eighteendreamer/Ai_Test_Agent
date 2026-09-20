@@ -411,3 +411,83 @@ async def test_collector_exports_redis_slowlog_depth_and_worst_duration(harness)
             await client.config_set("slowlog-log-slower-than", previous)
             await client.slowlog_reset()
         await client.aclose()
+
+
+def test_commit_chokepoint_counts_only_real_transactions():
+    """The exit commit after an explicit store commit is a no-op and must stay invisible."""
+    from src.infrastructure.sqlalchemy_runtime import _commit
+
+    class _Connection:
+        def __init__(self, open_transaction: bool) -> None:
+            self.open_transaction = open_transaction
+            self.commits = 0
+
+        def in_transaction(self) -> bool:
+            return self.open_transaction
+
+        def commit(self) -> None:
+            self.commits += 1
+
+    idle = _Connection(False)
+    _commit(idle, "postgres")
+    assert idle.commits == 1
+    assert "qa_db_commits_total" not in render()
+
+    busy = _Connection(True)
+    _commit(busy, "postgres")
+    assert busy.commits == 1
+    assert 'qa_db_commits_total{database="postgres"}' in render()
+    assert 'qa_db_commit_duration_seconds_count{database="postgres"}' in render()
+
+
+def test_failed_commit_is_counted_and_reraised():
+    from src.infrastructure.sqlalchemy_runtime import _commit
+
+    class _Failing:
+        def in_transaction(self) -> bool:
+            return True
+
+        def commit(self) -> None:
+            raise RuntimeError("commit exploded")
+
+    with pytest.raises(RuntimeError, match="commit exploded"):
+        _commit(_Failing(), "mysql")
+    exported = render()
+    assert 'qa_db_commit_errors_total{database="mysql"}' in exported
+    assert 'qa_db_commits_total{database="mysql"}' not in exported
+
+
+def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
+    import asyncio
+
+    from src.application.mcp.host.namespace import encode
+    from src.application.runtime.tool_runtime_service import ToolRuntimeService
+
+    class _Stub:
+        def __init__(self, outcome) -> None:
+            self.outcome = outcome
+
+        async def _dispatch(self, tool, call, context):
+            if isinstance(self.outcome, BaseException):
+                raise self.outcome
+            return SimpleNamespace(status=self.outcome)
+
+    record = asyncio.run(
+        ToolRuntimeService.execute(
+            _Stub("completed"), SimpleNamespace(key=encode("srv", "tool")), None, None
+        )
+    )
+    assert record.status == "completed"
+    exported = render()
+    assert 'qa_tool_calls_total{tool_key="mcp",status="completed"}' in exported
+    assert 'qa_tool_call_seconds_count{tool_key="mcp"}' in exported
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            ToolRuntimeService.execute(
+                _Stub(asyncio.CancelledError()), SimpleNamespace(key="cli-executor"), None, None
+            )
+        )
+    aborted = render()
+    assert 'qa_tool_calls_total{tool_key="cli-executor",status="aborted"}' in aborted
+    assert 'qa_tool_call_seconds_count{tool_key="cli-executor"}' in aborted

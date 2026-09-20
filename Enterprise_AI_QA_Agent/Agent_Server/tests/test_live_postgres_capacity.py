@@ -397,6 +397,7 @@ async def test_live_postgres_full_lifecycle_capacity():
                 "claimed": 0,
                 "running": 0,
                 "waiting_approval": 0,
+                "waiting_resource": 0,
                 "passed": size,
                 "failed": 0,
                 "error": 0,
