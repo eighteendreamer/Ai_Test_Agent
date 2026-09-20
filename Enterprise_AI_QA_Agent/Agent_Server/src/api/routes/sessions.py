@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,6 +12,8 @@ from src.application.flow.projection_service import FlowProjectionService
 from src.runtime.streaming import format_sse
 from src.runtime.store import EventCursorNotFoundError
 from src.core.config import get_settings
+from src.runtime.postgres_agent_task_store import AgentSubmissionConflict
+from src.schemas.agent_task import AgentTaskAccepted, AgentTaskRecord
 from src.schemas.flow import SessionFlowResponse
 from src.schemas.session import (
     ApprovalDecisionRequest,
@@ -137,50 +138,24 @@ async def list_events(
         raise HTTPException(status_code=404, detail="Session not found") from exc
 
 
-@router.post("/{session_id}/messages")
+@router.post("/{session_id}/messages", status_code=202, response_model=AgentTaskAccepted)
 async def send_message(session_id: str, payload: SendMessageRequest, request: Request):
-    service = request.app.state.session_service
-    disconnect_watch_stop = asyncio.Event()
-    execution_task = asyncio.create_task(service.send_message(session_id, payload))
-    disconnect_task = asyncio.create_task(
-        _wait_for_request_disconnect(request, disconnect_watch_stop)
-    )
     try:
-        done, _pending = await asyncio.wait(
-            {execution_task, disconnect_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if disconnect_task in done and disconnect_task.result() and not execution_task.done():
-            with suppress(KeyError, ValueError):
-                await service.interrupt_session(
-                    session_id,
-                    InterruptSessionRequest(
-                        reason="The HTTP client disconnected during the active turn.",
-                        source="client_disconnect",
-                    ),
-                )
-        return await execution_task
+        return await request.app.state.agent_task_dispatcher.submit(session_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
+    except AgentSubmissionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        disconnect_watch_stop.set()
-        await disconnect_task
 
 
-async def _wait_for_request_disconnect(
-    request: Request,
-    stop_event: asyncio.Event,
-) -> bool:
-    while not stop_event.is_set():
-        if await request.is_disconnected():
-            return True
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=0.25)
-        except TimeoutError:
-            continue
-    return False
+@router.get("/{session_id}/tasks", response_model=list[AgentTaskRecord])
+async def list_agent_tasks(session_id: str, request: Request):
+    try:
+        return await request.app.state.agent_task_dispatcher.list_tasks(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
 
 
 @router.get("/{session_id}/snapshots")
@@ -207,7 +182,7 @@ async def interrupt_session(
     request: Request,
 ):
     try:
-        return await request.app.state.session_service.interrupt_session(session_id, payload)
+        return await request.app.state.agent_task_dispatcher.interrupt(session_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
     except ValueError as exc:

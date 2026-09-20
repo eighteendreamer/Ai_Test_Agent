@@ -474,10 +474,25 @@ class PostgresSessionStore:
                         updated_at = EXCLUDED.updated_at,
                         preferred_model = EXCLUDED.preferred_model,
                         selected_agent = EXCLUDED.selected_agent,
-                        metadata = EXCLUDED.metadata,
+                        metadata = (
+                            EXCLUDED.metadata
+                            - 'turn_lease_turn_id'
+                            - 'turn_lease_owner'
+                            - 'turn_lease_token'
+                            - 'turn_lease_expires_at'
+                        ) || jsonb_strip_nulls(jsonb_build_object(
+                            'turn_lease_turn_id',
+                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_turn_id',
+                            'turn_lease_owner',
+                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_owner',
+                            'turn_lease_token',
+                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_token',
+                            'turn_lease_expires_at',
+                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at'
+                        )),
                         event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
                         snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
-                    RETURNING event_count, snapshot_count
+                    RETURNING event_count, snapshot_count, metadata
                     """,
                     (
                         session.id,
@@ -503,6 +518,8 @@ class PostgresSessionStore:
                     )
                 session.event_count = int(counts.get("event_count") or 0)
                 session.snapshot_count = int(counts.get("snapshot_count") or 0)
+                if counts.get("metadata") is not None:
+                    session.metadata = counts["metadata"]
                 for item in session.messages:
                     if not bool(item.metadata.get("persist_transcript", True)):
                         continue
@@ -701,105 +718,126 @@ class PostgresSessionStore:
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                self._assert_continuation_lease_sync(
-                    cur, session_id, continuation_approval_id, continuation_lease_token
+                return self.append_event_in_transaction(
+                    cur, session_id, event, continuation_approval_id,
+                    continuation_lease_token, turn_lease_token,
                 )
-                self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
-                # Serialize each session BEFORE allocating its sequence value.
-                # A bare sequence does not guarantee transaction commit order.
-                cur.execute(
-                    f"SELECT id FROM {self._settings.database.postgres_session_table} WHERE id = %s FOR UPDATE",
-                    (session_id,),
-                )
-                if cur.fetchone() is None:
-                    raise KeyError(session_id)
-                event_payload = dict(event.payload)
-                context_fields = {
-                    name: getattr(event, name)
-                    for name in (
-                        "request_id",
-                        "trace_id",
-                        "turn_id",
-                        "run_id",
-                        "run_item_id",
-                        "attempt_id",
-                        "worker_id",
-                        "resource_id",
-                    )
-                    if getattr(event, name) is not None
-                }
-                request_context = get_request_context()
-                if request_context is not None:
-                    for name in context_fields.keys() | {"request_id", "trace_id"}:
-                        value = getattr(request_context, name, None)
-                        if value is not None:
-                            context_fields.setdefault(name, value)
-                if context_fields:
-                    event_payload["_harness_context"] = context_fields
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_event_table} (
-                        id, session_id, type, timestamp, payload
-                    ) VALUES (%s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (id) DO NOTHING RETURNING id
-                    """,
-                    (
-                        event.id,
-                        session_id,
-                        event.type,
-                        event.timestamp,
-                        json.dumps(make_json_safe(event_payload), ensure_ascii=False),
-                    ),
-                )
-                if cur.fetchone() is None:
-                    return False
-                cur.execute(
-                    f"""
-                    UPDATE {self._settings.database.postgres_session_table}
-                    SET event_count = event_count + 1,
-                        updated_at = %s
-                    WHERE id = %s
-                    """,
-                    (datetime.utcnow(), session_id),
-                )
-                if (
-                    getattr(self, "_compaction_outbox_table", None)
-                    and getattr(self, "_compaction_task_stream", None)
-                    and event.type in {"turn.completed", "turn.interrupted"}
-                ):
-                    task_id = f"task_compaction_{session_id}_{event.id}"
-                    task_payload = {
-                        "schema_version": 1,
-                        "task_id": task_id,
-                        "task_type": "compaction_task",
-                        "request_id": context_fields.get("request_id") or f"req_{event.id}",
-                        "trace_id": context_fields.get("trace_id") or f"trace_{event.id}",
-                        "session_id": session_id,
-                        "turn_id": context_fields.get("turn_id") or event_payload.get("turn_id"),
-                        "run_id": context_fields.get("run_id"),
-                        "run_item_id": context_fields.get("run_item_id"),
-                        "attempt_id": context_fields.get("attempt_id"),
-                        "worker_id": context_fields.get("worker_id"),
-                        "resource_id": context_fields.get("resource_id"),
-                        "created_at": event.timestamp.isoformat(),
-                        "payload": {
-                            "source_event_id": event.id,
-                            "source_event_type": event.type,
-                        },
-                    }
-                    cur.execute(
-                        f"""
-                        INSERT INTO {self._compaction_outbox_table} (
-                            event_key, stream, payload
-                        ) VALUES (%s, %s, %s::jsonb)
-                        ON CONFLICT (event_key) DO NOTHING
-                        """,
-                        (
-                            f"compaction:{session_id}:{event.id}",
-                            self._compaction_task_stream,
-                            json.dumps(task_payload, ensure_ascii=False, separators=(",", ":")),
-                        ),
-                    )
+
+    def append_event_in_transaction(
+        self, cur, session_id: str, event: ExecutionEvent,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> bool:
+        """Append an event and derived outbox facts in the caller's transaction."""
+        self._assert_continuation_lease_sync(
+            cur, session_id, continuation_approval_id, continuation_lease_token
+        )
+        self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+        # Serialize each session BEFORE allocating its sequence value.
+        # A bare sequence does not guarantee transaction commit order.
+        cur.execute(
+            f"SELECT id FROM {self._settings.database.postgres_session_table} WHERE id = %s FOR UPDATE",
+            (session_id,),
+        )
+        if cur.fetchone() is None:
+            raise KeyError(session_id)
+        event_payload = dict(event.payload)
+        context_fields = {
+            name: getattr(event, name)
+            for name in (
+                "request_id",
+                "trace_id",
+                "turn_id",
+                "run_id",
+                "run_item_id",
+                "attempt_id",
+                "worker_id",
+                "resource_id",
+            )
+            if getattr(event, name) is not None
+        }
+        request_context = get_request_context()
+        if request_context is not None:
+            for name in (
+                "request_id",
+                "trace_id",
+                "turn_id",
+                "run_id",
+                "run_item_id",
+                "attempt_id",
+                "worker_id",
+                "resource_id",
+            ):
+                value = getattr(request_context, name, None)
+                if value is not None:
+                    context_fields.setdefault(name, value)
+        if context_fields:
+            event_payload["_harness_context"] = context_fields
+        cur.execute(
+            f"""
+            INSERT INTO {self._settings.database.postgres_event_table} (
+                id, session_id, type, timestamp, payload
+            ) VALUES (%s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (id) DO NOTHING RETURNING id
+            """,
+            (
+                event.id,
+                session_id,
+                event.type,
+                event.timestamp,
+                json.dumps(make_json_safe(event_payload), ensure_ascii=False),
+            ),
+        )
+        if cur.fetchone() is None:
+            return False
+        cur.execute(
+            f"""
+            UPDATE {self._settings.database.postgres_session_table}
+            SET event_count = event_count + 1,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (datetime.utcnow(), session_id),
+        )
+        if (
+            getattr(self, "_compaction_outbox_table", None)
+            and getattr(self, "_compaction_task_stream", None)
+            and event.type in {"turn.completed", "turn.interrupted"}
+        ):
+            task_id = f"task_compaction_{session_id}_{event.id}"
+            task_payload = {
+                "schema_version": 1,
+                "task_id": task_id,
+                "task_type": "compaction_task",
+                "request_id": context_fields.get("request_id") or f"req_{event.id}",
+                "trace_id": context_fields.get("trace_id") or f"trace_{event.id}",
+                "session_id": session_id,
+                "turn_id": context_fields.get("turn_id") or event_payload.get("turn_id"),
+                "run_id": context_fields.get("run_id"),
+                "run_item_id": context_fields.get("run_item_id"),
+                "attempt_id": context_fields.get("attempt_id"),
+                "worker_id": context_fields.get("worker_id"),
+                "resource_id": context_fields.get("resource_id"),
+                "created_at": event.timestamp.isoformat(),
+                "payload": {
+                    "source_event_id": event.id,
+                    "source_event_type": event.type,
+                },
+            }
+            cur.execute(
+                f"""
+                INSERT INTO {self._compaction_outbox_table} (
+                    event_key, stream, payload
+                ) VALUES (%s, %s, %s::jsonb)
+                ON CONFLICT (event_key) DO NOTHING
+                """,
+                (
+                    f"compaction:{session_id}:{event.id}",
+                    self._compaction_task_stream,
+                    json.dumps(task_payload, ensure_ascii=False, separators=(",", ":")),
+                ),
+            )
         return True
 
     def _list_events_sync(

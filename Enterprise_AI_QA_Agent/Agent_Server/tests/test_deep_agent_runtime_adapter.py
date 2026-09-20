@@ -1618,33 +1618,29 @@ async def test_deep_agent_timeout_cancels_invocation_without_leaking_task():
 
 
 @pytest.mark.asyncio
-async def test_message_route_interrupts_runtime_when_client_disconnects():
+async def test_message_route_accepts_durable_input_without_disconnect_cancellation():
     from types import SimpleNamespace
 
     from src.api.routes.sessions import send_message
 
-    release = asyncio.Event()
-
-    class SessionServiceStub:
+    class DispatcherStub:
         def __init__(self):
             self.interrupt_payload = None
 
-        async def send_message(self, session_id, payload):
-            await release.wait()
-            return {"status": "interrupted"}
+        async def submit(self, session_id, payload):
+            return {"status": "queued"}
 
         async def interrupt_session(self, session_id, payload):
             self.interrupt_payload = payload
-            release.set()
 
     class RequestStub:
         def __init__(self, service):
-            self.app = SimpleNamespace(state=SimpleNamespace(session_service=service))
+            self.app = SimpleNamespace(state=SimpleNamespace(agent_task_dispatcher=service))
 
         async def is_disconnected(self):
             return True
 
-    service = SessionServiceStub()
+    service = DispatcherStub()
     response = await asyncio.wait_for(
         send_message(
             "session-disconnect",
@@ -1654,23 +1650,23 @@ async def test_message_route_interrupts_runtime_when_client_disconnects():
         timeout=1,
     )
 
-    assert response == {"status": "interrupted"}
-    assert service.interrupt_payload.source == "client_disconnect"
+    assert response == {"status": "queued"}
+    assert service.interrupt_payload is None
 
 
 @pytest.mark.asyncio
-async def test_message_route_stops_disconnect_watch_after_normal_completion():
+async def test_message_route_returns_task_receipt_without_waiting_for_execution():
     from types import SimpleNamespace
 
     from src.api.routes.sessions import send_message
 
-    class SessionServiceStub:
-        async def send_message(self, session_id, payload):
-            return {"status": "completed"}
+    class DispatcherStub:
+        async def submit(self, session_id, payload):
+            return {"status": "queued"}
 
     class RequestStub:
         def __init__(self, service):
-            self.app = SimpleNamespace(state=SimpleNamespace(session_service=service))
+            self.app = SimpleNamespace(state=SimpleNamespace(agent_task_dispatcher=service))
 
         async def is_disconnected(self):
             return False
@@ -1679,12 +1675,12 @@ async def test_message_route_stops_disconnect_watch_after_normal_completion():
         send_message(
             "session-completed",
             SimpleNamespace(),
-            RequestStub(SessionServiceStub()),
+            RequestStub(DispatcherStub()),
         ),
         timeout=1,
     )
 
-    assert response == {"status": "completed"}
+    assert response == {"status": "queued"}
 
 
 @pytest.mark.parametrize("path", ["../outside.txt", "/../outside.txt"])

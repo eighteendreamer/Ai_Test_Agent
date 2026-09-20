@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from collections import defaultdict
 from datetime import datetime
 import logging
@@ -128,6 +129,66 @@ class SessionService:
         self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_resume_tasks: dict[str, asyncio.Task[None]] = {}
+        self._agent_task_store = None
+
+    def set_agent_task_store(self, store) -> None:
+        self._agent_task_store = store
+
+    async def execute_claimed_message(
+        self,
+        task,
+        *,
+        ownership_monitor: asyncio.Task,
+    ) -> ConversationResponse:
+        """Worker entry: use the session lease atomically granted with the task.
+
+        The dispatcher commits its outcome and releases this lease; this method
+        never creates a second claim or routes the input into the local queue.
+        """
+        async with self._session_locks[task.session_id]:
+            await self._store.assert_turn_execution(task.session_id, task.lease_token)
+            stop = asyncio.Event()
+            heartbeat = asyncio.create_task(
+                self._keep_turn_execution_alive(
+                    session_id=task.session_id,
+                    lease_token=task.lease_token,
+                    stop_event=stop,
+                )
+            )
+
+            async def execute():
+                session = await self._require_session(task.session_id)
+                session.messages = [
+                    message
+                    for message in session.messages
+                    if message.metadata.get("delivery_status") != "queued"
+                    or message.id == task.user_message_id
+                ]
+                if session.project_id:
+                    await self._require_active_project(session.project_id)
+                request = await self._input_orchestrator_service.orchestrate_async(
+                    session,
+                    task.input,
+                )
+                request.turn_id = task.turn_id
+                return await self._run_owned_submission_locked(
+                    session,
+                    task.input,
+                    request,
+                    allow_interrupted=True,
+                    turn_lease_token=task.lease_token,
+                    user_message_id=task.user_message_id,
+                )
+
+            try:
+                return await self._await_owned_execution(
+                    task.session_id,
+                    heartbeat,
+                    execute,
+                    ownership_monitors=(ownership_monitor,),
+                )
+            finally:
+                await self._stop_lease_heartbeat(task.session_id, stop, heartbeat)
 
     def set_recording_approval_service(self, recording_approval_service) -> None:
         """注入 UI 录制审批服务（审批通过 → RecorderSessionService.launch）。"""
@@ -972,20 +1033,35 @@ class SessionService:
     def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
         return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)
 
-    async def _await_owned_execution(self, session_id: str, heartbeat: asyncio.Task, operation, *args, **kwargs):
+    async def _await_owned_execution(
+        self,
+        session_id: str,
+        heartbeat: asyncio.Task,
+        operation,
+        *args,
+        ownership_monitors: tuple[asyncio.Task, ...] = (),
+        **kwargs,
+    ):
         """Use the TestRun/Redis worker FIRST_COMPLETED ownership pattern."""
         execution = None
+        monitors = (heartbeat, *ownership_monitors)
         try:
-            if not heartbeat.done():
+            if not any(task.done() for task in monitors):
                 execution = asyncio.create_task(operation(*args, **kwargs))
-                await asyncio.wait({execution, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
-            if heartbeat.done():
-                error = None if heartbeat.cancelled() else heartbeat.exception()
+                await asyncio.wait(
+                    {execution, *monitors},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            stopped = next((task for task in monitors if task.done()), None)
+            if stopped is not None:
+                error = None if stopped.cancelled() else stopped.exception()
                 logger.error("session_execution_ownership_lost", extra={
                     "session_id": session_id,
                     "error_type": type(error).__name__ if error else "LeaseLost",
                 })
-                raise ContinuationLeaseLostError("Session execution heartbeat cannot confirm ownership") from error
+                raise ContinuationLeaseLostError(
+                    "Session execution heartbeat cannot confirm ownership"
+                ) from error
             return await execution
         finally:
             if execution is not None:
@@ -1097,6 +1173,7 @@ class SessionService:
         *,
         allow_interrupted: bool,
         turn_lease_token: str,
+        user_message_id: str | None = None,
     ) -> ConversationResponse:
         session_id = session.id
         turn_fenced_write = {"turn_lease_token": turn_lease_token}
@@ -1172,7 +1249,16 @@ class SessionService:
                 **payload.metadata,
             }
         )
-        if execution_request.message_kind in {MessageKind.task_notification, MessageKind.coordinator_assignment}:
+        if user_message_id is not None:
+            user_message_metadata.update(
+                turn_id=execution_request.turn_id,
+                delivery_status="delivered",
+                context_eligible=True,
+            )
+        if execution_request.message_kind in {
+            MessageKind.task_notification,
+            MessageKind.coordinator_assignment,
+        }:
             user_message_metadata.update(
                 {
                     "persist_transcript": False,
@@ -1182,13 +1268,25 @@ class SessionService:
             )
 
         user_message = ChatMessage(
-            id=str(uuid4()),
+            id=user_message_id or str(uuid4()),
             role=MessageRole.user,
             content=payload.content.strip(),
             created_at=datetime.utcnow(),
             metadata=user_message_metadata,
         )
-        session.messages.append(user_message)
+        existing_message = next(
+            (
+                index
+                for index, message in enumerate(session.messages)
+                if message.id == user_message.id
+            ),
+            None,
+        )
+        if existing_message is None:
+            session.messages.append(user_message)
+        else:
+            user_message.created_at = session.messages[existing_message].created_at
+            session.messages[existing_message] = user_message
         await self._store.save_session(session, **turn_fenced_write)
         await self._store.append_event(
             session_id,
@@ -2015,12 +2113,46 @@ class SessionService:
         )
 
     async def _to_detail(self, session: SessionRecord) -> SessionDetail:
+        # Queue projection is a read model, never persist it into the legacy
+        # pending_input_queue consumed by local coordinator continuations.
+        session = deepcopy(session)
         approvals, last_snapshot = await asyncio.gather(
             self._store.list_approvals(session.id),
             self._store.get_latest_snapshot(session.id),
         )
         control = self._ensure_control_metadata(session)
         has_pending_turn = bool(session.metadata.get("pending_turn"))
+        if self._agent_task_store is not None:
+            tasks = await self._agent_task_store.list_session(session.id, pending_only=True)
+            queued = [
+                task
+                for task in reversed(tasks)
+                if task.status in {"queued", "waiting_resource", "claimed"}
+            ]
+            local_queue = session.metadata.get("pending_input_queue", [])
+            durable_queue = [
+                {
+                    "id": task.id,
+                    "created_at": task.created_at.isoformat(),
+                    "busy_status": session.status.value,
+                    "queue_behavior": "enqueue_if_busy",
+                    "interrupt_policy": "wait_for_active_turn",
+                    "reason": task.waiting_reason or "等待 Worker 执行",
+                    "payload": task.input.model_dump(mode="json"),
+                    "metadata": {
+                        "turn_id": task.turn_id,
+                        "task_status": task.status,
+                    },
+                }
+                for task in queued
+            ]
+            session.metadata["pending_input_queue"] = [*local_queue, *durable_queue]
+            control["queued_input_count"] = len(queued) + len(local_queue)
+            if queued and session.status not in {
+                SessionStatus.running,
+                SessionStatus.waiting_approval,
+            }:
+                control["control_state"] = "queued"
         derived_resumable = bool(control.get("is_resumable")) or (
             last_snapshot is not None
             and (

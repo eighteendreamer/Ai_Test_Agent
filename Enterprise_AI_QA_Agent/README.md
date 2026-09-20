@@ -224,6 +224,65 @@ uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
 
 启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED=true` 后，普通/回归 TestRun 的运行记录、RunItem 与首次 dispatch intent 会在同一个 PostgreSQL 事务中提交；Redis 暂时不可用时不会丢失任务意图。
 
+### 1.2 启动 Agent Turn Worker
+
+公开接口 `POST /api/v1/sessions/{session_id}/messages` 不再在 API 进程内执行模型和工具，
+而是返回 HTTP 202 任务回执。API 会在同一个 PostgreSQL 事务中写入用户消息、
+`agent_turn_tasks`、`input.queued` 事件和 Outbox；Redis 不可用时事实仍保留在数据库，
+Relay 恢复后继续发布到 `qa:tasks:agent`。生产环境必须在 Outbox Relay 之外独立启动 Agent Worker：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_agent_worker
+```
+
+单次消费可用于部署探针和恢复验证：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_agent_worker --once --worker-id agent-probe-1
+```
+
+`metadata.client_message_id` 是客户端重试的幂等键；相同键和相同请求返回原任务，
+相同键但请求体不同返回 409。Worker 领取任务时原子创建新的 Attempt 和 Session 执行租约，
+随后领取 `agent:turn:{task_id}` 逻辑资源槽位；配额不足持久化为 `waiting_resource`，
+不会伪造成运行中。会话内按任务序号 FIFO 执行，尚未轮到的消息标为 `context_eligible=false`，
+避免后提交的输入进入前一个 Turn 的模型上下文。
+
+Redis 命令是严格版本化 TaskEnvelope，只传递任务身份、`request_id/trace_id/session_id/turn_id`、
+可选 `project_id/run_id/run_item_id`、预留为空的领取后标识、优先级及
+`payload.input_source=postgres`；用户输入和附件引用只从 PostgreSQL 权威任务记录读取。
+领取后生成的 `attempt_id/worker_id/resource_id/fencing_token`
+写入任务、Attempt、资源租约、FlowEvent 和结构化日志，不把租约密钥暴露给前端。
+
+结果写入 PostgreSQL 后 Redis 消息才 ACK。已进入模型/工具阶段的 Worker 若被强杀，
+Pending 消息会被其他 Worker 接管，但任务进入 `recovery_required`，不会自动重放可能已有外部副作用的 Turn；
+只在 `claimed` 且尚未开始执行时创建新 Attempt 重试。任意 API 实例发出的 interrupt 会写入持久任务，
+执行 Worker 轮询后协作取消。客户端断开提交请求不会取消已接收任务。
+
+相关配置统一位于 `.env`：
+
+```ini
+DATABASE__POSTGRES_AGENT_TASK_TABLE=agent_turn_tasks
+DATABASE__POSTGRES_AGENT_ATTEMPT_TABLE=agent_turn_attempts
+ORCHESTRATION__AGENT_TASK_STREAM=qa:tasks:agent
+ORCHESTRATION__AGENT_TASK_CONTROL_POLL_SECONDS=1
+ORCHESTRATION__AGENT_TASK_LIMIT=20
+```
+
+新表由 API/Worker lifespan 初始化。升级时先停止旧 API 与 Worker，确认数据库账号具有建表权限，
+再协调启动新 API、Outbox Relay 和 Agent Worker；不能让仍采用同步 `/messages` 语义的旧实例混跑。
+前端已按 202 回执显示排队状态，并通过持久 SSE 事件刷新最终结果。
+
+真实 PostgreSQL/Redis 验证命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+uv run --locked --directory Agent_Server python -m pytest tests/test_agent_task_dispatch.py -q
+```
+
+测试覆盖并发幂等提交、事务回滚、FIFO、资源等待、新 Attempt、跨 API 中断、
+独立 Worker 进程、Worker 强杀、Pending 接管及“已开始 Turn 不重放”。
+
 Session/Turn 完成事件也会在同一 PostgreSQL 事务中写入 `compaction_task` Outbox。配置额外 Stream 包含 `qa:tasks:compaction` 后，单独启动低优先级压缩 Worker：
 
 ```bash
@@ -618,7 +677,9 @@ ORCHESTRATION__RESOURCE_GLOBAL_LIMIT=20
 （PowerShell 先设置 `$env:RUN_LIVE_BROWSER_TESTS='1'`），使用隔离的 PostgreSQL 表、Redis 前缀及真实 Chromium。
 覆盖三级任务配额、等待状态落库、新 Attempt 重试、任务满额下浏览器执行、心跳故障中断和重复取消清理顺序。
 测试依据项目课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、幂等与补偿原则；不以仅检查返回值替代资源和状态断言。
-当前准入覆盖 TestRun 执行链路；普通对话 Agent Turn 的队列化与同级准入仍需接入，不能据此宣称所有 Agent 已受控。
+当前准入同时覆盖 TestRun RunItem 和公开普通对话 Agent Turn。审批续跑、手动恢复、
+Coordinator 内部子任务及 headless 内部入口仍沿用各自现有执行路径，后续必须迁移到同一持久任务契约，
+因此尚不能宣称所有 Agent 入口均已任务化。
 
 ### 跨进程编排事件与 SSE 回补
 
@@ -659,8 +720,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_event_delivery.py -q`：
 覆盖独立 Worker 进程与两个真实 HTTP 客户端、1004 条断线补读、晚到时间戳、未提交事务、
-执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。该链路是 Agent Turn 队列化的前置能力，
-普通对话本身仍由现有入口执行，尚未完成 Outbox/Agent Worker 调度改造。
+执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。公开普通对话现在已使用上述持久事件链路
+和 Outbox/Agent Worker；其他内部续跑入口的统一任务化仍按前述边界继续实施。
 
 普通执行、手动恢复与审批续跑现在共同监控实际执行和数据库租约心跳，沿用
 `RedisTaskWorker._run_handler` / `TestRunExecutionService._execute_with_lease_watch` 的
@@ -669,7 +730,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 失去租约时不尝试把 Session 改成成功/中断终态，也不完成租约，交给现有过期恢复流程；
 `session_execution_ownership_lost` 和 `session_lease_left_for_recovery` 记录异常类型与会话。
 外部重复取消不会绕过清理，停止心跳时等待正在进行的续租调用返回，避免其数据库线程在租约释放后继续运行。
-这里解决已检测到的续租失败；数据库调用长期无响应的期限控制、普通对话的持久任务调度仍需接续完成。
+这里解决已检测到的续租失败；公开普通对话已接入持久任务调度，数据库调用长期无响应的期限控制，
+以及审批续跑、手动恢复和内部 Coordinator/headless 入口的持久调度仍需接续完成。
 
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_execution_ownership.py -q`，

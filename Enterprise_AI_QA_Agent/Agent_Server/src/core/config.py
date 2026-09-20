@@ -51,6 +51,8 @@ class DatabaseConfig(BaseModel):
     postgres_recording_event_table: str = "ui_recording_event"
     postgres_perf_runs_table: str = "agent_perf_runs"
     postgres_task_outbox_table: str = "agent_task_outbox"
+    postgres_agent_task_table: str = "agent_turn_tasks"
+    postgres_agent_attempt_table: str = "agent_turn_attempts"
     postgres_compaction_table: str = "agent_compaction_records"
     postgres_vector_rebuild_job_table: str = "agent_vector_rebuild_jobs"
     postgres_embedding_job_table: str = "agent_embedding_jobs"
@@ -194,6 +196,8 @@ class OrchestrConfig(BaseModel):
     test_case_vector_candidate_multiplier: int = Field(default=8, ge=2, le=50)
     resource_global_limit: int = Field(default=20, ge=1)
     agent_task_limit: int = Field(default=20, ge=1)
+    agent_task_stream: str = "qa:tasks:agent"
+    agent_task_control_poll_seconds: float = Field(default=1.0, ge=0.05)
     session_event_buffer_capacity: int = Field(default=4096, ge=1)
     session_sse_poll_seconds: float = Field(default=0.5, ge=0.05)
     session_sse_keepalive_seconds: float = Field(default=15.0, ge=1)
@@ -274,7 +278,7 @@ class OrchestrConfig(BaseModel):
     @property
     def task_stream_names(self) -> tuple[str, ...]:
         """Return configured task streams once, preserving declaration order."""
-        values = [self.redis_task_stream]
+        values = [self.redis_task_stream, self.agent_task_stream]
         values.extend(self.redis_task_outbox_streams.split(","))
         result: list[str] = []
         for value in values:

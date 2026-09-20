@@ -139,6 +139,8 @@ from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
+from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
 from src.runtime.compaction_worker import CompactionWorker
@@ -216,6 +218,9 @@ async def lifespan(app: FastAPI):
     # before a relay publishes to Redis.
     task_outbox = PostgresTaskOutbox(settings)
     await task_outbox.initialize()
+    agent_task_store = PostgresAgentTaskStore(settings, store)
+    await agent_task_store.initialize()
+    app.state.agent_task_store = agent_task_store
     await PostgresResourceAllocationStore(settings).initialize()
     await PostgresBrowserAllocationStore(settings).initialize()
     app.state.task_outbox = task_outbox
@@ -652,6 +657,10 @@ async def lifespan(app: FastAPI):
     tool_runtime_service.set_session_store(store)
     app.state.coordinator_runtime_service = coordinator_runtime_service
     app.state.session_service = session_service
+    session_service.set_agent_task_store(agent_task_store)
+    app.state.agent_task_dispatcher = AgentTaskDispatcher(
+        settings, agent_task_store, session_service, resource_lease_manager,
+    )
     app.state.registry_service = RegistryService(
         agent_registry=agent_registry,
         tool_registry=tool_registry,

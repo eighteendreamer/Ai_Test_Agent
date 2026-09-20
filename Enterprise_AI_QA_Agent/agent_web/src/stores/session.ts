@@ -608,6 +608,7 @@ export const useSessionStore = defineStore("session", {
       ) {
         return "running";
       }
+      if (this.queuedTurnCount > 0) return "queued";
       if (this.session.status === "completed") return "completed";
       return "idle";
     },
@@ -741,6 +742,7 @@ export const useSessionStore = defineStore("session", {
             return;
           }
           if (
+            event.type.startsWith("agent_task.") ||
             event.type === "tool.execution_started" ||
             event.type === "worker.task_notification_received" ||
             event.type === "worker.auto_stopped" ||

@@ -185,6 +185,15 @@ class InMemorySessionStore:
                 )
             if turn_lease_token:
                 self._assert_turn_lease_locked(session.id, turn_lease_token)
+            current = self._sessions.get(session.id)
+            if current is not None and current is not session:
+                # Ordinary snapshot saves cannot replace ownership/expiry set by
+                # claim and heartbeat operations in another service instance.
+                for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
+                    if key in current.metadata:
+                        session.metadata[key] = current.metadata[key]
+                    else:
+                        session.metadata.pop(key, None)
             session.updated_at = datetime.utcnow()
             self._sessions[session.id] = session
             return session

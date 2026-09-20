@@ -13,6 +13,8 @@ const sessionStatus = computed(() => sessionStore.watcherPhase ?? sessionStore.s
 
 const phaseLabel = computed(() => {
   switch (sessionStore.watcherPhase) {
+    case "queued":
+      return t("eventConsole.queued_turns");
     case "running":
       return t("runtime.running");
     case "waiting_approval":
@@ -30,6 +32,8 @@ const phaseLabel = computed(() => {
 
 const dialValue = computed(() => {
   switch (sessionStore.watcherPhase) {
+    case "queued":
+      return "WAIT";
     case "running":
       return "RUN";
     case "waiting_approval":
@@ -70,7 +74,7 @@ const statRows = computed(() => [
 
 function toneForStatus(status: string) {
   if (status === "completed") return "online";
-  if (status === "running" || status === "waiting_approval" || status === "interrupted" || status === "partial") {
+  if (status === "queued" || status === "running" || status === "waiting_approval" || status === "interrupted" || status === "partial") {
     return "degraded";
   }
   return "offline";
@@ -78,6 +82,8 @@ function toneForStatus(status: string) {
 
 function sessionStatusLabel(status: string) {
   switch (status) {
+    case "queued":
+      return t("eventConsole.queued_turns");
     case "running":
       return t("runtime.running");
     case "waiting_approval":

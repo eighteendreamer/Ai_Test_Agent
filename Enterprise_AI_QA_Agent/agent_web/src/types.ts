@@ -876,6 +876,7 @@ export interface PendingInputQueueEntry {
 
 export type SessionWatcherPhase =
   | "idle"
+  | "queued"
   | "running"
   | "waiting_approval"
   | "interrupted"
@@ -905,6 +906,43 @@ export interface ConversationResponse {
   session: SessionDetail;
   output: ChatMessage;
   events: ExecutionEvent[];
+}
+
+export type AgentTaskStatus =
+  | "queued"
+  | "waiting_resource"
+  | "claimed"
+  | "running"
+  | "completed"
+  | "interrupted"
+  | "failed"
+  | "cancelled"
+  | "recovery_required";
+
+export interface AgentTaskRecord {
+  id: string;
+  session_id: string;
+  turn_id: string;
+  project_id?: string | null;
+  request_id: string;
+  trace_id: string;
+  run_id?: string | null;
+  run_item_id?: string | null;
+  status: AgentTaskStatus;
+  priority: number;
+  attempt_id?: string | null;
+  attempt_no: number;
+  worker_id?: string | null;
+  waiting_reason?: string | null;
+  result_status?: string | null;
+  error_code?: string | null;
+  resource_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentTaskAccepted extends ConversationResponse {
+  task: AgentTaskRecord;
 }
 
 export interface SessionReplayResponse {

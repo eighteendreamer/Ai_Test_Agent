@@ -6,6 +6,7 @@ import type {
   SessionFlowResponse,
   SessionReplayResponse,
   ConversationResponse,
+  AgentTaskAccepted,
   ExecutionEvent,
   InputAttachment,
   ToolApprovalRequest,
@@ -122,7 +123,7 @@ export function sendMessage(
   attachments: InputAttachment[] = [],
   context?: Record<string, unknown>,
   metadata?: Record<string, unknown>,
-): Promise<ConversationResponse> {
+): Promise<AgentTaskAccepted> {
   return request(`/api/v1/sessions/${sessionId}/messages`, {
     method: "POST",
     body: JSON.stringify({
