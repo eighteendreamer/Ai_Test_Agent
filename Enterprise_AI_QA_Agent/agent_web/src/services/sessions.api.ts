@@ -5,7 +5,6 @@ import type {
   SessionSnapshot,
   SessionFlowResponse,
   SessionReplayResponse,
-  ConversationResponse,
   AgentTaskAccepted,
   ExecutionEvent,
   InputAttachment,
@@ -143,10 +142,18 @@ export function interruptSession(sessionId: string, reason?: string): Promise<Se
   });
 }
 
-export function resumeSession(sessionId: string, reason?: string): Promise<ConversationResponse> {
+export function resumeSession(
+  sessionId: string,
+  reason?: string,
+  clientRequestId?: string,
+): Promise<AgentTaskAccepted> {
   return request(`/api/v1/sessions/${sessionId}/resume`, {
     method: "POST",
-    body: JSON.stringify({ reason: reason || null, source: "web_console" }),
+    body: JSON.stringify({
+      reason: reason || null,
+      source: "web_console",
+      client_request_id: clientRequestId || null,
+    }),
   });
 }
 

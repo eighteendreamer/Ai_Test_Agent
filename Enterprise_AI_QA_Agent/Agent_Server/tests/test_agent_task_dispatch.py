@@ -31,6 +31,8 @@ from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import (
     InterruptSessionRequest,
+    HeadlessExecutionRequest,
+    ResumeSessionRequest,
     RuntimeMode,
     SendMessageRequest,
     SessionMode,
@@ -48,6 +50,7 @@ class Runtime:
         self.entered = asyncio.Event()
         self.finish = None
         self.interrupted = False
+        self.resume_calls = []
 
     def request_interrupt(self, *args):
         self.interrupted = True
@@ -77,6 +80,35 @@ class Runtime:
             state={"turn_id": request.turn_id, "trace_id": "test-trace", "selected_agent_key": "default",
                 "selected_agent_name": "Default", "selected_model_key": "test", "selected_model_name": "Test",
                 "termination_reason": "interrupted" if self.interrupted else "completed"})
+
+    async def resume_turn(self, session, snapshot, **kwargs):
+        turn_id = str(snapshot.graph_state.get("turn_id") or f"resume_{snapshot.id}")
+        self.resume_calls.append((snapshot.id, kwargs.get("resume_reason")))
+        return RuntimeTurnResult(
+            output_text="worker-resume-result",
+            events=[],
+            tool_messages=[],
+            approvals=[],
+            pending_turn={},
+            snapshot=SessionSnapshot(
+                id=str(uuid4()),
+                session_id=session.id,
+                version=snapshot.version + 1,
+                stage="completed",
+                created_at=datetime.now(timezone.utc),
+                graph_state={"turn_id": turn_id},
+            ),
+            state={
+                "turn_id": turn_id,
+                "trace_id": "test-trace",
+                "selected_agent_key": "default",
+                "selected_agent_name": "Default",
+                "selected_model_key": "test",
+                "selected_model_name": "Test",
+                "termination_reason": "completed",
+                "user_message": "original turn",
+            },
+        )
 
 
 def build_services(settings, runtime, resources):
@@ -154,6 +186,29 @@ async def delivery(h, receipt):
         return QueuedTask("test-delivery", cur.fetchone()["payload"])
 
 
+async def prepare_resumable_session(h):
+    turn_id = f"turn-resume-{uuid4().hex[:8]}"
+    session = await h.store.get_session(h.session_id)
+    session.status = SessionStatus.interrupted
+    session.metadata["pending_turn"] = {"turn_id": turn_id, "checkpoint": "durable"}
+    session.metadata["control"] = {
+        "control_state": "interrupted",
+        "is_interrupted": True,
+        "is_resumable": True,
+    }
+    await h.store.save_session(session)
+    snapshot = SessionSnapshot(
+        id=str(uuid4()),
+        session_id=h.session_id,
+        version=1,
+        stage="interrupted",
+        created_at=datetime.now(timezone.utc),
+        graph_state={"turn_id": turn_id},
+    )
+    await h.store.save_snapshot(h.session_id, snapshot)
+    return snapshot
+
+
 @pytest.mark.asyncio
 async def test_http_submission_is_atomic_idempotent_and_does_not_execute(harness):
     h = harness
@@ -180,6 +235,213 @@ async def test_http_submission_is_atomic_idempotent_and_does_not_execute(harness
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}")
         assert cur.fetchone()["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_http_resume_is_atomic_idempotent_and_runs_only_in_worker(harness):
+    h = harness
+    snapshot = await prepare_resumable_session(h)
+    resume = ResumeSessionRequest(
+        reason="continue the checkpoint",
+        source="test",
+        client_request_id="resume-request-1",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=h.app),
+        base_url="http://test",
+    ) as client:
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    f"/sessions/{h.session_id}/resume",
+                    json=resume.model_dump(mode="json"),
+                )
+                for _ in range(6)
+            )
+        )
+    assert {response.status_code for response in responses} == {202}
+    task_ids = {response.json()["task"]["id"] for response in responses}
+    assert len(task_ids) == 1
+    body = responses[0].json()
+    assert body["task"]["operation"] == "manual_resume"
+    assert body["task"]["reference_id"] == snapshot.id
+    assert body["session"]["control_state"] == "queued"
+    assert body["session"]["is_resumable"] is False
+    assert h.runtime.resume_calls == []
+    assert (await h.store.get_session(h.session_id)).messages == []
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}"
+        )
+        assert cur.fetchone()["count"] == 1
+
+    receipt = SimpleNamespace(task=SimpleNamespace(id=next(iter(task_ids))))
+    assert await h.outbox.relay_once(h.queue) == 1
+    worker = RedisTaskWorker(
+        h.queue,
+        consumer="resume-worker",
+        handler=lambda item: h.dispatcher.handle(item, worker_id="resume-worker"),
+        block_ms=0,
+    )
+    assert await worker.run_once() == 1
+    completed = await h.tasks.get(receipt.task.id)
+    assert completed.status == "completed"
+    assert completed.operation == "manual_resume"
+    assert completed.user_message_id is None
+    assert h.runtime.resume_calls == [(snapshot.id, "continue the checkpoint")]
+    session = await h.store.get_session(h.session_id)
+    assert [message.content for message in session.messages] == ["worker-resume-result"]
+    assert "turn_lease_token" not in session.metadata
+
+
+@pytest.mark.asyncio
+async def test_resume_checkpoint_change_fails_without_replaying_runtime(harness):
+    h = harness
+    original = await prepare_resumable_session(h)
+    receipt = await h.dispatcher.submit_resume(
+        h.session_id,
+        ResumeSessionRequest(client_request_id="resume-stale"),
+    )
+    await h.store.save_snapshot(
+        h.session_id,
+        SessionSnapshot(
+            id=str(uuid4()),
+            session_id=h.session_id,
+            version=original.version + 1,
+            stage="completed",
+            created_at=datetime.now(timezone.utc),
+            graph_state={"turn_id": original.graph_state["turn_id"]},
+        ),
+    )
+    await h.dispatcher.handle(await delivery(h, receipt), worker_id="resume-worker")
+    failed = await h.tasks.get(receipt.task.id)
+    assert failed.status == "failed"
+    assert failed.error_code == "resume_checkpoint_changed"
+    assert failed.attempt_no == 0
+    assert h.runtime.resume_calls == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_running_resume_cannot_fail_the_active_owner(harness):
+    h = harness
+    original = await prepare_resumable_session(h)
+    receipt = await h.dispatcher.submit_resume(
+        h.session_id,
+        ResumeSessionRequest(client_request_id="resume-running-duplicate"),
+    )
+    claimed = await h.tasks.claim(receipt.task.id, worker_id="active-resume-worker")
+    await h.tasks.begin(
+        claimed,
+        resource_id=f"turn:{receipt.task.id}",
+        fencing_token=1,
+    )
+    await h.store.save_snapshot(
+        h.session_id,
+        SessionSnapshot(
+            id=str(uuid4()),
+            session_id=h.session_id,
+            version=original.version + 1,
+            stage="completed",
+            created_at=datetime.now(timezone.utc),
+            graph_state={"turn_id": original.graph_state["turn_id"]},
+        ),
+    )
+    with pytest.raises(TaskDeferred, match="owned by another worker"):
+        await h.dispatcher.handle(
+            await delivery(h, receipt),
+            worker_id="duplicate-worker",
+        )
+    still_running = await h.tasks.get(receipt.task.id)
+    assert still_running.status == "running"
+    assert still_running.worker_id == "active-resume-worker"
+
+
+@pytest.mark.asyncio
+async def test_headless_http_submission_creates_session_task_and_outbox_atomically(harness):
+    h = harness
+    request = HeadlessExecutionRequest(
+        title="Headless durable task",
+        content="execute in an independent worker",
+        client_request_id="headless-request-1",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=h.app),
+        base_url="http://test",
+    ) as client:
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    "/sessions/headless/execute",
+                    json=request.model_dump(mode="json"),
+                )
+                for _ in range(6)
+            )
+        )
+        conflict = await client.post(
+            "/sessions/headless/execute",
+            json=request.model_copy(update={"content": "different"}).model_dump(mode="json"),
+        )
+    assert {response.status_code for response in responses} == {202}
+    assert conflict.status_code == 409
+    task_ids = {response.json()["task"]["id"] for response in responses}
+    session_ids = {response.json()["task"]["session_id"] for response in responses}
+    assert len(task_ids) == len(session_ids) == 1
+    task_id, session_id = next(iter(task_ids)), next(iter(session_ids))
+    assert session_id != h.session_id
+    assert responses[0].json()["session"]["runtime_mode"] == "headless"
+    assert h.runtime.calls == []
+    session = await h.store.get_session(session_id)
+    assert [message.content for message in session.messages] == [request.content]
+    events = await h.store.list_events(session_id)
+    assert [event.type for event in events] == ["session.created", "input.queued"]
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table} "
+            "WHERE event_key=%s",
+            (f"agent_turn:{task_id}",),
+        )
+        assert cur.fetchone()["count"] == 1
+
+    assert await h.outbox.relay_once(h.queue) == 1
+    worker = RedisTaskWorker(
+        h.queue,
+        consumer="headless-worker",
+        handler=lambda item: h.dispatcher.handle(item, worker_id="headless-worker"),
+        block_ms=0,
+    )
+    assert await worker.run_once() == 1
+    completed = await h.tasks.get(task_id)
+    assert completed.status == "completed"
+    assert h.runtime.calls == [completed.turn_id]
+    persisted = await h.store.get_session(session_id)
+    assert [message.content for message in persisted.messages] == [
+        request.content,
+        "worker-result",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_headless_transaction_failure_rolls_back_new_session(harness, monkeypatch):
+    h = harness
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("injected headless event failure")
+
+    monkeypatch.setattr(h.store, "append_event_in_transaction", fail)
+    with pytest.raises(RuntimeError, match="headless event failure"):
+        await h.dispatcher.submit_headless(
+            HeadlessExecutionRequest(
+                content="must roll back",
+                client_request_id="headless-rollback",
+            )
+        )
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS count FROM {h.settings.database.postgres_session_table}")
+        assert cur.fetchone()["count"] == 1
+        cur.execute(f"SELECT count(*) AS count FROM {h.settings.database.postgres_agent_task_table}")
+        assert cur.fetchone()["count"] == 0
+        cur.execute(f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}")
+        assert cur.fetchone()["count"] == 0
 
 
 @pytest.mark.asyncio
@@ -377,6 +639,40 @@ async def test_separate_worker_process_executes_persisted_api_input(harness):
         assert result.status == "completed" and result.worker_id == "separate-worker"
         assert (await h.store.get_session(h.session_id)).messages[-1].content == "worker-result"
         assert h.runtime.calls == []
+    finally:
+        if process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 5)
+
+
+@pytest.mark.asyncio
+async def test_separate_worker_process_executes_persisted_resume(harness):
+    h = harness
+    snapshot = await prepare_resumable_session(h)
+    receipt = await h.dispatcher.submit_resume(
+        h.session_id,
+        ResumeSessionRequest(
+            reason="cross-process resume",
+            client_request_id="resume-separate-worker",
+        ),
+    )
+    assert await h.outbox.relay_once(h.queue) == 1
+    process = multiprocessing.get_context("spawn").Process(
+        target=worker_process,
+        args=(h.settings, h.prefix),
+    )
+    try:
+        process.start()
+        await asyncio.to_thread(process.join, 15)
+        assert process.exitcode == 0
+        result = await h.tasks.get(receipt.task.id)
+        assert result.status == "completed"
+        assert result.operation == "manual_resume"
+        assert result.reference_id == snapshot.id
+        assert result.worker_id == "separate-worker"
+        session = await h.store.get_session(h.session_id)
+        assert session.messages[-1].content == "worker-resume-result"
+        assert h.runtime.resume_calls == []
     finally:
         if process.is_alive():
             process.terminate()

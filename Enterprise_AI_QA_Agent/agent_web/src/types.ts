@@ -921,6 +921,7 @@ export type AgentTaskStatus =
 
 export interface AgentTaskRecord {
   id: string;
+  operation: "message" | "manual_resume";
   session_id: string;
   turn_id: string;
   project_id?: string | null;
@@ -937,6 +938,7 @@ export interface AgentTaskRecord {
   result_status?: string | null;
   error_code?: string | null;
   resource_id?: string | null;
+  reference_id?: string | null;
   created_at: string;
   updated_at: string;
 }

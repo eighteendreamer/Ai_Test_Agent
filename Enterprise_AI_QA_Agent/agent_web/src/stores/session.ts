@@ -1010,6 +1010,7 @@ export const useSessionStore = defineStore("session", {
         const response = await api.resumeSession(
           this.session.id,
           "用户在工作台中恢复了当前会话。",
+          createClientMessageId(),
         );
         this.applySession(response.session);
         this.activity = [...response.events.slice().reverse(), ...this.activity].slice(0, 50);

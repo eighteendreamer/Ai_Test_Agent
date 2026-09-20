@@ -226,8 +226,9 @@ uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
 
 ### 1.2 启动 Agent Turn Worker
 
-公开接口 `POST /api/v1/sessions/{session_id}/messages` 不再在 API 进程内执行模型和工具，
-而是返回 HTTP 202 任务回执。API 会在同一个 PostgreSQL 事务中写入用户消息、
+公开接口 `POST /api/v1/sessions/{session_id}/messages`、`POST /api/v1/sessions/{session_id}/resume`
+和 `POST /api/v1/sessions/headless/execute` 不再在 API 进程内执行模型和工具，
+而是返回 HTTP 202 任务回执。普通消息 API 会在同一个 PostgreSQL 事务中写入用户消息、
 `agent_turn_tasks`、`input.queued` 事件和 Outbox；Redis 不可用时事实仍保留在数据库，
 Relay 恢复后继续发布到 `qa:tasks:agent`。生产环境必须在 Outbox Relay 之外独立启动 Agent Worker：
 
@@ -247,7 +248,18 @@ uv run --locked --directory Agent_Server python -m src.cli.run_agent_worker --on
 不会伪造成运行中。会话内按任务序号 FIFO 执行，尚未轮到的消息标为 `context_eligible=false`，
 避免后提交的输入进入前一个 Turn 的模型上下文。
 
-Redis 命令是严格版本化 TaskEnvelope，只传递任务身份、`request_id/trace_id/session_id/turn_id`、
+手动恢复使用 `client_request_id` 幂等，并在任务中固定 `reference_id=snapshot_id`；提交事务和
+Worker 领取时都会验证最新快照、Turn 和可恢复状态。排队期间快照发生变化时任务以
+`resume_checkpoint_changed` 失败，不会恢复旧图状态。等待审批的快照必须通过审批接口处理，
+不能用手动恢复绕过审批。恢复任务没有伪造的用户消息，`user_message_id` 允许为空。
+
+Headless 提交可使用 `client_request_id` 保证重试幂等；服务从该键派生稳定 Session ID，
+并将新 Session、`session.created`、首条用户消息、Agent Task、`input.queued` 和 Outbox
+放在同一个 PostgreSQL 事务中。任何一步失败都会整体回滚，不留下无任务的孤儿 Session。
+相同键但标题、模型、Skill、上下文或正文不同返回 409。
+
+Redis 命令是严格版本化 TaskEnvelope，只传递任务身份、`operation`、恢复用 `reference_id`、
+`request_id/trace_id/session_id/turn_id`、
 可选 `project_id/run_id/run_item_id`、预留为空的领取后标识、优先级及
 `payload.input_source=postgres`；用户输入和附件引用只从 PostgreSQL 权威任务记录读取。
 领取后生成的 `attempt_id/worker_id/resource_id/fencing_token`
@@ -268,7 +280,9 @@ ORCHESTRATION__AGENT_TASK_CONTROL_POLL_SECONDS=1
 ORCHESTRATION__AGENT_TASK_LIMIT=20
 ```
 
-新表由 API/Worker lifespan 初始化。升级时先停止旧 API 与 Worker，确认数据库账号具有建表权限，
+新表由 API/Worker lifespan 初始化。升级会给 Agent Task 增加 `operation/reference_id`，允许
+`user_message_id` 为空，并将 `turn_id` 唯一约束改为普通索引，因为同一 Turn 的恢复是独立任务。
+升级时先停止旧 API 与 Worker，确认数据库账号具有 ALTER/建表权限，
 再协调启动新 API、Outbox Relay 和 Agent Worker；不能让仍采用同步 `/messages` 语义的旧实例混跑。
 前端已按 202 回执显示排队状态，并通过持久 SSE 事件刷新最终结果。
 
@@ -677,8 +691,8 @@ ORCHESTRATION__RESOURCE_GLOBAL_LIMIT=20
 （PowerShell 先设置 `$env:RUN_LIVE_BROWSER_TESTS='1'`），使用隔离的 PostgreSQL 表、Redis 前缀及真实 Chromium。
 覆盖三级任务配额、等待状态落库、新 Attempt 重试、任务满额下浏览器执行、心跳故障中断和重复取消清理顺序。
 测试依据项目课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、幂等与补偿原则；不以仅检查返回值替代资源和状态断言。
-当前准入同时覆盖 TestRun RunItem 和公开普通对话 Agent Turn。审批续跑、手动恢复、
-Coordinator 内部子任务及 headless 内部入口仍沿用各自现有执行路径，后续必须迁移到同一持久任务契约，
+当前准入同时覆盖 TestRun RunItem、公开普通对话、手动恢复和 Headless Agent Turn。
+审批续跑与 Coordinator 内部父子任务仍沿用各自现有执行路径，后续必须迁移到同一持久任务契约，
 因此尚不能宣称所有 Agent 入口均已任务化。
 
 ### 跨进程编排事件与 SSE 回补
@@ -720,8 +734,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_event_delivery.py -q`：
 覆盖独立 Worker 进程与两个真实 HTTP 客户端、1004 条断线补读、晚到时间戳、未提交事务、
-执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。公开普通对话现在已使用上述持久事件链路
-和 Outbox/Agent Worker；其他内部续跑入口的统一任务化仍按前述边界继续实施。
+执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。公开普通对话、手动恢复和 Headless
+现在已使用上述持久事件链路和 Outbox/Agent Worker；审批与 Coordinator 续跑仍按前述边界继续实施。
 
 普通执行、手动恢复与审批续跑现在共同监控实际执行和数据库租约心跳，沿用
 `RedisTaskWorker._run_handler` / `TestRunExecutionService._execute_with_lease_watch` 的
@@ -730,8 +744,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 失去租约时不尝试把 Session 改成成功/中断终态，也不完成租约，交给现有过期恢复流程；
 `session_execution_ownership_lost` 和 `session_lease_left_for_recovery` 记录异常类型与会话。
 外部重复取消不会绕过清理，停止心跳时等待正在进行的续租调用返回，避免其数据库线程在租约释放后继续运行。
-这里解决已检测到的续租失败；公开普通对话已接入持久任务调度，数据库调用长期无响应的期限控制，
-以及审批续跑、手动恢复和内部 Coordinator/headless 入口的持久调度仍需接续完成。
+这里解决已检测到的续租失败；公开普通对话、手动恢复和 Headless 已接入持久任务调度。
+数据库调用长期无响应的期限控制，以及审批续跑和内部 Coordinator 入口的持久调度仍需接续完成。
 
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_execution_ownership.py -q`，

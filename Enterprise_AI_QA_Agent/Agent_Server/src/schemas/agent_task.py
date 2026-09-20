@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.schemas.session import ConversationResponse, SendMessageRequest
+from src.schemas.session import ConversationResponse
 
 
 AgentTaskStatus = Literal[
@@ -20,6 +20,7 @@ AgentTaskStatus = Literal[
     "cancelled",
     "recovery_required",
 ]
+AgentTaskOperation = Literal["message", "manual_resume"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -29,6 +30,7 @@ class AgentTaskCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1] = 1
     task_type: Literal["agent_turn"] = "agent_turn"
+    operation: AgentTaskOperation = "message"
     task_id: str = Field(min_length=1, max_length=160)
     session_id: str = Field(min_length=1, max_length=160)
     turn_id: str = Field(min_length=1, max_length=160)
@@ -40,6 +42,7 @@ class AgentTaskCommand(BaseModel):
     attempt_id: str | None = None
     worker_id: str | None = None
     resource_id: str | None = None
+    reference_id: str | None = None
     priority: int = Field(default=50, ge=0, le=100)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, str] = Field(
@@ -49,6 +52,7 @@ class AgentTaskCommand(BaseModel):
 
 class AgentTaskRecord(BaseModel):
     id: str
+    operation: AgentTaskOperation = "message"
     session_id: str
     turn_id: str
     project_id: str | None = None
@@ -65,6 +69,7 @@ class AgentTaskRecord(BaseModel):
     result_status: str | None = None
     error_code: str | None = None
     resource_id: str | None = None
+    reference_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,8 +78,8 @@ class AgentTaskExecution(AgentTaskRecord):
     """Worker-only fields; never serialize this type in a public task response."""
     lease_token: str | None = None
     fencing_token: int | None = None
-    input: SendMessageRequest
-    user_message_id: str
+    input: dict[str, Any]
+    user_message_id: str | None = None
 
 
 class AgentTaskAccepted(ConversationResponse):

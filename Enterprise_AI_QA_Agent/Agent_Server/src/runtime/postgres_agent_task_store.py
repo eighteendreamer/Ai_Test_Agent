@@ -17,7 +17,12 @@ from src.runtime.task_deferred import TaskDeferred
 from src.schemas.agent_task import (
     AgentTaskCommand, AgentTaskExecution, AgentTaskRecord, TERMINAL_AGENT_TASK_STATUSES,
 )
-from src.schemas.session import ChatMessage, ExecutionEvent, SendMessageRequest
+from src.schemas.session import (
+    ChatMessage,
+    ExecutionEvent,
+    ResumeSessionRequest,
+    SendMessageRequest,
+)
 
 
 class AgentSubmissionConflict(ValueError):
@@ -43,6 +48,42 @@ class PostgresAgentTaskStore:
             payload,
             message,
             idempotency_key,
+        )
+
+    async def submit_resume(
+        self,
+        command: AgentTaskCommand,
+        payload: ResumeSessionRequest,
+        *,
+        idempotency_key: str,
+    ) -> AgentTaskRecord:
+        return await asyncio.to_thread(
+            self._submit_resume_sync,
+            command,
+            payload,
+            idempotency_key,
+        )
+
+    async def submit_new_session(
+        self,
+        session,
+        created_event: ExecutionEvent,
+        command: AgentTaskCommand,
+        payload: SendMessageRequest,
+        message: ChatMessage,
+        *,
+        idempotency_key: str,
+        submission_payload: dict,
+    ) -> AgentTaskRecord:
+        return await asyncio.to_thread(
+            self._submit_new_session_sync,
+            session,
+            created_event,
+            command,
+            payload,
+            message,
+            idempotency_key,
+            submission_payload,
         )
 
     async def get(self, task_id: str) -> AgentTaskExecution:
@@ -119,11 +160,13 @@ class PostgresAgentTaskStore:
             cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._tasks} (
                 id TEXT PRIMARY KEY, sequence BIGSERIAL NOT NULL,
                 session_id TEXT NOT NULL REFERENCES {self._session_table}(id) ON DELETE CASCADE,
-                turn_id TEXT NOT NULL UNIQUE, project_id TEXT,
+                operation TEXT NOT NULL DEFAULT 'message',
+                turn_id TEXT NOT NULL, project_id TEXT,
                 request_id TEXT NOT NULL, trace_id TEXT NOT NULL,
                 run_id TEXT, run_item_id TEXT, priority INTEGER NOT NULL DEFAULT 50,
                 idempotency_key TEXT NOT NULL, input_hash TEXT NOT NULL,
-                input_payload JSONB NOT NULL, user_message_id TEXT NOT NULL,
+                input_payload JSONB NOT NULL, user_message_id TEXT,
+                reference_id TEXT,
                 status TEXT NOT NULL DEFAULT 'queued', attempt_id TEXT, attempt_no INTEGER NOT NULL DEFAULT 0,
                 worker_id TEXT, lease_token TEXT, resource_id TEXT, fencing_token BIGINT,
                 waiting_reason TEXT, result_status TEXT, error_code TEXT,
@@ -135,6 +178,14 @@ class PostgresAgentTaskStore:
                 f"CREATE INDEX IF NOT EXISTS {self._tasks}_session_idx "
                 f"ON {self._tasks}(session_id, sequence)"
             )
+            cur.execute(
+                f"ALTER TABLE {self._tasks} DROP CONSTRAINT IF EXISTS "
+                f"{self._tasks}_turn_id_key"
+            )
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS {self._tasks}_session_turn_idx "
+                f"ON {self._tasks}(session_id, turn_id)"
+            )
             # The feature may have initialized its tables during development
             # before the complete TaskEnvelope fields were added.
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS run_id TEXT")
@@ -145,6 +196,12 @@ class PostgresAgentTaskStore:
             )
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS resource_id TEXT")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS fencing_token BIGINT")
+            cur.execute(
+                f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS "
+                "operation TEXT NOT NULL DEFAULT 'message'"
+            )
+            cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS reference_id TEXT")
+            cur.execute(f"ALTER TABLE {self._tasks} ALTER COLUMN user_message_id DROP NOT NULL")
             cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._attempts} (
                 id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES {self._tasks}(id) ON DELETE CASCADE,
                 attempt_no INTEGER NOT NULL, worker_id TEXT NOT NULL, lease_token TEXT NOT NULL,
@@ -154,23 +211,133 @@ class PostgresAgentTaskStore:
 
     def _submit_sync(self, command, payload, message, idempotency_key):
         serialized = payload.model_dump(mode="json")
-        canonical_payload = json.dumps(
+        effective_key = self._idempotency_key("message", idempotency_key)
+        content_hash = self._input_hash("message", serialized)
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            row = self._submit_message_in_transaction(
+                cur,
+                command,
+                payload,
+                message,
+                effective_key=effective_key,
+                content_hash=content_hash,
+            )
+        return AgentTaskRecord.model_validate(row)
+
+    def _submit_message_in_transaction(
+        self,
+        cur,
+        command,
+        payload,
+        message,
+        *,
+        effective_key,
+        content_hash,
+    ):
+        session = self._lock_session(cur, command.session_id)
+        existing = self._find_idempotent(
+            cur,
+            command.session_id,
+            effective_key,
+            content_hash,
+        )
+        if existing:
+            return existing
+        if session["project_id"] != command.project_id:
+            raise AgentSubmissionConflict("Session project changed before submission")
+        cur.execute(
+            f"SELECT id FROM {self._tasks} WHERE session_id=%s "
+            "AND status IN ('queued','waiting_resource','claimed','running') LIMIT 1",
+            (command.session_id,),
+        )
+        pending = cur.fetchone()
+        if (pending or session["status"] in {"running", "waiting_approval", "interrupted"}) and (
+            payload.submit_mode not in {"queued", "enqueue", "background"}
+            and not payload.interrupt_if_busy
+        ):
+            raise AgentSubmissionConflict(
+                "Session has pending work; use queued submission or resume the interrupted turn"
+            )
+        cur.execute(f"""INSERT INTO {self._tasks}
+            (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
+             priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s) RETURNING *""",
+            (
+                command.task_id,
+                command.session_id,
+                command.operation,
+                command.turn_id,
+                command.project_id,
+                command.request_id,
+                command.trace_id,
+                command.run_id,
+                command.run_item_id,
+                command.priority,
+                effective_key,
+                content_hash,
+                json.dumps(payload.model_dump(mode="json"), ensure_ascii=False),
+                message.id,
+                command.reference_id,
+            ))
+        row = cur.fetchone()
+        if payload.interrupt_if_busy:
+            cur.execute(
+                f"UPDATE {self._tasks} SET interrupt_requested=TRUE "
+                "WHERE session_id=%s AND status IN ('claimed','running')",
+                (command.session_id,),
+            )
+        cur.execute(f"""INSERT INTO {self._settings.database.postgres_message_table}
+            (id,session_id,role,content,created_at,metadata) VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (message.id, command.session_id, message.role.value, message.content, message.created_at,
+             json.dumps(message.metadata, ensure_ascii=False)))
+        cur.execute(
+            f"SELECT count(*) AS count FROM {self._tasks} WHERE session_id=%s "
+            "AND status IN ('queued','waiting_resource','claimed')",
+            (command.session_id,),
+        )
+        queue_depth = cur.fetchone()["count"]
+        self._event(
+            cur,
+            row,
+            "input.queued",
+            {
+                "queue_entry_id": row["id"],
+                "queued_turn_id": row["turn_id"],
+                "busy_status": session["status"],
+                "queue_depth": queue_depth,
+                "queue_behavior": "enqueue_if_busy",
+                "queue": self._settings.orchestration.agent_task_stream,
+                "source": payload.source,
+            },
+        )
+        cur.execute(f"""INSERT INTO {self._settings.database.postgres_task_outbox_table}
+            (event_key,stream,payload) VALUES (%s,%s,%s::jsonb)""",
+            (
+                f"agent_turn:{command.task_id}",
+                self._settings.orchestration.agent_task_stream,
+                command.model_dump_json(),
+            ))
+        return row
+
+    def _submit_resume_sync(self, command, payload, idempotency_key):
+        if command.operation != "manual_resume" or not command.reference_id:
+            raise ValueError("Manual resume command requires its checkpoint reference")
+        serialized = payload.model_dump(mode="json")
+        effective_key = self._idempotency_key("manual_resume", idempotency_key)
+        content_hash = self._input_hash(
+            "manual_resume",
             serialized,
-            sort_keys=True,
-            ensure_ascii=False,
-        ).encode()
-        content_hash = hashlib.sha256(canonical_payload).hexdigest()
+            reference_id=command.reference_id,
+        )
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             session = self._lock_session(cur, command.session_id)
-            cur.execute(
-                f"SELECT * FROM {self._tasks} "
-                "WHERE session_id=%s AND idempotency_key=%s",
-                (command.session_id, idempotency_key),
+            existing = self._find_idempotent(
+                cur,
+                command.session_id,
+                effective_key,
+                content_hash,
             )
-            existing = cur.fetchone()
             if existing:
-                if existing["input_hash"] != content_hash:
-                    raise AgentSubmissionConflict("Submission ID already belongs to different input")
                 return AgentTaskRecord.model_validate(existing)
             if session["project_id"] != command.project_id:
                 raise AgentSubmissionConflict("Session project changed before submission")
@@ -179,20 +346,24 @@ class PostgresAgentTaskStore:
                 "AND status IN ('queued','waiting_resource','claimed','running') LIMIT 1",
                 (command.session_id,),
             )
-            pending = cur.fetchone()
-            if (pending or session["status"] in {"running", "waiting_approval", "interrupted"}) and (
-                payload.submit_mode not in {"queued", "enqueue", "background"} and not payload.interrupt_if_busy
-            ):
-                raise AgentSubmissionConflict(
-                    "Session has pending work; use queued submission or resume the interrupted turn"
-                )
-            cur.execute(f"""INSERT INTO {self._tasks}
-                (id,session_id,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
-                 priority,idempotency_key,input_hash,input_payload,user_message_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s) RETURNING *""",
+            if cur.fetchone():
+                raise AgentSubmissionConflict("Session already has pending Agent work")
+            snapshot = self._latest_snapshot(cur, command.session_id)
+            self._assert_resume_checkpoint(
+                session,
+                snapshot,
+                reference_id=command.reference_id,
+                turn_id=command.turn_id,
+            )
+            cur.execute(
+                f"""INSERT INTO {self._tasks}
+                (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
+                 priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NULL,%s) RETURNING *""",
                 (
                     command.task_id,
                     command.session_id,
+                    command.operation,
                     command.turn_id,
                     command.project_id,
                     command.request_id,
@@ -200,49 +371,77 @@ class PostgresAgentTaskStore:
                     command.run_id,
                     command.run_item_id,
                     command.priority,
-                    idempotency_key,
+                    effective_key,
                     content_hash,
                     json.dumps(serialized, ensure_ascii=False),
-                    message.id,
-                ))
-            row = cur.fetchone()
-            if payload.interrupt_if_busy:
-                cur.execute(
-                    f"UPDATE {self._tasks} SET interrupt_requested=TRUE "
-                    "WHERE session_id=%s AND status IN ('claimed','running')",
-                    (command.session_id,),
-                )
-            cur.execute(f"""INSERT INTO {self._settings.database.postgres_message_table}
-                (id,session_id,role,content,created_at,metadata) VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
-                (message.id, command.session_id, message.role.value, message.content, message.created_at,
-                 json.dumps(message.metadata, ensure_ascii=False)))
-            cur.execute(
-                f"SELECT count(*) AS count FROM {self._tasks} WHERE session_id=%s "
-                "AND status IN ('queued','waiting_resource','claimed')",
-                (command.session_id,),
+                    command.reference_id,
+                ),
             )
-            queue_depth = cur.fetchone()["count"]
+            row = cur.fetchone()
             self._event(
                 cur,
                 row,
-                "input.queued",
+                "runtime.resume_queued",
                 {
-                    "queue_entry_id": row["id"],
-                    "queued_turn_id": row["turn_id"],
-                    "busy_status": session["status"],
-                    "queue_depth": queue_depth,
-                    "queue_behavior": "enqueue_if_busy",
-                    "queue": self._settings.orchestration.agent_task_stream,
+                    "snapshot_id": command.reference_id,
                     "source": payload.source,
+                    "reason": payload.reason or "Manual resume requested.",
+                    "queue": self._settings.orchestration.agent_task_stream,
                 },
             )
-            cur.execute(f"""INSERT INTO {self._settings.database.postgres_task_outbox_table}
+            cur.execute(
+                f"""INSERT INTO {self._settings.database.postgres_task_outbox_table}
                 (event_key,stream,payload) VALUES (%s,%s,%s::jsonb)""",
                 (
                     f"agent_turn:{command.task_id}",
                     self._settings.orchestration.agent_task_stream,
                     command.model_dump_json(),
-                ))
+                ),
+            )
+        return AgentTaskRecord.model_validate(row)
+
+    def _submit_new_session_sync(
+        self,
+        session,
+        created_event,
+        command,
+        payload,
+        message,
+        idempotency_key,
+        submission_payload,
+    ):
+        if command.operation != "message" or command.session_id != session.id:
+            raise ValueError("New-session Agent command identity is invalid")
+        effective_key = self._idempotency_key("headless", idempotency_key)
+        content_hash = self._input_hash("headless", submission_payload)
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            inserted = self._sessions.create_session_in_transaction(cur, session)
+            self._lock_session(cur, session.id)
+            existing = self._find_idempotent(
+                cur,
+                session.id,
+                effective_key,
+                content_hash,
+            )
+            if existing:
+                return AgentTaskRecord.model_validate(existing)
+            if not inserted:
+                raise AgentSubmissionConflict(
+                    "Headless submission ID already belongs to a different request"
+                )
+            self._sessions.append_event_in_transaction(
+                cur,
+                session.id,
+                created_event,
+            )
+            row = self._submit_message_in_transaction(
+                cur,
+                command,
+                payload,
+                message,
+                effective_key=effective_key,
+                content_hash=content_hash,
+            )
         return AgentTaskRecord.model_validate(row)
 
     def _get_sync(self, task_id):
@@ -252,6 +451,63 @@ class PostgresAgentTaskStore:
             if row is None:
                 raise KeyError(task_id)
         return self._record(row)
+
+    @staticmethod
+    def _idempotency_key(operation: str, value: str) -> str:
+        normalized = value.strip()
+        return normalized if operation == "message" else f"{operation}:{normalized}"
+
+    @staticmethod
+    def _input_hash(operation: str, payload: dict, *, reference_id: str | None = None) -> str:
+        hash_payload = payload if operation == "message" else {
+            "operation": operation,
+            "reference_id": reference_id,
+            "payload": payload,
+        }
+        canonical_payload = json.dumps(
+            hash_payload,
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode()
+        return hashlib.sha256(canonical_payload).hexdigest()
+
+    def _find_idempotent(self, cur, session_id, idempotency_key, content_hash):
+        cur.execute(
+            f"SELECT * FROM {self._tasks} WHERE session_id=%s AND idempotency_key=%s",
+            (session_id, idempotency_key),
+        )
+        existing = cur.fetchone()
+        if existing and existing["input_hash"] != content_hash:
+            raise AgentSubmissionConflict("Submission ID already belongs to different input")
+        return existing
+
+    def _latest_snapshot(self, cur, session_id):
+        cur.execute(
+            f"SELECT * FROM {self._settings.database.postgres_snapshot_table} "
+            "WHERE session_id=%s ORDER BY version DESC LIMIT 1",
+            (session_id,),
+        )
+        return cur.fetchone()
+
+    @staticmethod
+    def _assert_resume_checkpoint(session, snapshot, *, reference_id, turn_id):
+        if snapshot is None:
+            raise AgentSubmissionConflict("No snapshot is available for resume")
+        if snapshot["id"] != reference_id:
+            raise AgentSubmissionConflict("Resume checkpoint changed before submission")
+        if snapshot["stage"] == "waiting_approval":
+            raise AgentSubmissionConflict(
+                "Pending approval must be resolved through the approval API"
+            )
+        if snapshot["stage"] not in {"interrupted", "resumable"}:
+            raise AgentSubmissionConflict("Latest snapshot is not resumable")
+        snapshot_turn_id = str((snapshot.get("graph_state") or {}).get("turn_id") or f"resume_{snapshot['id']}")
+        if snapshot_turn_id != turn_id:
+            raise AgentSubmissionConflict("Resume turn identity no longer matches its checkpoint")
+        if snapshot["stage"] == "interrupted" and not (session.get("metadata") or {}).get("pending_turn"):
+            raise AgentSubmissionConflict(
+                "The interrupted runtime has no durable checkpoint and cannot be resumed"
+            )
 
     def _read_interrupt_sync(self, task_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
@@ -324,6 +580,24 @@ class PostgresAgentTaskStore:
                         "error_code": "execution_owner_expired",
                     })
                 self._end_attempt(cur, row, "interrupted", "owner_expired_before_execution")
+            if row.get("operation") == "manual_resume":
+                try:
+                    self._assert_resume_checkpoint(
+                        session,
+                        self._latest_snapshot(cur, row["session_id"]),
+                        reference_id=row.get("reference_id"),
+                        turn_id=row["turn_id"],
+                    )
+                except AgentSubmissionConflict:
+                    self._update_status(
+                        cur,
+                        row,
+                        "failed",
+                        None,
+                        "resume_checkpoint_changed",
+                    )
+                    cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
+                    return self._record(cur.fetchone())
             if session["lease_active"] or session["status"] == "waiting_approval":
                 raise TaskDeferred("Session is occupied or waiting for approval")
             if session["status"] == "running" and session["metadata"].get("turn_lease_token") != row["lease_token"]:
@@ -402,7 +676,7 @@ class PostgresAgentTaskStore:
             (status, result_status, reason if status == "waiting_resource" else None,
              reason if status != "waiting_resource" else None, row["id"]))
         self._end_attempt(cur, row, status, reason)
-        if status in TERMINAL_AGENT_TASK_STATUSES:
+        if status in TERMINAL_AGENT_TASK_STATUSES and row.get("user_message_id"):
             cur.execute(f"""UPDATE {self._settings.database.postgres_message_table}
                 SET metadata=metadata || jsonb_build_object('delivery_status',%s::text) WHERE id=%s""",
                 (status, row["user_message_id"]))

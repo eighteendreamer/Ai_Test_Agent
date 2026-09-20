@@ -287,6 +287,7 @@ class InterruptSessionRequest(BaseModel):
 class ResumeSessionRequest(BaseModel):
     reason: str | None = None
     source: str = "user"
+    client_request_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class SessionReplayResponse(BaseModel):
@@ -319,3 +320,4 @@ class HeadlessExecutionRequest(BaseModel):
     skill_keys: list[str] = Field(default_factory=list)
     context: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    client_request_id: str | None = Field(default=None, min_length=1, max_length=256)

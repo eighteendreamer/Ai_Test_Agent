@@ -82,9 +82,14 @@ async def create_session(payload: CreateSessionRequest, request: Request):
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
 
 
-@router.post("/headless/execute")
+@router.post("/headless/execute", status_code=202, response_model=AgentTaskAccepted)
 async def execute_headless(payload: HeadlessExecutionRequest, request: Request):
-    return await request.app.state.session_service.execute_headless(payload)
+    try:
+        return await request.app.state.agent_task_dispatcher.submit_headless(payload)
+    except AgentSubmissionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{session_id}")
@@ -189,16 +194,18 @@ async def interrupt_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{session_id}/resume")
+@router.post("/{session_id}/resume", status_code=202, response_model=AgentTaskAccepted)
 async def resume_session(
     session_id: str,
     payload: ResumeSessionRequest,
     request: Request,
 ):
     try:
-        return await request.app.state.session_service.resume_session(session_id, payload)
+        return await request.app.state.agent_task_dispatcher.submit_resume(session_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc
+    except AgentSubmissionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.core.request_context import bind_request_context, get_request_context, new_id
 from src.runtime.resource_lease_manager import ResourceUnavailable
@@ -16,7 +16,16 @@ from src.schemas.agent_task import (
     AgentTaskRecord,
     TERMINAL_AGENT_TASK_STATUSES,
 )
-from src.schemas.session import ChatMessage, MessageRole
+from src.schemas.session import (
+    ChatMessage,
+    CreateSessionRequest,
+    ExecutionEvent,
+    HeadlessExecutionRequest,
+    MessageRole,
+    ResumeSessionRequest,
+    RuntimeMode,
+    SendMessageRequest,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -80,17 +89,171 @@ class AgentTaskDispatcher:
                 "source": payload.source,
             },
         )
+        return await self._accepted(
+            task,
+            "任务已接收，执行状态请查看编排轨迹。",
+        )
+
+    async def submit_resume(
+        self,
+        session_id: str,
+        payload: ResumeSessionRequest,
+    ) -> AgentTaskAccepted:
+        session = await self._sessions._require_session(session_id)
+        snapshot = await self._sessions._require_resume_snapshot(session_id)
+        context = get_request_context()
+        command = AgentTaskCommand(
+            task_id=new_id("task"),
+            operation="manual_resume",
+            session_id=session_id,
+            turn_id=self._sessions._resume_turn_id(snapshot),
+            project_id=session.project_id,
+            request_id=context.request_id if context else new_id("req"),
+            trace_id=context.trace_id if context else new_id("trace"),
+            run_id=context.run_id if context else None,
+            run_item_id=context.run_item_id if context else None,
+            reference_id=snapshot.id,
+        )
+        key = payload.client_request_id or command.request_id
+        task = await self._tasks.submit_resume(
+            command,
+            payload,
+            idempotency_key=key,
+        )
+        LOGGER.info(
+            "agent_resume_task_submitted",
+            extra={
+                "task_id": task.id,
+                "session_id": task.session_id,
+                "turn_id": task.turn_id,
+                "request_id": task.request_id,
+                "trace_id": task.trace_id,
+                "snapshot_id": task.reference_id,
+                "queue": self._settings.orchestration.agent_task_stream,
+                "source": payload.source,
+            },
+        )
+        return await self._accepted(
+            task,
+            "恢复任务已排队，执行状态请查看编排轨迹。",
+        )
+
+    async def submit_headless(
+        self,
+        payload: HeadlessExecutionRequest,
+    ) -> AgentTaskAccepted:
+        context = get_request_context()
+        request_id = context.request_id if context else new_id("req")
+        trace_id = context.trace_id if context else new_id("trace")
+        key = payload.client_request_id or request_id
+        session = await self._sessions._new_session_record(
+            CreateSessionRequest(
+                title=payload.title,
+                session_mode=payload.session_mode,
+                runtime_mode=RuntimeMode.headless,
+                mode_key=payload.mode_key,
+                preferred_model=payload.model_key,
+                selected_agent=payload.agent_key,
+                metadata={"launch_mode": "headless"},
+            )
+        )
+        session.id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"enterprise-ai-qa-agent:headless:{key}",
+            )
+        )
+        execution_payload = SendMessageRequest(
+            content=payload.content,
+            mode_key=payload.mode_key,
+            agent_key=payload.agent_key,
+            model_key=payload.model_key,
+            skill_keys=payload.skill_keys,
+            submit_mode="background",
+            source="headless.execute",
+            context=payload.context,
+            metadata={**payload.metadata, "client_message_id": key},
+        )
+        execution_request = self._sessions._input_orchestrator_service.orchestrate(
+            session,
+            execution_payload,
+        )
+        command = AgentTaskCommand(
+            task_id=new_id("task"),
+            session_id=session.id,
+            turn_id=execution_request.turn_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            run_id=context.run_id if context else None,
+            run_item_id=context.run_item_id if context else None,
+        )
+        message = ChatMessage(
+            id=str(uuid4()),
+            role=MessageRole.user,
+            content=payload.content.strip(),
+            created_at=datetime.now(timezone.utc),
+            metadata=self._sessions._transcript_hygiene_service.user_message_metadata(
+                {
+                    **execution_payload.metadata,
+                    "turn_id": execution_request.turn_id,
+                    "delivery_status": "queued",
+                    "context_eligible": False,
+                }
+            ),
+        )
+        message.metadata["context_eligible"] = False
+        created_event = ExecutionEvent(
+            type="session.created",
+            session_id=session.id,
+            timestamp=datetime.now(timezone.utc),
+            request_id=request_id,
+            trace_id=trace_id,
+            turn_id=execution_request.turn_id,
+            payload={
+                "title": session.title,
+                "session_mode": session.session_mode.value,
+                "runtime_mode": session.runtime_mode.value,
+                "mode_key": session.mode_key,
+                "project_id": session.project_id,
+            },
+        )
+        task = await self._tasks.submit_new_session(
+            session,
+            created_event,
+            command,
+            execution_payload,
+            message,
+            idempotency_key=key,
+            submission_payload=payload.model_dump(mode="json"),
+        )
+        LOGGER.info(
+            "headless_agent_task_submitted",
+            extra={
+                "task_id": task.id,
+                "session_id": task.session_id,
+                "turn_id": task.turn_id,
+                "request_id": task.request_id,
+                "trace_id": task.trace_id,
+                "queue": self._settings.orchestration.agent_task_stream,
+            },
+        )
+        return await self._accepted(
+            task,
+            "Headless 任务已接收，执行状态请查看编排轨迹。",
+        )
+
+    async def _accepted(self, task, content: str) -> AgentTaskAccepted:
         return AgentTaskAccepted(
             task=task,
-            session=await self._sessions.get_session(session_id),
+            session=await self._sessions.get_session(task.session_id),
             output=ChatMessage(
                 id=f"receipt_{task.id}",
                 role=MessageRole.system,
-                content="任务已接收，执行状态请查看编排轨迹。",
+                content=content,
                 created_at=task.created_at,
                 metadata={"persist_transcript": False, "context_eligible": False},
             ),
-            events=await self._sessions.list_events(session_id, limit=10),
+            events=await self._sessions.list_events(task.session_id, limit=10),
         )
 
     async def list_tasks(self, session_id):
@@ -107,6 +270,7 @@ class AgentTaskDispatcher:
         command = AgentTaskCommand.model_validate(delivery.payload)
         stored = await self._tasks.get(command.task_id)
         for name in (
+            "operation",
             "session_id",
             "turn_id",
             "project_id",
@@ -114,6 +278,7 @@ class AgentTaskDispatcher:
             "trace_id",
             "run_id",
             "run_item_id",
+            "reference_id",
         ):
             if getattr(command, name) != getattr(stored, name):
                 raise ValueError("Agent command identity does not match the durable task")
@@ -207,7 +372,18 @@ class AgentTaskDispatcher:
                 },
             )
             with bind_request_context(resource_id=lease.resource_id):
-                response = await self._sessions.execute_claimed_message(task, ownership_monitor=monitor)
+                if task.operation == "message":
+                    response = await self._sessions.execute_claimed_message(
+                        task,
+                        ownership_monitor=monitor,
+                    )
+                elif task.operation == "manual_resume":
+                    response = await self._sessions.execute_claimed_resume(
+                        task,
+                        ownership_monitor=monitor,
+                    )
+                else:  # pragma: no cover - schema validation rejects this first
+                    raise ValueError(f"Unsupported Agent task operation: {task.operation}")
                 if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
                     raise ContinuationLeaseLostError(
                         "Agent admission lease lost before result commit"

@@ -64,6 +64,41 @@ class PostgresSessionStore:
             turn_lease_token,
         )
 
+    def create_session_in_transaction(self, cur, session: SessionRecord) -> bool:
+        """Insert a new session as part of a caller-owned PostgreSQL transaction."""
+        cur.execute(
+            f"""
+            INSERT INTO {self._settings.database.postgres_session_table} (
+                id, title, status, session_mode, runtime_mode, mode_key, project_id,
+                created_at, updated_at, preferred_model, selected_agent,
+                metadata, event_count, snapshot_count
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s::jsonb, %s, %s
+            )
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
+            """,
+            (
+                session.id,
+                session.title,
+                session.status.value,
+                session.session_mode.value,
+                session.runtime_mode.value,
+                session.mode_key,
+                session.project_id,
+                session.created_at,
+                session.updated_at,
+                session.preferred_model,
+                session.selected_agent,
+                json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
+                int(session.event_count),
+                int(session.snapshot_count),
+            ),
+        )
+        return cur.fetchone() is not None
+
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return await asyncio.to_thread(self._get_session_sync, session_id, True)
 
