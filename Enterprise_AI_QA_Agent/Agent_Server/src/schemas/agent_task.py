@@ -19,8 +19,16 @@ AgentTaskStatus = Literal[
     "failed",
     "cancelled",
     "recovery_required",
+    "waiting_children",
+    "coordinator_resuming",
 ]
-AgentTaskOperation = Literal["message", "manual_resume", "approval_resume"]
+AgentTaskOperation = Literal[
+    "message",
+    "manual_resume",
+    "approval_resume",
+    "coordinator_child",
+    "coordinator_resume",
+]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -29,13 +37,15 @@ TERMINAL_AGENT_TASK_STATUSES = frozenset(
 class AgentTaskCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1] = 1
-    task_type: Literal["agent_turn"] = "agent_turn"
+    task_type: Literal["agent_turn", "coordinator_child", "coordinator_resume"] = "agent_turn"
     operation: AgentTaskOperation = "message"
     task_id: str = Field(min_length=1, max_length=160)
     session_id: str = Field(min_length=1, max_length=160)
     turn_id: str = Field(min_length=1, max_length=160)
     request_id: str = Field(min_length=1, max_length=256)
     trace_id: str = Field(min_length=1, max_length=256)
+    parent_task_id: str | None = None
+    root_trace_id: str | None = None
     project_id: str | None = None
     run_id: str | None = None
     run_item_id: str | None = None
@@ -70,6 +80,9 @@ class AgentTaskRecord(BaseModel):
     error_code: str | None = None
     resource_id: str | None = None
     reference_id: str | None = None
+    parent_task_id: str | None = None
+    root_trace_id: str | None = None
+    result_payload: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

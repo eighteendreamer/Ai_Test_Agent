@@ -917,11 +917,18 @@ export type AgentTaskStatus =
   | "interrupted"
   | "failed"
   | "cancelled"
-  | "recovery_required";
+  | "recovery_required"
+  | "waiting_children"
+  | "coordinator_resuming";
 
 export interface AgentTaskRecord {
   id: string;
-  operation: "message" | "manual_resume" | "approval_resume";
+  operation:
+    | "message"
+    | "manual_resume"
+    | "approval_resume"
+    | "coordinator_child"
+    | "coordinator_resume";
   session_id: string;
   turn_id: string;
   project_id?: string | null;
@@ -939,6 +946,9 @@ export interface AgentTaskRecord {
   error_code?: string | null;
   resource_id?: string | null;
   reference_id?: string | null;
+  parent_task_id?: string | null;
+  root_trace_id?: string | null;
+  result_payload?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }

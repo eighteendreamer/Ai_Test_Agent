@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from time import monotonic
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.core.request_context import bind_request_context, get_request_context, new_id
@@ -36,6 +37,13 @@ class AgentTaskDispatcher:
         self._tasks = tasks
         self._sessions = sessions
         self._resources = resources
+        self._coordinator = None
+        self._child_reaper_task: asyncio.Task[None] | None = None
+        self._child_reaper_stop: asyncio.Event | None = None
+
+    def set_coordinator_service(self, coordinator) -> None:
+        """Inject the coordinator that turns finished child tasks into parent resumes."""
+        self._coordinator = coordinator
 
     async def submit(self, session_id, payload):
         session = await self._sessions._require_session(session_id)
@@ -288,6 +296,188 @@ class AgentTaskDispatcher:
             "审批已记录，续跑任务已排队。",
         )
 
+    async def submit_coordinator_child(
+        self,
+        *,
+        parent_task_id: str,
+        root_trace_id: str,
+        child_session_id: str,
+        turn_id: str,
+        project_id: str | None,
+        request_id: str,
+        trace_id: str,
+        run_id: str | None,
+        worker,
+        mode_key: str = "",
+        parent_session_id: str = "",
+        parent_turn_id: str = "",
+    ) -> AgentTaskRecord:
+        """Persist one coordinator worker assignment on its pre-created child session.
+
+        Coordinator dispatch already normalized the parent turn, so the child
+        payload is stored verbatim and normalized again only inside the Worker.
+        """
+        await self._sessions._require_session(child_session_id)
+        command = AgentTaskCommand(
+            task_type="coordinator_child",
+            operation="coordinator_child",
+            task_id=new_id("task"),
+            session_id=child_session_id,
+            turn_id=turn_id,
+            project_id=project_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            root_trace_id=root_trace_id,
+        )
+        payload = SendMessageRequest(
+            content=worker.prompt,
+            mode_key=mode_key or None,
+            agent_key=worker.agent_key,
+            model_key=worker.model_key,
+            skill_keys=list(worker.skill_keys),
+            submit_mode="background",
+            source="coordinator.dispatch",
+            context={
+                **worker.context,
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "parent_trace_id": trace_id,
+                "parent_task_id": parent_task_id,
+                "root_trace_id": root_trace_id,
+                "task_id": worker.task_id,
+                "dispatch_description": worker.description,
+            },
+            metadata={
+                "message_kind": "coordinator_assignment",
+                "task_id": worker.task_id,
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+            },
+        )
+        message = ChatMessage(
+            id=str(uuid4()),
+            role=MessageRole.user,
+            content=worker.prompt.strip(),
+            created_at=datetime.now(timezone.utc),
+            metadata=self._sessions._transcript_hygiene_service.user_message_metadata(
+                {
+                    **payload.metadata,
+                    "turn_id": turn_id,
+                    "delivery_status": "queued",
+                    "context_eligible": False,
+                }
+            ),
+        )
+        message.metadata["context_eligible"] = False
+        key = f"coordinator_child:{worker.task_id}"
+        task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        LOGGER.info(
+            "coordinator_child_task_submitted",
+            extra={
+                "task_id": task.id,
+                "parent_task_id": parent_task_id,
+                "child_session_id": child_session_id,
+                "child_turn_id": task.turn_id,
+                "worker_task_id": worker.task_id,
+                "root_trace_id": root_trace_id,
+                "queue": self._settings.orchestration.agent_task_stream,
+            },
+        )
+        return task
+
+    async def submit_coordinator_resume(
+        self,
+        *,
+        parent_session_id: str,
+        parent_turn_id: str,
+        project_id: str | None,
+        request_id: str,
+        trace_id: str,
+        run_id: str | None,
+        run_item_id: str | None,
+        parent_task_id: str,
+        notification_task_id: str,
+        content: str,
+        context: dict,
+        metadata: dict,
+        agent_key: str | None = None,
+        mode_key: str | None = None,
+        skill_keys: list[str] | None = None,
+    ) -> AgentTaskRecord:
+        """Queue the parent continuation for one settled coordinator child."""
+        await self._sessions._require_session(parent_session_id)
+        parent = None
+        try:
+            parent = await self._tasks.get(parent_task_id)
+        except KeyError:
+            LOGGER.warning(
+                "coordinator_resume_parent_task_missing",
+                extra={
+                    "parent_task_id": parent_task_id,
+                    "parent_session_id": parent_session_id,
+                    "notification_task_id": notification_task_id,
+                },
+            )
+        command = AgentTaskCommand(
+            task_type="coordinator_resume",
+            operation="coordinator_resume",
+            task_id=new_id("task"),
+            session_id=parent_session_id,
+            turn_id=parent_turn_id,
+            project_id=project_id,
+            request_id=request_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            run_item_id=run_item_id,
+            parent_task_id=parent_task_id,
+            root_trace_id=(
+                (parent.root_trace_id or parent.trace_id) if parent else None
+            ) or trace_id,
+        )
+        payload = SendMessageRequest(
+            content=content,
+            mode_key=mode_key,
+            agent_key=agent_key,
+            skill_keys=list(skill_keys or []),
+            submit_mode="background",
+            source="coordinator.notification",
+            context=dict(context),
+            metadata=dict(metadata),
+        )
+        turn_key = str(notification_task_id)
+        message = ChatMessage(
+            id=str(uuid4()),
+            role=MessageRole.user,
+            content=content.strip(),
+            created_at=datetime.now(timezone.utc),
+            metadata=self._sessions._transcript_hygiene_service.user_message_metadata(
+                {
+                    **payload.metadata,
+                    "turn_id": parent_turn_id,
+                    "delivery_status": "queued",
+                    "context_eligible": False,
+                }
+            ),
+        )
+        message.metadata["context_eligible"] = False
+        key = f"coordinator_resume:{turn_key}"
+        task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        LOGGER.info(
+            "coordinator_resume_task_submitted",
+            extra={
+                "task_id": task.id,
+                "parent_task_id": parent_task_id,
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "notification_task_id": turn_key,
+                "root_trace_id": task.root_trace_id,
+                "queue": self._settings.orchestration.agent_task_stream,
+            },
+        )
+        return task
+
     async def _accepted(self, task, content: str) -> AgentTaskAccepted:
         return AgentTaskAccepted(
             task=task,
@@ -359,6 +549,7 @@ class AgentTaskDispatcher:
         lease, monitor = None, None
         stop = asyncio.Event()
         started = False
+        notification = None
         config = self._settings.orchestration
         try:
             if await self._tasks.interrupt_requested(task.id):
@@ -418,6 +609,7 @@ class AgentTaskDispatcher:
                 },
             )
             with bind_request_context(resource_id=lease.resource_id):
+                clock = monotonic()
                 if task.operation == "message":
                     response = await self._sessions.execute_claimed_message(
                         task,
@@ -433,6 +625,26 @@ class AgentTaskDispatcher:
                         task,
                         ownership_monitor=monitor,
                     )
+                elif task.operation == "coordinator_resume":
+                    response = await self._sessions.execute_claimed_message(
+                        task,
+                        ownership_monitor=monitor,
+                    )
+                elif task.operation == "coordinator_child":
+                    response = await self._sessions.execute_claimed_message(
+                        task,
+                        ownership_monitor=monitor,
+                    )
+                    notification = self._child_notification(
+                        task,
+                        status=response.session.status.value,
+                        summary=self._child_summary(task, response.session.status.value),
+                        result_text=response.output.content if response.output else "",
+                        usage=self._notification_usage(
+                            response.session,
+                            int((monotonic() - clock) * 1000),
+                        ),
+                    )
                 else:  # pragma: no cover - schema validation rejects this first
                     raise ValueError(f"Unsupported Agent task operation: {task.operation}")
                 if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
@@ -444,6 +656,21 @@ class AgentTaskDispatcher:
                     "interrupted": "interrupted",
                     "failed": "failed",
                 }.get(outcome, "completed")
+                if notification is not None:
+                    if not await self._tasks.set_result_payload(
+                        task.id,
+                        attempt_id=task.attempt_id,
+                        fencing_token=task.fencing_token,
+                        payload=notification,
+                    ):
+                        LOGGER.warning(
+                            "coordinator_child_result_payload_fencing_rejected",
+                            extra={
+                                "task_id": task.id,
+                                "attempt_id": task.attempt_id,
+                                "fencing_token": task.fencing_token,
+                            },
+                        )
                 await self._tasks.finish(task, status=status, result_status=outcome)
                 LOGGER.info(
                     "agent_task_execution_finished",
@@ -455,6 +682,8 @@ class AgentTaskDispatcher:
                         "result_status": outcome,
                     },
                 )
+                if notification is not None:
+                    await self._notify_parent_child_done(task, notification)
         except TaskDeferred:
             raise
         except ContinuationLeaseLostError as exc:
@@ -473,7 +702,23 @@ class AgentTaskDispatcher:
                 extra={"task_id": task.id, "error_type": type(exc).__name__},
             )
             if started:
+                if notification is None:
+                    notification = self._child_notification(
+                        task,
+                        status="failed",
+                        summary=self._child_summary(task, "failed"),
+                        result_text=f"{type(exc).__name__}: {exc}",
+                    )
+                    if notification is not None:
+                        await self._tasks.set_result_payload(
+                            task.id,
+                            attempt_id=task.attempt_id,
+                            fencing_token=task.fencing_token,
+                            payload=notification,
+                        )
                 await self._tasks.finish(task, status="failed", error_code=type(exc).__name__)
+                if notification is not None:
+                    await self._notify_parent_child_done(task, notification)
             else:
                 await self._tasks.defer(task, "admission_unavailable")
                 raise
@@ -540,4 +785,188 @@ class AgentTaskDispatcher:
                 LOGGER.info(
                     "agent_task_interrupt_applied",
                     extra={"task_id": task.id, "worker_id": task.worker_id},
+                )
+
+    @staticmethod
+    def _child_input(task) -> dict:
+        payload = getattr(task, "input", None)
+        return payload if isinstance(payload, dict) else {}
+
+    def _child_summary(self, task, status: str) -> str:
+        context = self._child_input(task).get("context") or {}
+        description = str(context.get("dispatch_description") or "").strip()
+        label = f'"{description}"' if description else str(task.id)
+        if status == "completed":
+            return f"Worker {label} completed."
+        return f"Worker {label} finished with status {status}."
+
+    @staticmethod
+    def _notification_usage(session, duration_ms: int) -> dict:
+        messages = list(getattr(session, "messages", None) or [])
+        return {
+            "total_messages": len(messages),
+            "tool_uses": sum(
+                1 for message in messages if message.role == MessageRole.tool
+            ),
+            "duration_ms": int(duration_ms),
+            "event_count": int(getattr(session, "event_count", 0) or 0),
+            "snapshot_count": int(getattr(session, "snapshot_count", 0) or 0),
+        }
+
+    def _child_notification(
+        self,
+        task,
+        *,
+        status: str,
+        summary: str,
+        result_text: str,
+        usage: dict | None = None,
+    ) -> dict | None:
+        """Build the durable child outcome the parent coordinator resumes on."""
+        if task.operation != "coordinator_child" or not task.parent_task_id:
+            return None
+        payload = self._child_input(task)
+        metadata = payload.get("metadata") or {}
+        context = payload.get("context") or {}
+        return {
+            "child_task_id": task.id,
+            "parent_task_id": task.parent_task_id,
+            "root_trace_id": task.root_trace_id,
+            "child_session_id": task.session_id,
+            "child_turn_id": task.turn_id,
+            "child_request_id": task.request_id,
+            "child_trace_id": task.trace_id,
+            "attempt_id": task.attempt_id,
+            "fencing_token": task.fencing_token,
+            "worker_task_id": str(
+                metadata.get("task_id") or context.get("task_id") or ""
+            ),
+            "worker_agent_key": str(
+                payload.get("agent_key") or metadata.get("worker_agent_key") or ""
+            ),
+            "worker_parent_turn_id": str(metadata.get("parent_turn_id") or ""),
+            "status": status,
+            "summary": summary,
+            "result_text": result_text,
+            "usage": dict(usage or {}),
+        }
+
+    async def _notify_parent_child_done(self, task, notification: dict) -> None:
+        if self._coordinator is None:
+            LOGGER.warning(
+                "coordinator_child_notification_skipped",
+                extra={
+                    "task_id": task.id,
+                    "parent_task_id": task.parent_task_id,
+                    "reason": "coordinator_service_not_injected",
+                },
+            )
+            return
+        try:
+            await self._coordinator.on_child_task_finished(
+                parent_task_id=str(task.parent_task_id),
+                child_task_id=task.id,
+                child_session_id=task.session_id,
+                notification=notification,
+            )
+        except Exception as exc:
+            # The child fact is already committed; losing only the parent
+            # continuation must never rewrite the child outcome.
+            LOGGER.exception(
+                "coordinator_child_notification_failed",
+                extra={
+                    "task_id": task.id,
+                    "parent_task_id": task.parent_task_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+    async def reap_coordinator_children(self) -> int:
+        """Fail overdue children and resume their parents exactly once."""
+        config = self._settings.orchestration
+        rows = await self._tasks.reap_expired_children(
+            now=datetime.now(timezone.utc),
+            timeout_seconds=config.coordinator_child_timeout_seconds,
+        )
+        for row in rows:
+            try:
+                task = await self._tasks.get(row["id"])
+            except KeyError:
+                LOGGER.warning(
+                    "coordinator_child_reap_record_missing",
+                    extra={"child_task_id": row["id"], "parent_task_id": row.get("parent_task_id")},
+                )
+                continue
+            notification = self._child_notification(
+                task,
+                status="failed",
+                summary=self._child_summary(task, "failed")
+                + f" Timeout after {config.coordinator_child_timeout_seconds}s.",
+                result_text="coordinator_child_timeout",
+            )
+            if notification is None:
+                continue
+            await self._notify_parent_child_done(task, notification)
+        if rows:
+            LOGGER.info(
+                "coordinator_children_reaped",
+                extra={"reaped": len(rows), "timeout_seconds": config.coordinator_child_timeout_seconds},
+            )
+        return len(rows)
+
+    async def start_child_reaper(self) -> None:
+        """Start the overdue-child reaper when durable children are enabled."""
+        if not self._settings.orchestration.coordinator_durable_children:
+            LOGGER.info("coordinator_child_reaper_disabled")
+            return
+        if self._child_reaper_task is not None and not self._child_reaper_task.done():
+            return
+        self._child_reaper_stop = asyncio.Event()
+        self._child_reaper_task = asyncio.create_task(
+            self._child_reaper_loop(),
+            name="coordinator-child-reaper",
+        )
+        LOGGER.info(
+            "coordinator_child_reaper_started",
+            extra={
+                "interval_seconds": self._child_reaper_interval_seconds(),
+                "timeout_seconds": self._settings.orchestration.coordinator_child_timeout_seconds,
+            },
+        )
+
+    async def stop_child_reaper(self) -> None:
+        """Stop the reaper without leaving a background task behind."""
+        task = self._child_reaper_task
+        stop = self._child_reaper_stop
+        self._child_reaper_task = None
+        self._child_reaper_stop = None
+        if task is None:
+            return
+        if stop is not None:
+            stop.set()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        LOGGER.info("coordinator_child_reaper_stopped")
+
+    def _child_reaper_interval_seconds(self) -> float:
+        return max(self._settings.orchestration.agent_task_control_poll_seconds * 10, .05)
+
+    async def _child_reaper_loop(self) -> None:
+        stop = self._child_reaper_stop
+        interval = self._child_reaper_interval_seconds()
+        while stop is not None and not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), interval)
+                return
+            except TimeoutError:
+                pass
+            try:
+                await self.reap_coordinator_children()
+            except Exception as exc:
+                LOGGER.exception(
+                    "coordinator_child_reaper_pass_failed",
+                    extra={"error_type": type(exc).__name__},
                 )

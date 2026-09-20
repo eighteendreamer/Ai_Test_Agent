@@ -663,6 +663,9 @@ async def lifespan(app: FastAPI):
         settings, agent_task_store, session_service, resource_lease_manager,
     )
     session_service.set_agent_task_dispatcher(app.state.agent_task_dispatcher)
+    coordinator_runtime_service.set_agent_task_store(agent_task_store)
+    coordinator_runtime_service.set_agent_task_dispatcher(app.state.agent_task_dispatcher)
+    app.state.agent_task_dispatcher.set_coordinator_service(coordinator_runtime_service)
     app.state.registry_service = RegistryService(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
@@ -684,6 +687,7 @@ async def lifespan(app: FastAPI):
     )
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
+    await app.state.agent_task_dispatcher.start_child_reaper()
     await session_service.recover_expired_turn_executions()
     await coordinator_runtime_service.recover_orphaned_dispatches()
 
@@ -754,6 +758,9 @@ async def lifespan(app: FastAPI):
             await deep_agent_checkpoint_provider.close()
         await embedding_runtime_service.close()
         await test_run_service.stop_lease_reaper()
+        child_reaper = getattr(app.state, "agent_task_dispatcher", None)
+        if child_reaper is not None:
+            await child_reaper.stop_child_reaper()
         await tencent_auth_monitor.shutdown()
         await mcp_connection_manager.shutdown()
         await observability_service.flush()

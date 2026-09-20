@@ -12,9 +12,10 @@ from xml.sax.saxutils import escape
 
 from src.application.sessions.session_service import SessionService
 from src.application.observability import LangSmithObservabilityAdapter
-from src.core.agent_communication import AgentMessage, AgentMessageBus, ChildSessionWatcher
+from src.core.agent_communication import AgentMessageBus, ChildSessionWatcher
 from src.core.agent_control import AgentControlService
 from src.core.config import Settings
+from src.core.request_context import get_request_context, new_id
 from src.core.worker_pool import WorkerPool
 from src.registry.agents import AgentRegistry
 from src.runtime.store import SessionStore
@@ -46,6 +47,10 @@ class WorkerDispatchSpec:
     context: dict[str, Any] = field(default_factory=dict)
 
 
+# A settled worker must never be re-settled by a duplicate child completion.
+TERMINAL_WORKER_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+
+
 class CoordinatorRuntimeService:
     def __init__(
         self,
@@ -69,10 +74,20 @@ class CoordinatorRuntimeService:
         self._message_bus = AgentMessageBus()
         self._watchers: dict[str, ChildSessionWatcher] = {}
         self._observability_service: LangSmithObservabilityAdapter | None = None
+        self._agent_task_dispatcher = None
+        self._agent_task_store = None
         self._owner_id = f"coordinator:{uuid4()}"
 
     def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
         self._observability_service = service
+
+    def set_agent_task_dispatcher(self, dispatcher) -> None:
+        """Inject the durable task dispatcher; built after the dispatcher itself."""
+        self._agent_task_dispatcher = dispatcher
+
+    def set_agent_task_store(self, store) -> None:
+        """Inject the Agent task store used to resolve parent/child task rows."""
+        self._agent_task_store = store
 
     def _on_worker_task_done(self, session_id: str, task_id: str) -> None:
         watcher = self._watchers.pop(session_id, None)
@@ -88,6 +103,7 @@ class CoordinatorRuntimeService:
         reason: str,
     ) -> None:
         """Cancel coordinator-owned coroutines and settle their child sessions."""
+        await self._cancel_durable_children(child_session_ids, reason=reason)
         tasks = [
             task
             for task_id in task_ids
@@ -131,6 +147,50 @@ class CoordinatorRuntimeService:
                     payload={"reason": reason, "source": "security_coordinator"},
                 ),
             )
+
+    async def _cancel_durable_children(self, child_session_ids: list[str], *, reason: str) -> None:
+        """Cancel not-yet-started durable children before the in-process teardown."""
+        if self._agent_task_store is None or not child_session_ids:
+            return
+        for child_session_id in child_session_ids:
+            try:
+                child = await self._store.get_session(child_session_id)
+            except Exception as exc:
+                logger.warning(
+                    "coordinator_child_parent_context_lookup_failed",
+                    extra={
+                        "child_session_id": child_session_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                continue
+            metadata = child.metadata if child is not None and isinstance(child.metadata, dict) else {}
+            parent_session_id = str(metadata.get("parent_session_id") or "")
+            parent_turn_id = str(metadata.get("parent_turn_id") or "")
+            if not parent_session_id or not parent_turn_id:
+                continue
+            await self.cancel_parent_children(parent_session_id, parent_turn_id, reason=reason)
+            return
+
+    async def cancel_parent_children(self, parent_session_id: str, parent_turn_id: str, *, reason: str = "") -> int:
+        """Cancel queued coordinator children owned by one parent turn."""
+        if self._agent_task_store is None or not parent_session_id or not parent_turn_id:
+            return 0
+        parent_task = await self._resolve_parent_task(parent_session_id, parent_turn_id)
+        if parent_task is None:
+            return 0
+        cancelled = await self._agent_task_store.cancel_unstarted_children(parent_task.id)
+        logger.info(
+            "coordinator_children_cancel_requested",
+            extra={
+                "parent_task_id": parent_task.id,
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "cancelled": cancelled,
+                "reason": reason or "parent_cancelled",
+            },
+        )
+        return cancelled
 
     async def recover_orphaned_dispatches(self) -> int:
         """Reconcile persisted worker records after a coordinator restart.
@@ -335,28 +395,27 @@ class CoordinatorRuntimeService:
                 "source_stage": str(worker.context.get("source_stage") or "").strip(),
                 "source_round_index": int(worker.context.get("source_round_index") or 0),
             }
-            launch_records.append(launch_record)
 
-            task = asyncio.create_task(
-                self._run_child_session(
+            try:
+                child_task_id = await self._start_child_worker(
+                    parent_session=parent_session,
                     parent_session_id=parent_session_id,
                     parent_turn_id=parent_turn_id,
                     parent_trace_id=parent_trace_id,
                     child_session_id=child_session.id,
                     worker=worker,
+                    mode_key=mode_key,
+                    register_pool=True,
                 )
-            )
-            self._active_tasks[worker.task_id] = task
-            task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
-            self._worker_pool.register_worker(
-                worker.task_id,
-                child_session.id,
-                worker.agent_key,
-            )
-            self._watchers[child_session.id] = ChildSessionWatcher(child_session.id)
-            task.add_done_callback(
-                lambda _finished, sid=child_session.id, tid=worker.task_id: self._on_worker_task_done(sid, tid)
-            )
+            except ValueError as exc:
+                launch_record["status"] = "failed"
+                launch_record["error"] = str(exc)
+                launch_records.append(launch_record)
+                immediate_failures.append((worker, f"Coordinator child dispatch rejected: {exc}"))
+                continue
+            if child_task_id:
+                launch_record["child_task_id"] = child_task_id
+            launch_records.append(launch_record)
 
         await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
         if followup_workers:
@@ -423,6 +482,129 @@ class CoordinatorRuntimeService:
             },
             "error": "; ".join(immediate_failure_errors) or None,
         }
+
+    def _durable_children_enabled(self) -> bool:
+        return bool(
+            self._settings.orchestration.coordinator_durable_children
+            and self._agent_task_dispatcher is not None
+        )
+
+    async def _resolve_parent_task(self, parent_session_id: str, parent_turn_id: str):
+        """Find the durable task owning the parent turn that is dispatching now.
+
+        No upstream counterpart (checked: ToolExecutionContext fields, security
+        mode `_build_dispatch_context`, coordinator `dispatch` callers): the tool
+        dispatch context never carries a durable task id, so the running task is
+        resolved from the pending Agent task rows of the parent session.
+        """
+        if self._agent_task_store is None or not parent_session_id or not parent_turn_id:
+            return None
+        try:
+            pending = await self._agent_task_store.list_session(parent_session_id, pending_only=True)
+        except Exception as exc:
+            logger.warning(
+                "coordinator_parent_task_lookup_failed",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return None
+        for record in pending:
+            if record.turn_id != parent_turn_id:
+                continue
+            if record.operation not in {"message", "coordinator_resume"}:
+                continue
+            if record.status not in {"claimed", "running"}:
+                continue
+            return record
+        return None
+
+    async def _start_child_worker(
+        self,
+        *,
+        parent_session,
+        parent_session_id: str,
+        parent_turn_id: str,
+        parent_trace_id: str,
+        child_session_id: str,
+        worker: WorkerDispatchSpec,
+        mode_key: str,
+        register_pool: bool = True,
+    ) -> str | None:
+        """Launch one worker durably when the feature flag is on, else in-process.
+
+        Returns the durable child task id, or None for the in-process path.
+        Raises ValueError when the store rejects the assignment (depth, fan-out
+        or cycle guard) so the caller can settle the dispatch record.
+        """
+        parent_task = await self._resolve_parent_task(parent_session_id, parent_turn_id)
+        if self._durable_children_enabled() and parent_task is not None:
+            context = get_request_context()
+            receipt = await self._agent_task_dispatcher.submit_coordinator_child(
+                parent_task_id=parent_task.id,
+                root_trace_id=parent_task.root_trace_id or parent_trace_id,
+                child_session_id=child_session_id,
+                turn_id=str(uuid4()),
+                project_id=getattr(parent_session, "project_id", None),
+                request_id=context.request_id if context else new_id("req"),
+                trace_id=parent_trace_id or (context.trace_id if context else "") or new_id("trace"),
+                run_id=context.run_id if context else None,
+                worker=worker,
+                mode_key=mode_key,
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+            )
+            logger.info(
+                "coordinator_child_dispatched_durable",
+                extra={
+                    "parent_task_id": parent_task.id,
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "child_task_id": receipt.id,
+                    "child_session_id": child_session_id,
+                    "task_id": worker.task_id,
+                },
+            )
+            return receipt.id
+        if self._settings.orchestration.coordinator_durable_children and parent_task is None:
+            # The parent turn is not running under a durable Agent task (for
+            # example the worker pipeline is disabled). Falling back keeps the
+            # dispatch observable instead of silently dropping the worker.
+            logger.warning(
+                "coordinator_durable_child_parent_task_missing",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "task_id": worker.task_id,
+                    "reason": "in_process_fallback",
+                },
+            )
+        task = asyncio.create_task(
+            self._run_child_session(
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                parent_trace_id=parent_trace_id,
+                child_session_id=child_session_id,
+                worker=worker,
+            )
+        )
+        self._active_tasks[worker.task_id] = task
+        task.add_done_callback(
+            lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None)
+        )
+        if register_pool:
+            self._worker_pool.register_worker(
+                worker.task_id,
+                child_session_id,
+                worker.agent_key,
+            )
+            self._watchers[child_session_id] = ChildSessionWatcher(child_session_id)
+            task.add_done_callback(
+                lambda _finished, sid=child_session_id, tid=worker.task_id: self._on_worker_task_done(sid, tid)
+            )
+        return None
 
     def _trusted_worker_metadata(self, parent_session: Any, mode_key: str) -> dict[str, Any]:
         """Propagate server-trusted security scope into security child sessions.
@@ -570,6 +752,110 @@ class CoordinatorRuntimeService:
                 lambda _finished, task_id=worker.task_id: self._watch_tasks.pop(task_id, None)
             )
 
+    async def _project_worker_notification(
+        self,
+        *,
+        parent_session_id: str,
+        parent_turn_id: str,
+        child_session_id: str,
+        worker: WorkerDispatchSpec,
+        content: str,
+        status: str,
+        failure_reason: str = "",
+    ) -> tuple[Any, bool] | None:
+        """Apply the parent-side projection of one child notification.
+
+        The caller must hold ``self._parent_locks[parent_session_id]``. Returns
+        ``(parent_session, auto_stopped)`` or None when the parent vanished.
+        """
+        parent_session = await self._store.get_session(parent_session_id)
+        if parent_session is None:
+            return None
+
+        await self._mark_worker_status(
+            parent_session_id=parent_session_id,
+            task_id=worker.task_id,
+            status=status,
+            child_session_id=child_session_id,
+            worker=worker,
+        )
+        await self._store.append_event(
+            parent_session_id,
+            ExecutionEvent(
+                type="worker.task_notification_received",
+                session_id=parent_session_id,
+                timestamp=datetime.utcnow(),
+                payload={
+                    "turn_id": parent_turn_id,
+                    "task_id": worker.task_id,
+                    "child_session_id": child_session_id,
+                    "worker_agent_key": worker.agent_key,
+                    "worker_status": status,
+                },
+            ),
+        )
+        await self._sync_child_approvals_to_parent(
+            parent_session_id=parent_session_id,
+            parent_turn_id=parent_turn_id,
+            child_session_id=child_session_id,
+            worker=worker,
+        )
+
+        parent_session = await self._store.get_session(parent_session_id)
+        if parent_session is None:
+            return None
+
+        should_stop, stop_message = self._update_failure_guard(
+            session=parent_session,
+            parent_turn_id=parent_turn_id,
+            status=status,
+            worker=worker,
+            failure_reason=failure_reason or self._extract_failure_reason(content),
+        )
+        self._update_code_review_report_metadata(
+            session=parent_session,
+            worker=worker,
+            status=status,
+            child_session_id=child_session_id,
+            content=content,
+        )
+        await self._store.save_session(parent_session)
+
+        if should_stop:
+            parent_session.messages.append(
+                ChatMessage(
+                    id=str(uuid4()),
+                    role=MessageRole.assistant,
+                    content=stop_message,
+                    created_at=datetime.utcnow(),
+                    metadata={
+                        "message_kind": "automatic_stop",
+                        "turn_id": parent_turn_id,
+                        "worker_agent_key": worker.agent_key,
+                        "worker_status": status,
+                    },
+                )
+            )
+            parent_session.status = SessionStatus.failed
+            parent_session.updated_at = datetime.utcnow()
+            await self._store.save_session(parent_session)
+            await self._store.append_event(
+                parent_session_id,
+                ExecutionEvent(
+                    type="worker.auto_stopped",
+                    session_id=parent_session_id,
+                    timestamp=datetime.utcnow(),
+                    payload={
+                        "turn_id": parent_turn_id,
+                        "task_id": worker.task_id,
+                        "reason": stop_message,
+                        "worker_agent_key": worker.agent_key,
+                    },
+                ),
+            )
+            return parent_session, True
+        return parent_session, False
+
     async def _deliver_notification(
         self,
         parent_session_id: str,
@@ -581,91 +867,19 @@ class CoordinatorRuntimeService:
         failure_reason: str = "",
     ) -> None:
         async with self._parent_locks[parent_session_id]:
-            parent_session = await self._store.get_session(parent_session_id)
-            if parent_session is None:
-                return
-
-            await self._mark_worker_status(
-                parent_session_id=parent_session_id,
-                task_id=worker.task_id,
-                status=status,
-                child_session_id=child_session_id,
-                worker=worker,
-            )
-            await self._store.append_event(
-                parent_session_id,
-                ExecutionEvent(
-                    type="worker.task_notification_received",
-                    session_id=parent_session_id,
-                    timestamp=datetime.utcnow(),
-                    payload={
-                        "turn_id": parent_turn_id,
-                        "task_id": worker.task_id,
-                        "child_session_id": child_session_id,
-                        "worker_agent_key": worker.agent_key,
-                        "worker_status": status,
-                    },
-                ),
-            )
-            await self._sync_child_approvals_to_parent(
+            projected = await self._project_worker_notification(
                 parent_session_id=parent_session_id,
                 parent_turn_id=parent_turn_id,
                 child_session_id=child_session_id,
                 worker=worker,
-            )
-
-            parent_session = await self._store.get_session(parent_session_id)
-            if parent_session is None:
-                return
-
-            should_stop, stop_message = self._update_failure_guard(
-                session=parent_session,
-                parent_turn_id=parent_turn_id,
-                status=status,
-                worker=worker,
-                failure_reason=failure_reason or self._extract_failure_reason(content),
-            )
-            self._update_code_review_report_metadata(
-                session=parent_session,
-                worker=worker,
-                status=status,
-                child_session_id=child_session_id,
                 content=content,
+                status=status,
+                failure_reason=failure_reason,
             )
-            await self._store.save_session(parent_session)
-
+            if projected is None:
+                return
+            parent_session, should_stop = projected
             if should_stop:
-                parent_session.messages.append(
-                    ChatMessage(
-                        id=str(uuid4()),
-                        role=MessageRole.assistant,
-                        content=stop_message,
-                        created_at=datetime.utcnow(),
-                        metadata={
-                            "message_kind": "automatic_stop",
-                            "turn_id": parent_turn_id,
-                            "worker_agent_key": worker.agent_key,
-                            "worker_status": status,
-                        },
-                    )
-                )
-                parent_session.status = SessionStatus.failed
-                parent_session.updated_at = datetime.utcnow()
-                await self._store.save_session(parent_session)
-                await self._store.append_event(
-                    parent_session_id,
-                    ExecutionEvent(
-                        type="worker.auto_stopped",
-                        session_id=parent_session_id,
-                        timestamp=datetime.utcnow(),
-                        payload={
-                            "turn_id": parent_turn_id,
-                            "task_id": worker.task_id,
-                            "reason": stop_message,
-                            "worker_agent_key": worker.agent_key,
-                        },
-                    ),
-                )
                 return
 
             followup_launches = await self._maybe_launch_followup_workers(
@@ -739,6 +953,248 @@ class CoordinatorRuntimeService:
             parent_session.messages.append(notification_message)
             parent_session.updated_at = datetime.utcnow()
             await self._store.save_session(parent_session)
+
+    def _worker_from_dispatch(
+        self,
+        record: dict[str, Any] | None,
+        notification: dict[str, Any],
+        worker_task_id: str,
+    ) -> WorkerDispatchSpec:
+        """Rebuild the worker identity a projection needs from its dispatch record."""
+        item = record if isinstance(record, dict) else {}
+        return WorkerDispatchSpec(
+            task_id=str(item.get("task_id") or worker_task_id),
+            description=str(item.get("description") or ""),
+            prompt="",
+            agent_key=str(item.get("agent_key") or notification.get("worker_agent_key") or ""),
+            model_key=str(item.get("model_key") or "").strip() or None,
+            context={
+                "debate_stage": str(item.get("debate_stage") or "").strip(),
+                "debate_round_index": int(item.get("debate_round_index") or 0),
+                "debate_total_round_count": int(item.get("debate_total_round_count") or 0),
+                "dispatch_role": str(item.get("dispatch_role") or "").strip(),
+                "source_stage": str(item.get("source_stage") or "").strip(),
+                "source_round_index": int(item.get("source_round_index") or 0),
+            },
+        )
+
+    async def on_child_task_finished(
+        self,
+        *,
+        parent_task_id: str,
+        child_task_id: str,
+        child_session_id: str,
+        notification: dict[str, Any],
+    ) -> None:
+        """Project one settled durable child and queue its parent continuation."""
+        if self._agent_task_store is None or self._agent_task_dispatcher is None:
+            logger.warning(
+                "coordinator_child_finished_without_durable_wiring",
+                extra={"child_task_id": child_task_id, "parent_task_id": parent_task_id},
+            )
+            return
+        try:
+            parent_task = await self._agent_task_store.get(parent_task_id)
+        except KeyError:
+            logger.warning(
+                "coordinator_child_parent_task_missing",
+                extra={"child_task_id": child_task_id, "parent_task_id": parent_task_id},
+            )
+            return
+        parent_session_id = parent_task.session_id
+        parent_turn_id = parent_task.turn_id
+        worker_task_id = str(notification.get("worker_task_id") or child_task_id)
+        status = str(notification.get("status") or "completed")
+        result_text = str(notification.get("result_text") or "")
+        usage = notification.get("usage")
+        resume_content = ""
+        resume_agent_key = ""
+        async with self._parent_locks[parent_session_id]:
+            parent_session = await self._store.get_session(parent_session_id)
+            if parent_session is None:
+                logger.warning(
+                    "coordinator_child_parent_session_missing",
+                    extra={
+                        "child_task_id": child_task_id,
+                        "parent_task_id": parent_task_id,
+                        "parent_session_id": parent_session_id,
+                    },
+                )
+                return
+            record = next(
+                (
+                    item
+                    for item in parent_session.metadata.get("worker_dispatches", [])
+                    if isinstance(item, dict) and str(item.get("task_id") or "") == worker_task_id
+                ),
+                None,
+            )
+            if record is not None and str(record.get("status") or "") in TERMINAL_WORKER_STATUSES:
+                logger.info(
+                    "coordinator_child_duplicate_finished_ignored",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "task_id": worker_task_id,
+                        "child_task_id": child_task_id,
+                        "worker_status": record.get("status"),
+                    },
+                )
+                return
+            worker = self._worker_from_dispatch(record, notification, worker_task_id)
+            content = self._build_task_notification(
+                task_id=worker.task_id,
+                child_session_id=child_session_id,
+                agent_key=worker.agent_key,
+                trace_id=str(notification.get("root_trace_id") or parent_task.trace_id),
+                status=status,
+                summary=str(
+                    notification.get("summary")
+                    or f'Worker "{worker.description}" finished with status {status}.'
+                ),
+                result=result_text,
+                usage=usage if isinstance(usage, dict) else {},
+            )
+            logger.info(
+                "coordinator_child_finished",
+                extra={
+                    "parent_task_id": parent_task_id,
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "child_task_id": child_task_id,
+                    "child_session_id": child_session_id,
+                    "task_id": worker.task_id,
+                    "worker_status": status,
+                },
+            )
+            projected = await self._project_worker_notification(
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                child_session_id=child_session_id,
+                worker=worker,
+                content=content,
+                status=status,
+                failure_reason=result_text if status == SessionStatus.failed.value else "",
+            )
+            if projected is None:
+                return
+            parent_session, should_stop = projected
+            if should_stop:
+                return
+            if status == SessionStatus.waiting_approval.value:
+                # An approval continuation is its own task type and carries no
+                # child result; keep watching in-process until it truly settles.
+                watch_task = asyncio.create_task(
+                    self._watch_child_session_until_settled(
+                        parent_session_id=parent_session_id,
+                        parent_turn_id=parent_turn_id,
+                        parent_trace_id=str(notification.get("child_trace_id") or parent_task.trace_id),
+                        child_session_id=child_session_id,
+                        worker=worker,
+                    )
+                )
+                self._watch_tasks[worker.task_id] = watch_task
+                watch_task.add_done_callback(
+                    lambda _finished, task_id=worker.task_id: self._watch_tasks.pop(task_id, None)
+                )
+                return
+            # Debate rounds stay registered here: both helpers only append
+            # dispatch records and submit further child tasks when due, so the
+            # durable path keeps the previous in-process semantics.
+            followup_launches = await self._maybe_launch_followup_workers(
+                parent_session=parent_session,
+                parent_turn_id=parent_turn_id,
+            )
+            if followup_launches:
+                parent_session = await self._store.get_session(parent_session_id)
+                if parent_session is None:
+                    return
+            completion_launch = await self._maybe_launch_completion_worker(
+                parent_session=parent_session,
+                parent_turn_id=parent_turn_id,
+            )
+            if completion_launch is not None:
+                parent_session = await self._store.get_session(parent_session_id)
+                if parent_session is None:
+                    return
+
+            auto_resume = (
+                parent_session.session_mode == SessionMode.coordinator
+                or (parent_session.selected_agent or "") == "coordinator"
+            ) and parent_session.status not in {
+                SessionStatus.running,
+                SessionStatus.waiting_approval,
+            }
+            if not auto_resume:
+                parent_session.messages.append(
+                    ChatMessage(
+                        id=str(uuid4()),
+                        role=MessageRole.user,
+                        content=content,
+                        created_at=datetime.utcnow(),
+                        metadata={
+                            "message_kind": "task_notification",
+                            "task_id": worker.task_id,
+                            "child_session_id": child_session_id,
+                            "worker_agent_key": worker.agent_key,
+                            "worker_status": status,
+                            "persist_transcript": False,
+                            "context_eligible": False,
+                            "transcript_bucket": "event",
+                        },
+                    )
+                )
+                parent_session.updated_at = datetime.utcnow()
+                await self._store.save_session(parent_session)
+                return
+            resume_content = content
+            resume_agent_key = parent_session.selected_agent or "coordinator"
+
+        # Released the parent lock before writing the parent continuation so a
+        # concurrent notification cannot serialize behind this database submit.
+        resume = await self._agent_task_dispatcher.submit_coordinator_resume(
+            parent_session_id=parent_session_id,
+            parent_turn_id=parent_turn_id,
+            project_id=parent_task.project_id,
+            request_id=new_id("req"),
+            trace_id=str(notification.get("child_trace_id") or "") or parent_task.trace_id or new_id("trace"),
+            run_id=parent_task.run_id,
+            run_item_id=parent_task.run_item_id,
+            parent_task_id=parent_task.id,
+            notification_task_id=f"{child_task_id}:{notification.get('attempt_id') or 'na'}",
+            content=resume_content,
+            context={
+                "message_source": "task_notification",
+                "parent_turn_id": parent_turn_id,
+                "parent_task_id": parent_task.id,
+                "child_session_id": child_session_id,
+                "child_task_id": child_task_id,
+                "task_id": worker_task_id,
+                "worker_agent_key": str(notification.get("worker_agent_key") or ""),
+                "worker_status": status,
+                "root_trace_id": str(notification.get("root_trace_id") or ""),
+            },
+            metadata={
+                "message_kind": "task_notification",
+                "task_id": worker_task_id,
+                "child_session_id": child_session_id,
+                "child_task_id": child_task_id,
+                "worker_agent_key": str(notification.get("worker_agent_key") or ""),
+                "worker_status": status,
+            },
+            agent_key=resume_agent_key,
+        )
+        logger.info(
+            "coordinator_resume_queued",
+            extra={
+                "task_id": resume.id,
+                "parent_task_id": parent_task.id,
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "child_task_id": child_task_id,
+                "worker_status": status,
+            },
+        )
 
     async def _watch_child_session_until_settled(
         self,
@@ -1256,6 +1712,30 @@ class CoordinatorRuntimeService:
             "debate_total_round_count": int(worker.context.get("debate_total_round_count") or 0),
             "dispatch_role": "completion_worker",
         }
+        try:
+            child_task_id = await self._start_child_worker(
+                parent_session=parent_session,
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                parent_trace_id=parent_trace_id,
+                child_session_id=child_session.id,
+                worker=worker,
+                mode_key=self._resolve_worker_mode_key(worker),
+                register_pool=False,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "coordinator_completion_child_rejected",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "task_id": worker.task_id,
+                    "reason": str(exc),
+                },
+            )
+            return None
+        if child_task_id:
+            launch_record["child_task_id"] = child_task_id
         worker_dispatches = list(parent_session.metadata.get("worker_dispatches", []))
         worker_dispatches.append(launch_record)
         parent_session.metadata["worker_dispatches"] = worker_dispatches
@@ -1268,18 +1748,6 @@ class CoordinatorRuntimeService:
             total_round_count=int(worker.context.get("debate_total_round_count") or 0),
         )
         await self._store.save_session(parent_session)
-
-        task = asyncio.create_task(
-            self._run_child_session(
-                parent_session_id=parent_session_id,
-                parent_turn_id=parent_turn_id,
-                parent_trace_id=parent_trace_id,
-                child_session_id=child_session.id,
-                worker=worker,
-            )
-        )
-        self._active_tasks[worker.task_id] = task
-        task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
         return launch_record
 
     async def _maybe_launch_followup_workers(
@@ -1402,19 +1870,31 @@ class CoordinatorRuntimeService:
                 "source_stage": source_stage,
                 "source_round_index": source_round_index,
             }
-            launch_records.append(launch_record)
-
-            task = asyncio.create_task(
-                self._run_child_session(
+            try:
+                child_task_id = await self._start_child_worker(
+                    parent_session=parent_session,
                     parent_session_id=parent_session_id,
                     parent_turn_id=parent_turn_id,
                     parent_trace_id=parent_trace_id,
                     child_session_id=child_session.id,
                     worker=worker,
+                    mode_key=self._resolve_worker_mode_key(worker),
+                    register_pool=False,
                 )
-            )
-            self._active_tasks[worker.task_id] = task
-            task.add_done_callback(lambda _finished, task_id=worker.task_id: self._active_tasks.pop(task_id, None))
+            except ValueError as exc:
+                logger.warning(
+                    "coordinator_followup_child_rejected",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "task_id": worker.task_id,
+                        "reason": str(exc),
+                    },
+                )
+                continue
+            if child_task_id:
+                launch_record["child_task_id"] = child_task_id
+            launch_records.append(launch_record)
 
         remaining_pending = [
             item for item in normalized_pending if self._pending_worker_round_index(item) != next_round_index

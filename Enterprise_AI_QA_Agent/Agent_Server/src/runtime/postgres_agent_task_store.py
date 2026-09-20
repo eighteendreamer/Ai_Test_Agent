@@ -33,6 +33,8 @@ class AgentSubmissionConflict(ValueError):
 
 
 class PostgresAgentTaskStore:
+    MAX_COORDINATOR_DEPTH = 5
+
     def __init__(self, settings, session_store) -> None:
         self._settings = settings
         self._sessions = session_store
@@ -116,6 +118,36 @@ class PostgresAgentTaskStore:
         limit: int = 100,
     ) -> list[AgentTaskExecution]:
         return await asyncio.to_thread(self._list_sync, session_id, pending_only, limit)
+
+    async def list_children(self, parent_task_id: str) -> list[AgentTaskRecord]:
+        return await asyncio.to_thread(self._list_children_sync, parent_task_id)
+
+    async def set_result_payload(
+        self,
+        task_id: str,
+        *,
+        attempt_id: str | None,
+        fencing_token: int | None,
+        payload: dict,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._set_result_payload_sync,
+            task_id,
+            attempt_id,
+            fencing_token,
+            payload,
+        )
+
+    async def cancel_unstarted_children(self, parent_task_id: str) -> int:
+        return await asyncio.to_thread(self._cancel_unstarted_children_sync, parent_task_id)
+
+    async def reap_expired_children(
+        self,
+        *,
+        now: datetime,
+        timeout_seconds: int,
+    ) -> list[dict]:
+        return await asyncio.to_thread(self._reap_expired_children_sync, now, timeout_seconds)
 
     async def claim(self, task_id: str, *, worker_id: str) -> AgentTaskExecution:
         return await asyncio.to_thread(self._claim_sync, task_id, worker_id)
@@ -220,6 +252,15 @@ class PostgresAgentTaskStore:
                 "operation TEXT NOT NULL DEFAULT 'message'"
             )
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS reference_id TEXT")
+            cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS parent_task_id TEXT")
+            cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS root_trace_id TEXT")
+            cur.execute(
+                f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS result_payload JSONB"
+            )
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS {self._tasks}_parent_idx "
+                f"ON {self._tasks}(parent_task_id) WHERE parent_task_id IS NOT NULL"
+            )
             cur.execute(f"ALTER TABLE {self._tasks} ALTER COLUMN user_message_id DROP NOT NULL")
             cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._attempts} (
                 id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES {self._tasks}(id) ON DELETE CASCADE,
@@ -262,6 +303,8 @@ class PostgresAgentTaskStore:
         )
         if existing:
             return existing
+        if command.operation == "coordinator_child":
+            self._assert_coordinator_child_bounds(cur, command)
         if session["project_id"] != command.project_id:
             raise AgentSubmissionConflict("Session project changed before submission")
         cur.execute(
@@ -279,8 +322,9 @@ class PostgresAgentTaskStore:
             )
         cur.execute(f"""INSERT INTO {self._tasks}
             (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
-             priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s) RETURNING *""",
+             priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id,
+             parent_task_id,root_trace_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *""",
             (
                 command.task_id,
                 command.session_id,
@@ -297,6 +341,8 @@ class PostgresAgentTaskStore:
                 json.dumps(payload.model_dump(mode="json"), ensure_ascii=False),
                 message.id,
                 command.reference_id,
+                command.parent_task_id,
+                command.root_trace_id,
             ))
         row = cur.fetchone()
         if payload.interrupt_if_busy:
@@ -332,11 +378,42 @@ class PostgresAgentTaskStore:
         cur.execute(f"""INSERT INTO {self._settings.database.postgres_task_outbox_table}
             (event_key,stream,payload) VALUES (%s,%s,%s::jsonb)""",
             (
-                f"agent_turn:{command.task_id}",
+                f"{command.task_type}:{command.task_id}",
                 self._settings.orchestration.agent_task_stream,
                 command.model_dump_json(),
             ))
         return row
+
+    def _assert_coordinator_child_bounds(self, cur, command):
+        if not command.parent_task_id:
+            raise ValueError("coordinator_parent_task_id_required")
+        cur.execute(
+            f"""WITH RECURSIVE chain AS (
+                SELECT id, parent_task_id, 1 AS chain_depth, ARRAY[id] AS chain_path,
+                    FALSE AS chain_cycle
+                FROM {self._tasks} WHERE id=%s
+                UNION ALL
+                SELECT node.id, node.parent_task_id, chain.chain_depth + 1,
+                    chain.chain_path || node.id, node.id = ANY(chain.chain_path)
+                FROM {self._tasks} AS node JOIN chain ON node.id = chain.parent_task_id
+                WHERE NOT chain.chain_cycle
+            ) SELECT COALESCE(MAX(chain_depth), 0) AS chain_depth,
+                COALESCE(BOOL_OR(chain_cycle), FALSE) AS chain_cycle FROM chain""",
+            (command.parent_task_id,),
+        )
+        ancestors = cur.fetchone()
+        if ancestors["chain_cycle"]:
+            raise ValueError("coordinator_parent_cycle")
+        if ancestors["chain_depth"] == 0:
+            raise ValueError("coordinator_parent_not_found")
+        if ancestors["chain_depth"] + 1 > self.MAX_COORDINATOR_DEPTH:
+            raise ValueError("coordinator_depth_exceeded")
+        cur.execute(
+            f"SELECT count(*) AS count FROM {self._tasks} WHERE parent_task_id=%s",
+            (command.parent_task_id,),
+        )
+        if cur.fetchone()["count"] >= self._settings.orchestration.coordinator_max_workers:
+            raise ValueError("coordinator_child_limit_exceeded")
 
     def _submit_resume_sync(self, command, payload, idempotency_key):
         if command.operation != "manual_resume" or not command.reference_id:
@@ -711,6 +788,91 @@ class PostgresAgentTaskStore:
                 (session_id, min(max(1, limit), 1000)),
             )
             return [self._record(row) for row in cur.fetchall()]
+
+    def _list_children_sync(self, parent_task_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT * FROM {self._tasks} WHERE parent_task_id=%s ORDER BY sequence",
+                (parent_task_id,),
+            )
+            return [self._record(row) for row in cur.fetchall()]
+
+    def _set_result_payload_sync(self, task_id, attempt_id, fencing_token, payload):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {self._tasks} SET result_payload=%s::jsonb,updated_at=NOW() "
+                "WHERE id=%s AND attempt_id=%s AND (%s::bigint IS NULL OR fencing_token=%s)",
+                (
+                    json.dumps(payload, ensure_ascii=False),
+                    task_id,
+                    attempt_id,
+                    fencing_token,
+                    fencing_token,
+                ),
+            )
+            return cur.rowcount > 0
+
+    def _cancel_unstarted_children_sync(self, parent_task_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT * FROM {self._tasks} WHERE parent_task_id=%s "
+                "AND status IN ('queued','waiting_resource') AND interrupt_requested=FALSE "
+                "ORDER BY sequence FOR UPDATE",
+                (parent_task_id,),
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                self._update_status(cur, row, "cancelled", None, "parent_cancelled")
+            return len(rows)
+
+    def _reap_expired_children_sync(self, now, timeout_seconds):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT * FROM {self._tasks} WHERE operation='coordinator_child' "
+                "AND status IN ('queued','waiting_resource','claimed','running') "
+                "AND created_at < %s - make_interval(secs=>%s) "
+                "ORDER BY sequence FOR UPDATE SKIP LOCKED LIMIT 50",
+                (now, timeout_seconds),
+            )
+            rows = cur.fetchall()
+            reaped = []
+            for row in rows:
+                if row["status"] in {"claimed", "running"}:
+                    self._end_attempt(cur, row, "failed", "coordinator_child_timeout")
+                    self._clear_lease(cur, row)
+                cur.execute(
+                    f"""UPDATE {self._tasks} SET status='failed', result_status=NULL,
+                    waiting_reason=NULL, error_code='coordinator_child_timeout',
+                    result_payload=jsonb_set(jsonb_set(
+                        COALESCE(result_payload,'{{}}'::jsonb),
+                        '{{status}}',%s::jsonb),'{{summary}}',%s::jsonb),
+                    updated_at=NOW() WHERE id=%s""",
+                    (
+                        json.dumps("failed", ensure_ascii=False),
+                        json.dumps("coordinator child timeout", ensure_ascii=False),
+                        row["id"],
+                    ),
+                )
+                if row.get("user_message_id"):
+                    cur.execute(
+                        f"""UPDATE {self._settings.database.postgres_message_table}
+                        SET metadata=metadata || jsonb_build_object('delivery_status',%s::text)
+                        WHERE id=%s""",
+                        ("failed", row["user_message_id"]),
+                    )
+                self._event(
+                    cur,
+                    row,
+                    "agent_task.failed",
+                    {"status": "failed", "reason": "coordinator_child_timeout"},
+                )
+                reaped.append({
+                    "id": row["id"],
+                    "parent_task_id": row["parent_task_id"],
+                    "session_id": row["session_id"],
+                    "turn_id": row["turn_id"],
+                })
+            return reaped
 
     def _lock_session(self, cur, session_id):
         cur.execute(f"""SELECT *, COALESCE((metadata->>'turn_lease_expires_at')::timestamptz > NOW(), FALSE)
