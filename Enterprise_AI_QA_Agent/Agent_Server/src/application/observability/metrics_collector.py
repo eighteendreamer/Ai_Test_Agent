@@ -28,6 +28,7 @@ from src.application.observability.business_metrics import (
     redis_used_memory_bytes,
     resource_quota_limit,
     resource_quota_used,
+    stream_consumer_lag,
     stream_length,
     stream_pending,
 )
@@ -252,3 +253,17 @@ async def _collect_stream(client: Redis, stream: str, *, group: str | None) -> N
         _record_collector_error("stream_pending", ValueError(f"XPENDING summary has no pending for {stream}"))
         return
     stream_pending().labels(stream=stream).set(int(pending))
+    try:
+        groups = await client.xinfo_groups(stream)
+    except Exception as exc:
+        if _NOGROUP not in str(exc):
+            _record_collector_error("stream_consumer_lag", exc)
+        return
+    for entry in groups if isinstance(groups, list) else []:
+        if not isinstance(entry, dict) or entry.get("name") != group:
+            continue
+        lag = entry.get("lag")
+        # Redis < 7.0 omits lag and 7.0 reports None before a read cursor exists.
+        if lag is not None:
+            stream_consumer_lag().labels(stream=stream).set(int(lag))
+        break

@@ -491,3 +491,61 @@ def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
     aborted = render()
     assert 'qa_tool_calls_total{tool_key="cli-executor",status="aborted"}' in aborted
     assert 'qa_tool_call_seconds_count{tool_key="cli-executor"}' in aborted
+
+
+class _LagClient:
+    """Minimal stand-in exposing only what the lag export touches."""
+
+    def __init__(self, groups=None, error: Exception | None = None) -> None:
+        self._groups = groups or []
+        self._error = error
+
+    async def xlen(self, stream: str) -> int:
+        return 0
+
+    async def xpending(self, stream: str, group: str) -> dict[str, object]:
+        return {"pending": 0}
+
+    async def xinfo_groups(self, stream: str):
+        if self._error is not None:
+            raise self._error
+        return self._groups
+
+
+@pytest.mark.asyncio
+async def test_consumer_lag_exports_group_lag_and_tolerates_older_redis():
+    from src.application.observability.metrics_collector import _collect_stream
+
+    await _collect_stream(
+        _LagClient([{"name": "other", "lag": 99}, {"name": "g1", "lag": 7}]), "orders", group="g1"
+    )
+    assert 'qa_stream_consumer_lag{stream="orders"}' in render()
+    assert samples(render())[(business_metrics.STREAM_CONSUMER_LAG, (("stream", "orders"),))] == 7.0
+
+    # Redis < 7.0 omits the key and 7.0 reports None before the group has a cursor.
+    reset_registry()
+    await _collect_stream(_LagClient([{"name": "g1"}]), "legacy", group="g1")
+    await _collect_stream(_LagClient([{"name": "g1", "lag": None}]), "fresh", group="g1")
+    assert "qa_stream_consumer_lag" not in render()
+
+
+@pytest.mark.asyncio
+async def test_consumer_lag_failure_is_isolated_per_source():
+    from src.application.observability.metrics_collector import _collect_stream
+
+    await _collect_stream(_LagClient(error=RuntimeError("boom")), "broken", group="g1")
+    exported = render()
+    assert 'qa_collector_errors_total{item="stream_consumer_lag"}' in exported
+
+
+@pytest.mark.asyncio
+async def test_absent_consumer_group_is_idle_queue_not_a_fault():
+    from src.application.observability.metrics_collector import _collect_stream
+
+    await _collect_stream(
+        _LagClient(error=Exception("NOGROUP No such key 'x' consumer group 'g'")),
+        "ungrouped",
+        group="g1",
+    )
+    assert "qa_stream_consumer_lag" not in render()
+    assert 'item="stream_consumer_lag"' not in render()

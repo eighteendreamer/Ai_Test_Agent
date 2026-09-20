@@ -23,6 +23,7 @@ from src.schemas.run_management import (
     RunItemCompletion,
     TestRunItemRecord as _TestRunItemRecord,
     TestRunRecord as _TestRunRecord,
+    TestRunStats,
 )
 from tests.live_postgres_config import LivePostgresTestConfig
 
@@ -389,6 +390,7 @@ async def test_live_postgres_full_lifecycle_capacity():
             assert attempt_count == size
             assert result_count == size
             assert status_counts == {"passed": size}
+            assert set(run_row["record"]["stats"]) == set(TestRunStats.model_fields)
             assert run_row["status"] == "completed"
             assert run_row["record"]["status"] == "completed"
             assert run_row["record"]["stats"] == {

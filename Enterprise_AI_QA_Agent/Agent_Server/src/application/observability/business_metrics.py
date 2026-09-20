@@ -66,6 +66,8 @@ DB_COMMIT_ERRORS_TOTAL = "qa_db_commit_errors_total"
 DB_COMMIT_SECONDS = "qa_db_commit_duration_seconds"
 TOOL_CALLS_TOTAL = "qa_tool_calls_total"
 TOOL_CALL_SECONDS = "qa_tool_call_seconds"
+WORKER_ACTIVE = "qa_worker_active"
+STREAM_CONSUMER_LAG = "qa_stream_consumer_lag"
 
 REDIS_VECTOR_STORE = "redis"
 POSTGRES_VECTOR_STORE = "postgres_memory"
@@ -243,4 +245,13 @@ tool_calls_total = _counter(
 )
 tool_call_seconds = _histogram(
     TOOL_CALL_SECONDS, "Tool invocation duration from dispatch to terminal record.", "tool_key"
+)
+
+worker_active = _gauge(
+    WORKER_ACTIVE, "Task deliveries a worker slot is executing right now.", "stream"
+)
+stream_consumer_lag = _gauge(
+    STREAM_CONSUMER_LAG,
+    "Stream entries the consumer group has not delivered yet; absent on Redis < 7.",
+    "stream",
 )

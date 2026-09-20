@@ -11,6 +11,7 @@ from redis.exceptions import RedisError
 from src.application.observability.business_metrics import (
     redis_errors_total,
     task_deferred_total,
+    worker_active,
     worker_errors_total,
     worker_iteration_seconds,
 )
@@ -99,6 +100,7 @@ class RedisTaskWorker:
                 continue
             payload = task.payload
             started = perf_counter()
+            worker_active().labels(stream=stream).inc()
             context_token = set_request_context(
                 request_id=str(payload.get("request_id") or ""),
                 trace_id=str(payload.get("trace_id") or ""),
@@ -165,6 +167,7 @@ class RedisTaskWorker:
                     max(0.0, perf_counter() - started)
                 )
                 reset_request_context(context_token)
+                worker_active().labels(stream=stream).dec()
         return processed
 
     async def run(self) -> None:
