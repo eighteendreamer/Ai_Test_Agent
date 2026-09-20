@@ -142,16 +142,24 @@ class RedisVectorStore:
             await asyncio.sleep(poll_interval_seconds)
 
         if probe_id and probe_vector:
+            expected_key = f"{self.prefix(entity, embedding_version)}{probe_id}"
+            if not await self._client.exists(expected_key):
+                raise ValueError(
+                    "Redis vector replica is missing the probe document."
+                )
             hits = await self.search(
                 entity=entity,
                 embedding_version=embedding_version,
                 vector=probe_vector,
                 top_k=1,
             )
-            expected_key = f"{self.prefix(entity, embedding_version)}{probe_id}"
-            if not hits or hits[0].get("id") != expected_key:
+            # Tied vectors are ordered arbitrarily by RediSearch, so rank is not
+            # a usable signal; a zero distance proves the probe vector itself
+            # is indexed without truncation or zero padding.
+            distance = float(hits[0].get("vector_distance")) if hits else float("nan")
+            if not math.isfinite(distance) or distance > 1e-6:
                 raise ValueError(
-                    "Redis vector replica recall probe did not return the source record."
+                    "Redis vector replica did not index the probe vector exactly."
                 )
         LOGGER.info(
             "redis_vector_replica_validated",
