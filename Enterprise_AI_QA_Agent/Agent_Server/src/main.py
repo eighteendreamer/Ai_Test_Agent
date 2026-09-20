@@ -38,7 +38,10 @@ from src.api.routes.task_pool import router as task_pool_router
 from src.api.routes.resource_quotas import router as resource_quotas_router, run_router as run_resource_quotas_router
 from src.api.routes.resource_occupancy import router as resource_occupancy_router
 from src.api.routes.mail import router as mail_router
+from src.api.routes.metrics import router as metrics_router
+from src.api.http_metrics_middleware import HttpMetricsMiddleware
 from src.api.request_context_middleware import RequestContextMiddleware
+from src.core.log_format import configure_logging
 from src.application.mail.auth_monitor import TencentAuthMonitor
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
@@ -770,6 +773,7 @@ async def lifespan(app: FastAPI):
 
 
 settings = get_settings()
+configure_logging()
 app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
@@ -786,6 +790,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    HttpMetricsMiddleware,
 )
 
 app.include_router(health_router, prefix=settings.api_v1_prefix)
@@ -812,6 +820,8 @@ app.include_router(oauth_router, prefix=settings.api_v1_prefix)
 app.include_router(mail_router, prefix=settings.api_v1_prefix)
 app.include_router(docker_router, prefix=settings.api_v1_prefix)
 app.include_router(recordings_router, prefix=settings.api_v1_prefix)
+# Prometheus scrapers expect /metrics on the root path, so this one skips api_v1_prefix.
+app.include_router(metrics_router)
 
 
 if __name__ == "__main__":

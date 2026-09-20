@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any
 from uuid import uuid4
 
@@ -21,11 +21,15 @@ class RequestContext:
     attempt_id: str | None = None
     worker_id: str | None = None
     resource_id: str | None = None
+    task_type: str | None = None
+    queue: str | None = None
 
 
 _context: ContextVar[RequestContext | None] = ContextVar(
     "enterprise_ai_qa_request_context", default=None
 )
+
+CONTEXT_FIELDS: tuple[str, ...] = tuple(field.name for field in fields(RequestContext))
 
 
 def new_id(prefix: str) -> str:
@@ -48,6 +52,8 @@ def set_request_context(
     attempt_id: str | None = None,
     worker_id: str | None = None,
     resource_id: str | None = None,
+    task_type: str | None = None,
+    queue: str | None = None,
 ) -> object:
     return _context.set(
         RequestContext(
@@ -61,6 +67,8 @@ def set_request_context(
             attempt_id=attempt_id,
             worker_id=worker_id,
             resource_id=resource_id,
+            task_type=task_type,
+            queue=queue,
         )
     )
 
@@ -73,21 +81,7 @@ def reset_request_context(token: object) -> None:
 def bind_request_context(**updates: str | None):
     """Temporarily enrich the current correlation context for a child operation."""
     current = get_request_context()
-    values = {
-        name: getattr(current, name, None)
-        for name in (
-            "request_id",
-            "trace_id",
-            "project_id",
-            "session_id",
-            "turn_id",
-            "run_id",
-            "run_item_id",
-            "attempt_id",
-            "worker_id",
-            "resource_id",
-        )
-    }
+    values = {name: getattr(current, name, None) for name in CONTEXT_FIELDS}
     for name, value in updates.items():
         if name in values and value is not None:
             values[name] = value
@@ -100,22 +94,15 @@ def bind_request_context(**updates: str | None):
 
 def correlation_fields(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     context = get_request_context()
-    fields: dict[str, Any] = {}
+    result: dict[str, Any] = {}
     if context is not None:
-        fields.update(request_id=context.request_id, trace_id=context.trace_id)
-        for name in (
-            "project_id",
-            "session_id",
-            "turn_id",
-            "run_id",
-            "run_item_id",
-            "attempt_id",
-            "worker_id",
-            "resource_id",
-        ):
-            value = getattr(context, name)
-            if value is not None:
-                fields[name] = value
+        result.update(
+            {
+                name: value
+                for name in CONTEXT_FIELDS
+                if (value := getattr(context, name)) is not None
+            }
+        )
     if extra:
-        fields.update(extra)
-    return fields
+        result.update(extra)
+    return result
