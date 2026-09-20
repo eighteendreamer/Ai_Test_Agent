@@ -91,3 +91,44 @@ def test_failed_compaction_retries_the_same_pending_prefix():
         )
     )
     assert memory.args["compaction_key"] == "s1:e2:v1"
+
+
+def test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavailable():
+    class UnavailableHot:
+        async def get_compaction_state(self, session_id):
+            return None
+
+        async def list_events(self, session_id, *, after_id=None, limit=10000):
+            raise ConnectionError("redis unavailable")
+
+        async def acquire_compaction(self, session_id, key):
+            return True
+
+        async def mark_compaction_pending(self, session_id, *, last_event_id):
+            self.pending = last_event_id
+
+        async def commit_compaction(self, session_id, *, key, last_event_id):
+            self.committed = (key, last_event_id)
+            return True
+
+    class DurableEvents:
+        async def read_event_page(self, session_id, *, limit, after_event_id=None):
+            if after_event_id:
+                return []
+            return [
+                {"id": "e1", "type": "message", "payload": {"role": "user", "content": "goal"}},
+                {"id": "e2", "type": "turn.completed", "payload": {"role": "assistant", "content": "done"}},
+            ]
+
+    hot, memory = UnavailableHot(), Memory()
+    assert asyncio.run(
+        CompactionWorker(
+            hot_memory_store=hot,
+            memory_runtime_service=memory,
+            durable_event_store=DurableEvents(),
+        ).compact_session(session_id="s1", turn_id="t1", trace_id="tr1")
+    )
+    assert hot.pending == "e2"
+    assert hot.committed == ("e2:v1", "e2")
+    assert memory.args["user_message"] == "goal"
+    assert memory.args["assistant_message"] == "done"

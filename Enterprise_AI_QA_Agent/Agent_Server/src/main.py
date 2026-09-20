@@ -330,6 +330,7 @@ async def lifespan(app: FastAPI):
         memory_runtime_service=memory_runtime_service,
         compression_version=settings.orchestration.redis_compaction_compression_version,
         record_store=compaction_record_store,
+        durable_event_store=store,
     )
 
     tool_job_store = container.tool_job_store()

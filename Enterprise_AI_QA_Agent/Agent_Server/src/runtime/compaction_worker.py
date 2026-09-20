@@ -19,12 +19,16 @@ class CompactionWorker:
         compression_version: str = "v1",
         record_store: Any | None = None,
         owner_id: str | None = None,
+        durable_event_store: Any | None = None,
+        durable_page_size: int = 500,
     ) -> None:
         self._hot = hot_memory_store
         self._memory = memory_runtime_service
         self._compression_version = compression_version
         self._record_store = record_store
         self._owner_id = owner_id
+        self._durable_event_store = durable_event_store
+        self._durable_page_size = max(1, int(durable_page_size))
 
     async def compact_session(
         self,
@@ -44,33 +48,11 @@ class CompactionWorker:
             str(state.get("last_event_id") or "") if isinstance(state, dict) else ""
         )
         pending_key = str(state.get("key") or "") if isinstance(state, dict) else ""
-        try:
-            if state_status == "pending" and state_last_event_id:
-                # A failed compaction must retry the exact same event prefix so
-                # the stable memory ids make the durable write idempotent.
-                all_events = await self._hot.list_events(session_id, limit=10000)
-                target_index = next(
-                    (
-                        index
-                        for index, event in enumerate(all_events)
-                        if str(event.get("id") or "") == state_last_event_id
-                    ),
-                    None,
-                )
-                if target_index is None:
-                    return False
-                events = all_events[: target_index + 1]
-            else:
-                after_id = state_last_event_id if state_status == "completed" else ""
-                events = await self._hot.list_events(
-                    session_id,
-                    after_id=after_id or None,
-                    limit=10000,
-                )
-        except TypeError:
-            # Keep small in-memory/test stores compatible with the production
-            # cursor contract while they are migrated.
-            events = await self._hot.list_events(session_id, limit=10000)
+        events = await self._load_events(
+            session_id=session_id,
+            state_status=state_status,
+            state_last_event_id=state_last_event_id,
+        )
         if not events:
             return False
         last_event_id = str(events[-1].get("id") or "")
@@ -193,3 +175,135 @@ class CompactionWorker:
     @staticmethod
     def _tool_results(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [dict(event.get("payload") or {}) for event in events if str(event.get("type") or "").startswith("tool.")]
+
+    async def _load_events(
+        self,
+        *,
+        session_id: str,
+        state_status: str,
+        state_last_event_id: str,
+    ) -> list[dict[str, Any]]:
+        """Read the hot prefix first and fall back to durable FlowEvents.
+
+        Redis is intentionally not the source of truth.  A missing/expired hot
+        cursor must not make a completed turn impossible to compact, so the
+        PostgreSQL event store is consulted when Redis is unavailable or no
+        longer contains the requested cursor.
+        """
+        hot_events: list[dict[str, Any]] = []
+        hot_available = True
+        try:
+            if state_status == "pending" and state_last_event_id:
+                hot_events = await self._hot.list_events(session_id, limit=10000)
+                target_index = self._event_index(hot_events, state_last_event_id)
+                if target_index is not None:
+                    return hot_events[: target_index + 1]
+            else:
+                after_id = state_last_event_id if state_status == "completed" else ""
+                hot_events = await self._hot.list_events(
+                    session_id,
+                    after_id=after_id or None,
+                    limit=10000,
+                )
+                if hot_events:
+                    return hot_events
+        except TypeError:
+            # Keep small in-memory/test stores compatible with the production
+            # cursor contract while they are migrated.
+            try:
+                hot_events = await self._hot.list_events(session_id, limit=10000)
+                if state_status == "pending" and state_last_event_id:
+                    target_index = self._event_index(hot_events, state_last_event_id)
+                    if target_index is not None:
+                        return hot_events[: target_index + 1]
+                elif hot_events:
+                    return hot_events
+            except Exception:
+                hot_available = False
+        except Exception as exc:
+            hot_available = False
+            LOGGER.warning(
+                "session_hot_memory_read_failed_using_durable_events",
+                extra={"session_id": session_id, "error_type": type(exc).__name__},
+            )
+
+        durable_events = await self._read_durable_events(
+            session_id=session_id,
+            after_event_id=(
+                None
+                if state_status == "pending"
+                else state_last_event_id or None
+            ),
+        )
+        if state_status == "pending" and state_last_event_id:
+            target_index = self._event_index(durable_events, state_last_event_id)
+            if target_index is None:
+                LOGGER.error(
+                    "session_compaction_cursor_missing_from_durable_events",
+                    extra={"session_id": session_id, "last_event_id": state_last_event_id},
+                )
+                return []
+            return durable_events[: target_index + 1]
+        if durable_events:
+            if not hot_available:
+                LOGGER.info(
+                    "session_compaction_loaded_from_durable_events",
+                    extra={"session_id": session_id, "event_count": len(durable_events)},
+                )
+            return durable_events
+        return []
+
+    async def _read_durable_events(
+        self,
+        *,
+        session_id: str,
+        after_event_id: str | None,
+    ) -> list[dict[str, Any]]:
+        store = self._durable_event_store
+        reader = getattr(store, "read_event_page", None) if store is not None else None
+        if not callable(reader):
+            return []
+        events: list[dict[str, Any]] = []
+        cursor = after_event_id
+        while True:
+            try:
+                page = await reader(
+                    session_id,
+                    limit=self._durable_page_size,
+                    after_event_id=cursor,
+                )
+            except Exception as exc:
+                LOGGER.warning(
+                    "session_durable_event_read_failed",
+                    extra={"session_id": session_id, "error_type": type(exc).__name__},
+                )
+                return []
+            if not page:
+                break
+            events.extend(self._event_to_dict(event) for event in page)
+            if len(page) < self._durable_page_size:
+                break
+            cursor = str(self._event_to_dict(page[-1]).get("id") or "") or None
+            if cursor is None:
+                break
+        return events
+
+    @staticmethod
+    def _event_index(events: list[dict[str, Any]], event_id: str) -> int | None:
+        for index, event in enumerate(events):
+            if str(event.get("id") or "") == event_id:
+                return index
+        return None
+
+    @staticmethod
+    def _event_to_dict(event: Any) -> dict[str, Any]:
+        if isinstance(event, dict):
+            return dict(event)
+        model_dump = getattr(event, "model_dump", None)
+        if callable(model_dump):
+            return dict(model_dump(mode="json"))
+        return {
+            "id": str(getattr(event, "id", "")),
+            "type": str(getattr(event, "type", "")),
+            "payload": dict(getattr(event, "payload", {}) or {}),
+        }
