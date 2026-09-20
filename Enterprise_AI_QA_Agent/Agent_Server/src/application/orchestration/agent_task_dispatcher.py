@@ -7,6 +7,13 @@ from datetime import datetime, timezone
 from time import monotonic
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from src.application.observability.business_metrics import (
+    agent_task_execution_seconds,
+    agent_task_retries_total,
+    agent_task_wait_seconds,
+    agent_tasks_finished_total,
+    agent_tasks_submitted_total,
+)
 from src.core.request_context import bind_request_context, get_request_context, new_id
 from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.runtime.store import ContinuationLeaseLostError
@@ -31,6 +38,23 @@ from src.schemas.session import (
 LOGGER = logging.getLogger(__name__)
 
 
+def _task_type(value) -> str:
+    """Resolve the task_type label from a command or a durable task record."""
+    declared = getattr(value, "task_type", None)
+    if declared:
+        return str(declared)
+    operation = str(getattr(value, "operation", "") or "")
+    return "agent_turn" if operation in {"", "message"} else operation
+
+
+def _seconds_since(value: datetime | None) -> float:
+    """Elapsed whole seconds since a persisted timestamp, never negative."""
+    if value is None:
+        return 0.0
+    moment = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - moment).total_seconds())
+
+
 class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources):
         self._settings = settings
@@ -44,6 +68,12 @@ class AgentTaskDispatcher:
     def set_coordinator_service(self, coordinator) -> None:
         """Inject the coordinator that turns finished child tasks into parent resumes."""
         self._coordinator = coordinator
+
+    def _record_submission(self, command) -> None:
+        agent_tasks_submitted_total().labels(
+            task_type=_task_type(command),
+            queue=self._settings.orchestration.agent_task_stream,
+        ).inc()
 
     async def submit(self, session_id, payload):
         session = await self._sessions._require_session(session_id)
@@ -85,6 +115,7 @@ class AgentTaskDispatcher:
         )
         message.metadata["context_eligible"] = False
         task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        self._record_submission(command)
         LOGGER.info(
             "agent_task_submitted",
             extra={
@@ -128,6 +159,7 @@ class AgentTaskDispatcher:
             payload,
             idempotency_key=key,
         )
+        self._record_submission(command)
         LOGGER.info(
             "agent_resume_task_submitted",
             extra={
@@ -234,6 +266,7 @@ class AgentTaskDispatcher:
             idempotency_key=key,
             submission_payload=payload.model_dump(mode="json"),
         )
+        self._record_submission(command)
         LOGGER.info(
             "headless_agent_task_submitted",
             extra={
@@ -278,6 +311,7 @@ class AgentTaskDispatcher:
             payload,
             idempotency_key=key,
         )
+        self._record_submission(command)
         LOGGER.info(
             "agent_approval_task_submitted",
             extra={
@@ -373,6 +407,7 @@ class AgentTaskDispatcher:
         message.metadata["context_eligible"] = False
         key = f"coordinator_child:{worker.task_id}"
         task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        self._record_submission(command)
         LOGGER.info(
             "coordinator_child_task_submitted",
             extra={
@@ -464,6 +499,7 @@ class AgentTaskDispatcher:
         message.metadata["context_eligible"] = False
         key = f"coordinator_resume:{turn_key}"
         task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        self._record_submission(command)
         LOGGER.info(
             "coordinator_resume_task_submitted",
             extra={
@@ -521,6 +557,12 @@ class AgentTaskDispatcher:
         task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
             return
+        task_type = _task_type(command)
+        agent_task_wait_seconds().labels(task_type=task_type).observe(
+            _seconds_since(task.created_at)
+        )
+        if task.attempt_no > 1:
+            agent_task_retries_total().labels(task_type=task_type).inc()
         LOGGER.info(
             "agent_task_claimed",
             extra={
@@ -542,6 +584,8 @@ class AgentTaskDispatcher:
             run_item_id=task.run_item_id,
             attempt_id=task.attempt_id,
             worker_id=worker_id,
+            task_type=task_type,
+            queue=self._settings.orchestration.agent_task_stream,
         ):
             await self._execute(task)
 
@@ -551,6 +595,8 @@ class AgentTaskDispatcher:
         started = False
         notification = None
         config = self._settings.orchestration
+        execution_clock = monotonic()
+        finished_status: str | None = None
         try:
             if await self._tasks.interrupt_requested(task.id):
                 await self._tasks.finish(
@@ -558,6 +604,7 @@ class AgentTaskDispatcher:
                     status="cancelled",
                     error_code="user_cancelled_before_admission",
                 )
+                finished_status = "cancelled"
                 return
             try:
                 lease = await self._resources.acquire(
@@ -597,6 +644,7 @@ class AgentTaskDispatcher:
                     status="cancelled",
                     error_code="user_cancelled_before_execution",
                 )
+                finished_status = "cancelled"
                 return
             monitor = asyncio.create_task(self._monitor(task, lease, stop))
             LOGGER.info(
@@ -672,6 +720,7 @@ class AgentTaskDispatcher:
                             },
                         )
                 await self._tasks.finish(task, status=status, result_status=outcome)
+                finished_status = status
                 LOGGER.info(
                     "agent_task_execution_finished",
                     extra={
@@ -717,12 +766,23 @@ class AgentTaskDispatcher:
                             payload=notification,
                         )
                 await self._tasks.finish(task, status="failed", error_code=type(exc).__name__)
+                finished_status = "failed"
                 if notification is not None:
                     await self._notify_parent_child_done(task, notification)
             else:
                 await self._tasks.defer(task, "admission_unavailable")
                 raise
         finally:
+            if finished_status is not None:
+                task_type = _task_type(task)
+                agent_tasks_finished_total().labels(
+                    task_type=task_type,
+                    status=finished_status,
+                ).inc()
+                agent_task_execution_seconds().labels(task_type=task_type).observe(
+                    max(0.0, monotonic() - execution_clock)
+                )
+
             async def cleanup():
                 stop.set()
                 if monitor is not None:

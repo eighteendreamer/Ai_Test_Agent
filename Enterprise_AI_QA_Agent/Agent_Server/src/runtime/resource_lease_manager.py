@@ -12,6 +12,12 @@ from typing import Any
 
 from redis.asyncio import Redis
 
+from src.application.observability.business_metrics import (
+    resource_acquire_total,
+    resource_lease_expired_total,
+    resource_lease_renew_lost_total,
+    resource_release_errors_total,
+)
 from src.core.request_context import get_request_context, new_id
 from src.runtime.resource_lease_scripts import (
     BIND,
@@ -196,11 +202,13 @@ class RedisResourceLeaseManager:
             payload, lease_token, int(lease_seconds * 1000), *quota_fields,
         )
         if not result or int(result[0]) == 0:
+            resource_acquire_total().labels(resource_type=resource_type, result="unavailable").inc()
             reason = result[1] if len(result) > 1 else "resource_busy"
             if isinstance(reason, bytes):
                 reason = reason.decode("utf-8", errors="replace")
             raise ResourceUnavailable(str(reason or "resource_busy"))
         fencing = int(result[0])
+        resource_acquire_total().labels(resource_type=resource_type, result="ok").inc()
         return ResourceLease(
             resource_id=resource_id, resource_type=resource_type, project_id=project_id,
             session_id=session_id, run_id=run_id, run_item_id=run_item_id,
@@ -215,11 +223,14 @@ class RedisResourceLeaseManager:
             RENEW, 2, self._lease_key(lease.resource_type, lease.resource_id), self._key("lease:registry"),
             lease.lease_token, int(lease_seconds * 1000),
         )
+        if not result:
+            resource_lease_renew_lost_total().labels(resource_type=lease.resource_type).inc()
         return bool(result)
 
     async def acquire_first_available(self, *, resource_type: str, resource_ids: list[str], **kwargs) -> ResourceLease:
         """Atomically claim the first free slot; all slots share normal quotas."""
         if not resource_ids:
+            resource_acquire_total().labels(resource_type=resource_type, result="unavailable").inc()
             raise ResourceUnavailable(f"{resource_type}_capacity")
         last_reason = f"{resource_type}_capacity"
         for resource_id in resource_ids:
@@ -237,6 +248,8 @@ class RedisResourceLeaseManager:
             self._key("quota:usage"), self._key("lease:registry"), self._key("lease:metadata"),
             lease.lease_token, *quota_fields,
         )
+        if not result:
+            resource_release_errors_total().labels(resource_type=lease.resource_type).inc()
         return bool(result)
 
     async def retire(self, lease: ResourceLease) -> bool:
@@ -252,6 +265,8 @@ class RedisResourceLeaseManager:
             self._key("lease:metadata"), self._cleanup_stream,
             lease.lease_token, lease.fencing_token,
         ))
+        if not result:
+            resource_release_errors_total().labels(resource_type=lease.resource_type).inc()
         event = ("resource_cleanup_handoff" if result == 2
                  else "resource_lease_retired" if result == 1
                  else "resource_lease_retire_rejected")
@@ -298,7 +313,9 @@ class RedisResourceLeaseManager:
             raw = member.decode() if isinstance(member, bytes) else str(member)
             payload = json.loads(raw)
             if payload:
-                results.append(ExpiredResourceLease.from_payload(payload))
+                expired = ExpiredResourceLease.from_payload(payload)
+                resource_lease_expired_total().labels(resource_type=expired.resource_type).inc()
+                results.append(expired)
         return results
 
     async def reconcile_quota_usage(self) -> int:

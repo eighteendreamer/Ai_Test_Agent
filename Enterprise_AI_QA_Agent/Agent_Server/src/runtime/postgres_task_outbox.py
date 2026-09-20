@@ -12,11 +12,15 @@ import inspect
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from src.application.observability.business_metrics import (
+    outbox_pending,
+    outbox_published_total,
+)
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -41,6 +45,7 @@ class TaskOutboxRecord:
 class PostgresTaskOutbox:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        self._reported_streams: set[str] = set()
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -71,17 +76,16 @@ class PostgresTaskOutbox:
         if queue is None and queue_for_stream is None:
             raise ValueError("A queue or stream queue resolver is required")
         relay_id = f"relay_{uuid.uuid4().hex}"
+        fixed_stream = getattr(queue, "stream", None) if queue_for_stream is None else None
+        seen_streams: set[str] = set()
         # Claim just in time: later records must not spend their lease waiting
         # for earlier network calls in a large batch. Failed rows have backoff.
         for _ in range(max(1, limit)):
-            stream = getattr(queue, "stream", None) if queue_for_stream is None else None
-            if stream is None and queue_for_stream is None:
-                records = await self.claim(limit=1, relay_id=relay_id)
-            else:
-                records = await self.claim(limit=1, relay_id=relay_id, stream=stream)
+            records = await self.claim(limit=1, relay_id=relay_id, stream=fixed_stream)
             if not records:
                 break
             record = records[0]
+            seen_streams.add(record.stream)
             try:
                 target_queue = queue
                 if queue_for_stream is not None:
@@ -108,11 +112,43 @@ class PostgresTaskOutbox:
                 LOGGER.warning("task_outbox_publish_lease_lost", extra={"outbox_id": record.id})
                 continue
             published += 1
+            outbox_published_total().labels(stream=record.stream).inc()
             LOGGER.info(
                 "task_outbox_published",
                 extra={"outbox_id": record.id, "event_key": record.event_key, "stream": record.stream, "message_id": message_id},
             )
+        await self._record_pending_gauges(seen_streams | ({fixed_stream} if fixed_stream else set()))
         return published
+
+    async def pending_counts(self, *, streams: Iterable[str] = ()) -> dict[str, int]:
+        """Unpublished row counts, so a relay can export its own queue depth."""
+        return await asyncio.to_thread(self._pending_counts_sync, tuple(streams))
+
+    def _pending_counts_sync(self, streams: tuple[str, ...]) -> dict[str, int]:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT stream, COUNT(*) AS pending FROM {self._table()} "
+                    "WHERE published_at IS NULL GROUP BY stream"
+                )
+                rows = cur.fetchall()
+        counts = {str(row["stream"]): int(row["pending"]) for row in rows}
+        for stream in streams:
+            counts.setdefault(stream, 0)
+        return counts
+
+    async def _record_pending_gauges(self, streams: set[str]) -> None:
+        """Best-effort depth export: a metrics read must never fail a relay pass."""
+        try:
+            counts = await self.pending_counts(streams=streams)
+            self._reported_streams.update(counts)
+            for stream in self._reported_streams:
+                outbox_pending().labels(stream=stream).set(counts.get(stream, 0))
+        except Exception as exc:
+            LOGGER.warning(
+                "task_outbox_pending_metric_failed",
+                extra={"error_type": type(exc).__name__, "streams": sorted(streams)},
+            )
 
     def _table(self) -> str:
         return self._settings.database.postgres_task_outbox_table

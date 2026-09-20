@@ -12,6 +12,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
+from src.application.observability.business_metrics import (
+    redis_errors_total,
+    task_claimed_total,
+    task_dead_letter_total,
+    task_reclaimed_total,
+)
 from src.infrastructure.redis_task_scripts import CONTROL, TRANSFER
 
 
@@ -61,6 +68,7 @@ class RedisTaskQueue:
             # must remain visible to the caller; silently running without the
             # queue would violate the task delivery contract.
             if "BUSYGROUP" not in str(exc):
+                redis_errors_total().labels(operation="connect").inc()
                 raise
 
     async def close(self) -> None:
@@ -73,7 +81,11 @@ class RedisTaskQueue:
         if maxlen is not None:
             raise ValueError("Task streams must not use MAXLEN: it can delete pending deliveries")
         fields = {"payload": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
-        message_id = await self._client.xadd(self.stream, fields)
+        try:
+            message_id = await self._client.xadd(self.stream, fields)
+        except RedisError:
+            redis_errors_total().labels(operation="enqueue").inc()
+            raise
         return str(message_id)
 
     async def transfer(
@@ -82,13 +94,23 @@ class RedisTaskQueue:
     ) -> str | None:
         """Publish successor then ACK original, only while consumer owns it."""
         destination = f"{self.stream}:dead_letter" if dead_letter_reason else self.stream
-        message_id = await self._client.eval(
-            TRANSFER, 2, self.stream, destination,
-            self.group, consumer, task.message_id,
-            json.dumps(task.payload, ensure_ascii=False, separators=(",", ":")),
-            max(0, retry_count), max(0, delay_ms), dead_letter_reason or "",
-        )
-        return str(message_id) if message_id else None
+        try:
+            message_id = await self._client.eval(
+                TRANSFER, 2, self.stream, destination,
+                self.group, consumer, task.message_id,
+                json.dumps(task.payload, ensure_ascii=False, separators=(",", ":")),
+                max(0, retry_count), max(0, delay_ms), dead_letter_reason or "",
+            )
+        except RedisError:
+            redis_errors_total().labels(operation="transfer").inc()
+            raise
+        if not message_id:
+            return None
+        if dead_letter_reason:
+            task_dead_letter_total().labels(stream=self.stream).inc()
+        else:
+            task_reclaimed_total().labels(stream=self.stream).inc()
+        return str(message_id)
 
     async def ready(self, task: QueuedTask, *, consumer: str) -> bool:
         return bool(await self._control(task, consumer, "ready"))
@@ -100,10 +122,14 @@ class RedisTaskQueue:
         return int(await self._control(task, consumer, "ack") or 0)
 
     async def _control(self, task: QueuedTask, consumer: str, action: str):
-        return await self._client.eval(
-            CONTROL, 1, self.stream, self.group, consumer, task.message_id,
-            action, task.not_before_ms,
-        )
+        try:
+            return await self._client.eval(
+                CONTROL, 1, self.stream, self.group, consumer, task.message_id,
+                action, task.not_before_ms,
+            )
+        except RedisError:
+            redis_errors_total().labels(operation=f"control_{action}").inc()
+            raise
 
     async def dead_letter(self, payload: dict[str, Any], *, reason: str) -> str:
         """Persist a failed envelope in a separate stream for operator recovery."""
@@ -111,12 +137,16 @@ class RedisTaskQueue:
             raise RuntimeError("RedisTaskQueue is not connected")
         stream = f"{self.stream}:dead_letter"
         body = {**payload, "dead_letter_reason": reason}
-        return str(
-            await self._client.xadd(
+        try:
+            message_id = await self._client.xadd(
                 stream,
                 {"payload": json.dumps(body, ensure_ascii=False, separators=(",", ":"))},
             )
-        )
+        except RedisError:
+            redis_errors_total().labels(operation="dead_letter").inc()
+            raise
+        task_dead_letter_total().labels(stream=self.stream).inc()
+        return str(message_id)
 
     async def consume(
         self,
@@ -128,14 +158,21 @@ class RedisTaskQueue:
     ) -> list[QueuedTask]:
         if self._client is None:
             raise RuntimeError("RedisTaskQueue is not connected")
-        rows = await self._client.xreadgroup(
-            groupname=self.group,
-            consumername=consumer,
-            streams={self.stream: stream_id},
-            count=max(1, count),
-            block=block_ms if block_ms > 0 else None,
-        )
-        return self._decode_rows(rows)
+        try:
+            rows = await self._client.xreadgroup(
+                groupname=self.group,
+                consumername=consumer,
+                streams={self.stream: stream_id},
+                count=max(1, count),
+                block=block_ms if block_ms > 0 else None,
+            )
+        except RedisError:
+            redis_errors_total().labels(operation="consume").inc()
+            raise
+        tasks = self._decode_rows(rows)
+        if tasks:
+            task_claimed_total().labels(stream=self.stream).inc(len(tasks))
+        return tasks
 
     async def ack(self, message_id: str) -> int:
         if self._client is None:
@@ -163,18 +200,25 @@ class RedisTaskQueue:
     ) -> list[QueuedTask]:
         if self._client is None:
             raise RuntimeError("RedisTaskQueue is not connected")
-        rows = await self._client.xautoclaim(
-            self.stream,
-            self.group,
-            consumer,
-            min_idle_time=max(1, min_idle_ms),
-            start_id=self._reclaim_cursor,
-            count=max(1, count),
-        )
+        try:
+            rows = await self._client.xautoclaim(
+                self.stream,
+                self.group,
+                consumer,
+                min_idle_time=max(1, min_idle_ms),
+                start_id=self._reclaim_cursor,
+                count=max(1, count),
+            )
+        except RedisError:
+            redis_errors_total().labels(operation="reclaim").inc()
+            raise
         if isinstance(rows, (list, tuple)) and rows and rows[0]:
             self._reclaim_cursor = str(rows[0])
         messages = rows[1] if isinstance(rows, (list, tuple)) and len(rows) > 1 else []
-        return self._decode_rows([(self.stream, messages)])
+        tasks = self._decode_rows([(self.stream, messages)])
+        if tasks:
+            task_reclaimed_total().labels(stream=self.stream).inc(len(tasks))
+        return tasks
 
     @staticmethod
     def _decode_rows(rows: Any) -> list[QueuedTask]:

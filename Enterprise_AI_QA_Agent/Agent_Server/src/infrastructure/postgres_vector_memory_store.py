@@ -4,8 +4,15 @@ import asyncio
 import json
 import re
 from datetime import datetime
+from time import perf_counter
 from uuid import uuid4
 
+from src.application.observability.business_metrics import (
+    POSTGRES_VECTOR_STORE,
+    vector_errors_total,
+    vector_queries_total,
+    vector_query_seconds,
+)
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, recent_day_buckets
@@ -36,14 +43,31 @@ class PostgresVectorMemoryStore:
         return await asyncio.to_thread(self._write_sync, request)
 
     async def search(self, request: MemorySearchRequest) -> list[MemoryPoint]:
-        return await asyncio.to_thread(self._search_sync, request)
+        return await self._timed_search(self._search_sync, request)
 
     async def search_candidates(
         self, request: MemorySearchRequest, point_ids: list[str],
     ) -> list[MemoryPoint]:
         if not point_ids:
             return []
-        return await asyncio.to_thread(self._search_sync, request, list(dict.fromkeys(point_ids)))
+        return await self._timed_search(
+            self._search_sync, request, list(dict.fromkeys(point_ids))
+        )
+
+    @staticmethod
+    async def _timed_search(reader, *args) -> list[MemoryPoint]:
+        """Export similarity volume, failures and latency for the durable store."""
+        started = perf_counter()
+        try:
+            return await asyncio.to_thread(reader, *args)
+        except Exception:
+            vector_errors_total().labels(store=POSTGRES_VECTOR_STORE).inc()
+            raise
+        finally:
+            vector_queries_total().labels(store=POSTGRES_VECTOR_STORE).inc()
+            vector_query_seconds().labels(store=POSTGRES_VECTOR_STORE).observe(
+                max(0.0, perf_counter() - started)
+            )
 
     async def list_points(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         return await asyncio.to_thread(self._list_points_sync, request)

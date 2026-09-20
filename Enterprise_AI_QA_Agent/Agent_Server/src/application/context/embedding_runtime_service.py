@@ -16,6 +16,11 @@ from redis.exceptions import RedisError
 
 from src.application.model_clients.embeddings import resolve_embedding_client
 from src.application.models.oauth_token_service import OAuthTokenService
+from src.application.observability.business_metrics import (
+    embedding_api_seconds,
+    embedding_calls_total,
+    embedding_cache_total,
+)
 from src.core.config import Settings
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.schemas.model_config import ModelConfigRecord
@@ -118,13 +123,32 @@ class EmbeddingRuntimeService:
                 if cached[index] is None and vector is not None:
                     cached[index] = vector
         missing_indexes = [index for index, vector in enumerate(cached) if vector is None]
+        if use_cache:
+            cache_counter = embedding_cache_total()
+            cache_counter.labels(result="miss").inc(len(missing_indexes))
+            cache_counter.labels(result="hit").inc(len(prepared) - len(missing_indexes))
         started_at = perf_counter()
         original_dimension = 0
 
         if missing_indexes:
             api_key = await self._resolve_api_key(resolved_config)
             missing_texts = [prepared[index] for index in missing_indexes]
-            raw_vectors = await client.embed(resolved_config, api_key, missing_texts)
+            api_started = perf_counter()
+            try:
+                raw_vectors = await client.embed(resolved_config, api_key, missing_texts)
+            except Exception:
+                embedding_calls_total().labels(
+                    model_key=resolved_config.key, outcome="error"
+                ).inc()
+                raise
+            else:
+                embedding_calls_total().labels(
+                    model_key=resolved_config.key, outcome="ok"
+                ).inc()
+            finally:
+                embedding_api_seconds().labels(model_key=resolved_config.key).observe(
+                    max(0.0, perf_counter() - api_started)
+                )
             if len(raw_vectors) != len(missing_indexes):
                 raise ValueError(
                     "Embedding provider returned a different number of vectors than inputs."

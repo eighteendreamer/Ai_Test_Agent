@@ -5,8 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from time import perf_counter
 from redis.exceptions import RedisError
 
+from src.application.observability.business_metrics import (
+    redis_errors_total,
+    task_deferred_total,
+    worker_errors_total,
+    worker_iteration_seconds,
+)
 from src.infrastructure.redis_task_queue import QueuedTask, RedisTaskQueue
 from src.core.request_context import reset_request_context, set_request_context
 from src.runtime.task_deferred import TaskDeferred
@@ -83,12 +90,15 @@ class RedisTaskWorker:
             block_ms=0 if tasks else self._block_ms,
         )
         processed = 0
+        # Queue doubles are legitimate callers, so the label must degrade instead of raising.
+        stream = str(getattr(self._queue, "stream", "") or "")
         for task in tasks:
             if self._stop.is_set():
                 break  # Unstarted deliveries stay pending for recovery.
             if not await self._queue.ready(task, consumer=self._consumer):
                 continue
             payload = task.payload
+            started = perf_counter()
             context_token = set_request_context(
                 request_id=str(payload.get("request_id") or ""),
                 trace_id=str(payload.get("trace_id") or ""),
@@ -122,12 +132,14 @@ class RedisTaskWorker:
                 # Never ACK/requeue when heartbeat/ownership cannot be confirmed.
                 continue
             except TaskDeferred:
+                task_deferred_total().labels(stream=stream).inc()
                 LOGGER.info(
                     "redis_task_deferred",
                     extra={"task_id": payload.get("task_id"), "message_id": task.message_id},
                 )
                 continue
             except Exception as exc:
+                worker_errors_total().labels(stream=stream).inc()
                 LOGGER.error(
                     "redis_task_handler_failed",
                     extra={"task_id": task.payload.get("task_id"), "message_id": task.message_id,
@@ -149,6 +161,9 @@ class RedisTaskWorker:
             else:
                 processed += int(bool(await self._queue.ack_owned(task, consumer=self._consumer)))
             finally:
+                worker_iteration_seconds().labels(stream=stream).observe(
+                    max(0.0, perf_counter() - started)
+                )
                 reset_request_context(context_token)
         return processed
 
@@ -157,6 +172,7 @@ class RedisTaskWorker:
             try:
                 await self.run_once()
             except RedisError as exc:
+                redis_errors_total().labels(operation="worker_run").inc()
                 LOGGER.warning("redis_worker_transport_unavailable", extra={
                     "worker_id": self._consumer, "error_type": type(exc).__name__,
                 })

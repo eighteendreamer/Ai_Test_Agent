@@ -12,6 +12,12 @@ from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
+from src.application.observability.business_metrics import (
+    REDIS_VECTOR_STORE,
+    vector_errors_total,
+    vector_queries_total,
+    vector_query_seconds,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -240,21 +246,31 @@ class RedisVectorStore:
         top_k: int = 5,
         filters: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        blob = self.pack_vector(vector)
-        await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=len(vector))
-        index = self.index_name(entity, embedding_version)
-        query_filter = "*"
-        if filters:
-            clauses = [f"@{name}:{{{self._escape_tag(value)}}}" for name, value in filters.items() if name in {"project_id", "case_version_id", "status", "environment"}]
-            query_filter = " ".join(clauses) if clauses else "*"
-        count = max(1, int(top_k))
-        query = f"({query_filter})=>[KNN {count} @embedding $query AS vector_distance]"
-        raw = await self._client.execute_command(
-            "FT.SEARCH", index, query, "PARAMS", "2", "query", blob,
-            "SORTBY", "vector_distance", "LIMIT", "0", str(count),
-            "RETURN", "5", "vector_distance", "project_id", "case_version_id", "status", "environment", "DIALECT", "2",
-        )
-        return self._decode_search(raw)
+        started = perf_counter()
+        try:
+            blob = self.pack_vector(vector)
+            await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=len(vector))
+            index = self.index_name(entity, embedding_version)
+            query_filter = "*"
+            if filters:
+                clauses = [f"@{name}:{{{self._escape_tag(value)}}}" for name, value in filters.items() if name in {"project_id", "case_version_id", "status", "environment"}]
+                query_filter = " ".join(clauses) if clauses else "*"
+            count = max(1, int(top_k))
+            query = f"({query_filter})=>[KNN {count} @embedding $query AS vector_distance]"
+            raw = await self._client.execute_command(
+                "FT.SEARCH", index, query, "PARAMS", "2", "query", blob,
+                "SORTBY", "vector_distance", "LIMIT", "0", str(count),
+                "RETURN", "5", "vector_distance", "project_id", "case_version_id", "status", "environment", "DIALECT", "2",
+            )
+            return self._decode_search(raw)
+        except Exception:
+            vector_errors_total().labels(store=REDIS_VECTOR_STORE).inc()
+            raise
+        finally:
+            vector_queries_total().labels(store=REDIS_VECTOR_STORE).inc()
+            vector_query_seconds().labels(store=REDIS_VECTOR_STORE).observe(
+                max(0.0, perf_counter() - started)
+            )
 
     @staticmethod
     def pack_vector(vector: list[float]) -> bytes:

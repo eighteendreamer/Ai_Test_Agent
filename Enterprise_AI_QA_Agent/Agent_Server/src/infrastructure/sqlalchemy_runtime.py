@@ -216,6 +216,20 @@ def dispose_sqlalchemy_engines(database: DatabaseKind | None = None) -> None:
             engine.dispose()
 
 
+def iter_engines(database: DatabaseKind | None = None) -> list[Engine]:
+    """Snapshot cached engines for read-only pool observability.
+
+    The engine cache stays owned by this module; callers such as the metrics
+    collector must never add to or dispose from it.
+    """
+    with _ENGINE_LOCK:
+        return [
+            engine
+            for key, engine in _ENGINES.items()
+            if database is None or key[0] == database
+        ]
+
+
 def _get_or_create_engine(key: tuple[Any, ...], factory) -> Engine:
     with _ENGINE_LOCK:
         engine = _ENGINES.get(key)

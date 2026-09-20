@@ -8,11 +8,17 @@ import os
 from typing import Any, Iterator
 
 from src.application.security.output_safety_policy import OutputSafetyPolicy
+from src.application.observability.business_metrics import langsmith_reports_total
 from src.application.observability.trace_context import TraceContext
 from src.core.config import LangSmithConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+def _count_report(outcome: str) -> None:
+    """Record one trace report attempt; the SDK buffers the payload itself."""
+    langsmith_reports_total().labels(outcome=outcome).inc()
 
 
 @dataclass
@@ -164,11 +170,13 @@ class LangSmithObservabilityAdapter:
                 client=client,
             )
             run = run_cm.__enter__()
+            _count_report("ok")
         except Exception as exc:
             if run_cm is not None:
                 self._safe_exit(run_cm, exc)
             if tracing_cm is not None:
                 self._safe_exit(tracing_cm, exc)
+            _count_report("error")
             logger.exception(
                 "langsmith_trace_start_failed",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
@@ -244,7 +252,9 @@ class LangSmithObservabilityAdapter:
                 exceptions_to_handle=(Exception,),
             )
             trace_cm.__enter__()
+            _count_report("ok")
         except Exception:
+            _count_report("error")
             logger.exception(
                 "langsmith_node_trace_failed",
                 extra={"trace_id": context.trace_id, "node_name": node_name},
@@ -360,6 +370,7 @@ class LangSmithObservabilityAdapter:
             trace_cm.__enter__()
             self._safe_exit(trace_cm, exception)
             self._safe_exit(tracing_cm, exception)
+            _count_report("ok")
             logger.info(
                 "langsmith_error_trace_recorded",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},
@@ -369,6 +380,7 @@ class LangSmithObservabilityAdapter:
                 self._safe_exit(trace_cm, trace_error)
             if tracing_cm is not None:
                 self._safe_exit(tracing_cm, trace_error)
+            _count_report("error")
             logger.exception(
                 "langsmith_error_trace_failed",
                 extra={"trace_id": context.trace_id, "turn_id": context.turn_id},

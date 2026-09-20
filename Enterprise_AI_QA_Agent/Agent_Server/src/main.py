@@ -69,6 +69,7 @@ from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter
 from src.application.observability import LangSmithObservabilityAdapter
+from src.application.observability import metrics_collector
 from src.application.intent.semantic_intent_service import SemanticIntentService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
 from src.application.permissions.permission_service import PermissionService
@@ -691,6 +692,7 @@ async def lifespan(app: FastAPI):
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
     await app.state.agent_task_dispatcher.start_child_reaper()
+    await metrics_collector.start(settings)
     await session_service.recover_expired_turn_executions()
     await coordinator_runtime_service.recover_orphaned_dispatches()
 
@@ -761,6 +763,7 @@ async def lifespan(app: FastAPI):
             await deep_agent_checkpoint_provider.close()
         await embedding_runtime_service.close()
         await test_run_service.stop_lease_reaper()
+        await metrics_collector.stop()
         child_reaper = getattr(app.state, "agent_task_dispatcher", None)
         if child_reaper is not None:
             await child_reaper.stop_child_reaper()

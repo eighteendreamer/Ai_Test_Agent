@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Any
 
+from src.application.observability.business_metrics import (
+    compaction_duration_seconds,
+    compaction_events_total,
+    compaction_total,
+)
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 
 LOGGER = logging.getLogger(__name__)
@@ -41,6 +47,7 @@ class CompactionWorker:
         tool_results: list[dict[str, Any]] | None = None,
         context_bundle: dict[str, Any] | None = None,
     ) -> bool:
+        started = perf_counter()
         state_reader = getattr(self._hot, "get_compaction_state", None)
         state = await state_reader(session_id) if callable(state_reader) else None
         state_status = str(state.get("status") or "") if isinstance(state, dict) else ""
@@ -54,6 +61,7 @@ class CompactionWorker:
             state_last_event_id=state_last_event_id,
         )
         if not events:
+            self._record_cycle("skipped", started=started, events=0)
             return False
         last_event_id = str(events[-1].get("id") or "")
         if not last_event_id:
@@ -61,9 +69,11 @@ class CompactionWorker:
                 "session_hot_memory_compaction_invalid_cursor",
                 extra={"session_id": session_id},
             )
+            self._record_cycle("skipped", started=started, events=0)
             return False
         key = pending_key or f"{last_event_id}:{self._compression_version}"
         if not await self._hot.acquire_compaction(session_id, key):
+            self._record_cycle("not_owner", started=started, events=0)
             return False
         if self._record_store is not None:
             began = await self._record_store.begin(
@@ -84,7 +94,9 @@ class CompactionWorker:
                             key=key,
                             last_event_id=last_event_id,
                         )
+                    self._record_cycle("completed", started=started, events=0)
                     return True
+                self._record_cycle("not_owner", started=started, events=0)
                 return False
         pending_marker = getattr(self._hot, "mark_compaction_pending", None)
         if callable(pending_marker):
@@ -134,6 +146,7 @@ class CompactionWorker:
                     if existing is None or existing.status != "completed":
                         raise RuntimeError("Compaction record completion lost ownership")
             LOGGER.info("session_hot_memory_compacted", extra={"session_id": session_id, "last_event_id": last_event_id, "compression_version": self._compression_version})
+            self._record_cycle("completed", started=started, events=len(events))
             return True
         except Exception as exc:
             failed_marker = getattr(self._hot, "mark_compaction_failed", None)
@@ -154,7 +167,20 @@ class CompactionWorker:
                         extra={"session_id": session_id, "last_event_id": last_event_id},
                     )
             LOGGER.exception("session_hot_memory_compaction_failed", extra={"session_id": session_id, "last_event_id": last_event_id, "error_type": type(exc).__name__})
+            self._record_cycle("failed", started=started, events=0)
             return False
+
+    @staticmethod
+    def _record_cycle(result: str, *, started: float, events: int) -> None:
+        """Export one compaction cycle.
+
+        There is no numeric hot-memory watermark to diff against, so backlog lag
+        is not exported; only the folded event count and the cycle duration are.
+        """
+        compaction_total().labels(result=result).inc()
+        if events:
+            compaction_events_total().inc(events)
+        compaction_duration_seconds().observe(max(0.0, perf_counter() - started))
 
     @staticmethod
     def _first_text(events: list[dict[str, Any]], role: str) -> str:

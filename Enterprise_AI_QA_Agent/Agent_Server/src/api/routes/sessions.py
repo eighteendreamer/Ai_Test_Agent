@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from src.application.flow.projection_service import FlowProjectionService
+from src.application.observability.business_metrics import sse_connections_active
 from src.runtime.streaming import format_sse
 from src.runtime.store import EventCursorNotFoundError
 from src.core.config import get_settings
@@ -386,6 +387,7 @@ async def stream_events(session_id: str, request: Request):
         loop = asyncio.get_running_loop()
         last_sent = loop.time()
         logger.info("session_sse_connected", extra={"session_id": session_id})
+        sse_connections_active().inc()
         try:
             while not await request.is_disconnected():
                 try:
@@ -413,6 +415,7 @@ async def stream_events(session_id: str, request: Request):
             logger.exception("session_sse_read_failed", extra={"session_id": session_id})
             raise
         finally:
+            sse_connections_active().dec()
             logger.info("session_sse_disconnected", extra={"session_id": session_id})
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",

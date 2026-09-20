@@ -6,6 +6,7 @@ import asyncio
 
 from src.cli.run_redis_worker import _default_worker_id
 from src.core.config import get_settings
+from src.core.request_context import bind_request_context
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.main import app
 from src.runtime.redis_task_worker import RedisTaskWorker
@@ -23,7 +24,12 @@ async def _run(*, once: bool, worker_id: str):
         await queue.connect()
 
         async def handle(task):
-            await app.state.agent_task_dispatcher.handle(task, worker_id=worker_id)
+            with bind_request_context(
+                worker_id=worker_id,
+                queue=queue.stream,
+                task_type=str(task.payload.get("task_type") or "agent_turn"),
+            ):
+                await app.state.agent_task_dispatcher.handle(task, worker_id=worker_id)
 
         worker = RedisTaskWorker.from_settings(
             queue,
