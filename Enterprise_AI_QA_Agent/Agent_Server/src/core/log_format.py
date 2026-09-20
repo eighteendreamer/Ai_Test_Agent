@@ -7,9 +7,27 @@ import sys
 
 from src.core.request_context import CONTEXT_FIELDS, get_request_context
 
+# 开发规范第四节要求的 12 个统一字段，按此顺序逐个渲染；缺任一字段就无法回答
+# “哪个 Worker 领取、用了哪个资源、跑到哪一步”。
+CORRELATION_FIELDS: tuple[str, ...] = (
+    "request_id",
+    "trace_id",
+    "session_id",
+    "turn_id",
+    "run_id",
+    "run_item_id",
+    "attempt_id",
+    "worker_id",
+    "resource_id",
+    "task_type",
+    "queue",
+    "status",
+)
+
 LOG_FORMAT = (
-    "%(asctime)s %(levelname)s [%(request_id)s %(trace_id)s %(session_id)s "
-    "%(turn_id)s %(task_type)s %(queue)s %(status)s] %(name)s: %(message)s"
+    "%(asctime)s %(levelname)s ["
+    + " ".join(f"%({name})s" for name in CORRELATION_FIELDS)
+    + "] %(name)s: %(message)s"
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 

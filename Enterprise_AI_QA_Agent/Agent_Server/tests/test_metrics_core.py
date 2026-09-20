@@ -24,7 +24,7 @@ from src.application.observability.metrics import (
     reset_registry,
     set_gauge,
 )
-from src.core.log_format import LOG_FORMAT, ContextFilter
+from src.core.log_format import CORRELATION_FIELDS, LOG_FORMAT, ContextFilter
 from src.core.request_context import bind_request_context
 
 LABEL_RE = re.compile(r'(?P<key>[a-zA-Z_][a-zA-Z0-9_]*)="(?P<value>(?:[^"\\]|\\.)*)"')
@@ -302,23 +302,34 @@ def test_configured_formatter_renders_without_bound_context(capsys):
     logger.setLevel(logging.INFO)
     logger.propagate = False
     logger.addHandler(handler)
+    values = {
+        "request_id": "req-line",
+        "trace_id": "trace-line",
+        "session_id": "session-line",
+        "turn_id": "turn-line",
+        "run_id": "run-line",
+        "run_item_id": "item-line",
+        "attempt_id": "attempt-line",
+        "worker_id": "worker-line",
+        "resource_id": "resource-line",
+        "task_type": "perf_run",
+        "queue": "perf:default",
+    }
     try:
-        with bind_request_context(
-            request_id="req-line", trace_id="trace-line", task_type="perf_run", queue="perf:default"
-        ):
+        with bind_request_context(**values):
             logger.info("metrics_scraped")
         logger.info("metrics_scraped_without_context")
     finally:
         logger.removeHandler(handler)
 
     lines = stream.getvalue().splitlines()
+    # 第四节的 12 个统一字段必须全部出现在行内，缺一个就查不到是谁领的哪个资源。
     rendered = [
-        "[" + " ".join(values) + "]"
-        for values in (
-            ["req-line", "trace-line", "", "", "perf_run", "perf:default", ""],
-            [""] * 7,
-        )
+        "[" + " ".join(values.get(name, "") for name in CORRELATION_FIELDS) + "]",
+        "[" + " ".join([""] * len(CORRELATION_FIELDS)) + "]",
     ]
+    assert len(CORRELATION_FIELDS) == 12
+    assert "status" in CORRELATION_FIELDS
     assert f"{rendered[0]} src.core.log_format.tested: metrics_scraped" in lines[0]
     assert f"{rendered[1]} src.core.log_format.tested: metrics_scraped_without_context" in lines[1]
     timestamp = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} INFO ")
