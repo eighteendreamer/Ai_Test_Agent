@@ -455,6 +455,17 @@ async def run_ladder_case(harness, fleet) -> None:
     expected = 2 * session_count
     assert len(set(task_ids)) == expected, "each submission must own exactly one durable task"
 
+    server_errors = sum(
+        1 for pair in nested for response in pair if response.status_code >= 500
+    )
+    error_limit = _TEST_CONFIG.run_live_p5_max_api_error_rate
+    if error_limit >= 0:
+        assert server_errors / expected <= error_limit, (
+            f"P99 API error-rate gate: {server_errors}/{expected} exceeds {error_limit}"
+        )
+    else:
+        print(f"api error-rate gate disabled; measured {server_errors}/{expected}")
+
     # Consumers are up before delivery, so the spawned processes cannot be
     # starved by the faster in-process one.
     await fleet.wait_ready()

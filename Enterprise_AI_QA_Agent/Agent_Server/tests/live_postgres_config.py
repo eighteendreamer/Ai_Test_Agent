@@ -13,6 +13,8 @@ class LivePostgresTestConfig(BaseSettings):
     run_live_postgres_capacity: bool = False
     run_live_postgres_capacity_sizes: str = "1000,10000,100000"
     run_live_postgres_capacity_workers: int = 32
+    run_live_postgres_capacity_max_claim_p95_ms: float = -1.0
+    run_live_p5_max_api_error_rate: float = -1.0
     run_live_postgres_soak: bool = False
     run_live_postgres_soak_seconds: int = 14400
     run_live_postgres_soak_sample_interval_seconds: int = 60

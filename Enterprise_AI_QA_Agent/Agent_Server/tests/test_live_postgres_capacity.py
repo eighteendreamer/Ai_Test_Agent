@@ -391,6 +391,15 @@ async def test_live_postgres_full_lifecycle_capacity():
             assert result_count == size
             assert status_counts == {"passed": size}
             assert set(run_row["record"]["stats"]) == set(TestRunStats.model_fields)
+            claim_p95 = _percentile(latencies["claim"], 0.95)
+            claim_limit = LIVE_CONFIG.run_live_postgres_capacity_max_claim_p95_ms
+            if claim_limit >= 0:
+                assert claim_p95 <= claim_limit, (
+                    f"P95 queue-wait gate: claim p95 {claim_p95:.2f}ms exceeds {claim_limit:.2f}ms "
+                    f"at size={size} workers={workers}"
+                )
+            else:
+                print(f"p95 queue-wait gate disabled; measured claim_p95={claim_p95:.2f}ms")
             assert run_row["status"] == "completed"
             assert run_row["record"]["status"] == "completed"
             assert run_row["record"]["stats"] == {
