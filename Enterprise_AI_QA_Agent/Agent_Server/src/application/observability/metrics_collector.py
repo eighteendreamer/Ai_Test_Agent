@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from redis.asyncio import Redis
 
 from src.application.observability.business_metrics import (
     collector_errors_total,
+    compaction_lag_events,
     pg_pool_checked_out,
     pg_pool_size,
     redis_used_memory_bytes,
@@ -37,18 +39,23 @@ _NOGROUP = "NOGROUP"
 
 _task: asyncio.Task[None] | None = None
 _stop: asyncio.Event | None = None
+_compaction_store: Any | None = None
 
 
-async def start(settings: Settings) -> None:
+async def start(settings: Settings, *, compaction_store: Any | None = None) -> None:
     """Start the collector exactly once per process."""
-    global _task, _stop
+    global _task, _stop, _compaction_store
     if _task is not None and not _task.done():
         return
+    _compaction_store = compaction_store
     _stop = asyncio.Event()
     _task = asyncio.create_task(_loop(settings), name="metrics-collector")
     LOGGER.info(
         "metrics_collector_started",
-        extra={"interval_seconds": COLLECT_INTERVAL_SECONDS},
+        extra={
+            "interval_seconds": COLLECT_INTERVAL_SECONDS,
+            "compaction_lag_wired": compaction_store is not None,
+        },
     )
 
 
@@ -81,10 +88,23 @@ async def _loop(settings: Settings) -> None:
         await collect_once(settings)
 
 
-async def collect_once(settings: Settings) -> None:
+async def collect_once(settings: Settings, *, compaction_store: Any | None = None) -> None:
     """Run one full export pass; each source guards its own failures."""
     _collect_postgres_pools()
+    await _collect_compaction_lag(compaction_store if compaction_store is not None else _compaction_store)
     await _collect_redis(settings)
+
+
+async def _collect_compaction_lag(store: Any | None) -> None:
+    if store is None:
+        # The compaction subsystem is not wired in this process; the watermark
+        # table it owns does not exist here, so there is nothing to export.
+        LOGGER.debug("metrics_collect_compaction_lag_not_wired")
+        return
+    try:
+        compaction_lag_events().set(await store.uncompacted_event_count())
+    except Exception as exc:
+        _record_collector_error("compaction_lag", exc)
 
 
 def _record_collector_error(item: str, error: Exception | str) -> None:

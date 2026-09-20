@@ -174,8 +174,8 @@ class CompactionWorker:
     def _record_cycle(result: str, *, started: float, events: int) -> None:
         """Export one compaction cycle.
 
-        There is no numeric hot-memory watermark to diff against, so backlog lag
-        is not exported; only the folded event count and the cycle duration are.
+        Backlog lag is not exported here: the record store persists the event
+        sequence watermark and the metrics collector derives the depth from it.
         """
         compaction_total().labels(result=result).inc()
         if events:

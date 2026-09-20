@@ -286,3 +286,36 @@ async def test_collector_exports_pool_and_stream_depth(harness):
         for (name, labels) in values
         if name == "qa_collector_errors_total"
     } == set()
+
+
+class _CompactionStore:
+    def __init__(self, *, backlog: int | None = None, error: Exception | None = None) -> None:
+        self._backlog = backlog
+        self._error = error
+
+    async def uncompacted_event_count(self) -> int:
+        if self._error is not None:
+            raise self._error
+        assert self._backlog is not None
+        return self._backlog
+
+
+@pytest.mark.asyncio
+async def test_collector_exports_compaction_backlog_from_watermark(harness):
+    h = harness
+    await metrics_collector.collect_once(
+        h.settings, compaction_store=_CompactionStore(backlog=12)
+    )
+    assert samples(render())[("qa_compaction_lag_events", ())] == 12
+
+
+@pytest.mark.asyncio
+async def test_compaction_backlog_failure_does_not_stop_other_exports(harness):
+    h = harness
+    await metrics_collector.collect_once(
+        h.settings, compaction_store=_CompactionStore(error=RuntimeError("postgres down"))
+    )
+    values = samples(render())
+    assert values[("qa_collector_errors_total", (("item", "compaction_lag"),))] == 1
+    assert values[("qa_redis_used_memory_bytes", ())] > 0
+    assert values[("qa_compaction_lag_events", ())] == 0

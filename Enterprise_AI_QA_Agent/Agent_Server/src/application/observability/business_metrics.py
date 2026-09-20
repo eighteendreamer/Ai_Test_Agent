@@ -42,6 +42,7 @@ SSE_CONNECTIONS_ACTIVE = "qa_sse_connections_active"
 COMPACTION_TOTAL = "qa_compaction_total"
 COMPACTION_EVENTS_TOTAL = "qa_compaction_events_total"
 COMPACTION_DURATION_SECONDS = "qa_compaction_duration_seconds"
+COMPACTION_LAG_EVENTS = "qa_compaction_lag_events"
 EMBEDDING_CALLS_TOTAL = "qa_embedding_calls_total"
 EMBEDDING_CACHE_TOTAL = "qa_embedding_cache_total"
 EMBEDDING_API_SECONDS = "qa_embedding_api_seconds"
@@ -152,6 +153,9 @@ compaction_events_total = _counter(
 )
 compaction_duration_seconds = _histogram(
     COMPACTION_DURATION_SECONDS, "Session compaction cycle duration."
+)
+compaction_lag_events = _gauge(
+    COMPACTION_LAG_EVENTS, "Durable FlowEvents no completed compaction cycle has folded."
 )
 
 embedding_calls_total = _counter(

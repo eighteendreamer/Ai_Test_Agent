@@ -18,6 +18,7 @@ class CompactionRecord:
     compaction_key: str
     session_id: str
     last_event_id: str
+    last_compacted_event_sequence: int
     compression_version: str
     status: str
     memory_ids: list[str]
@@ -34,6 +35,7 @@ class PostgresCompactionRecordStore:
         self._settings = settings
         self._lease_seconds = max(1, int(lease_seconds))
         self._table_name = settings.database.postgres_compaction_table
+        self._event_table_name = settings.database.postgres_event_table
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -74,6 +76,7 @@ class PostgresCompactionRecordStore:
                         compaction_key TEXT PRIMARY KEY,
                         session_id TEXT NOT NULL,
                         last_event_id TEXT NOT NULL,
+                        last_compacted_event_sequence BIGINT NOT NULL DEFAULT 0,
                         compression_version TEXT NOT NULL,
                         status TEXT NOT NULL,
                         memory_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -85,6 +88,10 @@ class PostgresCompactionRecordStore:
                         completed_at TIMESTAMPTZ NULL
                     )
                     """
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._table_name} ADD COLUMN IF NOT EXISTS "
+                    "last_compacted_event_sequence BIGINT NOT NULL DEFAULT 0"
                 )
                 cur.execute(
                     f"CREATE INDEX IF NOT EXISTS {self._table_name}_session_idx "
@@ -154,7 +161,14 @@ class PostgresCompactionRecordStore:
                     UPDATE {self._table_name}
                     SET status = 'completed', memory_ids = %s::jsonb,
                         claimed_by = NULL, claimed_until = NULL,
-                        last_error = NULL, completed_at = NOW(), updated_at = NOW()
+                        last_error = NULL, completed_at = NOW(), updated_at = NOW(),
+                        last_compacted_event_sequence = COALESCE(
+                            (SELECT event.event_sequence
+                             FROM {self._event_table_name} event
+                             WHERE event.session_id = {self._table_name}.session_id
+                               AND event.id = {self._table_name}.last_event_id),
+                            {self._table_name}.last_compacted_event_sequence
+                        )
                     WHERE compaction_key = %s AND status = 'running'
                     """,
                     (json.dumps(memory_ids, ensure_ascii=False), compaction_key),
@@ -162,6 +176,34 @@ class PostgresCompactionRecordStore:
                 updated = cur.rowcount == 1
             conn.commit()
         return updated
+
+    async def uncompacted_event_count(self) -> int:
+        return await asyncio.to_thread(self._uncompacted_event_count_sync)
+
+    def _uncompacted_event_count_sync(self) -> int:
+        """Count durable FlowEvents no completed compaction cycle has folded yet."""
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    WITH durable AS (
+                        SELECT session_id, MAX(event_sequence) AS latest_sequence
+                        FROM {self._event_table_name}
+                        GROUP BY session_id
+                    ), compacted AS (
+                        SELECT session_id,
+                               MAX(last_compacted_event_sequence) AS watermark
+                        FROM {self._table_name}
+                        WHERE status = 'completed'
+                        GROUP BY session_id
+                    )
+                    SELECT COALESCE(SUM(GREATEST(durable.latest_sequence - COALESCE(compacted.watermark, 0), 0)), 0)
+                    FROM durable
+                    LEFT JOIN compacted ON compacted.session_id = durable.session_id
+                    """
+                )
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
 
     def _fail_sync(self, compaction_key: str, error: str) -> bool:
         with postgres_connect(self._settings) as conn:
@@ -185,7 +227,8 @@ class PostgresCompactionRecordStore:
                 cur.execute(
                     f"SELECT compaction_key, session_id, last_event_id, compression_version, "
                     f"status, memory_ids, last_error, claimed_by, claimed_until, "
-                    f"created_at, updated_at, completed_at FROM {self._table_name} "
+                    f"created_at, updated_at, completed_at, last_compacted_event_sequence "
+                    f"FROM {self._table_name} "
                     "WHERE compaction_key = %s",
                     (compaction_key,),
                 )
@@ -197,12 +240,16 @@ class PostgresCompactionRecordStore:
             "compression_version": row[3], "status": row[4], "memory_ids": row[5],
             "last_error": row[6], "claimed_by": row[7], "claimed_until": row[8],
             "created_at": row[9], "updated_at": row[10], "completed_at": row[11],
+            "last_compacted_event_sequence": row[12],
         }
         memory_ids = value.get("memory_ids") or []
         return CompactionRecord(
             compaction_key=str(value["compaction_key"]),
             session_id=str(value["session_id"]),
             last_event_id=str(value["last_event_id"]),
+            last_compacted_event_sequence=int(
+                value.get("last_compacted_event_sequence") or 0
+            ),
             compression_version=str(value["compression_version"]),
             status=str(value["status"]),
             memory_ids=[str(item) for item in memory_ids],
