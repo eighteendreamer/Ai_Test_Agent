@@ -819,6 +819,96 @@ async def run_sse_case(h) -> None:
     assert len(streams[0]) > len(streams[1]) > len(streams[2])
 
 
+async def run_sse_client_ladder(h) -> None:
+    """S8 fan-out gate: N simultaneous clients, one identical intact trace.
+
+    The cursor test above proves a late joiner still gets its own window; it is
+    pinned to three connections because that is how many distinct windows the
+    trace can offer. This case varies only the number of concurrent connections,
+    so every client must see exactly the persisted event list, in order.
+    """
+    h.runtime.finish = asyncio.Event()
+    receipt = await h.dispatcher.submit(
+        h.session_id,
+        message_payload(f"stream me to {h.concurrency} clients", "p5-sse-ladder-1"),
+    )
+    task_id = receipt.task.id
+    assert await relay_all(h) == 1
+    deliveries = await fetch_rows(
+        h,
+        f"SELECT payload FROM {h.settings.database.postgres_task_outbox_table} WHERE event_key=%s",
+        (f"agent_turn:{task_id}",),
+    )
+    assert deliveries, "the turn command must be delivered before anyone can subscribe"
+
+    async with serve_app(h.app) as base_url:
+        executing = asyncio.create_task(
+            h.dispatcher.handle(
+                QueuedTask("p5-sse-ladder-delivery", deliveries[0]["payload"]),
+                worker_id="p5-sse-ladder-executor",
+            )
+        )
+        streams: list[list[dict]] = []
+        collectors: list[asyncio.Task] = []
+        try:
+            await asyncio.wait_for(h.runtime.entered.wait(), 20)
+            for _ in range(h.concurrency):
+                received: list[dict] = []
+                streams.append(received)
+                collectors.append(asyncio.create_task(collect_sse(
+                    base_url,
+                    h.session_id,
+                    cursor="",
+                    received=received,
+                    stop_types={"turn.completed"},
+                    timeout=40,
+                )))
+            started = time.monotonic()
+            while not all(
+                any(event["type"] == "turn.started" for event in stream) for stream in streams
+            ):
+                silent = [index for index, stream in enumerate(streams) if not stream]
+                assert time.monotonic() - started < 30, (
+                    f"SSE clients never saw the running turn: silent={silent}"
+                )
+                await asyncio.sleep(.05)
+            h.runtime.finish.set()
+            await asyncio.wait_for(asyncio.gather(*collectors), timeout=40)
+        finally:
+            h.runtime.finish.set()
+            for collector in collectors:
+                if not collector.done():
+                    collector.cancel()
+            await asyncio.gather(*collectors, return_exceptions=True)
+            await executing
+
+    assert (await h.tasks.get(task_id)).status == "completed"
+    persisted = await h.store.list_events(h.session_id)
+    completed_at = next(
+        index for index, event in enumerate(persisted) if event.type == "turn.completed"
+    )
+    expected = [event.id for event in persisted[: completed_at + 1]]
+    assert len(streams) == h.concurrency
+    for index, stream in enumerate(streams):
+        assert [event["id"] for event in stream] == expected, (
+            f"SSE loss gate: client {index} of {h.concurrency} missed or reordered events"
+        )
+        assert all(event["session_id"] == h.session_id for event in stream), (
+            f"SSE isolation gate: client {index} was fed another session's trace"
+        )
+        assert stream[-1]["type"] == "turn.completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("p5_harness", CONCURRENCY_LEVELS, indirect=True)
+async def test_sse_client_ladder_delivers_the_intact_trace(p5_harness):
+    h = p5_harness
+    try:
+        await asyncio.wait_for(run_sse_client_ladder(h), 90 + 5 * h.concurrency)
+    except TimeoutError:
+        pytest.fail(f"P5 SSE fan-out to {h.concurrency} clients exceeded its wall-clock budget")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("p5_harness", [1], indirect=True)
 async def test_sse_multiple_clients_independent(p5_harness):
