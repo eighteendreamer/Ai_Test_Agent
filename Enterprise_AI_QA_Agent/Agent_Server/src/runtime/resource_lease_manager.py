@@ -384,6 +384,10 @@ class RedisResourceLeaseManager:
         values = await self._client.hgetall(self._key("quota:usage"))
         return {str(key): int(value) for key, value in values.items()}
 
+    async def quota_limits(self) -> dict[str, int]:
+        values = await self._client.hgetall(self._key("quota:limits"))
+        return {str(key): int(value) for key, value in values.items()}
+
     def _key(self, suffix: str) -> str:
         return f"{self._prefix}:{suffix}"
 

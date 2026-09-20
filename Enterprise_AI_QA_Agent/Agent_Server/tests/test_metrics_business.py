@@ -319,3 +319,95 @@ async def test_compaction_backlog_failure_does_not_stop_other_exports(harness):
     assert values[("qa_collector_errors_total", (("item", "compaction_lag"),))] == 1
     assert values[("qa_redis_used_memory_bytes", ())] > 0
     assert values[("qa_compaction_lag_events", ())] == 0
+
+
+class _LeaseManager:
+    def __init__(
+        self,
+        *,
+        usage: dict[str, int] | None = None,
+        limits: dict[str, int] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._usage = usage or {}
+        self._limits = limits or {}
+        self._error = error
+
+    async def usage_snapshot(self) -> dict[str, int]:
+        if self._error is not None:
+            raise self._error
+        return self._usage
+
+    async def quota_limits(self) -> dict[str, int]:
+        if self._error is not None:
+            raise self._error
+        return self._limits
+
+
+@pytest.mark.asyncio
+async def test_collector_exports_resource_occupancy_without_unbounded_labels(harness):
+    h = harness
+    await metrics_collector.collect_once(
+        h.settings,
+        lease_manager=_LeaseManager(
+            usage={
+                "resource_type:browser": 3,
+                "resource_type:docker": 1,
+                "project:11111111-1111-1111-1111-111111111111": 7,
+                "run:22222222-2222-2222-2222-222222222222": 9,
+            },
+            limits={"resource_type:browser": 5},
+        ),
+    )
+
+    values = samples(render())
+    assert values[("qa_resource_quota_used", (("resource_type", "browser"),))] == 3
+    assert values[("qa_resource_quota_limit", (("resource_type", "browser"),))] == 5
+    # No ceiling was configured for docker, so only its occupancy is known.
+    assert values[("qa_resource_quota_used", (("resource_type", "docker"),))] == 1
+    assert ("qa_resource_quota_limit", (("resource_type", "docker"),)) not in values
+    exported_types = {
+        dict(labels)["resource_type"]
+        for (name, labels) in values
+        if name == "qa_resource_quota_used"
+    }
+    assert exported_types == {"browser", "docker"}
+
+
+@pytest.mark.asyncio
+async def test_occupancy_failure_does_not_stop_other_exports(harness):
+    h = harness
+    await metrics_collector.collect_once(
+        h.settings, lease_manager=_LeaseManager(error=RuntimeError("redis down"))
+    )
+    values = samples(render())
+    assert values[("qa_collector_errors_total", (("item", "resource_occupancy"),))] == 1
+    assert values[("qa_redis_used_memory_bytes", ())] > 0
+    assert "qa_resource_quota_used" not in {name for name, _labels in values}
+
+
+@pytest.mark.asyncio
+async def test_collector_exports_redis_slowlog_depth_and_worst_duration(harness):
+    """Force one slow command so the export is proven against a real server."""
+    h = harness
+    client = Redis.from_url(h.settings.database.redis_url, decode_responses=True)
+    previous = None
+    try:
+        try:
+            previous = (await client.config_get("slowlog-log-slower-than"))["slowlog-log-slower-than"]
+            await client.slowlog_reset()
+            await client.config_set("slowlog-log-slower-than", 0)
+        except Exception as exc:
+            pytest.skip(f"Redis in this environment forbids CONFIG/SLOWLOG administration: {exc}")
+        await client.ping()
+
+        await metrics_collector.collect_once(h.settings)
+
+        values = samples(render())
+        assert values[("qa_redis_slowlog_entries", ())] >= 1
+        assert values[("qa_redis_slowlog_max_duration_microseconds", ())] > 0
+    finally:
+        if previous is not None:
+            await client.config_set("slowlog-log-slower-than", previous)
+            await client.slowlog_reset()
+        await client.aclose()

@@ -5,6 +5,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 import logging
 from datetime import datetime, timezone
+from time import monotonic
 
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_job_service import ToolJobService
@@ -20,6 +21,7 @@ from src.application.test_runs.case_execution import (
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.test_runs.run_service import TestRunService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
+from src.application.observability.business_metrics import run_item_execution_seconds
 from src.core.request_context import bind_request_context
 from src.runtime.store import SessionStore
 from src.runtime.task_deferred import TaskDeferred
@@ -116,6 +118,7 @@ class TestRunExecutionService:
         item_id: str,
         payload: RunItemExecuteRequest,
     ) -> TestCaseResultRecord | RunItemApprovalPending:
+        execution_clock = monotonic()
         item = await self._runs.start_item(
             item_id,
             RunItemLeaseRequest(lease_token=payload.lease_token),
@@ -363,6 +366,9 @@ class TestRunExecutionService:
                 outcome = None
 
             result = await self._runs.complete_item(item.id, completion)
+            run_item_execution_seconds().labels(
+                mode_key=run.mode_key, status=completion.status
+            ).observe(monotonic() - execution_clock)
             if outcome is not None and outcome.verification_results:
                 await self._persist_verifications(
                     run=run,

@@ -34,10 +34,13 @@ AGENT_TASK_WAIT_SECONDS = "qa_agent_task_wait_seconds"
 AGENT_TASK_RETRIES_TOTAL = "qa_agent_task_retries_total"
 AGENT_TASKS_FINISHED_TOTAL = "qa_agent_tasks_finished_total"
 AGENT_TASK_EXECUTION_SECONDS = "qa_agent_task_execution_seconds"
+RUN_ITEM_EXECUTION_SECONDS = "qa_run_item_execution_seconds"
 RESOURCE_ACQUIRE_TOTAL = "qa_resource_acquire_total"
 RESOURCE_LEASE_RENEW_LOST_TOTAL = "qa_resource_lease_renew_lost_total"
 RESOURCE_RELEASE_ERRORS_TOTAL = "qa_resource_release_errors_total"
 RESOURCE_LEASE_EXPIRED_TOTAL = "qa_resource_lease_expired_total"
+RESOURCE_QUOTA_USED = "qa_resource_quota_used"
+RESOURCE_QUOTA_LIMIT = "qa_resource_quota_limit"
 SSE_CONNECTIONS_ACTIVE = "qa_sse_connections_active"
 COMPACTION_TOTAL = "qa_compaction_total"
 COMPACTION_EVENTS_TOTAL = "qa_compaction_events_total"
@@ -53,6 +56,8 @@ LANGSMITH_REPORTS_TOTAL = "qa_langsmith_reports_total"
 PG_POOL_CHECKED_OUT = "qa_pg_pool_checked_out"
 PG_POOL_SIZE = "qa_pg_pool_size"
 REDIS_USED_MEMORY_BYTES = "qa_redis_used_memory_bytes"
+REDIS_SLOWLOG_ENTRIES = "qa_redis_slowlog_entries"
+REDIS_SLOWLOG_MAX_DURATION_MICROSECONDS = "qa_redis_slowlog_max_duration_microseconds"
 STREAM_LENGTH = "qa_stream_length"
 STREAM_PENDING = "qa_stream_pending"
 COLLECTOR_ERRORS_TOTAL = "qa_collector_errors_total"
@@ -123,6 +128,12 @@ agent_tasks_finished_total = _counter(
 agent_task_execution_seconds = _histogram(
     AGENT_TASK_EXECUTION_SECONDS, "Agent task execution time from claim to finish.", "task_type"
 )
+run_item_execution_seconds = _histogram(
+    RUN_ITEM_EXECUTION_SECONDS,
+    "Test run item execution time from claim to terminal result.",
+    "mode_key",
+    "status",
+)
 
 resource_acquire_total = _counter(
     RESOURCE_ACQUIRE_TOTAL, "Resource lease acquisition attempts.", "resource_type", "result"
@@ -139,6 +150,12 @@ resource_release_errors_total = _counter(
 )
 resource_lease_expired_total = _counter(
     RESOURCE_LEASE_EXPIRED_TOTAL, "Expired leases reclaimed by the reaper.", "resource_type"
+)
+resource_quota_used = _gauge(
+    RESOURCE_QUOTA_USED, "Held resource leases per resource type.", "resource_type"
+)
+resource_quota_limit = _gauge(
+    RESOURCE_QUOTA_LIMIT, "Configured lease ceiling per resource type.", "resource_type"
 )
 
 sse_connections_active = _gauge(
@@ -188,6 +205,13 @@ pg_pool_checked_out = _gauge(
 pg_pool_size = _gauge(PG_POOL_SIZE, "PostgreSQL pool configured size.")
 redis_used_memory_bytes = _gauge(
     REDIS_USED_MEMORY_BYTES, "Redis used_memory reported by INFO memory."
+)
+redis_slowlog_entries = _gauge(
+    REDIS_SLOWLOG_ENTRIES, "Commands waiting in the Redis slow log."
+)
+redis_slowlog_max_duration_microseconds = _gauge(
+    REDIS_SLOWLOG_MAX_DURATION_MICROSECONDS,
+    "Slowest command among the most recent Redis slow log entries.",
 )
 stream_length = _gauge(STREAM_LENGTH, "Redis Stream entry count by stream.", "stream")
 stream_pending = _gauge(

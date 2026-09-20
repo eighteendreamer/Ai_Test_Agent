@@ -3,7 +3,8 @@
 No upstream counterpart (checked: src-wide grep for an existing background poller of
 pool/stream statistics, official FastAPI docs; the project metrics registry only
 stores values, so external depths must be polled): this reads PostgreSQL pool
-statistics and Redis INFO/XLEN/XPENDING and writes them as gauges.
+statistics, Redis INFO/XLEN/XPENDING/SLOWLOG and the resource quota hashes, and
+writes them as gauges.
 
 Every source is read independently.  A missing stream, consumer group or an
 unreachable Redis must never stop the other exports.
@@ -22,7 +23,11 @@ from src.application.observability.business_metrics import (
     compaction_lag_events,
     pg_pool_checked_out,
     pg_pool_size,
+    redis_slowlog_entries,
+    redis_slowlog_max_duration_microseconds,
     redis_used_memory_bytes,
+    resource_quota_limit,
+    resource_quota_used,
     stream_length,
     stream_pending,
 )
@@ -35,19 +40,29 @@ LOGGER = logging.getLogger(__name__)
 # of every other reaper in this project, so the value stays a module constant.
 COLLECT_INTERVAL_SECONDS = 30.0
 DEAD_LETTER_SUFFIX = ":dead_letter"
+# SLOWLOG GET is O(N) on the server side; the worst-case depth is all occupancy
+# reporting needs, and an idle Redis answers this in one round trip.
+REDIS_SLOWLOG_SAMPLE_SIZE = 32
+# Only resource_type quota fields are exported: project and run quota fields carry
+# unbounded identifiers, which would blow up Prometheus label cardinality.
+QUOTA_SCOPE_RESOURCE_TYPE = "resource_type"
 _NOGROUP = "NOGROUP"
 
 _task: asyncio.Task[None] | None = None
 _stop: asyncio.Event | None = None
 _compaction_store: Any | None = None
+_lease_manager: Any | None = None
 
 
-async def start(settings: Settings, *, compaction_store: Any | None = None) -> None:
+async def start(
+    settings: Settings, *, compaction_store: Any | None = None, lease_manager: Any | None = None
+) -> None:
     """Start the collector exactly once per process."""
-    global _task, _stop, _compaction_store
+    global _task, _stop, _compaction_store, _lease_manager
     if _task is not None and not _task.done():
         return
     _compaction_store = compaction_store
+    _lease_manager = lease_manager
     _stop = asyncio.Event()
     _task = asyncio.create_task(_loop(settings), name="metrics-collector")
     LOGGER.info(
@@ -55,6 +70,7 @@ async def start(settings: Settings, *, compaction_store: Any | None = None) -> N
         extra={
             "interval_seconds": COLLECT_INTERVAL_SECONDS,
             "compaction_lag_wired": compaction_store is not None,
+            "resource_occupancy_wired": lease_manager is not None,
         },
     )
 
@@ -88,11 +104,37 @@ async def _loop(settings: Settings) -> None:
         await collect_once(settings)
 
 
-async def collect_once(settings: Settings, *, compaction_store: Any | None = None) -> None:
+async def collect_once(
+    settings: Settings,
+    *,
+    compaction_store: Any | None = None,
+    lease_manager: Any | None = None,
+) -> None:
     """Run one full export pass; each source guards its own failures."""
     _collect_postgres_pools()
     await _collect_compaction_lag(compaction_store if compaction_store is not None else _compaction_store)
+    await _collect_resource_occupancy(lease_manager if lease_manager is not None else _lease_manager)
     await _collect_redis(settings)
+
+
+async def _collect_resource_occupancy(manager: Any | None) -> None:
+    if manager is None:
+        # The lifespan wires the lease manager; without it no quota hashes exist.
+        LOGGER.debug("metrics_collect_resource_occupancy_not_wired")
+        return
+    try:
+        usage = await manager.usage_snapshot()
+        limits = await manager.quota_limits()
+    except Exception as exc:
+        _record_collector_error("resource_occupancy", exc)
+        return
+    for field, used in usage.items():
+        scope, separator, resource_type = str(field).partition(":")
+        if not separator or scope != QUOTA_SCOPE_RESOURCE_TYPE:
+            continue
+        resource_quota_used().labels(resource_type=resource_type).set(int(used))
+        if field in limits:
+            resource_quota_limit().labels(resource_type=resource_type).set(int(limits[field]))
 
 
 async def _collect_compaction_lag(store: Any | None) -> None:
@@ -141,6 +183,7 @@ async def _collect_redis(settings: Settings) -> None:
     )
     try:
         await _collect_redis_memory(client)
+        await _collect_redis_slowlog(client)
         for stream in streams:
             await _collect_stream(client, stream, group=config.redis_task_consumer_group)
         # Dead letter entries have no consumer group: only their depth matters.
@@ -164,6 +207,28 @@ async def _collect_redis_memory(client: Redis) -> None:
         _record_collector_error("redis_memory", exc)
         return
     redis_used_memory_bytes().set(used_memory)
+
+
+async def _collect_redis_slowlog(client: Redis) -> None:
+    try:
+        entries = int(await client.slowlog_len())
+    except Exception as exc:
+        _record_collector_error("redis_slowlog", exc)
+        return
+    redis_slowlog_entries().set(entries)
+    if entries <= 0:
+        redis_slowlog_max_duration_microseconds().set(0)
+        return
+    try:
+        # SLOWLOG GET returns the newest entries first; only the worst matters here.
+        slow = await client.slowlog_get(min(entries, REDIS_SLOWLOG_SAMPLE_SIZE))
+    except Exception as exc:
+        _record_collector_error("redis_slowlog_detail", exc)
+        return
+    durations = [
+        int(entry.get("duration") or 0) for entry in slow if isinstance(entry, dict)
+    ]
+    redis_slowlog_max_duration_microseconds().set(max(durations) if durations else 0)
 
 
 async def _collect_stream(client: Redis, stream: str, *, group: str | None) -> None:

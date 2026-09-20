@@ -692,7 +692,11 @@ async def lifespan(app: FastAPI):
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
     await app.state.agent_task_dispatcher.start_child_reaper()
-    await metrics_collector.start(settings, compaction_store=compaction_record_store)
+    await metrics_collector.start(
+        settings,
+        compaction_store=compaction_record_store,
+        lease_manager=resource_lease_manager,
+    )
     await session_service.recover_expired_turn_executions()
     await coordinator_runtime_service.recover_orphaned_dispatches()
 

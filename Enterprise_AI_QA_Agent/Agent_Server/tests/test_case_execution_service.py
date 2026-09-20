@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 
 from src.api.routes.run_management import router
+from src.application.observability.metrics import render
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
 from src.application.test_runs.case_execution import CaseExecutionOutcome
@@ -746,6 +747,8 @@ async def test_execution_service_heartbeats_slow_item_and_completes_with_same_le
     assert all(payload.lease_token == "lease-1" for _, payload in runs.heartbeats)
     assert runs.completed_payload.lease_token == "lease-1"
     assert runs.completed_payload.status == "passed"
+    # Per-item latency percentiles are only answerable if the terminal write observes.
+    assert 'qa_run_item_execution_seconds_count{mode_key="api_testing",status="passed"}' in render()
 
 
 @pytest.mark.asyncio
