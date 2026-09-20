@@ -208,6 +208,8 @@ class OrchestrConfig(BaseModel):
     resource_docker_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
     resource_mock_target_max_lifetime_seconds: float = Field(default=3600, gt=0)
     resource_cleanup_interval_seconds: float = Field(default=30.0, gt=0)
+    compaction_idle_seconds: int = Field(default=900, gt=0)
+    compaction_sweep_interval_seconds: float = Field(default=300.0, gt=0)
     resource_browser_host_id: str = Field(default_factory=lambda: re.sub(r"[^A-Za-z0-9_.-]", "_", platform.node()) or "localhost")
     resource_browser_limit: int = Field(default=10, ge=1)
     resource_browser_max_lifetime_seconds: float = Field(default=900, gt=0)

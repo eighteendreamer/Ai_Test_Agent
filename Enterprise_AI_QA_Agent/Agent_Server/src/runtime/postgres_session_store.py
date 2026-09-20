@@ -773,6 +773,78 @@ class PostgresSessionStore:
             for row in rows
         ]
 
+    async def queue_idle_compaction_tasks(self, *, idle_seconds: int, limit: int = 50) -> int:
+        return await asyncio.to_thread(self._queue_idle_compaction_tasks_sync, idle_seconds, limit)
+
+    def _queue_idle_compaction_tasks_sync(self, idle_seconds: int, limit: int) -> int:
+        """Enqueue compaction for Sessions that went quiet while still holding a backlog.
+
+        Switching away from a Session is only a frontend navigation, so idleness plus an
+        unfilled watermark is the durable signal that nobody is still writing it. The
+        outbox key matches the turn-completion trigger, so the two can never double-queue.
+        """
+        outbox_table = getattr(self, "_compaction_outbox_table", None)
+        stream = getattr(self, "_compaction_task_stream", None)
+        if not outbox_table or not stream:
+            return 0
+        bounded_limit = max(1, min(int(limit), 500))
+        queued = 0
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    WITH latest AS (
+                        SELECT DISTINCT ON (session_id) session_id, id, event_sequence, timestamp
+                        FROM {self._settings.database.postgres_event_table}
+                        ORDER BY session_id, event_sequence DESC
+                    ), watermark AS (
+                        SELECT session_id, MAX(last_compacted_event_sequence) AS watermark
+                        FROM {self._settings.database.postgres_compaction_table}
+                        WHERE status = 'completed'
+                        GROUP BY session_id
+                    )
+                    SELECT latest.session_id, latest.id, latest.event_sequence
+                    FROM latest
+                    LEFT JOIN watermark ON watermark.session_id = latest.session_id
+                    WHERE latest.timestamp < now() - (%s || ' seconds')::interval
+                      AND latest.event_sequence > COALESCE(watermark.watermark, 0)
+                    ORDER BY latest.timestamp
+                    LIMIT %s
+                    """,
+                    (max(1, int(idle_seconds)), bounded_limit),
+                )
+                candidates = list(cur.fetchall() or [])
+                for row in candidates:
+                    session_id = str(row["session_id"])
+                    event_id = str(row["id"])
+                    task_payload = {
+                        "schema_version": 1,
+                        "task_id": f"task_compaction_{session_id}_{event_id}",
+                        "task_type": "compaction_task",
+                        "request_id": f"req_{event_id}",
+                        "trace_id": f"trace_{event_id}",
+                        "session_id": session_id,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "payload": {
+                            "source_event_id": event_id,
+                            "source_event_type": "idle_sweep",
+                        },
+                    }
+                    cur.execute(
+                        f"""
+                        INSERT INTO {outbox_table} (event_key, stream, payload)
+                        VALUES (%s, %s, %s::jsonb)
+                        ON CONFLICT (event_key) DO NOTHING
+                        """,
+                        (
+                            f"compaction:{session_id}:{event_id}",
+                            stream,
+                            json.dumps(task_payload, ensure_ascii=False, separators=(",", ":")),
+                        ),
+                    )
+                    queued += max(0, int(cur.rowcount or 0))
+        return queued
+
     def _append_event_sync(
         self,
         session_id: str,
