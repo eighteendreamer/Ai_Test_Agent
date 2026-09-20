@@ -12,10 +12,13 @@ from time import perf_counter
 from uuid import uuid4
 
 import pytest
+from redis.asyncio import Redis
 
 from src.application.test_runs.run_store import PostgresTestRunStore
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
+from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.schemas.run_management import (
     RunItemCompletion,
     TestRunItemRecord as _TestRunItemRecord,
@@ -111,11 +114,95 @@ def _postgres_connection_count(settings: Settings) -> int | None:
         return None
 
 
+def _compaction_watermark_gap(settings: Settings) -> str | None:
+    """Return why the backlog query cannot run here, or None when it can."""
+    database = settings.database
+    try:
+        with postgres_connect(settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (database.postgres_compaction_table,))
+                if not (cur.fetchone() or {}).get("present"):
+                    return "table_missing"
+                for table, column, reason in (
+                    (database.postgres_compaction_table, "last_compacted_event_sequence", "watermark_column_missing"),
+                    (database.postgres_event_table, "event_sequence", "event_sequence_column_missing"),
+                ):
+                    cur.execute(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = %s AND column_name = %s",
+                        (table, column),
+                    )
+                    if not cur.fetchone():
+                        return reason
+                return None
+    except Exception:
+        return "unreachable"
+
+
+class _SoakBacklogProbes:
+    """Observe the backlogs a soak must not let grow: queue, leases, compaction."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._redis = Redis.from_url(settings.database.redis_url, decode_responses=True)
+        self._leases = RedisResourceLeaseManager(settings.database.redis_url)
+        self._compaction = PostgresCompactionRecordStore(settings)
+        self.unavailable: set[str] = set()
+        self._compaction_gap = "probe_not_started"
+
+    async def start(self) -> None:
+        await self._leases.connect()
+        self._compaction_gap = _compaction_watermark_gap(self._settings)
+
+    async def sample(self) -> dict[str, int]:
+        observed: dict[str, int] = {}
+        try:
+            groups = await self._redis.xinfo_groups(self._settings.orchestration.agent_task_stream)
+            observed["pending"] = sum(
+                int(group["pending"] if isinstance(group, dict) else group[2])
+                for group in groups
+            )
+        except Exception as exc:
+            # A stream nobody has published to yet has nothing pending; the reason
+            # is recorded so the report never reads a zero as a proven idle queue.
+            reason = "no_stream" if "no such key" in str(exc).lower() else type(exc).__name__
+            self.unavailable.add(f"pending:{reason}")
+            observed["pending"] = 0
+        try:
+            observed["cleanup_pending"] = len(await self._leases.list_cleanup_pending())
+        except Exception as exc:
+            self.unavailable.add(f"cleanup_pending:{type(exc).__name__}")
+        if self._compaction_gap is None:
+            try:
+                observed["uncompacted_events"] = await self._compaction.uncompacted_event_count()
+            except Exception as exc:
+                self.unavailable.add(f"uncompacted_events:{type(exc).__name__}")
+        else:
+            self.unavailable.add(f"uncompacted_events:{self._compaction_gap}")
+        return observed
+
+    async def aclose(self) -> None:
+        await self._leases.close()
+        await self._redis.aclose()
+
+
 def _soak_percentile_windows(values: list[float]) -> tuple[float, float]:
     window_size = max(1, len(values) // 4)
     return (
         _percentile(values[:window_size], 0.95),
         _percentile(values[-window_size:], 0.95),
+    )
+
+
+def _backlog_window(samples: list[dict[str, int]]) -> str:
+    """Render the first and last observed value of every backlog key."""
+    if not samples:
+        return "unavailable"
+    keys = sorted({key for sample in samples for key in sample})
+    return ",".join(
+        f"{key}:{next(sample[key] for sample in samples if key in sample)}"
+        f"->{next(sample[key] for sample in reversed(samples) if key in sample)}"
+        for key in keys
     )
 
 
@@ -367,6 +454,7 @@ async def test_live_postgres_lifecycle_soak():
         postgres_test_case_result_table=f"soak_result_{suffix}",
     )
     store = PostgresTestRunStore(settings)
+    probes = _SoakBacklogProbes(settings)
     now = datetime.now(timezone.utc).replace(microsecond=0)
     iterations = 0
     completed = 0
@@ -374,11 +462,13 @@ async def test_live_postgres_lifecycle_soak():
     latencies: list[float] = []
     rss_samples: list[int] = []
     connection_samples: list[int] = []
+    backlog_samples: list[dict[str, int]] = []
     next_sample_at = perf_counter()
     started = perf_counter()
 
     try:
         _create_tables(settings)
+        await probes.start()
         while perf_counter() - started < duration_seconds:
             if max_iterations and iterations >= max_iterations:
                 break
@@ -453,6 +543,7 @@ async def test_live_postgres_lifecycle_soak():
                     rss_samples.append(rss)
                 if connections is not None:
                     connection_samples.append(connections)
+                backlog_samples.append(await probes.sample())
                 next_sample_at = perf_counter() + sample_interval_seconds
             await asyncio.sleep(iteration_interval_seconds)
 
@@ -485,7 +576,9 @@ async def test_live_postgres_lifecycle_soak():
             f"rss_min={min(rss_samples) if rss_samples else 'unavailable'} "
             f"rss_max={max(rss_samples) if rss_samples else 'unavailable'} "
             f"rss_growth={rss_samples[-1] - rss_samples[0] if len(rss_samples) >= 2 else 'unavailable'} "
-            f"connections_max={max(connection_samples) if connection_samples else 'unavailable'}"
+            f"connections_max={max(connection_samples) if connection_samples else 'unavailable'} "
+            f"backlog={_backlog_window(backlog_samples)} "
+            f"backlog_unavailable={sorted(probes.unavailable)}"
         )
         report_path = str(LIVE_CONFIG.run_live_postgres_soak_report_path or "").strip()
         if report_path:
@@ -504,12 +597,15 @@ async def test_live_postgres_lifecycle_soak():
                 "rss_max_bytes": max(rss_samples) if rss_samples else None,
                 "rss_growth_bytes": rss_samples[-1] - rss_samples[0] if len(rss_samples) >= 2 else None,
                 "connections_max": max(connection_samples) if connection_samples else None,
+                "backlog_samples": backlog_samples,
+                "backlog_unavailable": sorted(probes.unavailable),
             }
             output_path = Path(report_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"postgres_soak_report={output_path}")
     finally:
+        await probes.aclose()
         _tables(
             settings,
             [
