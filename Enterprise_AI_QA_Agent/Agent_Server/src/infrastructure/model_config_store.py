@@ -104,6 +104,16 @@ class MySQLModelConfigStore:
                         """
                     )
                 cur.execute(
+                    f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'active_application'"
+                )
+                if not cur.fetchone():
+                    cur.execute(
+                        f"""
+                        ALTER TABLE `{self._settings.database.llm_model_table}`
+                        ADD COLUMN `active_application` VARCHAR(64) NULL AFTER `applications`
+                        """
+                    )
+                cur.execute(
                     f"""
                     UPDATE `{self._settings.database.llm_model_table}`
                     SET `applications` = JSON_ARRAY('task_execution')
@@ -117,6 +127,15 @@ class MySQLModelConfigStore:
                         JSON_UNQUOTE(JSON_EXTRACT(`applications`, '$[0]'))
                     )
                     WHERE JSON_LENGTH(`applications`) > 1
+                    """
+                )
+                cur.execute(
+                    f"""
+                    UPDATE `{self._settings.database.llm_model_table}`
+                    SET `active_application` = 'task_execution'
+                    WHERE `is_active`=1
+                      AND `active_application` IS NULL
+                      AND JSON_CONTAINS(`applications`, JSON_QUOTE('task_execution'))
                     """
                 )
                 cur.execute(
@@ -275,7 +294,7 @@ class MySQLModelConfigStore:
 
     _SELECT_COLS = (
         "id, model_name, api_key, base_url, provider, is_active, created_at, updated_at"
-        ", capability_overrides, transport, applications"
+        ", capability_overrides, transport, applications, active_application"
         ", auth_type, oauth_provider, oauth_refresh_token"
         ", context_window, max_output_tokens"
     )
@@ -304,7 +323,15 @@ class MySQLModelConfigStore:
         ]
         if not candidates:
             raise KeyError(application)
-        active = [item for item in candidates if item.is_active]
+        active = [
+            item
+            for item in candidates
+            if (
+                item.is_active
+                if application == "task_execution"
+                else item.active_application == application
+            )
+        ]
         return (active or candidates)[0]
 
     def get_by_name(self, model_name: str) -> ModelConfigRecord:
@@ -324,8 +351,8 @@ class MySQLModelConfigStore:
         return self._row_to_record(row)
 
     def upsert(self, payload: ModelConfigUpdateRequest) -> ModelConfigPublic:
-        is_task_model = "task_execution" in payload.applications
-        should_activate = bool(payload.is_active and is_task_model)
+        application = payload.applications[0]
+        should_activate = bool(payload.is_active)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -338,21 +365,22 @@ class MySQLModelConfigStore:
                 )
                 existing_row = cur.fetchone()
                 if should_activate:
-                    cur.execute(
-                        f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0"
-                    )
+                    self._deactivate_application(cur, application)
+                stored_is_active = int(should_activate and application == "task_execution")
+                stored_active_application = application if should_activate else None
                 cur.execute(
                     f"""
                     INSERT INTO `{self._settings.database.llm_model_table}`
-                    (`model_name`, `api_key`, `base_url`, `provider`, `transport`, `applications`, `capability_overrides`, `is_active`,
+                    (`model_name`, `api_key`, `base_url`, `provider`, `transport`, `applications`, `active_application`, `capability_overrides`, `is_active`,
                      `auth_type`, `oauth_provider`, `oauth_refresh_token`, `context_window`, `max_output_tokens`)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         `api_key`=VALUES(`api_key`),
                         `base_url`=VALUES(`base_url`),
                         `provider`=VALUES(`provider`),
                         `transport`=VALUES(`transport`),
                         `applications`=VALUES(`applications`),
+                        `active_application`=VALUES(`active_application`),
                         `capability_overrides`=VALUES(`capability_overrides`),
                         `is_active`=VALUES(`is_active`),
                         `auth_type`=VALUES(`auth_type`),
@@ -368,11 +396,12 @@ class MySQLModelConfigStore:
                         normalize_provider(payload.provider),
                         normalize_transport(payload.transport, provider=payload.provider),
                         json.dumps(payload.applications or ["task_execution"]),
+                        stored_active_application,
                         self._serialize_capability_overrides(
                             payload,
                             existing_row=existing_row,
                         ),
-                        int(should_activate),
+                        stored_is_active,
                         payload.auth_type or "api_key",
                         payload.oauth_provider or None,
                         payload.oauth_refresh_token if payload.oauth_refresh_token else ((existing_row or {}).get("oauth_refresh_token") or None),
@@ -394,8 +423,8 @@ class MySQLModelConfigStore:
         return self.to_public(self._row_to_record(row))
 
     def update_existing(self, original_model_name: str, payload: ModelConfigUpdateRequest) -> ModelConfigPublic:
-        is_task_model = "task_execution" in payload.applications
-        should_activate = bool(payload.is_active and is_task_model)
+        application = payload.applications[0]
+        should_activate = bool(payload.is_active)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -421,7 +450,10 @@ class MySQLModelConfigStore:
                         raise ValueError(f"Model '{target_model_name}' already exists.")
 
                 if should_activate:
-                    cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
+                    self._deactivate_application(cur, application)
+
+                stored_is_active = int(should_activate and application == "task_execution")
+                stored_active_application = application if should_activate else None
 
                 cur.execute(
                     f"""
@@ -432,6 +464,7 @@ class MySQLModelConfigStore:
                         `provider`=%s,
                         `transport`=%s,
                         `applications`=%s,
+                        `active_application`=%s,
                         `capability_overrides`=%s,
                         `is_active`=%s,
                         `auth_type`=%s,
@@ -448,11 +481,12 @@ class MySQLModelConfigStore:
                         normalize_provider(payload.provider),
                         normalize_transport(payload.transport, provider=payload.provider),
                         json.dumps(payload.applications or ["task_execution"]),
+                        stored_active_application,
                         self._serialize_capability_overrides(
                             payload,
                             existing_row=existing_row,
                         ),
-                        int(should_activate),
+                        stored_is_active,
                         payload.auth_type or "api_key",
                         payload.oauth_provider or None,
                         payload.oauth_refresh_token if payload.oauth_refresh_token else (existing_row.get("oauth_refresh_token") or None),
@@ -484,17 +518,21 @@ class MySQLModelConfigStore:
                 existing_row = cur.fetchone()
                 if not existing_row:
                     raise KeyError(model_name)
-                if "task_execution" not in self._parse_applications(
-                    existing_row.get("applications")
-                ):
-                    raise ValueError(
-                        "Only a model applied to task execution can be activated as the main model."
+                applications = self._parse_applications(existing_row.get("applications"))
+                application = applications[0]
+                self._deactivate_application(cur, application)
+                if application == "task_execution":
+                    cur.execute(
+                        f"UPDATE `{self._settings.database.llm_model_table}` "
+                        "SET `is_active`=1, `active_application`=%s WHERE model_name=%s",
+                        (application, model_name),
                     )
-                cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
-                cur.execute(
-                    f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
-                    (model_name,),
-                )
+                else:
+                    cur.execute(
+                        f"UPDATE `{self._settings.database.llm_model_table}` "
+                        "SET `active_application`=%s WHERE model_name=%s",
+                        (application, model_name),
+                    )
                 cur.execute(
                     f"""
                     SELECT {self._SELECT_COLS}
@@ -529,23 +567,35 @@ class MySQLModelConfigStore:
                 )
 
                 replacement_row = None
-                if deleted_record.is_active:
+                active_application = deleted_record.active_application or (
+                    "task_execution" if deleted_record.is_active else None
+                )
+                if active_application:
                     cur.execute(
                         f"""
                         SELECT {self._SELECT_COLS}
                         FROM `{self._settings.database.llm_model_table}`
-                        WHERE JSON_CONTAINS(`applications`, JSON_QUOTE('task_execution'))
+                        WHERE JSON_CONTAINS(`applications`, JSON_QUOTE(%s))
                         ORDER BY id ASC
                         LIMIT 1
-                        """
+                        """,
+                        (active_application,),
                     )
                     replacement_row = cur.fetchone()
                     if replacement_row:
-                        cur.execute(f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=0")
-                        cur.execute(
-                            f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE model_name=%s",
-                            (replacement_row["model_name"],),
-                        )
+                        self._deactivate_application(cur, active_application)
+                        if active_application == "task_execution":
+                            cur.execute(
+                                f"UPDATE `{self._settings.database.llm_model_table}` "
+                                "SET `is_active`=1, `active_application`=%s WHERE model_name=%s",
+                                (active_application, replacement_row["model_name"]),
+                            )
+                        else:
+                            cur.execute(
+                                f"UPDATE `{self._settings.database.llm_model_table}` "
+                                "SET `active_application`=%s WHERE model_name=%s",
+                                (active_application, replacement_row["model_name"]),
+                            )
                         cur.execute(
                             f"""
                             SELECT {self._SELECT_COLS}
@@ -581,9 +631,30 @@ class MySQLModelConfigStore:
         replacement = cur.fetchone()
         if replacement:
             cur.execute(
-                f"UPDATE `{self._settings.database.llm_model_table}` SET `is_active`=1 WHERE `model_name`=%s",
+                f"UPDATE `{self._settings.database.llm_model_table}` "
+                "SET `is_active`=1, `active_application`='task_execution' WHERE `model_name`=%s",
                 (replacement["model_name"],),
             )
+
+    def _deactivate_application(self, cur, application: str) -> None:
+        if application == "task_execution":
+            cur.execute(
+                f"""
+                UPDATE `{self._settings.database.llm_model_table}`
+                SET `is_active`=0, `active_application`=NULL
+                WHERE JSON_CONTAINS(`applications`, JSON_QUOTE(%s))
+                """,
+                (application,),
+            )
+            return
+        cur.execute(
+            f"""
+            UPDATE `{self._settings.database.llm_model_table}`
+            SET `active_application`=NULL
+            WHERE JSON_CONTAINS(`applications`, JSON_QUOTE(%s))
+            """,
+            (application,),
+        )
 
     def get_active(self, key: str) -> ModelConfigRecord:
         for item in self.list_active():
@@ -610,7 +681,11 @@ class MySQLModelConfigStore:
             supports_tools=record.supports_tools,
             supports_vision=record.supports_vision,
             supports_reasoning=record.supports_reasoning,
-            is_active=record.is_active,
+            is_active=(
+                record.is_active
+                if "task_execution" in record.applications
+                else record.active_application == "embedding_retrieval"
+            ),
             is_default=record.is_default,
             temperature=record.temperature,
             max_tokens=record.max_tokens,
@@ -683,6 +758,12 @@ class MySQLModelConfigStore:
             oauth_provider=row.get("oauth_provider") or None,
             oauth_refresh_token=row.get("oauth_refresh_token") or None,
             applications=self._parse_applications(row.get("applications")),
+            active_application=(
+                str(row.get("active_application"))
+                if str(row.get("active_application") or "")
+                in {"task_execution", "embedding_retrieval"}
+                else None
+            ),
         )
 
     def _normalize_datetime(self, value) -> datetime | None:

@@ -117,6 +117,10 @@ class ModelConfigRecord(BaseModel):
     applications: list[ModelApplication] = Field(
         default_factory=lambda: ["task_execution"]
     )
+    # Internal activation scope.  ``is_active`` is retained for the legacy
+    # task-execution column; embedding activation is independent so selecting
+    # an embedding model cannot deactivate the chat model.
+    active_application: ModelApplication | None = None
 
     @model_validator(mode="after")
     def _sync_capabilities(self):

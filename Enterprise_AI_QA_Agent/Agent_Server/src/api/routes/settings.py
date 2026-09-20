@@ -65,6 +65,8 @@ async def activate_model_config(model_name: str, request: Request):
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/models/{model_name:path}/test-connection")

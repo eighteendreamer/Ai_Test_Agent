@@ -11,6 +11,7 @@ from src.application.model_clients.embeddings import (
     resolve_embedding_client,
 )
 from src.application.model_clients.google_client import GoogleGenAIClient
+from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.settings import ModelConfigUpdateRequest
 
@@ -44,6 +45,33 @@ def test_model_application_defaults_and_requires_single_selection() -> None:
             base_url="https://example.test/v1",
             applications=["embedding_retrieval", "task_execution"],
         )
+
+
+def test_embedding_activation_is_independent_from_task_model_activation() -> None:
+    task_model = _config(
+        key="task-model",
+        name="chat-model",
+        model_id="chat-model",
+        applications=["task_execution"],
+        is_active=True,
+        active_application="task_execution",
+    )
+    embedding_model = _config(
+        key="embedding-model-2",
+        name="Qwen/Qwen3-VL-Embedding-8B",
+        model_id="Qwen/Qwen3-VL-Embedding-8B",
+        active_application="embedding_retrieval",
+    )
+    store = MySQLModelConfigStore.__new__(MySQLModelConfigStore)
+    store.list_all = lambda: [task_model, embedding_model]
+
+    assert store.get_for_application("task_execution").name == "chat-model"
+    assert (
+        store.get_for_application("embedding_retrieval").name
+        == "Qwen/Qwen3-VL-Embedding-8B"
+    )
+    assert store.to_public(embedding_model).is_active is True
+    assert store.to_public(task_model).is_active is True
 
 
 def test_embedding_client_dispatch_follows_transport() -> None:
