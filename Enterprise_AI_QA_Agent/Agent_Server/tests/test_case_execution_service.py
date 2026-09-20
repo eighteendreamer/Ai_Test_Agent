@@ -666,6 +666,8 @@ async def test_execution_service_heartbeats_slow_item_and_completes_with_same_le
     now, run, item, case, version = _records()
     item = item.model_copy(update={"lease_expires_at": datetime.now(timezone.utc)})
 
+    required_beat = asyncio.Event()
+
     class FakeRuns:
         def __init__(self):
             self.heartbeats = []
@@ -680,6 +682,8 @@ async def test_execution_service_heartbeats_slow_item_and_completes_with_same_le
 
         async def heartbeat_item(self, item_id, payload):
             self.heartbeats.append((item_id, payload))
+            if len(self.heartbeats) >= 3:
+                required_beat.set()
             return item.model_copy(update={"status": "running"})
 
         async def complete_item(self, item_id, payload):
@@ -714,7 +718,9 @@ async def test_execution_service_heartbeats_slow_item_and_completes_with_same_le
 
     class SlowAdapter:
         async def execute(self, **kwargs):
-            await asyncio.sleep(0.06)
+            # A fixed sleep races the event loop's timer granularity under suite
+            # load; hold the execution open until the supervisor proves it can beat.
+            await asyncio.wait_for(required_beat.wait(), timeout=10)
             return CaseExecutionOutcome(
                 completion=RunItemCompleteRequest(
                     lease_token=kwargs["item"].lease_token,
