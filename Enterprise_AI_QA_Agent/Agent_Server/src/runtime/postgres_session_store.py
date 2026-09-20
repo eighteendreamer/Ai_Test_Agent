@@ -535,6 +535,8 @@ class PostgresSessionStore:
                         updated_at = EXCLUDED.updated_at,
                         preferred_model = EXCLUDED.preferred_model,
                         selected_agent = EXCLUDED.selected_agent,
+                        -- worker_dispatches advances only under mutate_metadata's row
+                        -- lock, so a stale whole-document save cannot rewind it.
                         metadata = (
                             EXCLUDED.metadata
                             - 'turn_lease_turn_id'
@@ -549,7 +551,9 @@ class PostgresSessionStore:
                             'turn_lease_token',
                                 {self._settings.database.postgres_session_table}.metadata->'turn_lease_token',
                             'turn_lease_expires_at',
-                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at'
+                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at',
+                            'worker_dispatches',
+                                {self._settings.database.postgres_session_table}.metadata->'worker_dispatches'
                         )),
                         event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
                         snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)

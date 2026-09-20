@@ -253,8 +253,7 @@ class CoordinatorRuntimeService:
                 else:
                     reconciled.append(record)
             if changed:
-                parent.metadata["worker_dispatches"] = reconciled
-                await self._store.save_session(parent)
+                await self._reconcile_worker_dispatches(parent, reconciled)
                 await self._store.append_event(
                     parent.id,
                     ExecutionEvent(
@@ -1448,6 +1447,44 @@ class CoordinatorRuntimeService:
         self._merge_worker_dispatches(
             parent_session.metadata, parent_turn_id, launch_records
         )
+        await self._store.save_session(parent_session)
+
+    def _apply_reconciled_dispatches(
+        self,
+        metadata: dict[str, Any],
+        reconciled: list[dict[str, Any]],
+    ) -> None:
+        updates = {
+            str(record.get("task_id") or "").strip(): record
+            for record in reconciled
+            if isinstance(record, dict) and record.get("recovered_at")
+        }
+        if not updates:
+            return
+        merged: list[Any] = []
+        for record in metadata.get("worker_dispatches") or []:
+            task_id = str(record.get("task_id") or "").strip() if isinstance(record, dict) else ""
+            update = updates.get(task_id)
+            if update is not None and str(record.get("status") or "") == "running":
+                merged.append(update)
+            else:
+                merged.append(record)
+        metadata["worker_dispatches"] = merged
+
+    async def _reconcile_worker_dispatches(
+        self,
+        parent_session: SessionRecord,
+        reconciled: list[dict[str, Any]],
+    ) -> None:
+        """Reap orphaned dispatches without rewinding a concurrently settled child."""
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            await mutate(
+                parent_session.id,
+                lambda metadata: self._apply_reconciled_dispatches(metadata, reconciled),
+            )
+            return
+        parent_session.metadata["worker_dispatches"] = reconciled
         await self._store.save_session(parent_session)
 
     async def _register_followup_workers(
