@@ -42,7 +42,7 @@ async def update_model_config(payload: ModelConfigUpdateRequest, request: Reques
     )
 
 
-@router.patch("/models/{model_name}")
+@router.patch("/models/{model_name:path}")
 async def edit_model_config(model_name: str, payload: ModelConfigUpdateRequest, request: Request):
     try:
         return await asyncio.to_thread(
@@ -56,7 +56,7 @@ async def edit_model_config(model_name: str, payload: ModelConfigUpdateRequest, 
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/models/{model_name}/activate")
+@router.post("/models/{model_name:path}/activate")
 async def activate_model_config(model_name: str, request: Request):
     try:
         return await asyncio.to_thread(
@@ -67,7 +67,7 @@ async def activate_model_config(model_name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found.") from exc
 
 
-@router.post("/models/{model_name}/test-connection")
+@router.post("/models/{model_name:path}/test-connection")
 async def test_model_config_connection(model_name: str, request: Request):
     try:
         return await request.app.state.settings_service.test_model_config_connection(model_name)
@@ -75,7 +75,7 @@ async def test_model_config_connection(model_name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found.") from exc
 
 
-@router.delete("/models/{model_name}")
+@router.delete("/models/{model_name:path}")
 async def delete_model_config(model_name: str, request: Request):
     try:
         return await asyncio.to_thread(
