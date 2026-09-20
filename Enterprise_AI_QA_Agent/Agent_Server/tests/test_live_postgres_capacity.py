@@ -140,6 +140,9 @@ def _compaction_watermark_gap(settings: Settings) -> str | None:
         return "unreachable"
 
 
+SOAK_PENDING_GROUP = "soak-pending-probe"
+
+
 class _SoakBacklogProbes:
     """Observe the backlogs a soak must not let grow: queue, leases, compaction."""
 
@@ -153,7 +156,34 @@ class _SoakBacklogProbes:
 
     async def start(self) -> None:
         await self._leases.connect()
+        # The watermark column belongs to the compaction store's own schema; without
+        # it the backlog probe used to record a reason and the soak kept going green.
+        await self._compaction.initialize()
+        try:
+            await self._redis.xgroup_create(
+                self._settings.orchestration.agent_task_stream,
+                SOAK_PENDING_GROUP,
+                id="$",
+                mkstream=True,
+            )
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
         self._compaction_gap = _compaction_watermark_gap(self._settings)
+        assert self._compaction_gap is None, (
+            f"Compaction backlog is unobservable, so this soak cannot answer "
+            f"'is compaction piling up': {self._compaction_gap}"
+        )
+        # A declared column is not the same as a runnable query: probe the real
+        # aggregate once, so an unanswerable backlog fails here instead of after
+        # four hours of reporting "unavailable".
+        try:
+            await self._compaction.uncompacted_event_count()
+        except Exception as exc:
+            raise AssertionError(
+                "Compaction backlog cannot be measured, so this soak must not run: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
 
     async def sample(self) -> dict[str, int]:
         observed: dict[str, int] = {}

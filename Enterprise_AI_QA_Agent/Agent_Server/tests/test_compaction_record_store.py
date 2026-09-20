@@ -75,7 +75,9 @@ def test_compaction_record_claim_is_idempotent_and_can_reclaim_failed(monkeypatc
 
 def test_compaction_backlog_diffs_durable_events_against_watermark(monkeypatch):
     cursor = Cursor([1])
-    cursor.fetchone = lambda: (7,)
+    # Real rows here are name-mapped, so a positional fake would have kept hiding
+    # an unreadable aggregate.
+    cursor.fetchone = lambda: {"uncompacted_events": 7}
     settings = SimpleNamespace(
         database=SimpleNamespace(
             postgres_compaction_table="compaction_records",

@@ -198,12 +198,13 @@ class PostgresCompactionRecordStore:
                         GROUP BY session_id
                     )
                     SELECT COALESCE(SUM(GREATEST(durable.latest_sequence - COALESCE(compacted.watermark, 0), 0)), 0)
+                        AS uncompacted_events
                     FROM durable
                     LEFT JOIN compacted ON compacted.session_id = durable.session_id
                     """
                 )
                 row = cur.fetchone()
-        return int(row[0]) if row else 0
+        return int(row["uncompacted_events"]) if row else 0
 
     def _fail_sync(self, compaction_key: str, error: str) -> bool:
         with postgres_connect(self._settings) as conn:
