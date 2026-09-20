@@ -106,6 +106,7 @@ async def harness():
             prefix=prefix,
             stream=stream,
             redis=redis,
+            resources=resources,
             runtime=runtime,
             store=store,
             tasks=tasks,
@@ -179,3 +180,36 @@ async def test_postgres_outage_stops_claim_and_the_worker_resumes_afterwards(har
     await h.dispatcher.handle(delivery, worker_id="p4b-worker")
     assert (await h.tasks.get(h.parent_task_id)).status == "completed"
     assert h.runtime.calls, "the same delivery must run once the database answers again"
+
+
+@pytest.mark.asyncio
+async def test_postgres_outage_on_the_running_write_never_starts_the_runtime(harness):
+    """An outage after the claim must leave the task unexecuted, not running.
+
+    ``begin`` is the only writer of the running state, so the whole point of the
+    claim/running split is that a delivery which cannot record running also gets
+    no runtime work at all. The raise is also what keeps the Worker from ACKing.
+    """
+    h = harness
+    delivery = QueuedTask("p4b-running-outage", dict((await outbox_row(h, h.event_key))["payload"]))
+    originals = {name: getattr(h.tasks, name) for name in ("begin", "finish")}
+
+    async def outage(*args, **kwargs):
+        raise PostgresOutage("injected postgres outage at the running write")
+
+    try:
+        for name in originals:
+            setattr(h.tasks, name, outage)
+        with pytest.raises(PostgresOutage):
+            await h.dispatcher.handle(delivery, worker_id="p4b-worker")
+    finally:
+        for name, original in originals.items():
+            setattr(h.tasks, name, original)
+
+    assert (await h.tasks.get(h.parent_task_id)).status == "claimed", (
+        "a delivery that could not write running must not look started or finished"
+    )
+    assert h.runtime.calls == []
+    assert await h.resources.get(resource_type="agent", resource_id=f"turn:{h.parent_task_id}") is None, (
+        "the admission slot must come back even when the database write failed"
+    )
