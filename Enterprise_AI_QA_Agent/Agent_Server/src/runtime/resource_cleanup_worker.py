@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from src.infrastructure.redis_task_queue import QueuedTask
-from src.core.request_context import get_request_context
+from src.core.request_context import bind_request_context, get_request_context
 from src.runtime.postgres_resource_cleanup_store import PostgresResourceCleanupStore
 from redis.exceptions import RedisError
 from src.runtime.resource_lease_manager import (
@@ -26,6 +26,7 @@ class ResourceCleanupWorker:
         *,
         interval_seconds: float = 30.0,
         reconcilers=(),
+        worker_id: str = "",
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Resource cleanup interval must be positive")
@@ -33,28 +34,33 @@ class ResourceCleanupWorker:
         self._interval_seconds = interval_seconds
         self._stop = asyncio.Event()
         self._reconcilers = tuple(reconcilers)
+        self._worker_id = worker_id
 
     def stop(self) -> None:
         self._stop.set()
 
     async def run_once(self, *, limit: int = 100) -> int:
-        expired = await self._manager.reap_expired(limit=limit)
-        await self._manager.reconcile_quota_usage()
-        results = await asyncio.gather(*(reconciler.reconcile(self._manager) for reconciler in self._reconcilers),
-                                       return_exceptions=True)
-        for result in results:
-            if isinstance(result, BaseException):
-                raise result
-        for lease in expired:
-            LOGGER.info("resource_cleanup_task_enqueued", extra={
-                "resource_type": lease.resource_type,
-                "resource_id": lease.resource_id,
-                "external_resource_id": lease.external_resource_id,
-                "run_id": lease.run_id,
-                "run_item_id": lease.run_item_id,
-                "attempt_id": lease.attempt_id,
-            })
-        return len(expired)
+        # The reaper runs outside any request or delivery, so it pins its own identity.
+        with bind_request_context(worker_id=self._worker_id, task_type="resource_cleanup"):
+            expired = await self._manager.reap_expired(limit=limit)
+            await self._manager.reconcile_quota_usage()
+            results = await asyncio.gather(
+                *(reconciler.reconcile(self._manager) for reconciler in self._reconcilers),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+            for lease in expired:
+                LOGGER.info("resource_cleanup_task_enqueued", extra={
+                    "resource_type": lease.resource_type,
+                    "resource_id": lease.resource_id,
+                    "external_resource_id": lease.external_resource_id,
+                    "run_id": lease.run_id,
+                    "run_item_id": lease.run_item_id,
+                    "attempt_id": lease.attempt_id,
+                })
+            return len(expired)
 
     async def run(self) -> None:
         while not self._stop.is_set():

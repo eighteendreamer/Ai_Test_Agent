@@ -111,6 +111,7 @@ class RedisTaskWorker:
                 attempt_id=payload.get("attempt_id"),
                 worker_id=self._consumer,
                 resource_id=payload.get("resource_id"),
+                queue=stream,
             )
             try:
                 LOGGER.info(

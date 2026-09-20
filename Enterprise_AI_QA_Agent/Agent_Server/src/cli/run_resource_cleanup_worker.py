@@ -65,6 +65,7 @@ async def _run(*, once: bool, worker_id: str) -> None:
         manager,
         interval_seconds=settings.orchestration.resource_cleanup_interval_seconds,
         reconcilers=callbacks.values(),
+        worker_id=worker_id,
     )
     cleanup_worker = RedisTaskWorker.from_settings(
         queue,

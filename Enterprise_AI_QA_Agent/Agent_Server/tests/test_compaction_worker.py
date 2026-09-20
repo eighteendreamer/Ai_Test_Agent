@@ -132,3 +132,64 @@ def test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavai
     assert hot.committed == ("e2:v1", "e2")
     assert memory.args["user_message"] == "goal"
     assert memory.args["assistant_message"] == "done"
+
+
+def test_concurrent_compaction_writes_one_summary_per_session():
+    """Session switch racing a compaction pass must still fold a session once."""
+
+    class Contended:
+        def __init__(self):
+            self.holders = {}
+            self.cleared = []
+
+        async def get_compaction_state(self, session_id):
+            return None
+
+        async def list_events(self, session_id, *, after_id=None, limit=10000):
+            return [{
+                "id": f"{session_id}-e1",
+                "type": "message",
+                "payload": {"role": "user", "content": f"goal {session_id}"},
+            }]
+
+        async def acquire_compaction(self, session_id, key):
+            # Redis SETNX semantics: the key, not the session, is the lock identity.
+            if key in self.holders:
+                return False
+            self.holders[key] = session_id
+            return True
+
+        async def mark_compaction_pending(self, session_id, *, last_event_id):
+            return None
+
+        async def commit_compaction(self, session_id, *, key, last_event_id):
+            return True
+
+        async def clear_session(self, session_id):
+            self.cleared.append(session_id)
+
+    class WritingMemory:
+        def __init__(self):
+            self.keys = []
+
+        async def write_turn_memory(self, **kwargs):
+            # Yield so the second caller of the same session really races the first.
+            await asyncio.sleep(0)
+            self.keys.append(kwargs["compaction_key"])
+            return ["m1"]
+
+    store, memory = Contended(), WritingMemory()
+    worker = CompactionWorker(hot_memory_store=store, memory_runtime_service=memory)
+
+    async def race():
+        return await asyncio.gather(
+            worker.compact_session(session_id="s1", turn_id="t1", trace_id="tr-a"),
+            worker.compact_session(session_id="s1", turn_id="t2", trace_id="tr-b"),
+            worker.compact_session(session_id="s2", turn_id="t3", trace_id="tr-c"),
+        )
+
+    results = asyncio.run(race())
+    assert results.count(True) == 2
+    assert len(memory.keys) == 2
+    assert sorted({key.split(":", 1)[0] for key in memory.keys}) == ["s1", "s2"]
+    assert len(store.holders) == 2
