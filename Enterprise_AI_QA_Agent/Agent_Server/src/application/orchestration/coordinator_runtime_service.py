@@ -6,6 +6,7 @@ from collections import defaultdict
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 from xml.sax.saxutils import escape
@@ -49,6 +50,9 @@ class WorkerDispatchSpec:
 
 # A settled worker must never be re-settled by a duplicate child completion.
 TERMINAL_WORKER_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+# Launch-time registration may not rewind an already projected outcome; a
+# recovery_required record still accepts a genuine later settlement.
+NON_REWINDABLE_WORKER_STATUSES = TERMINAL_WORKER_STATUSES | {"recovery_required"}
 
 
 class CoordinatorRuntimeService:
@@ -338,6 +342,7 @@ class CoordinatorRuntimeService:
 
         launch_records: list[dict[str, Any]] = []
         immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
+        pending_launches: list[tuple[WorkerDispatchSpec, dict[str, Any], str]] = []
 
         for worker in workers[: self._settings.orchestration.coordinator_max_workers]:
             if not self._is_agent_available(worker.agent_key):
@@ -395,29 +400,38 @@ class CoordinatorRuntimeService:
                 "source_stage": str(worker.context.get("source_stage") or "").strip(),
                 "source_round_index": int(worker.context.get("source_round_index") or 0),
             }
+            launch_records.append(launch_record)
+            pending_launches.append((worker, launch_record, child_session.id))
 
+        # Register before launching: another process' Worker can settle a durable
+        # child faster than this turn reaches its registration call, and the
+        # parent metadata is written as a whole document.
+        await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
+        for worker, launch_record, child_session_id in pending_launches:
             try:
                 child_task_id = await self._start_child_worker(
                     parent_session=parent_session,
                     parent_session_id=parent_session_id,
                     parent_turn_id=parent_turn_id,
                     parent_trace_id=parent_trace_id,
-                    child_session_id=child_session.id,
+                    child_session_id=child_session_id,
                     worker=worker,
-                    mode_key=mode_key,
+                    mode_key=self._resolve_worker_mode_key(worker),
                     register_pool=True,
                 )
             except ValueError as exc:
                 launch_record["status"] = "failed"
                 launch_record["error"] = str(exc)
-                launch_records.append(launch_record)
                 immediate_failures.append((worker, f"Coordinator child dispatch rejected: {exc}"))
                 continue
             if child_task_id:
                 launch_record["child_task_id"] = child_task_id
-            launch_records.append(launch_record)
-
-        await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
+        if pending_launches:
+            await self._register_worker_dispatches(
+                parent_session_id,
+                parent_turn_id,
+                [record for _worker, record, _child in pending_launches],
+            )
         if followup_workers:
             await self._register_followup_workers(
                 parent_session_id=parent_session_id,
@@ -1354,25 +1368,22 @@ class CoordinatorRuntimeService:
                     ),
                 )
 
-    async def _register_worker_dispatches(
+    def _merge_worker_dispatches(
         self,
-        parent_session_id: str,
+        metadata: dict[str, Any],
         parent_turn_id: str,
         launch_records: list[dict[str, Any]],
     ) -> None:
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
-
-        guard = self._get_failure_guard(parent_session)
+        guard_host = SimpleNamespace(metadata=metadata)
+        guard = self._get_failure_guard(guard_host)
         if str(guard.get("turn_id") or "") != parent_turn_id:
-            self._reset_failure_guard(parent_session, parent_turn_id)
+            self._reset_failure_guard(guard_host, parent_turn_id)
 
-        existing = parent_session.metadata.get("worker_dispatches", [])
+        existing = metadata.get("worker_dispatches", [])
         merged_by_task_id: dict[str, dict[str, Any]] = {}
         ordered_task_ids: list[str] = []
         anonymous: list[dict[str, Any]] = []
-        for record in existing:
+        for record in existing if isinstance(existing, list) else []:
             if not isinstance(record, dict):
                 continue
             task_id = str(record.get("task_id") or "").strip()
@@ -1401,11 +1412,42 @@ class CoordinatorRuntimeService:
             merged = {**existing_record, **record}
             if not str(merged.get("child_session_id") or "").strip():
                 merged["child_session_id"] = existing_record.get("child_session_id") or ""
+            # A child can settle before this registration runs, so a terminal
+            # projection must never be rewound to a launch-time status.
+            prior_status = str(existing_record.get("status") or "")
+            if prior_status in NON_REWINDABLE_WORKER_STATUSES and str(
+                record.get("status") or ""
+            ) not in TERMINAL_WORKER_STATUSES:
+                merged["status"] = prior_status
+                if existing_record.get("completed_at"):
+                    merged["completed_at"] = existing_record["completed_at"]
             merged_by_task_id[task_id] = merged
 
         rebuilt = [merged_by_task_id[task_id] for task_id in ordered_task_ids]
         rebuilt.extend(anonymous)
-        parent_session.metadata["worker_dispatches"] = rebuilt
+        metadata["worker_dispatches"] = rebuilt
+
+    async def _register_worker_dispatches(
+        self,
+        parent_session_id: str,
+        parent_turn_id: str,
+        launch_records: list[dict[str, Any]],
+    ) -> None:
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            await mutate(
+                parent_session_id,
+                lambda metadata: self._merge_worker_dispatches(
+                    metadata, parent_turn_id, launch_records
+                ),
+            )
+            return
+        parent_session = await self._store.get_session(parent_session_id)
+        if parent_session is None:
+            return
+        self._merge_worker_dispatches(
+            parent_session.metadata, parent_turn_id, launch_records
+        )
         await self._store.save_session(parent_session)
 
     async def _register_followup_workers(
@@ -1481,22 +1523,18 @@ class CoordinatorRuntimeService:
         )
         await self._store.save_session(parent_session)
 
-    async def _mark_worker_status(
+    def _apply_worker_status(
         self,
-        parent_session_id: str,
+        metadata: dict[str, Any],
         task_id: str,
         status: str,
         child_session_id: str,
         worker: WorkerDispatchSpec | None = None,
     ) -> None:
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
-
         worker_dispatches = []
         matched = False
-        completion_task_id = str(parent_session.metadata.get("completion_worker_task_id") or "")
-        for record in parent_session.metadata.get("worker_dispatches", []):
+        completion_task_id = str(metadata.get("completion_worker_task_id") or "")
+        for record in metadata.get("worker_dispatches", []):
             if not isinstance(record, dict):
                 continue
             if record.get("task_id") == task_id:
@@ -1532,7 +1570,31 @@ class CoordinatorRuntimeService:
                 }
             )
 
-        parent_session.metadata["worker_dispatches"] = worker_dispatches
+        metadata["worker_dispatches"] = worker_dispatches
+
+    async def _mark_worker_status(
+        self,
+        parent_session_id: str,
+        task_id: str,
+        status: str,
+        child_session_id: str,
+        worker: WorkerDispatchSpec | None = None,
+    ) -> None:
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            await mutate(
+                parent_session_id,
+                lambda metadata: self._apply_worker_status(
+                    metadata, task_id, status, child_session_id, worker
+                ),
+            )
+            return
+        parent_session = await self._store.get_session(parent_session_id)
+        if parent_session is None:
+            return
+        self._apply_worker_status(
+            parent_session.metadata, task_id, status, child_session_id, worker
+        )
         await self._store.save_session(parent_session)
 
     def _normalize_workers(self, payload: dict[str, Any]) -> list[WorkerDispatchSpec]:

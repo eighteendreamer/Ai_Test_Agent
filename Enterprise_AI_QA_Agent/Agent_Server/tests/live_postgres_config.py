@@ -9,6 +9,7 @@ class LivePostgresTestConfig(BaseSettings):
     """Opt-in live-test settings loaded from Agent_Server/.env or the process."""
 
     run_live_postgres_tests: bool = False
+    run_live_p5_acceptance: bool = False
     run_live_postgres_capacity: bool = False
     run_live_postgres_capacity_sizes: str = "1000,10000,100000"
     run_live_postgres_capacity_workers: int = 32

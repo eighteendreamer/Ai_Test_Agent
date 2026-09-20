@@ -310,6 +310,32 @@ class PostgresSessionStore:
             owner_id,
         )
 
+    async def mutate_metadata(self, session_id: str, mutate) -> bool:
+        """Apply ``mutate(metadata)`` under a row lock so concurrent writers
+        cannot overwrite each other's whole-document metadata."""
+        return await asyncio.to_thread(self._mutate_metadata_sync, session_id, mutate)
+
+    def _mutate_metadata_sync(self, session_id: str, mutate) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT metadata FROM {self._settings.database.postgres_session_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return False
+                stored = row["metadata"]
+                metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                mutate(metadata)
+                cur.execute(
+                    f"UPDATE {self._settings.database.postgres_session_table} "
+                    "SET metadata = %s::jsonb, updated_at = now() WHERE id = %s",
+                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                )
+                return True
+
     async def recover_expired_turn_executions(self) -> list[str]:
         return await asyncio.to_thread(self._recover_expired_turn_executions_sync)
 
@@ -964,6 +990,30 @@ class PostgresSessionStore:
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
                 self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+                # Serialize each session BEFORE trusting the caller's version: the
+                # caller derived it from an in-memory snapshot_count, so two writers
+                # can pick the same value and collide on (session_id, version).
+                cur.execute(
+                    f"SELECT id FROM {self._settings.database.postgres_session_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                if cur.fetchone() is None:
+                    raise KeyError(session_id)
+                version = snapshot.version
+                cur.execute(
+                    f"SELECT count(*) AS taken FROM {self._settings.database.postgres_snapshot_table} "
+                    "WHERE session_id = %s AND version = %s AND id <> %s",
+                    (session_id, version, snapshot.id),
+                )
+                if int((cur.fetchone() or {}).get("taken") or 0) > 0:
+                    cur.execute(
+                        f"SELECT coalesce(max(version), 0) + 1 AS next FROM "
+                        f"{self._settings.database.postgres_snapshot_table} WHERE session_id = %s",
+                        (session_id,),
+                    )
+                    version = int((cur.fetchone() or {})["next"])
+                    snapshot = snapshot.model_copy(update={"version": version})
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_snapshot_table} (
