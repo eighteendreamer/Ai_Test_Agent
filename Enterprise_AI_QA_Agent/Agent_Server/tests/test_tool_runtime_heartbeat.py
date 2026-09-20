@@ -39,11 +39,14 @@ async def test_tool_job_heartbeat_keeps_long_handler_alive_and_supervisor_is_cle
     jobs = ToolJobService(InMemoryToolJobStore())
     heartbeat_calls: list[datetime] = []
     original_heartbeat = jobs.heartbeat
+    required_beat = asyncio.Event()
 
     async def counting_heartbeat(job_id: str, **kwargs) -> ToolJobRecord | None:
         heartbeat = await original_heartbeat(job_id, **kwargs)
         if heartbeat is not None:
             heartbeat_calls.append(heartbeat.heartbeat_at)
+            if len(heartbeat_calls) >= 3:
+                required_beat.set()
         return heartbeat
 
     jobs.heartbeat = counting_heartbeat  # type: ignore[method-assign]
@@ -53,7 +56,9 @@ async def test_tool_job_heartbeat_keeps_long_handler_alive_and_supervisor_is_cle
     )
 
     async def slow_handler(arguments, context):
-        await asyncio.sleep(0.06)
+        # A fixed sleep races the timer granularity of the event loop; hold the
+        # handler open until the supervisor has proven it can beat instead.
+        await asyncio.wait_for(required_beat.wait(), timeout=10)
         return {"status": "completed", "summary": "长任务完成"}
 
     runtime._handlers[_tool().key] = slow_handler

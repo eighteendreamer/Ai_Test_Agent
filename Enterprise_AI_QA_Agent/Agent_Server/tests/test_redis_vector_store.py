@@ -17,6 +17,7 @@ class FakeRedis:
     async def get(self, key): return self.values.get(key)
     async def set(self, key, value): self.values[key] = value; return True
     async def delete(self, key): return int(self.values.pop(key, None) is not None)
+    async def exists(self, *keys): return sum(key in self.hashes or key in self.values for key in keys)
     async def execute_command(self, *args):
         self.commands.append(args)
         if args[0] == "FT.CREATE":
@@ -109,6 +110,18 @@ async def test_replica_validation_checks_document_count_and_recall_probe():
         timeout_seconds=0.1,
         poll_interval_seconds=0.01,
     )
+
+    with pytest.raises(ValueError, match="probe document"):
+        await store.validate_replica(
+            entity="memory",
+            embedding_version="v1",
+            dimension=2,
+            expected_count=1,
+            probe_id="missing",
+            probe_vector=[1.0, 0.0],
+            timeout_seconds=0.1,
+            poll_interval_seconds=0.01,
+        )
 
     with pytest.raises(TimeoutError, match="document count"):
         await store.validate_replica(
