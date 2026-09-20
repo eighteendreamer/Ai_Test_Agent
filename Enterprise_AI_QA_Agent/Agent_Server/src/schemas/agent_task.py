@@ -20,7 +20,7 @@ AgentTaskStatus = Literal[
     "cancelled",
     "recovery_required",
 ]
-AgentTaskOperation = Literal["message", "manual_resume"]
+AgentTaskOperation = Literal["message", "manual_resume", "approval_resume"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )

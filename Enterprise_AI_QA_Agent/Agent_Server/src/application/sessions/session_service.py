@@ -128,9 +128,13 @@ class SessionService:
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_resume_tasks: dict[str, asyncio.Task[None]] = {}
         self._agent_task_store = None
+        self._agent_task_dispatcher = None
 
     def set_agent_task_store(self, store) -> None:
         self._agent_task_store = store
+
+    def set_agent_task_dispatcher(self, dispatcher) -> None:
+        self._agent_task_dispatcher = dispatcher
 
     async def execute_claimed_message(
         self,
@@ -215,6 +219,29 @@ class SessionService:
                 turn_lease_token=task.lease_token,
                 ownership_monitors=(ownership_monitor,),
                 complete_lease=False,
+            )
+
+    async def execute_claimed_approval(
+        self,
+        task,
+        *,
+        ownership_monitor: asyncio.Task,
+    ) -> ConversationResponse:
+        """Worker entry for an approval continuation fenced by the Agent task."""
+        approval_payload = (task.input or {}).get("approval")
+        if not isinstance(approval_payload, dict):
+            raise ValueError("Approval task is missing its durable approval payload")
+        approval = ToolApprovalRequest.model_validate(approval_payload)
+        if approval.id != task.reference_id:
+            raise ValueError("Approval task reference does not match its payload")
+        async with self._session_locks[task.session_id]:
+            await self._store.assert_turn_execution(task.session_id, task.lease_token)
+            session = await self._require_session(task.session_id)
+            return await self._run_owned_approval_locked(
+                session=session,
+                approval=approval,
+                turn_lease_token=task.lease_token,
+                ownership_monitors=(ownership_monitor,),
             )
 
     def set_recording_approval_service(self, recording_approval_service) -> None:
@@ -735,6 +762,19 @@ class SessionService:
             proxy_child_session_id = str(proxy_metadata.get("proxy_child_session_id") or "").strip()
             proxy_child_approval_id = str(proxy_metadata.get("proxy_child_approval_id") or "").strip()
 
+            if (
+                self._agent_task_dispatcher is not None
+                and not proxy_child_session_id
+                and not proxy_child_approval_id
+                and proxy_metadata.get("approval_type") != "ui_recording"
+                and proxy_metadata.get("source") != "test_run_case_execution"
+            ):
+                return await self._agent_task_dispatcher.submit_approval(
+                    session_id,
+                    approval_id,
+                    payload,
+                )
+
             approval = await self._store.resolve_approval(
                 session_id=session_id,
                 approval_id=approval_id,
@@ -861,6 +901,121 @@ class SessionService:
                 lambda _finished, task_id=approval.id: self._approval_resume_tasks.pop(task_id, None)
             )
             return approval
+
+    async def _run_owned_approval_locked(
+        self,
+        *,
+        session: SessionRecord,
+        approval: ToolApprovalRequest,
+        turn_lease_token: str,
+        ownership_monitors: tuple[asyncio.Task, ...] = (),
+    ) -> ConversationResponse:
+        session_id = session.id
+        turn_id = str(session.metadata.get("pending_turn", {}).get("turn_id", ""))
+        assistant_message_id = str(uuid4())
+        heartbeat_stop = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self._keep_turn_execution_alive(
+                session_id=session_id,
+                lease_token=turn_lease_token,
+                stop_event=heartbeat_stop,
+            )
+        )
+        stream_chunk_handler = self._build_stream_chunk_handler(
+            session_id=session_id,
+            turn_id=turn_id,
+            assistant_message_id=assistant_message_id,
+            turn_lease_token=turn_lease_token,
+        )
+        control = self._ensure_control_metadata(session)
+        control.update(
+            {
+                "control_state": "resuming_after_approval",
+                "is_interrupted": False,
+                "is_resumable": False,
+                "last_approval_id": approval.id,
+            }
+        )
+        session.metadata["control"] = control
+        await self._store.save_session(session, turn_lease_token=turn_lease_token)
+        settled = False
+        try:
+            continuation = await self._await_owned_execution(
+                session_id,
+                heartbeat_task,
+                self._event_sink(session_id, turn_lease_token=turn_lease_token).run,
+                self._runtime_service.resume_after_approval,
+                session,
+                approval.model_dump(mode="python"),
+                on_model_chunk=stream_chunk_handler,
+                ownership_monitors=ownership_monitors,
+            )
+            if continuation is None:
+                settled = True
+                return ConversationResponse(
+                    session=await self._to_detail(session),
+                    output=ChatMessage(
+                        id=assistant_message_id,
+                        role=MessageRole.assistant,
+                        content="",
+                        created_at=datetime.utcnow(),
+                        metadata={"persist_transcript": False, "context_eligible": False},
+                    ),
+                    events=await self._store.list_events(session_id, limit=RECENT_CONVERSATION_EVENT_LIMIT),
+                )
+            response = await self._await_owned_execution(
+                session_id,
+                heartbeat_task,
+                self._finalize_runtime_result,
+                session=session,
+                runtime_result=continuation,
+                assistant_message_id=assistant_message_id,
+                user_message_override=str(continuation.state.get("user_message", "")),
+                turn_lease_token=turn_lease_token,
+                ownership_monitors=ownership_monitors,
+            )
+            settled = True
+            return response
+        except asyncio.CancelledError:
+            raise
+        except ContinuationLeaseLostError:
+            logger.warning(
+                "approval_task_fenced_after_lease_loss",
+                extra={"session_id": session_id, "approval_id": approval.id},
+            )
+            raise
+        except Exception as exc:
+            settled = True
+            latest = await self._require_session(session_id)
+            latest.status = SessionStatus.interrupted
+            self._ensure_control_metadata(latest).update(
+                {
+                    "control_state": "interrupted",
+                    "is_interrupted": True,
+                    "is_resumable": True,
+                    "preserve_resources": True,
+                    "last_interrupt_reason": truncate_text(str(exc), 240),
+                    "last_approval_id": approval.id,
+                }
+            )
+            await self._store.save_session(latest, turn_lease_token=turn_lease_token)
+            await self._store.append_event(
+                session_id,
+                self._make_event(
+                    session_id,
+                    "approval.continuation_interrupted",
+                    {
+                        "approval_id": approval.id,
+                        "tool_key": approval.tool_key,
+                        "message": "Approval continuation was interrupted and preserved for resume.",
+                        "error": truncate_text(str(exc), 240),
+                    },
+                ),
+                turn_lease_token=turn_lease_token,
+            )
+            raise
+        finally:
+            await self._stop_lease_heartbeat(session_id, heartbeat_stop, heartbeat_task)
 
     async def _resume_after_approval_async(
         self,

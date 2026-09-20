@@ -30,6 +30,7 @@ from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import (
+    ApprovalDecisionRequest,
     InterruptSessionRequest,
     HeadlessExecutionRequest,
     ResumeSessionRequest,
@@ -38,6 +39,8 @@ from src.schemas.session import (
     SessionMode,
     SessionSnapshot,
     SessionStatus,
+    ToolApprovalRequest,
+    ToolApprovalStatus,
 )
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_live_postgres_concurrency import _drop_tables
@@ -51,6 +54,7 @@ class Runtime:
         self.finish = None
         self.interrupted = False
         self.resume_calls = []
+        self.approval_calls = []
 
     def request_interrupt(self, *args):
         self.interrupted = True
@@ -110,6 +114,35 @@ class Runtime:
             },
         )
 
+    async def resume_after_approval(self, session, approval, **kwargs):
+        self.approval_calls.append(approval["id"])
+        turn_id = str((session.metadata.get("pending_turn") or {}).get("turn_id") or "approval-turn")
+        return RuntimeTurnResult(
+            output_text="worker-approval-result",
+            events=[],
+            tool_messages=[],
+            approvals=[],
+            pending_turn={},
+            snapshot=SessionSnapshot(
+                id=str(uuid4()),
+                session_id=session.id,
+                version=2,
+                stage="completed",
+                created_at=datetime.now(timezone.utc),
+                graph_state={"turn_id": turn_id},
+            ),
+            state={
+                "turn_id": turn_id,
+                "trace_id": "test-trace",
+                "selected_agent_key": "default",
+                "selected_agent_name": "Default",
+                "selected_model_key": "test",
+                "selected_model_name": "Test",
+                "termination_reason": "completed",
+                "user_message": "approved continuation",
+            },
+        )
+
 
 def build_services(settings, runtime, resources):
     store = PostgresSessionStore(settings)
@@ -118,7 +151,9 @@ def build_services(settings, runtime, resources):
     sessions = SessionService(store, InputOrchestratorService(modes), runtime, modes,
         turn_execution_heartbeat_seconds=.1)
     sessions.set_agent_task_store(tasks)
-    return store, tasks, sessions, AgentTaskDispatcher(settings, tasks, sessions, resources)
+    dispatcher = AgentTaskDispatcher(settings, tasks, sessions, resources)
+    sessions.set_agent_task_dispatcher(dispatcher)
+    return store, tasks, sessions, dispatcher
 
 
 @pytest_asyncio.fixture
@@ -207,6 +242,34 @@ async def prepare_resumable_session(h):
     )
     await h.store.save_snapshot(h.session_id, snapshot)
     return snapshot
+
+
+async def prepare_pending_approval(h):
+    turn_id = f"turn-approval-{uuid4().hex[:8]}"
+    session = await h.store.get_session(h.session_id)
+    session.status = SessionStatus.waiting_approval
+    session.metadata["pending_turn"] = {
+        "turn_id": turn_id,
+        "pending_approval_ids": [],
+    }
+    session.metadata["control"] = {
+        "control_state": "waiting_approval",
+        "is_interrupted": False,
+        "is_resumable": False,
+    }
+    await h.store.save_session(session)
+    approval = ToolApprovalRequest(
+        id=str(uuid4()),
+        session_id=h.session_id,
+        tool_key="browser.navigate",
+        tool_name="Browser Navigate",
+        reason="Navigate to the approved test page",
+        status=ToolApprovalStatus.pending,
+        created_at=datetime.now(timezone.utc),
+        metadata={"approval_type": "tool"},
+    )
+    await h.store.save_approval(h.session_id, approval)
+    return approval
 
 
 @pytest.mark.asyncio
@@ -354,6 +417,68 @@ async def test_duplicate_running_resume_cannot_fail_the_active_owner(harness):
     still_running = await h.tasks.get(receipt.task.id)
     assert still_running.status == "running"
     assert still_running.worker_id == "active-resume-worker"
+
+
+@pytest.mark.asyncio
+async def test_http_approval_resolution_is_atomic_idempotent_and_worker_owned(harness):
+    h = harness
+    approval = await prepare_pending_approval(h)
+    payload = ApprovalDecisionRequest(
+        decision=ToolApprovalStatus.approved,
+        reason="approved for the controlled test",
+        client_request_id="approval-request-1",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=h.app),
+        base_url="http://test",
+    ) as client:
+        responses = await asyncio.gather(
+            *(
+                client.post(
+                    f"/sessions/{h.session_id}/approvals/{approval.id}",
+                    json=payload.model_dump(mode="json"),
+                )
+                for _ in range(6)
+            )
+        )
+    assert {response.status_code for response in responses} == {202}
+    task_ids = {
+        response.json()["task"]["id"]
+        for response in responses
+        if "task" in response.json()
+    }
+    assert len(task_ids) == 1
+    task_id = next(iter(task_ids))
+    body = responses[0].json()
+    assert body["task"]["operation"] == "approval_resume"
+    assert body["task"]["reference_id"] == approval.id
+    assert h.runtime.approval_calls == []
+    approvals = await h.store.list_approvals(h.session_id)
+    assert approvals[0].status == ToolApprovalStatus.approved
+    events = await h.store.list_events(h.session_id)
+    assert [event.type for event in events].count("approval.resolved") == 1
+    assert [event.type for event in events].count("approval.continuation_queued") == 1
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}"
+        )
+        assert cur.fetchone()["count"] == 1
+    assert await h.outbox.relay_once(h.queue) == 1
+    worker = RedisTaskWorker(
+        h.queue,
+        consumer="approval-worker",
+        handler=lambda item: h.dispatcher.handle(item, worker_id="approval-worker"),
+        block_ms=0,
+    )
+    assert await worker.run_once() == 1
+    completed = await h.tasks.get(task_id)
+    assert completed.status == "completed"
+    assert completed.operation == "approval_resume"
+    assert completed.user_message_id is None
+    assert h.runtime.approval_calls == [approval.id]
+    session = await h.store.get_session(h.session_id)
+    assert session.messages[-1].content == "worker-approval-result"
+    assert "turn_lease_token" not in session.metadata
 
 
 @pytest.mark.asyncio
@@ -673,6 +798,42 @@ async def test_separate_worker_process_executes_persisted_resume(harness):
         session = await h.store.get_session(h.session_id)
         assert session.messages[-1].content == "worker-resume-result"
         assert h.runtime.resume_calls == []
+    finally:
+        if process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 5)
+
+
+@pytest.mark.asyncio
+async def test_separate_worker_process_executes_persisted_approval(harness):
+    h = harness
+    approval = await prepare_pending_approval(h)
+    receipt = await h.dispatcher.submit_approval(
+        h.session_id,
+        approval.id,
+        ApprovalDecisionRequest(
+            decision=ToolApprovalStatus.approved,
+            reason="cross-process approval",
+            client_request_id="approval-separate-worker",
+        ),
+    )
+    assert await h.outbox.relay_once(h.queue) == 1
+    process = multiprocessing.get_context("spawn").Process(
+        target=worker_process,
+        args=(h.settings, h.prefix),
+    )
+    try:
+        process.start()
+        await asyncio.to_thread(process.join, 15)
+        assert process.exitcode == 0
+        result = await h.tasks.get(receipt.task.id)
+        assert result.status == "completed"
+        assert result.operation == "approval_resume"
+        assert result.reference_id == approval.id
+        assert result.worker_id == "separate-worker"
+        session = await h.store.get_session(h.session_id)
+        assert session.messages[-1].content == "worker-approval-result"
+        assert h.runtime.approval_calls == []
     finally:
         if process.is_alive():
             process.terminate()

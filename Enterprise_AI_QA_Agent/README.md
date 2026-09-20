@@ -286,6 +286,14 @@ ORCHESTRATION__AGENT_TASK_LIMIT=20
 再协调启动新 API、Outbox Relay 和 Agent Worker；不能让仍采用同步 `/messages` 语义的旧实例混跑。
 前端已按 202 回执显示排队状态，并通过持久 SSE 事件刷新最终结果。
 
+普通 LangGraph 工具审批也使用同一 `agent_turn_tasks` 任务契约，操作类型为
+`approval_resume`。审批决策、审批状态更新、`approval.resolved`、
+`approval.continuation_queued`、任务记录和 Outbox 在同一个 PostgreSQL 事务中提交；
+API 对该分支返回 HTTP 202，Worker 领取后再获得 Session 执行租约并恢复图。
+`reference_id` 固定为 `approval_id`，任务输入保存已决策审批的脱敏快照，避免 Worker
+依赖 API 进程内存。审批重复提交按 `client_request_id`（未提供时按审批和决策）幂等；
+录制审批、TestRun 审批和 Coordinator 代理审批继续使用各自专用端点/转发语义。
+
 真实 PostgreSQL/Redis 验证命令：
 
 ```powershell
@@ -691,8 +699,8 @@ ORCHESTRATION__RESOURCE_GLOBAL_LIMIT=20
 （PowerShell 先设置 `$env:RUN_LIVE_BROWSER_TESTS='1'`），使用隔离的 PostgreSQL 表、Redis 前缀及真实 Chromium。
 覆盖三级任务配额、等待状态落库、新 Attempt 重试、任务满额下浏览器执行、心跳故障中断和重复取消清理顺序。
 测试依据项目课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、幂等与补偿原则；不以仅检查返回值替代资源和状态断言。
-当前准入同时覆盖 TestRun RunItem、公开普通对话、手动恢复和 Headless Agent Turn。
-审批续跑与 Coordinator 内部父子任务仍沿用各自现有执行路径，后续必须迁移到同一持久任务契约，
+当前准入同时覆盖 TestRun RunItem、公开普通对话、手动恢复、Headless Agent Turn 和普通审批续跑。
+Coordinator 内部父子任务仍沿用各自现有执行路径，后续必须迁移到同一持久任务契约，
 因此尚不能宣称所有 Agent 入口均已任务化。
 
 ### 跨进程编排事件与 SSE 回补
@@ -734,8 +742,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_event_delivery.py -q`：
 覆盖独立 Worker 进程与两个真实 HTTP 客户端、1004 条断线补读、晚到时间戳、未提交事务、
-执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。公开普通对话、手动恢复和 Headless
-现在已使用上述持久事件链路和 Outbox/Agent Worker；审批与 Coordinator 续跑仍按前述边界继续实施。
+执行中事件落库、重复 ID、写库故障、缓冲上限及未知游标。公开普通对话、手动恢复、Headless
+和普通审批续跑现在已使用上述持久事件链路和 Outbox/Agent Worker；Coordinator 续跑仍按前述边界继续实施。
 
 普通执行、手动恢复与审批续跑现在共同监控实际执行和数据库租约心跳，沿用
 `RedisTaskWorker._run_handler` / `TestRunExecutionService._execute_with_lease_watch` 的
@@ -744,8 +752,8 @@ Redis 通知加速和 SSE 连接监控尚需后续接入，当前结果不代表
 失去租约时不尝试把 Session 改成成功/中断终态，也不完成租约，交给现有过期恢复流程；
 `session_execution_ownership_lost` 和 `session_lease_left_for_recovery` 记录异常类型与会话。
 外部重复取消不会绕过清理，停止心跳时等待正在进行的续租调用返回，避免其数据库线程在租约释放后继续运行。
-这里解决已检测到的续租失败；公开普通对话、手动恢复和 Headless 已接入持久任务调度。
-数据库调用长期无响应的期限控制，以及审批续跑和内部 Coordinator 入口的持久调度仍需接续完成。
+这里解决已检测到的续租失败；公开普通对话、手动恢复、Headless 和普通审批续跑已接入持久任务调度。
+数据库调用长期无响应的期限控制，以及内部 Coordinator 入口的持久调度仍需接续完成。
 
 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行
 `uv run --no-sync python -m pytest tests/test_session_execution_ownership.py -q`，

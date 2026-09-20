@@ -661,6 +661,7 @@ async def lifespan(app: FastAPI):
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
     )
+    session_service.set_agent_task_dispatcher(app.state.agent_task_dispatcher)
     app.state.registry_service = RegistryService(
         agent_registry=agent_registry,
         tool_registry=tool_registry,

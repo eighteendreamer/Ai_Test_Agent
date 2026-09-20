@@ -242,6 +242,52 @@ class AgentTaskDispatcher:
             "Headless 任务已接收，执行状态请查看编排轨迹。",
         )
 
+    async def submit_approval(
+        self,
+        session_id: str,
+        approval_id: str,
+        payload,
+    ) -> AgentTaskAccepted:
+        session = await self._sessions._require_session(session_id)
+        pending_turn = session.metadata.get("pending_turn") or {}
+        context = get_request_context()
+        command = AgentTaskCommand(
+            task_id=new_id("task"),
+            operation="approval_resume",
+            session_id=session_id,
+            turn_id=str(pending_turn.get("turn_id") or f"approval_{approval_id}"),
+            project_id=session.project_id,
+            request_id=context.request_id if context else new_id("req"),
+            trace_id=context.trace_id if context else new_id("trace"),
+            run_id=context.run_id if context else None,
+            run_item_id=context.run_item_id if context else None,
+            reference_id=approval_id,
+        )
+        key = payload.client_request_id or f"{approval_id}:{payload.decision.value}"
+        task = await self._tasks.submit_approval(
+            command,
+            approval_id,
+            payload,
+            idempotency_key=key,
+        )
+        LOGGER.info(
+            "agent_approval_task_submitted",
+            extra={
+                "task_id": task.id,
+                "session_id": task.session_id,
+                "turn_id": task.turn_id,
+                "approval_id": approval_id,
+                "request_id": task.request_id,
+                "trace_id": task.trace_id,
+                "queue": self._settings.orchestration.agent_task_stream,
+                "decision": payload.decision.value,
+            },
+        )
+        return await self._accepted(
+            task,
+            "审批已记录，续跑任务已排队。",
+        )
+
     async def _accepted(self, task, content: str) -> AgentTaskAccepted:
         return AgentTaskAccepted(
             task=task,
@@ -379,6 +425,11 @@ class AgentTaskDispatcher:
                     )
                 elif task.operation == "manual_resume":
                     response = await self._sessions.execute_claimed_resume(
+                        task,
+                        ownership_monitor=monitor,
+                    )
+                elif task.operation == "approval_resume":
+                    response = await self._sessions.execute_claimed_approval(
                         task,
                         ownership_monitor=monitor,
                     )

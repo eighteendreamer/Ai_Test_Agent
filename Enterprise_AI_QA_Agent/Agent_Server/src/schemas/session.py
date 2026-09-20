@@ -277,6 +277,7 @@ class ExecutionRequest(BaseModel):
 class ApprovalDecisionRequest(BaseModel):
     decision: ToolApprovalStatus
     reason: str | None = None
+    client_request_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class InterruptSessionRequest(BaseModel):

@@ -108,10 +108,15 @@ export function resolveApproval(
   approvalId: string,
   decision: "approved" | "denied",
   reason?: string,
-): Promise<ToolApprovalRequest> {
+  clientRequestId?: string,
+): Promise<ToolApprovalRequest | AgentTaskAccepted> {
   return request(`/api/v1/sessions/${sessionId}/approvals/${approvalId}`, {
     method: "POST",
-    body: JSON.stringify({ decision, reason: reason || null }),
+    body: JSON.stringify({
+      decision,
+      reason: reason || null,
+      client_request_id: clientRequestId || null,
+    }),
   });
 }
 

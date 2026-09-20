@@ -962,7 +962,13 @@ export const useSessionStore = defineStore("session", {
           }
           await api.resolveTestRunItemApproval(runItemId, approvalId, decision, reason);
         } else {
-          await api.resolveApproval(this.session.id, approvalId, decision, reason);
+          await api.resolveApproval(
+            this.session.id,
+            approvalId,
+            decision,
+            reason,
+            createClientMessageId(),
+          );
         }
         if (this.session) {
           this.session.pending_approvals = this.session.pending_approvals.filter((item) => item.id !== approvalId);

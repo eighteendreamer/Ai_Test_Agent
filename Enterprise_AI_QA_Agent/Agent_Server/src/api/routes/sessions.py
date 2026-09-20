@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from src.application.flow.projection_service import FlowProjectionService
 from src.runtime.streaming import format_sse
@@ -347,7 +347,17 @@ async def resolve_approval(
     request: Request,
 ):
     try:
-        return await request.app.state.session_service.resolve_approval(session_id, approval_id, payload)
+        result = await request.app.state.session_service.resolve_approval(
+            session_id,
+            approval_id,
+            payload,
+        )
+        if isinstance(result, AgentTaskAccepted):
+            return JSONResponse(
+                status_code=202,
+                content=result.model_dump(mode="json"),
+            )
+        return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval or session not found") from exc
     except ValueError as exc:

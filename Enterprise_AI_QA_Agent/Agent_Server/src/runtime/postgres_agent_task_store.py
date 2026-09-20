@@ -18,10 +18,13 @@ from src.schemas.agent_task import (
     AgentTaskCommand, AgentTaskExecution, AgentTaskRecord, TERMINAL_AGENT_TASK_STATUSES,
 )
 from src.schemas.session import (
+    ApprovalDecisionRequest,
     ChatMessage,
     ExecutionEvent,
     ResumeSessionRequest,
     SendMessageRequest,
+    ToolApprovalRequest,
+    ToolApprovalStatus,
 )
 
 
@@ -60,6 +63,22 @@ class PostgresAgentTaskStore:
         return await asyncio.to_thread(
             self._submit_resume_sync,
             command,
+            payload,
+            idempotency_key,
+        )
+
+    async def submit_approval(
+        self,
+        command: AgentTaskCommand,
+        approval_id: str,
+        payload: ApprovalDecisionRequest,
+        *,
+        idempotency_key: str,
+    ) -> AgentTaskRecord:
+        return await asyncio.to_thread(
+            self._submit_approval_sync,
+            command,
+            approval_id,
             payload,
             idempotency_key,
         )
@@ -444,6 +463,152 @@ class PostgresAgentTaskStore:
             )
         return AgentTaskRecord.model_validate(row)
 
+    def _submit_approval_sync(self, command, approval_id, payload, idempotency_key):
+        if command.operation != "approval_resume" or command.reference_id != approval_id:
+            raise ValueError("Approval command identity is invalid")
+        decision_payload = payload.model_dump(mode="json")
+        if not payload.client_request_id:
+            # Without an explicit client key, the approval itself is the
+            # idempotency boundary. A repeated click may carry a different
+            # explanatory reason but must not create a second continuation.
+            decision_payload = {"decision": payload.decision.value}
+        effective_key = self._idempotency_key("approval_resume", idempotency_key)
+        content_hash = self._input_hash(
+            "approval_resume",
+            decision_payload,
+            reference_id=approval_id,
+        )
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            session = self._lock_session(cur, command.session_id)
+            existing = self._find_idempotent(
+                cur,
+                command.session_id,
+                effective_key,
+                content_hash,
+            )
+            if existing:
+                return AgentTaskRecord.model_validate(existing)
+            if session["status"] != "waiting_approval":
+                raise AgentSubmissionConflict(
+                    "Session is not waiting for an approval continuation"
+                )
+            cur.execute(
+                f"SELECT * FROM {self._settings.database.postgres_approval_table} "
+                "WHERE id=%s AND session_id=%s FOR UPDATE",
+                (approval_id, command.session_id),
+            )
+            approval_row = cur.fetchone()
+            if approval_row is None:
+                raise KeyError(approval_id)
+            if approval_row["status"] != ToolApprovalStatus.pending.value:
+                raise AgentSubmissionConflict(f"Approval already resolved: {approval_id}")
+            metadata = approval_row.get("metadata") or {}
+            if (
+                metadata.get("approval_type") == "ui_recording"
+                or metadata.get("source") == "test_run_case_execution"
+                or metadata.get("proxy_child_session_id")
+            ):
+                raise AgentSubmissionConflict(
+                    "This approval type must use its dedicated approval endpoint"
+                )
+            approval = ToolApprovalRequest(
+                id=str(approval_row["id"]),
+                session_id=str(approval_row["session_id"]),
+                tool_key=str(approval_row["tool_key"]),
+                tool_name=str(approval_row["tool_name"]),
+                reason=str(approval_row["reason"]),
+                status=ToolApprovalStatus(payload.decision.value),
+                created_at=approval_row["created_at"],
+                resolved_at=datetime.now(timezone.utc),
+                decision_note=payload.reason,
+                metadata=metadata,
+            )
+            cur.execute(
+                f"""UPDATE {self._settings.database.postgres_approval_table}
+                SET status=%s,resolved_at=%s,decision_note=%s
+                WHERE id=%s AND session_id=%s""",
+                (
+                    payload.decision.value,
+                    approval.resolved_at,
+                    payload.reason,
+                    approval_id,
+                    command.session_id,
+                ),
+            )
+            cur.execute(
+                f"""UPDATE {self._settings.database.postgres_session_table}
+                SET metadata = metadata || jsonb_build_object(
+                    'control', COALESCE(metadata->'control','{{}}'::jsonb) ||
+                        jsonb_build_object(
+                            'control_state','queued',
+                            'is_interrupted',false,
+                            'is_resumable',false,
+                            'last_approval_id',%s::text
+                        )
+                ), updated_at=NOW()
+                WHERE id=%s""",
+                (approval_id, command.session_id),
+            )
+            input_payload = {
+                "approval": approval.model_dump(mode="json"),
+                "decision": decision_payload,
+            }
+            cur.execute(
+                f"""INSERT INTO {self._tasks}
+                (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
+                 priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NULL,%s)
+                RETURNING *""",
+                (
+                    command.task_id,
+                    command.session_id,
+                    command.operation,
+                    command.turn_id,
+                    command.project_id,
+                    command.request_id,
+                    command.trace_id,
+                    command.run_id,
+                    command.run_item_id,
+                    command.priority,
+                    effective_key,
+                    content_hash,
+                    json.dumps(input_payload, ensure_ascii=False),
+                    approval_id,
+                ),
+            )
+            row = cur.fetchone()
+            self._event(
+                cur,
+                row,
+                "approval.resolved",
+                {
+                    "approval_id": approval_id,
+                    "tool_key": approval.tool_key,
+                    "decision": approval.status.value,
+                },
+            )
+            self._event(
+                cur,
+                row,
+                "approval.continuation_queued",
+                {
+                    "approval_id": approval_id,
+                    "tool_key": approval.tool_key,
+                    "decision": approval.status.value,
+                    "queue": self._settings.orchestration.agent_task_stream,
+                },
+            )
+            cur.execute(
+                f"""INSERT INTO {self._settings.database.postgres_task_outbox_table}
+                (event_key,stream,payload) VALUES (%s,%s,%s::jsonb)""",
+                (
+                    f"agent_turn:{command.task_id}",
+                    self._settings.orchestration.agent_task_stream,
+                    command.model_dump_json(),
+                ),
+            )
+        return AgentTaskRecord.model_validate(row)
+
     def _get_sync(self, task_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
@@ -598,7 +763,10 @@ class PostgresAgentTaskStore:
                     )
                     cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
                     return self._record(cur.fetchone())
-            if session["lease_active"] or session["status"] == "waiting_approval":
+            if session["lease_active"] or (
+                session["status"] == "waiting_approval"
+                and row.get("operation") != "approval_resume"
+            ):
                 raise TaskDeferred("Session is occupied or waiting for approval")
             if session["status"] == "running" and session["metadata"].get("turn_lease_token") != row["lease_token"]:
                 raise TaskDeferred("Session has other active work")

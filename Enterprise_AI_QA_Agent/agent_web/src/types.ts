@@ -921,7 +921,7 @@ export type AgentTaskStatus =
 
 export interface AgentTaskRecord {
   id: string;
-  operation: "message" | "manual_resume";
+  operation: "message" | "manual_resume" | "approval_resume";
   session_id: string;
   turn_id: string;
   project_id?: string | null;
