@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="575" viewBox="0 0 900 575">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#455a64"/></marker></defs>
+<rect x="0" y="0" width="900" height="575" fill="#ffffff"/>
+<text x="24" y="30" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="15" text-anchor="start" fill="#263238" font-weight="700">图 5-3C  数据流全景（三）：事件持久化与 SSE 回放</text>
+<text x="24" y="48" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="start" fill="#78909c">事件先落库拿到单调序号，前端再按游标增量拉取，跨进程、可重连、不丢不重</text>
+<rect x="30" y="72" width="188" height="54" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="124" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">SessionEventSink</text>
+<rect x="230" y="72" width="188" height="54" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="324" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">PostgreSQL</text>
+<text x="324" y="104.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">agent_session_events</text>
+<rect x="430" y="72" width="188" height="54" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="524" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">SSE 端点</text>
+<rect x="630" y="72" width="188" height="54" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="724" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">前端 useSSEStream</text>
+<text x="224" y="165" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">INSERT agent_session_events（</text>
+<text x="224" y="178.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">event_sequence BIGSERIAL）</text>
+<path d="M 124 188.5 L 324 188.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="624" y="212.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">GET /api/v1/sessions/{id}/events，</text>
+<text x="624" y="226" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">Last-Event-ID: evt_1024</text>
+<path d="M 724 236 L 524 236" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="424" y="260" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">SELECT ... WHERE event_sequence</text>
+<text x="424" y="273.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">&gt; cursor LIMIT batch_size</text>
+<path d="M 524 283.5 L 324 283.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="624" y="307.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">逐条推送 id / event / data 帧</text>
+<path d="M 524 317.5 L 724 317.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="732" y="341.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">更新本地 cursor</text>
+<path d="M 719 342.5 L 758 342.5 L 758 360.5 L 729 360.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<rect x="16" y="245" width="816" height="122.5" rx="6" fill="none" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="6 4"/>
+<rect x="16" y="234" width="222.58" height="22" rx="4" fill="#ffffff" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="32" y="249" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="start" fill="#455a64" font-weight="600">loop 轮询（session_sse_poll_seconds）</text>
+<rect x="298" y="373.5" width="452" height="43" rx="5" fill="#fff8e1" stroke="#c8a415" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="306" y="392" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#5d4037">event_sequence BIGSERIAL + UNIQUE(session_id, event_sequence)：单调序号是无锁</text>
+<text x="306" y="405.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#5d4037">增量拉取的唯一事实来源</text>
+<text x="624" y="439.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">: keep-alive（空行保活）</text>
+<path d="M 524 449.5 L 724 449.5" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<text x="532" y="473.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">EventCursorNotFoundError →</text>
+<text x="532" y="487" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">session_event_cursor_reset</text>
+<path d="M 519 488 L 558 488 L 558 506 L 529 506" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<rect x="16" y="458.5" width="816" height="54.5" rx="6" fill="none" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="6 4"/>
+<rect x="16" y="447.5" width="164.39" height="22" rx="4" fill="#ffffff" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="32" y="462.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="start" fill="#455a64" font-weight="600">alt 游标越界（事件已被清理）</text>
+<text x="624" y="522" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">重置为最早可用序号后继续</text>
+<path d="M 524 532 L 724 532" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<path d="M 124 126 L 124 551" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 324 126 L 324 551" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 524 126 L 524 551" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 724 126 L 724 551" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+</svg>

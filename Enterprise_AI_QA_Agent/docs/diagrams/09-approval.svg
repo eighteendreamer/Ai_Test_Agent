@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1224" height="853.5" viewBox="0 0 1224 853.5">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#455a64"/></marker></defs>
+<rect x="0" y="0" width="1224" height="853.5" fill="#ffffff"/>
+<text x="24" y="30" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="15" text-anchor="start" fill="#263238" font-weight="700">图 6-5  危险操作人工审批全流程</text>
+<text x="24" y="48" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="start" fill="#78909c">审批不占用执行进程：挂起→待批→续跑全程由持久任务驱动，Worker 重启不影响</text>
+<rect x="30" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="124" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">测试负责人</text>
+<rect x="230" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="324" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">工作台</text>
+<rect x="430" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="524" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">FastAPI</text>
+<rect x="630" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="724" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">Agent Worker</text>
+<rect x="830" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="924" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">LangGraph</text>
+<rect x="1030" y="72" width="188" height="48" rx="6" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="1124" y="91" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">PostgreSQL</text>
+<text x="932" y="159" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">permission_gate 判定需要人工</text>
+<text x="932" y="172.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">审批</text>
+<path d="M 919 173.5 L 958 173.5 L 958 191.5 L 929 191.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="1024" y="207.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">写 agent_session_</text>
+<text x="1024" y="221" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">approvals(status=pending)</text>
+<path d="M 924 231 L 1124 231" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="1024" y="255" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">落 graph.waiting_for_approval 事件</text>
+<path d="M 924 265 L 1124 265" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="824" y="289" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">pending_turn（本轮就此挂起）</text>
+<path d="M 924 299 L 724 299" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<text x="924" y="323" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">任务转「等待审批」态</text>
+<path d="M 724 333 L 1124 333" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="724" y="357" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">SSE 推送 approval.created</text>
+<path d="M 1124 367 L 324 367" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<text x="224" y="391" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">渲染审批卡片（tool_key / reason）</text>
+<path d="M 324 401 L 124 401" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<text x="224" y="425" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">点击「批准」</text>
+<path d="M 124 435 L 324 435" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="424" y="459" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">POST /api/v1/sessions/{id}/</text>
+<text x="424" y="472.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">approvals/{approval_id}</text>
+<path d="M 324 482.5 L 524 482.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="824" y="506.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">resolve_approval（乐观并发，防重复决策）</text>
+<path d="M 524 516.5 L 1124 516.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="824" y="540.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">写持久续跑任务 submit_approval，返回 202</text>
+<path d="M 524 550.5 L 1124 550.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="424" y="574.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">202 + AgentTaskAccepted</text>
+<path d="M 524 584.5 L 324 584.5" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<rect x="498" y="597.5" width="652" height="29.5" rx="5" fill="#e8eaf6" stroke="#6f7dd0" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="506" y="616" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#5d4037">续跑复用与提交消息完全相同的持久任务机制：不依赖原进程、原 Worker 是否存活</text>
+<text x="924" y="650" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">新一轮任务开始执行续跑</text>
+<path d="M 1124 660 L 724 660" stroke="#455a64" stroke-width="1.4" fill="none" stroke-dasharray="7 4" marker-end="url(#ah)"/>
+<text x="924" y="684" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">approval.decision_replayed / applied</text>
+<path d="M 724 694 L 1124 694" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="824" y="718" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">从待恢复快照恢复 state</text>
+<path d="M 724 728 L 924 728" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="932" y="752" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="start" fill="#37474f">重入图执行，完成原轮</text>
+<path d="M 919 753 L 958 753 L 958 771 L 929 771" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<text x="1024" y="787" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">approval.resolved + runtime.turn_</text>
+<text x="1024" y="800.5" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10.5" text-anchor="middle" fill="#37474f">completed</text>
+<path d="M 924 810.5 L 1124 810.5" stroke="#455a64" stroke-width="1.4" fill="none" marker-end="url(#ah)"/>
+<path d="M 124 120 L 124 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 324 120 L 324 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 524 120 L 524 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 724 120 L 724 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 924 120 L 924 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+<path d="M 1124 120 L 1124 829.5" stroke="#cfd8dc" stroke-width="1.1" fill="none" stroke-dasharray="4 4"/>
+</svg>

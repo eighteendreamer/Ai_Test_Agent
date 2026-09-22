@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1020" height="650" viewBox="0 0 1020 650">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#455a64"/></marker></defs>
+<rect x="0" y="0" width="1020" height="650" fill="#ffffff"/>
+<text x="24" y="30" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="15" text-anchor="start" fill="#263238" font-weight="700">图 6-3  AgentLoop 外层多轮循环控制流</text>
+<text x="24" y="48" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="start" fill="#78909c">循环的四个出口：中断、异常恢复、continue_loop、达到 max_iterations</text>
+<rect x="75" y="67" width="250" height="46" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="200" y="83.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">run_turn 入口</text>
+<text x="200" y="103.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">state = build_state(session, mode)</text>
+<polygon points="200,145 310,176 200,207 90,176" fill="#fff8e1" stroke="#c8a415" stroke-width="1.4"/>
+<text x="200" y="180" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#5d4037" font-weight="600">interrupt_requested ?</text>
+<rect x="425" y="150" width="330" height="52" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="590" y="169.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">抛出 InterruptTurn</text>
+<text x="590" y="189.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">runtime.interrupt_requested 事件后退出</text>
+<rect x="75" y="239" width="250" height="46" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="200" y="255.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">graph.ainvoke(state)</text>
+<text x="200" y="275.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">执行单轮 LangGraph 状态机</text>
+<polygon points="200,317 310,348 200,379 90,348" fill="#fff8e1" stroke="#c8a415" stroke-width="1.4"/>
+<text x="200" y="352" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#5d4037" font-weight="600">执行异常 ?</text>
+<rect x="425" y="319" width="330" height="58" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="590" y="341.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">错误恢复路径</text>
+<text x="590" y="361.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">提取 error_code 与部分结果，不向上抛原始异常</text>
+<polygon points="200,403 310,434 200,465 90,434" fill="#fff8e1" stroke="#c8a415" stroke-width="1.4"/>
+<text x="200" y="438" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#5d4037" font-weight="600">continue_loop ?</text>
+<rect x="75" y="491" width="250" height="58" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="200" y="506.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">finalize 收尾</text>
+<text x="200" y="526.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">summary + token 用量；runtime.turn_completed /</text>
+<text x="200" y="540.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">turn.failed</text>
+<rect x="410" y="412" width="300" height="44" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="560" y="427.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">runtime.loop_reenter</text>
+<text x="560" y="447.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">loop_iteration += 1</text>
+<polygon points="560,489 660,520 560,551 460,520" fill="#fff8e1" stroke="#c8a415" stroke-width="1.4"/>
+<text x="560" y="524" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#5d4037" font-weight="600">loop_iteration &gt;= 8 ?</text>
+<rect x="710" y="498" width="280" height="44" rx="7" fill="#ffffff" stroke="#7b8b9a" stroke-width="1.4"/>
+<text x="850" y="513.875" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11.5" text-anchor="middle" fill="#1f2933" font-weight="600">graph.max_iterations_reached</text>
+<text x="850" y="533.975" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#546e7a">强制收尾，防止无限循环</text>
+<rect x="164" y="592" width="72" height="28" rx="14" fill="#eceff1" stroke="#90a4ae" stroke-width="1.4"/>
+<text x="200" y="610" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#37474f" font-weight="600">返回</text>
+<path d="M 75 90 L 75 176" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 200 113 L 200 145" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 310 176 L 425 176" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="367.5" y="170" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#2e7d32">是</text>
+<path d="M 200 207 L 200 239" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="200" y="217" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#c62828">否</text>
+<path d="M 200 285 L 200 317" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 310 348 L 425 348" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="367.5" y="342" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#2e7d32">是</text>
+<path d="M 590 377 L 590 420 L 320 420 L 320 403" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 200 379 L 200 403" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="200" y="385" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#c62828">否</text>
+<path d="M 200 465 L 200 491" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="200" y="472" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#c62828">false</text>
+<path d="M 310 434 L 410 434" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="360" y="428" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#2e7d32">true</text>
+<path d="M 710 434 L 710 500 L 660 500" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 660 520 L 755 520" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<text x="707.5" y="514" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="11" text-anchor="middle" fill="#2e7d32">是</text>
+<path d="M 560 549 L 560 580 L 200 580 L 200 580" stroke="#546e7a" stroke-width="1.5" fill="none"/>
+<path d="M 200 549 L 200 145 L 200 145" stroke="#546e7a" stroke-width="1.5" fill="none"/>
+<path d="M 60 520 L 60 176 L 92 176" stroke="#546e7a" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#ah)"/>
+<text x="52" y="360" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC','WenQuanYi Micro Hei',sans-serif" font-size="10" text-anchor="middle" fill="#6d4c41">否：进入下一轮</text>
+<path d="M 850 549 L 850 606 L 240 606" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+<path d="M 200 549 L 200 580" stroke="#546e7a" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+</svg>
