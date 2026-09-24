@@ -5,6 +5,7 @@ import json
 import logging
 from copy import deepcopy
 from datetime import datetime
+from typing import Callable
 
 from src.core.config import Settings
 from src.domain.models import SessionRecord
@@ -339,6 +340,50 @@ class PostgresSessionStore:
         """Apply ``mutate(metadata)`` under a row lock so concurrent writers
         cannot overwrite each other's whole-document metadata."""
         return await asyncio.to_thread(self._mutate_metadata_sync, session_id, mutate)
+
+    async def update_metadata_and_append_event(
+        self,
+        session_id: str,
+        update: Callable[[dict], bool],
+        event: ExecutionEvent,
+    ) -> bool:
+        applied = await asyncio.to_thread(
+            self._update_metadata_and_append_event_sync, session_id, update, event
+        )
+        if applied:
+            await self._publish_hot_event(session_id, event)
+        return applied
+
+    def _update_metadata_and_append_event_sync(
+        self,
+        session_id: str,
+        update: Callable[[dict], bool],
+        event: ExecutionEvent,
+    ) -> bool:
+        if event.session_id != session_id:
+            raise ValueError("Projection event session_id does not match the session.")
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT metadata FROM {self._settings.database.postgres_session_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return False
+                stored = row["metadata"]
+                metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                if not update(metadata):
+                    return False
+                cur.execute(
+                    f"UPDATE {self._settings.database.postgres_session_table} "
+                    "SET metadata = %s::jsonb, updated_at = now() WHERE id = %s",
+                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                )
+                if not self.append_event_in_transaction(cur, session_id, event):
+                    raise ValueError("Projection event ID already exists.")
+                return True
 
     def _mutate_metadata_sync(self, session_id: str, mutate) -> bool:
         with postgres_connect(self._settings) as conn:

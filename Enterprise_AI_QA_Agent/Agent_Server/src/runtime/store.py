@@ -4,7 +4,7 @@ import asyncio
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import Callable, Protocol
 
 from src.domain.models import SessionRecord
 from src.schemas.session import (
@@ -89,6 +89,12 @@ class SessionStore(Protocol):
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
     ) -> None: ...
+    async def update_metadata_and_append_event(
+        self,
+        session_id: str,
+        update: Callable[[dict], bool],
+        event: ExecutionEvent,
+    ) -> bool: ...
     async def list_snapshots(
         self,
         session_id: str,
@@ -373,6 +379,34 @@ class InMemorySessionStore:
             if turn_lease_token:
                 self._assert_turn_lease_locked(session_id, turn_lease_token)
             self._append_event_locked(session_id, event)
+
+    async def update_metadata_and_append_event(
+        self,
+        session_id: str,
+        update: Callable[[dict], bool],
+        event: ExecutionEvent,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            if event.session_id != session_id:
+                raise ValueError("Projection event session_id does not match the session.")
+            metadata = deepcopy(session.metadata)
+            if not update(metadata):
+                return False
+            if any(item.id == event.id for item in self._events[session_id]):
+                raise ValueError("Projection event ID already exists.")
+            previous_session = deepcopy(session)
+            previous_events = list(self._events[session_id])
+            try:
+                session.metadata = metadata
+                self._append_event_locked(session_id, event)
+            except Exception:
+                self._sessions[session_id] = previous_session
+                self._events[session_id] = previous_events
+                raise
+            return True
 
     def _append_event_locked(self, session_id: str, event: ExecutionEvent) -> None:
         if any(item.id == event.id for item in self._events[session_id]):

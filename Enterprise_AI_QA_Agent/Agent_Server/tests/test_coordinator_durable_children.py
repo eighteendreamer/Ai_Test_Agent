@@ -537,6 +537,66 @@ async def test_timed_out_child_recovery_uses_durable_result_after_notify_failure
 
 
 @pytest.mark.asyncio
+async def test_two_coordinators_do_not_project_the_same_child_twice(harness, monkeypatch):
+    h = harness
+    child_session_id = await make_session(h.store, "Concurrent notification child")
+    spec = worker("worker-concurrent-notification")
+    child = await submit_child(h, h.parent_task_id, spec, child_session_id)
+    parent = await h.store.get_session(h.parent_id)
+    parent.metadata["worker_dispatches"] = [{
+        "task_id": spec.task_id,
+        "child_session_id": child_session_id,
+        "agent_key": spec.agent_key,
+        "model_key": "",
+        "description": spec.description,
+        "status": "running",
+    }]
+    await h.store.save_session(parent)
+    notification = {
+        "child_task_id": child.id,
+        "parent_task_id": h.parent_task_id,
+        "worker_task_id": spec.task_id,
+        "worker_agent_key": spec.agent_key,
+        "child_trace_id": child.trace_id,
+        "root_trace_id": "root-trace-1",
+        "attempt_id": "attempt-1",
+        "status": "failed",
+        "summary": "Worker failed.",
+        "result_text": "injected child failure",
+        "usage": {},
+    }
+    coordinators = [build_coordinator(h), build_coordinator(h)]
+    both_read = asyncio.Event()
+    entered = 0
+    for coordinator in coordinators:
+        project = coordinator._project_worker_notification
+
+        async def pause_after_read(*, _project=project, **kwargs):
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                both_read.set()
+            await asyncio.wait_for(both_read.wait(), 5)
+            return await _project(**kwargs)
+
+        monkeypatch.setattr(coordinator, "_project_worker_notification", pause_after_read)
+
+    await asyncio.gather(*(
+        coordinator.on_child_task_finished(
+            parent_task_id=h.parent_task_id, child_task_id=child.id,
+            child_session_id=child_session_id, notification=notification,
+        )
+        for coordinator in coordinators
+    ))
+    parent = await h.store.get_session(h.parent_id)
+    assert parent.metadata["worker_failure_guard"]["count"] == 1
+    assert [event.type for event in await h.store.list_events(h.parent_id)].count(
+        "worker.task_notification_received"
+    ) == 1
+    assert len([item for item in await h.tasks.list_session(h.parent_id) if item.operation == "coordinator_resume"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_child_execution_failure_still_notifies_parent(harness):
     h = harness
     runtime = RaisingRuntime()

@@ -785,15 +785,22 @@ class CoordinatorRuntimeService:
         if parent_session is None:
             return None
 
-        await self._mark_worker_status(
-            parent_session_id=parent_session_id,
-            task_id=worker.task_id,
-            status=status,
-            child_session_id=child_session_id,
-            worker=worker,
-        )
-        await self._store.append_event(
+        def claim_projection(metadata: dict[str, Any]) -> bool:
+            if any(
+                isinstance(record, dict)
+                and str(record.get("task_id") or "") == worker.task_id
+                and str(record.get("status") or "") in TERMINAL_WORKER_STATUSES
+                for record in metadata.get("worker_dispatches", [])
+            ):
+                return False
+            self._apply_worker_status(
+                metadata, worker.task_id, status, child_session_id, worker
+            )
+            return True
+
+        projected = await self._store.update_metadata_and_append_event(
             parent_session_id,
+            claim_projection,
             ExecutionEvent(
                 type="worker.task_notification_received",
                 session_id=parent_session_id,
@@ -807,6 +814,8 @@ class CoordinatorRuntimeService:
                 },
             ),
         )
+        if not projected:
+            return None
         await self._sync_child_approvals_to_parent(
             parent_session_id=parent_session_id,
             parent_turn_id=parent_turn_id,

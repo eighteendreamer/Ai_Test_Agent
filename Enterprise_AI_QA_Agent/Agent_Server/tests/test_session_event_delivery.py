@@ -215,6 +215,55 @@ async def test_final_response_transaction_rolls_back_when_second_event_fails(sto
     assert await reader.list_events(session_id) == []
 
 
+@pytest.mark.asyncio
+async def test_projection_status_and_notification_event_commit_once(stores, monkeypatch):
+    writer, reader, session_id, _ = stores
+    session = deepcopy(await writer.get_session(session_id))
+    session.metadata["worker_dispatches"] = [{"task_id": "worker-1", "status": "running"}]
+    await writer.save_session(session)
+    notification = ExecutionEvent(
+        id=f"{session_id}-worker-notification", type="worker.task_notification_received",
+        session_id=session_id, timestamp=datetime.now(timezone.utc), payload={"task_id": "worker-1"},
+    )
+
+    def mark_completed(metadata):
+        record = metadata["worker_dispatches"][0]
+        if record["status"] == "completed":
+            return False
+        record["status"] = "completed"
+        return True
+
+    if isinstance(writer, PostgresSessionStore):
+        original_append = writer.append_event_in_transaction
+
+        def fail_append(*args, **kwargs):
+            raise RuntimeError("injected projection event failure")
+
+        monkeypatch.setattr(writer, "append_event_in_transaction", fail_append)
+    else:
+        original_append = writer._append_event_locked
+
+        def fail_append(*args, **kwargs):
+            raise RuntimeError("injected projection event failure")
+
+        monkeypatch.setattr(writer, "_append_event_locked", fail_append)
+
+    with pytest.raises(RuntimeError, match="injected projection event failure"):
+        await writer.update_metadata_and_append_event(session_id, mark_completed, notification)
+    assert (await reader.get_session(session_id)).metadata["worker_dispatches"][0]["status"] == "running"
+    assert await reader.list_events(session_id) == []
+
+    monkeypatch.setattr(
+        writer,
+        "append_event_in_transaction" if isinstance(writer, PostgresSessionStore) else "_append_event_locked",
+        original_append,
+    )
+    assert await writer.update_metadata_and_append_event(session_id, mark_completed, notification)
+    assert not await writer.update_metadata_and_append_event(session_id, mark_completed, notification)
+    assert (await reader.get_session(session_id)).metadata["worker_dispatches"][0]["status"] == "completed"
+    assert [item.type for item in await reader.list_events(session_id)] == [notification.type]
+
+
 def request_for(reader, session_id, settings, cursor=""):
     class Service:
         async def get_session(self, sid): return await reader.get_session(sid)
