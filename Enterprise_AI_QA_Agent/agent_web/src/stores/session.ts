@@ -715,6 +715,7 @@ export const useSessionStore = defineStore("session", {
             event.type === "tool.execution_completed" ||
             event.type === "tool.execution_failed" ||
             event.type === "tool.execution_denied" ||
+            event.type === "tool.execution_skipped" ||
             event.type === "verification.completed" ||
             event.type === "turn.completed" ||
             event.type === "turn.failed"
@@ -1121,7 +1122,8 @@ export const useSessionStore = defineStore("session", {
         event.type === "tool.execution_blocked" ||
         event.type === "tool.execution_completed" ||
         event.type === "tool.execution_failed" ||
-        event.type === "tool.execution_denied"
+        event.type === "tool.execution_denied" ||
+        event.type === "tool.execution_skipped"
       ) {
         const statusMap: Record<string, string> = {
           "tool.execution_started": "running",
@@ -1129,6 +1131,7 @@ export const useSessionStore = defineStore("session", {
           "tool.execution_completed": "completed",
           "tool.execution_failed": "failed",
           "tool.execution_denied": "denied",
+          "tool.execution_skipped": "skipped",
         };
         const status = statusMap[event.type] || "running";
         const fallbackSummary =
@@ -1140,6 +1143,8 @@ export const useSessionStore = defineStore("session", {
                 ? "Tool execution completed."
                 : event.type === "tool.execution_denied"
                   ? "Tool execution was denied."
+                  : event.type === "tool.execution_skipped"
+                    ? "Tool execution was skipped."
                   : "Tool execution failed.";
         const summary = String(event.payload?.summary || event.payload?.message || fallbackSummary).trim() || fallbackSummary;
         const index = findToolMessageIndex(this.messages, event);

@@ -27,6 +27,7 @@ const EXECUTION_EVENT_TYPES = new Set([
   "tool.execution_completed",
   "tool.execution_failed",
   "tool.execution_denied",
+  "tool.execution_skipped",
   "graph.loop_prepared",
   "graph.response_ready",
   "graph.execution_completed",
@@ -322,6 +323,8 @@ function toolStatusLabel(status: string) {
       return "已拒绝";
     case "cancelled":
       return "已取消";
+    case "skipped":
+      return "已跳过";
     default:
       return status || "处理中";
   }

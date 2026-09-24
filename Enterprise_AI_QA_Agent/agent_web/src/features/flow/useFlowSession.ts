@@ -22,6 +22,7 @@ const SIDE_DATA_REFRESH_TYPES = new Set([
   "tool.execution_completed",
   "tool.execution_failed",
   "tool.execution_denied",
+  "tool.execution_skipped",
   "turn.completed",
   "turn.failed",
   "runtime.turn_completed",
