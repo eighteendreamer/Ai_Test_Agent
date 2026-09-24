@@ -171,6 +171,9 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
         }
       },
       lastEventId,
+      (message) => {
+        error.value = message;
+      },
     );
     eventSource.onerror = () => {
       console.warn("[flow] SSE connection error", { sessionId: id });

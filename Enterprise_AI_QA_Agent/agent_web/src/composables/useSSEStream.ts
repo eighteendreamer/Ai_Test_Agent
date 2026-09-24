@@ -76,7 +76,10 @@ export class SSEStreamManager {
     const source = api.connectEvents(sessionId, (event) => {
       if (!this.rememberIncomingEvent(event)) return;
       this._callbacks?.onEvent(event);
-    }, lastEventId);
+    }, lastEventId, (error) => {
+      if (this._source !== source) return;
+      this._callbacks?.onError(error);
+    });
 
     source.onopen = () => {
       if (this._source !== source) return;

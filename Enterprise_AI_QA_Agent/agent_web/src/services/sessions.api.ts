@@ -186,17 +186,43 @@ export function connectEvents(
   sessionId: string,
   onEvent: (event: ExecutionEvent) => void,
   lastEventId = "",
+  onMalformed?: (error: string) => void,
 ): EventSource {
   const query = new URLSearchParams();
   if (lastEventId) query.set("last_event_id", lastEventId);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const source = new EventSource(`/api/v1/sessions/${sessionId}/events${suffix}`);
   source.onmessage = (message) => {
-    const payload = JSON.parse(message.data) as ExecutionEvent;
-    if (!payload.id && message.lastEventId) {
-      payload.id = message.lastEventId;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(message.data);
+    } catch {
+      console.warn("[SSE] invalid JSON event frame", { sessionId, eventId: message.lastEventId });
+      onMalformed?.("事件流收到无法解析的消息，已跳过该帧。");
+      return;
     }
-    onEvent(payload);
+    const event = payload as Partial<ExecutionEvent> | null;
+    if (
+      !event ||
+      typeof event !== "object" ||
+      Array.isArray(event) ||
+      typeof event.type !== "string" ||
+      !event.type ||
+      event.session_id !== sessionId ||
+      typeof event.timestamp !== "string" ||
+      !event.payload ||
+      typeof event.payload !== "object" ||
+      Array.isArray(event.payload) ||
+      (event.id != null && typeof event.id !== "string")
+    ) {
+      console.warn("[SSE] invalid event schema or session", { sessionId, eventId: message.lastEventId });
+      onMalformed?.("事件流收到无效消息，已跳过该帧。");
+      return;
+    }
+    if (!event.id && message.lastEventId) {
+      event.id = message.lastEventId;
+    }
+    onEvent(event as ExecutionEvent);
   };
   return source;
 }
