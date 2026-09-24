@@ -79,6 +79,8 @@ class SecurityContext:
 class StaticSafetyPolicy:
     """L1: Static policy checks (allowlist/denylist/risk level)."""
 
+    EXECUTABLE_ARGUMENT_KEYS = frozenset({"command", "shell_command", "script", "sql", "statement", "code"})
+
     DANGEROUS_PATTERNS = [
         r"rm\s+-rf\s+/",
         r"DROP\s+TABLE",
@@ -117,7 +119,7 @@ class StaticSafetyPolicy:
         if tool_key in self._allow_keys:
             return None
 
-        args_str = str(tool_args)
+        args_str = " ".join(_executable_argument_values(tool_args))
         for pattern in self._deny_patterns:
             if re.search(pattern, args_str, re.IGNORECASE):
                 return SafetyVerdict.deny(
@@ -159,6 +161,7 @@ class AISafetyClassifier:
         Returns (None, confidence, risk_level) if confidence is below threshold.
         """
         args_str = str(tool_args).lower()
+        executable_args = " ".join(_executable_argument_values(tool_args))
 
         for pattern, confidence in self._safe_patterns:
             if re.search(pattern, args_str, re.IGNORECASE):
@@ -166,7 +169,7 @@ class AISafetyClassifier:
                     return SafetyVerdict.allow(reasons=["ai_classifier_safe"]), confidence, "low"
 
         for pattern, confidence in self._dangerous_patterns:
-            if re.search(pattern, args_str, re.IGNORECASE):
+            if re.search(pattern, executable_args, re.IGNORECASE):
                 risk = "high" if confidence > 0.85 else "medium"
                 if confidence >= self.HIGH_CONFIDENCE_THRESHOLD:
                     return (
@@ -177,6 +180,22 @@ class AISafetyClassifier:
                 return None, confidence, risk
 
         return None, 0.5, "medium"
+
+
+def _executable_argument_values(value: Any) -> list[str]:
+    """Inspect command-bearing fields without classifying test data as commands."""
+    if not isinstance(value, dict):
+        return []
+    values: list[str] = []
+    for key, item in value.items():
+        if key in StaticSafetyPolicy.EXECUTABLE_ARGUMENT_KEYS and isinstance(item, str):
+            values.append(item)
+        elif isinstance(item, dict):
+            values.extend(_executable_argument_values(item))
+        elif isinstance(item, list):
+            for nested in item:
+                values.extend(_executable_argument_values(nested))
+    return values
 
 
 class SafetyGate:

@@ -44,4 +44,48 @@ describe("session tool execution events", () => {
     expect(message.metadata.tool_progress_finalized).toBe("true");
     expect(JSON.parse(message.content).status).toBe("skipped");
   });
+
+  it("shows safety gate denial and approval wait from tool execution events", () => {
+    const store = useSessionStore();
+    const common = {
+      session_id: "session-1",
+      timestamp: "2026-09-24T10:00:00Z",
+    };
+
+    store.applyStreamingEvent({
+      ...common,
+      id: "event-denied",
+      type: "tool.execution_denied",
+      payload: {
+        turn_id: "turn-1",
+        call_id: "call-denied",
+        tool_key: "cli-executor",
+        message: "Dangerous command denied.",
+        permission_reason_code: "safety_gate_denied",
+      },
+    });
+    store.applyStreamingEvent({
+      ...common,
+      id: "event-approval",
+      type: "tool.execution_blocked",
+      payload: {
+        turn_id: "turn-1",
+        call_id: "call-approval",
+        tool_key: "mock-target-runner",
+        message: "Waiting for approval.",
+        permission_source: "safety_gate",
+        permission_reason_code: "safety_gate_approval_required",
+      },
+    });
+
+    const messages = store.messages.filter((message) => message.role === "tool");
+    expect(messages.map((message) => JSON.parse(message.content).status)).toEqual([
+      "denied",
+      "waiting_approval",
+    ]);
+    expect(messages.map((message) => message.metadata.tool_progress_status)).toEqual([
+      "denied",
+      "waiting_approval",
+    ]);
+  });
 });

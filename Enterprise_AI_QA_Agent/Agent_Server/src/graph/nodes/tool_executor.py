@@ -42,30 +42,6 @@ def build_tool_executor_node(
             tool_call_count=len(state["model_tool_calls"]),
         )
 
-        if safety_gate is not None:
-            security_ctx = SecurityContext(
-                session_id=state["session_id"],
-                agent_key=state.get("selected_agent_key", ""),
-                mode_key=state.get("mode_key", ""),
-                transcript_preview=state.get("user_message", "")[:500],
-                user_message=state.get("user_message", ""),
-            )
-            for tool_call in state.get("model_tool_calls", []):
-                verdict = await safety_gate.evaluate(
-                    tool_call={"tool_name": tool_call.get("name", ""), "arguments": tool_call.get("arguments", {})},
-                    context=security_ctx,
-                )
-                if verdict.decision == SafetyDecision.DENY:
-                    append_graph_event(
-                        state,
-                        "safety.tool_denied",
-                        "safety_gate",
-                        f"Tool call '{tool_call.get('name')}' denied by SafetyGate.",
-                        tool_name=tool_call.get("name", ""),
-                        reason=verdict.reason,
-                        risk_level=verdict.risk_level,
-                    )
-
         prior_tool_messages = list(state["tool_messages"])
         prior_tool_results = list(state["tool_results"])
         new_tool_messages: list[dict[str, Any]] = []
@@ -104,6 +80,7 @@ def build_tool_executor_node(
                 tool_context=tool_context,
                 skill_registry=skill_registry,
                 skill_runtime_service=skill_runtime_service,
+                safety_gate=safety_gate,
             )
             _apply_tool_output_restrictions(
                 state=state,
@@ -201,6 +178,7 @@ async def _resolve_tool_call(
     tool_context: ToolExecutionContext,
     skill_registry: SkillRegistry | None = None,
     skill_runtime_service: SkillRuntimeService | None = None,
+    safety_gate: SafetyGate | None = None,
 ) -> dict[str, Any]:
     state.setdefault("event_log", [])
     permission_decision = _find_permission_decision(state, tool_call.name)
@@ -404,6 +382,62 @@ async def _resolve_tool_call(
             "approval": None,
         }
 
+    safety_verdict = None
+    if safety_gate is not None and (
+        tool.permission_level != "safe" or tool.category in ExecutionSafetyPolicy.EXECUTION_CATEGORIES
+    ):
+        security_ctx = SecurityContext(
+            session_id=state["session_id"],
+            agent_key=state.get("selected_agent_key", ""),
+            mode_key=state.get("mode_key", ""),
+            transcript_preview=state.get("user_message", "")[:500],
+            user_message=state.get("user_message", ""),
+        )
+        safety_verdict = await safety_gate.evaluate(
+            tool_key=tool.key,
+            tool_args=tool_call.arguments,
+            ctx=security_ctx,
+        )
+        if safety_verdict.decision == SafetyDecision.DENY:
+            reason = safety_verdict.reason or f"Tool '{tool.key}' was denied by the safety gate."
+            result = ToolExecutionRecord(
+                call_id=tool_call.id,
+                tool_key=tool.key,
+                tool_name=tool.name,
+                status="denied",
+                summary=reason,
+                input=tool_call.arguments,
+                output={
+                    "error": "safety_gate_denied",
+                    "permission_reason": reason,
+                    "permission_reason_code": "safety_gate_denied",
+                    "risk_level": safety_verdict.risk_level,
+                },
+            )
+            append_graph_event(
+                state,
+                "safety.tool_denied",
+                "safety_gate",
+                reason,
+                tool_key=tool.key,
+                call_id=tool_call.id,
+                risk_level=safety_verdict.risk_level,
+            )
+            append_graph_event(
+                state,
+                "tool.execution_denied",
+                "tool_executor",
+                reason,
+                tool_key=tool.key,
+                call_id=tool_call.id,
+                permission_reason_code="safety_gate_denied",
+            )
+            return {
+                "tool_result": result.model_dump(mode="python"),
+                "tool_message": build_tool_message(result),
+                "approval": None,
+            }
+
     if not tool_registry.has_handler_binding(tool.key) and tool.permission_level == "safe":
         result = ToolExecutionRecord(
             call_id=tool_call.id,
@@ -430,9 +464,14 @@ async def _resolve_tool_call(
             "approval": None,
         }
 
-    if tool.key in state["approval_required_tool_keys"] or execution_safety.behavior == "ask":
+    safety_gate_approval = safety_verdict is not None and safety_verdict.decision in {
+        SafetyDecision.REQUIRE_APPROVAL,
+        SafetyDecision.ESCALATE,
+    }
+    if tool.key in state["approval_required_tool_keys"] or execution_safety.behavior == "ask" or safety_gate_approval:
         reason = str(
-            execution_safety.reason
+            (safety_verdict.reason if safety_gate_approval else "")
+            or execution_safety.reason
             or (permission_decision or {}).get("reason")
             or (
                 f"Tool '{tool.name}' requires explicit approval before execution "
@@ -440,21 +479,18 @@ async def _resolve_tool_call(
             )
         )
         execution_policy_approval = execution_safety.behavior == "ask"
-        permission_source = (
-            "execution_safety_policy"
-            if execution_policy_approval
-            else str((permission_decision or {}).get("source") or "static_policy")
-        )
-        permission_reason_code = (
-            execution_safety.reason_code
-            if execution_policy_approval
-            else str((permission_decision or {}).get("reason_code") or "approval_required_default")
-        )
-        permission_policy_key = (
-            "execution_safety_policy.tool_call"
-            if execution_policy_approval
-            else str((permission_decision or {}).get("policy_key") or "permission_level.ask")
-        )
+        if safety_gate_approval:
+            permission_source = "safety_gate"
+            permission_reason_code = "safety_gate_approval_required"
+            permission_policy_key = "safety_gate.tool_call"
+        elif execution_policy_approval:
+            permission_source = "execution_safety_policy"
+            permission_reason_code = execution_safety.reason_code
+            permission_policy_key = "execution_safety_policy.tool_call"
+        else:
+            permission_source = str((permission_decision or {}).get("source") or "static_policy")
+            permission_reason_code = str((permission_decision or {}).get("reason_code") or "approval_required_default")
+            permission_policy_key = str((permission_decision or {}).get("policy_key") or "permission_level.ask")
         approval_job_id = None
         if tool_job_service is not None:
             approval_job = await tool_job_service.create_job(

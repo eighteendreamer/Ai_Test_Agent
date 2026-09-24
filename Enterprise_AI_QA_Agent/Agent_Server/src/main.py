@@ -42,6 +42,7 @@ from src.api.routes.metrics import router as metrics_router
 from src.api.http_metrics_middleware import HttpMetricsMiddleware
 from src.api.request_context_middleware import RequestContextMiddleware
 from src.core.log_format import configure_logging
+from src.core.safety_gate import SafetyGate
 from src.application.mail.auth_monitor import TencentAuthMonitor
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
@@ -513,6 +514,7 @@ async def lifespan(app: FastAPI):
         tool_runtime_service=tool_runtime_service,
         tool_job_service=tool_job_service,
         tool_message_max_chars=settings.orchestration.tool_message_max_chars,
+        safety_gate=SafetyGate(),
         observability_service=observability_service,
     )
     context_compaction_service = ContextCompactionService(
