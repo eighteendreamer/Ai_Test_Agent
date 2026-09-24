@@ -68,7 +68,7 @@ from src.runtime.store import SessionStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
-from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord, is_reserved_tool_argument
 from src.schemas.session_resource import SessionResourceKind
 
 
@@ -101,6 +101,8 @@ class ToolExecutionContext:
     tool_job_id: str = ""
     tool_key: str = ""
     call_id: str = ""
+    server_approval_granted: bool = False
+    approval_scope_hash: str = ""
 
 
 class ToolRuntimeService:
@@ -384,6 +386,30 @@ class ToolRuntimeService:
         context: ToolExecutionContext,
     ) -> ToolExecutionRecord:
         """Count and time every tool call at the one place handlers are entered."""
+        reserved_keys = [
+            key for key in call.arguments if is_reserved_tool_argument(key)
+        ]
+        if reserved_keys:
+            logger.warning(
+                "tool_runtime_reserved_arguments_ignored",
+                extra={"tool_key": tool.key, "call_id": call.id, "argument_keys": reserved_keys},
+            )
+            call = call.model_copy(update={
+                "arguments": {
+                    key: value for key, value in call.arguments.items()
+                    if key not in reserved_keys
+                }
+            })
+        if context.server_approval_granted:
+            logger.info(
+                "tool_runtime_server_approval_context_used",
+                extra={
+                    "tool_key": tool.key,
+                    "call_id": call.id,
+                    "tool_job_id": context.tool_job_id,
+                    "has_approval_scope_hash": bool(context.approval_scope_hash),
+                },
+            )
         started = monotonic()
         status = "aborted"
         tool_key = _metric_tool_key(tool.key)
@@ -447,6 +473,8 @@ class ToolRuntimeService:
                     tool_job_id=context.tool_job_id,
                     tool_key=tool.key,
                     call_id=call.id,
+                    server_approval_granted=context.server_approval_granted,
+                    approval_scope_hash=context.approval_scope_hash,
                 )
             if self._tool_job_service is not None:
                 if context.tool_job_id:
@@ -484,6 +512,8 @@ class ToolRuntimeService:
                     tool_job_id=job.id,
                     tool_key=tool.key,
                     call_id=call.id,
+                    server_approval_granted=context.server_approval_granted,
+                    approval_scope_hash=context.approval_scope_hash,
                 )
 
             trace_context = None
@@ -2642,8 +2672,8 @@ class ToolRuntimeService:
                 profile_key=profile_key,
                 tool_name=tool_name,
                 requested_version=str(arguments.get("requested_version") or "").strip(),
-                approval_scope_hash=str(arguments.get("_p4_approval_scope_hash") or "").strip(),
-                approval_granted=bool(arguments.get("_server_approval_granted")),
+                approval_scope_hash=context.approval_scope_hash,
+                approval_granted=context.server_approval_granted,
                 artifact_dir=artifact_dir,
                 timeout_seconds=arguments.get("timeout_seconds"),
             )
@@ -2935,7 +2965,7 @@ class ToolRuntimeService:
                 "error": "profile_blocked_in_environment",
             }
 
-        approval_granted = bool(arguments.get("_server_approval_granted"))
+        approval_granted = context.server_approval_granted
         if risk_policy.requires_approval(profile.profile_key) and not approval_granted:
             return {
                 "status": "waiting_approval",

@@ -23,7 +23,7 @@ from src.schemas.run_management import (
     TestRunRecord,
 )
 from src.schemas.session import VerificationResult, VerificationStatus
-from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord, is_reserved_tool_argument
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,9 @@ class CaseExecutionAdapter:
         sanitized_test_data = deepcopy(version.test_data)
         envelope_runner_arguments = sanitized_test_data.get("runner_arguments")
         if isinstance(envelope_runner_arguments, dict):
-            envelope_runner_arguments.pop("_server_approval_granted", None)
+            for key in list(envelope_runner_arguments):
+                if is_reserved_tool_argument(key):
+                    envelope_runner_arguments.pop(key)
         test_case_envelope = {
             "project_id": run.project_id,
             "run_id": run.id,
@@ -142,13 +144,13 @@ class CaseExecutionAdapter:
             version=version,
             raw_arguments=raw_arguments if isinstance(raw_arguments, dict) else {},
         )
-        arguments.pop("_server_approval_granted", None)
-        if server_approval_granted:
-            if run.mode_key != "security_testing":
-                raise CaseExecutionBlockedError(
-                    "Server approval grants are only valid for security test cases."
-                )
-            arguments["_server_approval_granted"] = True
+        for key in list(arguments):
+            if is_reserved_tool_argument(key):
+                arguments.pop(key)
+        if server_approval_granted and run.mode_key != "security_testing":
+            raise CaseExecutionBlockedError(
+                "Server approval grants are only valid for security test cases."
+            )
         arguments["test_case"] = test_case_envelope
         execution_checkpoint = (trusted_context_bundle or {}).get("execution_checkpoint")
         if isinstance(execution_checkpoint, dict):
@@ -186,6 +188,7 @@ class CaseExecutionAdapter:
             tool_job_id=tool_job_id,
             tool_key=tool.key,
             call_id=call_id,
+            server_approval_granted=server_approval_granted,
         )
         return CaseToolInvocation(
             tool=tool,

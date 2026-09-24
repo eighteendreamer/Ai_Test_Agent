@@ -676,6 +676,7 @@ def test_free_command_and_bootstrap_are_server_gated():
         user_message="",
         normalized_input="",
         context_bundle={"environment": "test"},
+        server_approval_granted=True,
     )
     disabled = asyncio.run(
         runtime._execute_security_runner(
@@ -683,7 +684,6 @@ def test_free_command_and_bootstrap_are_server_gated():
                 "command_profile": "free_command",
                 "target": "http://localhost:8089",
                 "command": "curl http://localhost:8089",
-                "_server_approval_granted": True,
             },
             context,
             "security-scan-runner",
@@ -923,10 +923,12 @@ class _RuntimeModelStub:
 class _CapturingToolRuntime:
     def __init__(self, *, output_status="completed"):
         self.calls = []
+        self.contexts = []
         self.output_status = output_status
 
     async def execute(self, *, tool, call, context):
         self.calls.append(call)
+        self.contexts.append(context)
         return ToolExecutionRecord(
             call_id=call.id,
             tool_key=tool.key,
@@ -948,7 +950,7 @@ def _runtime_service(tool_runtime):
     )
 
 
-def test_resume_after_approval_injects_server_marker_before_tool_execution():
+def test_resume_after_approval_passes_trusted_context_before_tool_execution():
     tool_runtime = _CapturingToolRuntime()
     runtime = _runtime_service(tool_runtime)
     session = _session("security_testing")
@@ -1000,7 +1002,8 @@ def test_resume_after_approval_injects_server_marker_before_tool_execution():
 
     assert result is not None
     assert result.snapshot.stage == "waiting_approval"
-    assert tool_runtime.calls[0].arguments["_server_approval_granted"] is True
+    assert tool_runtime.contexts[0].server_approval_granted is True
+    assert "_server_approval_granted" not in tool_runtime.calls[0].arguments
     assert "_server_approval_granted" not in arguments
 
 
@@ -1078,8 +1081,10 @@ def test_p4_approval_has_dedicated_scope_and_resume_injects_p4_marker():
 
     assert result is not None
     assert scope_hash != scan_scope
-    assert tool_runtime.calls[0].arguments["_server_approval_granted"] is True
-    assert tool_runtime.calls[0].arguments["_p4_approval_scope_hash"] == scope_hash
+    assert tool_runtime.contexts[0].server_approval_granted is True
+    assert tool_runtime.contexts[0].approval_scope_hash == scope_hash
+    assert "_server_approval_granted" not in tool_runtime.calls[0].arguments
+    assert "_p4_approval_scope_hash" not in tool_runtime.calls[0].arguments
     assert result.state["termination_reason"] != "waiting_approval"
     assert result.snapshot.stage == "completed"
 

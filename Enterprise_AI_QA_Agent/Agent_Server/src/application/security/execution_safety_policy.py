@@ -4,7 +4,8 @@ import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
-from src.application.security.command_profiles import SecurityCommandProfileRegistry
+from src.application.security.command_profiles import get_profile_registry
+from src.application.security.risk_policy import SecurityRiskPolicy
 from src.schemas.agent import ToolDescriptor
 from src.schemas.intent import ToolSafetyDecision
 
@@ -24,7 +25,8 @@ class ExecutionSafetyPolicy:
     }
 
     def __init__(self) -> None:
-        self._security_profiles = SecurityCommandProfileRegistry()
+        self._security_profiles = get_profile_registry()
+        self._security_risk_policy = SecurityRiskPolicy()
 
     def evaluate_tool_call(
         self,
@@ -85,7 +87,7 @@ class ExecutionSafetyPolicy:
             profile = self._security_profiles.get(profile_key)
             requires_profile_approval = (
                 profile is None
-                or profile.requires_approval
+                or self._security_risk_policy.requires_approval(profile_key)
                 or profile.risk_level in {"high", "critical"}
             )
             if bool(task_data.get("requires_approval")) or requires_profile_approval:

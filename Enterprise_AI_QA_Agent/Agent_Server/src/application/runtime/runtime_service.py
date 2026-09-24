@@ -564,12 +564,9 @@ class RuntimeService:
         )
 
         if approval["status"] == "approved" and scope_matches and execution_safety.behavior != "deny":
-            tool_call.arguments = {
-                **tool_call.arguments,
-                "_server_approval_granted": True,
-            }
+            context.server_approval_granted = True
             if tool.key == "security-tool-bootstrap":
-                tool_call.arguments["_p4_approval_scope_hash"] = stored_scope_hash
+                context.approval_scope_hash = stored_scope_hash
             append_graph_event(
                 state,
                 "tool.execution_started",

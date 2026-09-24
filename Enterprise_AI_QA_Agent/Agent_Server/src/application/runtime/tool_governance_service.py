@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 from typing import Any
 
@@ -107,9 +107,6 @@ class ToolGovernanceService:
             context.execution.tool_job_id = str(
                 approval.get("metadata", {}).get("tool_job_id") or ""
             )
-            call = call.model_copy(
-                update={"arguments": {**call.arguments, "_server_approval_granted": True}}
-            )
         elif decision.behavior == "ask" or execution_safety.behavior == "ask":
             if prepare_approval:
                 return await self._create_approval(
@@ -167,9 +164,18 @@ class ToolGovernanceService:
                     "the prior execution may still be active or have an unknown outcome. "
                     "Reconcile its evidence before any retry."
                 )
+        execution_context = replace(
+            context.execution,
+            server_approval_granted=approval is not None,
+            approval_scope_hash=(
+                str(approval.get("metadata", {}).get("approval_scope_hash") or "")
+                if approval is not None and tool.key == "security-tool-bootstrap"
+                else ""
+            ),
+        )
         return GovernedToolCallResult(
             record=await self._tool_runtime_service.execute(
-                tool=tool, call=call, context=context.execution,
+                tool=tool, call=call, context=execution_context,
             )
         )
 

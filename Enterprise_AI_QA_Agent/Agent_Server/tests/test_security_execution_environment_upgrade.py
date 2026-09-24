@@ -897,11 +897,11 @@ async def test_p4_bootstrap_capacity_wait_does_not_finalize_campaign(monkeypatch
     monkeypatch.setattr(runtime, "record_security_tool_bootstrap_campaign", unexpected_projection)
     tool = ToolDescriptor(key="security-tool-bootstrap", name="bootstrap", description="test", category="test")
     context = ToolExecutionContext(session_id="bootstrap-session", turn_id="bootstrap-turn", trace_id="bootstrap-trace",
-        user_message="bootstrap", normalized_input="bootstrap", context_bundle={"project_id": "bootstrap-project"})
+        user_message="bootstrap", normalized_input="bootstrap", context_bundle={"project_id": "bootstrap-project"},
+        server_approval_granted=True, approval_scope_hash="approved-fixture")
     result = await runtime.execute(tool, ModelToolCall(id="bootstrap-call", name=tool.key, arguments={
         "campaign_id": "bootstrap-campaign", "target_allowlist": ["127.0.0.1"], "tool_name": "tcpdump",
-        "profile_key": "tcpdump_timed_capture", "_p4_approval_scope_hash": "approved-fixture",
-        "_server_approval_granted": True,
+        "profile_key": "tcpdump_timed_capture",
     }), context)
     assert result.status == "waiting_resource"
     assert (await jobs.get_job(result.job_id)).status.value == "waiting_resource"

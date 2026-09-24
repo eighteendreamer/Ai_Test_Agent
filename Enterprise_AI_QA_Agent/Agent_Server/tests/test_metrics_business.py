@@ -461,7 +461,8 @@ def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
     import asyncio
 
     from src.application.mcp.host.namespace import encode
-    from src.application.runtime.tool_runtime_service import ToolRuntimeService
+    from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
+    from src.schemas.tool_runtime import ModelToolCall
 
     class _Stub:
         def __init__(self, outcome) -> None:
@@ -472,9 +473,20 @@ def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
                 raise self.outcome
             return SimpleNamespace(status=self.outcome)
 
+    context = ToolExecutionContext(
+        session_id="metrics-session",
+        turn_id="metrics-turn",
+        trace_id="metrics-trace",
+        user_message="metrics",
+        normalized_input="metrics",
+        context_bundle={},
+    )
     record = asyncio.run(
         ToolRuntimeService.execute(
-            _Stub("completed"), SimpleNamespace(key=encode("srv", "tool")), None, None
+            _Stub("completed"),
+            SimpleNamespace(key=encode("srv", "tool")),
+            ModelToolCall(id="metrics-call-1", name=encode("srv", "tool"), arguments={}),
+            context,
         )
     )
     assert record.status == "completed"
@@ -485,7 +497,10 @@ def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(
             ToolRuntimeService.execute(
-                _Stub(asyncio.CancelledError()), SimpleNamespace(key="cli-executor"), None, None
+                _Stub(asyncio.CancelledError()),
+                SimpleNamespace(key="cli-executor"),
+                ModelToolCall(id="metrics-call-2", name="cli-executor", arguments={}),
+                context,
             )
         )
     aborted = render()
