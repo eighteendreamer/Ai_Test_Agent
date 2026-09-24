@@ -11,6 +11,9 @@ from src.schemas.tool_runtime import ModelToolCall
 TextDeltaHandler = Callable[[str], Awaitable[None]]
 
 
+_MODEL_TOOL_NAME_MAX_LENGTH = 64
+
+
 class ProviderClientError(Exception):
     """Uniform wrapper around openai / anthropic / google-genai API failures."""
 
@@ -60,7 +63,19 @@ def sanitize_tool_name(value: str, *, allow_dash: bool = True) -> str:
         cleaned = "tool"
     if cleaned[0].isdigit():
         cleaned = f"tool_{cleaned}"
-    return cleaned[:64]
+    return cleaned[:_MODEL_TOOL_NAME_MAX_LENGTH]
+
+
+def _append_tool_name_suffix(base: str, suffix: int) -> str:
+    """Append a collision suffix without exceeding the provider name limit."""
+
+    suffix_text = f"_{suffix}"
+    prefix_length = _MODEL_TOOL_NAME_MAX_LENGTH - len(suffix_text)
+    if prefix_length <= 0:
+        # This requires more than 10**62 colliding tools. Keep the failure
+        # bounded rather than allowing a truncation loop to repeat forever.
+        return f"tool{suffix_text}"[:_MODEL_TOOL_NAME_MAX_LENGTH]
+    return f"{base[:prefix_length]}{suffix_text}"
 
 
 def build_tool_name_map(
@@ -74,11 +89,16 @@ def build_tool_name_map(
         original = str(item.get("name") or "").strip()
         if not original:
             continue
-        candidate = sanitize_tool_name(original, allow_dash=allow_dash)
+        if original in name_map:
+            continue
+        base = sanitize_tool_name(original, allow_dash=allow_dash)
+        candidate = base
         suffix = 2
-        while candidate in used and name_map.get(original) != candidate:
-            candidate = sanitize_tool_name(f"{original}_{suffix}", allow_dash=allow_dash)
+        while candidate in used:
+            candidate = _append_tool_name_suffix(base, suffix)
             suffix += 1
+            if suffix > len(tools) + 1:
+                raise ValueError("Unable to allocate a unique model tool name.")
         used.add(candidate)
         name_map[original] = candidate
     return name_map
