@@ -88,7 +88,7 @@ export function startChannelPairing(
   domain: ChannelDomain,
   payload: ChannelPairingStartRequest,
 ): Promise<ChannelPairingSessionPublic> {
-  return request(`/api/v1/settings/channels/${encodeURIComponent(domain)}/pairing-start`, {
+  return request(`/api/v1/settings/channels/${encodeURIComponent(domain)}/pairing/start`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

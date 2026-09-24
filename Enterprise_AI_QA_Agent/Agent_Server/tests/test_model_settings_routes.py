@@ -30,6 +30,10 @@ class _SettingsService:
         self.calls.append(("delete", model_name))
         return {"ok": True, "model_name": model_name}
 
+    def start_channel_pairing(self, domain, payload, base_url):
+        self.calls.append(("pairing", domain))
+        return {"session_id": "pairing-1", "domain": domain, "base_url": base_url}
+
 
 def _client() -> tuple[TestClient, _SettingsService]:
     app = FastAPI()
@@ -72,3 +76,16 @@ def test_model_name_with_slash_is_supported_by_model_settings_routes():
         ("test", MODEL_NAME),
         ("delete", MODEL_NAME),
     ]
+
+
+def test_channel_pairing_start_uses_nested_pairing_route():
+    client, service = _client()
+
+    wrong_path = client.post("/api/v1/settings/channels/feishu/pairing-start", json={})
+    assert wrong_path.status_code == 404
+    assert service.calls == []
+
+    response = client.post("/api/v1/settings/channels/feishu/pairing/start", json={})
+    assert response.status_code == 200
+    assert response.json()["session_id"] == "pairing-1"
+    assert service.calls == [("pairing", "feishu")]
