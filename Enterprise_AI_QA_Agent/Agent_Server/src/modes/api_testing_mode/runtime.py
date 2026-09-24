@@ -48,6 +48,7 @@ from src.modes.api_testing_mode.contracts import (
     SELECTION_KIND_ENDPOINTS,
     SELECTION_KIND_PROJECT,
     STATE_METADATA_KEY,
+    TASK_COMPLETED,
     TERMINAL_PHASES,
 )
 from src.modes.api_testing_mode.coordinator import ApiTestCoordinator

@@ -12,7 +12,13 @@ from src.graph.nodes.router import build_router_node
 from src.graph.nodes.tool_executor import _run_skill_loader
 from src.modes.api_testing_mode.manifest import MODE_MANIFEST
 from src.modes.api_testing_mode.skills import API_TESTING_AGENT_SKILLS, API_TESTING_SKILL_KEYS
-from src.modes.api_testing_mode.campaign_state import ApiTestTask
+from src.modes.api_testing_mode.campaign_state import (
+    ApiTestCampaign,
+    ApiTestTask,
+    ApiTestingState,
+)
+from src.modes.api_testing_mode.contracts import TASK_COMPLETED
+from src.modes.api_testing_mode.runtime import ApiTestingModeRuntime
 from src.registry.agents import AgentRegistry
 from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
@@ -227,3 +233,36 @@ def test_api_task_idempotency_key_excludes_attempt_count():
     first = task.idempotency_key
     task.attempts = 2
     assert task.idempotency_key == first
+
+
+def test_checkpoint_persists_completed_task_without_runtime_name_error():
+    runtime = ApiTestingModeRuntime(api_docs_service=object())
+    persisted = []
+    runtime._persist_state = lambda state, _context: persisted.append(state)
+
+    task = ApiTestTask(
+        task_id="task-1",
+        name="health check",
+        method="GET",
+        path="/health",
+        status=TASK_COMPLETED,
+        response_status=200,
+        response_body={"ok": True},
+        check_results=[{"passed": True}],
+        completed_at="2026-09-23T00:00:00+00:00",
+    )
+    state = ApiTestingState(
+        campaign=ApiTestCampaign(campaign_id="campaign-1", tasks=[task]),
+    )
+
+    runtime._checkpoint_execution_state(
+        state=state,
+        context=object(),
+        event_type="task_completed",
+        task=task,
+        tasks=[task],
+    )
+
+    assert persisted == [state]
+    assert state.execution_checkpoint["completed_task_ids"] == ["task-1"]
+    assert state.execution_checkpoint["completed_request"]["response_status"] == 200
