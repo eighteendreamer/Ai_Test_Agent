@@ -122,6 +122,9 @@ class PostgresAgentTaskStore:
     async def list_children(self, parent_task_id: str) -> list[AgentTaskRecord]:
         return await asyncio.to_thread(self._list_children_sync, parent_task_id)
 
+    async def list_settled_children_needing_resume(self, *, limit: int = 50) -> list[AgentTaskExecution]:
+        return await asyncio.to_thread(self._list_settled_children_needing_resume_sync, limit)
+
     async def set_result_payload(
         self,
         task_id: str,
@@ -260,6 +263,13 @@ class PostgresAgentTaskStore:
             cur.execute(
                 f"CREATE INDEX IF NOT EXISTS {self._tasks}_parent_idx "
                 f"ON {self._tasks}(parent_task_id) WHERE parent_task_id IS NOT NULL"
+            )
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS {self._tasks}_settled_child_idx "
+                f"ON {self._tasks}(updated_at, sequence) "
+                "WHERE operation='coordinator_child' "
+                "AND status IN ('completed','failed','cancelled','interrupted') "
+                "AND result_payload IS NOT NULL"
             )
             cur.execute(f"ALTER TABLE {self._tasks} ALTER COLUMN user_message_id DROP NOT NULL")
             cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._attempts} (
@@ -794,6 +804,37 @@ class PostgresAgentTaskStore:
             cur.execute(
                 f"SELECT * FROM {self._tasks} WHERE parent_task_id=%s ORDER BY sequence",
                 (parent_task_id,),
+            )
+            return [self._record(row) for row in cur.fetchall()]
+
+    def _list_settled_children_needing_resume_sync(self, limit):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT child.* FROM {self._tasks} AS child
+                JOIN {self._tasks} AS parent ON parent.id = child.parent_task_id
+                JOIN {self._session_table} AS session ON session.id = parent.session_id
+                WHERE child.operation = 'coordinator_child'
+                  AND child.status IN ('completed', 'failed', 'cancelled', 'interrupted')
+                  AND child.result_payload IS NOT NULL
+                  AND child.updated_at < NOW() - INTERVAL '1 second'
+                  AND (session.session_mode = 'coordinator'
+                       OR session.selected_agent = 'coordinator')
+                  AND session.status NOT IN ('running', 'waiting_approval')
+                  AND NOT (
+                      COALESCE((session.metadata->'worker_failure_guard'->>'blocked')::boolean, FALSE)
+                      AND COALESCE(session.metadata->'worker_failure_guard'->>'turn_id', '') = parent.turn_id
+                  )
+                  AND COALESCE(child.result_payload->>'status', '') <> 'waiting_approval'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {self._tasks} AS resume
+                      WHERE resume.session_id = parent.session_id
+                        AND resume.idempotency_key =
+                            'coordinator_resume:' || child.id || ':' ||
+                            COALESCE(child.result_payload->>'attempt_id', child.attempt_id, 'na')
+                  )
+                ORDER BY child.updated_at, child.sequence
+                LIMIT %s""",
+                (max(1, min(int(limit), 50)),),
             )
             return [self._record(row) for row in cur.fetchall()]
 

@@ -1043,6 +1043,38 @@ class CoordinatorRuntimeService:
                 None,
             )
             if record is not None and str(record.get("status") or "") in TERMINAL_WORKER_STATUSES:
+                auto_resume = (
+                    parent_session.session_mode == SessionMode.coordinator
+                    or (parent_session.selected_agent or "") == "coordinator"
+                ) and parent_session.status not in {
+                    SessionStatus.running,
+                    SessionStatus.waiting_approval,
+                }
+                if auto_resume and not self._is_dispatch_blocked(parent_session, parent_turn_id):
+                    worker = self._worker_from_dispatch(record, notification, worker_task_id)
+                    content = self._build_task_notification(
+                        task_id=worker.task_id,
+                        child_session_id=child_session_id,
+                        agent_key=worker.agent_key,
+                        trace_id=str(notification.get("root_trace_id") or parent_task.trace_id),
+                        status=status,
+                        summary=str(notification.get("summary") or f'Worker "{worker.description}" finished with status {status}.'),
+                        result=result_text,
+                        usage=usage if isinstance(usage, dict) else {},
+                    )
+                    await self._queue_coordinator_resume(
+                        parent_task=parent_task,
+                        parent_session_id=parent_session_id,
+                        parent_turn_id=parent_turn_id,
+                        child_task_id=child_task_id,
+                        child_session_id=child_session_id,
+                        notification=notification,
+                        worker_task_id=worker_task_id,
+                        status=status,
+                        content=content,
+                        agent_key=parent_session.selected_agent or "coordinator",
+                    )
+                    return
                 logger.info(
                     "coordinator_child_duplicate_finished_ignored",
                     extra={
@@ -1165,6 +1197,33 @@ class CoordinatorRuntimeService:
 
         # Released the parent lock before writing the parent continuation so a
         # concurrent notification cannot serialize behind this database submit.
+        await self._queue_coordinator_resume(
+            parent_task=parent_task,
+            parent_session_id=parent_session_id,
+            parent_turn_id=parent_turn_id,
+            child_task_id=child_task_id,
+            child_session_id=child_session_id,
+            notification=notification,
+            worker_task_id=worker_task_id,
+            status=status,
+            content=resume_content,
+            agent_key=resume_agent_key,
+        )
+
+    async def _queue_coordinator_resume(
+        self,
+        *,
+        parent_task,
+        parent_session_id: str,
+        parent_turn_id: str,
+        child_task_id: str,
+        child_session_id: str,
+        notification: dict[str, Any],
+        worker_task_id: str,
+        status: str,
+        content: str,
+        agent_key: str,
+    ) -> None:
         resume = await self._agent_task_dispatcher.submit_coordinator_resume(
             parent_session_id=parent_session_id,
             parent_turn_id=parent_turn_id,
@@ -1175,7 +1234,7 @@ class CoordinatorRuntimeService:
             run_item_id=parent_task.run_item_id,
             parent_task_id=parent_task.id,
             notification_task_id=f"{child_task_id}:{notification.get('attempt_id') or 'na'}",
-            content=resume_content,
+            content=content,
             context={
                 "message_source": "task_notification",
                 "parent_turn_id": parent_turn_id,
@@ -1195,7 +1254,7 @@ class CoordinatorRuntimeService:
                 "worker_agent_key": str(notification.get("worker_agent_key") or ""),
                 "worker_status": status,
             },
-            agent_key=resume_agent_key,
+            agent_key=agent_key,
         )
         logger.info(
             "coordinator_resume_queued",

@@ -911,7 +911,7 @@ class AgentTaskDispatcher:
             "usage": dict(usage or {}),
         }
 
-    async def _notify_parent_child_done(self, task, notification: dict) -> None:
+    async def _notify_parent_child_done(self, task, notification: dict) -> bool:
         if self._coordinator is None:
             LOGGER.warning(
                 "coordinator_child_notification_skipped",
@@ -921,7 +921,7 @@ class AgentTaskDispatcher:
                     "reason": "coordinator_service_not_injected",
                 },
             )
-            return
+            return False
         try:
             await self._coordinator.on_child_task_finished(
                 parent_task_id=str(task.parent_task_id),
@@ -929,6 +929,7 @@ class AgentTaskDispatcher:
                 child_session_id=task.session_id,
                 notification=notification,
             )
+            return True
         except Exception as exc:
             # The child fact is already committed; losing only the parent
             # continuation must never rewrite the child outcome.
@@ -940,6 +941,36 @@ class AgentTaskDispatcher:
                     "error_type": type(exc).__name__,
                 },
             )
+            return False
+
+    async def recover_settled_coordinator_children(self) -> int:
+        """Retry a committed child result whose parent resume has not been queued."""
+        retried = 0
+        for task in await self._tasks.list_settled_children_needing_resume():
+            payload = task.result_payload or {}
+            timed_out = task.error_code == "coordinator_child_timeout"
+            status = str(payload.get("status") or task.status)
+            summary = (
+                self._child_summary(task, "failed")
+                + f" Timeout after {self._settings.orchestration.coordinator_child_timeout_seconds}s."
+                if timed_out else str(payload.get("summary") or self._child_summary(task, status))
+            )
+            notification = self._child_notification(
+                task,
+                status=status,
+                summary=summary,
+                result_text=str(payload.get("result_text") or task.error_code or ""),
+            )
+            if notification is None:
+                continue
+            notification.update(payload)
+            if timed_out:
+                notification["summary"] = summary
+            if await self._notify_parent_child_done(task, notification):
+                retried += 1
+        if retried:
+            LOGGER.info("coordinator_settled_children_retried", extra={"retried": retried})
+        return retried
 
     async def reap_coordinator_children(self) -> int:
         """Fail overdue children and resume their parents exactly once."""
@@ -1025,6 +1056,7 @@ class AgentTaskDispatcher:
                 pass
             try:
                 await self.reap_coordinator_children()
+                await self.recover_settled_coordinator_children()
             except Exception as exc:
                 LOGGER.exception(
                     "coordinator_child_reaper_pass_failed",
