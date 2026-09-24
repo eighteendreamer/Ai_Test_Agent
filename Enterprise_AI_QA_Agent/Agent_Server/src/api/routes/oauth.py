@@ -9,6 +9,8 @@ Routes
 """
 from __future__ import annotations
 
+from html import escape
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
@@ -315,6 +317,10 @@ _FAILURE_HTML = """
 """
 
 
+def _failure_response(error: str) -> HTMLResponse:
+    return HTMLResponse(content=_FAILURE_HTML.format(error=escape(str(error), quote=True)), status_code=200)
+
+
 @router.get("/providers", response_model=OAuthProviderListResponse)
 async def list_oauth_providers():
     """Return all known OAuth provider presets."""
@@ -351,28 +357,17 @@ async def oauth_callback(request: Request):
           state,
           f"Provider rejected authorization: {detail}",
       )
-      return HTMLResponse(
-          content=_FAILURE_HTML.format(error=detail),
-          status_code=200,
-      )
+      return _failure_response(detail)
 
     if not code or not state:
-      return HTMLResponse(
-          content=_FAILURE_HTML.format(
-              error="Missing 'code' or 'state' parameter in callback URL."
-          ),
-          status_code=200,
-      )
+      return _failure_response("Missing 'code' or 'state' parameter in callback URL.")
 
     oauth_svc = request.app.state.oauth_token_service
     await oauth_svc.handle_callback(code=code, state=state)
 
     result = oauth_svc.get_completed_flow(state)
     if result and result.status == "failed":
-      return HTMLResponse(
-          content=_FAILURE_HTML.format(error=result.error),
-          status_code=200,
-      )
+      return _failure_response(result.error)
 
     return HTMLResponse(content=_SUCCESS_HTML, status_code=200)
 
