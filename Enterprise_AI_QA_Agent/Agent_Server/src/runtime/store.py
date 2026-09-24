@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -29,6 +30,15 @@ class SessionStore(Protocol):
     async def save_session(
         self,
         session: SessionRecord,
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> SessionRecord: ...
+    async def save_session_with_events(
+        self,
+        session: SessionRecord,
+        events: list[ExecutionEvent],
         *,
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
@@ -185,18 +195,54 @@ class InMemorySessionStore:
                 )
             if turn_lease_token:
                 self._assert_turn_lease_locked(session.id, turn_lease_token)
-            current = self._sessions.get(session.id)
-            if current is not None and current is not session:
-                # Ordinary snapshot saves cannot replace ownership/expiry set by
-                # claim and heartbeat operations in another service instance.
-                for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
-                    if key in current.metadata:
-                        session.metadata[key] = current.metadata[key]
-                    else:
-                        session.metadata.pop(key, None)
-            session.updated_at = datetime.utcnow()
-            self._sessions[session.id] = session
+            return self._save_session_locked(session)
+
+    async def save_session_with_events(
+        self,
+        session: SessionRecord,
+        events: list[ExecutionEvent],
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> SessionRecord:
+        async with self._lock:
+            if continuation_approval_id or continuation_lease_token:
+                self._assert_continuation_lease_locked(
+                    session.id, continuation_approval_id, continuation_lease_token
+                )
+            if turn_lease_token:
+                self._assert_turn_lease_locked(session.id, turn_lease_token)
+            previous_session = deepcopy(self._sessions.get(session.id))
+            previous_events = list(self._events[session.id])
+            try:
+                self._save_session_locked(session)
+                for event in events:
+                    if event.session_id != session.id:
+                        raise ValueError("Final event session_id does not match the session being saved.")
+                    self._append_event_locked(session.id, event)
+            except Exception:
+                if previous_session is None:
+                    self._sessions.pop(session.id, None)
+                else:
+                    self._sessions[session.id] = previous_session
+                self._events[session.id] = previous_events
+                raise
             return session
+
+    def _save_session_locked(self, session: SessionRecord) -> SessionRecord:
+        current = self._sessions.get(session.id)
+        if current is not None and current is not session:
+            # Ordinary snapshot saves cannot replace ownership/expiry set by
+            # claim and heartbeat operations in another service instance.
+            for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
+                if key in current.metadata:
+                    session.metadata[key] = current.metadata[key]
+                else:
+                    session.metadata.pop(key, None)
+        session.updated_at = datetime.utcnow()
+        self._sessions[session.id] = session
+        return session
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return self._sessions.get(session_id)
@@ -326,13 +372,16 @@ class InMemorySessionStore:
                 )
             if turn_lease_token:
                 self._assert_turn_lease_locked(session_id, turn_lease_token)
-            if any(item.id == event.id for item in self._events[session_id]):
-                return
-            session = self._sessions.get(session_id)
-            if session is not None:
-                session.event_count += 1
-                session.updated_at = datetime.utcnow()
-            self._events[session_id].append(event)
+            self._append_event_locked(session_id, event)
+
+    def _append_event_locked(self, session_id: str, event: ExecutionEvent) -> None:
+        if any(item.id == event.id for item in self._events[session_id]):
+            return
+        session = self._sessions.get(session_id)
+        if session is not None:
+            session.event_count += 1
+            session.updated_at = datetime.utcnow()
+        self._events[session_id].append(event)
 
     async def list_events(
         self,

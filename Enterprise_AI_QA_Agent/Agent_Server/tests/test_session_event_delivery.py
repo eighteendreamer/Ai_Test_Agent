@@ -4,6 +4,7 @@ import asyncio
 import json
 import multiprocessing
 import socket
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -15,6 +16,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.api.routes.sessions import router, stream_events
+from src.application.sessions.session_service import SessionService
 from src.application.runtime.runtime_service import RuntimeService
 from src.core.config import get_settings
 from src.domain.models import SessionRecord
@@ -23,7 +25,7 @@ from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.store import InMemorySessionStore
 from src.runtime.session_event_sink import SessionEventSink
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.schemas.session import ExecutionEvent, RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import ChatMessage, ExecutionEvent, MessageRole, RuntimeMode, SessionMode, SessionSnapshot, SessionStatus
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_live_postgres_concurrency import _drop_tables
 
@@ -80,6 +82,137 @@ async def test_repeated_event_id_is_idempotent_and_does_not_inflate_counts(store
     await writer.append_event(session_id, value)
     assert len(await reader.list_events(session_id)) == 1
     assert (await reader.get_session(session_id)).event_count == 1
+
+
+@pytest.mark.asyncio
+async def test_final_response_commit_failure_cannot_publish_completion_events():
+    class DetachedFailStore(InMemorySessionStore):
+        fail_final = False
+
+        async def get_session(self, session_id):
+            session = await super().get_session(session_id)
+            return deepcopy(session) if session is not None else None
+
+        async def save_session(self, session, **fence):
+            if self.fail_final:
+                raise RuntimeError("injected final session write failure")
+            return await super().save_session(deepcopy(session), **fence)
+
+        async def save_session_with_events(self, session, events, **fence):
+            if self.fail_final:
+                raise RuntimeError("injected final session write failure")
+            return await super().save_session_with_events(deepcopy(session), events, **fence)
+
+    store = DetachedFailStore()
+    now = datetime.now(timezone.utc)
+    original = SessionRecord(
+        id="session-atomic-final", title="atomic final", status=SessionStatus.running,
+        session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive,
+        mode_key="default", created_at=now, updated_at=now,
+    )
+    await store.save_session(original)
+    session = await store.get_session(original.id)
+    service = SessionService(store, object(), object(), object())
+    runtime_result = SimpleNamespace(
+        events=[], tool_messages=[], approvals=[], pending_turn={}, output_text="final answer",
+        snapshot=SessionSnapshot(
+            id="snapshot-final", session_id=original.id, version=1,
+            stage="completed", created_at=now, graph_state={},
+        ),
+        state={
+            "turn_id": "turn-final", "trace_id": "trace-final",
+            "selected_agent_key": "agent", "selected_agent_name": "Agent",
+            "selected_model_key": "model", "selected_model_name": "Model",
+            "tool_results": [], "context_bundle": {},
+            "model_response_summary": {}, "termination_reason": "assistant_final",
+        },
+    )
+    store.fail_final = True
+
+    with pytest.raises(RuntimeError, match="injected final session write failure"):
+        await service._finalize_runtime_result(
+            session, runtime_result, "assistant-final", "user request"
+        )
+
+    persisted = await store.get_session(original.id)
+    assert persisted.messages == []
+    assert not {
+        "assistant.stream.completed", "assistant.response_generated", "turn.completed"
+    }.intersection(event.type for event in await store.list_events(original.id))
+
+
+@pytest.mark.asyncio
+async def test_final_response_and_completion_events_commit_together(stores):
+    writer, reader, session_id, _ = stores
+    session = deepcopy(await writer.get_session(session_id))
+    session.status = SessionStatus.completed
+    session.messages.append(ChatMessage(
+        id="assistant-atomic", role=MessageRole.assistant,
+        content="committed answer", created_at=datetime.now(timezone.utc),
+    ))
+    final_events = [
+        ExecutionEvent(
+            id=f"{session_id}-final-{number}", type=event_type,
+            session_id=session_id, timestamp=datetime.now(timezone.utc), payload={},
+        )
+        for number, event_type in enumerate((
+            "assistant.stream.completed", "assistant.response_generated", "turn.completed"
+        ))
+    ]
+
+    await writer.save_session_with_events(session, final_events)
+
+    persisted = await reader.get_session(session_id)
+    assert persisted.status == SessionStatus.completed
+    assert [(item.role, item.content) for item in persisted.messages] == [
+        (MessageRole.assistant, "committed answer")
+    ]
+    assert [item.type for item in await reader.list_events(session_id)] == [
+        item.type for item in final_events
+    ]
+    assert [item.id for item in await reader.read_event_page(session_id, limit=10)] == [
+        item.id for item in final_events
+    ]
+    assert persisted.event_count == len(final_events)
+
+
+@pytest.mark.asyncio
+async def test_final_response_transaction_rolls_back_when_second_event_fails(stores, monkeypatch):
+    writer, reader, session_id, _ = stores
+    session = deepcopy(await writer.get_session(session_id))
+    session.status = SessionStatus.completed
+    session.messages.append(ChatMessage(
+        id="assistant-rollback", role=MessageRole.assistant,
+        content="must roll back", created_at=datetime.now(timezone.utc),
+    ))
+    final_events = [event(session_id, number) for number in (1, 2)]
+    if isinstance(writer, PostgresSessionStore):
+        original_append = writer.append_event_in_transaction
+
+        def append_with_failure(cur, sid, value, *fence):
+            if value.id == final_events[1].id:
+                raise RuntimeError("injected second event failure")
+            return original_append(cur, sid, value, *fence)
+
+        monkeypatch.setattr(writer, "append_event_in_transaction", append_with_failure)
+    else:
+        original_append = writer._append_event_locked
+
+        def append_with_failure(sid, value):
+            if value.id == final_events[1].id:
+                raise RuntimeError("injected second event failure")
+            return original_append(sid, value)
+
+        monkeypatch.setattr(writer, "_append_event_locked", append_with_failure)
+
+    with pytest.raises(RuntimeError, match="injected second event failure"):
+        await writer.save_session_with_events(session, final_events)
+
+    persisted = await reader.get_session(session_id)
+    assert persisted.status == SessionStatus.idle
+    assert persisted.messages == []
+    assert persisted.event_count == 0
+    assert await reader.list_events(session_id) == []
 
 
 def request_for(reader, session_id, settings, cursor=""):

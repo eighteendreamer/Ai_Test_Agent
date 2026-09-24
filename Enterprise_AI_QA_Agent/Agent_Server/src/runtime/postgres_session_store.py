@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from copy import deepcopy
 from datetime import datetime
 
 from src.core.config import Settings
@@ -63,6 +64,27 @@ class PostgresSessionStore:
             continuation_lease_token,
             turn_lease_token,
         )
+
+    async def save_session_with_events(
+        self,
+        session: SessionRecord,
+        events: list[ExecutionEvent],
+        *,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> SessionRecord:
+        inserted = await asyncio.to_thread(
+            self._save_session_with_events_sync,
+            session,
+            events,
+            continuation_approval_id,
+            continuation_lease_token,
+            turn_lease_token,
+        )
+        for event in inserted:
+            await self._publish_hot_event(session.id, event)
+        return session
 
     def create_session_in_transaction(self, cur, session: SessionRecord) -> bool:
         """Insert a new session as part of a caller-owned PostgreSQL transaction."""
@@ -157,6 +179,9 @@ class PostgresSessionStore:
         )
         if not inserted:
             return
+        await self._publish_hot_event(session_id, event)
+
+    async def _publish_hot_event(self, session_id: str, event: ExecutionEvent) -> None:
         if self._hot_memory_store is not None:
             try:
                 await self._hot_memory_store.append_event(
@@ -506,109 +531,153 @@ class PostgresSessionStore:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
     ) -> SessionRecord:
-        now = datetime.utcnow()
-        session.updated_at = now
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                self._assert_continuation_lease_sync(
-                    cur, session.id, continuation_approval_id, continuation_lease_token
+                self._save_session_in_transaction(
+                    cur, session, continuation_approval_id,
+                    continuation_lease_token, turn_lease_token,
                 )
-                self._assert_turn_lease_sync(cur, session.id, turn_lease_token)
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_session_table} (
-                        id, title, status, session_mode, runtime_mode, mode_key, project_id,
-                        created_at, updated_at, preferred_model, selected_agent,
-                        metadata, event_count, snapshot_count
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s::jsonb, %s, %s
-                    )
-                    ON CONFLICT (id) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        status = EXCLUDED.status,
-                        session_mode = EXCLUDED.session_mode,
-                        runtime_mode = EXCLUDED.runtime_mode,
-                        mode_key = EXCLUDED.mode_key,
-                        project_id = EXCLUDED.project_id,
-                        updated_at = EXCLUDED.updated_at,
-                        preferred_model = EXCLUDED.preferred_model,
-                        selected_agent = EXCLUDED.selected_agent,
-                        -- worker_dispatches advances only under mutate_metadata's row
-                        -- lock, so a stale whole-document save cannot rewind it.
-                        metadata = (
-                            EXCLUDED.metadata
-                            - 'turn_lease_turn_id'
-                            - 'turn_lease_owner'
-                            - 'turn_lease_token'
-                            - 'turn_lease_expires_at'
-                        ) || jsonb_strip_nulls(jsonb_build_object(
-                            'turn_lease_turn_id',
-                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_turn_id',
-                            'turn_lease_owner',
-                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_owner',
-                            'turn_lease_token',
-                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_token',
-                            'turn_lease_expires_at',
-                                {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at',
-                            'worker_dispatches',
-                                {self._settings.database.postgres_session_table}.metadata->'worker_dispatches'
-                        )),
-                        event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
-                        snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
-                    RETURNING event_count, snapshot_count, metadata
-                    """,
-                    (
-                        session.id,
-                        session.title,
-                        session.status.value,
-                        session.session_mode.value,
-                        session.runtime_mode.value,
-                        session.mode_key,
-                        session.project_id,
-                        session.created_at,
-                        now,
-                        session.preferred_model,
-                        session.selected_agent,
-                        json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
-                        int(session.event_count),
-                        int(session.snapshot_count),
-                    ),
+        return session
+
+    def _save_session_with_events_sync(
+        self,
+        session: SessionRecord,
+        events: list[ExecutionEvent],
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> list[ExecutionEvent]:
+        candidate = deepcopy(session)
+        inserted: list[ExecutionEvent] = []
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                self._save_session_in_transaction(
+                    cur, candidate, continuation_approval_id,
+                    continuation_lease_token, turn_lease_token,
                 )
-                counts = cur.fetchone()
-                if counts is None:
-                    raise ContinuationLeaseLostError(
-                        "Continuation lease is no longer active for session write."
-                    )
-                session.event_count = int(counts.get("event_count") or 0)
-                session.snapshot_count = int(counts.get("snapshot_count") or 0)
-                if counts.get("metadata") is not None:
-                    session.metadata = counts["metadata"]
-                for item in session.messages:
-                    if not bool(item.metadata.get("persist_transcript", True)):
-                        continue
-                    cur.execute(
-                        f"""
-                        INSERT INTO {self._settings.database.postgres_message_table} (
-                            id, session_id, role, content, created_at, metadata
-                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-                        ON CONFLICT (id) DO UPDATE SET
-                            session_id = EXCLUDED.session_id,
-                            role = EXCLUDED.role,
-                            content = EXCLUDED.content,
-                            created_at = EXCLUDED.created_at,
-                            metadata = EXCLUDED.metadata
-                        """,
-                        (
-                            item.id,
-                            session.id,
-                            item.role.value,
-                            item.content,
-                            item.created_at,
-                            json.dumps(make_json_safe(item.metadata), ensure_ascii=False),
-                        ),
-                    )
+                for event in events:
+                    if event.session_id != session.id:
+                        raise ValueError("Final event session_id does not match the session being saved.")
+                    if self.append_event_in_transaction(
+                        cur, session.id, event, continuation_approval_id,
+                        continuation_lease_token, turn_lease_token,
+                    ):
+                        inserted.append(event)
+        session.event_count = candidate.event_count + len(inserted)
+        session.snapshot_count = candidate.snapshot_count
+        session.metadata = candidate.metadata
+        session.updated_at = candidate.updated_at
+        return inserted
+
+    def _save_session_in_transaction(
+        self,
+        cur,
+        session: SessionRecord,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> SessionRecord:
+        now = datetime.utcnow()
+        session.updated_at = now
+        self._assert_continuation_lease_sync(
+            cur, session.id, continuation_approval_id, continuation_lease_token
+        )
+        self._assert_turn_lease_sync(cur, session.id, turn_lease_token)
+        cur.execute(
+            f"""
+            INSERT INTO {self._settings.database.postgres_session_table} (
+                id, title, status, session_mode, runtime_mode, mode_key, project_id,
+                created_at, updated_at, preferred_model, selected_agent,
+                metadata, event_count, snapshot_count
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s::jsonb, %s, %s
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                status = EXCLUDED.status,
+                session_mode = EXCLUDED.session_mode,
+                runtime_mode = EXCLUDED.runtime_mode,
+                mode_key = EXCLUDED.mode_key,
+                project_id = EXCLUDED.project_id,
+                updated_at = EXCLUDED.updated_at,
+                preferred_model = EXCLUDED.preferred_model,
+                selected_agent = EXCLUDED.selected_agent,
+                -- worker_dispatches advances only under mutate_metadata's row
+                -- lock, so a stale whole-document save cannot rewind it.
+                metadata = (
+                    EXCLUDED.metadata
+                    - 'turn_lease_turn_id'
+                    - 'turn_lease_owner'
+                    - 'turn_lease_token'
+                    - 'turn_lease_expires_at'
+                ) || jsonb_strip_nulls(jsonb_build_object(
+                    'turn_lease_turn_id',
+                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_turn_id',
+                    'turn_lease_owner',
+                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_owner',
+                    'turn_lease_token',
+                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_token',
+                    'turn_lease_expires_at',
+                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at',
+                    'worker_dispatches',
+                        {self._settings.database.postgres_session_table}.metadata->'worker_dispatches'
+                )),
+                event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
+                snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
+            RETURNING event_count, snapshot_count, metadata
+            """,
+            (
+                session.id,
+                session.title,
+                session.status.value,
+                session.session_mode.value,
+                session.runtime_mode.value,
+                session.mode_key,
+                session.project_id,
+                session.created_at,
+                now,
+                session.preferred_model,
+                session.selected_agent,
+                json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
+                int(session.event_count),
+                int(session.snapshot_count),
+            ),
+        )
+        counts = cur.fetchone()
+        if counts is None:
+            raise ContinuationLeaseLostError(
+                "Continuation lease is no longer active for session write."
+            )
+        session.event_count = int(counts.get("event_count") or 0)
+        session.snapshot_count = int(counts.get("snapshot_count") or 0)
+        if counts.get("metadata") is not None:
+            session.metadata = counts["metadata"]
+        for item in session.messages:
+            if not bool(item.metadata.get("persist_transcript", True)):
+                continue
+            cur.execute(
+                f"""
+                INSERT INTO {self._settings.database.postgres_message_table} (
+                    id, session_id, role, content, created_at, metadata
+                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (id) DO UPDATE SET
+                    session_id = EXCLUDED.session_id,
+                    role = EXCLUDED.role,
+                    content = EXCLUDED.content,
+                    created_at = EXCLUDED.created_at,
+                    metadata = EXCLUDED.metadata
+                """,
+                (
+                    item.id,
+                    session.id,
+                    item.role.value,
+                    item.content,
+                    item.created_at,
+                    json.dumps(make_json_safe(item.metadata), ensure_ascii=False),
+                ),
+            )
         return session
 
     def _get_session_sync(self, session_id: str, include_messages: bool) -> SessionRecord | None:

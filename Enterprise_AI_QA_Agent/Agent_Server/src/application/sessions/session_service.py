@@ -2034,10 +2034,10 @@ class SessionService:
                 },
             ),
         )
+        completion_events = []
         if runtime_result.output_text:
             session.messages.append(assistant_message)
-            await self._store.append_event(
-                session_id,
+            completion_events.append(
                 self._make_event(
                     session_id,
                     "assistant.stream.completed",
@@ -2047,10 +2047,8 @@ class SessionService:
                         "response_length": len(runtime_result.output_text),
                     },
                 ),
-                **fenced_write,
             )
-            await self._store.append_event(
-                session_id,
+            completion_events.append(
                 self._make_event(
                     session_id,
                     "assistant.response_generated",
@@ -2065,19 +2063,7 @@ class SessionService:
                         "response_length": len(runtime_result.output_text),
                     },
                 ),
-                **fenced_write,
             )
-            if response_mode == "ok":
-                await self._persist_turn_memory(
-                    session=session,
-                    turn_id=runtime_result.state["turn_id"],
-                    trace_id=runtime_result.state["trace_id"],
-                    user_message=user_message_override,
-                    assistant_message=runtime_result.output_text,
-                    tool_results=list(runtime_result.state.get("tool_results", [])),
-                    context_bundle=dict(runtime_result.state.get("context_bundle", {})),
-                    fenced_write=fenced_write,
-                )
 
         latest_session = await self._require_session(session_id)
         latest_queue_entries = self._get_pending_input_queue(latest_session)
@@ -2094,9 +2080,7 @@ class SessionService:
         if latest_control.get("last_control_source") and not control.get("last_control_source"):
             control["last_control_source"] = latest_control["last_control_source"]
         session.metadata["control"] = control
-        await self._store.save_session(session, **fenced_write)
-        await self._store.append_event(
-            session_id,
+        completion_events.append(
             self._make_event(
                 session_id,
                 "turn.completed" if session.status != SessionStatus.interrupted else "turn.interrupted",
@@ -2109,8 +2093,27 @@ class SessionService:
                     "approval_count": len(runtime_result.approvals),
                 },
             ),
-            **fenced_write,
         )
+        await self._store.save_session_with_events(session, completion_events, **fenced_write)
+        if runtime_result.output_text and response_mode == "ok":
+            try:
+                await self._persist_turn_memory(
+                    session=session,
+                    turn_id=runtime_result.state["turn_id"],
+                    trace_id=runtime_result.state["trace_id"],
+                    user_message=user_message_override,
+                    assistant_message=runtime_result.output_text,
+                    tool_results=list(runtime_result.state.get("tool_results", [])),
+                    context_bundle=dict(runtime_result.state.get("context_bundle", {})),
+                    fenced_write=fenced_write,
+                )
+            except Exception:
+                # Transcript and completion events have already committed. Memory is
+                # derived data and must not turn the committed answer into an API error.
+                logger.exception("turn_memory_persist_failed_after_commit", extra={
+                    "session_id": session_id,
+                    "turn_id": runtime_result.state["turn_id"],
+                })
         if session.status == SessionStatus.completed:
             await self._cleanup_session_resources_if_terminal(session)
 
