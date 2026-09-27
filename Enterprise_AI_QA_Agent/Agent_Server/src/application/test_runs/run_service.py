@@ -7,8 +7,9 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -59,6 +60,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 REGRESSION_EVENT_SOURCE_ID_LIMIT = 100
+RECONCILIATION_BATCH_SIZE = 64
 _WINDOWS_PATH_PATTERN = re.compile(r"(?i)(?:^|[\s;,(])(?:[a-z]:[\\/])")
 _INTERNAL_LOCATION_KEYS = {
     "path",
@@ -97,6 +99,10 @@ class TestRunService:
         )
         self._lease_reaper_stop: asyncio.Event | None = None
         self._lease_reaper_task: asyncio.Task | None = None
+        self._reconciliation_cursors: dict[str, tuple[datetime, str] | None] = {
+            "denied_approvals": None,
+            "cancelled_runs": None,
+        }
         self._task_outbox: PostgresTaskOutbox | None = None
         self._task_outbox_table: str | None = None
         self._task_stream: str | None = None
@@ -123,8 +129,17 @@ class TestRunService:
                 "test_run_startup_leases_recovered",
                 extra={"recovered_count": recovered},
             )
-        await self._reconcile_denied_approvals()
-        await self._reconcile_cancelled_runs()
+        for kind, reconcile in (
+            ("denied_approvals", self._reconcile_denied_approvals),
+            ("cancelled_runs", self._reconcile_cancelled_runs),
+        ):
+            try:
+                await reconcile()
+            except Exception:
+                logger.exception(
+                    "test_run_startup_reconciliation_deferred",
+                    extra={"reconciliation_kind": kind},
+                )
 
     async def start_lease_reaper(self) -> None:
         """Start the process-local lease reaper after store initialization."""
@@ -182,6 +197,19 @@ class TestRunService:
                 raise
             except Exception:
                 logger.exception("test_run_lease_reaper_iteration_failed")
+            for kind, reconcile in (
+                ("denied_approvals", self._reconcile_denied_approvals),
+                ("cancelled_runs", self._reconcile_cancelled_runs),
+            ):
+                try:
+                    await reconcile()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "test_run_reconciliation_retry_failed",
+                        extra={"reconciliation_kind": kind},
+                    )
 
     async def create_run(
         self,
@@ -1066,7 +1094,9 @@ class TestRunService:
     async def _reconcile_denied_approvals(self) -> None:
         if self._sessions is None:
             return
-        items = await self._store.list_waiting_approval_items()
+        items = await self._next_reconciliation_batch(
+            self._store.list_waiting_approval_items, "denied_approvals",
+        )
         failures: list[str] = []
         for item in items:
             try:
@@ -1113,22 +1143,23 @@ class TestRunService:
             )
 
     async def _reconcile_cancelled_runs(self) -> None:
-        items = await self._store.list_cancelled_resource_items()
+        items = await self._next_reconciliation_batch(
+            self._store.list_cancelled_resource_items, "cancelled_runs",
+        )
         run_ids = list(dict.fromkeys(item.run_id for item in items))
         failures: list[str] = []
         for run_id in run_ids:
             try:
-                detail = await self._store.get_run(run_id)
-                if detail is None:
-                    raise KeyError(f"Test run not found: {run_id}")
-                await self._reconcile_cancelled_resources(
-                    detail,
-                    detail.run.cancel_reason or "Cancelled by operator",
+                run = await self._get_run_record(run_id)
+                await self._reconcile_cancelled_items(
+                    run,
+                    [item for item in items if item.run_id == run_id],
+                    run.cancel_reason or "Cancelled by operator",
                 )
             except Exception as exc:
                 failures.append(f"{run_id}: {exc}")
                 logger.exception(
-                    "test_run_cancelled_startup_reconciliation_failed",
+                    "test_run_cancelled_reconciliation_failed",
                     extra={"run_id": run_id},
                 )
         if failures:
@@ -1137,24 +1168,47 @@ class TestRunService:
                 + "; ".join(failures)
             )
 
+    async def _next_reconciliation_batch(
+        self,
+        list_items: Callable[..., Awaitable[list[TestRunItemRecord]]],
+        kind: str,
+    ) -> list[TestRunItemRecord]:
+        after = self._reconciliation_cursors[kind]
+        items = await list_items(limit=RECONCILIATION_BATCH_SIZE, after=after)
+        if not items and after is not None:
+            items = await list_items(limit=RECONCILIATION_BATCH_SIZE, after=None)
+        self._reconciliation_cursors[kind] = (
+            (items[-1].updated_at, items[-1].id)
+            if len(items) == RECONCILIATION_BATCH_SIZE else None
+        )
+        return items
+
     async def _reconcile_cancelled_resources(
         self,
         detail: TestRunDetail,
         reason: str,
     ) -> None:
+        await self._reconcile_cancelled_items(detail.run, detail.items, reason)
+
+    async def _reconcile_cancelled_items(
+        self,
+        run: TestRunRecord,
+        items: list[TestRunItemRecord],
+        reason: str,
+    ) -> None:
         failures: list[str] = []
-        for item in detail.items:
+        for item in items:
             if item.resource_cleanup_completed_at is not None:
                 continue
             if not item.approval_id and not item.tool_job_id:
                 continue
             try:
                 if item.approval_id:
-                    if self._sessions is None or not detail.run.session_id:
+                    if self._sessions is None or not run.session_id:
                         raise RuntimeError(
                             f"Approval store unavailable for cancelled run item: {item.id}"
                         )
-                    approvals = await self._sessions.list_approvals(detail.run.session_id)
+                    approvals = await self._sessions.list_approvals(run.session_id)
                     approval = next(
                         (value for value in approvals if value.id == item.approval_id),
                         None,
@@ -1163,14 +1217,14 @@ class TestRunService:
                         logger.warning(
                             "test_run_cancelled_approval_already_absent",
                             extra={
-                                "run_id": detail.run.id,
+                                "run_id": run.id,
                                 "run_item_id": item.id,
                                 "approval_id": item.approval_id,
                             },
                         )
                     elif approval.status == ToolApprovalStatus.pending:
                         await self._sessions.resolve_approval(
-                            detail.run.session_id,
+                            run.session_id,
                             approval.id,
                             ToolApprovalStatus.denied,
                             reason,
@@ -1186,7 +1240,7 @@ class TestRunService:
                 logger.exception(
                     "test_run_cancelled_resource_reconciliation_failed",
                     extra={
-                        "run_id": detail.run.id,
+                        "run_id": run.id,
                         "run_item_id": item.id,
                         "approval_id": item.approval_id,
                         "tool_job_id": item.tool_job_id,

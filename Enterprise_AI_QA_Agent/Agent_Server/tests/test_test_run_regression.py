@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -45,6 +46,8 @@ from src.schemas.session import (
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
+from src.schemas.tool_job import ToolJobRecord as _ToolJobRecord
+from src.schemas.tool_job import ToolJobStatus
 
 
 class _Projects:
@@ -1151,3 +1154,43 @@ async def test_initialize_continues_cancelled_cleanup_when_tool_job_record_is_go
     assert detail.items[0].status == "cancelled"
     assert detail.items[0].resource_cleanup_completed_at is not None
     assert (await sessions.list_approvals(run.session_id))[0].status == ToolApprovalStatus.denied
+
+
+@pytest.mark.asyncio
+async def test_startup_compensation_failure_is_retried_without_blocking_service():
+    class UnavailableOnceToolJobStore(InMemoryToolJobStore):
+        failures_remaining = 1
+
+        async def get_job(self, job_id):
+            if self.failures_remaining:
+                self.failures_remaining -= 1
+                raise ConnectionError("tool job store temporarily unavailable")
+            return await super().get_job(job_id)
+
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    await store.cancel_run(run.id, "operator cancelled before restart", datetime.now(timezone.utc))
+    job_store = UnavailableOnceToolJobStore()
+    now = datetime.now(timezone.utc)
+    await job_store.save_job(_ToolJobRecord(
+        id="job-1", session_id=run.session_id, turn_id="turn-1", trace_id="trace-1",
+        call_id="call-1", tool_key="security-scan-runner", tool_name="Security Scan Runner",
+        status=ToolJobStatus.waiting_approval, created_at=now, updated_at=now,
+    ))
+    jobs = ToolJobService(job_store)
+    service, _, _ = _components(
+        store=store, session_store=InMemorySessionStore(), tool_job_service=jobs,
+    )
+    service._lease_reaper_interval_seconds = 0.05
+
+    await service.initialize()
+    assert (await store.get_run(run.id)).items[0].resource_cleanup_completed_at is None
+    await service.start_lease_reaper()
+    try:
+        async with asyncio.timeout(3):
+            while (await store.get_run(run.id)).items[0].resource_cleanup_completed_at is None:
+                await asyncio.sleep(0.02)
+    finally:
+        await service.stop_lease_reaper()
+
+    assert (await jobs.get_job("job-1")).status == ToolJobStatus.cancelled

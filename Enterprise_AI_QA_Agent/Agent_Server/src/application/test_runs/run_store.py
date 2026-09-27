@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from src.core.config import Settings
 from src.application.test_runs.timing import add_active_duration, add_waiting_duration, elapsed_ms
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.run_management import (
     LatestRegressionRecord,
     RegressionBatchRecord,
@@ -143,8 +144,12 @@ class TestRunStore(Protocol):
         lease_seconds: int,
         now: datetime,
     ) -> TestRunItemRecord: ...
-    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]: ...
-    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]: ...
+    async def list_waiting_approval_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]: ...
+    async def list_cancelled_resource_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]: ...
     async def mark_cancelled_resources_reconciled(
         self,
         item_id: str,
@@ -759,25 +764,49 @@ class InMemoryTestRunStore:
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
 
-    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]:
+    async def list_waiting_approval_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        if limit is not None and limit < 0:
+            raise ValueError("Reconciliation page limit cannot be negative")
         async with self._lock:
-            return [
+            items = [
                 item.model_copy(deep=True)
                 for item in self._items.values()
                 if item.status == "waiting_approval"
                 and item.approval_id
                 and item.tool_job_id
             ]
+            items.sort(key=lambda item: (ensure_utc_datetime(item.updated_at), item.id))
+            if after is not None:
+                cursor = (ensure_utc_datetime(after[0]), after[1])
+                items = [
+                    item for item in items
+                    if (ensure_utc_datetime(item.updated_at), item.id) > cursor
+                ]
+            return items[:limit] if limit is not None else items
 
-    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]:
+    async def list_cancelled_resource_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        if limit is not None and limit < 0:
+            raise ValueError("Reconciliation page limit cannot be negative")
         async with self._lock:
-            return [
+            items = [
                 item.model_copy(deep=True)
                 for item in self._items.values()
                 if item.status == "cancelled"
                 and (item.approval_id or item.tool_job_id)
                 and item.resource_cleanup_completed_at is None
             ]
+            items.sort(key=lambda item: (ensure_utc_datetime(item.updated_at), item.id))
+            if after is not None:
+                cursor = (ensure_utc_datetime(after[0]), after[1])
+                items = [
+                    item for item in items
+                    if (ensure_utc_datetime(item.updated_at), item.id) > cursor
+                ]
+            return items[:limit] if limit is not None else items
 
     async def mark_cancelled_resources_reconciled(
         self,
@@ -1362,11 +1391,19 @@ class PostgresTestRunStore:
             now,
         )
 
-    async def list_waiting_approval_items(self) -> list[TestRunItemRecord]:
-        return await asyncio.to_thread(self._list_waiting_approval_items_sync)
+    async def list_waiting_approval_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        if limit is not None and limit < 0:
+            raise ValueError("Reconciliation page limit cannot be negative")
+        return await asyncio.to_thread(self._list_waiting_approval_items_sync, limit, after)
 
-    async def list_cancelled_resource_items(self) -> list[TestRunItemRecord]:
-        return await asyncio.to_thread(self._list_cancelled_resource_items_sync)
+    async def list_cancelled_resource_items(
+        self, *, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        if limit is not None and limit < 0:
+            raise ValueError("Reconciliation page limit cannot be negative")
+        return await asyncio.to_thread(self._list_cancelled_resource_items_sync, limit, after)
 
     async def mark_cancelled_resources_reconciled(
         self,
@@ -2484,28 +2521,56 @@ class PostgresTestRunStore:
                 )
         return item
 
-    def _list_waiting_approval_items_sync(self) -> list[TestRunItemRecord]:
+    def _list_waiting_approval_items_sync(
+        self, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        query = (
+            f"SELECT record FROM {self._item_table} "
+            "WHERE status = 'waiting_approval' "
+        )
+        params: list[object] = []
+        if after is not None:
+            query += "AND (updated_at, id) > (%s, %s::uuid) "
+            cursor_time = after[0]
+            params.extend((
+                cursor_time.replace(tzinfo=UTC) if cursor_time.tzinfo is None else cursor_time,
+                after[1],
+            ))
+        query += "ORDER BY updated_at ASC, id ASC"
+        if limit is not None:
+            query += " LIMIT %s"
+            params.append(limit)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT record FROM {self._item_table} "
-                    "WHERE status = 'waiting_approval' "
-                    "ORDER BY updated_at ASC, id ASC"
-                )
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall() or []
         return [self._item_from_value(row["record"]) for row in rows]
 
-    def _list_cancelled_resource_items_sync(self) -> list[TestRunItemRecord]:
+    def _list_cancelled_resource_items_sync(
+        self, limit: int | None = None, after: tuple[datetime, str] | None = None,
+    ) -> list[TestRunItemRecord]:
+        query = (
+            f"SELECT record FROM {self._item_table} "
+            "WHERE status = 'cancelled' "
+            "AND ((record->>'approval_id') IS NOT NULL "
+            "OR (record->>'tool_job_id') IS NOT NULL) "
+            "AND (record->>'resource_cleanup_completed_at') IS NULL "
+        )
+        params: list[object] = []
+        if after is not None:
+            query += "AND (updated_at, id) > (%s, %s::uuid) "
+            cursor_time = after[0]
+            params.extend((
+                cursor_time.replace(tzinfo=UTC) if cursor_time.tzinfo is None else cursor_time,
+                after[1],
+            ))
+        query += "ORDER BY updated_at ASC, id ASC"
+        if limit is not None:
+            query += " LIMIT %s"
+            params.append(limit)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT record FROM {self._item_table} "
-                    "WHERE status = 'cancelled' "
-                    "AND ((record->>'approval_id') IS NOT NULL "
-                    "OR (record->>'tool_job_id') IS NOT NULL) "
-                    "AND (record->>'resource_cleanup_completed_at') IS NULL "
-                    "ORDER BY updated_at ASC, id ASC"
-                )
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall() or []
         return [self._item_from_value(row["record"]) for row in rows]
 
