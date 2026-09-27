@@ -36,9 +36,10 @@ class UIExplorationService:
         self._mcp_runtime_service = mcp_runtime_service
         self._memory_runtime_service = memory_runtime_service
         self._ui_graph_store = ui_graph_store
-        self._playwright_runtime = PythonPlaywrightCliRuntime(settings,
-            resource_manager=mcp_runtime_service.browser_resources if mcp_runtime_service else None)
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
+        self._playwright_runtime = PythonPlaywrightCliRuntime(settings,
+            resource_manager=mcp_runtime_service.browser_resources if mcp_runtime_service else None,
+            artifact_root=self._artifact_root)
 
     async def close(self) -> None:
         await self._playwright_runtime.close()

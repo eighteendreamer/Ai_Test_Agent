@@ -212,14 +212,15 @@ def test_persistent_profile_root_is_scoped_and_registered_from_runtime(tmp_path)
         resources = SessionResourceService(InMemorySessionResourceStore())
         registry = SimpleNamespace(get=lambda key: SimpleNamespace(
             enabled=True, capabilities=["browser-control"], name="browser"))
-        service = MCPRuntimeService(registry, browser_settings(), resources)
-        service._artifact_root = tmp_path / "artifacts"
+        settings = browser_settings()
+        settings.storage.artifact_root_dir = str(tmp_path / "artifacts")
+        service = MCPRuntimeService(registry, settings, resources)
         contexts = [{"session_id": "s-live", "turn_id": "t-live", "context_bundle": {"attempt_id": attempt}}
                     for attempt in ("a1", "a2")]
         try:
             for index, context in enumerate(contexts):
                 result = await service.call("browser", "browser-control", {"action": "command",
-                    "args": ["open", "--persistent", f"--profile={tmp_path / 'profiles'}"]}, context)
+                    "args": ["open", "--persistent", f"--profile={service._artifact_root / 'profiles'}"]}, context)
                 assert result["status"] == "success"
                 name = service._playwright_session_name(context, "browser-control-command")
                 session = service._playwright_cli._sessions[name]
@@ -234,6 +235,83 @@ def test_persistent_profile_root_is_scoped_and_registered_from_runtime(tmp_path)
             assert len({item.resource_key for item in profiles}) == 2
         finally:
             await service.close()
+    asyncio.run(run())
+
+
+def test_browser_command_confines_navigation_uploads_outputs_and_profiles(tmp_path):
+    async def run():
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        outside_page = tmp_path / "outside.html"
+        outside_page.write_text("<html><body>LOCAL_FILE_MARKER</body></html>", encoding="utf-8")
+        inside_file = root / "inside.txt"
+        inside_file.write_text("ALLOWED_UPLOAD_MARKER", encoding="utf-8")
+        runtime = PythonPlaywrightCliRuntime(browser_settings(), artifact_root=root)
+        try:
+            denied_page = await runtime.run("file-scope", ["open", outside_page.as_uri()], root)
+            assert denied_page["exit_code"] == 1
+            assert "local files is not allowed" in denied_page["stderr"]
+
+            page = await runtime.run(
+                "file-scope", ["open", 'data:text/html,<input type="file"><h1>PAGE_MARKER</h1>'], root,
+            )
+            assert page["exit_code"] == 0, page["stderr"]
+
+            denied_upload = await runtime.run("file-scope", ["upload", str(outside_page)], root)
+            assert denied_upload["exit_code"] == 1
+            assert "Browser upload path" in denied_upload["stderr"]
+            link = root / "outside_link.html"
+            try:
+                link.symlink_to(outside_page)
+            except OSError:
+                link = None
+            if link is not None:
+                denied_link_upload = await runtime.run("file-scope", ["upload", str(link)], root)
+                assert denied_link_upload["exit_code"] == 1
+            allowed_upload = await runtime.run("file-scope", ["upload", str(inside_file)], root)
+            assert allowed_upload["exit_code"] == 0, allowed_upload["stderr"]
+            uploaded_content = await runtime.run(
+                "file-scope", ["eval", 'async () => await document.querySelector("input").files[0].text()'], root,
+            )
+            assert "ALLOWED_UPLOAD_MARKER" in uploaded_content["stdout"]
+
+            denied_snapshot = await runtime.run(
+                "file-scope", ["snapshot", "--filename=../outside_snapshot.txt"], root,
+            )
+            assert denied_snapshot["exit_code"] == 1
+            assert not (tmp_path / "outside_snapshot.txt").exists()
+            outside_target = tmp_path / "existing_outside.txt"
+            outside_target.write_text("UNCHANGED_MARKER", encoding="utf-8")
+            output_link = root / "linked_snapshot.txt"
+            try:
+                output_link.symlink_to(outside_target)
+            except OSError:
+                output_link = None
+            if output_link is not None:
+                denied_link_snapshot = await runtime.run(
+                    "file-scope", ["snapshot", "--filename=linked_snapshot.txt"], root,
+                )
+                assert denied_link_snapshot["exit_code"] == 1
+                assert outside_target.read_text(encoding="utf-8") == "UNCHANGED_MARKER"
+            allowed_snapshot = await runtime.run(
+                "file-scope", ["snapshot", "--filename=nested/inside_snapshot.txt"], root,
+            )
+            assert allowed_snapshot["exit_code"] == 0, allowed_snapshot["stderr"]
+            assert (root / "nested" / "inside_snapshot.txt").exists()
+
+            denied_profile = await runtime.run(
+                "profile-outside", ["open", "--persistent", f"--profile={tmp_path / 'profiles'}"], root,
+            )
+            assert denied_profile["exit_code"] == 1
+            assert not (tmp_path / "profiles").exists()
+            allowed_profile = await runtime.run(
+                "profile-inside", ["open", "--persistent", f"--profile={root / 'profiles'}"], root,
+            )
+            assert allowed_profile["exit_code"] == 0, allowed_profile["stderr"]
+            assert runtime._sessions["profile-inside"].profile_dir.is_dir()
+        finally:
+            await runtime.close()
+
     asyncio.run(run())
 
 

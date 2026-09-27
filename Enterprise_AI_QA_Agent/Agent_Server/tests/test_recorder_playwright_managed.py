@@ -111,6 +111,7 @@ def _make_driver(tmp_path: Path, *, pages: list[FakeManagedPage] | None = None) 
         recording_id="rec-1",
     )
     driver._profile_root = tmp_path / "artifacts" / "recorder-profile"
+    driver._runtime._artifact_root = driver._profile_root.parent.resolve()
 
     async def fake_start() -> FakePlaywright:
         return pw

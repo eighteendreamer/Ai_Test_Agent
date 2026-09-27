@@ -41,7 +41,7 @@ class MCPRuntimeService:
         self._session_resource_service = session_resource_service
         self._artifact_root = Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir
         self._artifact_root.mkdir(parents=True, exist_ok=True)
-        self._playwright_cli = PythonPlaywrightCliRuntime(settings)
+        self._playwright_cli = PythonPlaywrightCliRuntime(settings, artifact_root=self._artifact_root)
         self.browser_resources = None
 
     def set_resource_lease_manager(self, manager) -> None:

@@ -62,7 +62,9 @@ class PlaywrightManagedDriver(PlaywrightBindingDriverBase):
         runtime_settings.orchestration.browser_headless = False
         runtime_settings.orchestration.browser_window_width = int(self._viewport[0])
         runtime_settings.orchestration.browser_window_height = int(self._viewport[1])
-        self._runtime = PythonPlaywrightCliRuntime(runtime_settings, resource_manager=resource_manager)
+        self._runtime = PythonPlaywrightCliRuntime(
+            runtime_settings, resource_manager=resource_manager, artifact_root=base,
+        )
         self._closed_event = asyncio.Event()
 
     # ------------------------------------------------------------ BrowserDriver 契约

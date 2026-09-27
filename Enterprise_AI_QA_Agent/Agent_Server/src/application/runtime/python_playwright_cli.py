@@ -94,9 +94,10 @@ class PythonPlaywrightCliRuntime:
     inside the Agent_Server Python process.
     """
 
-    def __init__(self, settings: Settings, *, resource_manager=None) -> None:
+    def __init__(self, settings: Settings, *, resource_manager=None, artifact_root: Path | None = None) -> None:
         self._settings = settings
         self._resource_manager = resource_manager
+        self._artifact_root = artifact_root.resolve() if artifact_root is not None else None
         self._sessions: dict[str, _BrowserSession] = {}
         self._session_locks: dict[str, _SessionLock] = {}
         self._commands: set[asyncio.Task] = set()
@@ -243,7 +244,7 @@ class PythonPlaywrightCliRuntime:
             async with self._session_scope(session_name, command=True):
                 try:
                     session = await self._ensure_session(session_name, cwd, open_args, recording_id=recording_id)
-                    await session.page.goto(url, wait_until="domcontentloaded")
+                    await session.page.goto(self._normalize_url(url), wait_until="domcontentloaded")
                     return session
                 except BaseException as exc:
                     session = self._sessions.get(session_name)
@@ -320,7 +321,15 @@ class PythonPlaywrightCliRuntime:
             session.playwright = await asyncio.shield(session.driver_start)
             browser_type = getattr(session.playwright, browser_type_name, session.playwright.chromium)
             if persistent:
-                profile_dir = Path(profile) / scope_digest if profile else output_dir / "profile"
+                if profile:
+                    profile_root = self._scoped_file_path(
+                        self._artifact_root or cwd, profile,
+                        allowed_root=self._artifact_root or cwd,
+                        purpose="Browser profile path",
+                    )
+                    profile_dir = profile_root / scope_digest
+                else:
+                    profile_dir = output_dir / "profile"
                 session.profile_dir = profile_dir
                 session.context = await browser_type.launch_persistent_context(
                     str(profile_dir), viewport=viewport, **launch_options,
@@ -425,7 +434,7 @@ class PythonPlaywrightCliRuntime:
             text = await self._snapshot(session, target=target, depth=depth)
             artifacts = []
             if filename:
-                path = cwd / filename
+                path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text, encoding="utf-8")
                 artifacts.append({"type": "snapshot", "path": str(path)})
@@ -437,7 +446,7 @@ class PythonPlaywrightCliRuntime:
             text = json.dumps(payload, ensure_ascii=False, indent=None if raw else 2) + "\n"
             artifacts = []
             if filename:
-                path = cwd / filename
+                path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
                 artifacts.append({"type": "semantic-snapshot", "path": str(path)})
@@ -448,7 +457,7 @@ class PythonPlaywrightCliRuntime:
             return (text if raw else self._with_page_header(session, f"### UI Exploration Graph\n{text}", artifacts), artifacts)
         if verb == "screenshot":
             target, filename = self._parse_target_filename(args, default_name="screenshot.png")
-            path = cwd / filename
+            path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
             path.parent.mkdir(parents=True, exist_ok=True)
             if target:
                 await self._locator(session, target).screenshot(path=str(path))
@@ -457,7 +466,7 @@ class PythonPlaywrightCliRuntime:
             return ("" if raw else f"Saved screenshot to {path}\n", [{"type": "screenshot", "path": str(path)}])
         if verb == "pdf":
             filename = self._option_value(args, "--filename") or "page.pdf"
-            path = cwd / filename
+            path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
             path.parent.mkdir(parents=True, exist_ok=True)
             await page.pdf(path=str(path))
             return ("" if raw else f"Saved PDF to {path}\n", [{"type": "pdf", "path": str(path)}])
@@ -518,7 +527,12 @@ class PythonPlaywrightCliRuntime:
             return await self._page_output(session, raw)
         if verb == "upload":
             self._require_args(args, 1, "upload <file>")
-            await page.locator("input[type=file]").last.set_input_files([str((cwd / item).resolve()) for item in args])
+            allowed_root = self._artifact_root or cwd
+            files = [
+                str(self._scoped_file_path(cwd, item, allowed_root=allowed_root, purpose="Browser upload path"))
+                for item in args
+            ]
+            await page.locator("input[type=file]").last.set_input_files(files)
             return await self._page_output(session, raw)
         if verb == "go-back":
             await page.go_back(wait_until="domcontentloaded")
@@ -573,7 +587,7 @@ class PythonPlaywrightCliRuntime:
             return await self._web_storage(session, "sessionStorage", verb.replace("sessionstorage-", ""), args, raw)
         if verb == "state-save":
             filename = args[0] if args else "storage-state.json"
-            path = cwd / filename
+            path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
             await session.context.storage_state(path=str(path))
             return ("" if raw else f"Saved storage state to {path}\n", [{"type": "json", "path": str(path)}])
         if verb == "state-load":
@@ -765,7 +779,7 @@ class PythonPlaywrightCliRuntime:
             if url in visited:
                 continue
             visited.add(url)
-            await session.page.goto(url, wait_until="domcontentloaded")
+            await session.page.goto(self._normalize_url(url), wait_until="domcontentloaded")
             stability = await self._wait_for_view_stable(session, max_seconds=12.0)
             login_probe = await self._wait_for_login_or_stable(session, max_seconds=8.0)
             if login_probe.get("required"):
@@ -865,7 +879,7 @@ class PythonPlaywrightCliRuntime:
             "pages": pages,
             "graph": graph,
         }
-        path = cwd / filename
+        path = self._scoped_file_path(cwd, filename, purpose="Browser output path")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(app_map, ensure_ascii=False, indent=2), encoding="utf-8")
         return app_map, [{"type": "ui-explorer-graph", "path": str(path)}]
@@ -2120,13 +2134,29 @@ class PythonPlaywrightCliRuntime:
         return ""
 
     def _normalize_url(self, value: str) -> str:
+        if urlparse(value).scheme.lower() == "file":
+            raise ValueError("Browser navigation to local files is not allowed.")
         if value.startswith("data:text/html,"):
             payload = value[len("data:text/html,") :]
             if any(ord(ch) > 127 for ch in payload):
                 return "data:text/html;charset=utf-8," + quote(payload, safe="/:=?&%#[]@!$&'()*+,;<>\" ")
-        if value.startswith(("http://", "https://", "file://", "data:", "about:")):
+        if value.startswith(("http://", "https://", "data:", "about:")):
             return value
         return f"https://{value}"
+
+    def _scoped_file_path(
+        self,
+        cwd: Path,
+        value: str,
+        *,
+        allowed_root: Path | None = None,
+        purpose: str,
+    ) -> Path:
+        root = (allowed_root or cwd).resolve()
+        candidate = (cwd / value).resolve()
+        if root not in candidate.parents:
+            raise ValueError(f"{purpose} must stay within the browser artifact root.")
+        return candidate
 
     def _require_args(self, args: list[str], count: int, usage: str) -> None:
         positional = [arg for arg in args if not arg.startswith("--")]
