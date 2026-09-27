@@ -649,14 +649,15 @@ class PostgresSessionStore:
                 updated_at = EXCLUDED.updated_at,
                 preferred_model = EXCLUDED.preferred_model,
                 selected_agent = EXCLUDED.selected_agent,
-                -- worker_dispatches advances only under mutate_metadata's row
-                -- lock, so a stale whole-document save cannot rewind it.
+                -- SQL-owned coordinator claims and row-locked worker dispatches
+                -- must survive a stale whole-document save.
                 metadata = (
                     EXCLUDED.metadata
                     - 'turn_lease_turn_id'
                     - 'turn_lease_owner'
                     - 'turn_lease_token'
                     - 'turn_lease_expires_at'
+                    - 'coordinator_dispatch_claims'
                 ) || jsonb_strip_nulls(jsonb_build_object(
                     'turn_lease_turn_id',
                         {self._settings.database.postgres_session_table}.metadata->'turn_lease_turn_id',
@@ -667,7 +668,9 @@ class PostgresSessionStore:
                     'turn_lease_expires_at',
                         {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at',
                     'worker_dispatches',
-                        {self._settings.database.postgres_session_table}.metadata->'worker_dispatches'
+                        {self._settings.database.postgres_session_table}.metadata->'worker_dispatches',
+                    'coordinator_dispatch_claims',
+                        {self._settings.database.postgres_session_table}.metadata->'coordinator_dispatch_claims'
                 )),
                 event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
                 snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)

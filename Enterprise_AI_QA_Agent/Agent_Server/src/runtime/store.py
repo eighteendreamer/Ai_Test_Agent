@@ -239,9 +239,12 @@ class InMemorySessionStore:
     def _save_session_locked(self, session: SessionRecord) -> SessionRecord:
         current = self._sessions.get(session.id)
         if current is not None and current is not session:
-            # Ordinary snapshot saves cannot replace ownership/expiry set by
-            # claim and heartbeat operations in another service instance.
-            for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
+            # Snapshot saves cannot replace lease ownership or SQL-style
+            # coordinator claims advanced by another operation.
+            for key in (
+                "turn_lease_turn_id", "turn_lease_owner", "turn_lease_token",
+                "turn_lease_expires_at", "coordinator_dispatch_claims",
+            ):
                 if key in current.metadata:
                     session.metadata[key] = current.metadata[key]
                 else:
