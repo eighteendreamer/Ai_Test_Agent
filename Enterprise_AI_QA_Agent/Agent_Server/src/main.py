@@ -651,6 +651,7 @@ async def lifespan(app: FastAPI):
         turn_execution_heartbeat_seconds=(
             settings.orchestration.turn_execution_heartbeat_seconds
         ),
+        turn_reaper_interval_seconds=settings.orchestration.turn_reaper_interval_seconds,
     )
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
@@ -753,9 +754,11 @@ async def lifespan(app: FastAPI):
         project_catalog_provider=_project_catalog,
     )
 
+    await session_service.start_turn_reaper()
     try:
         yield
     finally:
+        await session_service.stop_turn_reaper()
         execution_shutdown = await asyncio.gather(
             tool_runtime_service.close(), mcp_runtime_service.close(), recorder_service.close(), return_exceptions=True,
         )

@@ -97,6 +97,7 @@ class SessionService:
         approval_continuation_heartbeat_seconds: float = 30.0,
         turn_execution_lease_seconds: int = 120,
         turn_execution_heartbeat_seconds: float = 30.0,
+        turn_reaper_interval_seconds: float = 30.0,
         event_buffer_capacity: int = 4096,
     ) -> None:
         self._store = store
@@ -120,6 +121,9 @@ class SessionService:
         self._turn_execution_heartbeat_seconds = max(
             0.1, float(turn_execution_heartbeat_seconds)
         )
+        self._turn_reaper_interval_seconds = max(0.05, float(turn_reaper_interval_seconds))
+        self._turn_reaper_stop: asyncio.Event | None = None
+        self._turn_reaper_task: asyncio.Task | None = None
         self._worker_owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4()}"
         # UI 录制审批回调（方案 4.2 环节④/⑤，P0-8）：main.py 在 recorder 域初始化后注入
         self._recording_approval_service = None
@@ -323,7 +327,9 @@ class SessionService:
         )
         return session
 
-    async def recover_expired_turn_executions(self) -> list[str]:
+    async def recover_expired_turn_executions(
+        self, *, recovery_source: str = "service_startup",
+    ) -> list[str]:
         recovered_session_ids = await self._store.recover_expired_turn_executions()
         for session_id in recovered_session_ids:
             await self._store.append_event(
@@ -332,17 +338,56 @@ class SessionService:
                     session_id,
                     "turn.recovery_detected",
                     {
-                        "message": "An expired turn lease was detected during service startup; the session was preserved for manual resume.",
-                        "recovery_source": "service_startup",
+                        "message": "An expired turn lease was detected; the session was preserved for manual resume.",
+                        "recovery_source": recovery_source,
                         "is_resumable": True,
                     },
                 ),
             )
             logger.warning(
-                "expired_turn_recovered_at_startup",
-                extra={"session_id": session_id},
+                "expired_turn_recovered",
+                extra={"session_id": session_id, "recovery_source": recovery_source},
             )
         return recovered_session_ids
+
+    async def start_turn_reaper(self) -> None:
+        if self._turn_reaper_task is not None and not self._turn_reaper_task.done():
+            return
+        self._turn_reaper_stop = asyncio.Event()
+        self._turn_reaper_task = asyncio.create_task(
+            self._turn_reaper_loop(), name="session-turn-lease-reaper",
+        )
+        logger.info("session_turn_reaper_started", extra={
+            "interval_seconds": self._turn_reaper_interval_seconds,
+        })
+
+    async def stop_turn_reaper(self) -> None:
+        stop = self._turn_reaper_stop
+        task = self._turn_reaper_task
+        if task is None:
+            return
+        if stop is not None:
+            stop.set()
+        await task
+        self._turn_reaper_task = None
+        self._turn_reaper_stop = None
+        logger.info("session_turn_reaper_stopped")
+
+    async def _turn_reaper_loop(self) -> None:
+        stop = self._turn_reaper_stop
+        if stop is None:
+            return
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=self._turn_reaper_interval_seconds)
+            except asyncio.TimeoutError:
+                pass
+            if stop.is_set():
+                return
+            try:
+                await self.recover_expired_turn_executions(recovery_source="periodic_reaper")
+            except Exception:
+                logger.exception("session_turn_reaper_failed")
 
     async def get_session(self, session_id: str) -> SessionDetail:
         session = await self._store.get_session(session_id)

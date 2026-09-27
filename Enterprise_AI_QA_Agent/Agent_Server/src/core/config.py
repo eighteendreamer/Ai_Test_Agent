@@ -233,6 +233,7 @@ class OrchestrConfig(BaseModel):
     approval_continuation_heartbeat_seconds: float = 30.0
     turn_execution_lease_seconds: int = 120
     turn_execution_heartbeat_seconds: float = 30.0
+    turn_reaper_interval_seconds: float = Field(default=30.0, gt=0)
     test_run_lease_reaper_interval_seconds: float = 30.0
     compatibility_runner_heartbeat_timeout_seconds: int = 120
 
