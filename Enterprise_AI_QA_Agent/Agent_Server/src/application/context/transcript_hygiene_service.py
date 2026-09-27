@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.schemas.session import ChatMessage
 
 
@@ -17,8 +18,11 @@ class TranscriptHygieneService:
         if summary and summary.strip():
             runtime_messages.append(
                 {
-                    "role": "system",
-                    "content": "[Earlier conversation summary]\n" + summary.strip(),
+                    "role": "user",
+                    "content": (
+                        "[Earlier conversation summary]\n"
+                        + wrap_untrusted_content("conversation_summary", summary.strip())
+                    ),
                 }
             )
         tail = messages[summary_covers_until:] if summary_covers_until > 0 else messages
