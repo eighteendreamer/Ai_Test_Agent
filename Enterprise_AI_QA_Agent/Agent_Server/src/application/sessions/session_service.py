@@ -1255,7 +1255,7 @@ class SessionService:
         session_lock = self._session_locks[session_id]
         if session_lock.locked():
             session = await self._require_session(session_id)
-            execution_request = self._input_orchestrator_service.orchestrate(session, payload)
+            execution_request = await self._input_orchestrator_service.orchestrate_async(session, payload)
             busy_response = await self._handle_busy_submission(
                 session=session,
                 payload=payload,
@@ -1739,7 +1739,6 @@ class SessionService:
         request_interrupt: bool,
     ) -> ConversationResponse:
         session_id = session.id
-        queue_entries = self._get_pending_input_queue(session)
         queue_entry = PendingInputQueueEntry(
             id=str(uuid4()),
             created_at=datetime.utcnow(),
@@ -1777,34 +1776,41 @@ class SessionService:
                 "interrupt_requested": request_interrupt,
             },
         )
-        queue_entries.append(queue_entry)
-        self._set_pending_input_queue(session, queue_entries)
-        control = self._ensure_control_metadata(session)
-        control["queued_input_count"] = len(queue_entries)
-        if request_interrupt:
-            control["control_state"] = "interrupt_requested"
-            control["last_interrupt_reason"] = "Queued retry requested by a follow-up input."
-        session.metadata["control"] = control
-        await self._store.save_session(session)
-        await self._store.append_event(
+        queued_event = self._make_event(
             session_id,
-            self._make_event(
-                session_id,
-                "input.queued",
-                {
-                    "queue_entry_id": queue_entry.id,
-                    "busy_status": busy_status.value,
-                    "queue_behavior": queue_entry.queue_behavior,
-                    "interrupt_policy": queue_entry.interrupt_policy,
-                    "queue_depth": len(queue_entries),
-                    "queued_turn_id": execution_request.turn_id,
-                    "message_kind": execution_request.message_kind.value,
-                    "command_name": execution_request.command_name or "",
-                    "interrupt_requested": request_interrupt,
-                    "message": queue_entry.reason,
-                },
-            ),
+            "input.queued",
+            {
+                "queue_entry_id": queue_entry.id,
+                "busy_status": busy_status.value,
+                "queue_behavior": queue_entry.queue_behavior,
+                "interrupt_policy": queue_entry.interrupt_policy,
+                "queue_depth": 0,
+                "queued_turn_id": execution_request.turn_id,
+                "message_kind": execution_request.message_kind.value,
+                "command_name": execution_request.command_name or "",
+                "interrupt_requested": request_interrupt,
+                "message": queue_entry.reason,
+            },
         )
+
+        def append_queued_input(metadata: dict) -> bool:
+            queue_entries = self._parse_pending_input_queue(metadata.get("pending_input_queue", []))
+            queue_entries.append(queue_entry)
+            metadata["pending_input_queue"] = [item.model_dump(mode="python") for item in queue_entries]
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control["queued_input_count"] = len(queue_entries)
+            if request_interrupt:
+                control["control_state"] = "interrupt_requested"
+                control["last_interrupt_reason"] = "Queued retry requested by a follow-up input."
+            metadata["control"] = control
+            queued_event.payload["queue_depth"] = len(queue_entries)
+            return True
+
+        if not await self._store.update_metadata_and_append_event(
+            session_id, append_queued_input, queued_event,
+        ):
+            raise KeyError(session_id)
         if request_interrupt:
             self._runtime_service.request_interrupt(
                 session_id,
@@ -1824,7 +1830,8 @@ class SessionService:
                 ),
             )
 
-        if busy_status != SessionStatus.running and busy_status != SessionStatus.waiting_approval:
+        refreshed = await self._require_session(session_id)
+        if refreshed.status not in {SessionStatus.running, SessionStatus.waiting_approval}:
             self._maybe_schedule_pending_input_drain(session_id)
         return await self._build_queued_response(session, queue_entry)
 
@@ -1856,7 +1863,10 @@ class SessionService:
         )
 
     def _get_pending_input_queue(self, session: SessionRecord) -> list[PendingInputQueueEntry]:
-        raw_items = session.metadata.get("pending_input_queue", [])
+        return self._parse_pending_input_queue(session.metadata.get("pending_input_queue", []))
+
+    @staticmethod
+    def _parse_pending_input_queue(raw_items: object) -> list[PendingInputQueueEntry]:
         if not isinstance(raw_items, list):
             return []
         items: list[PendingInputQueueEntry] = []
