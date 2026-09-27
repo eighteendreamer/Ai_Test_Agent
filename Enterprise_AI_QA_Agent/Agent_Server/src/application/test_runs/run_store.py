@@ -497,7 +497,7 @@ class InMemoryTestRunStore:
                 (
                     self._items[item_id]
                     for item_id in self._item_ids_by_run[run_id]
-                    if self._items[item_id].status in {"queued", "waiting_resource"}
+                    if self._items[item_id].status == "queued"
                 ),
                 key=lambda item: (item.position, item.id),
             )[:limit]
@@ -2062,7 +2062,7 @@ class PostgresTestRunStore:
                     return []
                 cur.execute(
                     f"SELECT record FROM {self._item_table} "
-                    "WHERE run_id = %s AND status IN ('queued', 'waiting_resource') "
+                    "WHERE run_id = %s AND status = 'queued' "
                     "ORDER BY position ASC, id ASC "
                     "FOR UPDATE SKIP LOCKED LIMIT %s",
                     (run_id, limit),
