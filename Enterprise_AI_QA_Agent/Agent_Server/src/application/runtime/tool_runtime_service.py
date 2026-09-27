@@ -5,6 +5,7 @@ from contextlib import nullcontext
 import json
 import logging
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -2364,6 +2365,11 @@ class ToolRuntimeService:
                 )
             )
         except Exception as exc:
+            if project_source.source_type == "ssh":
+                logger.warning(
+                    "code_review_ssh_file_read_failed",
+                    extra={"project_name": project_source.project_name, "reason": str(exc)},
+                )
             return {
                 "status": "failed",
                 "ok": False,
@@ -4602,13 +4608,22 @@ class ToolRuntimeService:
         max_chars: int,
         timeout_seconds: float,
     ) -> dict[str, Any]:
-        remote_path = _join_remote_path(project_source_root(project_source), file_path)
+        root_value = project_source_root(project_source).replace("\\", "/")
+        remote_path = _join_remote_path(root_value, file_path)
         script = (
+            f"ROOT={shlex.quote(root_value)}; "
             f"FILE={shlex.quote(remote_path)}; "
+            'if [ ! -d "$ROOT" ]; then echo "__ERROR__:missing_root"; exit 4; fi; '
             'if [ ! -f "$FILE" ]; then echo "__ERROR__:missing_file"; exit 4; fi; '
-            'printf "__LINES__=%s\n" "$(wc -l < "$FILE" 2>/dev/null || echo 0)"; '
+            'if ! command -v readlink >/dev/null 2>&1; then echo "__ERROR__:readlink_required"; exit 5; fi; '
+            'CANONICAL_ROOT=$(readlink -f -- "$ROOT") || exit 5; '
+            'CANONICAL_FILE=$(readlink -f -- "$FILE") || exit 5; '
+            'if [ "$CANONICAL_ROOT" != / ]; then '
+            'case "$CANONICAL_FILE" in "$CANONICAL_ROOT"/*) ;; '
+            '*) echo "__ERROR__:remote_file_outside_project_root"; exit 4 ;; esac; fi; '
+            'printf "__LINES__=%s\n" "$(wc -l < "$CANONICAL_FILE" 2>/dev/null || echo 0)"; '
             'echo "__CONTENT__"; '
-            f"sed -n '{start_line},{end_line}p' \"$FILE\""
+            f"sed -n '{start_line},{end_line}p' \"$CANONICAL_FILE\""
         )
         result = await self._run_ssh_shell(project_source, script, timeout_seconds=timeout_seconds)
         if not result["ok"]:
@@ -4788,7 +4803,7 @@ class ToolRuntimeService:
         auth_ref = str(project_source.ssh.auth_ref or "").strip()
         if auth_ref:
             args.extend(["-i", auth_ref])
-        args.extend([target, f"sh -lc {shlex.quote(remote_script)}"])
+        args.extend(["--", target, f"sh -lc {shlex.quote(remote_script)}"])
         return await self._run_subprocess("ssh", args, timeout_seconds=timeout_seconds)
 
     async def _run_subprocess(
@@ -5659,13 +5674,21 @@ def _language_from_extension(extension: str) -> str:
 
 
 def _join_remote_path(root_path: str, child_path: str) -> str:
-    normalized_root = root_path.replace("\\", "/").strip()
+    normalized_root = posixpath.normpath(root_path.replace("\\", "/").strip())
     normalized_child = child_path.replace("\\", "/").strip()
     if not normalized_child:
         return normalized_root
-    if normalized_child.startswith("/"):
-        return normalized_child
-    return str(PurePosixPath(normalized_root) / normalized_child)
+    candidate = posixpath.normpath(posixpath.join(normalized_root, normalized_child))
+    if normalized_root == ".":
+        within_root = candidate != ".." and not candidate.startswith("../") and not candidate.startswith("/")
+    else:
+        try:
+            within_root = posixpath.commonpath((normalized_root, candidate)) == normalized_root
+        except ValueError:
+            within_root = False
+    if not within_root or candidate == normalized_root:
+        raise ValueError(f"File path must stay within the project root: {root_path}")
+    return candidate
 
 
 def _relativize_remote_path(root_path: str, target_path: str) -> str:
