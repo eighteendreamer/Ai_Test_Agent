@@ -1160,8 +1160,15 @@ class TestRunService:
                         None,
                     )
                     if approval is None:
-                        raise KeyError(f"Approval not found: {item.approval_id}")
-                    if approval.status == ToolApprovalStatus.pending:
+                        logger.warning(
+                            "test_run_cancelled_approval_already_absent",
+                            extra={
+                                "run_id": detail.run.id,
+                                "run_item_id": item.id,
+                                "approval_id": item.approval_id,
+                            },
+                        )
+                    elif approval.status == ToolApprovalStatus.pending:
                         await self._sessions.resolve_approval(
                             detail.run.session_id,
                             approval.id,

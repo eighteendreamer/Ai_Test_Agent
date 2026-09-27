@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from src.api.routes.run_management import router as run_router
 from src.application.test_runs.run_service import TestRunService as _RunService
 from src.application.test_runs.run_store import InMemoryTestRunStore
+from src.domain.models import SessionRecord
+from src.runtime.store import InMemorySessionStore
 from src.schemas.case_management import (
     TestCaseAssertion as _CaseAssertion,
     TestCaseRecord as _CaseRecord,
@@ -34,7 +36,13 @@ from src.schemas.suite_management import (
     TestSuiteItemRecord as _SuiteItemRecord,
     TestSuiteRecord as _SuiteRecord,
 )
-from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
+from src.schemas.session import (
+    RuntimeMode,
+    SessionMode,
+    SessionStatus,
+    ToolApprovalRequest,
+    ToolApprovalStatus,
+)
 
 
 class _Projects:
@@ -1075,3 +1083,47 @@ async def test_initialize_reconciles_cancelled_resources_after_process_restart()
     assert jobs.cancelled[0][0] == "job-1"
     persisted = await store.get_run(run.id)
     assert persisted.items[0].resource_cleanup_completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_initialize_continues_cancelled_cleanup_when_approval_record_is_gone():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    await store.cancel_run(run.id, "operator cancelled before restart", datetime.now(timezone.utc))
+    sessions = InMemorySessionStore()
+    now = datetime.now(timezone.utc)
+    await sessions.save_session(SessionRecord(
+        id=run.session_id,
+        title="cancelled run session",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.normal,
+        runtime_mode=RuntimeMode.interactive,
+        mode_key="security_testing",
+        created_at=now,
+        updated_at=now,
+    ))
+    jobs = _ApprovalJobs()
+    service, _, _ = _components(store=store, session_store=sessions, tool_job_service=jobs)
+
+    await service.initialize()
+
+    detail = await store.get_run(run.id)
+    assert detail.items[0].status == "cancelled"
+    assert detail.items[0].resource_cleanup_completed_at is not None
+    assert jobs.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_initialize_does_not_fail_for_waiting_item_without_approval_record():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    sessions = InMemorySessionStore()
+    jobs = _ApprovalJobs()
+    service, _, _ = _components(store=store, session_store=sessions, tool_job_service=jobs)
+
+    await service.initialize()
+
+    detail = await store.get_run(run.id)
+    assert detail.items[0].status == "waiting_approval"
+    assert detail.items[0].resource_cleanup_completed_at is None
+    assert jobs.status == "waiting_approval"
