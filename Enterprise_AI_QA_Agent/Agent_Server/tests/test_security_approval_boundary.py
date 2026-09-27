@@ -4,11 +4,15 @@ from datetime import UTC, datetime
 from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_governance_service import GovernedToolCallContext, ToolGovernanceService
+from src.application.runtime.tool_input_validation import validate_tool_input
 from src.application.security.execution_environment_service import SecurityCommandExecutionResult
 from src.application.security.execution_safety_policy import ExecutionSafetyPolicy
 from src.core.config import Settings
 from src.core.safety_gate import SafetyGate
 from src.graph.nodes.tool_executor import _resolve_tool_call
+from src.modes.security_testing_mode.campaign_state import SecurityTask
+from src.modes.security_testing_mode.subagent_coordinator import SecuritySubagentCoordinator
+from src.modes.security_testing_mode.task_pool import SecurityTaskPool
 from src.registry.tools import ToolRegistry
 from src.schemas.session import MessageKind, RuntimeMode, SessionMode
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
@@ -239,3 +243,169 @@ def test_deep_agent_governance_passes_approval_outside_model_arguments():
     assert "_server_approval_granted" not in runtime.calls[0][0].arguments
     assert runtime.calls[0][1].server_approval_granted is True
     assert context.execution.server_approval_granted is False
+
+
+def test_model_risk_tolerance_cannot_override_low_risk_session(monkeypatch, tmp_path):
+    runtime, calls = _capturing_runtime(monkeypatch, tmp_path)
+    tool = ToolRegistry().get("web-scan-runner")
+    arguments = {
+        "command_profile": "nikto_web_scan",
+        "target": "https://example.test",
+        "risk_tolerance": "high",
+    }
+    assert validate_tool_input(tool.input_schema, arguments) == []
+    context = ToolExecutionContext(
+        session_id="risk-boundary-session",
+        turn_id="risk-boundary-turn",
+        trace_id="risk-boundary-trace",
+        user_message="Use only low-risk checks on the authorized target",
+        normalized_input="Use only low-risk checks on the authorized target",
+        context_bundle={"environment": "testing", "risk_tolerance": "low"},
+    )
+
+    result = asyncio.run(runtime.execute(
+        tool,
+        ModelToolCall(id="model-risk-call", name=tool.key, arguments=arguments),
+        context,
+    ))
+
+    assert result.status == "denied"
+    assert calls == []
+
+    text_only_context = ToolExecutionContext(
+        session_id=context.session_id,
+        turn_id=context.turn_id,
+        trace_id=context.trace_id,
+        user_message=context.user_message,
+        normalized_input=context.normalized_input,
+        context_bundle={"environment": "testing"},
+    )
+    text_only_result = asyncio.run(runtime.execute(
+        tool,
+        ModelToolCall(id="text-only-risk-call", name=tool.key, arguments=arguments),
+        text_only_context,
+    ))
+    assert text_only_result.status == "denied"
+    assert calls == []
+
+
+def test_security_worker_inherits_campaign_risk_tolerance():
+    task = SecurityTask(
+        task_id="risk-worker-task",
+        command_profile="nikto_web_scan",
+        tool_family="web_scan",
+        surface_type="web",
+        target="https://example.test",
+    )
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([task]),
+        coordinator_runtime_service=None,
+        session_store=None,
+        parent_context={
+            "context_bundle": {
+                "security_testing_state": {"request": {"risk_tolerance": "low"}},
+            },
+        },
+        runner_lookup=lambda _family: "web-scan-runner",
+    )
+
+    worker_spec = coordinator._build_worker_spec(task)
+
+    assert worker_spec["context"]["risk_tolerance"] == "low"
+    runner_args = worker_spec["context"]["security_runtime_arguments"]
+    assert runner_args["target"] == task.target
+    assert runner_args["command_profile"] == task.command_profile
+    assert validate_tool_input(ToolRegistry().get("web-scan-runner").input_schema, runner_args) == []
+
+
+def test_worker_task_profile_cannot_be_replaced_by_model_argument(monkeypatch, tmp_path):
+    runtime, calls = _capturing_runtime(monkeypatch, tmp_path)
+    tool = ToolRegistry().get("web-scan-runner")
+    assigned_task = SecurityTask(
+        task_id="assigned-header-check",
+        command_profile="http_headers_probe",
+        tool_family="web_scan",
+        surface_type="web",
+        target="https://example.test",
+    )
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([assigned_task]),
+        coordinator_runtime_service=None,
+        session_store=None,
+        parent_context={"context_bundle": {"risk_tolerance": "medium"}},
+        runner_lookup=lambda _family: "web-scan-runner",
+    )
+    worker_spec = coordinator._build_worker_spec(assigned_task)
+    assignment = worker_spec["context"]["security_runtime_arguments"]
+    conflicting_arguments = {
+        **assignment,
+        "command_profile": "nikto_web_scan",
+        "target": "https://other.test",
+    }
+    context = ToolExecutionContext(
+        session_id="worker-profile-session",
+        turn_id="worker-profile-turn",
+        trace_id="worker-profile-trace",
+        user_message="Check headers on the assigned target",
+        normalized_input="Check headers on the assigned target",
+        context_bundle={
+            **worker_spec["context"],
+            "environment": "testing",
+        },
+    )
+    result = asyncio.run(runtime.execute(
+        tool,
+        ModelToolCall(
+            id="worker-profile-call",
+            name=tool.key,
+            arguments=conflicting_arguments,
+        ),
+        context,
+    ))
+
+    assert result.status == "denied"
+    assert calls == []
+    assert ExecutionSafetyPolicy().evaluate_tool_call(
+        tool=tool,
+        arguments=conflicting_arguments,
+        active_mode_key="security_testing",
+        context=context.context_bundle,
+    ).behavior == "deny"
+
+    matching = asyncio.run(runtime.execute(
+        tool,
+        ModelToolCall(id="assigned-profile-call", name=tool.key, arguments=assignment),
+        context,
+    ))
+    assert matching.status != "denied"
+    assert len(calls) == 1
+    assert calls[0]["command"].startswith("sh -lc")
+
+    calls.clear()
+    nonworker_context = ToolExecutionContext(
+        session_id=context.session_id,
+        turn_id=context.turn_id,
+        trace_id=context.trace_id,
+        user_message=context.user_message,
+        normalized_input=context.normalized_input,
+        context_bundle={"environment": "testing", "risk_tolerance": "medium"},
+    )
+    asyncio.run(runtime.execute(
+        tool,
+        ModelToolCall(id="serialized-task-call", name=tool.key, arguments=conflicting_arguments),
+        nonworker_context,
+    ))
+    assert len(calls) == 1
+    assert calls[0]["command"].startswith("sh -lc")
+    assert "https://example.test" in calls[0]["command"]
+    assert "https://other.test" not in calls[0]["command"]
+
+    blocked_task = {**assignment["task"], "target": "http://169.254.169.254/latest"}
+    blocked_decision = ExecutionSafetyPolicy().evaluate_tool_call(
+        tool=tool,
+        arguments={"task": blocked_task, "target": assigned_task.target},
+        active_mode_key="security_testing",
+        context={"environment": "testing"},
+    )
+    assert blocked_decision.behavior == "deny"
+    assert blocked_decision.reason_code == "blocked_network_target"

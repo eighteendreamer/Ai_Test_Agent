@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from src.application.security.command_profiles import get_profile_registry
 from src.application.security.risk_policy import SecurityRiskPolicy
+from src.application.security.worker_assignment import matches_security_worker_assignment
 from src.schemas.agent import ToolDescriptor
 from src.schemas.intent import ToolSafetyDecision
 
@@ -37,6 +38,17 @@ class ExecutionSafetyPolicy:
         context: dict[str, Any] | None = None,
     ) -> ToolSafetyDecision:
         context = context or {}
+        if (
+            active_mode_key == "security_testing"
+            and tool.owner_mode_key == "security_testing"
+            and context.get("dispatch_role") == "security_testing_worker"
+            and not matches_security_worker_assignment(arguments, context)
+        ):
+            return ToolSafetyDecision(
+                behavior="deny",
+                reason="The security worker call does not match its assigned task payload.",
+                reason_code="security_worker_assignment_mismatch",
+            )
         if tool.exposure == "internal" and tool.owner_mode_key != active_mode_key:
             return ToolSafetyDecision(
                 behavior="deny",
@@ -80,8 +92,8 @@ class ExecutionSafetyPolicy:
             task = arguments.get("task")
             task_data = task if isinstance(task, dict) else {}
             profile_key = str(
-                arguments.get("command_profile")
-                or task_data.get("command_profile")
+                task_data.get("command_profile")
+                or arguments.get("command_profile")
                 or ""
             ).strip()
             profile = self._security_profiles.get(profile_key)
@@ -140,7 +152,11 @@ class ExecutionSafetyPolicy:
         context: dict[str, Any],
     ) -> tuple[str, str]:
         trusted_hosts = self._trusted_target_hosts(context)
-        for key, raw_value in arguments.items():
+        task = arguments.get("task")
+        candidates = list(arguments.items())
+        if isinstance(task, dict):
+            candidates.append(("target", task.get("target")))
+        for key, raw_value in candidates:
             if key not in self.TARGET_KEYS or not isinstance(raw_value, str):
                 continue
             host = (urlparse(raw_value).hostname or raw_value.split(":", 1)[0]).strip("[]").lower()

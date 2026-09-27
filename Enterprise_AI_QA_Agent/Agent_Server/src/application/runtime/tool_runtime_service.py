@@ -2890,8 +2890,22 @@ class ToolRuntimeService:
         from src.application.security.result_parsers import evaluate_parser_success, get_parser_registry
         from src.application.security.risk_policy import SecurityRiskPolicy
         from src.application.security.tool_catalog import SecurityToolCatalog
+        from src.application.security.worker_assignment import matches_security_worker_assignment
 
         runner_key = runner_key or "security-scan-runner"
+        if not matches_security_worker_assignment(arguments, context.context_bundle):
+            logger.warning(
+                "security_worker_assignment_mismatch",
+                extra={"session_id": context.session_id, "tool_key": runner_key, "call_id": context.call_id},
+            )
+            return {
+                "status": "denied",
+                "ok": False,
+                "success": False,
+                "summary": "Security worker call does not match its assigned task payload.",
+                "runner_key": runner_key,
+                "error": "security_worker_assignment_mismatch",
+            }
         catalog = SecurityToolCatalog()
         risk_policy = SecurityRiskPolicy()
         execution_monitor = SecurityExecutionMonitor()
@@ -3212,9 +3226,11 @@ class ToolRuntimeService:
         arguments: dict[str, Any],
         context: ToolExecutionContext,
     ) -> str:
-        explicit = str(arguments.get("risk_tolerance") or "").strip().lower()
-        if explicit:
-            return explicit
+        if "risk_tolerance" in arguments:
+            logger.warning(
+                "security_runner_untrusted_risk_tolerance_ignored",
+                extra={"session_id": context.session_id, "tool_key": context.tool_key, "call_id": context.call_id},
+            )
         bundle = context.context_bundle if isinstance(context.context_bundle, dict) else {}
         direct = str(bundle.get("risk_tolerance") or "").strip().lower()
         if direct:
@@ -3226,6 +3242,10 @@ class ToolRuntimeService:
                 risk = str(request.get("risk_tolerance") or "").strip().lower()
                 if risk:
                     return risk
+        from src.modes.security_testing_mode.request_interpreter import SecurityRequestInterpreter
+
+        if SecurityRequestInterpreter().infer_risk_tolerance(context.user_message) == "low":
+            return "low"
         return "medium"
 
     def _resolve_security_profile_key(
@@ -3234,11 +3254,11 @@ class ToolRuntimeService:
         task: Any,
         runner_key: str,
     ) -> str:
+        if task is not None and str(task.command_profile or "").strip():
+            return str(task.command_profile).strip()
         explicit = str(arguments.get("command_profile") or "").strip()
         if explicit:
             return explicit
-        if task is not None and str(task.command_profile or "").strip():
-            return str(task.command_profile).strip()
         if runner_key == "network-recon-runner":
             return "nmap_tcp_basic"
         if runner_key == "web-scan-runner":
@@ -3313,9 +3333,9 @@ class ToolRuntimeService:
             if arguments.get(key) not in (None, ""):
                 supplied[key] = arguments.get(key)
         if task is not None:
-            supplied.setdefault("target", task.target)
+            supplied["target"] = task.target
             if task.target_port:
-                supplied.setdefault("ports", str(task.target_port))
+                supplied["ports"] = str(task.target_port)
         if profile.profile_key in {"searchsploit_lookup", "searchsploit_exploit_lookup"}:
             supplied.setdefault("query", supplied.get("target") or "")
         # Tools like sslscan only accept ``host[:port]`` targets, not full

@@ -585,10 +585,22 @@ class SecuritySubagentCoordinator:
         parent_bundle = self._parent_context.get("context_bundle", {})
         if not isinstance(parent_bundle, dict):
             parent_bundle = {}
+        parent_state = parent_bundle.get("security_testing_state")
+        parent_request = parent_state.get("request") if isinstance(parent_state, dict) else None
+        if not isinstance(parent_request, dict):
+            parent_request = {}
+        risk_tolerance = str(
+            getattr(self._request, "risk_tolerance", "")
+            or parent_request.get("risk_tolerance")
+            or parent_bundle.get("risk_tolerance")
+            or "medium"
+        ).strip().lower()
 
         runner_args: dict[str, Any] = {
             "worker_action": "execute_security_task",
             "task": task.model_dump(mode="json"),
+            "command_profile": task.command_profile,
+            "target": task.target,
         }
         runner_key = self._runner_lookup(task.tool_family) if self._runner_lookup else ""
 
@@ -608,6 +620,7 @@ class SecuritySubagentCoordinator:
                 "mode_key": "security_testing",
                 "security_task_id": task.task_id,
                 "security_runtime_arguments": runner_args,
+                "risk_tolerance": risk_tolerance,
                 "surface_type": task.surface_type,
                 "tool_family": task.tool_family,
                 "command_profile": task.command_profile,
