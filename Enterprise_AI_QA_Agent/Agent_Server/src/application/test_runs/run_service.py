@@ -1237,7 +1237,11 @@ class TestRunService:
             raise RuntimeError(f"ToolJob service unavailable for cancelled run: {job_id}")
         job = await self._jobs.get_job(job_id)
         if job is None:
-            raise KeyError(f"Tool job not found: {job_id}")
+            logger.warning(
+                "test_run_cancelled_tool_job_already_absent",
+                extra={"tool_job_id": job_id},
+            )
+            return
         status = _enum_value(getattr(job, "status", ""))
         if status in {
             ToolJobStatus.cancelled.value,
@@ -1249,7 +1253,10 @@ class TestRunService:
             return
         cancelled = await self._jobs.cancel_job(job_id, reason)
         if cancelled is None:
-            raise KeyError(f"Tool job not found while cancelling: {job_id}")
+            logger.warning(
+                "test_run_cancelled_tool_job_disappeared",
+                extra={"tool_job_id": job_id},
+            )
 
     async def _emit_for_item(self, item: TestRunItemRecord, event_type: str) -> None:
         run = await self._get_run_record(item.run_id)

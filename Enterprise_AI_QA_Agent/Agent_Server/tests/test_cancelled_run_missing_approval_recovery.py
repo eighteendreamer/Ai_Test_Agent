@@ -5,17 +5,25 @@ from uuid import uuid4
 
 import pytest
 
+from src.application.runtime.tool_job_service import ToolJobService
 from src.application.test_runs.run_store import PostgresTestRunStore
 from src.core.config import Settings
 from src.domain.models import SessionRecord
 from src.runtime.store import InMemorySessionStore
+from src.runtime.tool_job_store import InMemoryToolJobStore
 from src.schemas.run_management import (
     TestRunItemRecord as _RunItemRecord,
 )
 from src.schemas.run_management import (
     TestRunRecord as _RunRecord,
 )
-from src.schemas.session import RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import (
+    RuntimeMode,
+    SessionMode,
+    SessionStatus,
+    ToolApprovalRequest,
+    ToolApprovalStatus,
+)
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_live_postgres_concurrency import _create_claim_tables, _drop_tables
 from tests.test_test_run_regression import _ApprovalJobs, _components
@@ -26,7 +34,8 @@ from tests.test_test_run_regression import _ApprovalJobs, _components
     reason="set RUN_LIVE_POSTGRES_TESTS=1 to use local PostgreSQL",
 )
 @pytest.mark.asyncio
-async def test_postgres_restart_cleans_cancelled_job_when_approval_is_gone() -> None:
+@pytest.mark.parametrize("missing_resource", ["approval", "job"])
+async def test_postgres_restart_cleans_cancelled_item_with_missing_resource(missing_resource) -> None:
     suffix = uuid4().hex[:10]
     tables = [f"live_cancel_{kind}_{suffix}" for kind in ("run", "item", "attempt")]
     settings = Settings()
@@ -54,7 +63,15 @@ async def test_postgres_restart_cleans_cancelled_job_when_approval_is_gone() -> 
         session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive,
         mode_key="security_testing", created_at=now, updated_at=now,
     ))
-    jobs = _ApprovalJobs()
+    if missing_resource == "job":
+        await sessions.save_approval(run.session_id, ToolApprovalRequest(
+            id="approval-1", session_id=run.session_id,
+            tool_key="security-scan-runner", tool_name="Security Scan Runner",
+            reason="high risk profile", created_at=now,
+        ))
+        jobs = ToolJobService(InMemoryToolJobStore())
+    else:
+        jobs = _ApprovalJobs()
     try:
         _create_claim_tables(settings)
         await store.create_run(run, [item])
@@ -65,7 +82,9 @@ async def test_postgres_restart_cleans_cancelled_job_when_approval_is_gone() -> 
         )[0]
         await store.start_item(claimed.id, attempt.lease_token, now)
         await store.mark_waiting_approval(
-            item.id, attempt.lease_token, "deleted-approval", "job-1", now,
+            item.id, attempt.lease_token,
+            "approval-1" if missing_resource == "job" else "deleted-approval",
+            "job-1", now,
         )
         await store.cancel_run(run.id, "operator cancelled before restart", now)
         service, _, _ = _components(store=store, session_store=sessions, tool_job_service=jobs)
@@ -75,6 +94,10 @@ async def test_postgres_restart_cleans_cancelled_job_when_approval_is_gone() -> 
         detail = await store.get_run(run.id)
         assert detail.items[0].status == "cancelled"
         assert detail.items[0].resource_cleanup_completed_at is not None
-        assert jobs.status == "cancelled"
+        if missing_resource == "job":
+            assert (await sessions.list_approvals(run.session_id))[0].status == ToolApprovalStatus.denied
+            assert await jobs.get_job("job-1") is None
+        else:
+            assert jobs.status == "cancelled"
     finally:
         _drop_tables(settings, list(reversed(tables)))

@@ -8,10 +8,12 @@ import pytest
 from fastapi import FastAPI
 
 from src.api.routes.run_management import router as run_router
+from src.application.runtime.tool_job_service import ToolJobService
 from src.application.test_runs.run_service import TestRunService as _RunService
 from src.application.test_runs.run_store import InMemoryTestRunStore
 from src.domain.models import SessionRecord
 from src.runtime.store import InMemorySessionStore
+from src.runtime.tool_job_store import InMemoryToolJobStore
 from src.schemas.case_management import (
     TestCaseAssertion as _CaseAssertion,
     TestCaseRecord as _CaseRecord,
@@ -1127,3 +1129,25 @@ async def test_initialize_does_not_fail_for_waiting_item_without_approval_record
     assert detail.items[0].status == "waiting_approval"
     assert detail.items[0].resource_cleanup_completed_at is None
     assert jobs.status == "waiting_approval"
+
+
+@pytest.mark.asyncio
+async def test_initialize_continues_cancelled_cleanup_when_tool_job_record_is_gone():
+    store = InMemoryTestRunStore()
+    run, _ = await _seed_waiting_approval(store)
+    await store.cancel_run(run.id, "operator cancelled before restart", datetime.now(timezone.utc))
+    sessions = InMemorySessionStore()
+    await sessions.save_approval(run.session_id, ToolApprovalRequest(
+        id="approval-1", session_id=run.session_id,
+        tool_key="security-scan-runner", tool_name="Security Scan Runner",
+        reason="high risk profile", created_at=datetime.now(timezone.utc),
+    ))
+    jobs = ToolJobService(InMemoryToolJobStore())
+    service, _, _ = _components(store=store, session_store=sessions, tool_job_service=jobs)
+
+    await service.initialize()
+
+    detail = await store.get_run(run.id)
+    assert detail.items[0].status == "cancelled"
+    assert detail.items[0].resource_cleanup_completed_at is not None
+    assert (await sessions.list_approvals(run.session_id))[0].status == ToolApprovalStatus.denied
