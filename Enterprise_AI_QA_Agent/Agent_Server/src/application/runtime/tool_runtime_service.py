@@ -1918,6 +1918,7 @@ class ToolRuntimeService:
         checks: list[dict[str, Any]] = []
         passed = 0
         failed = 0
+        unverified = 0
 
         if expected_status is not None:
             status_ok = response_status == expected_status
@@ -1951,13 +1952,13 @@ class ToolRuntimeService:
             checks.append(
                 {
                     "name": f"assertion:{len(checks)+1}",
-                    "passed": True,
+                    "passed": None,
                     "expected": assertion,
-                    "actual": "captured",
-                    "reason": "Assertion was captured for downstream verification.",
+                    "actual": None,
+                    "reason": "Free-text assertion was captured but not evaluated.",
                 }
             )
-            passed += 1
+            unverified += 1
 
         if not checks:
             return {
@@ -1967,18 +1968,18 @@ class ToolRuntimeService:
                 "checks": [],
                 "request": {"endpoint": endpoint, "method": method, "body": request_body},
                 "response": {"status": response_status, "body": response_body},
-                "metrics": {"check_count": 0, "passed": 0, "failed": 0},
+                "metrics": {"check_count": 0, "passed": 0, "failed": 0, "unverified": 0},
                 "artifacts": [],
             }
 
-        overall_ok = failed == 0
+        overall_ok = failed == 0 and unverified == 0
         status = "completed" if overall_ok else "partial"
         return {
             "status": status,
             "ok": overall_ok,
             "summary": (
                 f"Validated {len(checks)} API checks for {method} {endpoint or 'request'}; "
-                f"{passed} passed and {failed} failed."
+                f"{passed} passed, {failed} failed, and {unverified} unverified."
             ),
             "checks": checks,
             "request": {"endpoint": endpoint, "method": method, "body": request_body},
@@ -1987,6 +1988,7 @@ class ToolRuntimeService:
                 "check_count": len(checks),
                 "passed": passed,
                 "failed": failed,
+                "unverified": unverified,
             },
             "artifacts": [
                 {
@@ -1995,7 +1997,7 @@ class ToolRuntimeService:
                     "content": json.dumps({"checks": checks, "endpoint": endpoint, "method": method}, ensure_ascii=False, indent=2),
                 }
             ],
-            "error": None if overall_ok else "api_assertions_failed",
+            "error": "api_assertions_failed" if failed else "api_assertions_unverified" if unverified else None,
         }
 
     async def _run_cli_executor(

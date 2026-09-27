@@ -704,7 +704,7 @@ class ToolRegistry:
                             "assertions": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Free-form checks to include in the report.",
+                                "description": "Free-form checks to capture for later verification; not evaluated here.",
                             },
                         },
                     },
