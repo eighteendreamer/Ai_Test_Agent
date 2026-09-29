@@ -360,16 +360,31 @@ class TestModeIntentService:
         intent_key = "reporting" if self._contains_any(combined, self.REPORT_TOKENS) else "smoke_validation"
         confidence = 0.64 if suite_focus != "critical_path" else 0.56
         reasons = [f"Resolved smoke-testing focus as '{suite_focus}'."]
+        parameters: dict[str, Any] = {
+            "objective": message,
+            "suite_focus": suite_focus,
+            "target_url": self._first_text(context.get("target_url"), self._extract_url(message)),
+        }
+        smoke_action = self._first_text(context.get("smoke_action"))
+        if smoke_action in {"draft_plan", "revise_plan", "execute_approved_plan", "get_plan"}:
+            parameters["smoke_action"] = smoke_action
+        plan_id = self._first_text(context.get("plan_id"))
+        if plan_id:
+            parameters["plan_id"] = plan_id
+        plan_version = context.get("plan_version")
+        if isinstance(plan_version, int) and not isinstance(plan_version, bool) and plan_version > 0:
+            parameters["plan_version"] = plan_version
+        if isinstance(context.get("selected_case_ids"), list):
+            parameters["selected_case_ids"] = [
+                case_id for case_id in context["selected_case_ids"]
+                if isinstance(case_id, str) and case_id.strip()
+            ]
         return TestModeIntentState(
             mode_key=mode_key,
             intent_key=intent_key,
             confidence=confidence,
             reasons=reasons,
-            parameters={
-                "objective": message,
-                "suite_focus": suite_focus,
-                "target_url": self._first_text(context.get("target_url"), self._extract_url(message)),
-            },
+            parameters=parameters,
         )
 
     def _classify_code_review(

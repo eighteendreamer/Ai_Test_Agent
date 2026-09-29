@@ -33,7 +33,7 @@ const plans = computed(() => {
       return {
         jobId: job.id,
         planId: String(normalized.plan_id || ""),
-        version: Number(normalized.version || 1),
+        version: Number(normalized.version),
         title: String(normalized.title || "冒烟测试方案"),
         status: String(normalized.status || ""),
         targetUrl: String(normalized.target_url || ""),
@@ -42,7 +42,7 @@ const plans = computed(() => {
         cases,
       };
     })
-    .filter((item): item is NonNullable<typeof item> => Boolean(item?.planId))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item?.planId) && Number.isInteger(item.version) && item.version > 0)
     .slice(0, 3);
 });
 
@@ -51,10 +51,11 @@ watch(
   (items) => {
     const next = { ...selectedCasesByPlan.value };
     for (const plan of items) {
-      if (next[plan.planId]) {
+      const key = planSelectionKey(plan.planId, plan.version);
+      if (next[key]) {
         continue;
       }
-      next[plan.planId] = plan.cases
+      next[key] = plan.cases
         .filter((item) => item.selected !== false && item.execution_eligible !== false)
         .map((item) => String(item.case_id || ""))
         .filter(Boolean);
@@ -87,32 +88,38 @@ function caseId(item: Record<string, unknown>) {
   return String(item.case_id || "");
 }
 
-function isSelected(planId: string, id: string) {
-  return (selectedCasesByPlan.value[planId] || []).includes(id);
+function planSelectionKey(planId: string, version: number) {
+  return JSON.stringify([planId, version]);
 }
 
-function toggleCase(planId: string, id: string) {
-  const current = selectedCasesByPlan.value[planId] || [];
+function isSelected(planId: string, version: number, id: string) {
+  return (selectedCasesByPlan.value[planSelectionKey(planId, version)] || []).includes(id);
+}
+
+function toggleCase(planId: string, version: number, id: string) {
+  const key = planSelectionKey(planId, version);
+  const current = selectedCasesByPlan.value[key] || [];
   selectedCasesByPlan.value = {
     ...selectedCasesByPlan.value,
-    [planId]: current.includes(id)
+    [key]: current.includes(id)
       ? current.filter((item) => item !== id)
       : [...current, id],
   };
 }
 
-async function confirmSelected(planId: string) {
-  const selected = selectedCasesByPlan.value[planId] || [];
+async function confirmSelected(planId: string, version: number) {
+  const selected = selectedCasesByPlan.value[planSelectionKey(planId, version)] || [];
   if (!selected.length) {
     return;
   }
   await sessionStore.sendMessage(
-    `确认执行冒烟测试方案 ${planId}，只执行以下勾选用例：${selected.join(", ")}`,
+    `确认执行冒烟测试方案 ${planId} v${version}，只执行以下勾选用例：${selected.join(", ")}`,
     [],
     {
       context: {
         smoke_action: "execute_approved_plan",
         plan_id: planId,
+        plan_version: version,
         selected_case_ids: selected,
       },
     },
@@ -191,9 +198,9 @@ async function confirmSelected(planId: string) {
           <label v-for="item in plan.cases" :key="caseId(item)" class="smoke-case-row">
             <input
               type="checkbox"
-              :checked="isSelected(plan.planId, caseId(item))"
+              :checked="isSelected(plan.planId, plan.version, caseId(item))"
               :disabled="item.execution_eligible === false"
-              @change="toggleCase(plan.planId, caseId(item))"
+              @change="toggleCase(plan.planId, plan.version, caseId(item))"
             >
             <span>
               <strong>{{ String(item.title || "未命名用例") }}</strong>
@@ -209,8 +216,8 @@ async function confirmSelected(planId: string) {
           <button
             type="button"
             class="home-tool-btn"
-            :disabled="!(selectedCasesByPlan[plan.planId] || []).length || sessionStore.isBusy"
-            @click="confirmSelected(plan.planId)"
+            :disabled="!(selectedCasesByPlan[planSelectionKey(plan.planId, plan.version)] || []).length || sessionStore.isBusy"
+            @click="confirmSelected(plan.planId, plan.version)"
           >
             确认执行所选用例
           </button>

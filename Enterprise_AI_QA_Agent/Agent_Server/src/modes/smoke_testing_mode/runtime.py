@@ -14,7 +14,10 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.documents.api_docs_service import ApiDocsService
 from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
 from src.core.config import Settings
-from src.modes.smoke_testing_mode.catalog_store import SmokeCatalogStore
+from src.modes.smoke_testing_mode.catalog_store import (
+    SmokeCatalogStore,
+    SmokePlanVersionConflictError,
+)
 from src.modes.smoke_testing_mode.contracts import (
     SmokeApiStep,
     SmokeAssertion,
@@ -174,7 +177,26 @@ class SmokeTestingModeRuntime:
     async def _revise_plan(
         self, arguments: dict[str, Any], context: Any, init_warnings: list[str]
     ) -> dict[str, Any]:
-        plan, warnings = await self._load_plan_from_args(arguments)
+        plan_id = str(arguments.get("plan_id") or "").strip()
+        requested_version = arguments.get("plan_version")
+        if (
+            not plan_id
+            or not isinstance(requested_version, int)
+            or isinstance(requested_version, bool)
+            or requested_version < 1
+        ):
+            return {
+                "status": "failed", "ok": False,
+                "summary": "修订方案需要已保存的 plan_id 和正整数 plan_version。",
+                "error": "plan_version_required",
+            }
+        if "plan" in arguments:
+            return {
+                "status": "failed", "ok": False,
+                "summary": "修订方案必须从已保存版本开始，不能提交内联方案。",
+                "error": "inline_plan_not_allowed",
+            }
+        plan, warnings = await self._plan_store.load_plan(plan_id)
         if plan is None:
             return {
                 "status": "failed",
@@ -182,6 +204,18 @@ class SmokeTestingModeRuntime:
                 "summary": "未找到可修订的冒烟测试方案，请先生成方案。",
                 "error": "plan_not_found",
                 "storage_warnings": warnings,
+            }
+        if plan.version != requested_version:
+            logger.warning(
+                "smoke_plan_revision_rejected",
+                extra={"plan_id": plan_id, "requested_version": requested_version, "current_version": plan.version},
+            )
+            return {
+                "status": "failed", "ok": False,
+                "summary": "方案版本已变化，请加载最新版本后重新审查。",
+                "error": "plan_version_conflict",
+                "plan_id": plan_id,
+                "plan_version": plan.version,
             }
         user_revision = str(arguments.get("user_revision") or getattr(context, "user_message", "") or "").strip()
         if not user_revision:
@@ -194,6 +228,8 @@ class SmokeTestingModeRuntime:
         plan.version += 1
         plan.status = "awaiting_user_confirmation"
         plan.updated_at = utc_now()
+        plan.rustfs_uris.pop("approved_plan_uri", None)
+        plan.rustfs_uris.pop("selected_cases_uri", None)
         plan.revisions.append(
             SmokePlanRevision(
                 user_revision=user_revision,
@@ -202,11 +238,32 @@ class SmokeTestingModeRuntime:
         )
         self._apply_revision(plan, user_revision, arguments)
         plan.risk_summary = self._risk_summary(plan.cases)
-        plan, storage_warnings = await self._plan_store.save_plan_version(
-            plan,
-            revision_reason="user_revision",
-            user_revision=user_revision,
-        )
+        try:
+            plan, storage_warnings = await self._plan_store.save_plan_version(
+                plan,
+                revision_reason="user_revision",
+                user_revision=user_revision,
+            )
+        except SmokePlanVersionConflictError:
+            logger.warning(
+                "smoke_plan_revision_conflict",
+                extra={"plan_id": plan_id, "requested_version": requested_version},
+            )
+            return {
+                "status": "failed", "ok": False,
+                "summary": "方案在保存时被其他修订更新，请加载最新版本后重试。",
+                "error": "plan_version_conflict",
+                "plan_id": plan_id,
+            }
+        if storage_warnings:
+            logger.error("smoke_plan_revision_storage_failed", extra={"plan_id": plan_id, "plan_version": plan.version})
+            return {
+                "status": "failed", "ok": False,
+                "summary": "方案版本未能完整保存，请加载方案确认持久状态。",
+                "error": "plan_storage_failed",
+                "plan_id": plan_id,
+                "storage_warnings": [*init_warnings, *warnings, *storage_warnings],
+            }
         return self._plan_output(
             plan,
             status="partial",
@@ -274,10 +331,13 @@ class SmokeTestingModeRuntime:
             selected_indices = set(self._int_list(arguments.get("selected_indices")))
             for idx, case in enumerate(plan.cases, start=1):
                 case.selected = idx in selected_indices
-        plan, approval_warnings = await self._plan_store.save_approved_plan(
-            plan,
-            selected_case_ids=[case.case_id for case in plan.cases if case.selected],
-        )
+        try:
+            plan, approval_warnings = await self._plan_store.save_approved_plan(
+                plan,
+                selected_case_ids=[case.case_id for case in plan.cases if case.selected],
+            )
+        except SmokePlanVersionConflictError:
+            return reject("plan_version_conflict", "方案在冻结前发生变化，请重新加载并确认。", warnings)
         if approval_warnings and not trusted_case_run:
             return reject("plan_freeze_failed", "方案冻结保存失败，未执行冒烟测试。", [*warnings, *approval_warnings])
         logger.info(

@@ -553,6 +553,10 @@ class InputOrchestratorService:
                 "objective": objective,
                 "suite_focus": str(parameters.get("suite_focus") or "").strip(),
                 "target_url": target_url,
+                "action": str(parameters.get("smoke_action") or "").strip(),
+                "plan_id": str(parameters.get("plan_id") or "").strip(),
+                "plan_version": parameters.get("plan_version"),
+                "selected_case_ids": list(parameters.get("selected_case_ids") or []),
             }
         elif mode_key == "compatibility_testing":
             compatibility_action = str(parameters.get("compatibility_action") or "draft_plan").strip() or "draft_plan"

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.domain.models import SessionRecord
 from src.graph.nodes.router import build_router_node
@@ -77,6 +78,43 @@ def test_smoke_request_contains_default_planning_skill():
     )
     assert request.mode_key == "smoke_testing"
     assert request.skill_keys == SMOKE_TESTING_SKILL_KEYS
+
+
+def test_smoke_confirmation_version_reaches_mode_intent_and_model_prompt():
+    session = SessionRecord(
+        id="smoke-session", title="smoke", status=SessionStatus.idle, session_mode=SessionMode.normal,
+        runtime_mode=RuntimeMode.interactive, mode_key="smoke_testing",
+        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    )
+    message = "确认执行冒烟测试方案 plan-1 v2，只执行 case-new"
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content=message,
+            mode_key="smoke_testing",
+            context={
+                "smoke_action": "execute_approved_plan",
+                "plan_id": "plan-1",
+                "plan_version": 2,
+                "selected_case_ids": ["case-new"],
+            },
+        ),
+    )
+    parameters = request.context["mode_intent"]["parameters"]
+    assert parameters["plan_id"] == "plan-1"
+    assert parameters["plan_version"] == 2
+    assert parameters["selected_case_ids"] == ["case-new"]
+    assert request.context["smoke_testing_request"]["plan_version"] == 2
+
+    state = _state(ModeRegistry().get("smoke_testing").model_dump(mode="python"))
+    state["user_message"] = message
+    state["normalized_input"] = message
+    state["context_bundle"] = request.context
+    prompt = PromptAssemblyService().build_for_turn(state, ["smoke-testing-agent"])
+    intent_section = next(section for section in prompt.runtime_message_sections if section.key == "detected_intent")
+    assert "'plan_id': 'plan-1'" in intent_section.content
+    assert "'plan_version': 2" in intent_section.content
+    assert "'selected_case_ids': ['case-new']" in intent_section.content
 
 
 @pytest.mark.asyncio

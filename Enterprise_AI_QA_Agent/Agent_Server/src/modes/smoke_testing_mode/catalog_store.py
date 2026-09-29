@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from src.core.config import Settings
@@ -13,6 +13,10 @@ from src.modes.smoke_testing_mode.contracts import (
     SmokeExecutionPlan,
     SmokeRunResult,
 )
+
+
+class SmokePlanVersionConflictError(ValueError):
+    """The plan changed since the caller loaded the previous version."""
 
 
 class SmokeCatalogStore:
@@ -242,6 +246,14 @@ class SmokeCatalogStore:
                         approved_plan_uri = COALESCE(NULLIF(EXCLUDED.approved_plan_uri, ''), {self.plan_table}.approved_plan_uri),
                         metadata = EXCLUDED.metadata,
                         updated_at = EXCLUDED.updated_at
+                    WHERE {self.plan_table}.current_version = EXCLUDED.current_version
+                      AND (
+                          {self.plan_table}.approved_version IS DISTINCT FROM EXCLUDED.approved_version
+                          OR (
+                              {self.plan_table}.metadata - 'rustfs_uris' - 'created_at' - 'updated_at'
+                              = EXCLUDED.metadata - 'rustfs_uris' - 'created_at' - 'updated_at'
+                          )
+                      )
                     """,
                     (
                         plan.plan_id,
@@ -261,6 +273,10 @@ class SmokeCatalogStore:
                         now,
                     ),
                 )
+                if cur.rowcount != 1:
+                    raise SmokePlanVersionConflictError(
+                        f"Smoke plan {plan.plan_id} version {plan.version} changed before approval."
+                    )
 
     def _save_plan_version_sync(
         self,
@@ -270,9 +286,51 @@ class SmokeCatalogStore:
         revision_reason: str,
         user_revision: str,
     ) -> None:
+        now = datetime.now(UTC)
         selected_count = sum(1 for item in plan.cases if item.selected)
+        metadata = json.dumps(make_json_safe(plan.model_dump(mode="json")), ensure_ascii=False)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                if plan.version == 1:
+                    cur.execute(
+                        f"""
+                        INSERT INTO {self.plan_table} (
+                            plan_id, project_scope, target_url, title, status, current_version,
+                            approved_version, selected_case_count, total_case_count, plan_uri,
+                            approved_plan_uri, created_by_session_id, metadata, created_at, updated_at
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s,
+                            NULL, %s, %s, %s,
+                            '', '', %s::jsonb, %s, %s
+                        )
+                        ON CONFLICT (plan_id) DO NOTHING
+                        """,
+                        (
+                            plan.plan_id, plan.project_scope, plan.target_url, plan.title,
+                            plan.status, plan.version, selected_count, len(plan.cases),
+                            plan_uri, metadata, now, now,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        UPDATE {self.plan_table}
+                        SET project_scope = %s, target_url = %s, title = %s,
+                            status = %s, current_version = %s,
+                            selected_case_count = %s, total_case_count = %s,
+                            plan_uri = %s, metadata = %s::jsonb, updated_at = %s
+                        WHERE plan_id = %s AND current_version = %s
+                        """,
+                        (
+                            plan.project_scope, plan.target_url, plan.title, plan.status,
+                            plan.version, selected_count, len(plan.cases), plan_uri,
+                            metadata, now, plan.plan_id, plan.version - 1,
+                        ),
+                    )
+                if cur.rowcount != 1:
+                    raise SmokePlanVersionConflictError(
+                        f"Smoke plan {plan.plan_id} cannot advance to version {plan.version}."
+                    )
                 cur.execute(
                     f"""
                     INSERT INTO {self.version_table} (
@@ -284,14 +342,6 @@ class SmokeCatalogStore:
                         %s, %s, %s, %s,
                         %s::jsonb, %s
                     )
-                    ON CONFLICT (plan_id, version) DO UPDATE SET
-                        revision_reason = EXCLUDED.revision_reason,
-                        user_revision = EXCLUDED.user_revision,
-                        plan_uri = EXCLUDED.plan_uri,
-                        plan_md_uri = EXCLUDED.plan_md_uri,
-                        case_count = EXCLUDED.case_count,
-                        selected_case_count = EXCLUDED.selected_case_count,
-                        risk_summary = EXCLUDED.risk_summary
                     """,
                     (
                         f"{plan.plan_id}_v{plan.version}",
@@ -304,7 +354,7 @@ class SmokeCatalogStore:
                         len(plan.cases),
                         selected_count,
                         json.dumps(make_json_safe(plan.risk_summary), ensure_ascii=False),
-                        datetime.now(timezone.utc),
+                        now,
                     ),
                 )
 

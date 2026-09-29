@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import uuid4
 
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.infrastructure.storage_utils import make_json_safe
-from src.modes.smoke_testing_mode.catalog_store import SmokeCatalogStore
+from src.modes.smoke_testing_mode.catalog_store import (
+    SmokeCatalogStore,
+    SmokePlanVersionConflictError,
+)
 from src.modes.smoke_testing_mode.contracts import (
     RegressionCandidateCase,
     SmokeExecutionPlan,
@@ -37,15 +41,17 @@ class SmokePlanStore:
         user_revision: str = "",
     ) -> tuple[SmokeExecutionPlan, list[str]]:
         warnings: list[str] = []
-        json_name = f"plan.v{plan.version}.json"
-        md_name = f"plan.v{plan.version}.md"
+        # An unsuccessful concurrent catalog write must not replace an earlier version's objects.
+        artifact_id = uuid4().hex
+        json_name = f"plan.v{plan.version}.{artifact_id}.json"
+        md_name = f"plan.v{plan.version}.{artifact_id}.md"
         json_uri = ""
         md_uri = ""
         try:
             json_uri = await self._store_json(plan, json_name, plan.model_dump(mode="json"))
             md_uri = await self._store_text(plan, md_name, self.plan_markdown(plan), "text/markdown")
-            plan.rustfs_uris[json_name] = json_uri
-            plan.rustfs_uris[md_name] = md_uri
+            plan.rustfs_uris[f"plan.v{plan.version}.json"] = json_uri
+            plan.rustfs_uris[f"plan.v{plan.version}.md"] = md_uri
             plan.rustfs_uris["plan_uri"] = json_uri
             plan.rustfs_uris["plan_md_uri"] = md_uri
         except Exception as exc:
@@ -53,7 +59,6 @@ class SmokePlanStore:
 
         if self._catalog_store is not None:
             try:
-                await self._catalog_store.save_plan(plan)
                 await self._catalog_store.save_plan_version(
                     plan,
                     plan_uri=json_uri,
@@ -61,6 +66,8 @@ class SmokePlanStore:
                     revision_reason=revision_reason,
                     user_revision=user_revision,
                 )
+            except SmokePlanVersionConflictError:
+                raise
             except Exception as exc:
                 warnings.append(f"PostgreSQL 登记方案版本失败：{exc}")
         return plan, warnings
@@ -72,15 +79,16 @@ class SmokePlanStore:
             for case in plan.cases:
                 case.selected = case.case_id in selected
         plan.status = "approved_for_execution"
+        artifact_id = uuid4().hex
         try:
             plan.rustfs_uris["approved_plan_uri"] = await self._store_json(
                 plan,
-                "approved-plan.json",
+                f"approved-plan.{artifact_id}.json",
                 plan.model_dump(mode="json"),
             )
             plan.rustfs_uris["selected_cases_uri"] = await self._store_json(
                 plan,
-                "selected-cases.json",
+                f"selected-cases.{artifact_id}.json",
                 [case.model_dump(mode="json") for case in plan.cases if case.selected],
             )
         except Exception as exc:
@@ -88,6 +96,8 @@ class SmokePlanStore:
         if self._catalog_store is not None:
             try:
                 await self._catalog_store.save_plan(plan)
+            except SmokePlanVersionConflictError:
+                raise
             except Exception as exc:
                 warnings.append(f"PostgreSQL 登记冻结方案失败：{exc}")
         return plan, warnings
