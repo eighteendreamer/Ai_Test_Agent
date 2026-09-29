@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -28,9 +28,11 @@ from src.schemas.run_management import (
     TestRunItemRecord as _RunItemRecord,
     TestRunRecord as _RunRecord,
 )
-from src.schemas.session import SessionSnapshot, ToolApprovalStatus
+from src.schemas.session import SessionSnapshot, ToolApprovalStatus, VerificationResult, VerificationStatus
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.runtime.resource_lease_manager import ResourceLease
+
+pytest_plugins = ["tests.test_session_event_delivery"]
 
 
 def test_extract_run_item_checkpoint_requires_binding_and_supports_mode_state():
@@ -112,6 +114,94 @@ def _records():
         created_at=now,
     )
     return now, run, item, case, version
+
+
+@pytest.mark.asyncio
+async def test_concurrent_run_item_verifications_keep_both_session_results(stores, monkeypatch):
+    writer, reader, session_id, _ = stores
+    now, initial_run, first_item, case, version = _records()
+    run = initial_run.model_copy(update={"session_id": session_id})
+    second_item = first_item.model_copy(update={"id": "item-2", "lease_token": "lease-2"})
+    items = {item.id: item for item in (first_item, second_item)}
+
+    class Runs:
+        async def start_item(self, item_id, payload):
+            assert payload.lease_token == items[item_id].lease_token
+            return items[item_id].model_copy(update={"status": "running"})
+
+        async def get_record(self, run_id):
+            assert run_id == run.id
+            return run
+
+        async def complete_item(self, item_id, payload):
+            return _CaseResultRecord(
+                id=f"result-{item_id}", run_id=run.id, run_item_id=item_id,
+                case_id=case.id, case_version_id=version.id,
+                attempt_id=f"attempt-{item_id}", attempt_no=1,
+                status=payload.status, summary=payload.summary,
+                verification_ids=payload.verification_ids,
+                payload_hash="b" * 64, created_at=now,
+            )
+
+    class Cases:
+        async def get_case(self, case_id):
+            return case
+
+        async def get_version(self, version_id):
+            return version
+
+    class Adapter:
+        async def execute(self, **kwargs):
+            item = kwargs["item"]
+            verification = VerificationResult(
+                id=f"verification-{item.id}", session_id=session_id,
+                turn_id=f"turn-{item.id}", trace_id=f"trace-{item.id}",
+                verifier="api_assertions", status=VerificationStatus.passed,
+                summary=f"verified {item.id}", created_at=now,
+            )
+            return CaseExecutionOutcome(
+                completion=RunItemCompleteRequest(
+                    lease_token=item.lease_token, status="passed",
+                    summary=f"completed {item.id}", verification_ids=[verification.id],
+                ),
+                tool_record=None, verification_results=[verification],
+            )
+
+    original_get = writer.get_session
+    read_count = 0
+    both_read = asyncio.Event()
+
+    async def concurrent_get(requested_id):
+        nonlocal read_count
+        session = await original_get(requested_id)
+        read_count += 1
+        if read_count <= 2:
+            if read_count == 2:
+                both_read.set()
+            await both_read.wait()
+        return session
+
+    monkeypatch.setattr(writer, "get_session", concurrent_get)
+    service = _ExecutionService(
+        run_service=Runs(), test_case_service=Cases(), adapter=Adapter(),
+        session_store=writer,
+    )
+    await asyncio.gather(*(
+        service.execute_item(item.id, RunItemExecuteRequest(lease_token=item.lease_token))
+        for item in items.values()
+    ))
+
+    persisted = await (original_get(session_id) if reader is writer else reader.get_session(session_id))
+    assert persisted is not None
+    verifications = persisted.metadata.get("verification_results", [])
+    assert {value["id"] for value in verifications} == {
+        "verification-item-1", "verification-item-2",
+    }
+    events = [event for event in await reader.list_events(session_id)
+              if event.type == "verification.completed"]
+    assert {event.payload["run_item_id"] for event in events} == set(items)
+    if reader is writer:
+        assert all(event.timestamp.utcoffset() == timedelta(0) for event in events)
 
 
 @pytest.mark.asyncio

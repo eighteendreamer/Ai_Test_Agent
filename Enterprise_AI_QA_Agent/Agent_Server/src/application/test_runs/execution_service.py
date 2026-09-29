@@ -1128,28 +1128,41 @@ class TestRunExecutionService:
         if self._sessions is None or not run.session_id:
             return
         try:
-            session = await self._sessions.get_session(run.session_id)
-            if session is None:
-                raise KeyError(f"Session not found: {run.session_id}")
-            existing = session.metadata.get("verification_results", [])
-            if not isinstance(existing, list):
-                existing = []
             serialized = [item.model_dump(mode="python") for item in verifications]
-            session.metadata["verification_results"] = [*existing, *serialized]
-            await self._sessions.save_session(session)
-            await self._sessions.append_event(
+            event = ExecutionEvent(
+                type="verification.completed",
+                session_id=run.session_id,
+                timestamp=datetime.now(timezone.utc),
+                payload={
+                    "run_id": run.id,
+                    "run_item_id": result.run_item_id,
+                    "result_id": result.id,
+                    "verification_ids": [item.id for item in verifications],
+                },
+            )
+
+            def append_verifications(metadata: dict) -> bool:
+                existing = metadata.get("verification_results", [])
+                if not isinstance(existing, list):
+                    existing = []
+                metadata["verification_results"] = [*existing, *serialized]
+                return True
+
+            if not await self._sessions.update_metadata_and_append_event(
                 run.session_id,
-                ExecutionEvent(
-                    type="verification.completed",
-                    session_id=run.session_id,
-                    timestamp=datetime.utcnow(),
-                    payload={
-                        "run_id": run.id,
-                        "run_item_id": result.run_item_id,
-                        "result_id": result.id,
-                        "verification_ids": [item.id for item in verifications],
-                    },
-                ),
+                append_verifications,
+                event,
+            ):
+                raise KeyError(f"Session not found: {run.session_id}")
+            logger.info(
+                "test_run_verification_session_projected",
+                extra={
+                    "run_id": run.id,
+                    "run_item_id": result.run_item_id,
+                    "result_id": result.id,
+                    "session_id": run.session_id,
+                    "verification_count": len(serialized),
+                },
             )
         except Exception:
             # Result.actual 已持久化完整 Verification；会话投影失败必须留日志供补偿任务处理。
