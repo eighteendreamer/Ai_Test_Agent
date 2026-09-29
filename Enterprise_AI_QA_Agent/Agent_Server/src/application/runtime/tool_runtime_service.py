@@ -5261,24 +5261,24 @@ class ToolRuntimeService:
         requested_id = str(arguments.get("attachment_id") or "").strip()
         requested_uri = str(arguments.get("uri") or "").strip()
         requested_name = str(arguments.get("name") or "").strip().lower()
+        if not (requested_id or requested_uri or requested_name):
+            return attachments[0] if attachments else None
 
         def matches(item: dict[str, Any]) -> bool:
             metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
             attachment_id = str(metadata.get("attachment_id") or item.get("id") or "").strip()
             item_uri = str(item.get("uri") or "").strip()
             item_name = str(item.get("name") or "").strip().lower()
-            if requested_id and attachment_id == requested_id:
-                return True
-            if requested_uri and item_uri == requested_uri:
-                return True
-            if requested_name and item_name == requested_name:
-                return True
-            return False
+            return (
+                (not requested_id or attachment_id == requested_id)
+                and (not requested_uri or item_uri == requested_uri)
+                and (not requested_name or item_name == requested_name)
+            )
 
         for item in attachments:
             if matches(item):
                 return item
-        return attachments[0] if attachments else None
+        return None
 
     def _attachment_summary(self, item: dict[str, Any]) -> dict[str, Any]:
         metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
