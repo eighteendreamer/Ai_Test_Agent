@@ -1,37 +1,40 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import asyncio
 import json
-from pathlib import Path
 import secrets
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from time import perf_counter
 
 import httpx
-
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
 from src.application.model_clients import resolve_client
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.settings.channel_gateway_policy import ChannelGatewayPolicyService
 from src.core.config import Settings
 from src.domain.channel_strategies import channel_strategy_factory
-from src.infrastructure.channel_pairing_store import ChannelPairingSessionStore
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
-from src.infrastructure.email_config_store import AGENT_MAIL_PROVIDERS, MySQLEmailConfigStore
+from src.infrastructure.channel_pairing_store import ChannelPairingSessionStore
+from src.infrastructure.email_config_store import (
+    AGENT_MAIL_PROVIDERS,
+    MySQLEmailConfigStore,
+)
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.schemas.channel_config import (
     ChannelAdvancedSettings,
+    ChannelConfigActionResponse,
+    ChannelConfigCreateRequest,
+    ChannelConfigPublic,
+    ChannelConfigUpdateRequest,
     ChannelGatewayDecision,
     ChannelGatewaySessionReleaseRequest,
     ChannelGatewaySessionReleaseResponse,
     ChannelInboundMessage,
-    ChannelConfigActionResponse,
-    ChannelConfigCreateRequest,
     ChannelPairingApproveRequest,
     ChannelPairingRequestPublic,
     ChannelPairingSessionPublic,
     ChannelPairingStartRequest,
-    ChannelConfigPublic,
-    ChannelConfigUpdateRequest,
 )
 from src.schemas.email_config import (
     EmailConfigActionResponse,
@@ -109,7 +112,7 @@ class SettingsService:
         )
 
     async def test_model_config_connection(self, model_name: str):
-        record = self._model_config_store.get_by_name(model_name)
+        record = await asyncio.to_thread(self._model_config_store.get_by_name, model_name)
         public_item = self._model_config_store.to_public(record)
         tests_embedding = "embedding_retrieval" in record.applications
         tests_task = "task_execution" in record.applications

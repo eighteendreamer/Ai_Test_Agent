@@ -7,22 +7,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
-
 from src.schemas.channel_config import (
     ChannelAdvancedSettings,
-    ChannelGatewaySessionReleaseRequest,
-    ChannelInboundMessage,
     ChannelConfigCreateRequest,
     ChannelConfigUpdateRequest,
+    ChannelGatewaySessionReleaseRequest,
+    ChannelInboundMessage,
     ChannelPairingApproveRequest,
     ChannelPairingStartRequest,
 )
 from src.schemas.email_config import EmailConfigCreateRequest, EmailConfigUpdateRequest
 from src.schemas.settings import ModelConfigUpdateRequest
-
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -98,7 +96,7 @@ async def list_email_configs(request: Request):
 @router.post("/email")
 async def create_email_config(payload: EmailConfigCreateRequest, request: Request):
     try:
-        return request.app.state.settings_service.create_email_config(payload)
+        return await asyncio.to_thread(request.app.state.settings_service.create_email_config, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -106,7 +104,7 @@ async def create_email_config(payload: EmailConfigCreateRequest, request: Reques
 @router.patch("/email/{config_id}")
 async def update_email_config(config_id: int, payload: EmailConfigUpdateRequest, request: Request):
     try:
-        return request.app.state.settings_service.update_email_config(config_id, payload)
+        return await asyncio.to_thread(request.app.state.settings_service.update_email_config, config_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Email channel '{config_id}' not found.") from exc
     except ValueError as exc:
@@ -116,7 +114,7 @@ async def update_email_config(config_id: int, payload: EmailConfigUpdateRequest,
 @router.post("/email/{config_id}/activate")
 async def activate_email_config(config_id: int, request: Request):
     try:
-        return request.app.state.settings_service.activate_email_config(config_id)
+        return await asyncio.to_thread(request.app.state.settings_service.activate_email_config, config_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Email channel '{config_id}' not found.") from exc
 
@@ -124,53 +122,53 @@ async def activate_email_config(config_id: int, request: Request):
 @router.delete("/email/{config_id}")
 async def delete_email_config(config_id: int, request: Request):
     try:
-        return request.app.state.settings_service.delete_email_config(config_id)
+        return await asyncio.to_thread(request.app.state.settings_service.delete_email_config, config_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Email channel '{config_id}' not found.") from exc
 
 
 @router.get("/channels")
 async def list_channel_configs(request: Request):
-    return request.app.state.settings_service.list_channel_configs()
+    return await asyncio.to_thread(request.app.state.settings_service.list_channel_configs)
 
 
 @router.get("/channels/advanced")
 async def get_channel_advanced_settings(request: Request):
-    return request.app.state.settings_service.get_channel_advanced_settings()
+    return await asyncio.to_thread(request.app.state.settings_service.get_channel_advanced_settings)
 
 
 @router.put("/channels/advanced")
 async def update_channel_advanced_settings(payload: ChannelAdvancedSettings, request: Request):
-    return request.app.state.settings_service.update_channel_advanced_settings(payload)
+    return await asyncio.to_thread(request.app.state.settings_service.update_channel_advanced_settings, payload)
 
 
 @router.post("/channels/gateway/evaluate")
 async def evaluate_channel_inbound(payload: ChannelInboundMessage, request: Request):
-    return request.app.state.settings_service.evaluate_channel_inbound(payload)
+    return await asyncio.to_thread(request.app.state.settings_service.evaluate_channel_inbound, payload)
 
 
 @router.get("/channels/gateway/pairing")
 async def list_channel_pairing_requests(request: Request):
-    return request.app.state.settings_service.list_channel_pairing_requests()
+    return await asyncio.to_thread(request.app.state.settings_service.list_channel_pairing_requests)
 
 
 @router.post("/channels/gateway/pairing/approve")
 async def approve_channel_pairing(payload: ChannelPairingApproveRequest, request: Request):
     try:
-        return request.app.state.settings_service.approve_channel_pairing(payload)
+        return await asyncio.to_thread(request.app.state.settings_service.approve_channel_pairing, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Pairing request not found or expired.") from exc
 
 
 @router.post("/channels/gateway/session/release")
 async def release_channel_gateway_session(payload: ChannelGatewaySessionReleaseRequest, request: Request):
-    return request.app.state.settings_service.release_channel_session(payload)
+    return await asyncio.to_thread(request.app.state.settings_service.release_channel_session, payload)
 
 
 @router.post("/channels")
 async def create_channel_config(payload: ChannelConfigCreateRequest, request: Request):
     try:
-        return request.app.state.settings_service.create_channel_config(payload)
+        return await asyncio.to_thread(request.app.state.settings_service.create_channel_config, payload)
     except ValueError as exc:
         detail = str(exc)
         status_code = 409 if "already exists" in detail else 400
@@ -180,7 +178,7 @@ async def create_channel_config(payload: ChannelConfigCreateRequest, request: Re
 @router.patch("/channels/{config_id}")
 async def update_channel_config(config_id: int, payload: ChannelConfigUpdateRequest, request: Request):
     try:
-        return request.app.state.settings_service.update_channel_config(config_id, payload)
+        return await asyncio.to_thread(request.app.state.settings_service.update_channel_config, config_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Communication channel '{config_id}' not found.") from exc
     except ValueError as exc:
@@ -192,7 +190,7 @@ async def update_channel_config(config_id: int, payload: ChannelConfigUpdateRequ
 @router.delete("/channels/{config_id}")
 async def delete_channel_config(config_id: int, request: Request):
     try:
-        return request.app.state.settings_service.delete_channel_config(config_id)
+        return await asyncio.to_thread(request.app.state.settings_service.delete_channel_config, config_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Communication channel '{config_id}' not found.") from exc
 
@@ -200,7 +198,8 @@ async def delete_channel_config(config_id: int, request: Request):
 @router.post("/channels/{domain}/pairing/start")
 async def start_channel_pairing(domain: str, payload: ChannelPairingStartRequest, request: Request):
     try:
-        return request.app.state.settings_service.start_channel_pairing(
+        return await asyncio.to_thread(
+            request.app.state.settings_service.start_channel_pairing,
             domain,
             payload,
             str(request.base_url),
@@ -212,7 +211,7 @@ async def start_channel_pairing(domain: str, payload: ChannelPairingStartRequest
 @router.get("/channels/{domain}/pairing/active")
 async def get_active_channel_pairing(domain: str, request: Request):
     try:
-        return request.app.state.settings_service.get_active_channel_pairing(domain)
+        return await asyncio.to_thread(request.app.state.settings_service.get_active_channel_pairing, domain)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -220,7 +219,7 @@ async def get_active_channel_pairing(domain: str, request: Request):
 @router.get("/channels/pairing/{session_id}")
 async def get_channel_pairing(session_id: str, request: Request):
     try:
-        return request.app.state.settings_service.get_channel_pairing(session_id)
+        return await asyncio.to_thread(request.app.state.settings_service.get_channel_pairing, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Pairing session not found.") from exc
     except ValueError as exc:
@@ -230,7 +229,7 @@ async def get_channel_pairing(session_id: str, request: Request):
 @router.get("/channels/pairing/{session_id}/mobile", response_class=HTMLResponse)
 async def channel_pairing_mobile_page(session_id: str, request: Request):
     try:
-        session = request.app.state.settings_service.get_channel_pairing(session_id)
+        session = await asyncio.to_thread(request.app.state.settings_service.get_channel_pairing, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Pairing session not found.") from exc
     except ValueError as exc:
@@ -288,7 +287,11 @@ async def channel_pairing_mobile_page(session_id: str, request: Request):
 @router.post("/channels/pairing/{session_id}/confirm")
 async def confirm_channel_pairing(session_id: str, request: Request, device_name: str | None = None):
     try:
-        return request.app.state.settings_service.confirm_channel_pairing(session_id, device_name=device_name)
+        return await asyncio.to_thread(
+            request.app.state.settings_service.confirm_channel_pairing,
+            session_id,
+            device_name=device_name,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Pairing session not found.") from exc
     except ValueError as exc:
@@ -350,7 +353,7 @@ def _write_general_settings(data: dict[str, Any]) -> None:
 @router.get("/general")
 async def get_general_settings(request: Request):
     """Read the current general settings (workspace preferences)."""
-    stored = _read_general_settings()
+    stored = await asyncio.to_thread(_read_general_settings)
     if not stored:
         return GeneralSettingsPayload().model_dump()
     return stored
@@ -363,7 +366,7 @@ async def save_general_settings(payload: GeneralSettingsPayload, request: Reques
 
     data = payload.model_dump()
     data["lastSavedAt"] = datetime.now(timezone.utc).isoformat()
-    _write_general_settings(data)
+    await asyncio.to_thread(_write_general_settings, data)
     return data
 
 
@@ -486,7 +489,13 @@ async def import_data(request: Request, file: UploadFile = File(...)):
             continue
 
         from src.domain.models import SessionRecord
-        from src.schemas.session import SessionStatus, SessionMode, RuntimeMode, MessageRole, ChatMessage
+        from src.schemas.session import (
+            ChatMessage,
+            MessageRole,
+            RuntimeMode,
+            SessionMode,
+            SessionStatus,
+        )
 
         session = SessionRecord(
             id=sid,
@@ -512,7 +521,12 @@ async def import_data(request: Request, file: UploadFile = File(...)):
         )
         await store.save_session(session)
 
-        from src.schemas.session import ExecutionEvent, SessionSnapshot, ToolApprovalRequest, ToolApprovalStatus
+        from src.schemas.session import (
+            ExecutionEvent,
+            SessionSnapshot,
+            ToolApprovalRequest,
+            ToolApprovalStatus,
+        )
 
         for ev in (item.get("events") or []):
             await store.append_event(sid, ExecutionEvent(
