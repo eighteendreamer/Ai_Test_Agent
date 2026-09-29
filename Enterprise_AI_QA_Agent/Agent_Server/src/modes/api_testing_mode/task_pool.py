@@ -67,32 +67,26 @@ class ApiTaskPool:
         task = self._tasks.get(task_id)
         if task is not None:
             task.status = TASK_COMPLETED
-            self._release_dependents(task_id)
+            self._reconcile_dependencies()
 
     def mark_failed(self, task_id: str, error: str = "") -> None:
         task = self._tasks.get(task_id)
         if task is not None:
             task.status = TASK_FAILED
             task.last_error = error
-            self._skip_dependents(task_id)
+            self._reconcile_dependencies()
 
     def mark_skipped(self, task_id: str, reason: str = "") -> None:
         task = self._tasks.get(task_id)
         if task is not None:
             task.status = TASK_SKIPPED
             task.last_error = reason
-            self._skip_dependents(task_id)
+            task.dependency_skip_task_id = ""
+            self._reconcile_dependencies()
 
     def resolve_blocked(self) -> int:
         """Promote blocked tasks to ready if all their dependencies are satisfied."""
-        promoted = 0
-        for task in list(self._tasks.values()):
-            if task.status != TASK_BLOCKED:
-                continue
-            if self._dependencies_satisfied(task):
-                task.status = TASK_READY
-                promoted += 1
-        return promoted
+        return self._reconcile_dependencies()
 
     def summary(self) -> dict[str, int]:
         counts: dict[str, int] = {
@@ -112,30 +106,54 @@ class ApiTaskPool:
     # Internal
     # ------------------------------------------------------------------
 
-    def _dependencies_satisfied(self, task: ApiTestTask) -> bool:
+    def _reconcile_dependencies(self) -> int:
+        promoted = 0
+        changed = True
+        while changed:
+            changed = False
+            for task in self._tasks.values():
+                if task.status not in {TASK_BLOCKED, TASK_PENDING, TASK_SKIPPED}:
+                    continue
+                if task.status == TASK_SKIPPED and not self._dependency_skip_source(task):
+                    continue
+                dependencies = [self._tasks[dep_id] for dep_id in task.depends_on if dep_id in self._tasks]
+                failed = next(
+                    (dep for dep in dependencies if dep.status in {TASK_FAILED, TASK_SKIPPED}),
+                    None,
+                )
+                if task.status == TASK_PENDING and failed is None:
+                    continue
+                if failed is not None:
+                    status = TASK_SKIPPED
+                    skip_source = failed.task_id
+                    error = f"Skipped because dependency {failed.task_id} failed."
+                elif all(dep.status == TASK_COMPLETED for dep in dependencies):
+                    status = TASK_READY
+                    skip_source = ""
+                    error = ""
+                else:
+                    status = TASK_BLOCKED
+                    skip_source = ""
+                    error = ""
+                if (task.status, task.dependency_skip_task_id, task.last_error) == (status, skip_source, error):
+                    continue
+                if status == TASK_READY:
+                    promoted += 1
+                task.status = status
+                task.dependency_skip_task_id = skip_source
+                task.last_error = error
+                changed = True
+        return promoted
+
+    @staticmethod
+    def _dependency_skip_source(task: ApiTestTask) -> str:
+        if task.dependency_skip_task_id:
+            return task.dependency_skip_task_id
+        # Campaigns saved before this field existed still carry the generated reason.
         for dep_id in task.depends_on:
-            dep = self._tasks.get(dep_id)
-            if dep is None:
-                continue
-            if dep.status != TASK_COMPLETED:
-                return False
-        return True
-
-    def _release_dependents(self, completed_task_id: str) -> None:
-        for task in self._tasks.values():
-            if task.status != TASK_BLOCKED:
-                continue
-            if completed_task_id in task.depends_on:
-                if self._dependencies_satisfied(task):
-                    task.status = TASK_READY
-
-    def _skip_dependents(self, failed_task_id: str) -> None:
-        for task in self._tasks.values():
-            if task.status in {TASK_BLOCKED, TASK_PENDING}:
-                if failed_task_id in task.depends_on:
-                    task.status = TASK_SKIPPED
-                    task.last_error = f"Skipped because dependency {failed_task_id} failed."
-                    self._skip_dependents(task.task_id)
+            if task.last_error == f"Skipped because dependency {dep_id} failed.":
+                return dep_id
+        return ""
 
 
 __all__ = ["ApiTaskPool"]

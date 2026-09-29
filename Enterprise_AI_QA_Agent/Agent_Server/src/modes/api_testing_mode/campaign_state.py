@@ -169,6 +169,7 @@ class ApiTestTask(BaseModel):
     status: str = "pending"
     attempts: int = 0
     last_error: str = ""
+    dependency_skip_task_id: str = ""
     started_at: str = ""
     completed_at: str = ""
     response_status: int | None = None

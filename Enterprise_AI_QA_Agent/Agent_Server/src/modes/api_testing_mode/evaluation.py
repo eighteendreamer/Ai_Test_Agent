@@ -222,7 +222,7 @@ class ApiTestingEvaluationPolicy:
         tasks: list[ApiTestTask],
         total_available: int,
     ) -> CoverageMetrics:
-        tested = [t for t in tasks if t.status != TASK_SKIPPED]
+        tested = [t for t in tasks if t.status in {TASK_COMPLETED, TASK_FAILED}]
         tested_capabilities = list({t.capability for t in tested if t.capability})
         all_capabilities = list({t.capability for t in tasks if t.capability})
         untested = [cap for cap in all_capabilities if cap not in tested_capabilities]
