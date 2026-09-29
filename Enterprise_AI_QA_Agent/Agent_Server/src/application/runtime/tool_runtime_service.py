@@ -1808,14 +1808,22 @@ class ToolRuntimeService:
         context: ToolExecutionContext,
     ) -> dict[str, Any]:
         query = str(arguments.get("query") or context.user_message).lower()
+
+        def mentions_any(tokens: list[str]) -> bool:
+            return any(
+                (re.search(rf"\b{re.escape(token)}\b", query) is not None)
+                if token.isascii() and " " not in token
+                else token in query
+                for token in tokens
+            )
+
         route = "coordinator"
         rationale = "Defaulted to coordinator for orchestration."
-        if any(token in query for token in ["browser", "page", "ui", "selenium", "playwright", "页面", "浏览器", "探索", "图谱"]):
+        if mentions_any(["browser", "page", "ui", "selenium", "playwright", "页面", "浏览器", "探索", "图谱"]):
             route = "ui-executor"
             rationale = "Detected browser or UI execution intent."
-        elif any(
-            token in query
-            for token in [
+        elif mentions_any(
+            [
                 "cli",
                 "terminal",
                 "shell",
@@ -1831,19 +1839,19 @@ class ToolRuntimeService:
         ):
             route = "ops-executor"
             rationale = "Detected terminal or command execution intent."
-        elif any(token in query for token in ["api", "payload", "response", "request"]):
+        elif mentions_any(["api", "payload", "response", "request"]):
             route = "api-verifier"
             rationale = "Detected API verification intent."
-        elif any(token in query for token in ["history", "session report", "conversation report", "previous questions", "历史", "会话报告", "对话报告", "之前问", "以前问"]):
+        elif mentions_any(["history", "session report", "conversation report", "previous questions", "历史", "会话报告", "对话报告", "之前问", "以前问"]):
             route = "report-analyst"
             rationale = "Detected session history or conversation reporting intent."
-        elif any(token in query for token in ["email", "message", "notify", "notification", "send"]):
+        elif mentions_any(["email", "message", "notify", "notification", "send"]):
             route = "communication-agent"
             rationale = "Detected messaging or notification intent."
-        elif any(token in query for token in ["report", "summary", "结论", "报告"]):
+        elif mentions_any(["report", "summary", "结论", "报告"]):
             route = "report-analyst"
             rationale = "Detected reporting intent."
-        elif any(token in query for token in ["plan", "case", "scenario", "用例", "测试点"]):
+        elif mentions_any(["plan", "case", "scenario", "用例", "测试点"]):
             route = "qa-planner"
             rationale = "Detected planning or case design intent."
 
