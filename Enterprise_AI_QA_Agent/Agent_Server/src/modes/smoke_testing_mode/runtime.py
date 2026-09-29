@@ -67,14 +67,13 @@ class SmokeTestingModeRuntime:
         )
         self._result_analyzer = SmokeResultAnalyzer()
         self._initialized = False
-        self._init_warnings: list[str] = []
 
     def set_memory_runtime_service(self, memory_runtime_service: MemoryRuntimeService) -> None:
         self._memory_runtime_service = memory_runtime_service
         self._source_resolver._memory_runtime_service = memory_runtime_service
 
     async def handle(self, arguments: dict[str, Any], context: Any) -> dict[str, Any]:
-        await self._ensure_initialized()
+        init_warnings = await self._ensure_initialized()
         action = str(arguments.get("action") or "draft_plan").strip().lower()
         if action in {"draft", "plan"}:
             action = "draft_plan"
@@ -84,11 +83,11 @@ class SmokeTestingModeRuntime:
             action = "execute_approved_plan"
 
         if action == "draft_plan":
-            return await self._draft_plan(arguments, context)
+            return await self._draft_plan(arguments, context, init_warnings)
         if action == "revise_plan":
-            return await self._revise_plan(arguments, context)
+            return await self._revise_plan(arguments, context, init_warnings)
         if action == "execute_approved_plan":
-            return await self._execute_plan(arguments, context)
+            return await self._execute_plan(arguments, context, init_warnings)
         if action == "get_plan":
             return await self._get_plan(arguments)
         return {
@@ -98,17 +97,19 @@ class SmokeTestingModeRuntime:
             "error": "unsupported_action",
         }
 
-    async def _ensure_initialized(self) -> None:
+    async def _ensure_initialized(self) -> list[str]:
         if self._initialized:
-            return
+            return []
         try:
             await self._plan_store.initialize()
         except Exception as exc:
-            self._init_warnings.append(f"PostgreSQL catalog 初始化失败：{exc}")
-        finally:
-            self._initialized = True
+            return [f"PostgreSQL catalog 初始化失败：{exc}"]
+        self._initialized = True
+        return []
 
-    async def _draft_plan(self, arguments: dict[str, Any], context: Any) -> dict[str, Any]:
+    async def _draft_plan(
+        self, arguments: dict[str, Any], context: Any, init_warnings: list[str]
+    ) -> dict[str, Any]:
         target_url = self._target_url(arguments, context)
         objective = self._objective(arguments, context)
         explicit_scope = str(arguments.get("project_scope") or "").strip()
@@ -163,11 +164,13 @@ class SmokeTestingModeRuntime:
                 "action": "draft_plan",
                 "phase": "awaiting_user_confirmation",
                 "project_matches": [match.__dict__ for match in project_matches[:5]],
-                "storage_warnings": [*self._init_warnings, *project_warnings, *source_bundle.get("warnings", []), *storage_warnings],
+                "storage_warnings": [*init_warnings, *project_warnings, *source_bundle.get("warnings", []), *storage_warnings],
             },
         )
 
-    async def _revise_plan(self, arguments: dict[str, Any], context: Any) -> dict[str, Any]:
+    async def _revise_plan(
+        self, arguments: dict[str, Any], context: Any, init_warnings: list[str]
+    ) -> dict[str, Any]:
         plan, warnings = await self._load_plan_from_args(arguments)
         if plan is None:
             return {
@@ -205,10 +208,12 @@ class SmokeTestingModeRuntime:
             plan,
             status="partial",
             summary=f"冒烟测试方案已修订为 v{plan.version}，请再次确认是否执行。",
-            extra={"action": "revise_plan", "phase": "awaiting_user_confirmation", "storage_warnings": [*self._init_warnings, *warnings, *storage_warnings]},
+            extra={"action": "revise_plan", "phase": "awaiting_user_confirmation", "storage_warnings": [*init_warnings, *warnings, *storage_warnings]},
         )
 
-    async def _execute_plan(self, arguments: dict[str, Any], context: Any) -> dict[str, Any]:
+    async def _execute_plan(
+        self, arguments: dict[str, Any], context: Any, init_warnings: list[str]
+    ) -> dict[str, Any]:
         plan, warnings = await self._load_plan_from_args(arguments)
         if plan is None:
             return {
@@ -267,7 +272,7 @@ class SmokeTestingModeRuntime:
             "run_result_uri": result.rustfs_uris.get("run_result_uri", ""),
             "report_uri": result.rustfs_uris.get("report_uri", ""),
             "evidence_uris": [evidence.get("uri") for item in result.case_results for evidence in item.evidence if evidence.get("uri")],
-            "storage_warnings": [*self._init_warnings, *warnings, *approval_warnings, *result_warnings],
+            "storage_warnings": [*init_warnings, *warnings, *approval_warnings, *result_warnings],
         }
 
     async def _get_plan(self, arguments: dict[str, Any]) -> dict[str, Any]:
