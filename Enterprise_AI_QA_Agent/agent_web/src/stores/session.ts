@@ -802,6 +802,16 @@ export const useSessionStore = defineStore("session", {
     rememberIncomingEvent(event: ExecutionEvent) {
       return _sseStream.rememberIncomingEvent(event);
     },
+    mergeReceiptEvents(events: ExecutionEvent[]) {
+      const sessionId = this.session?.id;
+      if (!sessionId) {
+        return;
+      }
+      const unseen = events.filter(
+        (event) => event.session_id === sessionId && _sseStream.rememberReceiptEvent(event),
+      );
+      this.activity = [...unseen.reverse(), ...this.activity].slice(0, 50);
+    },
     disconnectEvents() {
       _sseStream.disconnect();
     },
@@ -950,7 +960,7 @@ export const useSessionStore = defineStore("session", {
             : message,
         );
         this.applySession(response.session);
-        this.activity = [...response.events.slice().reverse(), ...this.activity].slice(0, 50);
+        this.mergeReceiptEvents(response.events);
       } catch (error) {
         this.messages = this.messages
           .filter((message) => message.id !== optimisticAssistantMessage.id)
@@ -1047,7 +1057,7 @@ export const useSessionStore = defineStore("session", {
           createClientMessageId(),
         );
         this.applySession(response.session);
-        this.activity = [...response.events.slice().reverse(), ...this.activity].slice(0, 50);
+        this.mergeReceiptEvents(response.events);
       } catch (error) {
         this.error = error instanceof Error ? error.message : "恢复会话失败。";
       }

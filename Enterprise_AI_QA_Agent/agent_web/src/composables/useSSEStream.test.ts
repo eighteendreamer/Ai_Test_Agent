@@ -79,4 +79,17 @@ describe("session SSE transport", () => {
     expect(errors).toHaveLength(1);
     manager.disconnect();
   });
+
+  it("deduplicates a receipt event without advancing the SSE reconnect cursor", () => {
+    const manager = new SSEStreamManager();
+    const event: ExecutionEvent = {
+      id: "event-from-receipt", type: "session.created", session_id: "session-1",
+      timestamp: "2026-09-29T00:00:00Z", payload: {},
+    };
+
+    expect(manager.rememberReceiptEvent(event)).toBe(true);
+    expect(manager.cursorBySession["session-1"]).toBeUndefined();
+    expect(manager.rememberIncomingEvent(event)).toBe(false);
+    expect(manager.cursorBySession["session-1"]).toBe("event-from-receipt");
+  });
 });

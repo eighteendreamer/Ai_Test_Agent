@@ -124,11 +124,21 @@ export class SSEStreamManager {
   }
 
   rememberIncomingEvent(event: ExecutionEvent): boolean {
+    return this._rememberEvent(event, true);
+  }
+
+  rememberReceiptEvent(event: ExecutionEvent): boolean {
+    return this._rememberEvent(event, false);
+  }
+
+  private _rememberEvent(event: ExecutionEvent, advanceCursor: boolean): boolean {
     const eventId = String(event.id || "").trim();
     if (!eventId) return true;
+    if (advanceCursor) {
+      this._cursorBySession = { ...this._cursorBySession, [event.session_id]: eventId };
+    }
     if (this._receivedIds.includes(eventId)) return false;
     this._receivedIds = [...this._receivedIds, eventId].slice(-this._config.receivedIdLimit);
-    this._cursorBySession = { ...this._cursorBySession, [event.session_id]: eventId };
     return true;
   }
 }
