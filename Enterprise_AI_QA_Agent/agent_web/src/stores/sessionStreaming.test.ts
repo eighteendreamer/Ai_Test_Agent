@@ -8,6 +8,22 @@ describe("session tool execution events", () => {
     setActivePinia(createPinia());
   });
 
+  it("binds an optimistic user message from a top-level turn ID", () => {
+    const store = useSessionStore();
+    store.messages = [{
+      id: "pending-user", role: "user", content: "Run tests",
+      created_at: "2026-09-29T00:00:00Z",
+      metadata: { is_optimistic: true, delivery_status: "pending" },
+    }];
+
+    store.applyStreamingEvent({
+      id: "turn-started", type: "runtime.turn_started", session_id: "session-1",
+      timestamp: "2026-09-29T00:00:01Z", turn_id: "turn-1", payload: {},
+    });
+
+    expect(store.messages[0].metadata.turn_id).toBe("turn-1");
+  });
+
   it("finalizes a running tool when the backend skips it after an interrupt", () => {
     const store = useSessionStore();
     store.messages = [

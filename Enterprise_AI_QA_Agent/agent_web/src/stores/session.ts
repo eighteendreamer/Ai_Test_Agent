@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import { api } from "../services/api";
 import { handleRecorderSseEvent } from "../features/recorder/recorderBridge";
 import { serverDateTimestamp } from "../utils/datetime";
+import { eventTurnId } from "../utils/executionEvent";
 import { SSEStreamManager } from "../composables/useSSEStream";
 import { SessionWatcherManager } from "../composables/useSessionWatcher";
 import { ApprovalManager } from "../composables/useApprovalManager";
@@ -1118,8 +1119,8 @@ export const useSessionStore = defineStore("session", {
       }
     },
     applyStreamingEvent(event: ExecutionEvent) {
-      const eventTurnId = String(event.payload?.turn_id || "").trim();
-      if (eventTurnId) {
+      const currentTurnId = eventTurnId(event);
+      if (currentTurnId) {
         let pendingUserIndex = -1;
         for (let index = this.messages.length - 1; index >= 0; index -= 1) {
           const message = this.messages[index];
@@ -1138,7 +1139,7 @@ export const useSessionStore = defineStore("session", {
             ...nextMessages[pendingUserIndex],
             metadata: {
               ...nextMessages[pendingUserIndex].metadata,
-              turn_id: eventTurnId,
+              turn_id: currentTurnId,
               is_optimistic: true,
             },
           };
@@ -1227,7 +1228,7 @@ export const useSessionStore = defineStore("session", {
             created_at: event.timestamp,
             metadata: {
               ...nextMessages[streamingIndex].metadata,
-              turn_id: String(event.payload?.turn_id || ""),
+              turn_id: currentTurnId,
               delivery_status: "streaming",
               is_optimistic_stream: false,
             },
@@ -1246,7 +1247,7 @@ export const useSessionStore = defineStore("session", {
               content: "",
               created_at: event.timestamp,
               metadata: {
-                turn_id: String(event.payload?.turn_id || ""),
+                turn_id: currentTurnId,
                 delivery_status: "streaming",
                 is_optimistic_stream: false,
               },
@@ -1271,7 +1272,7 @@ export const useSessionStore = defineStore("session", {
               content: delta,
               created_at: event.timestamp,
               metadata: {
-                turn_id: String(event.payload?.turn_id || ""),
+                turn_id: currentTurnId,
                 delivery_status: "streaming",
                 is_optimistic_stream: false,
               },

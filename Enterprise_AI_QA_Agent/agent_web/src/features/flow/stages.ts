@@ -1,4 +1,5 @@
 import type { ExecutionEvent } from "../../types";
+import { eventTurnId } from "../../utils/executionEvent";
 
 export const FLOW_STAGES = [
   "context_builder",
@@ -140,7 +141,7 @@ export function compareEvents(left: ExecutionEvent, right: ExecutionEvent): numb
 
 export function resolveLatestTurnId(events: ExecutionEvent[]): string {
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    const turnId = payloadText(events[index], "turn_id");
+    const turnId = eventTurnId(events[index]);
     if (turnId) {
       return turnId;
     }
@@ -154,8 +155,8 @@ export function selectTurnEvents(events: ExecutionEvent[], turnId = ""): Executi
     return events;
   }
   return events.filter((event) => {
-    const eventTurnId = payloadText(event, "turn_id");
-    return !eventTurnId || eventTurnId === target;
+    const currentTurnId = eventTurnId(event);
+    return !currentTurnId || currentTurnId === target;
   });
 }
 

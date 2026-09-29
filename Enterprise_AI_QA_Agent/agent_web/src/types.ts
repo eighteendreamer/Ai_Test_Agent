@@ -839,6 +839,7 @@ export interface SessionDetail {
   session_mode: SessionMode;
   runtime_mode: RuntimeMode;
   mode_key: ModeKey | string;
+  project_id?: string | null;
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];
@@ -900,6 +901,14 @@ export interface ExecutionEvent {
   session_id: string;
   timestamp: string;
   payload: JsonObject;
+  request_id?: string | null;
+  trace_id?: string | null;
+  turn_id?: string | null;
+  run_id?: string | null;
+  run_item_id?: string | null;
+  attempt_id?: string | null;
+  worker_id?: string | null;
+  resource_id?: string | null;
 }
 
 export interface ConversationResponse {

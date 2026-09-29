@@ -1,4 +1,5 @@
 import type { ChatMessage, ExecutionEvent } from "../types";
+import { eventTurnId } from "../utils/executionEvent";
 
 export function hasStreamingAssistantMessage(messages: ChatMessage[]): boolean {
   return messages.some(
@@ -94,7 +95,7 @@ export function applyEventToMessages(
   const eventType = event.type;
 
   if (eventType === "model.response_chunk") {
-    const turnId = String(event.payload?.turn_id || "").trim();
+    const turnId = eventTurnId(event);
     if (!turnId) return messages;
 
     const chunk = String(event.payload?.delta || "");

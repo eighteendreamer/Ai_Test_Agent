@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import FlowInspector from "./FlowInspector.vue";
 import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openFlowWindow";
-import { projectFlowNodes } from "./stages";
+import { projectFlowNodes, resolveLatestTurnId, selectTurnEvents } from "./stages";
 import { collectWorkerDispatches, workerFlowStatus, workerNodeId } from "./workers";
 import { t } from "../../services/i18n";
 import type { ExecutionEvent, WorkerDispatchRecord } from "../../types";
@@ -128,6 +128,16 @@ describe("Flow inspector long content", () => {
 });
 
 describe("Dynamic flow projection", () => {
+  it("selects events whose turn ID is carried at the top level", () => {
+    const events: ExecutionEvent[] = [
+      { id: "old", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-09-29T00:00:00Z", turn_id: "turn-old", payload: {} },
+      { id: "new", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-09-29T00:00:01Z", turn_id: "turn-new", payload: {} },
+    ];
+
+    expect(resolveLatestTurnId(events)).toBe("turn-new");
+    expect(selectTurnEvents(events, "turn-new").map((event) => event.id)).toEqual(["new"]);
+  });
+
   it("creates only the phases observed in the selected turn", () => {
     const stages = projectFlowNodes([
       { id: "1", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-08-20T00:00:00Z", payload: { turn_id: "turn-1" } },

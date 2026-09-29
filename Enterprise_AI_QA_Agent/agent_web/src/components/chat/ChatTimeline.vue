@@ -6,6 +6,7 @@ import ExecutionTrace from "./ExecutionTrace.vue";
 import { t } from "../../services/i18n";
 import type { ChatMessage, ExecutionEvent, InputAttachment } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
+import { eventTurnId } from "../../utils/executionEvent";
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -45,7 +46,7 @@ const executionTrace = computed(() => {
     .reverse()
     .filter((event) => {
       if (!EXECUTION_EVENT_TYPES.has(event.type)) return false;
-      const turnId = String(event.payload?.turn_id || "").trim();
+      const turnId = eventTurnId(event);
       if (!turnId) return false;
       const key = String(event.id || `${event.type}:${event.timestamp}:${turnId}`);
       if (seen.has(key)) return false;
@@ -67,7 +68,7 @@ const latestUserTurnId = computed(() => {
 const currentExecutionTrace = computed(() => {
   const turnId = latestUserTurnId.value;
   return turnId
-    ? executionTrace.value.filter((event) => String(event.payload?.turn_id || "").trim() === turnId)
+    ? executionTrace.value.filter((event) => eventTurnId(event) === turnId)
     : [];
 });
 
