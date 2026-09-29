@@ -179,6 +179,10 @@ function readQueuedInputCount(metadata: Record<string, unknown> | undefined): nu
   return Number.isFinite(rawCount) && rawCount > 0 ? rawCount : 0;
 }
 
+function hasQueuedInput(metadata: Record<string, unknown> | undefined): boolean {
+  return readQueuedInputCount(metadata) > 0 || normalizePendingInputQueue(metadata?.pending_input_queue).length > 0;
+}
+
 function createOptimisticAssistantMessage() {
   return {
     id: `temp-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -219,8 +223,9 @@ function createClientMessageId() {
 function mergeSessionMessages(
   serverMessages: ChatMessage[],
   localMessages: ChatMessage[],
-  sessionStatus: SessionLifecycleStatus,
+  session: SessionDetail,
 ) {
+  const sessionStatus = session.status;
   const serverIds = new Set(serverMessages.map((message) => message.id));
   const serverClientMessageIds = new Set(
     serverMessages
@@ -249,7 +254,10 @@ function mergeSessionMessages(
       .map((message) => [String(message.metadata?.client_message_id || "").trim(), message] as const)
       .filter(([clientMessageId]) => Boolean(clientMessageId)),
   );
-  const allowTransientLocalMessages = isActiveSessionStatus(sessionStatus);
+  const allowTransientLocalMessages = isActiveSessionStatus(sessionStatus) || hasQueuedInput(session.metadata);
+  const queuedTaskIds = new Set(
+    normalizePendingInputQueue(session.metadata?.pending_input_queue).map((entry) => entry.id),
+  );
 
   const merged = serverMessages.map((serverMessage) => {
     const localMessage =
@@ -302,7 +310,14 @@ function mergeSessionMessages(
     }
     if (message.role === "assistant") {
       const status = messageDeliveryStatus(message);
-      return status === "streaming" && Boolean(message.content.trim());
+      if (status !== "streaming") {
+        return false;
+      }
+      if (message.content.trim()) {
+        return true;
+      }
+      return message.metadata?.is_optimistic_stream === true &&
+        (isActiveSessionStatus(sessionStatus) || queuedTaskIds.has(String(message.metadata?.task_id || "")));
     }
     if (!isTransientToolMessage(message)) {
       return false;
@@ -473,6 +488,7 @@ export const useSessionStore = defineStore("session", {
         state.isSending ||
         state.session?.status === "running" ||
         state.session?.status === "waiting_approval" ||
+        hasQueuedInput(state.session?.metadata) ||
         state.messages.some(
           (message) =>
             message.role === "assistant" &&
@@ -673,7 +689,7 @@ export const useSessionStore = defineStore("session", {
       const mergedMessages = mergeSessionMessages(
         session.messages,
         this.messages,
-        session.status,
+        session,
       );
       this.session = session;
       this.messages = mergedMessages;
@@ -924,6 +940,14 @@ export const useSessionStore = defineStore("session", {
             ...options.metadata,
             client_message_id: clientMessageId,
           },
+        );
+        this.messages = this.messages.map((message) =>
+          message.id === optimisticAssistantMessage.id
+            ? {
+                ...message,
+                metadata: { ...message.metadata, task_id: response.task.id },
+              }
+            : message,
         );
         this.applySession(response.session);
         this.activity = [...response.events.slice().reverse(), ...this.activity].slice(0, 50);
