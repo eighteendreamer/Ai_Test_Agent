@@ -2966,7 +2966,26 @@ class ToolRuntimeService:
         execution_monitor = SecurityExecutionMonitor()
         normalizer = FindingNormalizer()
 
-        task = self._security_task_from_arguments(arguments)
+        try:
+            task = self._security_task_from_arguments(arguments)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "security_runner_invalid_task",
+                extra={
+                    "session_id": context.session_id,
+                    "tool_key": runner_key,
+                    "call_id": context.call_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return {
+                "status": "failed",
+                "ok": False,
+                "success": False,
+                "summary": "Serialized security task is invalid.",
+                "runner_key": runner_key,
+                "error": "invalid_security_task",
+            }
         profile_key = self._resolve_security_profile_key(arguments, task, runner_key)
         if not profile_key:
             return {
@@ -3268,13 +3287,12 @@ class ToolRuntimeService:
     def _security_task_from_arguments(self, arguments: dict[str, Any]):
         from src.modes.security_testing_mode.campaign_state import SecurityTask
 
-        raw_task = arguments.get("task")
+        if "task" not in arguments:
+            return None
+        raw_task = arguments["task"]
         if not isinstance(raw_task, dict):
-            return None
-        try:
-            return SecurityTask.model_validate(raw_task)
-        except Exception:
-            return None
+            raise ValueError("Serialized security task must be an object.")
+        return SecurityTask.model_validate(raw_task)
 
     def _resolve_security_risk_tolerance(
         self,
@@ -3975,12 +3993,28 @@ class ToolRuntimeService:
 
         runner = PerformanceEngineRunner(self._settings)
         plan_data = arguments.get("plan")
-        if plan_data and isinstance(plan_data, dict):
+        if plan_data is not None and plan_data != {}:
             try:
-                plan = PerfPlan(**plan_data)
-                result = runner.validate_plan_engine(plan)
-            except Exception:
-                result = runner.select_engine(engine=engine, scenario=scenario)
+                if not isinstance(plan_data, dict):
+                    raise ValueError("Performance plan must be an object.")
+                plan = PerfPlan.model_validate(plan_data)
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "performance_runner_invalid_plan",
+                    extra={
+                        "session_id": context.session_id,
+                        "tool_key": context.tool_key or "performance-engine-runner",
+                        "call_id": context.call_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                return {
+                    "status": "error",
+                    "ok": False,
+                    "summary": "Performance plan is invalid.",
+                    "error": "invalid_perf_plan",
+                }
+            result = runner.validate_plan_engine(plan)
         else:
             result = runner.select_engine(engine=engine, scenario=scenario)
 
