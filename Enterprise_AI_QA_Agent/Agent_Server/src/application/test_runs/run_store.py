@@ -588,13 +588,29 @@ class InMemoryTestRunStore:
     ) -> TestRunItemRecord:
         async with self._lock:
             item = self._require_active_lease(item_id, lease_token, now, {"running"})
+            attempt = self._active_attempt(item_id, lease_token)
             updated = item.model_copy(deep=True, update={
                 "status": "waiting_resource",
                 "waiting_reason": str(reason or "resource_unavailable")[:240],
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=item.active_duration_ms,
+                    active_started_at=item.active_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
                 "waiting_started_at": now,
                 "updated_at": now,
             })
             self._items[item_id] = updated
+            self._attempts[attempt.id] = attempt.model_copy(deep=True, update={
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=attempt.active_duration_ms,
+                    active_started_at=attempt.active_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
+                "waiting_started_at": now,
+            })
             self._refresh_run(item.run_id, now)
             return updated.model_copy(deep=True)
 
@@ -1017,11 +1033,44 @@ class InMemoryTestRunStore:
                     attempt = self._active_attempt(item_id, item.lease_token)
                     self._attempts[attempt.id] = attempt.model_copy(
                         deep=True,
-                        update={"status": "cancelled", "completed_at": now},
+                        update={
+                            "status": "cancelled",
+                            "completed_at": now,
+                            "active_duration_ms": add_active_duration(
+                                active_duration_ms=attempt.active_duration_ms,
+                                active_started_at=attempt.active_started_at,
+                                now=now,
+                            ),
+                            "waiting_duration_ms": add_waiting_duration(
+                                waiting_duration_ms=attempt.waiting_duration_ms,
+                                waiting_started_at=attempt.waiting_started_at,
+                                now=now,
+                            ),
+                            "active_started_at": None,
+                            "waiting_started_at": None,
+                            "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                        },
                     )
                 self._items[item_id] = item.model_copy(
                     deep=True,
-                    update={"status": "cancelled", "completed_at": now, "updated_at": now},
+                    update={
+                        "status": "cancelled",
+                        "completed_at": now,
+                        "updated_at": now,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=item.active_duration_ms,
+                            active_started_at=item.active_started_at,
+                            now=now,
+                        ),
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=item.waiting_duration_ms,
+                            waiting_started_at=item.waiting_started_at,
+                            now=now,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": None,
+                        "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
+                    },
                 )
             self._runs[run_id] = run.model_copy(
                 deep=True,
@@ -1053,11 +1102,28 @@ class InMemoryTestRunStore:
                 and item.lease_expires_at is not None
                 and item.lease_expires_at <= now
             ):
+                interval_end = min(now, item.lease_expires_at)
                 if item.lease_token:
                     attempt = self._active_attempt(item_id, item.lease_token)
                     self._attempts[attempt.id] = attempt.model_copy(
                         deep=True,
-                        update={"status": "expired", "completed_at": now},
+                        update={
+                            "status": "expired",
+                            "completed_at": now,
+                            "active_duration_ms": add_active_duration(
+                                active_duration_ms=attempt.active_duration_ms,
+                                active_started_at=attempt.active_started_at,
+                                now=interval_end,
+                            ),
+                            "waiting_duration_ms": add_waiting_duration(
+                                waiting_duration_ms=attempt.waiting_duration_ms,
+                                waiting_started_at=attempt.waiting_started_at,
+                                now=interval_end,
+                            ),
+                            "active_started_at": None,
+                            "waiting_started_at": None,
+                            "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                        },
                     )
                 self._items[item_id] = item.model_copy(
                     deep=True,
@@ -1069,6 +1135,18 @@ class InMemoryTestRunStore:
                         "heartbeat_at": None,
                         "updated_at": now,
                         "started_at": None,
+                        "active_duration_ms": add_active_duration(
+                            active_duration_ms=item.active_duration_ms,
+                            active_started_at=item.active_started_at,
+                            now=interval_end,
+                        ),
+                        "waiting_duration_ms": add_waiting_duration(
+                            waiting_duration_ms=item.waiting_duration_ms,
+                            waiting_started_at=item.waiting_started_at,
+                            now=interval_end,
+                        ),
+                        "active_started_at": None,
+                        "waiting_started_at": None,
                     },
                 )
                 recovered += 1
@@ -2238,14 +2316,33 @@ class PostgresTestRunStore:
             with conn.cursor() as cur:
                 item = self._lock_item(cur, item_id)
                 self._validate_lease(item, lease_token, now, {"running"})
+                attempt = self._lock_attempt(cur, item_id, lease_token)
                 updated = item.model_copy(update={
                     "status": "waiting_resource",
                     "waiting_reason": str(reason or "resource_unavailable")[:240],
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=item.active_duration_ms,
+                        active_started_at=item.active_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
                     "waiting_started_at": now,
                     "updated_at": now,
                 })
                 self._write_item(cur, updated)
-                self._refresh_run_delta_in_cursor(cur, item.run_id, now, [("running", "waiting_resource")])
+                self._write_attempt(cur, attempt.model_copy(update={
+                    "active_duration_ms": add_active_duration(
+                        active_duration_ms=attempt.active_duration_ms,
+                        active_started_at=attempt.active_started_at,
+                        now=now,
+                    ),
+                    "active_started_at": None,
+                    "waiting_started_at": now,
+                }))
+                self._refresh_run_delta_in_cursor(
+                    cur, item.run_id, now, [("running", "waiting_resource")],
+                    active_duration_delta_ms=updated.active_duration_ms - item.active_duration_ms,
+                )
         return updated
 
     def _heartbeat_item_sync(
@@ -2322,6 +2419,8 @@ class PostgresTestRunStore:
                     raise ValueError(f"Test run item already completed: {item_id}")
                 self._validate_lease(item, lease_token, now, {"running"})
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
+                waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
                 result = TestCaseResultRecord(
                     id=str(uuid4()),
                     run_id=item.run_id,
@@ -2401,6 +2500,8 @@ class PostgresTestRunStore:
                     item.run_id,
                     now,
                     status_deltas=[("running", completion.status)],
+                    active_duration_delta_ms=active_duration_delta_ms,
+                    waiting_duration_delta_ms=waiting_duration_delta_ms,
                 )
         return result
 
@@ -2417,6 +2518,7 @@ class PostgresTestRunStore:
                 item = self._lock_item(cur, item_id)
                 self._validate_lease(item, lease_token, now, {"running"})
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
                 item = item.model_copy(
                     update={
                         "status": "waiting_approval",
@@ -2456,6 +2558,7 @@ class PostgresTestRunStore:
                     item.run_id,
                     now,
                     status_deltas=[("running", "waiting_approval")],
+                    active_duration_delta_ms=active_duration_delta_ms,
                 )
         return item
 
@@ -2485,6 +2588,7 @@ class PostgresTestRunStore:
                 if not item.lease_token:
                     raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
                 attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
                 item = item.model_copy(
                     update={
                         "status": "claimed",
@@ -2518,6 +2622,7 @@ class PostgresTestRunStore:
                     item.run_id,
                     now,
                     status_deltas=[("waiting_approval", "claimed")],
+                    waiting_duration_delta_ms=waiting_duration_delta_ms,
                 )
         return item
 
@@ -2614,6 +2719,7 @@ class PostgresTestRunStore:
                 if not item.lease_token:
                     raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
                 attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
                 result = TestCaseResultRecord(
                     id=str(uuid4()),
                     run_id=item.run_id,
@@ -2654,13 +2760,30 @@ class PostgresTestRunStore:
                             "result_id": result.id,
                             "completed_at": now,
                             "updated_at": now,
+                            "waiting_duration_ms": add_waiting_duration(
+                                waiting_duration_ms=item.waiting_duration_ms,
+                                waiting_started_at=item.waiting_started_at,
+                                now=now,
+                            ),
+                            "waiting_started_at": None,
+                            "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
                         }
                     ),
                 )
                 self._write_attempt(
                     cur,
                     attempt.model_copy(
-                        update={"status": "blocked", "completed_at": now}
+                        update={
+                            "status": "blocked",
+                            "completed_at": now,
+                            "waiting_duration_ms": add_waiting_duration(
+                                waiting_duration_ms=attempt.waiting_duration_ms,
+                                waiting_started_at=attempt.waiting_started_at,
+                                now=now,
+                            ),
+                            "waiting_started_at": None,
+                            "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                        }
                     ),
                 )
                 self._refresh_run_in_cursor(
@@ -2668,6 +2791,7 @@ class PostgresTestRunStore:
                     item.run_id,
                     now,
                     status_deltas=[("waiting_approval", "blocked")],
+                    waiting_duration_delta_ms=waiting_duration_delta_ms,
                 )
         return result
 
@@ -2688,11 +2812,28 @@ class PostgresTestRunStore:
                 attempts: list[TestRunAttemptRecord] = []
                 queued: list[TestRunItemRecord] = []
                 for item in expired:
+                    interval_end = min(now, item.lease_expires_at)
                     if item.lease_token:
                         attempt = self._lock_attempt(cur, item.id, item.lease_token)
                         attempts.append(
                             attempt.model_copy(
-                                update={"status": "expired", "completed_at": now}
+                                update={
+                                    "status": "expired",
+                                    "completed_at": now,
+                                    "active_duration_ms": add_active_duration(
+                                        active_duration_ms=attempt.active_duration_ms,
+                                        active_started_at=attempt.active_started_at,
+                                        now=interval_end,
+                                    ),
+                                    "waiting_duration_ms": add_waiting_duration(
+                                        waiting_duration_ms=attempt.waiting_duration_ms,
+                                        waiting_started_at=attempt.waiting_started_at,
+                                        now=interval_end,
+                                    ),
+                                    "active_started_at": None,
+                                    "waiting_started_at": None,
+                                    "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                                }
                             )
                         )
                     queued.append(
@@ -2705,6 +2846,18 @@ class PostgresTestRunStore:
                                 "heartbeat_at": None,
                                 "started_at": None,
                                 "updated_at": now,
+                                "active_duration_ms": add_active_duration(
+                                    active_duration_ms=item.active_duration_ms,
+                                    active_started_at=item.active_started_at,
+                                    now=interval_end,
+                                ),
+                                "waiting_duration_ms": add_waiting_duration(
+                                    waiting_duration_ms=item.waiting_duration_ms,
+                                    waiting_started_at=item.waiting_started_at,
+                                    now=interval_end,
+                                ),
+                                "active_started_at": None,
+                                "waiting_started_at": None,
                             }
                         )
                     )
@@ -2768,7 +2921,23 @@ class PostgresTestRunStore:
                         self._write_attempt(
                             cur,
                             attempt.model_copy(
-                                update={"status": "cancelled", "completed_at": now}
+                                update={
+                                    "status": "cancelled",
+                                    "completed_at": now,
+                                    "active_duration_ms": add_active_duration(
+                                        active_duration_ms=attempt.active_duration_ms,
+                                        active_started_at=attempt.active_started_at,
+                                        now=now,
+                                    ),
+                                    "waiting_duration_ms": add_waiting_duration(
+                                        waiting_duration_ms=attempt.waiting_duration_ms,
+                                        waiting_started_at=attempt.waiting_started_at,
+                                        now=now,
+                                    ),
+                                    "active_started_at": None,
+                                    "waiting_started_at": None,
+                                    "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+                                }
                             ),
                         )
                     self._write_item(
@@ -2778,6 +2947,19 @@ class PostgresTestRunStore:
                                 "status": "cancelled",
                                 "completed_at": now,
                                 "updated_at": now,
+                                "active_duration_ms": add_active_duration(
+                                    active_duration_ms=item.active_duration_ms,
+                                    active_started_at=item.active_started_at,
+                                    now=now,
+                                ),
+                                "waiting_duration_ms": add_waiting_duration(
+                                    waiting_duration_ms=item.waiting_duration_ms,
+                                    waiting_started_at=item.waiting_started_at,
+                                    now=now,
+                                ),
+                                "active_started_at": None,
+                                "waiting_started_at": None,
+                                "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
                             }
                         ),
                     )
@@ -2930,9 +3112,15 @@ class PostgresTestRunStore:
         *,
         preserve_cancelled: bool = False,
         status_deltas: list[tuple[str, str]] | None = None,
+        active_duration_delta_ms: int = 0,
+        waiting_duration_delta_ms: int = 0,
     ) -> TestRunRecord:
         if status_deltas is not None and not preserve_cancelled:
-            return self._refresh_run_delta_in_cursor(cur, run_id, now, status_deltas)
+            return self._refresh_run_delta_in_cursor(
+                cur, run_id, now, status_deltas,
+                active_duration_delta_ms=active_duration_delta_ms,
+                waiting_duration_delta_ms=waiting_duration_delta_ms,
+            )
         run = self._lock_run(cur, run_id)
         cur.execute(
             f"SELECT status, count(*) AS total FROM {self._item_table} "
@@ -2990,7 +3178,12 @@ class PostgresTestRunStore:
         run_id: str,
         now: datetime,
         status_deltas: list[tuple[str, str]],
+        *,
+        active_duration_delta_ms: int = 0,
+        waiting_duration_delta_ms: int = 0,
     ) -> TestRunRecord:
+        if active_duration_delta_ms < 0 or waiting_duration_delta_ms < 0:
+            raise ValueError("Run duration deltas cannot be negative")
         statuses = [status for status in TestRunStats.model_fields if status != "total"]
         deltas = {status: 0 for status in statuses}
         for from_status, to_status in status_deltas:
@@ -3044,9 +3237,16 @@ class PostgresTestRunStore:
             f"'stats', {stats_expr}, "
             "'updated_at', to_jsonb(%s::timestamptz), "
             f"'started_at', {started_expr}, "
-            f"'completed_at', {completed_expr}"
+            f"'completed_at', {completed_expr}, "
+            "'active_duration_ms', to_jsonb(COALESCE((record->>'active_duration_ms')::bigint, 0) + %s::bigint), "
+            "'waiting_duration_ms', to_jsonb(COALESCE((record->>'waiting_duration_ms')::bigint, 0) + %s::bigint), "
+            "'wall_clock_duration_ms', to_jsonb(GREATEST(0, FLOOR(EXTRACT(EPOCH FROM "
+            "(%s::timestamptz - created_at)) * 1000))::bigint)"
             ") WHERE id = %s RETURNING record",
-            (now, now, now, now, run_id),
+            (
+                now, now, now, now,
+                active_duration_delta_ms, waiting_duration_delta_ms, now, run_id,
+            ),
         )
         row = cur.fetchone()
         if not row:
