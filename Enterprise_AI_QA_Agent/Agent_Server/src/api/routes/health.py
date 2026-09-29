@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import asyncio
+
 from fastapi import APIRouter, Request
 
 from src.infrastructure.postgres_runtime import postgres_database_url, postgres_healthcheck
@@ -17,7 +20,7 @@ async def health(request: Request):
     ui_graph_backend = getattr(request.app.state, "ui_graph_backend", "uninitialized")
     if memory_runtime_service is not None:
         memory_backend = await memory_runtime_service.refresh_backend_status()
-    postgres_status = postgres_healthcheck(settings)
+    postgres_status = await asyncio.to_thread(postgres_healthcheck, settings)
 
     return {
         "status": "ok" if postgres_status.ok else "degraded",
