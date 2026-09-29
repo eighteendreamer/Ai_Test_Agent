@@ -208,7 +208,7 @@ async def provider_setup_action(
                 "error": "setup_action_not_supported",
             }
 
-    return {"ok": True, "action": body.action, "result": "no_op"}
+    raise HTTPException(status_code=400, detail=f"Unsupported setup action: {body.action}")
 
 
 @router.post("/test-send/prepare")
