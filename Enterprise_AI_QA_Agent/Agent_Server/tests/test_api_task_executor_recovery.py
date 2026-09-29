@@ -1,7 +1,11 @@
 import asyncio
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+from src.domain.models import SessionRecord
 from src.modes.api_testing_mode.campaign_state import (
     ApiTestCampaign,
+    ApiTestingState,
     ApiTestTask,
     ExecutionPolicy,
 )
@@ -9,7 +13,11 @@ from src.modes.api_testing_mode.coordinator import ApiTestCoordinator
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.evaluation import ApiTestingEvaluationPolicy
 from src.modes.api_testing_mode.executor import ApiTaskExecutor
+from src.modes.api_testing_mode.runtime import ApiTestingModeRuntime
+from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
+from src.runtime.store import InMemorySessionStore
+from src.schemas.session import RuntimeMode, SessionMode, SessionStatus
 
 
 def test_executor_reuses_only_complete_matching_checkpoint():
@@ -125,3 +133,185 @@ def test_legacy_dependency_skip_restores_after_parent_succeeds():
     assert pool.resolve_blocked() == 1
     assert dependent.status == "ready"
     assert dependent.last_error == ""
+
+
+def test_api_child_session_stuck_running_reaches_bounded_wait_result():
+    async def scenario():
+        store = InMemorySessionStore()
+        now = datetime.now(UTC)
+        child = SessionRecord(
+            id="stuck-child", title="API worker", status=SessionStatus.running,
+            session_mode=SessionMode.background_task, runtime_mode=RuntimeMode.background,
+            mode_key="api_testing", created_at=now, updated_at=now,
+        )
+        await store.save_session(child)
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        pool = ApiTaskPool([task])
+
+        class Dispatcher:
+            calls = 0
+
+            async def dispatch(self, payload, context):
+                self.calls += 1
+                return {
+                    "ok": True,
+                    "workers": [{
+                        "task_id": payload["workers"][0]["task_id"],
+                        "child_session_id": child.id,
+                        "status": "running",
+                    }],
+                }
+
+        dispatcher = Dispatcher()
+        coordinator = ApiSubagentCoordinator(
+            pool=pool,
+            policy=ExecutionPolicy(max_retries=1, request_timeout_seconds=0.05),
+            coordinator_runtime_service=dispatcher,
+            session_store=store,
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+            poll_interval_seconds=0.1,
+        )
+        tasks = await asyncio.wait_for(coordinator.run_all(), timeout=1.0)
+        return tasks, dispatcher.calls, (await store.get_session(child.id)).status
+
+    tasks, dispatch_calls, child_status = asyncio.run(scenario())
+
+    assert len(tasks) == 1
+    assert tasks[0].status == "failed"
+    assert tasks[0].worker_session_id == "stuck-child"
+    assert tasks[0].worker_status == "running"
+    assert tasks[0].last_error.startswith("worker_timeout:")
+    assert dispatch_calls == 1
+    assert child_status == SessionStatus.running
+
+
+def test_api_runtime_reports_unsettled_worker_as_incomplete_campaign():
+    async def scenario():
+        store = InMemorySessionStore()
+        now = datetime.now(UTC)
+        await store.save_session(SessionRecord(
+            id="stuck-child", title="API worker", status=SessionStatus.running,
+            session_mode=SessionMode.background_task, runtime_mode=RuntimeMode.background,
+            mode_key="api_testing", created_at=now, updated_at=now,
+        ))
+
+        class Dispatcher:
+            async def dispatch(self, payload, context):
+                return {
+                    "ok": True,
+                    "workers": [{
+                        "task_id": payload["workers"][0]["task_id"],
+                        "child_session_id": "stuck-child",
+                        "status": "running",
+                    }],
+                }
+
+        campaign = ApiTestCampaign(
+            campaign_id="orders",
+            tasks=[ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")],
+            execution_policy=ExecutionPolicy(request_timeout_seconds=0.05),
+        )
+        runtime = ApiTestingModeRuntime(
+            api_docs_service=None,
+            coordinator_runtime_service=Dispatcher(),
+            session_store=store,
+        )
+        state = ApiTestingState(campaign=campaign)
+        context = SimpleNamespace(
+            session_id="parent", turn_id="turn", trace_id="trace",
+            selected_model_key="", context_bundle={},
+        )
+        result = await asyncio.wait_for(runtime._execute_campaign(state, context), timeout=1.0)
+        return result, runtime._build_output(result), (await store.get_session("stuck-child")).status
+
+    state, output, child_status = asyncio.run(scenario())
+
+    assert state.phase == "failed"
+    assert state.execution_checkpoint["last_event_type"] == "campaign_execution_incomplete"
+    assert state.execution_checkpoint["phase"] == "failed"
+    assert state.campaign.tasks[0].worker_status == "running"
+    assert state.report is not None
+    assert "execution stopped with unsettled worker sessions" in state.report.summary
+    assert output["status"] == "failed"
+    assert output["summary"] == state.report.summary
+    assert "worker_timeout:" in output["report_markdown"]
+    assert output["evaluation_result"]["coverage"]["tested_endpoints"] == 0
+    classification = output["evaluation_result"]["failure_classifications"][0]
+    assert classification["category"] == "worker_unsettled"
+    assert classification["is_transient"] is False
+    assert "执行未完成" in output["evaluation_result"]["summary"]
+    assert any("核对子会话" in item for item in output["evaluation_result"]["recommendations"])
+    assert all("接口超时" not in item for item in output["evaluation_result"]["recommendations"])
+    assert child_status == SessionStatus.running
+
+
+def test_api_worker_session_read_cannot_block_campaign_past_deadline():
+    async def scenario():
+        class HangingStore:
+            async def get_session(self, session_id):
+                await asyncio.Event().wait()
+
+        class Dispatcher:
+            async def dispatch(self, payload, context):
+                return {
+                    "ok": True,
+                    "workers": [{
+                        "task_id": payload["workers"][0]["task_id"],
+                        "child_session_id": "unresponsive-store-child",
+                        "status": "running",
+                    }],
+                }
+
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]),
+            policy=ExecutionPolicy(request_timeout_seconds=0.05),
+            coordinator_runtime_service=Dispatcher(),
+            session_store=HangingStore(),
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+            poll_interval_seconds=0.1,
+        )
+        return await asyncio.wait_for(coordinator.run_all(), timeout=1.0)
+
+    tasks = asyncio.run(scenario())
+
+    assert tasks[0].status == "failed"
+    assert tasks[0].last_error.startswith("worker_timeout:")
+
+
+def test_api_restored_running_task_stops_before_dispatching_other_work():
+    async def scenario():
+        class Dispatcher:
+            calls = 0
+
+            async def dispatch(self, payload, context):
+                self.calls += 1
+                return {"ok": True, "workers": []}
+
+        dispatcher = Dispatcher()
+        running = ApiTestTask(
+            task_id="old-write", method="POST", path="/orders", status="running",
+            worker_session_id="existing-child", worker_status="running",
+        )
+        ready = ApiTestTask(task_id="next-write", method="POST", path="/orders", status="ready")
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([running, ready]),
+            policy=ExecutionPolicy(max_retries=1, request_timeout_seconds=0.05),
+            coordinator_runtime_service=dispatcher,
+            session_store=InMemorySessionStore(),
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+        )
+        tasks = await asyncio.wait_for(coordinator.run_all(), timeout=1.0)
+        return tasks, dispatcher.calls, coordinator.has_unsettled_workers
+
+    tasks, dispatch_calls, unsettled = asyncio.run(scenario())
+
+    assert unsettled
+    assert dispatch_calls == 0
+    assert tasks[0].status == "failed"
+    assert tasks[0].last_error.startswith("worker_unsettled:")
+    assert tasks[0].worker_session_id == "existing-child"
+    assert tasks[1].status == "ready"

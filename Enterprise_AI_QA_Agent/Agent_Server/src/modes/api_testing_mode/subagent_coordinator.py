@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Callable
 
-from src.modes.api_testing_mode.campaign_state import ApiTestTask, CredentialSession, ExecutionPolicy
+from src.modes.api_testing_mode.campaign_state import (
+    ApiTestTask,
+    CredentialSession,
+    ExecutionPolicy,
+)
 from src.modes.api_testing_mode.contracts import (
     EXECUTION_MODE_AUTH,
     EXECUTION_MODE_READ,
@@ -19,6 +24,7 @@ from src.runtime.store import SessionStore
 from src.schemas.session import MessageRole, SessionStatus
 
 CheckpointCallback = Callable[[str, ApiTestTask, list[ApiTestTask]], None]
+logger = logging.getLogger("uvicorn.error.api_testing_mode.coordinator")
 
 
 class ApiSubagentCoordinator:
@@ -53,8 +59,35 @@ class ApiSubagentCoordinator:
         self._active_resource_locks: set[str] = set()
         self._write_running: bool = False
         self._task_outputs: dict[str, Any] = {}
+        self._unsettled_child_session_ids: set[str] = set()
+        self._unsettled_task_ids: set[str] = set()
+
+    @property
+    def has_unsettled_workers(self) -> bool:
+        return bool(self._unsettled_child_session_ids or self._unsettled_task_ids)
 
     async def run_all(self) -> list[ApiTestTask]:
+        restored_running = self._pool.running_tasks()
+        if restored_running:
+            logger.warning(
+                "api_restored_workers_unsettled",
+                extra={
+                    "parent_session_id": str(self._parent_context.get("session_id") or ""),
+                    "parent_turn_id": str(self._parent_context.get("turn_id") or ""),
+                    "task_ids": [task.task_id for task in restored_running],
+                    "child_session_ids": [task.worker_session_id for task in restored_running if task.worker_session_id],
+                },
+            )
+            for task in restored_running:
+                self._unsettled_task_ids.add(task.task_id)
+                if task.worker_session_id:
+                    self._unsettled_child_session_ids.add(task.worker_session_id)
+                self._fail_task(
+                    task,
+                    "worker_unsettled: restored running task has no active coordinator wait; "
+                    "reconcile its child session before retry",
+                )
+            return self._pool.all_tasks
         while not self._pool.is_complete:
             self._pool.resolve_blocked()
             batch = self._select_batch()
@@ -64,9 +97,11 @@ class ApiSubagentCoordinator:
                     continue
                 break
             await self._dispatch_batch(batch)
+            if self.has_unsettled_workers:
+                break
             self._pool.resolve_blocked()
 
-        if self._policy.max_retries > 0:
+        if self._policy.max_retries > 0 and not self.has_unsettled_workers:
             await self._retry_failed()
 
         return self._pool.all_tasks
@@ -95,10 +130,14 @@ class ApiSubagentCoordinator:
                         continue
                     break
                 await self._dispatch_batch(batch)
+                if self.has_unsettled_workers:
+                    return
                 self._pool.resolve_blocked()
 
     def _is_retryable(self, task: ApiTestTask) -> bool:
         error = (task.last_error or "").lower()
+        if error.startswith(("worker_timeout:", "worker_unsettled:")):
+            return False
         if task.response_status and task.response_status >= 500:
             return True
         if "timeout" in error or "timed out" in error:
@@ -178,7 +217,8 @@ class ApiSubagentCoordinator:
                 for record in worker_records.values()
                 if str(record.get("status") or "") == "running" and str(record.get("child_session_id") or "")
             ]
-            settled_sessions = await self._wait_for_sessions(child_session_ids)
+            settled_sessions, timed_out_ids = await self._wait_for_sessions(child_session_ids)
+            self._unsettled_child_session_ids.update(timed_out_ids)
             settled_map = {session.id: session for session in settled_sessions}
 
             for task in launched_tasks:
@@ -188,6 +228,14 @@ class ApiSubagentCoordinator:
                     continue
                 child_session_id = str(record.get("child_session_id") or "")
                 task.worker_session_id = child_session_id
+                if child_session_id in timed_out_ids:
+                    task.worker_status = "running"
+                    self._fail_task(
+                        task,
+                        f"worker_timeout: child session {child_session_id} did not settle; "
+                        "its execution status remains unknown and must be reconciled before retry",
+                    )
+                    continue
                 session = settled_map.get(child_session_id)
                 if session is None:
                     self._fail_task(task, "worker_session_not_found")
@@ -235,29 +283,56 @@ class ApiSubagentCoordinator:
             },
         }
 
-    async def _wait_for_sessions(self, child_session_ids: list[str]) -> list[Any]:
+    async def _wait_for_sessions(self, child_session_ids: list[str]) -> tuple[list[Any], set[str]]:
         pending = {session_id for session_id in child_session_ids if session_id}
         settled: dict[str, Any] = {}
+        terminal_statuses = {
+            SessionStatus.completed,
+            SessionStatus.failed,
+            SessionStatus.interrupted,
+            SessionStatus.waiting_approval,
+        }
+        timeout_seconds = max(self._poll_interval_seconds, self._policy.request_timeout_seconds * 2)
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
         while pending:
             completed_ids: list[str] = []
+            read_timed_out = False
             for session_id in list(pending):
-                session = await self._session_store.get_session(session_id)
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    read_timed_out = True
+                    break
+                try:
+                    session = await asyncio.wait_for(
+                        self._session_store.get_session(session_id), timeout=remaining,
+                    )
+                except TimeoutError:
+                    read_timed_out = True
+                    break
                 if session is None:
                     completed_ids.append(session_id)
                     continue
-                if session.status in {
-                    SessionStatus.completed,
-                    SessionStatus.failed,
-                    SessionStatus.interrupted,
-                    SessionStatus.waiting_approval,
-                }:
+                if session.status in terminal_statuses:
                     settled[session_id] = session
                     completed_ids.append(session_id)
             for session_id in completed_ids:
                 pending.discard(session_id)
-            if pending:
-                await asyncio.sleep(self._poll_interval_seconds)
-        return list(settled.values())
+            if not pending:
+                break
+            remaining = deadline - asyncio.get_running_loop().time()
+            if read_timed_out or remaining <= 0:
+                logger.warning(
+                    "api_worker_wait_timed_out",
+                    extra={
+                        "parent_session_id": str(self._parent_context.get("session_id") or ""),
+                        "parent_turn_id": str(self._parent_context.get("turn_id") or ""),
+                        "child_session_ids": sorted(pending),
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+                return list(settled.values()), pending
+            await asyncio.sleep(min(self._poll_interval_seconds, remaining))
+        return list(settled.values()), set()
 
     def _apply_worker_output(self, task: ApiTestTask, tool_output: dict[str, Any]) -> None:
         task_payload = tool_output.get("task_result")

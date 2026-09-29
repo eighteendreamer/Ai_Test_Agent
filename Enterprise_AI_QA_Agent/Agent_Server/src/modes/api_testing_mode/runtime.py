@@ -462,19 +462,37 @@ class ApiTestingModeRuntime:
             completed_tasks = await coordinator.run_all()
         state.campaign.tasks = completed_tasks
         state.campaign.updated_at = datetime.now(timezone.utc).isoformat()
+        has_unsettled_workers = (
+            isinstance(coordinator, ApiSubagentCoordinator)
+            and coordinator.has_unsettled_workers
+        )
+        if has_unsettled_workers:
+            state.record_phase_transition(
+                PHASE_FAILED,
+                "Campaign stopped because worker sessions remain unsettled; reconcile them before retry.",
+            )
         latest_credential = self._credential_manager.get_latest()
         if latest_credential is not None:
             state.credential_session = latest_credential.model_copy(deep=True)
         self._checkpoint_execution_state(
             state=state,
             context=context,
-            event_type="campaign_tasks_settled",
+            event_type="campaign_execution_incomplete" if has_unsettled_workers else "campaign_tasks_settled",
             tasks=completed_tasks,
-            summary="All campaign tasks have settled.",
+            summary=(
+                "Campaign stopped while worker sessions remain unsettled."
+                if has_unsettled_workers else "All campaign tasks have settled."
+            ),
         )
 
         # Build report.
         report = self._report_builder.build(campaign=state.campaign)
+        if has_unsettled_workers:
+            report.summary = (
+                "Campaign execution stopped with unsettled worker sessions. "
+                f"{report.completed}/{report.total_tasks} tasks passed; "
+                "worker outcomes remain unknown and require reconciliation before retry."
+            )
         state.report = report
 
         # Generate Markdown report.
@@ -513,7 +531,8 @@ class ApiTestingModeRuntime:
             for rec in evaluation_result.recommendations[:5]:
                 state.notes.append(rec)
 
-        state.record_phase_transition(PHASE_REPORT_READY, "Campaign execution complete.")
+        if not has_unsettled_workers:
+            state.record_phase_transition(PHASE_REPORT_READY, "Campaign execution complete.")
         return state
 
     # ==================================================================
@@ -683,6 +702,11 @@ class ApiTestingModeRuntime:
         if note:
             return note
         if state.phase == PHASE_FAILED:
+            if (
+                state.report
+                and state.execution_checkpoint.get("last_event_type") == "campaign_execution_incomplete"
+            ):
+                return state.report.summary
             return state.notes[-1] if state.notes else "API testing mode encountered an error."
         if state.phase == PHASE_REPORT_READY and state.report:
             return state.report.summary

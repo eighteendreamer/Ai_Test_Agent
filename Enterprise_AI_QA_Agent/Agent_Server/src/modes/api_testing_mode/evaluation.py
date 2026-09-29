@@ -149,6 +149,8 @@ class ApiTestingEvaluationPolicy:
 
         # 5. Build summary.
         summary = self._build_summary(quality_score, coverage, classifications)
+        if any(c.category == "worker_unsettled" for c in classifications):
+            summary = f"执行未完成，质量评分仅供参考；需先核对子会话结果。{summary}"
 
         return EvaluationResult(
             campaign_id=campaign.campaign_id,
@@ -191,6 +193,9 @@ class ApiTestingEvaluationPolicy:
         status = task.response_status or 0
         error = (task.last_error or "").lower()
 
+        if error.startswith(("worker_timeout:", "worker_unsettled:")):
+            return "worker_unsettled", SEVERITY_MEDIUM, False
+
         # Auth failures.
         if status in {401, 403}:
             return "auth", SEVERITY_CRITICAL, False
@@ -222,7 +227,11 @@ class ApiTestingEvaluationPolicy:
         tasks: list[ApiTestTask],
         total_available: int,
     ) -> CoverageMetrics:
-        tested = [t for t in tasks if t.status in {TASK_COMPLETED, TASK_FAILED}]
+        tested = [
+            t for t in tasks
+            if t.status in {TASK_COMPLETED, TASK_FAILED}
+            and not (t.last_error or "").lower().startswith(("worker_timeout:", "worker_unsettled:"))
+        ]
         tested_capabilities = list({t.capability for t in tested if t.capability})
         all_capabilities = list({t.capability for t in tasks if t.capability})
         untested = [cap for cap in all_capabilities if cap not in tested_capabilities]
@@ -350,6 +359,12 @@ class ApiTestingEvaluationPolicy:
                 f"⏱️ {len(timeouts)} 个接口超时，建议检查网络连通性或增加超时时间。"
             )
 
+        unsettled = [c for c in classifications if c.category == "worker_unsettled"]
+        if unsettled:
+            recommendations.append(
+                f"⏱️ {len(unsettled)} 个子会话结果未结算，请核对子会话后再决定是否重试。"
+            )
+
         # Low coverage.
         if coverage.coverage_rate < 0.5:
             recommendations.append(
@@ -363,7 +378,7 @@ class ApiTestingEvaluationPolicy:
             )
 
         # Performance.
-        if quality_score.performance < 10.0:
+        if any(t.status == TASK_COMPLETED for t in tasks) and quality_score.performance < 10.0:
             recommendations.append(
                 "🐢 平均响应时间较长，建议关注接口性能。"
             )
