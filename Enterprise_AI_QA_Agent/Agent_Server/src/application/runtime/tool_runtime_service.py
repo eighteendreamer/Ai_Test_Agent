@@ -75,6 +75,59 @@ from src.schemas.session_resource import SessionResourceKind
 
 logger = logging.getLogger(__name__)
 
+
+def _run_cli_subprocess(command: list[str], cwd: Path, timeout_seconds: float) -> tuple[str, str, int, bool]:
+    # No upstream counterpart (checked: runtime subprocess paths and mail CLI adapter):
+    # Windows CLI timeouts must terminate children before collecting the final output.
+    with subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            return stdout or "", stderr or "", process.returncode, False
+        except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                try:
+                    cleanup = subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        capture_output=True,
+                        text=True,
+                        errors="replace",
+                        timeout=10,
+                        check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    if process.poll() is None:
+                        process.kill()
+                    logger.exception("cli_executor_process_tree_cleanup_failed", extra={"pid": process.pid})
+                    raise RuntimeError(f"CLI process-tree cleanup failed for PID {process.pid}: {exc}") from exc
+                if cleanup.returncode != 0:
+                    if process.poll() is None:
+                        process.kill()
+                    logger.error(
+                        "cli_executor_process_tree_cleanup_failed",
+                        extra={"pid": process.pid, "exit_code": cleanup.returncode,
+                               "stdout": cleanup.stdout, "stderr": cleanup.stderr},
+                    )
+                    raise RuntimeError(
+                        f"CLI process-tree cleanup failed for PID {process.pid}: "
+                        f"exit={cleanup.returncode}; stdout={cleanup.stdout}; stderr={cleanup.stderr}"
+                    )
+            else:
+                process.kill()
+            stdout, stderr = process.communicate(timeout=10)
+            logger.warning(
+                "cli_executor_timed_out",
+                extra={"pid": process.pid, "timeout_seconds": timeout_seconds},
+            )
+            return stdout or "", stderr or "", -1, True
+
 CODE_REVIEW_RESULT_CATEGORY_LABELS = {
     "serious_issue": "严重问题",
     "critical": "严重问题",
@@ -2030,26 +2083,12 @@ class ToolRuntimeService:
 
         executable, shell_args = self._build_cli_invocation(shell_name, command)
         started_at = datetime.utcnow()
-        try:
-            completed = await asyncio.to_thread(
-                subprocess.run,
-                [shutil.which(executable) or executable, *shell_args],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_seconds,
-            )
-            stdout_text = completed.stdout or ""
-            stderr_text = completed.stderr or ""
-            exit_code = completed.returncode
-            timed_out = False
-        except subprocess.TimeoutExpired as exc:
-            stdout_text = exc.stdout or ""
-            stderr_text = exc.stderr or ""
-            exit_code = -1
-            timed_out = True
+        stdout_text, stderr_text, exit_code, timed_out = await asyncio.to_thread(
+            _run_cli_subprocess,
+            [shutil.which(executable) or executable, *shell_args],
+            cwd,
+            timeout_seconds,
+        )
 
         status = "completed" if exit_code == 0 and not timed_out else "partial" if timed_out else "failed"
         ok = exit_code == 0 and not timed_out
