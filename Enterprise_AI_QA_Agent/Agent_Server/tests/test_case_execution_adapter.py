@@ -188,6 +188,7 @@ def test_adapter_translates_generic_http_step_for_non_api_required_modes(
 
     if mode_key == "smoke_testing":
         assert invocation.call.arguments["action"] == "execute_approved_plan"
+        assert invocation.context.trusted_case_run_item_id == item.id
         smoke_case = invocation.call.arguments["plan"]["cases"][0]
         assert smoke_case["case_id"] == case.id
         assert smoke_case["steps"][0]["api"]["url"] == "https://example.test/orders/42"

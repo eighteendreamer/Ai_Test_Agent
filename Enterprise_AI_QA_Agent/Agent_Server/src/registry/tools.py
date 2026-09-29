@@ -1866,6 +1866,7 @@ class ToolRegistry:
                             "attachment_ids": {"type": "array", "items": {"type": "string"}, "description": "可选会话附件 ID。"},
                             "plan_id": {"type": "string", "description": "待修订或执行的方案 ID。"},
                             "approved_plan_id": {"type": "string", "description": "已确认方案 ID。"},
+                            "plan_version": {"type": "integer", "description": "用户确认执行的方案版本；执行时必须与已保存版本一致。"},
                             "plan": {"type": "object", "description": "可选内联方案对象。"},
                             "user_revision": {"type": "string", "description": "用户对方案的修改意见。"},
                             "selected_case_ids": {"type": "array", "items": {"type": "string"}, "description": "用户勾选执行的用例 ID。"},
@@ -1882,6 +1883,8 @@ class ToolRegistry:
                     output_schema={
                         "summary": "string",
                         "plan": "object",
+                        "plan_id": "string",
+                        "plan_version": "integer",
                         "run_result": "object",
                         "plan_uri": "string",
                         "approved_plan_uri": "string",

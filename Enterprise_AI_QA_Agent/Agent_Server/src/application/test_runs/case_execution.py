@@ -189,6 +189,7 @@ class CaseExecutionAdapter:
             tool_key=tool.key,
             call_id=call_id,
             server_approval_granted=server_approval_granted,
+            trusted_case_run_item_id=item.id if run.mode_key == "smoke_testing" else "",
         )
         return CaseToolInvocation(
             tool=tool,

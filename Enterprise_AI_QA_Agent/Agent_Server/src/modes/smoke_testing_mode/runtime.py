@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -31,6 +32,8 @@ from src.modes.smoke_testing_mode.plan_store import SmokePlanStore
 from src.modes.smoke_testing_mode.project_resolver import SmokeProjectResolver
 from src.modes.smoke_testing_mode.result_analyzer import SmokeResultAnalyzer
 from src.modes.smoke_testing_mode.source_resolver import SmokeSourceResolver
+
+logger = logging.getLogger(__name__)
 
 
 class SmokeTestingModeRuntime:
@@ -214,15 +217,54 @@ class SmokeTestingModeRuntime:
     async def _execute_plan(
         self, arguments: dict[str, Any], context: Any, init_warnings: list[str]
     ) -> dict[str, Any]:
-        plan, warnings = await self._load_plan_from_args(arguments)
-        if plan is None:
+        plan_id = str(arguments.get("plan_id") or arguments.get("approved_plan_id") or "").strip()
+        case_run_item_id = str(getattr(context, "trusted_case_run_item_id", "") or "")
+        context_bundle = getattr(context, "context_bundle", None) or {}
+        trusted_case_run = bool(
+            case_run_item_id
+            and isinstance(context_bundle, dict)
+            and case_run_item_id == str(context_bundle.get("run_item_id") or "")
+        )
+
+        def reject(error: str, summary: str, warnings: list[str] | None = None) -> dict[str, Any]:
+            logger.warning(
+                "smoke_plan_execution_rejected",
+                extra={
+                    "error_code": error,
+                    "session_id": str(getattr(context, "session_id", "") or ""),
+                    "plan_id": plan_id,
+                    "trusted_case_run": trusted_case_run,
+                },
+            )
             return {
                 "status": "failed",
                 "ok": False,
-                "summary": "未找到可执行的冒烟测试方案。",
-                "error": "plan_not_found",
-                "storage_warnings": warnings,
+                "summary": summary,
+                "error": error,
+                "storage_warnings": [*init_warnings, *(warnings or [])],
             }
+
+        if not trusted_case_run:
+            if not getattr(context, "server_approval_granted", False):
+                return reject("approval_required", "执行冒烟方案需要服务端确认的工具审批。")
+            if "plan" in arguments:
+                return reject("inline_plan_not_allowed", "执行时必须使用已保存的方案，不能提交内联方案。")
+            if not plan_id:
+                return reject("plan_id_required", "执行时必须提供已保存方案的 plan_id。")
+            requested_version = arguments.get("plan_version")
+            if (
+                not isinstance(requested_version, int)
+                or isinstance(requested_version, bool)
+                or requested_version < 1
+            ):
+                return reject("plan_version_required", "执行时必须提供已确认的正整数 plan_version。")
+
+        plan, warnings = await self._load_plan_from_args(arguments)
+        if plan is None:
+            return reject("plan_not_found", "未找到可执行的冒烟测试方案。", warnings)
+        if not trusted_case_run and (plan.plan_id != plan_id or plan.version != requested_version):
+            return reject("plan_version_mismatch", "已保存方案与确认的 ID 或版本不一致。", warnings)
+
         selected_case_ids = self._string_list(arguments.get("selected_case_ids"))
         if selected_case_ids:
             selected = set(selected_case_ids)
@@ -235,6 +277,18 @@ class SmokeTestingModeRuntime:
         plan, approval_warnings = await self._plan_store.save_approved_plan(
             plan,
             selected_case_ids=[case.case_id for case in plan.cases if case.selected],
+        )
+        if approval_warnings and not trusted_case_run:
+            return reject("plan_freeze_failed", "方案冻结保存失败，未执行冒烟测试。", [*warnings, *approval_warnings])
+        logger.info(
+            "smoke_plan_execution_started",
+            extra={
+                "session_id": str(getattr(context, "session_id", "") or ""),
+                "plan_id": plan.plan_id,
+                "plan_version": plan.version,
+                "selected_case_count": sum(case.selected and case.execution_eligible for case in plan.cases),
+                "trusted_case_run": trusted_case_run,
+            },
         )
         result = SmokeRunResult(
             plan_id=plan.plan_id,

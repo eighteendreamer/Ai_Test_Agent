@@ -98,5 +98,6 @@ def test_smoke_skill_preserves_user_confirmation_protocol():
     content = (SkillRegistry().skills_root / "smoke-test-planning" / "SKILL.md").read_text(encoding="utf-8")
     assert len(content.splitlines()) < 500
     assert "等待用户确认" in content
-    assert "只传递已选 case id/序号" in content
+    assert "`plan_id`、`plan_version` 和已选 case id/序号" in content
+    assert "不要传内联 `plan`" in content
     assert "没有执行证据时不得声称通过" in content

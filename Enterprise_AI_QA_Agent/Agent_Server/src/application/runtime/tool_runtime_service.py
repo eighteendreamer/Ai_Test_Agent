@@ -157,6 +157,7 @@ class ToolExecutionContext:
     call_id: str = ""
     server_approval_granted: bool = False
     approval_scope_hash: str = ""
+    trusted_case_run_item_id: str = ""
 
 
 class ToolRuntimeService:
@@ -521,6 +522,7 @@ class ToolRuntimeService:
                     call_id=call.id,
                     server_approval_granted=context.server_approval_granted,
                     approval_scope_hash=context.approval_scope_hash,
+                    trusted_case_run_item_id=context.trusted_case_run_item_id,
                 )
             if self._tool_job_service is not None:
                 if context.tool_job_id:
@@ -560,6 +562,7 @@ class ToolRuntimeService:
                     call_id=call.id,
                     server_approval_granted=context.server_approval_granted,
                     approval_scope_hash=context.approval_scope_hash,
+                    trusted_case_run_item_id=context.trusted_case_run_item_id,
                 )
 
             trace_context = None
