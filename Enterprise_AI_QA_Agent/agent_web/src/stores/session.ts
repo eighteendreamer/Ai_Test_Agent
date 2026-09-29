@@ -710,13 +710,15 @@ export const useSessionStore = defineStore("session", {
             console.log("[SSE Event]", event.type, event.session_id);
           }
           if (
-            event.type === "approval.created" ||
-            event.type === "approval.resolved" ||
+            event.type.startsWith("approval.") ||
             event.type === "tool.execution_completed" ||
             event.type === "tool.execution_failed" ||
             event.type === "tool.execution_denied" ||
             event.type === "tool.execution_skipped" ||
             event.type === "verification.completed" ||
+            event.type === "runtime.turn_completed" ||
+            event.type === "runtime.turn_failed" ||
+            event.type === "runtime.turn_interrupted" ||
             event.type === "turn.completed" ||
             event.type === "turn.failed"
           ) {
@@ -747,6 +749,7 @@ export const useSessionStore = defineStore("session", {
             event.type === "tool.execution_started" ||
             event.type === "worker.task_notification_received" ||
             event.type === "worker.auto_stopped" ||
+            event.type === "worker.interrupted" ||
             event.type === "input.queued" ||
             event.type === "input.dequeued" ||
             event.type === "queue.interrupted_turn_superseded" ||
