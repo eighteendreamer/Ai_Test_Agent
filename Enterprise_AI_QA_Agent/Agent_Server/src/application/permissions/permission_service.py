@@ -178,7 +178,7 @@ class PermissionService:
             )
 
         if (
-            policy_context.safety_decision == "require_authorization"
+            policy_context.authorization_status != "verified"
             and ("security.assessment" in tool.capability_keys or tool.owner_mode_key == "security_testing")
         ):
             return self._decision(

@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from src.application.capabilities.capability_resolver import CapabilityResolver
 from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
 from src.application.intent.intent_recognition_service import IntentRecognitionService
@@ -19,7 +21,7 @@ from src.application.security.execution_safety_policy import ExecutionSafetyPoli
 from src.application.security.output_safety_policy import OutputSafetyPolicy
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
 from src.application.security.resource_access_policy import ResourceAccessPolicy
-from src.application.runtime.runtime_service import RuntimeService
+from src.application.runtime.runtime_service import RuntimeService, RuntimeTurnResult
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.security.command_profiles import get_profile_registry
 from src.core.config import Settings
@@ -235,12 +237,7 @@ def test_security_mode_is_never_ai_activated_without_authorization():
 
 
 def test_frontend_context_cannot_override_security_runtime_flag():
-    """Frontend payload.context must not be able to inject the trusted flag.
-
-    The flag is derived from mode selection and server-side metadata only.
-    Explicitly selecting security_testing mode activates the runtime, but
-    the untrusted context value itself is ignored.
-    """
+    """Frontend payload.context cannot turn mode selection into authorization."""
     request = InputOrchestratorService(ModeRegistry()).orchestrate(
         _session(),
         SendMessageRequest(
@@ -251,17 +248,12 @@ def test_frontend_context_cannot_override_security_runtime_flag():
     )
 
     runtime = object.__new__(RuntimeService)
-    # Mode selection enables the runtime; the frontend context value is
-    # not the source of the trust, mode_key is.
-    assert request.context["trusted_security_runtime_direct_execution"] is True
-    assert runtime._should_use_dedicated_security_runtime(request) is True
+    assert request.context["trusted_security_runtime_direct_execution"] is False
+    assert runtime._should_use_dedicated_security_runtime(request) is False
 
 
-def test_dedicated_security_runtime_activated_by_explicit_mode_selection():
-    """Explicitly selecting security_testing mode is sufficient to enter
-    the dedicated security runtime pipeline, without requiring server-side
-    metadata opt-in or a pre-verified grant.
-    """
+def test_dedicated_security_runtime_requires_server_grant():
+    """Selecting security_testing mode without a grant remains passive."""
     request = InputOrchestratorService(ModeRegistry()).orchestrate(
         _session(),
         SendMessageRequest(
@@ -271,9 +263,9 @@ def test_dedicated_security_runtime_activated_by_explicit_mode_selection():
     )
 
     runtime = object.__new__(RuntimeService)
-    assert request.context["safety_assessment"]["authorization_status"] == "verified"
-    assert request.context["trusted_security_runtime_direct_execution"] is True
-    assert runtime._should_use_dedicated_security_runtime(request) is True
+    assert request.context["safety_assessment"]["authorization_status"] != "verified"
+    assert request.context["trusted_security_runtime_direct_execution"] is False
+    assert runtime._should_use_dedicated_security_runtime(request) is False
 
 
 def test_security_mode_with_server_grant_uses_verified_grant_reason():
@@ -301,8 +293,191 @@ def test_security_mode_with_server_grant_uses_verified_grant_reason():
 
     runtime = object.__new__(RuntimeService)
     assert request.context["safety_assessment"]["authorization_status"] == "verified"
-    assert "explicit_security_mode_verified_grant" in request.context["safety_assessment"]["reason_codes"]
+    assert "target_authorization_verified" in request.context["safety_assessment"]["reason_codes"]
     assert runtime._should_use_dedicated_security_runtime(request) is True
+
+
+def test_server_grant_dispatches_security_scan_for_matching_target():
+    session = _session()
+    session.metadata["security_authorization"] = {
+        "status": "verified",
+        "targets": ["https://security.example.test"],
+        "expires_at": "2099-01-01T00:00:00Z",
+    }
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content="扫描 https://security.example.test 的 XSS 漏洞",
+            mode_key="security_testing",
+        ),
+    )
+    tool_runtime = _CapturingToolRuntime()
+
+    asyncio.run(_runtime_service(tool_runtime).execute_turn(session, request))
+
+    assert len(tool_runtime.calls) == 1
+    assert tool_runtime.calls[0].name == "security-scan-runner"
+    assert tool_runtime.calls[0].arguments["target_url"] == "https://security.example.test"
+    assert request.context["safety_assessment"]["authorization_status"] == "verified"
+    assert request.context["trusted_security_runtime_direct_execution"] is True
+
+
+def test_authorized_security_worker_keeps_assigned_runtime_arguments():
+    session = _session()
+    session.metadata["security_authorization"] = {
+        "status": "verified",
+        "targets": ["https://security.example.test"],
+    }
+    assigned = {
+        "worker_action": "execute_security_task",
+        "task": {
+            "target": "https://security.example.test",
+            "command_profile": "http_headers_probe",
+        },
+    }
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content="扫描 https://security.example.test 的响应头",
+            mode_key="security_testing",
+            context={"security_runtime_arguments": assigned},
+        ),
+    )
+    tool_runtime = _CapturingToolRuntime()
+
+    asyncio.run(_runtime_service(tool_runtime).execute_turn(session, request))
+
+    assert request.context["security_runtime_arguments"] == assigned
+    assert len(tool_runtime.calls) == 1
+    assert tool_runtime.calls[0].arguments == assigned
+
+
+@pytest.mark.parametrize(
+    ("grant_target", "client_context"),
+    [
+        ("https://other.example.test", {}),
+        (
+            "https://security.example.test",
+            {"security_runtime_arguments": {"target_url": "https://other.example.test"}},
+        ),
+        (
+            "https://security.example.test",
+            {
+                "security_runtime_arguments": {
+                    "task": {"target": "https://security.example.test"},
+                    "target": "https://other.example.test",
+                }
+            },
+        ),
+    ],
+)
+def test_security_mode_does_not_dispatch_out_of_scope_server_grant(
+    monkeypatch, grant_target, client_context
+):
+    session = _session()
+    session.metadata["security_authorization"] = {
+        "status": "verified",
+        "targets": [grant_target],
+        "expires_at": "2099-01-01T00:00:00Z",
+    }
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content="扫描 https://security.example.test 的 XSS 漏洞",
+            mode_key="security_testing",
+            context=client_context,
+        ),
+    )
+    tool_runtime = _CapturingToolRuntime()
+    runtime = _runtime_service(tool_runtime)
+    passive_turns = []
+
+    async def passive_turn(current_session, state, *, on_model_chunk=None):
+        passive_turns.append(state["turn_id"])
+        state["final_response"] = "目标不在授权范围内。"
+        state["control_state"] = "completed"
+        return RuntimeTurnResult(
+            output_text=state["final_response"], events=[],
+            snapshot=runtime._build_snapshot(current_session, state, 1),
+            approvals=[], state=state, tool_messages=[], pending_turn={},
+        )
+
+    monkeypatch.setattr(runtime, "_execute_state", passive_turn)
+    asyncio.run(runtime.execute_turn(session, request))
+
+    assert tool_runtime.calls == []
+    assert len(passive_turns) == 1
+    assert request.context["trusted_security_runtime_direct_execution"] is (
+        grant_target == "https://security.example.test"
+    )
+    assert runtime._should_use_dedicated_security_runtime(request) is False
+
+
+@pytest.mark.parametrize(
+    "client_context",
+    [
+        {},
+        {
+            "trusted_security_authorization": {
+                "status": "verified",
+                "targets": ["https://security.example.test"],
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+            "safety_assessment": {"decision": "allow", "authorization_status": "verified"},
+            "trusted_security_runtime_direct_execution": True,
+            "security_authorization": {
+                "status": "verified",
+                "targets": ["https://security.example.test"],
+            },
+            "security_runtime_arguments": {"target_url": "https://security.example.test"},
+        },
+    ],
+)
+@pytest.mark.parametrize("server_opt_in", [False, True])
+def test_explicit_security_mode_without_server_grant_cannot_dispatch_scan(
+    monkeypatch, client_context, server_opt_in
+):
+    session = _session()
+    session.metadata["security_runtime_direct_execution"] = server_opt_in
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content="扫描 https://security.example.test 的 XSS 漏洞",
+            mode_key="security_testing",
+            context=client_context,
+        ),
+    )
+    tool_runtime = _CapturingToolRuntime()
+    runtime = _runtime_service(tool_runtime)
+    passive_turns = []
+
+    async def passive_turn(current_session, state, *, on_model_chunk=None):
+        passive_turns.append(state["turn_id"])
+        state["final_response"] = "需要先核验目标授权。"
+        state["control_state"] = "completed"
+        state["termination_reason"] = "completed"
+        return RuntimeTurnResult(
+            output_text=state["final_response"],
+            events=[],
+            snapshot=runtime._build_snapshot(current_session, state, 1),
+            approvals=[],
+            state=state,
+            tool_messages=[],
+            pending_turn={},
+        )
+
+    monkeypatch.setattr(runtime, "_execute_state", passive_turn)
+    asyncio.run(runtime.execute_turn(session, request))
+
+    assert tool_runtime.calls == []
+    assert len(passive_turns) == 1
+    assert request.context["safety_assessment"]["decision"] == "require_authorization"
+    assert request.context["safety_assessment"]["authorization_status"] != "verified"
+    assert request.context["trusted_security_runtime_direct_execution"] is False
+    assert request.context.get("trusted_security_authorization") is None
+    assert request.context.get("security_authorization") is None
+    assert request.context.get("security_runtime_arguments") == client_context.get("security_runtime_arguments")
+    assert request.orchestration_meta["safety_decision"] == request.context["safety_assessment"]["decision"]
 
 
 def test_safety_policy_denies_production_load_and_cloud_metadata():
@@ -517,6 +692,43 @@ def test_verified_security_worker_sees_runner_before_concrete_risk_gate():
 
     assert evaluation.allowed_tool_keys == ["web-scan-runner"]
     assert evaluation.model_visible_tool_keys == ["web-scan-runner"]
+
+
+def test_passive_security_request_cannot_expose_active_runner_without_grant():
+    session = _session()
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(
+            content="查看 https://security.example.test 的安全报告",
+            mode_key="security_testing",
+        ),
+    )
+    tool = ToolRegistry().get("security-scan-runner")
+    safety = request.context["safety_assessment"]
+    policy_context = PermissionPolicyContext(
+        session_mode=session.session_mode,
+        runtime_mode=session.runtime_mode,
+        selected_agent_key=request.agent_key,
+        message_kind=request.message_kind,
+        submit_mode=request.submit_mode,
+        execution_lane=request.routing_decision.execution_lane,
+        active_mode_key=request.mode_key,
+        safety_decision=safety["decision"],
+        authorization_status=safety["authorization_status"],
+    )
+    permission = PermissionService().evaluate(policy_context=policy_context, tools=[tool])
+    execution = ExecutionSafetyPolicy().evaluate_tool_call(
+        tool=tool,
+        arguments={"target_url": "https://security.example.test"},
+        active_mode_key=request.mode_key,
+        context=request.context,
+    )
+
+    assert safety["authorization_status"] == "not_required"
+    assert permission.denied_tool_keys == [tool.key]
+    assert permission.model_visible_tool_keys == []
+    assert execution.behavior == "deny"
+    assert execution.reason_code == "security_authorization_required"
 
 
 def test_security_execution_policy_allows_scoped_low_risk_and_asks_for_high_risk():

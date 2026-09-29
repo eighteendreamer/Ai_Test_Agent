@@ -101,7 +101,10 @@ async def test_invalid_security_task_cannot_fall_back_to_top_level_target(monkey
         tool=tool,
         arguments=arguments,
         active_mode_key="security_testing",
-        context={"environment": "testing", "safety_assessment": {"decision": "allow"}},
+        context={
+            "environment": "testing",
+            "safety_assessment": {"decision": "allow", "authorization_status": "verified"},
+        },
     ).behavior != "deny"
 
     result = await runtime.execute(

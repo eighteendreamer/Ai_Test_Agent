@@ -70,7 +70,7 @@ class ExecutionSafetyPolicy:
                 reason="The turn-level safety assessment denies execution tools for this request.",
                 reason_code="turn_safety_denied",
             )
-        if safety_decision == "require_authorization" and (
+        if safety.get("authorization_status") != "verified" and (
             "security.assessment" in tool.capability_keys or tool.owner_mode_key == "security_testing"
         ):
             return ToolSafetyDecision(

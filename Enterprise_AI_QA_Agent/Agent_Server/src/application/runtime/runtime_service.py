@@ -1374,14 +1374,10 @@ class RuntimeService:
         }
 
     def _should_use_dedicated_security_runtime(self, request: ExecutionRequest) -> bool:
-        safety = request.context.get("safety_assessment")
-        authorization_verified = isinstance(safety, dict) and safety.get("authorization_status") == "verified"
-        if not authorization_verified:
-            authorization_verified = self._trusted_security_grant_matches_request(request)
         return (
             str(request.mode_key or "").strip() == "security_testing"
             and bool(request.context.get("trusted_security_runtime_direct_execution"))
-            and authorization_verified
+            and self._trusted_security_grant_matches_request(request)
         )
 
     @staticmethod
@@ -1395,6 +1391,23 @@ class RuntimeService:
 
     def _trusted_security_grant_matches_request(self, request: ExecutionRequest) -> bool:
         grant = request.context.get("trusted_security_authorization")
+        explicit_arguments = request.context.get("security_runtime_arguments")
+        if isinstance(explicit_arguments, dict):
+            task = explicit_arguments.get("task")
+            targets = [
+                str(value).strip()
+                for value in (
+                    task.get("target") if isinstance(task, dict) else None,
+                    explicit_arguments.get("target_url"),
+                    explicit_arguments.get("target"),
+                    explicit_arguments.get("target_host"),
+                    explicit_arguments.get("target_network"),
+                )
+                if str(value or "").strip()
+            ]
+            return bool(targets) and all(
+                verified_grant_matches_target(grant, target) for target in targets
+            )
         security_request = request.context.get("security_testing_request")
         target_url = str(
             (security_request.get("target_url") if isinstance(security_request, dict) else "")
