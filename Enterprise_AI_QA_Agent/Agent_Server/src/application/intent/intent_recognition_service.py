@@ -9,6 +9,8 @@ from src.schemas.intent import IntentDecision
 class IntentRecognitionService:
     """Extract a stable task frame without granting execution authority."""
 
+    URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
+
     MODE_TOKENS: dict[str, set[str]] = {
         "security_testing": {"security", "安全", "漏洞", "渗透", "越权", "xss", "csrf", "sql注入", "扫描"},
         "performance_testing": {
@@ -52,9 +54,10 @@ class IntentRecognitionService:
         if scores["security_testing"] and routing_scores["code_review"]:
             objectives.append("security_review")
         capabilities = self._capabilities(matched, target_kind)
-        actions = self._requested_actions(text)
+        text_without_urls = self.URL_PATTERN.sub(" ", normalized)
+        actions = self._requested_actions(text_without_urls.lower())
         target_url = self._extract_url(normalized)
-        endpoint = self._extract_endpoint(normalized)
+        endpoint = self._extract_endpoint(text_without_urls)
         evidence = [f"{key}:{scores[key]}" for key, score in scores.items() if score > 0]
         best_score = routing_scores.get(candidate or "", 0)
         second_score = sorted(routing_scores.values(), reverse=True)[1] if len(routing_scores) > 1 else 0
@@ -125,12 +128,12 @@ class IntentRecognitionService:
             "send": ("发送", "发邮件", "send", "publish"),
         }
         for action, tokens in checks.items():
-            if any(token in text for token in tokens):
+            if any(self._token_present(text, token) for token in tokens):
                 actions.append(action)
         return actions or ["respond"]
 
     def _extract_url(self, message: str) -> str:
-        match = re.search(r"https?://[^\s<>'\"]+", message, re.IGNORECASE)
+        match = self.URL_PATTERN.search(message)
         return match.group(0).rstrip(".,;，。；") if match else ""
 
     def _extract_endpoint(self, message: str) -> str:

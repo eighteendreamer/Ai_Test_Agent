@@ -88,6 +88,42 @@ def test_polite_request_is_not_misrouted_to_api_testing():
     assert intent.target_kind == "general"
 
 
+def test_url_domain_does_not_supply_an_endpoint_or_execution_action():
+    intent = IntentRecognitionService().recognize("查询 https://example.test 的状态")
+    prose = IntentRecognitionService().recognize("Summarize the contest results")
+
+    assert intent.parameters["target_url"] == "https://example.test"
+    assert intent.parameters["endpoint"] == ""
+    assert intent.requested_actions == ["read"]
+    assert "execute" not in prose.requested_actions
+
+
+def test_localhost_target_uses_same_restricted_scope_as_loopback_ip():
+    for url in (
+        "http://localhost:8000/health",
+        "http://service.localhost:8000/health",
+        "http://localhost.:8000/health",
+        "http://127.0.0.1:8000/health",
+    ):
+        message = f"查看 {url}"
+        intent = IntentRecognitionService().recognize(message)
+        safety = SafetyIntentService().assess(message, intent)
+
+        assert safety.target_scope_status == "restricted"
+        assert safety.decision == "clarify"
+
+
+def test_localhost_scope_and_url_endpoint_reach_orchestration_context():
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        _session(),
+        SendMessageRequest(content="查看 http://localhost:8000/health"),
+    )
+
+    assert request.context["intent_decision"]["parameters"]["endpoint"] == ""
+    assert request.context["safety_assessment"]["target_scope_status"] == "restricted"
+    assert request.context["safety_assessment"]["decision"] == "clarify"
+
+
 class _FakeSemanticModelRuntime:
     def __init__(self, payload: dict | None = None, text: str | None = None) -> None:
         self.payload = payload

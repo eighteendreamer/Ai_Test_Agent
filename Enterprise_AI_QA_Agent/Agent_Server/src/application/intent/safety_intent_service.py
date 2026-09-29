@@ -86,9 +86,13 @@ class SafetyIntentService:
         if not target_url:
             return "unknown", "target_scope_unknown"
         try:
-            host = (urlparse(target_url).hostname or "").strip().lower()
+            host = (urlparse(target_url).hostname or "").strip().lower().rstrip(".")
             if host in {"metadata.google.internal", "metadata.azure.internal"} or host == "169.254.169.254":
                 return "blocked", "cloud_metadata_target_blocked"
+            if host == "localhost" or host.endswith(".localhost"):
+                if authorization == "verified":
+                    return "in_scope", "target_authorization_verified"
+                return "restricted", "private_or_local_target_requires_scope_verification"
             address = ipaddress.ip_address(host)
             if address.is_loopback or address.is_link_local or address.is_private:
                 if authorization == "verified":
