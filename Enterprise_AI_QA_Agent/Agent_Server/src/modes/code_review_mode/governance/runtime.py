@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -23,7 +24,6 @@ from src.modes.code_review_mode.project_source import (
     normalize_project_source,
     resolve_local_project_root,
 )
-
 
 SEVERITY_ORDER = {
     "critical": 5,
@@ -53,6 +53,7 @@ DEPENDENCY_FILES = {
 
 TEST_PATH_TOKENS = ("test", "tests", "__tests__", ".spec.", ".test.")
 GRAPH_FILE_LANGUAGES = {"python", "typescript", "javascript", "vue", "java", "sql"}
+logger = logging.getLogger("uvicorn.error.code_review_mode.governance")
 
 
 class CodeGovernanceRuntime:
@@ -74,6 +75,10 @@ class CodeGovernanceRuntime:
 
         ignored_names = ignored_names_from_arguments(arguments)
         diff_payload = await self._collect_diff(root, project_source, arguments)
+        if diff_payload.get("collection_error"):
+            error = str(diff_payload["collection_error"])
+            logger.warning("code_governance_diff_collection_failed", extra={"project_root": str(root), "error": error})
+            return self._failed_result(f"Failed to collect review diff: {error}", error=error)
         changed_files = [
             item
             for item in self._build_changed_files(diff_payload)
@@ -97,6 +102,31 @@ class CodeGovernanceRuntime:
         findings = self._dedupe_findings(findings)
         risk_score = self._score_findings(findings)
         decision = self._decide(findings, risk_score, arguments)
+        failed_scanners = [str(run.get("scanner") or "unknown") for run in scanner_runs if run.get("status") == "failed"]
+        skipped_scanners = [str(run.get("scanner") or "unknown") for run in scanner_runs if run.get("status") == "skipped"]
+        if failed_scanners:
+            logger.warning(
+                "code_governance_scanners_failed",
+                extra={"project_root": str(root), "scanners": failed_scanners},
+            )
+            decision = ApprovalDecision(
+                status="blocked",
+                reason=f"Requested governance scanners failed: {', '.join(failed_scanners)}.",
+                blocking_findings=list(decision.blocking_findings),
+                required_actions=[*decision.required_actions, "Fix failed scanners and re-run code governance review."],
+                policy=dict(decision.policy),
+            )
+        elif skipped_scanners and decision.status != "blocked":
+            logger.warning(
+                "code_governance_scanners_skipped",
+                extra={"project_root": str(root), "scanners": skipped_scanners},
+            )
+            decision = ApprovalDecision(
+                status="warning",
+                reason=f"Requested governance scanners were skipped: {', '.join(skipped_scanners)}; review is incomplete.",
+                required_actions=[*decision.required_actions, "Run the skipped scanners before approving this change."],
+                policy=dict(decision.policy),
+            )
         report_markdown = self._build_report_markdown(
             project_name=project_source.project_name or root.name,
             changed_files=changed_files,
@@ -162,14 +192,16 @@ class CodeGovernanceRuntime:
     async def _collect_diff(self, root: Path, project_source, arguments: dict[str, Any]) -> dict[str, Any]:
         git_root_result = await self._run("git", ["-C", str(root), "rev-parse", "--show-toplevel"])
         if not git_root_result["ok"]:
+            inline_diff = str(arguments.get("diff_text") or "")
             return {
                 "diff_mode": "not_git_repo",
                 "commit_range": "",
                 "status_lines": [],
                 "diff_stat": "",
-                "diff_text": str(arguments.get("diff_text") or ""),
+                "diff_text": inline_diff,
                 "numstat_lines": [],
                 "truncated": False,
+                "collection_error": "git repository unavailable and no inline diff was supplied" if not inline_diff.strip() else "",
             }
         git_root = git_root_result["stdout"].strip()
         commit_range = str(arguments.get("commit_range") or project_source.commit_range or "").strip()
@@ -184,6 +216,20 @@ class CodeGovernanceRuntime:
         stat_result = await self._run("git", stat_args)
         numstat_result = await self._run("git", numstat_args)
         name_status_result = await self._run("git", name_status_args)
+        command_results = {
+            "git status": status_result,
+            "git diff": diff_result,
+            "git diff --stat": stat_result,
+            "git diff --numstat": numstat_result,
+            "git diff --name-status": name_status_result,
+        }
+        failed_commands = [
+            f"{name} (exit={result.get('exit_code')}, stderr={str(result.get('stderr') or '')[:300]})"
+            for name, result in command_results.items()
+            if not result.get("ok")
+        ]
+        if failed_commands:
+            return {"collection_error": "; ".join(failed_commands)}
         inline_diff = str(arguments.get("diff_text") or "").strip()
         diff_text = inline_diff or diff_result["stdout"]
         max_chars = int(arguments.get("max_chars") or 80000)
@@ -365,7 +411,16 @@ class CodeGovernanceRuntime:
                     evidence=[{"line": stripped[:240]}],
                 )
             )
-        if re.search(r"(?i)\b(update|delete)\b", stripped) and " where " not in f" {lowered} ":
+        sql_statement = re.search(
+            r"(?i)\b(?:delete\s+from\s+[a-z_][\w.]*|update\s+[a-z_][\w.]*\s+set\b)",
+            stripped,
+        )
+        if (
+            path.lower().endswith((".sql", ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".go", ".rs"))
+            and not stripped.startswith(("#", "--", "//", "*"))
+            and sql_statement
+            and " where " not in f" {lowered} "
+        ):
             findings.append(
                 self._finding(
                     source="builtin-sql-rule",

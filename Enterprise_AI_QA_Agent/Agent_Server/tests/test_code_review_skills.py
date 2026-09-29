@@ -1,25 +1,38 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+from src.application.orchestration.input_orchestrator_service import (
+    InputOrchestratorService,
+)
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.domain.models import SessionRecord
-from src.graph.nodes.tool_executor import _run_skill_loader
 from src.graph.nodes.router import build_router_node
+from src.graph.nodes.tool_executor import _run_skill_loader
+from src.modes.code_review_mode.governance import runtime as governance_module
+from src.modes.code_review_mode.governance.runtime import CodeGovernanceRuntime
 from src.modes.code_review_mode.manifest import MODE_MANIFEST
 from src.modes.code_review_mode.orchestrator import build_code_review_campaign
-from src.modes.code_review_mode.skills import CODE_REVIEW_REVIEWER_SKILLS, CODE_REVIEW_SKILL_KEYS
+from src.modes.code_review_mode.skills import (
+    CODE_REVIEW_REVIEWER_SKILLS,
+    CODE_REVIEW_SKILL_KEYS,
+)
 from src.registry.agents import AgentRegistry
 from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
-from src.schemas.session import RuntimeMode, SendMessageRequest, SessionMode, SessionStatus
+from src.schemas.session import (
+    RuntimeMode,
+    SendMessageRequest,
+    SessionMode,
+    SessionStatus,
+)
 from src.schemas.tool_runtime import ModelToolCall
 
 
@@ -328,3 +341,138 @@ def test_code_review_mode_defaults_are_available_to_execution_request():
     )
     assert request.mode_key == "code_review"
     assert request.skill_keys == CODE_REVIEW_SKILL_KEYS
+
+
+def test_git_diff_failure_cannot_produce_a_pass_decision(tmp_path):
+    async def scenario():
+        runtime = CodeGovernanceRuntime()
+
+        async def failed_diff(command, args, timeout_seconds=20.0, cwd=None):
+            if "rev-parse" in args:
+                return {"ok": True, "stdout": str(tmp_path), "stderr": "", "exit_code": 0}
+            if "--unified=3" in args:
+                return {"ok": False, "stdout": "", "stderr": "invalid diff range", "exit_code": 128}
+            return {"ok": True, "stdout": "", "stderr": "", "exit_code": 0}
+
+        runtime._run = failed_diff
+        return await runtime.handle({"root_path": str(tmp_path)}, None)
+
+    result = asyncio.run(scenario())
+
+    assert result["status"] == "failed"
+    assert result["ok"] is False
+    assert "diff" in result["summary"].lower()
+    assert "invalid diff range" in result["error"]
+
+
+def test_non_git_project_without_a_diff_cannot_pass_review(tmp_path):
+    async def scenario():
+        runtime = CodeGovernanceRuntime()
+
+        async def not_git(command, args, timeout_seconds=20.0, cwd=None):
+            return {"ok": False, "stdout": "", "stderr": "not a git repository", "exit_code": 128}
+
+        runtime._run = not_git
+        return await runtime.handle({"root_path": str(tmp_path)}, None)
+
+    result = asyncio.run(scenario())
+
+    assert result["status"] == "failed"
+    assert result["approval_decision"] == "blocked"
+
+
+def test_non_git_project_with_inline_diff_remains_reviewable(tmp_path):
+    async def scenario():
+        runtime = CodeGovernanceRuntime()
+
+        async def not_git(command, args, timeout_seconds=20.0, cwd=None):
+            return {"ok": False, "stdout": "", "stderr": "not a git repository", "exit_code": 128}
+
+        runtime._run = not_git
+        return await runtime.handle({
+            "root_path": str(tmp_path),
+            "diff_text": "diff --git a/readme.txt b/readme.txt\n+++ b/readme.txt\n@@ -0,0 +1 @@\n+safe text",
+        }, None)
+
+    result = asyncio.run(scenario())
+
+    assert result["status"] == "completed"
+    assert result["approval_decision"] == "pass"
+
+
+def test_failed_requested_scanner_blocks_governance_approval(tmp_path, monkeypatch):
+    async def scenario():
+        runtime = CodeGovernanceRuntime()
+
+        async def failed_scanner_command(command, args, timeout_seconds=20.0, cwd=None):
+            if command == "git":
+                return {"ok": False, "stdout": "", "stderr": "not a git repository", "exit_code": 128}
+            return {"ok": False, "stdout": "", "stderr": "scanner crashed", "exit_code": 2}
+
+        runtime._run = failed_scanner_command
+        monkeypatch.setattr(governance_module.shutil, "which", lambda executable: executable)
+        return await runtime.handle({
+            "root_path": str(tmp_path), "run_external_scanners": True,
+            "external_scanners": ["semgrep"],
+            "diff_text": "diff --git a/readme.txt b/readme.txt\n+++ b/readme.txt\n@@ -0,0 +1 @@\n+safe text",
+        }, None)
+
+    result = asyncio.run(scenario())
+
+    assert result["approval_decision"] == "blocked"
+    assert result["ok"] is False
+    assert result["metrics"]["scanner_failed_count"] == 1
+    assert "semgrep" in result["decision"]["reason"]
+
+
+def test_plain_documentation_delete_word_is_not_destructive_sql(tmp_path):
+    async def scenario(diff_text):
+        runtime = CodeGovernanceRuntime()
+
+        async def not_git(command, args, timeout_seconds=20.0, cwd=None):
+            return {"ok": False, "stdout": "", "stderr": "not a git repository", "exit_code": 128}
+
+        runtime._run = not_git
+        return await runtime.handle({"root_path": str(tmp_path), "diff_text": diff_text}, None)
+
+    prose = asyncio.run(scenario(
+        "diff --git a/readme.md b/readme.md\n+++ b/readme.md\n@@ -0,0 +1 @@\n+Please delete unused examples after review."
+    ))
+    sql = asyncio.run(scenario(
+        "diff --git a/query.sql b/query.sql\n+++ b/query.sql\n@@ -0,0 +1 @@\n+DELETE FROM users;"
+    ))
+    sql_in_code = asyncio.run(scenario(
+        'diff --git a/query.py b/query.py\n+++ b/query.py\n@@ -0,0 +1 @@\n+sql = "UPDATE users SET active = 0"'
+    ))
+    sql_comment = asyncio.run(scenario(
+        "diff --git a/query.sql b/query.sql\n+++ b/query.sql\n@@ -0,0 +1 @@\n+-- DELETE FROM users is an unsafe example"
+    ))
+
+    assert prose["approval_decision"] == "pass"
+    assert all(finding["source"] != "builtin-sql-rule" for finding in prose["findings"])
+    assert sql["approval_decision"] == "blocked"
+    assert any(finding["source"] == "builtin-sql-rule" for finding in sql["findings"])
+    assert sql_in_code["approval_decision"] == "blocked"
+    assert sql_comment["approval_decision"] == "pass"
+
+
+def test_requested_scanner_not_installed_cannot_report_a_clean_pass(tmp_path, monkeypatch):
+    async def scenario():
+        runtime = CodeGovernanceRuntime()
+
+        async def not_git(command, args, timeout_seconds=20.0, cwd=None):
+            return {"ok": False, "stdout": "", "stderr": "not a git repository", "exit_code": 128}
+
+        runtime._run = not_git
+        monkeypatch.setattr(governance_module.shutil, "which", lambda executable: None)
+        return await runtime.handle({
+            "root_path": str(tmp_path), "run_external_scanners": True,
+            "external_scanners": ["semgrep"],
+            "diff_text": "diff --git a/readme.txt b/readme.txt\n+++ b/readme.txt\n@@ -0,0 +1 @@\n+safe text",
+        }, None)
+
+    result = asyncio.run(scenario())
+
+    assert result["approval_decision"] == "warning"
+    assert result["scanner_runs"][0]["reason"] == "scanner_not_installed"
+    assert "semgrep" in result["decision"]["reason"]
