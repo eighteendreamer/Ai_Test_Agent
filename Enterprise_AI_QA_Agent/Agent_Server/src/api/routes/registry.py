@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-
-from src.schemas.mcp_management import MCPServerCreateRequest, MCPServerImportRequest, MCPServerUpdateRequest
-
+from src.schemas.mcp_management import (
+    MCPServerCreateRequest,
+    MCPServerImportRequest,
+    MCPServerUpdateRequest,
+)
 
 router = APIRouter(prefix="/registry", tags=["registry"])
 
@@ -119,7 +123,12 @@ async def search_skill_marketplace(
     limit: int = 20,
 ):
     try:
-        return request.app.state.skill_marketplace_service.search(source=source, query=q, limit=limit)
+        return await asyncio.to_thread(
+            request.app.state.skill_marketplace_service.search,
+            source=source,
+            query=q,
+            limit=limit,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -132,7 +141,12 @@ async def preview_skill_marketplace(
     url: str | None = None,
 ):
     try:
-        return request.app.state.skill_marketplace_service.preview(source=source, skill_id=skill_id, url=url)
+        return await asyncio.to_thread(
+            request.app.state.skill_marketplace_service.preview,
+            source=source,
+            skill_id=skill_id,
+            url=url,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -140,7 +154,8 @@ async def preview_skill_marketplace(
 @router.post("/skills/marketplaces/install")
 async def install_skill_marketplace(payload: SkillMarketplaceInstallRequest, request: Request):
     try:
-        return request.app.state.skill_marketplace_service.install(
+        return await asyncio.to_thread(
+            request.app.state.skill_marketplace_service.install,
             source=payload.source,
             skill_id=payload.skill_id,
             url=payload.url,
@@ -179,13 +194,15 @@ async def delete_skill(skill_key: str, request: Request):
 async def install_skill(payload: SkillInstallRequest, request: Request):
     try:
         if payload.source_path:
-            return request.app.state.skill_management_service.install_from_path(
+            return await asyncio.to_thread(
+                request.app.state.skill_management_service.install_from_path,
                 source_path=payload.source_path,
                 key=payload.key,
                 overwrite=payload.overwrite,
             )
         if payload.url:
-            return request.app.state.skill_management_service.install_from_url(
+            return await asyncio.to_thread(
+                request.app.state.skill_management_service.install_from_url,
                 url=payload.url,
                 key=payload.key,
                 overwrite=payload.overwrite,
