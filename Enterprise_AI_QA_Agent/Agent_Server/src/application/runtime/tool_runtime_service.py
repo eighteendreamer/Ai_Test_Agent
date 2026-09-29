@@ -231,12 +231,6 @@ class ToolRuntimeService:
             memory_runtime_service=memory_runtime_service,
             ui_exploration_service=self._ui_exploration_service,
         )
-        self._api_testing_mode_runtime = ApiTestingModeRuntime(
-            api_docs_service=api_docs_service,
-            settings=settings,
-            coordinator_runtime_service=coordinator_runtime_service,
-            session_store=session_store,
-        )
         self._compatibility_testing_mode_runtime = CompatibilityTestingModeRuntime(
             settings=settings,
             coordinator_runtime_service=coordinator_runtime_service,
@@ -343,7 +337,6 @@ class ToolRuntimeService:
 
     def set_coordinator_runtime_service(self, coordinator_runtime_service) -> None:
         self._coordinator_runtime_service = coordinator_runtime_service
-        self._api_testing_mode_runtime.set_coordinator_runtime_service(coordinator_runtime_service)
         self._compatibility_testing_mode_runtime.set_coordinator_runtime_service(coordinator_runtime_service)
         self._security_testing_mode_runtime.set_coordinator_runtime_service(coordinator_runtime_service)
         if self._performance_testing_mode_runtime is not None:
@@ -370,7 +363,6 @@ class ToolRuntimeService:
 
     def set_session_store(self, session_store: SessionStore) -> None:
         self._session_store = session_store
-        self._api_testing_mode_runtime.set_session_store(session_store)
         self._compatibility_testing_mode_runtime.set_session_store(session_store)
         self._security_testing_mode_runtime.set_session_store(session_store)
         if self._performance_testing_mode_runtime is not None:
@@ -2676,7 +2668,13 @@ class ToolRuntimeService:
         arguments: dict[str, Any],
         context: ToolExecutionContext,
     ) -> dict[str, Any]:
-        return await self._api_testing_mode_runtime.handle(arguments, context)
+        runtime = ApiTestingModeRuntime(
+            api_docs_service=self._api_docs_service,
+            settings=self._settings,
+            coordinator_runtime_service=self._coordinator_runtime_service,
+            session_store=self._session_store,
+        )
+        return await runtime.handle(arguments, context)
 
     async def _run_compatibility_test_runner(
         self,

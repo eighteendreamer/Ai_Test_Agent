@@ -94,9 +94,6 @@ class ApiTestingModeRuntime:
         self._credential_manager = CredentialManager()
         self._verification_policy = ApiTestingVerificationPolicy()
         self._evaluation_policy = ApiTestingEvaluationPolicy()
-        self._last_auth_hint: dict = {}
-        self._last_markdown_report: str = ""
-        self._last_artifacts: list[dict] = []
 
     # ==================================================================
     # Public entry point
@@ -280,7 +277,6 @@ class ApiTestingModeRuntime:
                 auth_hint = index.auth_hint
 
         # Store auth_hint for later use by executor.
-        self._last_auth_hint = auth_hint
         state.auth_hint = dict(auth_hint)
 
         if not all_endpoints:
@@ -428,11 +424,7 @@ class ApiTestingModeRuntime:
 
         pool = ApiTaskPool(tasks=state.campaign.tasks)
         # Resolve auth token field from parsed doc hints.
-        auth_token_field = "access_token"
-        if hasattr(self, "_last_auth_hint") and isinstance(self._last_auth_hint, dict):
-            auth_token_field = str(self._last_auth_hint.get("token_field") or "access_token")
-        if state.auth_hint:
-            auth_token_field = str(state.auth_hint.get("token_field") or auth_token_field)
+        auth_token_field = str(state.auth_hint.get("token_field") or "access_token")
         state.record_phase_transition(PHASE_TASK_RUNNING, "Executing campaign tasks.")
         self._checkpoint_execution_state(
             state=state,
@@ -470,6 +462,9 @@ class ApiTestingModeRuntime:
             completed_tasks = await coordinator.run_all()
         state.campaign.tasks = completed_tasks
         state.campaign.updated_at = datetime.now(timezone.utc).isoformat()
+        latest_credential = self._credential_manager.get_latest()
+        if latest_credential is not None:
+            state.credential_session = latest_credential.model_copy(deep=True)
         self._checkpoint_execution_state(
             state=state,
             context=context,
@@ -484,7 +479,6 @@ class ApiTestingModeRuntime:
 
         # Generate Markdown report.
         markdown_report = self._report_builder.build_markdown(campaign=state.campaign, report=report)
-        self._last_markdown_report = markdown_report
 
         # Build artifact payloads (ready for persistence).
         artifacts = self._report_builder.build_artifacts(
@@ -492,7 +486,6 @@ class ApiTestingModeRuntime:
             report=report,
             markdown_report=markdown_report,
         )
-        self._last_artifacts = artifacts
         state.artifacts = self._artifact_metadata(artifacts)
 
         # Run verification policy.
@@ -602,16 +595,8 @@ class ApiTestingModeRuntime:
             try:
                 state = ApiTestingState.model_validate(raw)
                 # Restore credential session into credential_manager if present.
-                if state.credential_session and state.credential_session.token:
-                    self._credential_manager.create_from_user_input(
-                        extracted={
-                            "auth_type": state.credential_session.auth_type,
-                            "token": state.credential_session.token,
-                        },
-                        source="state_restore",
-                    )
-                if state.auth_hint:
-                    self._last_auth_hint = dict(state.auth_hint)
+                if state.credential_session:
+                    self._credential_manager.restore_session(state.credential_session)
                 return state
             except Exception:
                 pass
@@ -669,13 +654,12 @@ class ApiTestingModeRuntime:
 
         if state.report:
             output["report"] = state.report.model_dump(mode="json")
-            # Include markdown report if available.
-            if hasattr(self, "_last_markdown_report") and self._last_markdown_report:
-                output["report_markdown"] = self._last_markdown_report
-            # Include artifact metadata if available.
-            if hasattr(self, "_last_artifacts") and self._last_artifacts:
-                output["artifacts"] = self._artifact_metadata(self._last_artifacts)
-            elif state.artifacts:
+            if state.campaign:
+                output["report_markdown"] = self._report_builder.build_markdown(
+                    campaign=state.campaign,
+                    report=state.report,
+                )
+            if state.artifacts:
                 output["artifacts"] = list(state.artifacts)
 
         if state.verification_result:
