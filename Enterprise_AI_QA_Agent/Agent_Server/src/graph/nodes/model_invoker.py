@@ -14,7 +14,7 @@ def build_model_invoker_node(
     tool_registry: ToolRegistry,
 ):
     async def model_invoker(state: AgentGraphState) -> AgentGraphState:
-        model_visible_tool_keys = list(state.get("model_visible_tool_keys") or state["available_tool_keys"])
+        model_visible_tool_keys = list(state.get("model_visible_tool_keys", state["available_tool_keys"]))
         append_graph_event(
             state,
             "graph.execution_started",
