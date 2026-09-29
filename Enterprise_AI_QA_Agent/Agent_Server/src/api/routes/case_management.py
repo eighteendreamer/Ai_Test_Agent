@@ -30,15 +30,18 @@ async def list_test_cases(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
-    return await request.app.state.test_case_service.list_cases(
-        project_id=project_id,
-        status=lifecycle_status,
-        mode_key=mode_key,
-        priority=priority,
-        query=query,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return await request.app.state.test_case_service.list_cases(
+            project_id=project_id,
+            status=lifecycle_status,
+            mode_key=mode_key,
+            priority=priority,
+            query=query,
+            limit=limit,
+            offset=offset,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post(
@@ -125,3 +128,5 @@ async def archive_test_case(case_id: str, request: Request):
         return await request.app.state.test_case_service.archive(case_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

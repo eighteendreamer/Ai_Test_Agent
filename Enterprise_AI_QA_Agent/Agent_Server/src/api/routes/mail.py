@@ -45,7 +45,10 @@ def _resolve_provider_record(mail_service, provider: str, config_id: int | None 
         raise HTTPException(status_code=500, detail="Email config store unavailable.")
 
     if config_id is not None:
-        record = store.get_by_id(config_id)
+        try:
+            record = store.get_by_id(config_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Email config '{config_id}' not found.") from exc
         if record.provider != provider:
             raise HTTPException(
                 status_code=400,
@@ -222,6 +225,8 @@ async def test_send_prepare(body: SendPrepareRequest, request: Request):
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Email config '{body.config_id}' not found.") from exc
     return result
 
 
@@ -237,6 +242,8 @@ async def test_send_confirm(body: SendConfirmRequest, request: Request):
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Email config '{body.config_id}' not found.") from exc
     return result
 
 
