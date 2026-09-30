@@ -509,7 +509,9 @@ export const useSessionStore = defineStore("session", {
     scheduledRefreshTimer: null as number | null,
     scheduledToolingRefresh: false,
     refreshInFlight: false,
+    refreshGeneration: 0,
     toolingRefreshInFlight: false,
+    resolvedApprovalIdsBySession: {} as Record<string, string[]>,
     lastToolingRefreshAt: "",
     watcherFailures: 0,
     watcherError: "",
@@ -735,16 +737,51 @@ export const useSessionStore = defineStore("session", {
     },
     applySession(session: SessionDetail) {
       const previousSessionId = this.session?.id || "";
+      let nextSession = session;
+      const resolvedApprovalIds = this.resolvedApprovalIdsBySession[session.id] || [];
+      if (resolvedApprovalIds.length > 0) {
+        const serverPendingApprovalIds = new Set(
+          session.pending_approvals
+            .filter((approval) => approval.status === "pending")
+            .map((approval) => approval.id),
+        );
+        const unresolvedIds = resolvedApprovalIds.filter((id) => serverPendingApprovalIds.has(id));
+        const nextResolvedApprovalIds = { ...this.resolvedApprovalIdsBySession };
+        if (unresolvedIds.length > 0) {
+          nextResolvedApprovalIds[session.id] = unresolvedIds;
+        } else {
+          delete nextResolvedApprovalIds[session.id];
+        }
+        this.resolvedApprovalIdsBySession = nextResolvedApprovalIds;
+        const locallyResolved = new Set(resolvedApprovalIds);
+        nextSession = {
+          ...session,
+          pending_approvals: session.pending_approvals.filter(
+            (approval) => !locallyResolved.has(approval.id),
+          ),
+        };
+      }
+
+      if (previousSessionId && previousSessionId !== nextSession.id) {
+        this.refreshGeneration += 1;
+        this.refreshInFlight = false;
+        this.toolingRefreshInFlight = false;
+        if (this.scheduledRefreshTimer !== null) {
+          window.clearTimeout(this.scheduledRefreshTimer);
+          this.scheduledRefreshTimer = null;
+        }
+        this.scheduledToolingRefresh = false;
+      }
       const mergedMessages = mergeSessionMessages(
-        session.messages,
+        nextSession.messages,
         this.messages,
-        session,
+        nextSession,
       );
-      this.session = session;
+      this.session = nextSession;
       this.messages = mergedMessages;
-      this.selectedAgentKey = session.selected_agent ?? this.selectedAgentKey;
-      const sessionModeKey = String(session.mode_key || "").trim();
-      if (previousSessionId && previousSessionId !== session.id) {
+      this.selectedAgentKey = nextSession.selected_agent ?? this.selectedAgentKey;
+      const sessionModeKey = String(nextSession.mode_key || "").trim();
+      if (previousSessionId && previousSessionId !== nextSession.id) {
         this.pendingModeKeySelection = "";
       }
       if (this.pendingModeKeySelection) {
@@ -883,27 +920,43 @@ export const useSessionStore = defineStore("session", {
       if (!this.session) {
         return;
       }
+      const sessionId = this.session.id;
       if (this.refreshInFlight) {
         this.scheduledToolingRefresh = this.scheduledToolingRefresh || Boolean(options.includeTooling);
         return;
       }
+      const generation = this.refreshGeneration;
       this.refreshInFlight = true;
       try {
-        const detail = await api.getSession(this.session.id);
+        const detail = await api.getSession(sessionId);
+        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+          return;
+        }
         this.applySession(detail);
+        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+          return;
+        }
         await this.refreshToolingData(Boolean(options.includeTooling));
+        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+          return;
+        }
         _watcher.recordSuccess();
         this.watcherFailures = _watcher.failures;
         this.watcherError = _watcher.error;
         this.watcherLastSyncAt = _watcher.lastSyncAt;
       } catch (error) {
+        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+          return;
+        }
         _watcher.recordFailure(error instanceof Error ? error.message : "刷新会话失败。");
         this.watcherFailures = _watcher.failures;
         this.watcherError = _watcher.error;
       } finally {
-        this.refreshInFlight = false;
-        if (this.scheduledToolingRefresh) {
-          this.scheduleRefresh(this.scheduledToolingRefresh, EVENT_REFRESH_DEBOUNCE_MS);
+        if (generation === this.refreshGeneration) {
+          this.refreshInFlight = false;
+          if (this.scheduledToolingRefresh) {
+            this.scheduleRefresh(this.scheduledToolingRefresh, EVENT_REFRESH_DEBOUNCE_MS);
+          }
         }
       }
     },
@@ -919,6 +972,9 @@ export const useSessionStore = defineStore("session", {
     },
     stopWatcher() {
       _watcher.stop();
+      this.refreshGeneration += 1;
+      this.refreshInFlight = false;
+      this.toolingRefreshInFlight = false;
       if (this.scheduledRefreshTimer !== null) {
         window.clearTimeout(this.scheduledRefreshTimer);
         this.scheduledRefreshTimer = null;
@@ -1038,10 +1094,12 @@ export const useSessionStore = defineStore("session", {
         return;
       }
 
+      const sessionId = this.session.id;
+      const refreshGeneration = this.refreshGeneration;
+      const approval = this.session.pending_approvals.find((item) => item.id === approvalId);
       _approvalManager.markResolving(approvalId);
       this.error = "";
       try {
-        const approval = this.session.pending_approvals.find((item) => item.id === approvalId);
         if (approval?.metadata?.source === "test_run_case_execution") {
           const runItemId = String(approval.metadata.run_item_id || "").trim();
           if (!runItemId) {
@@ -1050,31 +1108,41 @@ export const useSessionStore = defineStore("session", {
           await api.resolveTestRunItemApproval(runItemId, approvalId, decision, reason);
         } else {
           await api.resolveApproval(
-            this.session.id,
+            sessionId,
             approvalId,
             decision,
             reason,
             createClientMessageId(),
           );
         }
-        if (this.session) {
+        const resolvedApprovalIds = new Set(this.resolvedApprovalIdsBySession[sessionId] || []);
+        resolvedApprovalIds.add(approvalId);
+        this.resolvedApprovalIdsBySession = {
+          ...this.resolvedApprovalIdsBySession,
+          [sessionId]: [...resolvedApprovalIds],
+        };
+        if (this.session?.id === sessionId) {
           this.session.pending_approvals = this.session.pending_approvals.filter((item) => item.id !== approvalId);
-        }
-        const nextStatus = decision === "approved" ? "running" : "denied";
-        const nextSummary =
-          decision === "approved"
-            ? "Approval granted. Tool execution is running."
-            : "Approval denied. Tool execution was skipped.";
-        this.messages = this.messages.map((message) => {
-          const messageApprovalId = String(message.metadata?.approval_id || "").trim();
-          if (!isTransientToolMessage(message) || messageApprovalId !== approvalId) {
-            return message;
+          const nextStatus = decision === "approved" ? "running" : "denied";
+          const nextSummary =
+            decision === "approved"
+              ? "Approval granted. Tool execution is running."
+              : "Approval denied. Tool execution was skipped.";
+          this.messages = this.messages.map((message) => {
+            const messageApprovalId = String(message.metadata?.approval_id || "").trim();
+            if (!isTransientToolMessage(message) || messageApprovalId !== approvalId) {
+              return message;
+            }
+            return updateTransientToolMessageStatus(message, nextStatus, nextSummary);
+          });
+          if (refreshGeneration === this.refreshGeneration) {
+            this.scheduleRefresh(true, 120);
           }
-          return updateTransientToolMessageStatus(message, nextStatus, nextSummary);
-        });
-        this.scheduleRefresh(true, 120);
+        }
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "Failed to resolve approval.";
+        if (this.session?.id === sessionId) {
+          this.error = error instanceof Error ? error.message : "Failed to resolve approval.";
+        }
       } finally {
         _approvalManager.unmarkResolving(approvalId);
       }
@@ -1128,6 +1196,8 @@ export const useSessionStore = defineStore("session", {
       if (!this.session || this.toolingRefreshInFlight) {
         return;
       }
+      const sessionId = this.session.id;
+      const generation = this.refreshGeneration;
       if (!force && this.lastToolingRefreshAt) {
         const elapsed = Date.now() - Date.parse(this.lastToolingRefreshAt);
         if (Number.isFinite(elapsed) && elapsed < TOOLING_REFRESH_MIN_INTERVAL_MS) {
@@ -1137,22 +1207,36 @@ export const useSessionStore = defineStore("session", {
       this.toolingRefreshInFlight = true;
       try {
         const [jobs, artifacts, verifications] = await Promise.all([
-          api.listToolJobs(this.session.id),
-          api.listArtifacts(this.session.id),
-          api.listVerifications(this.session.id),
+          api.listToolJobs(sessionId),
+          api.listArtifacts(sessionId),
+          api.listVerifications(sessionId),
         ]);
+        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+          return;
+        }
         this.toolJobs = jobs;
         this.sessionArtifacts = artifacts;
         this.verificationMeta = verifications;
         this.lastToolingRefreshAt = new Date().toISOString();
         if (this.selectedToolJob) {
-          const refreshed = await api.getToolJobDetail(this.session.id, this.selectedToolJob.id);
-          this.selectedToolJob = refreshed;
+          const selectedToolJobId = this.selectedToolJob.id;
+          const refreshed = await api.getToolJobDetail(sessionId, selectedToolJobId);
+          if (
+            generation === this.refreshGeneration &&
+            this.session?.id === sessionId &&
+            this.selectedToolJob?.id === selectedToolJobId
+          ) {
+            this.selectedToolJob = refreshed;
+          }
         }
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "刷新工具任务数据失败。";
+        if (generation === this.refreshGeneration && this.session?.id === sessionId) {
+          this.error = error instanceof Error ? error.message : "刷新工具任务数据失败。";
+        }
       } finally {
-        this.toolingRefreshInFlight = false;
+        if (generation === this.refreshGeneration) {
+          this.toolingRefreshInFlight = false;
+        }
       }
     },
     async inspectToolJob(jobId: string) {
