@@ -338,6 +338,23 @@ class PostgresSessionStore:
             request_fingerprint,
         )
 
+    async def release_coordinator_dispatch_claim_if_no_child(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+        request_fingerprint: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._release_coordinator_dispatch_claim_if_no_child_sync,
+            session_id,
+            turn_id,
+            dispatch_key,
+            owner_id,
+            request_fingerprint,
+        )
+
     async def mutate_metadata(self, session_id: str, mutate) -> bool:
         """Apply ``mutate(metadata)`` under a row lock so concurrent writers
         cannot overwrite each other's whole-document metadata."""
@@ -1580,6 +1597,82 @@ class PostgresSessionStore:
                         owner_id,
                         request_fingerprint,
                         session_id,
+                        turn_id,
+                        dispatch_key,
+                    ),
+                )
+                return cur.fetchone() is not None
+
+    def _release_coordinator_dispatch_claim_if_no_child_sync(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+        request_fingerprint: str,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._settings.database.postgres_session_table} AS parent
+                    SET metadata = jsonb_set(
+                        COALESCE(parent.metadata, '{{}}'::jsonb),
+                        '{{coordinator_dispatch_claims}}',
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(claim.item ORDER BY claim.ordinality)
+                                FROM jsonb_array_elements(
+                                    COALESCE(
+                                        parent.metadata->'coordinator_dispatch_claims',
+                                        '[]'::jsonb
+                                    )
+                                ) WITH ORDINALITY AS claim(item, ordinality)
+                                WHERE NOT (
+                                    claim.item->>'turn_id' = %s
+                                    AND claim.item->>'dispatch_key' = %s
+                                    AND claim.item->>'owner_id' = %s
+                                    AND claim.item->>'request_fingerprint' = %s
+                                )
+                            ),
+                            '[]'::jsonb
+                        ),
+                        true
+                    ),
+                    updated_at = now()
+                    WHERE parent.id = %s
+                      AND EXISTS (
+                          SELECT 1
+                          FROM jsonb_array_elements(
+                              COALESCE(
+                                  parent.metadata->'coordinator_dispatch_claims',
+                                  '[]'::jsonb
+                              )
+                          ) AS claim(item)
+                          WHERE claim.item->>'turn_id' = %s
+                            AND claim.item->>'dispatch_key' = %s
+                            AND claim.item->>'owner_id' = %s
+                            AND claim.item->>'request_fingerprint' = %s
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM {self._settings.database.postgres_session_table} AS child
+                          WHERE child.metadata->>'parent_session_id' = parent.id
+                            AND child.metadata->>'parent_turn_id' = %s
+                            AND child.metadata->>'coordinator_dispatch_key' = %s
+                      )
+                    RETURNING parent.id
+                    """,
+                    (
+                        turn_id,
+                        dispatch_key,
+                        owner_id,
+                        request_fingerprint,
+                        session_id,
+                        turn_id,
+                        dispatch_key,
+                        owner_id,
+                        request_fingerprint,
                         turn_id,
                         dispatch_key,
                     ),

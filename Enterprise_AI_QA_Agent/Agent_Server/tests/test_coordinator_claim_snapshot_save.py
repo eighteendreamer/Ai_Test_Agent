@@ -57,6 +57,54 @@ async def _exercise_stale_save_after_dispatch_claim(store) -> None:
         "worker-b",
         request_fingerprint,
     )
+    assert not await store.release_coordinator_dispatch_claim_if_no_child(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-b",
+        request_fingerprint,
+    )
+    assert await store.release_coordinator_dispatch_claim_if_no_child(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-a",
+        request_fingerprint,
+    )
+    assert await store.claim_coordinator_dispatch(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-b",
+        request_fingerprint,
+    )
+
+    child = SessionRecord(
+        id=f"{session_id}-child",
+        title="materialized coordinator child",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.background_task,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={
+            "parent_session_id": session_id,
+            "parent_turn_id": "turn-1",
+            "coordinator_dispatch_key": "task-1",
+        },
+    )
+    await store.save_session(child)
+    assert not await store.release_coordinator_dispatch_claim_if_no_child(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-b",
+        request_fingerprint,
+    )
+    persisted = await store.get_session(session_id)
+    assert persisted is not None
+    assert len(persisted.metadata["coordinator_dispatch_claims"]) == 1
 
 
 @pytest.mark.asyncio

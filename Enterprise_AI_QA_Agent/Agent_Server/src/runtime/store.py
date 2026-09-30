@@ -138,6 +138,14 @@ class SessionStore(Protocol):
         owner_id: str,
         request_fingerprint: str | None = None,
     ) -> bool: ...
+    async def release_coordinator_dispatch_claim_if_no_child(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+        request_fingerprint: str,
+    ) -> bool: ...
     async def recover_expired_turn_executions(self) -> list[str]: ...
     async def assert_turn_execution(self, session_id: str, lease_token: str) -> None: ...
     async def claim_approval_continuation(
@@ -653,6 +661,50 @@ class InMemorySessionStore:
                     "request_fingerprint": request_fingerprint,
                 }
             )
+            session.metadata["coordinator_dispatch_claims"] = claims
+            session.updated_at = datetime.utcnow()
+            return True
+
+    async def release_coordinator_dispatch_claim_if_no_child(
+        self,
+        session_id: str,
+        turn_id: str,
+        dispatch_key: str,
+        owner_id: str,
+        request_fingerprint: str,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            claims = session.metadata.get("coordinator_dispatch_claims", [])
+            if not isinstance(claims, list):
+                return False
+            claim_index = next(
+                (
+                    index
+                    for index, item in enumerate(claims)
+                    if isinstance(item, dict)
+                    and item.get("turn_id") == turn_id
+                    and item.get("dispatch_key") == dispatch_key
+                    and item.get("owner_id") == owner_id
+                    and item.get("request_fingerprint") == request_fingerprint
+                ),
+                None,
+            )
+            if claim_index is None:
+                return False
+            has_child = any(
+                child.id != session_id
+                and isinstance(child.metadata, dict)
+                and child.metadata.get("parent_session_id") == session_id
+                and child.metadata.get("parent_turn_id") == turn_id
+                and child.metadata.get("coordinator_dispatch_key") == dispatch_key
+                for child in self._sessions.values()
+            )
+            if has_child:
+                return False
+            del claims[claim_index]
             session.metadata["coordinator_dispatch_claims"] = claims
             session.updated_at = datetime.utcnow()
             return True

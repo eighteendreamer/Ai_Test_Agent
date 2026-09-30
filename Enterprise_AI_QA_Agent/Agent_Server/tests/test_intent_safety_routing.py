@@ -1691,11 +1691,19 @@ async def test_coordinator_missing_task_id_is_stable_across_identical_requests()
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("explicit_task_id", [False, True])
-async def test_coordinator_failed_precreate_claim_never_reports_duplicate_success(explicit_task_id):
-    service, store, _created = await _batch_capacity_coordinator()
-    service._session_service.create_internal_session = AsyncMock(
-        side_effect=RuntimeError("injected precreate failure")
-    )
+async def test_coordinator_precreate_failure_releases_claim_for_safe_retry(explicit_task_id):
+    service, store, created = await _batch_capacity_coordinator()
+    create_internal_session = service._session_service.create_internal_session
+    attempt_count = 0
+
+    async def fail_once(request):
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            raise RuntimeError("injected precreate failure")
+        return await create_internal_session(request)
+
+    service._session_service.create_internal_session = AsyncMock(side_effect=fail_once)
     worker = _batch_worker(0)
     if not explicit_task_id:
         worker.pop("task_id")
@@ -1704,15 +1712,45 @@ async def test_coordinator_failed_precreate_claim_never_reports_duplicate_succes
 
     with pytest.raises(RuntimeError, match="injected precreate failure"):
         await service.dispatch(payload, context)
-    second = await service.dispatch(payload, context)
+    parent_after_failure = await store.get_session("batch-parent")
+    assert parent_after_failure.metadata.get("coordinator_dispatch_claims", []) == []
 
-    assert second["ok"] is False
-    assert second["status"] == "recovery_required"
-    assert second["workers"] == []
-    assert second["error"] == "coordinator_dispatch_claim_unresolved"
+    retry = await service.dispatch(payload, context)
+
+    assert retry["ok"] is True
+    assert retry["status"] == "completed"
+    assert len(created) == 1
+    assert service._session_service.create_internal_session.await_count == 2
+    parent = await store.get_session("batch-parent")
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_precreate_failure_retains_claim_after_child_materializes():
+    service, store, created = await _batch_capacity_coordinator()
+    create_internal_session = service._session_service.create_internal_session
+
+    async def persist_then_fail(request):
+        await create_internal_session(request)
+        raise RuntimeError("injected response failure after child persistence")
+
+    service._session_service.create_internal_session = AsyncMock(side_effect=persist_then_fail)
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    with pytest.raises(RuntimeError, match="after child persistence"):
+        await service.dispatch(payload, context)
+    retry = await service.dispatch(payload, context)
+
+    assert len(created) == 1
+    assert retry["ok"] is False
+    assert retry["status"] == "recovery_required"
+    assert retry["error"] == "coordinator_dispatch_claim_unresolved"
     assert service._session_service.create_internal_session.await_count == 1
     parent = await store.get_session("batch-parent")
     assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+    child = await store.get_session(created[0])
+    assert child.metadata["coordinator_dispatch_key"] == "worker-1-0|"
 
 
 @pytest.mark.asyncio
@@ -1721,21 +1759,38 @@ async def test_coordinator_old_turn_worker_cannot_satisfy_new_turn_claim():
     payload = {"workers": [_batch_worker(0)]}
     first_context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
     await service.dispatch(payload, first_context)
-    service._session_service.create_internal_session = AsyncMock(
-        side_effect=RuntimeError("new turn precreate failure")
-    )
+    create_internal_session = service._session_service.create_internal_session
+    attempt_count = 0
+
+    async def fail_new_turn_once(request):
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            raise RuntimeError("new turn precreate failure")
+        return await create_internal_session(request)
+
+    service._session_service.create_internal_session = AsyncMock(side_effect=fail_new_turn_once)
     next_context = {**first_context, "turn_id": "turn-2"}
+    next_payload = {
+        "workers": [{**_batch_worker(1), "task_id": "worker-turn-2"}]
+    }
 
     with pytest.raises(RuntimeError, match="new turn precreate failure"):
-        await service.dispatch(payload, next_context)
-    receipt = await service.dispatch(payload, next_context)
+        await service.dispatch(next_payload, next_context)
+    receipt = await service.dispatch(next_payload, next_context)
 
-    assert receipt["ok"] is False
-    assert receipt["status"] == "recovery_required"
-    assert receipt["workers"] == []
-    assert len(created) == 1
+    assert receipt["ok"] is True
+    assert receipt["status"] == "completed"
+    assert len(created) == 2
+    assert receipt["workers"][0]["task_id"] == "worker-turn-2"
+    assert receipt["workers"][0]["child_session_id"] == created[1]
     parent = await store.get_session("batch-parent")
-    assert parent.metadata["worker_dispatches"][0]["parent_turn_id"] == "turn-1"
+    turn_two_record = next(
+        record
+        for record in parent.metadata["worker_dispatches"]
+        if record["task_id"] == "worker-turn-2"
+    )
+    assert turn_two_record["parent_turn_id"] == "turn-2"
 
 
 @pytest.mark.asyncio

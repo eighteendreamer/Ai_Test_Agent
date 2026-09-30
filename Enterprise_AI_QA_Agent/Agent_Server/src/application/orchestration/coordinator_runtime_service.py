@@ -385,28 +385,39 @@ class CoordinatorRuntimeService:
 
             dispatch_role = str(worker.context.get("dispatch_role") or "worker").strip() or "worker"
             mode_key = self._resolve_worker_mode_key(worker)
-            child_session = await self._session_service.create_internal_session(
-                CreateSessionRequest(
-                    title=f"Worker: {worker.description}",
-                    session_mode=SessionMode.background_task,
-                    runtime_mode=RuntimeMode.background,
-                    mode_key=mode_key,
-                    preferred_model=worker.model_key,
-                    selected_agent=worker.agent_key,
-                    project_id=parent_session.project_id,
-                    metadata={
-                        "parent_session_id": parent_session_id,
-                        "parent_turn_id": parent_turn_id,
-                        "parent_trace_id": parent_trace_id,
-                        "task_id": worker.task_id,
-                        "worker_description": worker.description,
-                        "dispatch_role": dispatch_role,
-                        "notification_mode": "task-notification",
-                        "agent_depth": parent_depth + 1,
-                        **self._trusted_worker_metadata(parent_session, mode_key),
-                    },
+            try:
+                child_session = await self._session_service.create_internal_session(
+                    CreateSessionRequest(
+                        title=f"Worker: {worker.description}",
+                        session_mode=SessionMode.background_task,
+                        runtime_mode=RuntimeMode.background,
+                        mode_key=mode_key,
+                        preferred_model=worker.model_key,
+                        selected_agent=worker.agent_key,
+                        project_id=parent_session.project_id,
+                        metadata={
+                            "parent_session_id": parent_session_id,
+                            "parent_turn_id": parent_turn_id,
+                            "parent_trace_id": parent_trace_id,
+                            "coordinator_dispatch_key": dispatch_key,
+                            "task_id": worker.task_id,
+                            "worker_description": worker.description,
+                            "dispatch_role": dispatch_role,
+                            "notification_mode": "task-notification",
+                            "agent_depth": parent_depth + 1,
+                            **self._trusted_worker_metadata(parent_session, mode_key),
+                        },
+                    )
                 )
-            )
+            except Exception as exc:
+                await self._release_dispatch_claim_after_child_create_failure(
+                    parent_session_id=parent_session_id,
+                    parent_turn_id=parent_turn_id,
+                    dispatch_key=dispatch_key,
+                    request_fingerprint=request_fingerprint,
+                    error=exc,
+                )
+                raise
 
             launch_record = self._initial_worker_record(
                 worker, status="running", child_session_id=child_session.id
@@ -545,6 +556,55 @@ class CoordinatorRuntimeService:
             },
             "error": "; ".join(immediate_failure_errors) or None,
         }
+
+    async def _release_dispatch_claim_after_child_create_failure(
+        self,
+        *,
+        parent_session_id: str,
+        parent_turn_id: str,
+        dispatch_key: str,
+        request_fingerprint: str,
+        error: Exception,
+    ) -> None:
+        try:
+            released = await self._store.release_coordinator_dispatch_claim_if_no_child(
+                parent_session_id,
+                parent_turn_id,
+                dispatch_key,
+                self._owner_id,
+                request_fingerprint,
+            )
+        except Exception:
+            logger.exception(
+                "coordinator_dispatch_claim_release_check_failed",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "dispatch_key": dispatch_key,
+                    "failure_type": type(error).__name__,
+                },
+            )
+            return
+        if released:
+            logger.warning(
+                "coordinator_dispatch_claim_released_after_child_create_failure",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "dispatch_key": dispatch_key,
+                    "failure_type": type(error).__name__,
+                },
+            )
+            return
+        logger.warning(
+            "coordinator_dispatch_claim_retained_after_child_create_failure",
+            extra={
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "dispatch_key": dispatch_key,
+                "failure_type": type(error).__name__,
+            },
+        )
 
     async def _duplicate_dispatch_receipt(
         self,
