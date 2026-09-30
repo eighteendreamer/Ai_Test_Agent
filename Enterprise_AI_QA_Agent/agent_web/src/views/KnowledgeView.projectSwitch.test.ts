@@ -82,3 +82,20 @@ it("clears the previous graph while the newly selected project is loading", asyn
     wrapper.unmount();
   }
 });
+
+it("does not reselect a hidden node when the search has no matches", async () => {
+  api.getKnowledgeGraph.mockResolvedValue(graph("a"));
+  const wrapper = mount(KnowledgeView, { global: { stubs: { NModal: true, NButton: true } } });
+  try {
+    await flushPromises();
+    await wrapper.get(".node-row:not(.global-row)").trigger("click");
+    expect(wrapper.findAll(".graph-node")).toHaveLength(1);
+
+    await wrapper.get(".knowledge-search").setValue("not-present");
+    await flushPromises();
+    expect(wrapper.findAll(".node-row:not(.global-row)")).toHaveLength(0);
+    expect(wrapper.findAll(".graph-node")).toHaveLength(0);
+  } finally {
+    wrapper.unmount();
+  }
+});

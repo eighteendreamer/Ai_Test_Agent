@@ -73,11 +73,8 @@ const selectedNode = computed(() => {
   if (activeNodeId.value === '__GLOBAL_PAGES__') {
     return null;
   }
-  const firstNode = filteredNodes.value[0] ?? graph.value?.nodes?.[0] ?? null;
-  if (!activeNodeId.value && firstNode) {
-    activeNodeId.value = firstNode.id;
-  }
-  return nodesById.value.get(activeNodeId.value) ?? firstNode;
+  const nodes = filteredNodes.value;
+  return nodes.find((node) => node.id === activeNodeId.value) ?? nodes[0] ?? null;
 });
 
 const selectedNodeEdges = computed(() => {
