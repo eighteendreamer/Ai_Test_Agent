@@ -2610,11 +2610,16 @@ class ToolRuntimeService:
 
         workers = dispatch_result.get("workers", []) if isinstance(dispatch_result, dict) else []
         dispatch_status = str(dispatch_result.get("status") or "").strip() if isinstance(dispatch_result, dict) else ""
+        dispatch_metrics = dispatch_result.get("metrics") if isinstance(dispatch_result, dict) else None
+        dispatch_metrics = dispatch_metrics if isinstance(dispatch_metrics, dict) else {}
+        launched_worker_count = int(dispatch_metrics.get("worker_count", len(workers)))
+        queued_worker_count = int(dispatch_metrics.get("queued_worker_count", 0))
         return {
             "status": "partial" if launch_workers else "completed",
             "summary": (
-                f"Initialized code review debate campaign for '{campaign['project_source']['project_name']}' "
-                f"and launched {len(workers)} reviewer worker session(s)."
+                f"Initialized code review debate campaign for '{campaign['project_source']['project_name']}'. "
+                f"Launched {launched_worker_count} reviewer worker session(s); "
+                f"queued {queued_worker_count} for the next available slot."
                 if launch_workers
                 else f"Prepared code review debate campaign for '{campaign['project_source']['project_name']}'."
             ),
@@ -2648,7 +2653,8 @@ class ToolRuntimeService:
                 "bootstrap_ok": 1 if bootstrap.get("ok", False) else 0,
                 "governance_score": int((governance.get("risk_score") or {}).get("score") or 0) if isinstance(governance, dict) else 0,
                 "governance_finding_count": len(governance.get("findings", [])) if isinstance(governance, dict) else 0,
-                "launched_worker_count": len(workers),
+                "launched_worker_count": launched_worker_count,
+                "queued_worker_count": queued_worker_count,
                 "dispatch_started": launch_workers,
                 "dispatch_status": dispatch_status or "not_started",
             },

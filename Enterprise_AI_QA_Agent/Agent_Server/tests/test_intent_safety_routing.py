@@ -4,6 +4,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -1604,6 +1605,295 @@ def test_coordinator_dispatch_duplicate_workers_is_deduplicated_by_persistence_c
     assert first["ok"] and second["ok"]
     assert {first["status"], second["status"]} == {"completed", "duplicate"}
     assert created == ["child-1"]
+
+
+async def _batch_capacity_coordinator():
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "batch-parent"
+    parent.session_mode = SessionMode.coordinator
+    await store.save_session(parent)
+    created: list[str] = []
+
+    class Sessions:
+        async def create_internal_session(self, request):
+            child = _session(request.mode_key)
+            child.id = f"batch-child-{len(created)}"
+            child.metadata = dict(request.metadata)
+            created.append(child.id)
+            await store.save_session(child)
+            return child
+
+        async def create_session(self, request):
+            return await self.create_internal_session(request)
+
+    settings = Settings()
+    settings.orchestration.coordinator_max_workers = 4
+    service = CoordinatorRuntimeService(settings, store, Sessions(), AgentRegistry())
+    service._start_child_worker = AsyncMock(return_value=None)
+    return service, store, created
+
+
+def _batch_worker(index: int, round_index: int = 1) -> dict:
+    return {
+        "task_id": f"worker-{round_index}-{index}",
+        "description": f"Reviewer {index}",
+        "prompt": "Review the project",
+        "agent_key": "qa-planner",
+        "context": {
+            "debate_stage": "independent_findings" if round_index == 1 else "cross_review",
+            "debate_round_index": round_index,
+            "debate_total_round_count": 2,
+            "source_stage": "independent_findings",
+            "source_round_index": 1,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_coordinator_initial_overflow_is_retained_and_launched_after_slot_frees():
+    service, store, created = await _batch_capacity_coordinator()
+    result = await service.dispatch(
+        {"workers": [_batch_worker(index) for index in range(5)]},
+        {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"},
+    )
+
+    parent = await store.get_session("batch-parent")
+    assert len(created) == 4
+    assert [record["task_id"] for record in result["workers"]] == [
+        f"worker-1-{index}" for index in range(5)
+    ]
+    assert [item["task_id"] for item in parent.metadata["pending_initial_workers"]] == ["worker-1-4"]
+    assert [record["status"] for record in parent.metadata["worker_dispatches"]] == [
+        "running", "running", "running", "running", "queued"
+    ]
+
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+    await service._deliver_notification(
+        parent_session_id="batch-parent",
+        parent_turn_id="turn-1",
+        child_session_id=created[0],
+        worker=service._worker_from_pending(_batch_worker(0)),
+        content="worker completed",
+        status="completed",
+    )
+    parent = await store.get_session("batch-parent")
+    assert len(created) == 5
+    assert parent.metadata["pending_initial_workers"] == []
+    assert [record["task_id"] for record in parent.metadata["worker_dispatches"]] == [
+        f"worker-1-{index}" for index in range(5)
+    ]
+    assert [record["status"] for record in parent.metadata["worker_dispatches"]] == [
+        "completed", "running", "running", "running", "running"
+    ]
+    assert [event.type for event in await store.list_events("batch-parent")].count(
+        "worker.task_notification_received"
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_dispatch_receipt_includes_worker_started_after_immediate_failure():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+    workers = [_batch_worker(index) for index in range(5)]
+    workers[0]["agent_key"] = "missing-agent"
+
+    result = await service.dispatch(
+        {"workers": workers},
+        {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"},
+    )
+
+    assert len(created) == 4
+    assert result["status"] == "partial"
+    assert [record["status"] for record in result["workers"]] == [
+        "failed", "running", "running", "running", "running"
+    ]
+    assert result["metrics"]["worker_count"] == 4
+    assert result["metrics"]["queued_worker_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_deferred_rejection_is_persisted_and_notified():
+    service, store, created = await _batch_capacity_coordinator()
+    workers = [_batch_worker(index) for index in range(5)]
+    workers[-1]["agent_key"] = "missing-agent"
+    await service.dispatch(
+        {"workers": workers},
+        {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"},
+    )
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+
+    await service._deliver_notification(
+        parent_session_id="batch-parent",
+        parent_turn_id="turn-1",
+        child_session_id=created[0],
+        worker=service._worker_from_pending(workers[0]),
+        content="worker completed",
+        status="completed",
+    )
+
+    parent = await store.get_session("batch-parent")
+    assert len(created) == 4
+    assert parent.metadata["pending_initial_workers"] == []
+    assert parent.metadata["worker_dispatches"][-1]["status"] == "failed"
+    assert [event.type for event in await store.list_events("batch-parent")].count(
+        "worker.task_notification_received"
+    ) == 2
+
+
+@pytest.mark.asyncio
+async def test_coordinator_followup_overflow_uses_next_available_slot():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.metadata.update(
+        {
+            "worker_dispatches": [
+                {
+                    "task_id": f"worker-1-{index}",
+                    "status": "completed",
+                    "debate_stage": "independent_findings",
+                    "debate_round_index": 1,
+                }
+                for index in range(5)
+            ],
+            "pending_followup_workers": [_batch_worker(index, 2) for index in range(5)],
+            "followup_workers_parent_turn_id": "turn-1",
+            "followup_workers_parent_trace_id": "trace-1",
+        }
+    )
+    await store.save_session(parent)
+    service._build_peer_review_bundle = AsyncMock(return_value="peer findings")
+
+    first = await service._maybe_launch_followup_workers(parent, "turn-1")
+    parent = await store.get_session("batch-parent")
+    assert len(first) == 4
+    assert len(created) == 4
+    assert [item["task_id"] for item in parent.metadata["pending_followup_workers"]] == ["worker-2-4"]
+
+    next(record for record in parent.metadata["worker_dispatches"] if record["task_id"] == "worker-2-0")[
+        "status"
+    ] = "completed"
+    await store.save_session(parent)
+    second = await service._maybe_launch_followup_workers(parent, "turn-1")
+    parent = await store.get_session("batch-parent")
+    assert [record["task_id"] for record in second] == ["worker-2-4"]
+    assert len(created) == 5
+    assert parent.metadata["pending_followup_workers"] == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_followup_rejection_is_not_silently_discarded():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.metadata.update(
+        {
+            "worker_dispatches": [{
+                "task_id": "worker-1-0",
+                "status": "completed",
+                "debate_stage": "independent_findings",
+                "debate_round_index": 1,
+            }],
+            "pending_followup_workers": [{**_batch_worker(0, 2), "agent_key": "missing-agent"}],
+            "followup_workers_parent_turn_id": "turn-1",
+            "followup_workers_parent_trace_id": "trace-1",
+        }
+    )
+    await store.save_session(parent)
+    service._build_peer_review_bundle = AsyncMock(return_value="peer findings")
+
+    records = await service._maybe_launch_followup_workers(parent, "turn-1")
+
+    parent = await store.get_session("batch-parent")
+    assert created == []
+    assert [record["status"] for record in records] == ["failed"]
+    assert parent.metadata["pending_followup_workers"] == []
+    assert parent.metadata["worker_dispatches"][-1]["status"] == "failed"
+    assert [event.type for event in await store.list_events("batch-parent")].count(
+        "worker.task_notification_received"
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_completion_waits_for_initial_queue():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.metadata.update(
+        {
+            "worker_dispatches": [{"task_id": "worker-1-0", "status": "completed"}],
+            "pending_initial_workers": [_batch_worker(1)],
+            "pending_initial_workers_parent_turn_id": "turn-1",
+            "pending_completion_worker": {
+                **_batch_worker(9),
+                "parent_turn_id": "turn-1",
+                "parent_trace_id": "trace-1",
+            },
+        }
+    )
+    await store.save_session(parent)
+
+    assert await service._maybe_launch_completion_worker(parent, "turn-1") is None
+    assert created == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_five_reviewer_campaign_reaches_summary_without_dropping_work():
+    service, store, created = await _batch_capacity_coordinator()
+    service._build_peer_review_bundle = AsyncMock(return_value="peer findings")
+    initial = [_batch_worker(index) for index in range(5)]
+    followup = [_batch_worker(index, 2) for index in range(5)]
+    summary = {**_batch_worker(9), "task_id": "summary-worker"}
+    specs = {item["task_id"]: item for item in initial + followup + [summary]}
+    result = await service.dispatch(
+        {"workers": initial, "followup_workers": followup, "completion_worker": summary},
+        {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"},
+    )
+    assert result["metrics"]["queued_worker_count"] == 1
+    assert len(created) == 4
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+
+    async def settle(task_id: str):
+        current = await store.get_session("batch-parent")
+        record = next(
+            item for item in current.metadata["worker_dispatches"] if item["task_id"] == task_id
+        )
+        await service._deliver_notification(
+            parent_session_id="batch-parent",
+            parent_turn_id="turn-1",
+            child_session_id=record["child_session_id"],
+            worker=service._worker_from_pending(specs[task_id]),
+            content=f"{task_id} completed",
+            status="completed",
+        )
+
+    await settle("worker-1-0")
+    assert len(created) == 5
+    for index in range(1, 5):
+        await settle(f"worker-1-{index}")
+    assert len(created) == 9
+    parent = await store.get_session("batch-parent")
+    assert [item["task_id"] for item in parent.metadata["pending_followup_workers"]] == ["worker-2-4"]
+
+    await settle("worker-2-0")
+    assert len(created) == 10
+    for index in range(1, 5):
+        await settle(f"worker-2-{index}")
+    assert len(created) == 11
+    parent = await store.get_session("batch-parent")
+    assert parent.metadata["pending_initial_workers"] == []
+    assert parent.metadata["pending_followup_workers"] == []
+    assert [item["task_id"] for item in parent.metadata["worker_dispatches"]] == [
+        *[f"worker-1-{index}" for index in range(5)],
+        *[f"worker-2-{index}" for index in range(5)],
+        "summary-worker",
+    ]
+    assert parent.metadata["completion_worker_dispatched"] is True
 
 
 def test_coordinator_restart_reconciles_orphaned_child_without_replaying_it():

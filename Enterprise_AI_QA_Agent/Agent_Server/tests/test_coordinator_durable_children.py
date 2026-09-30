@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -631,6 +632,18 @@ async def test_child_depth_and_count_guard(harness):
     overflow = await make_session(h.store, "Sibling overflow")
     with pytest.raises(ValueError, match="coordinator_child_limit_exceeded"):
         await submit_child(h, h.parent_task_id, worker("worker-sibling-overflow"), overflow)
+    # The limit is concurrent child work, not all children ever created by the
+    # parent. A settled sibling must free one slot for a later review round.
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_task_table} "
+            "SET status='completed' WHERE parent_task_id=%s AND session_id=%s",
+            (h.parent_task_id, filled[0]),
+        )
+    replacement = await submit_child(
+        h, h.parent_task_id, worker("worker-sibling-after-completion"), overflow
+    )
+    assert replacement.operation == "coordinator_child"
 
     # The chain grows one level per child, so it needs its own clean tree.
     chain_parent_session = await make_session(h.store, "Chain root parent")
@@ -651,6 +664,145 @@ async def test_child_depth_and_count_guard(harness):
     deepest = await make_session(h.store, "Too deep")
     with pytest.raises(ValueError, match="coordinator_depth_exceeded"):
         await submit_child(h, chain_parent, worker("worker-chain-deep"), deepest)
+
+
+@pytest.mark.asyncio
+async def test_two_coordinators_claim_one_followup_batch_without_duplicate_workers(harness):
+    h = harness
+    h.settings.orchestration.coordinator_max_workers = 4
+    parent = await h.store.get_session(h.parent_id)
+    parent.metadata["worker_dispatches"] = [
+        {
+            "task_id": f"source-{index}",
+            "status": "completed",
+            "debate_stage": "independent_findings",
+            "debate_round_index": 1,
+        }
+        for index in range(5)
+    ]
+    parent.metadata["pending_followup_workers"] = [
+        {
+            "task_id": f"followup-{index}",
+            "description": f"Follow-up {index}",
+            "prompt": "Review peer findings",
+            "agent_key": "qa-planner",
+            "skill_keys": [],
+            "context": {
+                "debate_stage": "cross_review",
+                "debate_round_index": 2,
+                "debate_total_round_count": 2,
+                "source_stage": "independent_findings",
+                "source_round_index": 1,
+            },
+        }
+        for index in range(5)
+    ]
+    parent.metadata["followup_workers_parent_turn_id"] = h.parent_turn_id
+    parent.metadata["followup_workers_parent_trace_id"] = "root-trace-1"
+    await h.store.save_session(parent)
+
+    created: list[str] = []
+
+    class Sessions:
+        async def create_session(self, request):
+            session_id = await make_session(h.store, request.title)
+            created.append(session_id)
+            return await h.store.get_session(session_id)
+
+    coordinators = [build_coordinator(h), build_coordinator(h)]
+    for coordinator in coordinators:
+        coordinator._session_service = Sessions()
+        coordinator._start_child_worker = AsyncMock(return_value=None)
+        coordinator._build_peer_review_bundle = AsyncMock(return_value="peer findings")
+    snapshots = [await h.store.get_session(h.parent_id) for _ in coordinators]
+    await asyncio.gather(*(
+        coordinator._maybe_launch_followup_workers(snapshot, h.parent_turn_id)
+        for coordinator, snapshot in zip(coordinators, snapshots)
+    ))
+
+    updated = await h.store.get_session(h.parent_id)
+    launched = [
+        record for record in updated.metadata["worker_dispatches"]
+        if str(record.get("task_id") or "").startswith("followup-")
+    ]
+    assert len(created) == 4
+    assert [record["task_id"] for record in launched] == [f"followup-{index}" for index in range(4)]
+    assert [item["task_id"] for item in updated.metadata["pending_followup_workers"]] == ["followup-4"]
+
+    await coordinators[0]._register_worker_dispatches(
+        h.parent_id, h.parent_turn_id, [{"task_id": "followup-0", "status": "completed"}]
+    )
+    await coordinators[1]._maybe_launch_followup_workers(updated, h.parent_turn_id)
+    updated = await h.store.get_session(h.parent_id)
+    assert len(created) == 5
+    assert updated.metadata["pending_followup_workers"] == []
+    assert sorted(
+        record["task_id"] for record in updated.metadata["worker_dispatches"]
+        if str(record.get("task_id") or "").startswith("followup-")
+    ) == [f"followup-{index}" for index in range(5)]
+
+
+@pytest.mark.asyncio
+async def test_two_coordinators_claim_initial_overflow_once(harness):
+    h = harness
+    h.settings.orchestration.coordinator_max_workers = 4
+    parent = await h.store.get_session(h.parent_id)
+    parent.metadata["worker_dispatches"] = [
+        {
+            "task_id": f"initial-{index}",
+            "status": "completed" if index == 0 else "running",
+            "agent_key": "qa-planner",
+            "description": f"Reviewer {index}",
+            "dispatch_role": "worker",
+            "debate_stage": "independent_findings",
+            "debate_round_index": 1,
+        }
+        for index in range(4)
+    ] + [{
+        "task_id": "initial-4",
+        "status": "queued",
+        "agent_key": "qa-planner",
+        "description": "Reviewer 4",
+        "dispatch_role": "worker",
+        "debate_stage": "independent_findings",
+        "debate_round_index": 1,
+    }]
+    parent.metadata["pending_initial_workers"] = [{
+        "task_id": "initial-4",
+        "description": "Reviewer 4",
+        "prompt": "Review the project",
+        "agent_key": "qa-planner",
+        "skill_keys": [],
+        "context": {"debate_stage": "independent_findings", "debate_round_index": 1},
+    }]
+    parent.metadata["pending_initial_workers_parent_turn_id"] = h.parent_turn_id
+    parent.metadata["pending_initial_workers_parent_trace_id"] = "root-trace-1"
+    await h.store.save_session(parent)
+
+    created: list[str] = []
+
+    class Sessions:
+        async def create_internal_session(self, request):
+            session_id = await make_session(h.store, request.title)
+            created.append(session_id)
+            return await h.store.get_session(session_id)
+
+    coordinators = [build_coordinator(h), build_coordinator(h)]
+    for coordinator in coordinators:
+        coordinator._session_service = Sessions()
+        coordinator._start_child_worker = AsyncMock(return_value=None)
+    snapshots = [await h.store.get_session(h.parent_id) for _ in coordinators]
+    await asyncio.gather(*(
+        coordinator._maybe_launch_initial_workers(snapshot, h.parent_turn_id)
+        for coordinator, snapshot in zip(coordinators, snapshots)
+    ))
+
+    updated = await h.store.get_session(h.parent_id)
+    assert len(created) == 1
+    assert updated.metadata["pending_initial_workers"] == []
+    records = [record for record in updated.metadata["worker_dispatches"] if record["task_id"] == "initial-4"]
+    assert len(records) == 1
+    assert records[0]["status"] == "running"
 
 
 @pytest.mark.asyncio

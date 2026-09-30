@@ -11,13 +11,14 @@ from typing import Any
 from uuid import uuid4
 from xml.sax.saxutils import escape
 
-from src.application.sessions.session_service import SessionService
 from src.application.observability import LangSmithObservabilityAdapter
+from src.application.sessions.session_service import SessionService
 from src.core.agent_communication import AgentMessageBus, ChildSessionWatcher
 from src.core.agent_control import AgentControlService
 from src.core.config import Settings
 from src.core.request_context import get_request_context, new_id
 from src.core.worker_pool import WorkerPool
+from src.domain.models import SessionRecord
 from src.registry.agents import AgentRegistry
 from src.runtime.store import SessionStore
 from src.schemas.session import (
@@ -32,7 +33,6 @@ from src.schemas.session import (
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,9 @@ TERMINAL_WORKER_STATUSES = frozenset({"completed", "failed", "cancelled", "inter
 # Launch-time registration may not rewind an already projected outcome; a
 # recovery_required record still accepts a genuine later settlement.
 NON_REWINDABLE_WORKER_STATUSES = TERMINAL_WORKER_STATUSES | {"recovery_required"}
+ACTIVE_WORKER_STATUSES = frozenset(
+    {"running", "waiting_approval", "idle", "pending", "launching", "recovery_required", ""}
+)
 
 
 class CoordinatorRuntimeService:
@@ -309,6 +312,8 @@ class CoordinatorRuntimeService:
                 "error": str(guard.get("last_error") or "dispatch_blocked"),
             }
 
+        if self._settings.orchestration.coordinator_max_workers < 1:
+            raise ValueError("coordinator_max_workers must be at least 1")
         workers = self._normalize_workers(payload)
         if not workers:
             raise ValueError("subagent-dispatch requires at least one worker specification.")
@@ -342,8 +347,23 @@ class CoordinatorRuntimeService:
         launch_records: list[dict[str, Any]] = []
         immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
         pending_launches: list[tuple[WorkerDispatchSpec, dict[str, Any], str]] = []
+        max_workers = self._settings.orchestration.coordinator_max_workers
+        deferred_workers = workers[max_workers:]
+        if deferred_workers:
+            await self._register_initial_worker_queue(
+                parent_session_id, parent_turn_id, parent_trace_id, deferred_workers
+            )
+            logger.info(
+                "coordinator_initial_workers_queued",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "queued_count": len(deferred_workers),
+                    "max_concurrent": max_workers,
+                },
+            )
 
-        for worker in workers[: self._settings.orchestration.coordinator_max_workers]:
+        for worker in workers[:max_workers]:
             if not self._is_agent_available(worker.agent_key):
                 launch_records.append(
                     {
@@ -358,8 +378,6 @@ class CoordinatorRuntimeService:
                 immediate_failures.append((worker, f"Unknown agent: {worker.agent_key}"))
                 continue
 
-            debate_stage = str(worker.context.get("debate_stage") or "").strip()
-            debate_round_index = int(worker.context.get("debate_round_index") or 0)
             dispatch_role = str(worker.context.get("dispatch_role") or "worker").strip() or "worker"
             mode_key = self._resolve_worker_mode_key(worker)
             child_session = await self._session_service.create_internal_session(
@@ -385,27 +403,28 @@ class CoordinatorRuntimeService:
                 )
             )
 
-            launch_record = {
-                "task_id": worker.task_id,
-                "child_session_id": child_session.id,
-                "agent_key": worker.agent_key,
-                "model_key": worker.model_key or "",
-                "description": worker.description,
-                "status": "running",
-                "debate_stage": debate_stage,
-                "debate_round_index": debate_round_index,
-                "debate_total_round_count": int(worker.context.get("debate_total_round_count") or 0),
-                "dispatch_role": dispatch_role,
-                "source_stage": str(worker.context.get("source_stage") or "").strip(),
-                "source_round_index": int(worker.context.get("source_round_index") or 0),
-            }
+            launch_record = self._initial_worker_record(
+                worker, status="running", child_session_id=child_session.id
+            )
             launch_records.append(launch_record)
             pending_launches.append((worker, launch_record, child_session.id))
 
         # Register before launching: another process' Worker can settle a durable
         # child faster than this turn reaches its registration call, and the
         # parent metadata is written as a whole document.
-        await self._register_worker_dispatches(parent_session_id, parent_turn_id, launch_records)
+        queued_records = [
+            self._initial_worker_record(worker, status="queued")
+            for worker in deferred_workers
+        ]
+        await self._register_worker_dispatches(
+            parent_session_id,
+            parent_turn_id,
+            [
+                {**record, "status": "launching"}
+                if record.get("status") == "failed" else record
+                for record in launch_records
+            ] + queued_records,
+        )
         for worker, launch_record, child_session_id in pending_launches:
             try:
                 child_task_id = await self._start_child_worker(
@@ -429,7 +448,11 @@ class CoordinatorRuntimeService:
             await self._register_worker_dispatches(
                 parent_session_id,
                 parent_turn_id,
-                [record for _worker, record, _child in pending_launches],
+                [
+                    {**record, "status": "launching"}
+                    if record.get("status") == "failed" else record
+                    for _worker, record, _child in pending_launches
+                ],
             )
         if followup_workers:
             await self._register_followup_workers(
@@ -466,32 +489,54 @@ class CoordinatorRuntimeService:
                 failure_reason=failure_reason,
             )
 
-        successful_launches = [item for item in launch_records if item.get("status") == "running"]
-        failed_launches = [item for item in launch_records if item.get("status") == "failed"]
+        latest_parent = await self._store.get_session(parent_session_id)
+        latest_records = {
+            str(item.get("task_id") or ""): item
+            for item in (latest_parent.metadata.get("worker_dispatches", []) if latest_parent else [])
+            if isinstance(item, dict)
+        }
+        worker_records = [
+            latest_records.get(worker.task_id, record)
+            for worker, record in zip(workers, launch_records + queued_records)
+        ]
+        successful_launches = [
+            item for item in worker_records
+            if str(item.get("status") or "") in {"running", "completed", "waiting_approval", "idle"}
+        ]
+        queued_launches = [
+            item for item in worker_records if str(item.get("status") or "") == "queued"
+        ]
+        failed_launches = [
+            item for item in worker_records if str(item.get("status") or "") == "failed"
+        ]
+        unresolved_launches = [
+            item for item in worker_records
+            if str(item.get("status") or "") in {"launching", "recovery_required"}
+        ]
         immediate_failure_errors = [failure_reason for _, failure_reason in immediate_failures]
         dispatch_status = (
             "failed"
-            if not successful_launches
+            if not successful_launches and not queued_launches
             else "partial"
-            if failed_launches
+            if failed_launches or unresolved_launches
             else "completed"
         )
         return {
-            "ok": bool(successful_launches),
+            "ok": bool(successful_launches or queued_launches),
             "status": dispatch_status,
             "trace_id": parent_trace_id,
             "summary": (
-                f"Launched {len(successful_launches)} worker session(s) for coordinator orchestration."
-                if dispatch_status == "completed"
-                else f"Launched {len(successful_launches)} worker session(s); {len(failed_launches)} worker dispatch(es) failed immediately."
-                if dispatch_status == "partial"
-                else "No worker session was launched successfully."
+                f"Launched {len(successful_launches)} worker session(s); "
+                f"queued {len(queued_launches)} worker(s); "
+                f"failed {len(failed_launches)} and unresolved {len(unresolved_launches)}."
             ),
-            "workers": launch_records,
+            "workers": worker_records,
             "artifacts": [],
             "metrics": {
                 "worker_count": len(successful_launches),
-                "failed_worker_count": len(launch_records) - len(successful_launches),
+                "queued_worker_count": len(queued_launches),
+                "failed_worker_count": len(failed_launches),
+                "unresolved_worker_count": len(unresolved_launches),
             },
             "error": "; ".join(immediate_failure_errors) or None,
         }
@@ -904,6 +949,14 @@ class CoordinatorRuntimeService:
             if should_stop:
                 return
 
+            initial_launches = await self._maybe_launch_initial_workers(
+                parent_session=parent_session,
+                parent_turn_id=parent_turn_id,
+            )
+            if initial_launches:
+                parent_session = await self._store.get_session(parent_session_id)
+                if parent_session is None:
+                    return
             followup_launches = await self._maybe_launch_followup_workers(
                 parent_session=parent_session,
                 parent_turn_id=parent_turn_id,
@@ -1155,6 +1208,14 @@ class CoordinatorRuntimeService:
             # Debate rounds stay registered here: both helpers only append
             # dispatch records and submit further child tasks when due, so the
             # durable path keeps the previous in-process semantics.
+            initial_launches = await self._maybe_launch_initial_workers(
+                parent_session=parent_session,
+                parent_turn_id=parent_turn_id,
+            )
+            if initial_launches:
+                parent_session = await self._store.get_session(parent_session_id)
+                if parent_session is None:
+                    return
             followup_launches = await self._maybe_launch_followup_workers(
                 parent_session=parent_session,
                 parent_turn_id=parent_turn_id,
@@ -1555,6 +1616,240 @@ class CoordinatorRuntimeService:
         parent_session.metadata["worker_dispatches"] = reconciled
         await self._store.save_session(parent_session)
 
+    @staticmethod
+    def _pending_worker_payload(worker: WorkerDispatchSpec) -> dict[str, Any]:
+        return {
+            "task_id": worker.task_id,
+            "description": worker.description,
+            "prompt": worker.prompt,
+            "agent_key": worker.agent_key,
+            "model_key": worker.model_key,
+            "skill_keys": list(worker.skill_keys),
+            "context": dict(worker.context),
+        }
+
+    @staticmethod
+    def _worker_from_pending(item: dict[str, Any]) -> WorkerDispatchSpec:
+        return WorkerDispatchSpec(
+            task_id=str(item["task_id"]),
+            description=str(item["description"]),
+            prompt=str(item["prompt"]),
+            agent_key=str(item["agent_key"]),
+            model_key=str(item.get("model_key") or "").strip() or None,
+            skill_keys=list(item.get("skill_keys") or []),
+            context=dict(item.get("context") or {}),
+        )
+
+    @staticmethod
+    def _initial_worker_record(
+        worker: WorkerDispatchSpec, *, status: str, child_session_id: str = ""
+    ) -> dict[str, Any]:
+        return {
+            "task_id": worker.task_id,
+            "child_session_id": child_session_id,
+            "agent_key": worker.agent_key,
+            "model_key": worker.model_key or "",
+            "description": worker.description,
+            "status": status,
+            "debate_stage": str(worker.context.get("debate_stage") or "").strip(),
+            "debate_round_index": int(worker.context.get("debate_round_index") or 0),
+            "debate_total_round_count": int(worker.context.get("debate_total_round_count") or 0),
+            "dispatch_role": str(worker.context.get("dispatch_role") or "worker").strip() or "worker",
+            "source_stage": str(worker.context.get("source_stage") or "").strip(),
+            "source_round_index": int(worker.context.get("source_round_index") or 0),
+        }
+
+    @classmethod
+    def _followup_worker_record(
+        cls, worker: WorkerDispatchSpec, *, status: str, child_session_id: str = ""
+    ) -> dict[str, Any]:
+        record = cls._initial_worker_record(
+            worker, status=status, child_session_id=child_session_id
+        )
+        record["dispatch_role"] = "debate_followup"
+        record["debate_stage"] = str(worker.context.get("debate_stage") or "cross_review")
+        return record
+
+    async def _register_initial_worker_queue(
+        self, parent_session_id: str, parent_turn_id: str, parent_trace_id: str,
+        workers: list[WorkerDispatchSpec]
+    ) -> None:
+        def register(metadata: dict[str, Any]) -> None:
+            metadata["pending_initial_workers"] = [
+                self._pending_worker_payload(worker) for worker in workers
+            ]
+            metadata["pending_initial_workers_parent_turn_id"] = parent_turn_id
+            metadata["pending_initial_workers_parent_trace_id"] = parent_trace_id
+
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            if not await mutate(parent_session_id, register):
+                raise KeyError(f"Parent session not found: {parent_session_id}")
+            return
+        parent = await self._store.get_session(parent_session_id)
+        if parent is None:
+            raise KeyError(f"Parent session not found: {parent_session_id}")
+        register(parent.metadata)
+        await self._store.save_session(parent)
+
+    async def _claim_initial_worker_slots(
+        self, parent_session_id: str, parent_turn_id: str
+    ) -> list[dict[str, Any]]:
+        claimed: list[dict[str, Any]] = []
+
+        def claim(metadata: dict[str, Any]) -> None:
+            if str(metadata.get("pending_initial_workers_parent_turn_id") or "") != parent_turn_id:
+                return
+            pending = metadata.get("pending_initial_workers")
+            if not isinstance(pending, list) or not pending:
+                return
+            active = sum(
+                1
+                for record in metadata.get("worker_dispatches", [])
+                if isinstance(record, dict)
+                and str(record.get("dispatch_role") or "worker") not in {"debate_followup", "completion_worker"}
+                and str(record.get("status") or "") in ACTIVE_WORKER_STATUSES
+            )
+            capacity = max(0, self._settings.orchestration.coordinator_max_workers - active)
+            if capacity == 0:
+                return
+            claimed.extend(item for item in pending[:capacity] if isinstance(item, dict))
+            metadata["pending_initial_workers"] = pending[capacity:]
+            self._merge_worker_dispatches(
+                metadata,
+                parent_turn_id,
+                [
+                    self._initial_worker_record(
+                        self._worker_from_pending(item), status="launching"
+                    )
+                    for item in claimed
+                ],
+            )
+
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            await mutate(parent_session_id, claim)
+        else:
+            parent = await self._store.get_session(parent_session_id)
+            if parent is not None:
+                claim(parent.metadata)
+                if claimed:
+                    await self._store.save_session(parent)
+        return claimed
+
+    async def _record_unlaunched_worker_failure(
+        self,
+        *,
+        parent_session_id: str,
+        parent_turn_id: str,
+        parent_trace_id: str,
+        child_session_id: str,
+        worker: WorkerDispatchSpec,
+        reason: str,
+    ) -> None:
+        await self._project_worker_notification(
+            parent_session_id=parent_session_id,
+            parent_turn_id=parent_turn_id,
+            child_session_id=child_session_id,
+            worker=worker,
+            content=self._build_task_notification(
+                task_id=worker.task_id,
+                child_session_id=child_session_id,
+                agent_key=worker.agent_key,
+                trace_id=parent_trace_id,
+                status="failed",
+                summary=f'Worker "{worker.description}" failed: {reason}',
+                result=reason,
+                usage={},
+            ),
+            status="failed",
+            failure_reason=reason,
+        )
+
+    async def _maybe_launch_initial_workers(
+        self, parent_session: SessionRecord, parent_turn_id: str
+    ) -> list[dict[str, Any]] | None:
+        claimed = await self._claim_initial_worker_slots(parent_session.id, parent_turn_id)
+        if not claimed:
+            return None
+        parent = await self._store.get_session(parent_session.id)
+        if parent is None:
+            raise KeyError(f"Parent session not found: {parent_session.id}")
+        parent_trace_id = str(parent.metadata.get("pending_initial_workers_parent_trace_id") or "")
+        parent_depth = int(parent.metadata.get("agent_depth") or 0)
+        results: list[dict[str, Any]] = []
+        for item in claimed:
+            worker = self._worker_from_pending(item)
+            record = self._initial_worker_record(worker, status="launching")
+            try:
+                if not self._is_agent_available(worker.agent_key):
+                    raise ValueError(f"Unknown agent: {worker.agent_key}")
+                mode_key = self._resolve_worker_mode_key(worker)
+                child = await self._session_service.create_internal_session(
+                    CreateSessionRequest(
+                        title=f"Worker: {worker.description}",
+                        session_mode=SessionMode.background_task,
+                        runtime_mode=RuntimeMode.background,
+                        mode_key=mode_key,
+                        preferred_model=worker.model_key,
+                        selected_agent=worker.agent_key,
+                        project_id=parent.project_id,
+                        metadata={
+                            "parent_session_id": parent.id,
+                            "parent_turn_id": parent_turn_id,
+                            "parent_trace_id": parent_trace_id,
+                            "task_id": worker.task_id,
+                            "worker_description": worker.description,
+                            "dispatch_role": record["dispatch_role"],
+                            "notification_mode": "task-notification",
+                            "agent_depth": parent_depth + 1,
+                            **self._trusted_worker_metadata(parent, mode_key),
+                        },
+                    )
+                )
+                record["child_session_id"] = child.id
+                child_task_id = await self._start_child_worker(
+                    parent_session=parent,
+                    parent_session_id=parent.id,
+                    parent_turn_id=parent_turn_id,
+                    parent_trace_id=parent_trace_id,
+                    child_session_id=child.id,
+                    worker=worker,
+                    mode_key=mode_key,
+                    register_pool=True,
+                )
+                if child_task_id:
+                    record["child_task_id"] = child_task_id
+                record["status"] = "running"
+            except ValueError as exc:
+                record["status"] = "failed"
+                record["error"] = str(exc)
+                await self._record_unlaunched_worker_failure(
+                    parent_session_id=parent.id,
+                    parent_turn_id=parent_turn_id,
+                    parent_trace_id=parent_trace_id,
+                    child_session_id=record["child_session_id"],
+                    worker=worker,
+                    reason=str(exc),
+                )
+                logger.warning(
+                    "coordinator_queued_worker_rejected",
+                    extra={"parent_session_id": parent.id, "parent_turn_id": parent_turn_id,
+                           "task_id": worker.task_id, "reason": str(exc)},
+                )
+            except Exception:
+                # The child may already exist or have reached the task store.
+                # Preserve an explicit unresolved record rather than replay it.
+                record["status"] = "recovery_required"
+                logger.exception(
+                    "coordinator_queued_worker_launch_failed",
+                    extra={"parent_session_id": parent.id, "parent_turn_id": parent_turn_id,
+                           "task_id": worker.task_id},
+                )
+            await self._register_worker_dispatches(parent.id, parent_turn_id, [record])
+            results.append(record)
+        return results
+
     async def _register_followup_workers(
         self,
         parent_session_id: str,
@@ -1569,16 +1864,7 @@ class CoordinatorRuntimeService:
         if workers:
             total_round_count = int(workers[0].context.get("debate_total_round_count") or 0)
         parent_session.metadata["pending_followup_workers"] = [
-            {
-                "task_id": worker.task_id,
-                "description": worker.description,
-                "prompt": worker.prompt,
-                "agent_key": worker.agent_key,
-                "model_key": worker.model_key,
-                "skill_keys": list(worker.skill_keys),
-                "context": dict(worker.context),
-            }
-            for worker in workers
+            self._pending_worker_payload(worker) for worker in workers
         ]
         parent_session.metadata["followup_workers_parent_turn_id"] = parent_turn_id
         parent_session.metadata["followup_workers_parent_trace_id"] = parent_trace_id
@@ -1807,6 +2093,9 @@ class CoordinatorRuntimeService:
         pending_followup_workers = parent_session.metadata.get("pending_followup_workers")
         if isinstance(pending_followup_workers, list) and pending_followup_workers:
             return None
+        pending_initial_workers = parent_session.metadata.get("pending_initial_workers")
+        if isinstance(pending_initial_workers, list) and pending_initial_workers:
+            return None
 
         reviewer_dispatches = [
             record
@@ -1816,7 +2105,7 @@ class CoordinatorRuntimeService:
         if not reviewer_dispatches:
             return None
         if any(
-            str(record.get("status") or "") in {"running", "waiting_approval", "idle", ""}
+            str(record.get("status") or "") in ACTIVE_WORKER_STATUSES | {"queued"}
             for record in reviewer_dispatches
         ):
             return None
@@ -1917,69 +2206,133 @@ class CoordinatorRuntimeService:
         await self._store.save_session(parent_session)
         return launch_record
 
+    async def _claim_followup_worker_slots(
+        self, parent_session_id: str, parent_turn_id: str
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        claimed: list[dict[str, Any]] = []
+        source_dispatches: list[dict[str, Any]] = []
+
+        def claim(metadata: dict[str, Any]) -> None:
+            if str(metadata.get("followup_workers_parent_turn_id") or "") != parent_turn_id:
+                return
+            if metadata.get("pending_initial_workers"):
+                return
+            pending = metadata.get("pending_followup_workers")
+            if not isinstance(pending, list) or not pending:
+                return
+            pending = [item for item in pending if isinstance(item, dict)]
+            if not pending:
+                return
+            round_index = min(self._pending_worker_round_index(item) for item in pending)
+            first = next(item for item in pending if self._pending_worker_round_index(item) == round_index)
+            source_index = self._pending_worker_source_round_index(first)
+            source_stage = self._pending_worker_source_stage(first)
+            prior = [
+                record for record in metadata.get("worker_dispatches", [])
+                if isinstance(record, dict)
+                and not record.get("is_completion_worker")
+                and int(record.get("debate_round_index") or 0) == source_index
+                and str(record.get("debate_stage") or "").strip() == source_stage
+            ]
+            if not prior or any(
+                str(record.get("status") or "") in ACTIVE_WORKER_STATUSES | {"queued"}
+                for record in prior
+            ):
+                return
+            active = sum(
+                1 for record in metadata.get("worker_dispatches", [])
+                if isinstance(record, dict)
+                and int(record.get("debate_round_index") or 0) == round_index
+                and str(record.get("status") or "") in ACTIVE_WORKER_STATUSES
+            )
+            capacity = max(0, self._settings.orchestration.coordinator_max_workers - active)
+            if capacity == 0:
+                return
+            selected_positions: set[int] = set()
+            for position, item in enumerate(pending):
+                if self._pending_worker_round_index(item) != round_index:
+                    continue
+                claimed.append(item)
+                selected_positions.add(position)
+                if len(claimed) == capacity:
+                    break
+            if not claimed:
+                return
+            source_dispatches.extend(prior)
+            remaining = [item for position, item in enumerate(pending) if position not in selected_positions]
+            metadata["pending_followup_workers"] = remaining
+            metadata["followup_workers_dispatched"] = not bool(remaining)
+            self._merge_worker_dispatches(
+                metadata,
+                parent_turn_id,
+                [
+                    self._followup_worker_record(
+                        self._worker_from_pending(item), status="launching"
+                    )
+                    for item in claimed
+                ],
+            )
+            metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
+                stage="cross_review",
+                status="running",
+                current_round_index=round_index,
+                total_round_count=self._pending_worker_total_round_count(first),
+                peer_review_count=len(prior),
+            )
+
+        mutate = getattr(self._store, "mutate_metadata", None)
+        if callable(mutate):
+            await mutate(parent_session_id, claim)
+        else:
+            parent = await self._store.get_session(parent_session_id)
+            if parent is not None:
+                claim(parent.metadata)
+                if claimed:
+                    await self._store.save_session(parent)
+        return claimed, source_dispatches
+
     async def _maybe_launch_followup_workers(
         self,
         parent_session,
         parent_turn_id: str,
     ) -> list[dict[str, Any]] | None:
-        pending_raw = parent_session.metadata.get("pending_followup_workers")
-        if not isinstance(pending_raw, list) or not pending_raw:
+        selected_batch, source_dispatches = await self._claim_followup_worker_slots(
+            parent_session.id, parent_turn_id
+        )
+        if not selected_batch:
             return None
-        if str(parent_session.metadata.get("followup_workers_parent_turn_id") or "") != parent_turn_id:
-            return None
-
-        normalized_pending = [item for item in pending_raw if isinstance(item, dict)]
-        if not normalized_pending:
-            return None
-
-        next_round_index = min(self._pending_worker_round_index(item) for item in normalized_pending)
-        round_batch = [
-            item for item in normalized_pending if self._pending_worker_round_index(item) == next_round_index
-        ]
-        if not round_batch:
-            return None
-
-        source_round_index = self._pending_worker_source_round_index(round_batch[0])
-        source_stage = self._pending_worker_source_stage(round_batch[0])
-        source_dispatches = [
-            record
-            for record in parent_session.metadata.get("worker_dispatches", [])
-            if isinstance(record, dict)
-            and not record.get("is_completion_worker")
-            and int(record.get("debate_round_index") or 0) == source_round_index
-            and str(record.get("debate_stage") or "").strip() == source_stage
-        ]
-        if not source_dispatches:
-            return None
-        if any(
-            str(record.get("status") or "") in {"running", "waiting_approval", "idle", "", "pending"}
-            for record in source_dispatches
-        ):
-            return None
-
+        parent_session = await self._store.get_session(parent_session.id)
+        if parent_session is None:
+            raise KeyError("Coordinator parent session disappeared during follow-up dispatch")
         peer_bundle = await self._build_peer_review_bundle(source_dispatches)
         launch_records: list[dict[str, Any]] = []
         parent_session_id = parent_session.id
         parent_trace_id = str(parent_session.metadata.get("followup_workers_parent_trace_id") or "")
-        current_round_total = int(self._pending_worker_total_round_count(round_batch[0]) or 0)
+        next_round_index = self._pending_worker_round_index(selected_batch[0])
+        source_round_index = self._pending_worker_source_round_index(selected_batch[0])
+        source_stage = self._pending_worker_source_stage(selected_batch[0])
 
-        for item in round_batch[: self._settings.orchestration.coordinator_max_workers]:
-            worker = WorkerDispatchSpec(
-                task_id=str(item.get("task_id") or uuid4()),
-                description=str(item.get("description") or "Cross Review Worker"),
-                prompt=str(item.get("prompt") or "").strip(),
-                agent_key=str(item.get("agent_key") or "").strip(),
-                model_key=str(item.get("model_key") or "").strip() or None,
-                skill_keys=[
-                    str(skill_key).strip()
-                    for skill_key in item.get("skill_keys", [])
-                    if str(skill_key).strip()
-                ],
-                context=dict(item.get("context", {})) if isinstance(item.get("context"), dict) else {},
-            )
-            if not worker.prompt or not worker.agent_key:
-                continue
-            if not self._is_agent_available(worker.agent_key):
+        for item in selected_batch:
+            worker = self._worker_from_pending(item)
+            if not worker.prompt or not worker.agent_key or not self._is_agent_available(worker.agent_key):
+                reason = "invalid_worker_spec" if not worker.prompt or not worker.agent_key else "unknown_agent"
+                record = self._followup_worker_record(worker, status="failed")
+                record["error"] = reason
+                await self._record_unlaunched_worker_failure(
+                    parent_session_id=parent_session_id,
+                    parent_turn_id=parent_turn_id,
+                    parent_trace_id=parent_trace_id,
+                    child_session_id="",
+                    worker=worker,
+                    reason=reason,
+                )
+                await self._register_worker_dispatches(parent_session_id, parent_turn_id, [record])
+                logger.warning(
+                    "coordinator_followup_worker_rejected",
+                    extra={"parent_session_id": parent_session_id, "parent_turn_id": parent_turn_id,
+                           "task_id": worker.task_id, "reason": reason},
+                )
+                launch_records.append(record)
                 continue
 
             debate_stage = str(worker.context.get("debate_stage") or "cross_review").strip() or "cross_review"
@@ -2002,42 +2355,29 @@ class CoordinatorRuntimeService:
                 "- 在反驳或支持时，请明确引用 peer finding id 或评审官名称。\n"
             )
 
-            child_session = await self._session_service.create_session(
-                CreateSessionRequest(
-                    title=f"Worker: {worker.description}",
-                    session_mode=SessionMode.background_task,
-                    runtime_mode=RuntimeMode.background,
-                    mode_key=self._resolve_worker_mode_key(worker),
-                    preferred_model=worker.model_key,
-                    selected_agent=worker.agent_key,
-                    project_id=parent_session.project_id,
-                    metadata={
-                        "parent_session_id": parent_session_id,
-                        "parent_turn_id": parent_turn_id,
-                        "parent_trace_id": parent_trace_id,
-                        "task_id": worker.task_id,
-                        "worker_description": worker.description,
-                        "dispatch_role": "debate_followup",
-                        "notification_mode": "task-notification",
-                    },
-                )
-            )
-
-            launch_record = {
-                "task_id": worker.task_id,
-                "child_session_id": child_session.id,
-                "agent_key": worker.agent_key,
-                "model_key": worker.model_key or "",
-                "description": worker.description,
-                "status": "running",
-                "debate_stage": debate_stage,
-                "debate_round_index": debate_round_index,
-                "debate_total_round_count": int(worker.context.get("debate_total_round_count") or current_round_total),
-                "dispatch_role": "debate_followup",
-                "source_stage": source_stage,
-                "source_round_index": source_round_index,
-            }
+            launch_record = self._followup_worker_record(worker, status="launching")
             try:
+                child_session = await self._session_service.create_session(
+                    CreateSessionRequest(
+                        title=f"Worker: {worker.description}",
+                        session_mode=SessionMode.background_task,
+                        runtime_mode=RuntimeMode.background,
+                        mode_key=self._resolve_worker_mode_key(worker),
+                        preferred_model=worker.model_key,
+                        selected_agent=worker.agent_key,
+                        project_id=parent_session.project_id,
+                        metadata={
+                            "parent_session_id": parent_session_id,
+                            "parent_turn_id": parent_turn_id,
+                            "parent_trace_id": parent_trace_id,
+                            "task_id": worker.task_id,
+                            "worker_description": worker.description,
+                            "dispatch_role": "debate_followup",
+                            "notification_mode": "task-notification",
+                        },
+                    )
+                )
+                launch_record["child_session_id"] = child_session.id
                 child_task_id = await self._start_child_worker(
                     parent_session=parent_session,
                     parent_session_id=parent_session_id,
@@ -2049,6 +2389,16 @@ class CoordinatorRuntimeService:
                     register_pool=False,
                 )
             except ValueError as exc:
+                launch_record["status"] = "failed"
+                launch_record["error"] = str(exc)
+                await self._record_unlaunched_worker_failure(
+                    parent_session_id=parent_session_id,
+                    parent_turn_id=parent_turn_id,
+                    parent_trace_id=parent_trace_id,
+                    child_session_id=launch_record["child_session_id"],
+                    worker=worker,
+                    reason=str(exc),
+                )
                 logger.warning(
                     "coordinator_followup_child_rejected",
                     extra={
@@ -2058,40 +2408,20 @@ class CoordinatorRuntimeService:
                         "reason": str(exc),
                     },
                 )
-                continue
-            if child_task_id:
-                launch_record["child_task_id"] = child_task_id
+            except Exception:
+                launch_record["status"] = "recovery_required"
+                logger.exception(
+                    "coordinator_followup_child_launch_failed",
+                    extra={"parent_session_id": parent_session_id, "parent_turn_id": parent_turn_id,
+                           "task_id": worker.task_id},
+                )
+            else:
+                if child_task_id:
+                    launch_record["child_task_id"] = child_task_id
+                launch_record["status"] = "running"
+            await self._register_worker_dispatches(parent_session_id, parent_turn_id, [launch_record])
             launch_records.append(launch_record)
 
-        remaining_pending = [
-            item for item in normalized_pending if self._pending_worker_round_index(item) != next_round_index
-        ]
-        if not launch_records:
-            parent_session.metadata["pending_followup_workers"] = remaining_pending
-            parent_session.metadata["followup_workers_dispatched"] = not bool(remaining_pending)
-            parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
-                stage="summary_resolution" if not remaining_pending else "cross_review",
-                status="running",
-                current_round_index=next_round_index if remaining_pending else current_round_total,
-                total_round_count=current_round_total,
-                peer_review_count=len(source_dispatches),
-            )
-            await self._store.save_session(parent_session)
-            return None
-
-        worker_dispatches = list(parent_session.metadata.get("worker_dispatches", []))
-        worker_dispatches.extend(launch_records)
-        parent_session.metadata["worker_dispatches"] = worker_dispatches
-        parent_session.metadata["pending_followup_workers"] = remaining_pending
-        parent_session.metadata["followup_workers_dispatched"] = not bool(remaining_pending)
-        parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
-            stage="cross_review",
-            status="running",
-            current_round_index=next_round_index,
-            total_round_count=current_round_total,
-            peer_review_count=len(source_dispatches),
-        )
-        await self._store.save_session(parent_session)
         return launch_records
 
     def _update_code_review_report_metadata(

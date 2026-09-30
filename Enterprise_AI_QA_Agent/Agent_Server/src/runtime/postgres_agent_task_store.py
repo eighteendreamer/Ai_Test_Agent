@@ -397,6 +397,14 @@ class PostgresAgentTaskStore:
     def _assert_coordinator_child_bounds(self, cur, command):
         if not command.parent_task_id:
             raise ValueError("coordinator_parent_task_id_required")
+        # Serialize sibling submissions across child sessions. The limit is
+        # simultaneous unfinished children, not the parent's lifetime total.
+        cur.execute(
+            f"SELECT id FROM {self._tasks} WHERE id=%s FOR UPDATE",
+            (command.parent_task_id,),
+        )
+        if cur.fetchone() is None:
+            raise ValueError("coordinator_parent_not_found")
         cur.execute(
             f"""WITH RECURSIVE chain AS (
                 SELECT id, parent_task_id, 1 AS chain_depth, ARRAY[id] AS chain_path,
@@ -419,7 +427,9 @@ class PostgresAgentTaskStore:
         if ancestors["chain_depth"] + 1 > self.MAX_COORDINATOR_DEPTH:
             raise ValueError("coordinator_depth_exceeded")
         cur.execute(
-            f"SELECT count(*) AS count FROM {self._tasks} WHERE parent_task_id=%s",
+            f"SELECT count(*) AS count FROM {self._tasks} WHERE parent_task_id=%s "
+            "AND status IN ('queued','waiting_resource','claimed','running',"
+            "'waiting_children','coordinator_resuming')",
             (command.parent_task_id,),
         )
         if cur.fetchone()["count"] >= self._settings.orchestration.coordinator_max_workers:

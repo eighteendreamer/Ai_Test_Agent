@@ -152,7 +152,7 @@ function statusLabel(status: string) {
   if (status === "completed") return t("reviewProgress.completed");
   if (status === "running") return t("reviewProgress.running");
   if (status === "waiting_approval") return t("reviewProgress.waiting_approval");
-  if (status === "pending") return t("reviewProgress.pending");
+  if (status === "pending" || status === "queued" || status === "launching") return t("reviewProgress.pending");
   if (status === "failed") return t("reviewProgress.failed");
   if (status === "denied") return t("reviewProgress.denied");
   return status || t("reviewProgress.unknown");
