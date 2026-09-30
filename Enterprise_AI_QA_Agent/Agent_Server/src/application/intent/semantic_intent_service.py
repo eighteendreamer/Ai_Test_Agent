@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from src.schemas.intent import IntentDecision, SemanticIntentCandidate
 from src.schemas.model_config import ModelInvocationRequest
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticIntentService:
@@ -80,10 +83,40 @@ class SemanticIntentService:
         )
         try:
             result = await self._model_runtime_service.invoke(resolved_model_key, request)
+            summary = getattr(result, "response_summary", {}) or {}
+            response_mode = str(summary.get("mode") or "ok")
+            if response_mode != "ok":
+                logger.warning(
+                    "semantic_intent_enrichment_failed",
+                    extra={
+                        "model_key": resolved_model_key,
+                        "error_type": response_mode,
+                        "status_code": summary.get("status_code"),
+                        "message_length": len(message),
+                    },
+                )
+                return baseline
             candidate = self._parse_candidate(str(result.text or ""))
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "semantic_intent_enrichment_failed",
+                extra={
+                    "model_key": resolved_model_key,
+                    "error_type": type(exc).__name__,
+                    "status_code": getattr(exc, "status_code", None),
+                    "message_length": len(message),
+                },
+            )
             return baseline
         if candidate is None:
+            logger.warning(
+                "semantic_intent_response_invalid",
+                extra={
+                    "model_key": resolved_model_key,
+                    "error_type": "invalid_response",
+                    "response_length": len(str(result.text or "")),
+                },
+            )
             return baseline
         return self._merge(baseline, candidate, resolved_model_key)
 
