@@ -683,14 +683,8 @@ class ApiDocsService:
         if not is_text_like:
             return None, False, "该文件不是文本类型，暂不支持内容预览。"
 
-        decoded: str | None = None
-        for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
-            try:
-                decoded = content.decode(encoding)
-                break
-            except UnicodeDecodeError:
-                continue
-        if decoded is None:
+        decoded = self._decode_text(content)
+        if content and not decoded:
             return None, False, "文件内容无法按常见文本编码解析。"
 
         limit = 20000
@@ -706,7 +700,7 @@ class ApiDocsService:
 
         if suffix == ".json":
             try:
-                parsed = json.loads(content.decode("utf-8"))
+                parsed = json.loads(content.decode("utf-8-sig"))
             except Exception:
                 return "JSON 文档", None
             if isinstance(parsed, dict) and ("openapi" in parsed or "swagger" in parsed):
@@ -1703,10 +1697,10 @@ class ApiDocsService:
 
     def _decode_text(self, content: Any) -> str:
         if isinstance(content, str):
-            return content
+            return content.removeprefix("\ufeff")
         if not isinstance(content, (bytes, bytearray)):
             return ""
-        for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
+        for encoding in ("utf-8-sig", "gb18030", "latin-1"):
             try:
                 return bytes(content).decode(encoding)
             except UnicodeDecodeError:
