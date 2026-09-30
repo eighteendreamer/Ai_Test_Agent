@@ -13,6 +13,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable
 
 from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.events import LoopEvent, LoopEventType
+from src.application.runtime.state_persistence import persisted_turn_budget
 from src.application.runtime.state_types import LoopConfig, SessionContext, TurnState
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_logging import append_graph_event
@@ -253,6 +254,7 @@ class AgentLoop:
             "selected_agent_key": state.get("selected_agent_key", ""),
             "selected_model_key": state.get("selected_model_key", ""),
             "runtime_messages": list(state.get("runtime_messages") or []),
+            **persisted_turn_budget(state),
             "tool_results": list(state.get("tool_results") or []),
             "tool_messages": list(state.get("tool_messages") or []),
             "pending_approvals": list(state.get("pending_approvals") or []),

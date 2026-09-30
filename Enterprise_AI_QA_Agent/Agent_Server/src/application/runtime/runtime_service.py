@@ -19,6 +19,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.agent_loop import AgentLoop
 from src.application.runtime.error_recovery import ErrorRecoveryCascade
+from src.application.runtime.state_persistence import persisted_turn_budget
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_governance_service import (
@@ -1926,6 +1927,7 @@ class RuntimeService:
             "model_request_payload": state["model_request_payload"],
             "model_response_summary": state["model_response_summary"],
             "model_response_text": state["model_response_text"],
+            **persisted_turn_budget(state),
             "assistant_tool_call_message": state["assistant_tool_call_message"],
             "model_tool_calls": state["model_tool_calls"],
             "tool_results": state["tool_results"],
@@ -2001,6 +2003,7 @@ class RuntimeService:
             "system_prompt": state["system_prompt"],
             "conversation_messages": state["runtime_messages"],
             "runtime_messages": state["runtime_messages"],
+            **persisted_turn_budget(state),
             "tool_results": state["tool_results"],
             "tool_messages": state["tool_messages"],
             "worker_dispatches": state["worker_dispatches"],
@@ -2048,6 +2051,7 @@ class RuntimeService:
                 "model_request_payload": state["model_request_payload"],
                 "model_response_summary": state["model_response_summary"],
                 "model_response_text": state["model_response_text"],
+                **persisted_turn_budget(state),
                 "assistant_tool_call_message": state["assistant_tool_call_message"],
                 "model_tool_calls": state["model_tool_calls"],
                 "tool_results": state["tool_results"],
