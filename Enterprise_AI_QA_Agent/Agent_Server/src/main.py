@@ -313,6 +313,9 @@ async def _initialize_lifespan_resources(
     session_resource_service.set_browser_cleanup(mcp_runtime_service.close_browser_session)
 
     artifact_storage_service = container.artifact_storage_service()
+    cleanup.push_async_callback(
+        _close_lifespan_resource, "artifact_storage_service", artifact_storage_service.close,
+    )
     upload_security_service = container.upload_security_service()
 
     api_doc_store = container.api_doc_store()

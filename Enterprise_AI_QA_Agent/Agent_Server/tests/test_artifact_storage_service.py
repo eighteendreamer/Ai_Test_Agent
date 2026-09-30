@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
+import boto3
 import pytest
 
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
@@ -169,3 +171,61 @@ def test_rustfs_client_uses_configured_s3_endpoint(tmp_path: Path) -> None:
     assert client.meta.endpoint_url == "http://127.0.0.1:9000"
     assert client.meta.config.signature_version == "s3v4"
     assert client.meta.config.s3 == {"addressing_style": "path"}
+
+
+def test_rustfs_operations_reuse_one_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clients: list[_RustFSClient] = []
+    buckets: set[str] = set()
+    objects: dict[tuple[str, str], tuple[bytes, str]] = {}
+
+    def create_client(service_name: str, **kwargs):
+        assert service_name == "s3"
+        client = _RustFSClient()
+        client.buckets = buckets
+        client.objects = objects
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(boto3, "client", create_client)
+    monkeypatch.setattr(boto3.session, "Session", lambda: SimpleNamespace(client=create_client))
+    service = ArtifactStorageService(_settings(tmp_path))
+
+    stored = asyncio.run(service.store_uploaded_bytes(
+        content=b"payload", filename="artifact.txt", object_prefix="session",
+    ))
+    assert asyncio.run(service.read_object_uri(stored["uri"]))["content"] == b"payload"
+    asyncio.run(service.delete_object_uri(stored["uri"]))
+
+    assert len(clients) == 1
+
+
+def test_concurrent_first_access_creates_one_client_and_closes_it_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clients: list[_RustFSClient] = []
+    closes: list[_RustFSClient] = []
+
+    class ClosableClient(_RustFSClient):
+        def close(self):
+            closes.append(self)
+
+    def create_client(service_name: str, **kwargs):
+        assert service_name == "s3"
+        client = ClosableClient()
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(boto3, "client", create_client)
+    monkeypatch.setattr(boto3.session, "Session", lambda: SimpleNamespace(client=create_client))
+    service = ArtifactStorageService(_settings(tmp_path))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(lambda _: service._rustfs_client(), range(8)))
+
+    assert len(clients) == 1
+    assert all(result is clients[0] for result in results)
+    asyncio.run(service.close())
+    asyncio.run(service.close())
+    assert closes == clients
+    with pytest.raises(RuntimeError, match="closed"):
+        service._rustfs_client()

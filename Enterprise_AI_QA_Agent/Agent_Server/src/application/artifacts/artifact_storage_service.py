@@ -5,10 +5,10 @@ import logging
 import mimetypes
 from copy import deepcopy
 from pathlib import Path, PurePosixPath
+from threading import Lock
 from typing import Any
 
 from src.core.config import Settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,9 @@ class ArtifactStorageService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._artifact_root = (Path(__file__).resolve().parents[2] / settings.storage.artifact_root_dir).resolve()
+        self._client_lock = Lock()
+        self._client: Any | None = None
+        self._closed = False
 
     @property
     def enabled(self) -> bool:
@@ -299,24 +302,53 @@ class ArtifactStorageService:
         return guessed or "application/octet-stream"
 
     def _rustfs_client(self):
+        with self._client_lock:
+            if self._closed:
+                raise RuntimeError("RustFS client is closed.")
+            if self._client is None:
+                self._client = self._create_rustfs_client()
+            return self._client
+
+    def _create_rustfs_client(self):
         try:
             import boto3
             from botocore.config import Config
         except ImportError as exc:
             raise RuntimeError("RustFS artifact storage requires the 'boto3' Python package.") from exc
         scheme = "https" if self._settings.storage.rustfs_secure else "http"
-        return boto3.client(
-            "s3",
-            endpoint_url=f"{scheme}://{self._settings.storage.rustfs_endpoint}",
-            aws_access_key_id=self._settings.storage.rustfs_access_key,
-            aws_secret_access_key=self._settings.storage.rustfs_secret_key,
-            region_name="us-east-1",
-            config=Config(
-                signature_version="s3v4",
-                s3={"addressing_style": "path"},
-                retries={"mode": "standard", "max_attempts": 3},
-            ),
-        )
+        endpoint = f"{scheme}://{self._settings.storage.rustfs_endpoint}"
+        try:
+            client = boto3.session.Session().client(
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=self._settings.storage.rustfs_access_key,
+                aws_secret_access_key=self._settings.storage.rustfs_secret_key,
+                region_name="us-east-1",
+                config=Config(
+                    signature_version="s3v4",
+                    s3={"addressing_style": "path"},
+                    retries={"mode": "standard", "max_attempts": 3},
+                ),
+            )
+        except Exception:
+            logger.exception("rustfs_client_creation_failed", extra={"endpoint": endpoint})
+            raise
+        logger.info("rustfs_client_created", extra={"endpoint": endpoint})
+        return client
+
+    async def close(self) -> None:
+        await asyncio.to_thread(self._close_client)
+
+    def _close_client(self) -> None:
+        with self._client_lock:
+            if self._closed:
+                return
+            self._closed = True
+            client = self._client
+            self._client = None
+        if client is not None:
+            client.close()
+            logger.info("rustfs_client_closed")
 
     def _ensure_bucket(self, client: Any, bucket_name: str) -> None:
         try:
