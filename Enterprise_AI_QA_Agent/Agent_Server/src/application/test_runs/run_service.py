@@ -42,6 +42,7 @@ from src.schemas.run_management import (
     RunItemCheckpointRequest,
     RunItemLeaseRequest,
     TestCaseResultRecord,
+    TestRunAttemptRecord,
     TestRunCreateRequest,
     TestRunDetail,
     TestRunItemRecord,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
+from typing import get_type_hints
 
 import httpx
 import pytest
@@ -45,6 +46,14 @@ def _components():
     except ModuleNotFoundError as exc:
         pytest.fail(f"test run lifecycle module is not implemented: {exc}")
     return routes.router, service_module.TestRunService, store_module.InMemoryTestRunStore
+
+
+def test_run_service_attempt_annotations_resolve_for_runtime_reflection():
+    _, run_service_type, _ = _components()
+    attempt_type = import_module("src.schemas.run_management").TestRunAttemptRecord
+
+    assert get_type_hints(run_service_type.get_latest_attempt)["return"] == attempt_type | None
+    assert get_type_hints(run_service_type.save_checkpoint)["return"] is attempt_type
 
 
 async def _build_components(
