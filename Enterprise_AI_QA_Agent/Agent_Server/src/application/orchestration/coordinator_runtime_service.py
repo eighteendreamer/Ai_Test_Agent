@@ -346,14 +346,13 @@ class CoordinatorRuntimeService:
                         continue
                     parent_turn_id = str(claim.get("turn_id") or "").strip()
                     dispatch_key = str(claim.get("dispatch_key") or "").strip()
+                    request_fingerprint = str(claim.get("request_fingerprint") or "").strip()
                     worker_task_ids = [
                         str(item).strip()
                         for item in claim.get("worker_task_ids", [])
                         if str(item).strip()
                     ] if isinstance(claim.get("worker_task_ids"), list) else []
-                    if not parent_turn_id or not dispatch_key or not str(
-                        claim.get("request_fingerprint") or ""
-                    ).strip():
+                    if not parent_turn_id or not dispatch_key:
                         continue
                     pending_task_ids = self._pending_worker_task_ids(
                         parent.metadata, parent_turn_id
@@ -395,13 +394,18 @@ class CoordinatorRuntimeService:
                         claim_has_pending = any(
                             task_id in pending_task_ids for task_id in worker_task_ids
                         )
-                        if not claim_has_receipt and not claim_has_pending and not ambiguous_task_ids:
+                        if (
+                            request_fingerprint
+                            and not claim_has_receipt
+                            and not claim_has_pending
+                            and not ambiguous_task_ids
+                        ):
                             released = await self._store.release_coordinator_dispatch_claim_if_no_child(
                                 parent.id,
                                 parent_turn_id,
                                 dispatch_key,
                                 str(claim.get("owner_id") or ""),
-                                str(claim.get("request_fingerprint") or ""),
+                                request_fingerprint,
                                 worker_task_ids,
                                 require_settled_parent=True,
                             )
@@ -470,6 +474,7 @@ class CoordinatorRuntimeService:
                                 "task_id": task_id,
                                 "child_session_id": child.id,
                                 "child_session_status": child.status.value,
+                                "request_fingerprint_available": bool(request_fingerprint),
                             },
                         )
 

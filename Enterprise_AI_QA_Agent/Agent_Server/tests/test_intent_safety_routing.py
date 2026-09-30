@@ -2370,6 +2370,47 @@ async def test_coordinator_restart_recovers_legacy_child_receipt_after_task_id_r
 
 
 @pytest.mark.asyncio
+async def test_coordinator_restart_recovers_child_for_legacy_claim_without_fingerprint():
+    service, store, _created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    await store.save_session(parent)
+
+    dispatch_key = "legacy-task|"
+    assert await store.claim_coordinator_dispatch(
+        parent.id,
+        "legacy-turn",
+        dispatch_key,
+        "legacy-owner",
+    )
+    child = _session()
+    child.id = "legacy-fingerprint-child"
+    child.metadata = {
+        "parent_session_id": parent.id,
+        "parent_turn_id": "legacy-turn",
+        "coordinator_dispatch_key": dispatch_key,
+        "task_id": "legacy-task",
+        "worker_description": "legacy worker",
+    }
+    await store.save_session(child)
+
+    assert await service.recover_orphaned_dispatches() == 1
+
+    recovered_parent = await store.get_session(parent.id)
+    recovered_record = recovered_parent.metadata["worker_dispatches"][0]
+    assert recovered_record["task_id"] == "legacy-task"
+    assert recovered_record["child_session_id"] == child.id
+    assert recovered_record["status"] == "recovery_required"
+    assert recovered_record["recovery_reason"] == (
+        "child_session_persisted_before_parent_receipt"
+    )
+    assert recovered_parent.metadata["coordinator_dispatch_claims"][0][
+        "request_fingerprint"
+    ] is None
+    assert await service.recover_orphaned_dispatches() == 0
+
+
+@pytest.mark.asyncio
 async def test_coordinator_restart_releases_only_unmaterialized_settled_claims():
     service, store, created = await _batch_capacity_coordinator()
     payload = {"workers": [_batch_worker(0)]}
