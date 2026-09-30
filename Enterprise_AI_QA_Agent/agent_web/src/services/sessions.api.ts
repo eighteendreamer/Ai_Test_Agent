@@ -18,6 +18,10 @@ import type {
 } from "../types";
 import { request } from "./http";
 
+function sessionPath(sessionId: string): string {
+  return `/api/v1/sessions/${encodeURIComponent(sessionId)}`;
+}
+
 export function createSession(
   title = "Enterprise Intelligent QA Session",
   modeKey = "default",
@@ -49,7 +53,7 @@ export function listTaskPoolPage(limit = 24, offset = 0): Promise<TaskPoolPage> 
 }
 
 export function getSession(sessionId: string): Promise<SessionDetail> {
-  return request(`/api/v1/sessions/${sessionId}`);
+  return request(sessionPath(sessionId));
 }
 
 export function updateSession(
@@ -62,7 +66,7 @@ export function updateSession(
     metadata?: Record<string, unknown> | null;
   },
 ): Promise<SessionDetail> {
-  return request(`/api/v1/sessions/${sessionId}`, {
+  return request(sessionPath(sessionId), {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -76,7 +80,7 @@ export function listSessionSnapshots(
     limit: String(params.limit ?? 20),
     include_graph_state: params.includeGraphState === false ? "false" : "true",
   });
-  return request(`/api/v1/sessions/${sessionId}/snapshots?${query.toString()}`);
+  return request(`${sessionPath(sessionId)}/snapshots?${query.toString()}`);
 }
 
 export function listSessionEvents(
@@ -85,7 +89,7 @@ export function listSessionEvents(
 ): Promise<ExecutionEvent[]> {
   const query = new URLSearchParams({ limit: String(params.limit ?? 500) });
   if (params.afterEventId) query.set("after_event_id", params.afterEventId);
-  return request(`/api/v1/sessions/${sessionId}/events/history?${query.toString()}`);
+  return request(`${sessionPath(sessionId)}/events/history?${query.toString()}`);
 }
 
 export function getSessionFlow(
@@ -96,11 +100,11 @@ export function getSessionFlow(
   const turnId = String(params.turnId || "").trim();
   if (turnId) query.set("turn_id", turnId);
   const suffix = query.toString();
-  return request(`/api/v1/sessions/${sessionId}/flow${suffix ? `?${suffix}` : ""}`);
+  return request(`${sessionPath(sessionId)}/flow${suffix ? `?${suffix}` : ""}`);
 }
 
 export function listApprovals(sessionId: string): Promise<ToolApprovalRequest[]> {
-  return request(`/api/v1/sessions/${sessionId}/approvals`);
+  return request(`${sessionPath(sessionId)}/approvals`);
 }
 
 export function resolveApproval(
@@ -110,7 +114,7 @@ export function resolveApproval(
   reason?: string,
   clientRequestId?: string,
 ): Promise<ToolApprovalRequest | AgentTaskAccepted> {
-  return request(`/api/v1/sessions/${sessionId}/approvals/${approvalId}`, {
+  return request(`${sessionPath(sessionId)}/approvals/${encodeURIComponent(approvalId)}`, {
     method: "POST",
     body: JSON.stringify({
       decision,
@@ -128,7 +132,7 @@ export function sendMessage(
   context?: Record<string, unknown>,
   metadata?: Record<string, unknown>,
 ): Promise<AgentTaskAccepted> {
-  return request(`/api/v1/sessions/${sessionId}/messages`, {
+  return request(`${sessionPath(sessionId)}/messages`, {
     method: "POST",
     body: JSON.stringify({
       content,
@@ -141,7 +145,7 @@ export function sendMessage(
 }
 
 export function interruptSession(sessionId: string, reason?: string): Promise<SessionDetail> {
-  return request(`/api/v1/sessions/${sessionId}/interrupt`, {
+  return request(`${sessionPath(sessionId)}/interrupt`, {
     method: "POST",
     body: JSON.stringify({ reason: reason || null, source: "web_console" }),
   });
@@ -152,7 +156,7 @@ export function resumeSession(
   reason?: string,
   clientRequestId?: string,
 ): Promise<AgentTaskAccepted> {
-  return request(`/api/v1/sessions/${sessionId}/resume`, {
+  return request(`${sessionPath(sessionId)}/resume`, {
     method: "POST",
     body: JSON.stringify({
       reason: reason || null,
@@ -163,23 +167,23 @@ export function resumeSession(
 }
 
 export function replaySession(sessionId: string): Promise<SessionReplayResponse> {
-  return request(`/api/v1/sessions/${sessionId}/replay`);
+  return request(`${sessionPath(sessionId)}/replay`);
 }
 
 export function listToolJobs(sessionId: string): Promise<ToolJobRecord[]> {
-  return request(`/api/v1/sessions/${sessionId}/tool-jobs`);
+  return request(`${sessionPath(sessionId)}/tool-jobs`);
 }
 
 export function getToolJobDetail(sessionId: string, jobId: string): Promise<ToolJobDetail> {
-  return request(`/api/v1/sessions/${sessionId}/tool-jobs/${jobId}`);
+  return request(`${sessionPath(sessionId)}/tool-jobs/${encodeURIComponent(jobId)}`);
 }
 
 export function listArtifacts(sessionId: string): Promise<ToolArtifactRecord[]> {
-  return request(`/api/v1/sessions/${sessionId}/artifacts`);
+  return request(`${sessionPath(sessionId)}/artifacts`);
 }
 
 export function listVerifications(sessionId: string): Promise<SessionVerificationResponse> {
-  return request(`/api/v1/sessions/${sessionId}/verifications`);
+  return request(`${sessionPath(sessionId)}/verifications`);
 }
 
 export function connectEvents(
@@ -191,7 +195,7 @@ export function connectEvents(
   const query = new URLSearchParams();
   if (lastEventId) query.set("last_event_id", lastEventId);
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  const source = new EventSource(`/api/v1/sessions/${sessionId}/events${suffix}`);
+  const source = new EventSource(`${sessionPath(sessionId)}/events${suffix}`);
   source.onmessage = (message) => {
     let payload: unknown;
     try {
