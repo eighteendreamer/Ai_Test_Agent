@@ -188,7 +188,7 @@ Vue 3、Vite 6、Naive UI、Pinia、Vue Router、TypeScript、Electron 31、Vite
 
 复制 `Agent_Server/.env.example` 为 `Agent_Server/.env`，按需配置 MySQL / PostgreSQL / Memgraph / Redis / RustFS 连接信息。基础设施容器也可通过设置页的 Docker 管理面板一键拉起。
 
-API 使用共享 Bearer 密钥：本地开发未设置 `API_AUTH_TOKEN` 时仅接受环回来源；非环回请求返回 503。生产部署必须将 `APP_ENV` 设为 `production` 并配置至少 32 个非空白随机字符的 `API_AUTH_TOKEN`。使用 Vite / Electron 前端代理时，代理进程也需要取得同一个环境变量；代理会在服务端转发时添加认证头，密钥不会编入浏览器资源。自动化客户端直接请求 API 时使用 `Authorization: Bearer <API_AUTH_TOKEN>`。不要把密钥命名为 `VITE_*` 或放入前端源码。OAuth 授权回调和只返回存活状态的 `/api/v1/health/live` 保持公开；详细健康状态、指标、文档及其他 API 均受保护。邮件 Webhook 当前也要求 Bearer 密钥，接入外部提供商前须先实现并验证对应的签名契约。
+API 使用共享 Bearer 密钥：本地开发未设置 `API_AUTH_TOKEN` 时仅接受环回来源；非环回请求返回 503。生产部署必须将 `APP_ENV` 设为 `production` 并配置至少 32 个非空白随机字符的 `API_AUTH_TOKEN`。使用 Vite / Electron 前端代理时，代理进程也需要取得同一个环境变量；代理会在服务端转发时添加认证头，密钥不会编入浏览器资源。自动化客户端直接请求 API 时使用 `Authorization: Bearer <API_AUTH_TOKEN>`。不要把密钥命名为 `VITE_*` 或放入前端源码。OAuth 授权回调和只返回存活状态的 `/api/v1/health/live` 保持公开；详细健康状态、指标、文档及其他 API 均受保护。邮件 Webhook 当前也要求 Bearer 密钥；默认邮件适配器尚无处理器，对应端点返回 501，不要配置为外部生产回调。接入前须确定并实现供应商签名验证、事件持久化与幂等契约。
 
 Windows PowerShell 启动开发前后端时，可先在两个终端分别设置同一个值：`$env:API_AUTH_TOKEN = '<Agent_Server/.env 中的 API_AUTH_TOKEN>'`。Vite 与 Electron 主进程只读取服务端进程环境变量；不会从 `import.meta.env` 暴露密钥。
 

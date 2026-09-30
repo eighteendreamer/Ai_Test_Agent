@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+
 from src.application.mail.contracts import MailCapability
 from src.schemas.email_config import EmailConfigUpdateRequest
 
-
 router = APIRouter(prefix="/mail", tags=["mail"])
 _PROVIDER_CALL_LIMIT = asyncio.Semaphore(4)
+logger = logging.getLogger(__name__)
 
 
 async def _run_provider_call(func, *args, **kwargs):
@@ -255,7 +258,39 @@ async def handle_webhook(provider: str, request: Request):
     if adapter is None:
         raise HTTPException(status_code=404, detail="Unknown provider: " + provider)
 
-    body = await request.json()
-    if hasattr(adapter, "handle_webhook"):
-        return await _run_provider_call(adapter.handle_webhook, body)
-    return {"ok": True, "handled": False}
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning(
+            "mail_webhook_invalid_json",
+            extra={"provider": provider, "error_type": type(exc).__name__},
+        )
+        raise HTTPException(status_code=400, detail="Invalid JSON webhook payload.") from exc
+
+    handler = getattr(adapter, "handle_webhook", None)
+    capability_declared = adapter.supports(MailCapability.WEBHOOK)
+    if not capability_declared or not callable(handler):
+        logger.warning(
+            "mail_webhook_handler_unavailable",
+            extra={
+                "provider": provider,
+                "capability_declared": capability_declared,
+                "handler_available": callable(handler),
+            },
+        )
+        raise HTTPException(
+            status_code=501,
+            detail=f"Webhook handling is not implemented for provider '{provider}'.",
+        )
+
+    try:
+        result = await _run_provider_call(handler, body)
+    except Exception as exc:
+        logger.error(
+            "mail_webhook_handler_failed",
+            extra={"provider": provider, "error_type": type(exc).__name__},
+        )
+        raise
+
+    logger.info("mail_webhook_handled", extra={"provider": provider})
+    return result

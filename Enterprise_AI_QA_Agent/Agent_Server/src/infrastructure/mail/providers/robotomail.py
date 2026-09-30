@@ -36,7 +36,6 @@ class RobotomailAdapter(RestMailAdapterBase):
             MailCapability.REPLY,
             MailCapability.ATTACHMENTS,
             MailCapability.PROVISION_INBOX,
-            MailCapability.WEBHOOK,
         }
 
     def _messages_path(self, record: "EmailConfigRecord") -> str:

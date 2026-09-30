@@ -24,7 +24,7 @@ class AgentMailAdapter(RestMailAdapterBase):
             MailCapability.SEND, MailCapability.LIST, MailCapability.READ,
             MailCapability.SEARCH, MailCapability.REPLY, MailCapability.FORWARD,
             MailCapability.TRASH, MailCapability.ATTACHMENTS,
-            MailCapability.PROVISION_INBOX, MailCapability.WEBHOOK,
+            MailCapability.PROVISION_INBOX,
         }
 
     def _messages_path(self, record: "EmailConfigRecord") -> str:

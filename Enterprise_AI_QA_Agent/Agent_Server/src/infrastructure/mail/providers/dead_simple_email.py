@@ -35,7 +35,6 @@ class DeadSimpleEmailAdapter(RestMailAdapterBase):
             MailCapability.FORWARD,
             MailCapability.ATTACHMENTS,
             MailCapability.PROVISION_INBOX,
-            MailCapability.WEBHOOK,
         }
 
     def _messages_path(self, record: "EmailConfigRecord") -> str:
