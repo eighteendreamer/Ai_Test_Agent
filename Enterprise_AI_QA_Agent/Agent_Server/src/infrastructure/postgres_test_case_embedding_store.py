@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,8 +16,8 @@ from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 
-
 _VERSION_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ class PostgresTestCaseEmbeddingStore:
         self._table = settings.database.postgres_test_case_embedding_table
         self._case_table = settings.database.postgres_test_case_table
         self._version_table = settings.database.postgres_test_case_version_table
+        self._prepared_ann_indexes: set[tuple[str, int]] = set()
+        self._ann_index_lock = threading.Lock()
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -177,6 +181,7 @@ class PostgresTestCaseEmbeddingStore:
             expected_dimension=record.embedding_dimension,
         )
         version = self._validate_version(record.embedding_version)
+        self._prepare_ann_index_sync(version, dimension)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -225,7 +230,26 @@ class PostgresTestCaseEmbeddingStore:
                         self._serialize_vector(record.embedding),
                     ),
                 )
-                self._ensure_ann_index(cur, version, dimension)
+
+    def _prepare_ann_index_sync(self, version: str, dimension: int) -> None:
+        key = (version, dimension)
+        with self._ann_index_lock:
+            if key in self._prepared_ann_indexes:
+                return
+            try:
+                with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                    self._ensure_ann_index(cur, version, dimension)
+            except Exception:
+                LOGGER.exception(
+                    "test_case_ann_index_prepare_failed",
+                    extra={"embedding_version": version, "embedding_dimension": dimension},
+                )
+                raise
+            self._prepared_ann_indexes.add(key)
+            LOGGER.info(
+                "test_case_ann_index_prepared",
+                extra={"embedding_version": version, "embedding_dimension": dimension},
+            )
 
     def _search_sync(
         self,
