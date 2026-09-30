@@ -21,7 +21,8 @@ export class SSEStreamManager {
   private _source: EventSource | null = null;
   private _sessionId = "";
   private _reconnectTimer: number | null = null;
-  private _receivedIds: string[] = [];
+  private _receivedIds = new Set<string>();
+  private _receivedSessionId = "";
   private _cursorBySession: Record<string, string> = {};
   private _callbacks: SSEStreamCallbacks | null = null;
   private _config: SSEStreamConfig;
@@ -43,11 +44,11 @@ export class SSEStreamManager {
   }
 
   get receivedIds(): string[] {
-    return this._receivedIds;
+    return [...this._receivedIds];
   }
 
   set receivedIds(value: string[]) {
-    this._receivedIds = value;
+    this._receivedIds = new Set(value.slice(-this._config.receivedIdLimit));
   }
 
   get cursorBySession(): Record<string, string> {
@@ -70,7 +71,11 @@ export class SSEStreamManager {
     if (!sessionId) return;
     if (this._source && this._sessionId === sessionId && !force) return;
 
-    this.disconnect();
+    this._closeSource();
+    if (this._receivedSessionId !== sessionId) {
+      this._receivedIds.clear();
+      this._receivedSessionId = sessionId;
+    }
 
     const lastEventId = this._cursorBySession[sessionId] || "";
     const source = api.connectEvents(sessionId, (event) => {
@@ -106,6 +111,12 @@ export class SSEStreamManager {
   }
 
   disconnect(): void {
+    this._closeSource();
+    this._receivedIds.clear();
+    this._receivedSessionId = "";
+  }
+
+  private _closeSource(): void {
     if (this._reconnectTimer !== null) {
       window.clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
@@ -134,11 +145,19 @@ export class SSEStreamManager {
   private _rememberEvent(event: ExecutionEvent, advanceCursor: boolean): boolean {
     const eventId = String(event.id || "").trim();
     if (!eventId) return true;
+    if (this._receivedSessionId !== event.session_id) {
+      this._receivedIds.clear();
+      this._receivedSessionId = event.session_id;
+    }
     if (advanceCursor) {
       this._cursorBySession = { ...this._cursorBySession, [event.session_id]: eventId };
     }
-    if (this._receivedIds.includes(eventId)) return false;
-    this._receivedIds = [...this._receivedIds, eventId].slice(-this._config.receivedIdLimit);
+    if (this._receivedIds.has(eventId)) return false;
+    this._receivedIds.add(eventId);
+    if (this._receivedIds.size > this._config.receivedIdLimit) {
+      const oldestId = this._receivedIds.values().next().value;
+      if (oldestId !== undefined) this._receivedIds.delete(oldestId);
+    }
     return true;
   }
 }

@@ -92,4 +92,26 @@ describe("session SSE transport", () => {
     expect(manager.rememberIncomingEvent(event)).toBe(false);
     expect(manager.cursorBySession["session-1"]).toBe("event-from-receipt");
   });
+
+  it("scopes recent event IDs to the session and clears them on explicit disconnect", () => {
+    const manager = new SSEStreamManager({ receivedIdLimit: 2 });
+    const event = (sessionId: string, id: string): ExecutionEvent => ({
+      id, type: "session.created", session_id: sessionId,
+      timestamp: "2026-09-30T00:00:00Z", payload: {},
+    });
+
+    expect(manager.rememberReceiptEvent(event("session-1", "shared-id"))).toBe(true);
+    expect(manager.rememberReceiptEvent(event("session-1", "shared-id"))).toBe(false);
+    expect(manager.rememberReceiptEvent(event("session-2", "shared-id"))).toBe(true);
+    expect(manager.rememberReceiptEvent(event("session-2", "next-id"))).toBe(true);
+    expect(manager.rememberReceiptEvent(event("session-2", "third-id"))).toBe(true);
+    expect(manager.rememberReceiptEvent(event("session-2", "shared-id"))).toBe(true);
+    manager.connect("session-2");
+    manager.connect("session-2", true);
+    expect(manager.rememberReceiptEvent(event("session-2", "shared-id"))).toBe(false);
+
+    manager.disconnect();
+    expect(manager.receivedIds).toEqual([]);
+    expect(manager.rememberReceiptEvent(event("session-2", "shared-id"))).toBe(true);
+  });
 });
