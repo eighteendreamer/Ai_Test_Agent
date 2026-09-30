@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { computed, ref, watch, onActivated, onBeforeUnmount, onDeactivated } from "vue";
 import { NModal } from "naive-ui";
 
 import DropdownSelect from "../../../components/common/DropdownSelect.vue";
@@ -138,6 +138,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  pageActive = false;
+  stopExportPolling();
   if (isDirty.value) {
     settingsStore.restoreAppearance();
   }
@@ -190,37 +192,79 @@ const exportSessionCount = ref(0);
 const exportDone = ref(false);
 const exportProgress = ref(0);
 const exportTotal = ref(0);
+let exportTaskId: string | null = null;
+let exportPollTimer: ReturnType<typeof setTimeout> | null = null;
+let exportPollGeneration = 0;
+let pageActive = true;
+
+function stopExportPolling() {
+  exportPollGeneration += 1;
+  if (exportPollTimer !== null) {
+    clearTimeout(exportPollTimer);
+    exportPollTimer = null;
+  }
+}
+
+function scheduleExportPoll() {
+  if (!pageActive || !exportTaskId || !exportLoading.value || exportPollTimer !== null) return;
+  const generation = exportPollGeneration;
+  exportPollTimer = setTimeout(() => {
+    exportPollTimer = null;
+    void pollExport(generation);
+  }, 400);
+}
+
+async function pollExport(generation: number) {
+  const taskId = exportTaskId;
+  if (!pageActive || !taskId || generation !== exportPollGeneration) return;
+  try {
+    const result = await api.exportProgress(taskId);
+    if (!pageActive || taskId !== exportTaskId || generation !== exportPollGeneration) return;
+    exportProgress.value = result.progress;
+    if (result.status === "done") {
+      stopExportPolling();
+      exportTaskId = null;
+      try {
+        await api.exportDownload(taskId);
+        exportDone.value = true;
+      } catch (error) {
+        notice.value = error instanceof Error ? error.message : "Export download failed";
+      } finally {
+        exportLoading.value = false;
+      }
+      return;
+    }
+    if (result.status === "error") throw new Error(result.error || "Export failed");
+    scheduleExportPoll();
+  } catch (error) {
+    if (!pageActive || taskId !== exportTaskId || generation !== exportPollGeneration) return;
+    stopExportPolling();
+    exportTaskId = null;
+    notice.value = error instanceof Error ? error.message : "Export failed";
+    exportLoading.value = false;
+  }
+}
+
+onActivated(() => {
+  pageActive = true;
+  scheduleExportPoll();
+});
+onDeactivated(() => {
+  pageActive = false;
+  stopExportPolling();
+});
 
 async function doExport() {
+  if (exportTaskId) return;
   exportLoading.value = true;
   exportProgress.value = 0;
   try {
     const { task_id, total } = await api.exportStart();
+    exportTaskId = task_id;
     exportTotal.value = total;
-
-    await new Promise<void>((resolve, reject) => {
-      const timer = setInterval(async () => {
-        try {
-          const res = await api.exportProgress(task_id);
-          exportProgress.value = res.progress;
-          if (res.status === "done") {
-            clearInterval(timer);
-            await api.exportDownload(task_id);
-            exportDone.value = true;
-            resolve();
-          } else if (res.status === "error") {
-            clearInterval(timer);
-            reject(new Error(res.error || "Export failed"));
-          }
-        } catch (e) {
-          clearInterval(timer);
-          reject(e);
-        }
-      }, 400);
-    });
+    scheduleExportPoll();
   } catch (error) {
     notice.value = error instanceof Error ? error.message : "Export failed";
-  } finally {
     exportLoading.value = false;
   }
 }
