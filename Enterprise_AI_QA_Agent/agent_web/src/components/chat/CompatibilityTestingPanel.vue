@@ -64,6 +64,7 @@ const wizardStep = ref(1);
 const wizardStepTouched = ref<number[]>([]);
 const wizardReplies = ref<Record<number, string>>({});
 const processedWizardMessageIds = new Set<string>();
+let wizardRevision = 0;
 const wizardSteps = [
   { id: 1, label: "产品", title: "先认识一下要测试的产品", prompt: "它是什么类型、叫什么名字、当前版本是多少？" },
   { id: 2, label: "接入", title: "把产品交给 Runner", prompt: "告诉我可访问的入口，或提供安装包 / 启动方式。" },
@@ -284,14 +285,55 @@ function handleWizardMessage(messageId: string, content: string) {
   }
 }
 
+function resetWizardForSession() {
+  ++wizardRevision;
+  processedWizardMessageIds.clear();
+  for (const message of sessionStore.messages) {
+    if (message.role === "user" && message.id) processedWizardMessageIds.add(message.id);
+  }
+  wizardStep.value = 1;
+  wizardStepTouched.value = [];
+  wizardReplies.value = {};
+  productType.value = "web";
+  productName.value = "";
+  productVersion.value = "";
+  entryUrl.value = "";
+  artifactUri.value = "";
+  packageName.value = "";
+  activity.value = "";
+  bundleId.value = "";
+  miniProgramPath.value = "";
+  command.value = "";
+  authStrategy.value = "unspecified";
+  usernameRef.value = "";
+  passwordRef.value = "";
+  tokenRef.value = "";
+  baseApi.value = "";
+  requiresVpn.value = false;
+  testScope.value = "";
+  priorityFlows.value = "";
+  excludeScope.value = "";
+  forbiddenActions.value = "";
+  dataPolicy.value = "test data only";
+  directPlanOutputs.value = [];
+  selectedCaseIdsByPlan.value = {};
+  selectedEnvironmentIdsByPlan.value = {};
+  riskConfirmedByPlan.value = {};
+  isDraftingPlan.value = false;
+}
+
 watch(
-  () => sessionStore.messages,
-  (messages) => {
-    if (sessionStore.selectedModeKey !== "compatibility_testing") return;
-    const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  [() => sessionStore.session?.id ?? "", () => sessionStore.messages.length],
+  ([sessionId], previous) => {
+    if (sessionId !== previous?.[0]) {
+      resetWizardForSession();
+      return;
+    }
+    if (!sessionId || sessionStore.selectedModeKey !== "compatibility_testing") return;
+    const latestUserMessage = [...sessionStore.messages].reverse().find((message) => message.role === "user");
     if (latestUserMessage) handleWizardMessage(latestUserMessage.id, latestUserMessage.content);
   },
-  { deep: true },
+  { immediate: true },
 );
 
 function availabilityTone(availability: string) {
@@ -657,6 +699,10 @@ function buildProductAccessManifest(): CompatibilityProductAccessManifest {
 }
 
 async function draftCompatibilityPlan() {
+  if (isDraftingPlan.value || !sessionStore.session) return;
+  const sessionId = sessionStore.session.id;
+  const revision = wizardRevision;
+  const isCurrent = () => revision === wizardRevision && sessionStore.session?.id === sessionId;
   const manifest = buildProductAccessManifest();
   isDraftingPlan.value = true;
   runnerError.value = "";
@@ -672,6 +718,7 @@ async function draftCompatibilityPlan() {
       priority_flows: manifest.test_scope.priority_flows,
       forbidden_actions: manifest.test_scope.forbidden_actions,
     });
+    if (!isCurrent()) return;
     directPlanOutputs.value = [
       {
         jobId: `direct-${Date.now()}`,
@@ -683,9 +730,9 @@ async function draftCompatibilityPlan() {
     ].slice(0, 3);
     await refreshRunnerState();
   } catch (error) {
-    runnerError.value = error instanceof Error ? error.message : "兼容性测试计划生成失败";
+    if (isCurrent()) runnerError.value = error instanceof Error ? error.message : "兼容性测试计划生成失败";
   } finally {
-    isDraftingPlan.value = false;
+    if (isCurrent()) isDraftingPlan.value = false;
   }
 }
 
@@ -799,9 +846,6 @@ async function confirmDispatch(plan: CompatibilityPlan) {
 }
 
 onMounted(() => {
-  for (const message of sessionStore.messages) {
-    processedWizardMessageIds.add(message.id);
-  }
   void refreshRunnerState();
   refreshTimer = window.setInterval(() => {
     void refreshRunnerState();
@@ -809,6 +853,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  ++wizardRevision;
   if (refreshTimer) {
     window.clearInterval(refreshTimer);
   }
