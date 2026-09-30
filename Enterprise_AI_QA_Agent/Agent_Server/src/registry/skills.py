@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from src.schemas.agent import SkillDescriptor
+
+logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
@@ -156,8 +159,9 @@ class SkillRegistry:
         self.reload()
 
     def reload(self) -> None:
-        self._skills = dict(self._base_skills)
-        self._load_filesystem_skills()
+        candidate = dict(self._base_skills)
+        self._load_filesystem_skills(candidate)
+        self._skills = candidate
 
     def list(self) -> list[SkillDescriptor]:
         return list(self._skills.values())
@@ -174,17 +178,24 @@ class SkillRegistry:
     def skills_root(self) -> Path:
         return self._skills_root
 
-    def _load_filesystem_skills(self) -> None:
+    def _load_filesystem_skills(self, candidate: dict[str, SkillDescriptor]) -> None:
         skills_root = self._skills_root
         if not skills_root.exists():
             return
         for skill_file in sorted(skills_root.glob("*/SKILL.md")):
             key = skill_file.parent.name
-            frontmatter, body = self._parse_skill_file(skill_file)
+            try:
+                frontmatter, body = self._parse_skill_file(skill_file)
+            except (OSError, UnicodeError) as exc:
+                logger.warning(
+                    "skill_file_load_failed",
+                    extra={"skill_key": key, "error_type": type(exc).__name__},
+                )
+                continue
             name = str(frontmatter.get("name") or key)
             description = str(frontmatter.get("description") or self._first_sentence(body) or "Filesystem skill.")
-            existing = self._skills.get(key)
-            self._skills[key] = SkillDescriptor(
+            existing = candidate.get(key)
+            candidate[key] = SkillDescriptor(
                 key=key,
                 name=name,
                 summary=existing.summary if existing else description,
