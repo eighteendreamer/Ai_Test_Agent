@@ -8,6 +8,7 @@ import { useSessionStore } from "../../stores/session";
 import type { ChatMessage, SessionDetail, ToolApprovalRequest, WorkerDispatchRecord } from "../../types";
 import { formatServerDateTime } from "../../utils/datetime";
 import { toolOutputToMarkdown } from "../../utils/toolOutput";
+import { workerDispatchKey } from "../../features/flow/workers";
 
 const sessionStore = useSessionStore();
 
@@ -358,8 +359,8 @@ function closeTaskDetail() {
         </div>
         <div v-if="workerRows.length" class="review-progress-list review-progress-scroll">
           <button
-            v-for="item in workerRows"
-            :key="item.task_id"
+            v-for="(item, index) in workerRows"
+            :key="workerDispatchKey(item, index)"
             type="button"
             class="review-progress-item review-progress-item-button"
             @click="openTaskDetail(item)"

@@ -86,6 +86,56 @@ class CoordinatorRuntimeService:
         self._agent_task_dispatcher = None
         self._agent_task_store = None
         self._owner_id = f"coordinator:{uuid4()}"
+        self._dispatch_reaper_interval_seconds = float(
+            settings.orchestration.turn_reaper_interval_seconds
+        )
+        self._dispatch_reaper_task: asyncio.Task[None] | None = None
+        self._dispatch_reaper_stop: asyncio.Event | None = None
+
+    async def start_dispatch_reaper(self) -> None:
+        """Periodically reconcile claims after the session turn reaper settles turns."""
+        if self._dispatch_reaper_task is not None and not self._dispatch_reaper_task.done():
+            return
+        self._dispatch_reaper_stop = asyncio.Event()
+        self._dispatch_reaper_task = asyncio.create_task(
+            self._dispatch_reaper_loop(),
+            name="coordinator-dispatch-reaper",
+        )
+        logger.info(
+            "coordinator_dispatch_reaper_started",
+            extra={"interval_seconds": self._dispatch_reaper_interval_seconds},
+        )
+
+    async def stop_dispatch_reaper(self) -> None:
+        """Stop the dispatch reconciler and wait for its current pass to finish."""
+        task = self._dispatch_reaper_task
+        stop = self._dispatch_reaper_stop
+        self._dispatch_reaper_task = None
+        self._dispatch_reaper_stop = None
+        if task is None:
+            return
+        if stop is not None:
+            stop.set()
+        await task
+        logger.info("coordinator_dispatch_reaper_stopped")
+
+    async def _dispatch_reaper_loop(self) -> None:
+        stop = self._dispatch_reaper_stop
+        if stop is None:
+            return
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(), timeout=self._dispatch_reaper_interval_seconds
+                )
+            except asyncio.TimeoutError:
+                pass
+            if stop.is_set():
+                return
+            try:
+                await self.recover_orphaned_dispatches()
+            except Exception:
+                logger.exception("coordinator_dispatch_reaper_pass_failed")
 
     def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
         self._observability_service = service
@@ -202,23 +252,52 @@ class CoordinatorRuntimeService:
         return cancelled
 
     async def recover_orphaned_dispatches(self) -> int:
-        """Reconcile persisted worker records after a coordinator restart.
+        """Reconcile persisted worker receipts after a coordinator restart.
 
         Child execution ownership is already governed by the normal SessionStore
-        turn lease.  This scan only projects the child session's durable status
-        into the parent dispatch record; it never replays a child with unknown
-        external side effects.
+        turn lease. This scan records materialized children whose parent receipt
+        was not saved, but never replays a child with unknown external side effects.
         """
         recovered = 0
         sessions = await self._store.list_sessions(limit=None)
+        children_by_dispatch: dict[tuple[str, str, str], list[SessionRecord]] = defaultdict(list)
+        children_by_parent_turn_task: dict[tuple[str, str, str], list[SessionRecord]] = defaultdict(list)
+        for child in sessions:
+            metadata = child.metadata if isinstance(child.metadata, dict) else {}
+            parent_session_id = str(metadata.get("parent_session_id") or "").strip()
+            parent_turn_id = str(metadata.get("parent_turn_id") or "").strip()
+            dispatch_key = str(metadata.get("coordinator_dispatch_key") or "").strip()
+            task_id = str(metadata.get("task_id") or "").strip()
+            if parent_session_id and parent_turn_id and task_id:
+                children_by_parent_turn_task[(parent_session_id, parent_turn_id, task_id)].append(child)
+            if parent_session_id and parent_turn_id and dispatch_key:
+                children_by_dispatch[(parent_session_id, parent_turn_id, dispatch_key)].append(child)
+
         for parent in sessions:
             records = parent.metadata.get("worker_dispatches", [])
             if not isinstance(records, list):
-                continue
+                records = []
+            claims = parent.metadata.get("coordinator_dispatch_claims", [])
+            if not isinstance(claims, list):
+                claims = []
+            can_reconcile_missing_receipts = self._parent_turn_is_settled(parent)
             changed = False
             reconciled: list[dict[str, Any]] = []
+            known_worker_keys: set[tuple[str, str]] = set()
+            known_unscoped_task_ids: set[str] = set()
+            recovered_for_parent = 0
             for record in records:
-                if not isinstance(record, dict) or str(record.get("status") or "") != "running":
+                if not isinstance(record, dict):
+                    reconciled.append(record)
+                    continue
+                task_id = str(record.get("task_id") or "").strip()
+                record_turn_id = str(record.get("parent_turn_id") or "").strip()
+                if task_id:
+                    if record_turn_id:
+                        known_worker_keys.add((record_turn_id, task_id))
+                    else:
+                        known_unscoped_task_ids.add(task_id)
+                if str(record.get("status") or "") != "running":
                     reconciled.append(record)
                     continue
                 child_id = str(record.get("child_session_id") or "").strip()
@@ -235,6 +314,7 @@ class CoordinatorRuntimeService:
                     })
                     changed = True
                     recovered += 1
+                    recovered_for_parent += 1
                     continue
                 child_status = child.status.value
                 if child_status in {SessionStatus.completed.value, SessionStatus.failed.value}:
@@ -246,6 +326,7 @@ class CoordinatorRuntimeService:
                     })
                     changed = True
                     recovered += 1
+                    recovered_for_parent += 1
                 elif child_status == SessionStatus.interrupted.value:
                     reconciled.append({
                         **record,
@@ -255,8 +336,167 @@ class CoordinatorRuntimeService:
                     })
                     changed = True
                     recovered += 1
+                    recovered_for_parent += 1
                 else:
                     reconciled.append(record)
+
+            if can_reconcile_missing_receipts:
+                for claim in claims:
+                    if not isinstance(claim, dict):
+                        continue
+                    parent_turn_id = str(claim.get("turn_id") or "").strip()
+                    dispatch_key = str(claim.get("dispatch_key") or "").strip()
+                    worker_task_ids = [
+                        str(item).strip()
+                        for item in claim.get("worker_task_ids", [])
+                        if str(item).strip()
+                    ] if isinstance(claim.get("worker_task_ids"), list) else []
+                    if not parent_turn_id or not dispatch_key or not str(
+                        claim.get("request_fingerprint") or ""
+                    ).strip():
+                        continue
+                    pending_task_ids = self._pending_worker_task_ids(
+                        parent.metadata, parent_turn_id
+                    )
+                    if worker_task_ids:
+                        claim_children: list[SessionRecord] = []
+                        ambiguous_task_ids: set[str] = set()
+                        for task_id in worker_task_ids:
+                            candidates = children_by_parent_turn_task.get(
+                                (parent.id, parent_turn_id, task_id), []
+                            )
+                            matching = [
+                                child
+                                for child in candidates
+                                if not str(
+                                    (child.metadata or {}).get("coordinator_dispatch_key") or ""
+                                ).strip()
+                                or str(
+                                    (child.metadata or {}).get("coordinator_dispatch_key") or ""
+                                ).strip() == dispatch_key
+                            ]
+                            if candidates and not matching:
+                                ambiguous_task_ids.add(task_id)
+                            claim_children.extend(matching)
+                    else:
+                        claim_children = list(
+                            children_by_dispatch.get(
+                                (parent.id, parent_turn_id, dispatch_key), []
+                            )
+                        )
+                        ambiguous_task_ids = set()
+
+                    if worker_task_ids and not claim_children:
+                        claim_has_receipt = any(
+                            (parent_turn_id, task_id) in known_worker_keys
+                            or task_id in known_unscoped_task_ids
+                            for task_id in worker_task_ids
+                        )
+                        claim_has_pending = any(
+                            task_id in pending_task_ids for task_id in worker_task_ids
+                        )
+                        if not claim_has_receipt and not claim_has_pending and not ambiguous_task_ids:
+                            released = await self._store.release_coordinator_dispatch_claim_if_no_child(
+                                parent.id,
+                                parent_turn_id,
+                                dispatch_key,
+                                str(claim.get("owner_id") or ""),
+                                str(claim.get("request_fingerprint") or ""),
+                                worker_task_ids,
+                                require_settled_parent=True,
+                            )
+                            if released:
+                                changed = True
+                                recovered += 1
+                                recovered_for_parent += 1
+                                logger.warning(
+                                    "coordinator_dispatch_unmaterialized_claim_released_after_restart",
+                                    extra={
+                                        "parent_session_id": parent.id,
+                                        "parent_turn_id": parent_turn_id,
+                                        "dispatch_key": dispatch_key,
+                                        "worker_task_count": len(worker_task_ids),
+                                    },
+                                )
+                                continue
+
+                    materialized_task_ids: set[str] = set()
+                    for child in claim_children:
+                        child_metadata = (
+                            child.metadata if isinstance(child.metadata, dict) else {}
+                        )
+                        task_id = str(child_metadata.get("task_id") or "").strip()
+                        if task_id:
+                            materialized_task_ids.add(task_id)
+                        if not task_id or (parent_turn_id, task_id) in known_worker_keys:
+                            continue
+                        if task_id in known_unscoped_task_ids:
+                            logger.warning(
+                                "coordinator_dispatch_child_receipt_task_id_conflict",
+                                extra={
+                                    "parent_session_id": parent.id,
+                                    "parent_turn_id": parent_turn_id,
+                                    "dispatch_key": dispatch_key,
+                                    "task_id": task_id,
+                                },
+                            )
+                            continue
+                        recovery_record = {
+                            "task_id": task_id,
+                            "child_session_id": child.id,
+                            "agent_key": str(child.selected_agent or ""),
+                            "model_key": str(child.preferred_model or ""),
+                            "description": str(
+                                child_metadata.get("worker_description") or child.title
+                            ),
+                            "dispatch_role": str(child_metadata.get("dispatch_role") or "worker"),
+                            "status": "recovery_required",
+                            "parent_turn_id": parent_turn_id,
+                            "child_session_status": child.status.value,
+                            "recovery_reason": "child_session_persisted_before_parent_receipt",
+                            "recovered_at": datetime.utcnow().isoformat(),
+                        }
+                        reconciled.append(recovery_record)
+                        known_worker_keys.add((parent_turn_id, task_id))
+                        changed = True
+                        recovered += 1
+                        recovered_for_parent += 1
+                        logger.warning(
+                            "coordinator_dispatch_child_receipt_reconstructed",
+                            extra={
+                                "parent_session_id": parent.id,
+                                "parent_turn_id": parent_turn_id,
+                                "dispatch_key": dispatch_key,
+                                "task_id": task_id,
+                                "child_session_id": child.id,
+                                "child_session_status": child.status.value,
+                            },
+                        )
+
+                    for task_id in worker_task_ids:
+                        if (
+                            not task_id
+                            or task_id in materialized_task_ids
+                            or task_id in pending_task_ids
+                            or (parent_turn_id, task_id) in known_worker_keys
+                            or task_id in ambiguous_task_ids
+                            or task_id in known_unscoped_task_ids
+                        ):
+                            continue
+                        reconciled.append(
+                            {
+                                "task_id": task_id,
+                                "child_session_id": "",
+                                "status": "recovery_required",
+                                "parent_turn_id": parent_turn_id,
+                                "recovery_reason": "child_session_missing_after_partial_dispatch",
+                                "recovered_at": datetime.utcnow().isoformat(),
+                            }
+                        )
+                        known_worker_keys.add((parent_turn_id, task_id))
+                        changed = True
+                        recovered += 1
+                        recovered_for_parent += 1
             if changed:
                 await self._reconcile_worker_dispatches(parent, reconciled)
                 await self._store.append_event(
@@ -265,12 +505,53 @@ class CoordinatorRuntimeService:
                         type="worker.dispatches_reconciled",
                         session_id=parent.id,
                         timestamp=datetime.utcnow(),
-                        payload={"recovered_count": sum(1 for item in reconciled if isinstance(item, dict) and item.get("recovered_at"))},
+                        payload={"recovered_count": recovered_for_parent},
                     ),
                 )
         if recovered:
             logger.warning("coordinator_orphaned_dispatches_reconciled", extra={"recovered_count": recovered})
         return recovered
+
+    @staticmethod
+    def _parent_turn_is_settled(parent: SessionRecord) -> bool:
+        status = getattr(parent.status, "value", str(parent.status))
+        if status not in {
+            SessionStatus.interrupted.value,
+            SessionStatus.completed.value,
+            SessionStatus.failed.value,
+        }:
+            return False
+        metadata = parent.metadata if isinstance(parent.metadata, dict) else {}
+        return not str(metadata.get("turn_lease_token") or "").strip()
+
+    @staticmethod
+    def _pending_worker_task_ids(
+        metadata: dict[str, Any], parent_turn_id: str
+    ) -> set[str]:
+        task_ids: set[str] = set()
+        queues = (
+            ("pending_initial_workers", "pending_initial_workers_parent_turn_id"),
+            ("pending_followup_workers", "followup_workers_parent_turn_id"),
+        )
+        for key, turn_key in queues:
+            queued_turn_id = str(metadata.get(turn_key) or "").strip()
+            if queued_turn_id and queued_turn_id != parent_turn_id:
+                continue
+            pending = metadata.get(key)
+            if not isinstance(pending, list):
+                continue
+            task_ids.update(
+                str(item.get("task_id") or "").strip()
+                for item in pending
+                if isinstance(item, dict) and str(item.get("task_id") or "").strip()
+            )
+        completion = metadata.get("pending_completion_worker")
+        if isinstance(completion, dict):
+            completion_turn_id = str(completion.get("parent_turn_id") or "").strip()
+            task_id = str(completion.get("task_id") or "").strip()
+            if task_id and (not completion_turn_id or completion_turn_id == parent_turn_id):
+                task_ids.add(task_id)
+        return task_ids
 
     async def dispatch(
         self,
@@ -331,12 +612,21 @@ class CoordinatorRuntimeService:
         request_fingerprint = self._dispatch_request_fingerprint(
             workers, followup_workers, completion_worker
         )
+        dispatch_worker_task_ids = [
+            worker.task_id
+            for worker in [
+                *workers,
+                *followup_workers,
+                *([completion_worker] if completion_worker is not None else []),
+            ]
+        ]
         claimed = await self._store.claim_coordinator_dispatch(
             parent_session_id,
             parent_turn_id,
             dispatch_key,
             self._owner_id,
             request_fingerprint,
+            dispatch_worker_task_ids,
         )
         if not claimed:
             return await self._duplicate_dispatch_receipt(
@@ -415,6 +705,7 @@ class CoordinatorRuntimeService:
                     parent_turn_id=parent_turn_id,
                     dispatch_key=dispatch_key,
                     request_fingerprint=request_fingerprint,
+                    worker_task_ids=dispatch_worker_task_ids,
                     error=exc,
                 )
                 raise
@@ -510,6 +801,7 @@ class CoordinatorRuntimeService:
             str(item.get("task_id") or ""): item
             for item in (latest_parent.metadata.get("worker_dispatches", []) if latest_parent else [])
             if isinstance(item, dict)
+            and str(item.get("parent_turn_id") or "") == parent_turn_id
         }
         worker_records = [
             latest_records.get(worker.task_id, record)
@@ -564,6 +856,7 @@ class CoordinatorRuntimeService:
         parent_turn_id: str,
         dispatch_key: str,
         request_fingerprint: str,
+        worker_task_ids: list[str],
         error: Exception,
     ) -> None:
         try:
@@ -573,6 +866,7 @@ class CoordinatorRuntimeService:
                 dispatch_key,
                 self._owner_id,
                 request_fingerprint,
+                worker_task_ids,
             )
         except Exception:
             logger.exception(
@@ -1046,12 +1340,24 @@ class CoordinatorRuntimeService:
             if any(
                 isinstance(record, dict)
                 and str(record.get("task_id") or "") == worker.task_id
+                and (
+                    str(record.get("parent_turn_id") or "") == parent_turn_id
+                    or (
+                        not str(record.get("parent_turn_id") or "")
+                        and str(record.get("child_session_id") or "") == child_session_id
+                    )
+                )
                 and str(record.get("status") or "") in TERMINAL_WORKER_STATUSES
                 for record in metadata.get("worker_dispatches", [])
             ):
                 return False
             self._apply_worker_status(
-                metadata, worker.task_id, status, child_session_id, worker
+                metadata,
+                worker.task_id,
+                status,
+                child_session_id,
+                worker,
+                parent_turn_id=parent_turn_id,
             )
             return True
 
@@ -1312,7 +1618,15 @@ class CoordinatorRuntimeService:
                 (
                     item
                     for item in parent_session.metadata.get("worker_dispatches", [])
-                    if isinstance(item, dict) and str(item.get("task_id") or "") == worker_task_id
+                    if isinstance(item, dict)
+                    and (
+                        str(item.get("parent_turn_id") or "") == parent_turn_id
+                        or (
+                            not str(item.get("parent_turn_id") or "")
+                            and str(item.get("child_session_id") or "") == child_session_id
+                        )
+                    )
+                    and str(item.get("task_id") or "") == worker_task_id
                 ),
                 None,
             )
@@ -1585,6 +1899,7 @@ class CoordinatorRuntimeService:
                         task_id=worker.task_id,
                         status=status,
                         child_session_id=child_session_id,
+                        parent_turn_id=parent_turn_id,
                     )
                     running_marked = True
                 continue
@@ -1720,8 +2035,8 @@ class CoordinatorRuntimeService:
             self._reset_failure_guard(guard_host, parent_turn_id)
 
         existing = metadata.get("worker_dispatches", [])
-        merged_by_task_id: dict[str, dict[str, Any]] = {}
-        ordered_task_ids: list[str] = []
+        merged_by_worker_key: dict[tuple[str, str], dict[str, Any]] = {}
+        ordered_worker_keys: list[tuple[str, str]] = []
         anonymous: list[dict[str, Any]] = []
         for record in existing if isinstance(existing, list) else []:
             if not isinstance(record, dict):
@@ -1730,9 +2045,10 @@ class CoordinatorRuntimeService:
             if not task_id:
                 anonymous.append(record)
                 continue
-            if task_id not in merged_by_task_id:
-                ordered_task_ids.append(task_id)
-            merged_by_task_id[task_id] = record
+            worker_key = (str(record.get("parent_turn_id") or "").strip(), task_id)
+            if worker_key not in merged_by_worker_key:
+                ordered_worker_keys.append(worker_key)
+            merged_by_worker_key[worker_key] = record
 
         for record in launch_records:
             if not isinstance(record, dict):
@@ -1742,10 +2058,11 @@ class CoordinatorRuntimeService:
             if not task_id:
                 anonymous.append(record)
                 continue
-            existing_record = merged_by_task_id.get(task_id)
+            worker_key = (parent_turn_id, task_id)
+            existing_record = merged_by_worker_key.get(worker_key)
             if existing_record is None:
-                merged_by_task_id[task_id] = dict(record)
-                ordered_task_ids.append(task_id)
+                merged_by_worker_key[worker_key] = dict(record)
+                ordered_worker_keys.append(worker_key)
                 continue
             # Merge into the existing record. Preserve the first non-empty
             # child_session_id so downstream consumers can still correlate to
@@ -1765,9 +2082,9 @@ class CoordinatorRuntimeService:
                 merged["status"] = prior_status
                 if existing_record.get("completed_at"):
                     merged["completed_at"] = existing_record["completed_at"]
-            merged_by_task_id[task_id] = merged
+            merged_by_worker_key[worker_key] = merged
 
-        rebuilt = [merged_by_task_id[task_id] for task_id in ordered_task_ids]
+        rebuilt = [merged_by_worker_key[key] for key in ordered_worker_keys]
         rebuilt.extend(anonymous)
         metadata["worker_dispatches"] = rebuilt
 
@@ -1800,20 +2117,34 @@ class CoordinatorRuntimeService:
         reconciled: list[dict[str, Any]],
     ) -> None:
         updates = {
-            str(record.get("task_id") or "").strip(): record
+            (
+                str(record.get("parent_turn_id") or "").strip(),
+                str(record.get("task_id") or "").strip(),
+            ): record
             for record in reconciled
             if isinstance(record, dict) and record.get("recovered_at")
         }
         if not updates:
             return
         merged: list[Any] = []
+        seen_worker_keys: set[tuple[str, str]] = set()
         for record in metadata.get("worker_dispatches") or []:
-            task_id = str(record.get("task_id") or "").strip() if isinstance(record, dict) else ""
-            update = updates.get(task_id)
+            if isinstance(record, dict):
+                identity = (
+                    str(record.get("parent_turn_id") or "").strip(),
+                    str(record.get("task_id") or "").strip(),
+                )
+                seen_worker_keys.add(identity)
+            else:
+                identity = ("", "")
+            update = updates.get(identity)
             if update is not None and str(record.get("status") or "") == "running":
                 merged.append(update)
             else:
                 merged.append(record)
+        for identity, update in updates.items():
+            if identity not in seen_worker_keys:
+                merged.append(update)
         metadata["worker_dispatches"] = merged
 
     async def _reconcile_worker_dispatches(
@@ -2168,7 +2499,8 @@ class CoordinatorRuntimeService:
         task_id: str,
         status: str,
         child_session_id: str,
-        worker: WorkerDispatchSpec | None = None,
+        worker: WorkerDispatchSpec | None,
+        parent_turn_id: str,
     ) -> None:
         worker_dispatches = []
         matched = False
@@ -2176,11 +2508,21 @@ class CoordinatorRuntimeService:
         for record in metadata.get("worker_dispatches", []):
             if not isinstance(record, dict):
                 continue
-            if record.get("task_id") == task_id:
+            if (
+                record.get("task_id") == task_id
+                and (
+                    str(record.get("parent_turn_id") or "") == parent_turn_id
+                    or (
+                        not str(record.get("parent_turn_id") or "")
+                        and str(record.get("child_session_id") or "") == child_session_id
+                    )
+                )
+            ):
                 matched = True
                 worker_dispatches.append(
                     {
                         **record,
+                        "parent_turn_id": parent_turn_id,
                         "status": status,
                         "child_session_id": child_session_id,
                         "completed_at": datetime.utcnow().isoformat(),
@@ -2190,24 +2532,24 @@ class CoordinatorRuntimeService:
                 worker_dispatches.append(record)
 
         if not matched and worker is not None:
-            worker_dispatches.append(
-                {
-                    "task_id": task_id,
-                    "child_session_id": child_session_id,
-                    "agent_key": worker.agent_key,
-                    "model_key": worker.model_key or "",
-                    "description": worker.description,
-                    "status": status,
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "is_completion_worker": bool(completion_task_id and completion_task_id == task_id),
-                    "debate_stage": str(worker.context.get("debate_stage") or "").strip(),
-                    "debate_round_index": int(worker.context.get("debate_round_index") or 0),
-                    "debate_total_round_count": int(worker.context.get("debate_total_round_count") or 0),
-                    "dispatch_role": str(worker.context.get("dispatch_role") or "").strip(),
-                    "source_stage": str(worker.context.get("source_stage") or "").strip(),
-                    "source_round_index": int(worker.context.get("source_round_index") or 0),
-                }
-            )
+            new_record = {
+                "task_id": task_id,
+                "child_session_id": child_session_id,
+                "parent_turn_id": parent_turn_id,
+                "agent_key": worker.agent_key,
+                "model_key": worker.model_key or "",
+                "description": worker.description,
+                "status": status,
+                "completed_at": datetime.utcnow().isoformat(),
+                "is_completion_worker": bool(completion_task_id and completion_task_id == task_id),
+                "debate_stage": str(worker.context.get("debate_stage") or "").strip(),
+                "debate_round_index": int(worker.context.get("debate_round_index") or 0),
+                "debate_total_round_count": int(worker.context.get("debate_total_round_count") or 0),
+                "dispatch_role": str(worker.context.get("dispatch_role") or "").strip(),
+                "source_stage": str(worker.context.get("source_stage") or "").strip(),
+                "source_round_index": int(worker.context.get("source_round_index") or 0),
+            }
+            worker_dispatches.append(new_record)
 
         metadata["worker_dispatches"] = worker_dispatches
 
@@ -2217,14 +2559,20 @@ class CoordinatorRuntimeService:
         task_id: str,
         status: str,
         child_session_id: str,
-        worker: WorkerDispatchSpec | None = None,
+        worker: WorkerDispatchSpec | None,
+        parent_turn_id: str,
     ) -> None:
         mutate = getattr(self._store, "mutate_metadata", None)
         if callable(mutate):
             await mutate(
                 parent_session_id,
                 lambda metadata: self._apply_worker_status(
-                    metadata, task_id, status, child_session_id, worker
+                    metadata,
+                    task_id,
+                    status,
+                    child_session_id,
+                    worker,
+                    parent_turn_id=parent_turn_id,
                 ),
             )
             return
@@ -2232,7 +2580,12 @@ class CoordinatorRuntimeService:
         if parent_session is None:
             return
         self._apply_worker_status(
-            parent_session.metadata, task_id, status, child_session_id, worker
+            parent_session.metadata,
+            task_id,
+            status,
+            child_session_id,
+            worker,
+            parent_turn_id=parent_turn_id,
         )
         await self._store.save_session(parent_session)
 
@@ -2369,16 +2722,32 @@ class CoordinatorRuntimeService:
             return None
 
         pending_followup_workers = parent_session.metadata.get("pending_followup_workers")
-        if isinstance(pending_followup_workers, list) and pending_followup_workers:
+        followup_turn_id = str(
+            parent_session.metadata.get("followup_workers_parent_turn_id") or ""
+        )
+        if (
+            isinstance(pending_followup_workers, list)
+            and pending_followup_workers
+            and (not followup_turn_id or followup_turn_id == parent_turn_id)
+        ):
             return None
         pending_initial_workers = parent_session.metadata.get("pending_initial_workers")
-        if isinstance(pending_initial_workers, list) and pending_initial_workers:
+        initial_turn_id = str(
+            parent_session.metadata.get("pending_initial_workers_parent_turn_id") or ""
+        )
+        if (
+            isinstance(pending_initial_workers, list)
+            and pending_initial_workers
+            and (not initial_turn_id or initial_turn_id == parent_turn_id)
+        ):
             return None
 
         reviewer_dispatches = [
             record
             for record in parent_session.metadata.get("worker_dispatches", [])
-            if isinstance(record, dict) and not record.get("is_completion_worker")
+            if isinstance(record, dict)
+            and str(record.get("parent_turn_id") or "") == parent_turn_id
+            and not record.get("is_completion_worker")
         ]
         if not reviewer_dispatches:
             return None
@@ -2436,6 +2805,7 @@ class CoordinatorRuntimeService:
         launch_record = {
             "task_id": worker.task_id,
             "child_session_id": child_session.id,
+            "parent_turn_id": parent_turn_id,
             "agent_key": worker.agent_key,
             "model_key": worker.model_key or "",
             "description": worker.description,
@@ -2470,9 +2840,9 @@ class CoordinatorRuntimeService:
             return None
         if child_task_id:
             launch_record["child_task_id"] = child_task_id
-        worker_dispatches = list(parent_session.metadata.get("worker_dispatches", []))
-        worker_dispatches.append(launch_record)
-        parent_session.metadata["worker_dispatches"] = worker_dispatches
+        self._merge_worker_dispatches(
+            parent_session.metadata, parent_turn_id, [launch_record]
+        )
         parent_session.metadata["completion_worker_dispatched"] = True
         parent_session.metadata["completion_worker_task_id"] = worker.task_id
         parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
@@ -2493,7 +2863,12 @@ class CoordinatorRuntimeService:
         def claim(metadata: dict[str, Any]) -> None:
             if str(metadata.get("followup_workers_parent_turn_id") or "") != parent_turn_id:
                 return
-            if metadata.get("pending_initial_workers"):
+            initial_turn_id = str(
+                metadata.get("pending_initial_workers_parent_turn_id") or ""
+            )
+            if metadata.get("pending_initial_workers") and (
+                not initial_turn_id or initial_turn_id == parent_turn_id
+            ):
                 return
             pending = metadata.get("pending_followup_workers")
             if not isinstance(pending, list) or not pending:
@@ -2508,6 +2883,7 @@ class CoordinatorRuntimeService:
             prior = [
                 record for record in metadata.get("worker_dispatches", [])
                 if isinstance(record, dict)
+                and str(record.get("parent_turn_id") or "") == parent_turn_id
                 and not record.get("is_completion_worker")
                 and int(record.get("debate_round_index") or 0) == source_index
                 and str(record.get("debate_stage") or "").strip() == source_stage

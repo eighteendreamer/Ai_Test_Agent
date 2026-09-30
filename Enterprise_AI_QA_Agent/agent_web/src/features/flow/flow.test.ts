@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import FlowInspector from "./FlowInspector.vue";
 import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openFlowWindow";
 import { projectFlowNodes, resolveLatestTurnId, selectTurnEvents } from "./stages";
-import { collectWorkerDispatches, workerFlowStatus, workerNodeId } from "./workers";
+import { collectWorkerDispatches, workerDispatchKey, workerFlowStatus, workerNodeId } from "./workers";
 import { t } from "../../services/i18n";
 import type { ExecutionEvent, WorkerDispatchRecord } from "../../types";
 
@@ -197,9 +197,52 @@ describe("Flow worker projection helpers", () => {
     });
   });
 
+  it("keeps a reused task id isolated across turns when merging metadata and graph state", () => {
+    const metadata = {
+      worker_dispatches: [
+        worker({ task_id: "reused-task", parent_turn_id: "turn-1", status: "running" }),
+        worker({ task_id: "reused-task", parent_turn_id: "turn-2", status: "running" }),
+      ],
+    };
+    const graphState = {
+      worker_dispatches: [
+        worker({
+          task_id: "reused-task",
+          parent_turn_id: "turn-1",
+          child_session_id: "child-turn-1",
+          status: "completed",
+        }),
+        worker({
+          task_id: "reused-task",
+          parent_turn_id: "turn-2",
+          child_session_id: "child-turn-2",
+          status: "failed",
+        }),
+      ],
+    };
+
+    const allTurns = collectWorkerDispatches(metadata, graphState, "");
+    const firstTurn = collectWorkerDispatches(metadata, graphState, "turn-1");
+    const secondTurn = collectWorkerDispatches(metadata, graphState, "turn-2");
+
+    expect(allTurns).toHaveLength(2);
+    expect(allTurns.map((item) => [item.parent_turn_id, item.status, item.child_session_id])).toEqual([
+      ["turn-1", "completed", "child-turn-1"],
+      ["turn-2", "failed", "child-turn-2"],
+    ]);
+    expect(firstTurn).toHaveLength(1);
+    expect(firstTurn[0]).toMatchObject({ status: "completed", child_session_id: "child-turn-1" });
+    expect(secondTurn).toHaveLength(1);
+    expect(secondTurn[0]).toMatchObject({ status: "failed", child_session_id: "child-turn-2" });
+  });
+
   it("maps worker status and node identity for the canvas", () => {
     expect(workerFlowStatus("waiting")).toBe("waiting_approval");
     expect(workerNodeId(worker({ task_id: "task-42" }))).toBe("worker:task-42");
+    const turnOne = worker({ task_id: "reused-task", parent_turn_id: "turn-1" });
+    const turnTwo = worker({ task_id: "reused-task", parent_turn_id: "turn-2" });
+    expect(workerDispatchKey(turnOne)).not.toBe(workerDispatchKey(turnTwo));
+    expect(workerNodeId(turnOne)).not.toBe(workerNodeId(turnTwo));
   });
 });
 

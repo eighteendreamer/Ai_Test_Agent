@@ -11,6 +11,7 @@ from src.schemas.session import (
     ExecutionEvent,
     SessionMode,
     SessionSnapshot,
+    SessionStatus,
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
@@ -137,6 +138,7 @@ class SessionStore(Protocol):
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str | None = None,
+        worker_task_ids: list[str] | None = None,
     ) -> bool: ...
     async def release_coordinator_dispatch_claim_if_no_child(
         self,
@@ -145,6 +147,8 @@ class SessionStore(Protocol):
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str,
+        worker_task_ids: list[str] | None = None,
+        require_settled_parent: bool = False,
     ) -> bool: ...
     async def recover_expired_turn_executions(self) -> list[str]: ...
     async def assert_turn_execution(self, session_id: str, lease_token: str) -> None: ...
@@ -637,6 +641,7 @@ class InMemorySessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str | None = None,
+        worker_task_ids: list[str] | None = None,
     ) -> bool:
         async with self._lock:
             session = self._sessions.get(session_id)
@@ -659,6 +664,7 @@ class InMemorySessionStore:
                     "owner_id": owner_id,
                     "claimed_at": datetime.utcnow().isoformat(),
                     "request_fingerprint": request_fingerprint,
+                    "worker_task_ids": list(worker_task_ids or []),
                 }
             )
             session.metadata["coordinator_dispatch_claims"] = claims
@@ -672,11 +678,21 @@ class InMemorySessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str,
+        worker_task_ids: list[str] | None = None,
+        require_settled_parent: bool = False,
     ) -> bool:
         async with self._lock:
             session = self._sessions.get(session_id)
             if session is None:
                 return False
+            if require_settled_parent:
+                status = getattr(session.status, "value", str(session.status))
+                if status not in {
+                    SessionStatus.interrupted.value,
+                    SessionStatus.completed.value,
+                    SessionStatus.failed.value,
+                } or str(session.metadata.get("turn_lease_token") or "").strip():
+                    return False
             claims = session.metadata.get("coordinator_dispatch_claims", [])
             if not isinstance(claims, list):
                 return False
@@ -699,7 +715,11 @@ class InMemorySessionStore:
                 and isinstance(child.metadata, dict)
                 and child.metadata.get("parent_session_id") == session_id
                 and child.metadata.get("parent_turn_id") == turn_id
-                and child.metadata.get("coordinator_dispatch_key") == dispatch_key
+                and (
+                    child.metadata.get("coordinator_dispatch_key") == dispatch_key
+                    or str(child.metadata.get("task_id") or "")
+                    in set(worker_task_ids or [])
+                )
                 for child in self._sessions.values()
             )
             if has_child:

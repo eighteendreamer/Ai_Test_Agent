@@ -1794,6 +1794,50 @@ async def test_coordinator_old_turn_worker_cannot_satisfy_new_turn_claim():
 
 
 @pytest.mark.asyncio
+async def test_coordinator_same_task_id_across_turns_keeps_separate_receipts():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [{**_batch_worker(0), "task_id": "reused-task"}]}
+    first_context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+    second_context = {"session_id": "batch-parent", "turn_id": "turn-2", "trace_id": "trace-2"}
+
+    first = await service.dispatch(payload, first_context)
+    second = await service.dispatch(payload, second_context)
+    first_duplicate = await service.dispatch(payload, first_context)
+    second_duplicate = await service.dispatch(payload, second_context)
+
+    assert first["workers"][0]["child_session_id"] == created[0]
+    assert second["workers"][0]["child_session_id"] == created[1]
+    assert first_duplicate["status"] == "duplicate"
+    assert first_duplicate["workers"][0]["child_session_id"] == created[0]
+    assert second_duplicate["status"] == "duplicate"
+    assert second_duplicate["workers"][0]["child_session_id"] == created[1]
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+    await service._deliver_notification(
+        parent_session_id=parent.id,
+        parent_turn_id="turn-1",
+        child_session_id=created[0],
+        worker=service._worker_from_pending(payload["workers"][0]),
+        content="worker from first turn completed",
+        status="completed",
+    )
+
+    parent = await store.get_session("batch-parent")
+    records_by_turn = {
+        record["parent_turn_id"]: record
+        for record in parent.metadata["worker_dispatches"]
+        if record["task_id"] == "reused-task"
+    }
+    assert set(records_by_turn) == {"turn-1", "turn-2"}
+    assert records_by_turn["turn-1"]["status"] == "completed"
+    assert records_by_turn["turn-1"]["child_session_id"] == created[0]
+    assert records_by_turn["turn-2"]["status"] == "running"
+    assert records_by_turn["turn-2"]["child_session_id"] == created[1]
+
+
+@pytest.mark.asyncio
 async def test_coordinator_duplicate_preserves_worker_rejection_reason():
     service, store, created = await _batch_capacity_coordinator()
     parent = await store.get_session("batch-parent")
@@ -1899,7 +1943,7 @@ async def test_security_failed_worker_receipt_keeps_the_launch_error():
     assert task.last_error == "Unknown agent: security-worker"
 
 
-async def _batch_capacity_coordinator():
+async def _batch_capacity_coordinator(*, turn_reaper_interval_seconds: float | None = None):
     store = InMemorySessionStore()
     parent = _session()
     parent.id = "batch-parent"
@@ -1921,6 +1965,8 @@ async def _batch_capacity_coordinator():
 
     settings = Settings()
     settings.orchestration.coordinator_max_workers = 4
+    if turn_reaper_interval_seconds is not None:
+        settings.orchestration.turn_reaper_interval_seconds = turn_reaper_interval_seconds
     service = CoordinatorRuntimeService(settings, store, Sessions(), AgentRegistry())
     service._start_child_worker = AsyncMock(return_value=None)
     return service, store, created
@@ -2047,6 +2093,7 @@ async def test_coordinator_followup_overflow_uses_next_available_slot():
             "worker_dispatches": [
                 {
                     "task_id": f"worker-1-{index}",
+                    "parent_turn_id": "turn-1",
                     "status": "completed",
                     "debate_stage": "independent_findings",
                     "debate_round_index": 1,
@@ -2086,6 +2133,7 @@ async def test_coordinator_followup_rejection_is_not_silently_discarded():
         {
             "worker_dispatches": [{
                 "task_id": "worker-1-0",
+                "parent_turn_id": "turn-1",
                 "status": "completed",
                 "debate_stage": "independent_findings",
                 "debate_round_index": 1,
@@ -2224,6 +2272,236 @@ def test_coordinator_restart_reconciles_orphaned_child_without_replaying_it():
         "child_session_interrupted_without_safe_replay"
     )
     assert [event.type for event in events] == ["worker.dispatches_reconciled"]
+
+
+@pytest.mark.asyncio
+async def test_coordinator_restart_recovers_child_created_before_parent_receipt():
+    service, store, created = await _batch_capacity_coordinator()
+    service._register_worker_dispatches = AsyncMock(
+        side_effect=RuntimeError("injected parent receipt persistence failure")
+    )
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    with pytest.raises(RuntimeError, match="parent receipt persistence failure"):
+        await service.dispatch(payload, context)
+    assert len(created) == 1
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    parent.metadata["turn_lease_token"] = "live-turn-owner"
+    await store.save_session(parent)
+    assert await service.recover_orphaned_dispatches() == 0
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    parent.metadata.pop("turn_lease_token", None)
+    await store.save_session(parent)
+    assert await service.recover_orphaned_dispatches() == 1
+
+    recovered_parent = await store.get_session("batch-parent")
+    recovered_record = recovered_parent.metadata["worker_dispatches"][0]
+    assert recovered_record["task_id"] == "worker-1-0"
+    assert recovered_record["child_session_id"] == created[0]
+    assert recovered_record["status"] == "recovery_required"
+    assert recovered_record["recovery_reason"] == (
+        "child_session_persisted_before_parent_receipt"
+    )
+
+    retry = await service.dispatch(payload, context)
+    assert retry["status"] == "recovery_required"
+    assert retry["workers"][0]["child_session_id"] == created[0]
+    assert service._start_child_worker.await_count == 0
+    assert await service.recover_orphaned_dispatches() == 0
+    assert [event.type for event in await store.list_events("batch-parent")] == [
+        "worker.dispatches_reconciled"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_coordinator_restart_recovers_legacy_child_receipt_after_task_id_reuse():
+    service, store, _created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    parent.metadata["worker_dispatches"] = [
+        {
+            "task_id": "reused-task",
+            "parent_turn_id": "old-turn",
+            "child_session_id": "old-child",
+            "status": "completed",
+        }
+    ]
+    await store.save_session(parent)
+
+    payload = {"workers": [{**_batch_worker(0), "task_id": "reused-task"}]}
+    worker = service._normalize_workers(payload, parent.id, "new-turn")[0]
+    dispatch_key = "reused-task|"
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    assert await store.claim_coordinator_dispatch(
+        parent.id,
+        "new-turn",
+        dispatch_key,
+        "crashed-owner",
+        fingerprint,
+        [worker.task_id],
+    )
+    child = _session()
+    child.id = "legacy-child-without-dispatch-key"
+    child.metadata = {
+        "parent_session_id": parent.id,
+        "parent_turn_id": "new-turn",
+        "task_id": worker.task_id,
+        "worker_description": worker.description,
+    }
+    await store.save_session(child)
+
+    assert await service.recover_orphaned_dispatches() == 1
+
+    recovered_parent = await store.get_session(parent.id)
+    recovered_by_turn = {
+        record.get("parent_turn_id"): record
+        for record in recovered_parent.metadata["worker_dispatches"]
+        if record.get("task_id") == "reused-task"
+    }
+    assert recovered_by_turn["old-turn"]["child_session_id"] == "old-child"
+    assert recovered_by_turn["new-turn"]["child_session_id"] == child.id
+    assert recovered_by_turn["new-turn"]["status"] == "recovery_required"
+    assert await service.recover_orphaned_dispatches() == 0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_restart_releases_only_unmaterialized_settled_claims():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+    worker = service._normalize_workers(payload, "batch-parent", "turn-1")[0]
+    dispatch_key = "|".join((worker.task_id, ""))
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    worker_task_ids = [worker.task_id]
+    assert await store.claim_coordinator_dispatch(
+        "batch-parent",
+        "turn-1",
+        dispatch_key,
+        "crashed-owner",
+        fingerprint,
+        worker_task_ids,
+    )
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    parent.metadata["turn_lease_token"] = "live-turn-owner"
+    await store.save_session(parent)
+    assert await service.recover_orphaned_dispatches() == 0
+    assert not await store.release_coordinator_dispatch_claim_if_no_child(
+        parent.id,
+        "turn-1",
+        dispatch_key,
+        "crashed-owner",
+        fingerprint,
+        worker_task_ids,
+        require_settled_parent=True,
+    )
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    parent.metadata.pop("turn_lease_token", None)
+    parent.metadata["pending_initial_workers"] = [
+        service._pending_worker_payload(worker)
+    ]
+    parent.metadata["pending_initial_workers_parent_turn_id"] = "turn-1"
+    await store.save_session(parent)
+    assert await service.recover_orphaned_dispatches() == 0
+    assert len((await store.get_session(parent.id)).metadata["coordinator_dispatch_claims"]) == 1
+
+    parent = await store.get_session("batch-parent")
+    parent.metadata["pending_initial_workers_parent_turn_id"] = "old-turn"
+    await store.save_session(parent)
+    assert await service.recover_orphaned_dispatches() == 1
+    recovered_parent = await store.get_session(parent.id)
+    assert recovered_parent.metadata.get("coordinator_dispatch_claims", []) == []
+    assert await service.recover_orphaned_dispatches() == 0
+    events = await store.list_events(parent.id)
+    assert [event.type for event in events] == ["worker.dispatches_reconciled"]
+    assert events[0].payload["recovered_count"] == 1
+
+    parent = await store.get_session(parent.id)
+    parent.metadata["pending_initial_workers"] = []
+    await store.save_session(parent)
+    retry = await service.dispatch(payload, context)
+    assert retry["status"] == "completed"
+    assert len(created) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_restart_keeps_claim_when_legacy_receipt_is_unscoped():
+    service, store, _created = await _batch_capacity_coordinator()
+    worker = service._normalize_workers(
+        {"workers": [_batch_worker(0)]}, "batch-parent", "turn-1"
+    )[0]
+    dispatch_key = f"{worker.task_id}|"
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    assert await store.claim_coordinator_dispatch(
+        "batch-parent",
+        "turn-1",
+        dispatch_key,
+        "crashed-owner",
+        fingerprint,
+        [worker.task_id],
+    )
+
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    parent.metadata["worker_dispatches"] = [
+        {"task_id": worker.task_id, "status": "running", "child_session_id": ""}
+    ]
+    await store.save_session(parent)
+
+    assert await service.recover_orphaned_dispatches() == 0
+    recovered_parent = await store.get_session(parent.id)
+    assert len(recovered_parent.metadata["coordinator_dispatch_claims"]) == 1
+    assert recovered_parent.metadata["worker_dispatches"] == [
+        {"task_id": worker.task_id, "status": "running", "child_session_id": ""}
+    ]
+    assert await store.list_events(parent.id) == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_dispatch_reaper_reconciles_claims_while_service_stays_running():
+    service, store, _created = await _batch_capacity_coordinator(
+        turn_reaper_interval_seconds=0.01
+    )
+    worker = service._normalize_workers(
+        {"workers": [_batch_worker(0)]}, "batch-parent", "turn-1"
+    )[0]
+    dispatch_key = f"{worker.task_id}|"
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    assert await store.claim_coordinator_dispatch(
+        "batch-parent",
+        "turn-1",
+        dispatch_key,
+        "expired-owner",
+        fingerprint,
+        [worker.task_id],
+    )
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    await store.save_session(parent)
+
+    await service.start_dispatch_reaper()
+    try:
+        async with asyncio.timeout(5):
+            while (await store.get_session("batch-parent")).metadata.get(
+                "coordinator_dispatch_claims"
+            ):
+                await asyncio.sleep(0.01)
+    finally:
+        await service.stop_dispatch_reaper()
+
+    recovered_parent = await store.get_session("batch-parent")
+    assert recovered_parent.metadata.get("coordinator_dispatch_claims", []) == []
+    assert [event.type for event in await store.list_events("batch-parent")] == [
+        "worker.dispatches_reconciled"
+    ]
 
 
 def test_shared_security_grant_matches_url_and_bare_host_targets():

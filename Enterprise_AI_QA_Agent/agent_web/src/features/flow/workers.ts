@@ -3,16 +3,36 @@ import { type FlowNodeStatus } from "./stages";
 
 export const WORKER_NODE_PREFIX = "worker:";
 
-export function workerNodeId(worker: WorkerDispatchRecord, index = 0): string {
+function workerIdentity(
+  worker: WorkerDispatchRecord,
+  index = 0,
+  fallbackParentTurnId = "",
+): [string, string, string] {
+  const parentTurnId = String(worker.parent_turn_id || "").trim() || fallbackParentTurnId.trim();
   const taskId = String(worker.task_id || "").trim();
   if (taskId) {
-    return `${WORKER_NODE_PREFIX}${taskId}`;
+    return [parentTurnId, "task", taskId];
   }
   const childId = String(worker.child_session_id || "").trim();
   if (childId) {
-    return `${WORKER_NODE_PREFIX}${childId}`;
+    return [parentTurnId, "child", childId];
   }
-  return `${WORKER_NODE_PREFIX}anonymous-${index}`;
+  return [parentTurnId, "anonymous", String(index)];
+}
+
+export function workerDispatchKey(worker: WorkerDispatchRecord, index = 0): string {
+  return JSON.stringify(workerIdentity(worker, index));
+}
+
+export function workerNodeId(worker: WorkerDispatchRecord, index = 0): string {
+  const [parentTurnId, kind, identity] = workerIdentity(worker, index);
+  if (!parentTurnId) {
+    if (kind === "anonymous") {
+      return `${WORKER_NODE_PREFIX}anonymous-${identity}`;
+    }
+    return `${WORKER_NODE_PREFIX}${encodeURIComponent(identity)}`;
+  }
+  return `${WORKER_NODE_PREFIX}turn:${encodeURIComponent(parentTurnId)}:${kind}:${encodeURIComponent(identity)}`;
 }
 
 export function isWorkerNodeId(value: string): boolean {
@@ -26,23 +46,19 @@ function asRecordArray(value: unknown): WorkerDispatchRecord[] {
   return value.filter((item): item is WorkerDispatchRecord => Boolean(item) && typeof item === "object");
 }
 
-function mergeWorkers(groups: WorkerDispatchRecord[][]): WorkerDispatchRecord[] {
-  const merged = new Map<string, WorkerDispatchRecord>();
+function mergeWorkers(groups: WorkerDispatchRecord[][], fallbackParentTurnId = ""): WorkerDispatchRecord[] {
   const ordered: WorkerDispatchRecord[] = [];
+  const indexByKey = new Map<string, number>();
   for (const group of groups) {
     group.forEach((worker, index) => {
-      const key = workerNodeId(worker, index);
-      const current = merged.get(key);
-      if (!current) {
-        merged.set(key, worker);
+      const key = JSON.stringify(workerIdentity(worker, index, fallbackParentTurnId));
+      const existingIndex = indexByKey.get(key);
+      if (existingIndex === undefined) {
+        indexByKey.set(key, ordered.length);
         ordered.push(worker);
         return;
       }
-      merged.set(key, { ...current, ...worker });
-      const at = ordered.findIndex((item) => workerNodeId(item) === key);
-      if (at >= 0) {
-        ordered[at] = merged.get(key) as WorkerDispatchRecord;
-      }
+      ordered[existingIndex] = { ...ordered[existingIndex], ...worker };
     });
   }
   return ordered;
@@ -53,17 +69,18 @@ export function collectWorkerDispatches(
   graphState: Record<string, unknown> | null,
   turnId: string,
 ): WorkerDispatchRecord[] {
-  const merged = mergeWorkers([
+  const groups = [
     asRecordArray(metadata?.worker_dispatches),
     asRecordArray(graphState?.worker_dispatches),
-  ]);
+  ];
   if (!turnId) {
-    return merged;
+    return mergeWorkers(groups);
   }
-  return merged.filter((worker) => {
+  const turnGroups = groups.map((group) => group.filter((worker) => {
     const parentTurnId = String(worker.parent_turn_id || "").trim();
     return !parentTurnId || parentTurnId === turnId;
-  });
+  }));
+  return mergeWorkers(turnGroups, turnId);
 }
 
 export function workerFlowStatus(status: string): FlowNodeStatus {

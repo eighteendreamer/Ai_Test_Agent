@@ -674,6 +674,7 @@ async def test_two_coordinators_claim_one_followup_batch_without_duplicate_worke
     parent.metadata["worker_dispatches"] = [
         {
             "task_id": f"source-{index}",
+            "parent_turn_id": h.parent_turn_id,
             "status": "completed",
             "debate_stage": "independent_findings",
             "debate_round_index": 1,
@@ -750,6 +751,7 @@ async def test_two_coordinators_claim_initial_overflow_once(harness):
     parent.metadata["worker_dispatches"] = [
         {
             "task_id": f"initial-{index}",
+            "parent_turn_id": h.parent_turn_id,
             "status": "completed" if index == 0 else "running",
             "agent_key": "qa-planner",
             "description": f"Reviewer {index}",
@@ -760,6 +762,7 @@ async def test_two_coordinators_claim_initial_overflow_once(harness):
         for index in range(4)
     ] + [{
         "task_id": "initial-4",
+        "parent_turn_id": h.parent_turn_id,
         "status": "queued",
         "agent_key": "qa-planner",
         "description": "Reviewer 4",

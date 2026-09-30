@@ -11,6 +11,7 @@ import type {
   VerificationResult,
   WorkerDispatchRecord,
 } from "../types";
+import { workerDispatchKey } from "../features/flow/workers";
 
 interface ReportEntry {
   session: SessionSummary;
@@ -618,8 +619,8 @@ onMounted(() => {
             </div>
             <div class="worker-grid">
               <article
-                v-for="worker in selectedReport.workerDispatches"
-                :key="worker.task_id"
+                v-for="(worker, index) in selectedReport.workerDispatches"
+                :key="workerDispatchKey(worker, index)"
                 class="worker-card"
               >
                 <div class="worker-card-head">

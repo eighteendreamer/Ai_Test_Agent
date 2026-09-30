@@ -328,6 +328,7 @@ class PostgresSessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str | None = None,
+        worker_task_ids: list[str] | None = None,
     ) -> bool:
         return await asyncio.to_thread(
             self._claim_coordinator_dispatch_sync,
@@ -336,6 +337,7 @@ class PostgresSessionStore:
             dispatch_key,
             owner_id,
             request_fingerprint,
+            worker_task_ids,
         )
 
     async def release_coordinator_dispatch_claim_if_no_child(
@@ -345,6 +347,8 @@ class PostgresSessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str,
+        worker_task_ids: list[str] | None = None,
+        require_settled_parent: bool = False,
     ) -> bool:
         return await asyncio.to_thread(
             self._release_coordinator_dispatch_claim_if_no_child_sync,
@@ -353,6 +357,8 @@ class PostgresSessionStore:
             dispatch_key,
             owner_id,
             request_fingerprint,
+            worker_task_ids,
+            require_settled_parent,
         )
 
     async def mutate_metadata(self, session_id: str, mutate) -> bool:
@@ -1558,6 +1564,7 @@ class PostgresSessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str | None = None,
+        worker_task_ids: list[str] | None = None,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1574,6 +1581,7 @@ class PostgresSessionStore:
                                     'dispatch_key', %s::text,
                                     'owner_id', %s::text,
                                     'request_fingerprint', %s::text,
+                                    'worker_task_ids', %s::jsonb,
                                     'claimed_at', now()
                                 )
                             ),
@@ -1596,6 +1604,7 @@ class PostgresSessionStore:
                         dispatch_key,
                         owner_id,
                         request_fingerprint,
+                        json.dumps(worker_task_ids or [], ensure_ascii=False),
                         session_id,
                         turn_id,
                         dispatch_key,
@@ -1610,6 +1619,8 @@ class PostgresSessionStore:
         dispatch_key: str,
         owner_id: str,
         request_fingerprint: str,
+        worker_task_ids: list[str] | None = None,
+        require_settled_parent: bool = False,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1659,7 +1670,17 @@ class PostgresSessionStore:
                           FROM {self._settings.database.postgres_session_table} AS child
                           WHERE child.metadata->>'parent_session_id' = parent.id
                             AND child.metadata->>'parent_turn_id' = %s
-                            AND child.metadata->>'coordinator_dispatch_key' = %s
+                            AND (
+                                child.metadata->>'coordinator_dispatch_key' = %s
+                                OR child.metadata->>'task_id' = ANY(%s::text[])
+                            )
+                      )
+                      AND (
+                          NOT %s::boolean
+                          OR (
+                              parent.status IN ('interrupted', 'completed', 'failed')
+                              AND COALESCE(parent.metadata->>'turn_lease_token', '') = ''
+                          )
                       )
                     RETURNING parent.id
                     """,
@@ -1675,6 +1696,8 @@ class PostgresSessionStore:
                         request_fingerprint,
                         turn_id,
                         dispatch_key,
+                        worker_task_ids or [],
+                        require_settled_parent,
                     ),
                 )
                 return cur.fetchone() is not None

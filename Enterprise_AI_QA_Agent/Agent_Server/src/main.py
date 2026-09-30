@@ -756,9 +756,11 @@ async def lifespan(app: FastAPI):
     )
 
     await session_service.start_turn_reaper()
+    await coordinator_runtime_service.start_dispatch_reaper()
     try:
         yield
     finally:
+        await coordinator_runtime_service.stop_dispatch_reaper()
         await session_service.stop_turn_reaper()
         execution_shutdown = await asyncio.gather(
             tool_runtime_service.close(), mcp_runtime_service.close(), recorder_service.close(), return_exceptions=True,

@@ -808,7 +808,7 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
     parent = SessionRecord(
         id=f"coord-parent-{suffix}",
         title="coordinator recovery parent",
-        status=SessionStatus.running,
+        status=SessionStatus.interrupted,
         session_mode=SessionMode.normal,
         runtime_mode=RuntimeMode.interactive,
         mode_key="default",
@@ -834,23 +834,126 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
         created_at=now,
         updated_at=now,
     )
+    orphan_child = SessionRecord(
+        id=f"coord-orphan-child-{suffix}",
+        title="legacy child created before parent receipt",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.background_task,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={
+            "parent_session_id": parent.id,
+            "parent_turn_id": "turn-orphan",
+            "task_id": "coord-task-2",
+            "worker_description": "worker persisted before receipt",
+        },
+    )
+    keyed_orphan_child = SessionRecord(
+        id=f"coord-keyed-orphan-child-{suffix}",
+        title="child created before parent receipt with dispatch key",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.background_task,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={
+            "parent_session_id": parent.id,
+            "parent_turn_id": "turn-keyed",
+            "coordinator_dispatch_key": "coord-task-4|",
+            "task_id": "coord-task-4",
+            "worker_description": "worker persisted before receipt",
+        },
+    )
     try:
         await store.initialize()
         await store.save_session(parent)
         await store.save_session(child)
+        await store.save_session(orphan_child)
+        await store.save_session(keyed_orphan_child)
+        assert await store.claim_coordinator_dispatch(
+            parent.id,
+            "turn-orphan",
+            "coord-task-2|",
+            owner_id="coordinator-crashed-owner-2",
+            request_fingerprint="f" * 64,
+            worker_task_ids=["coord-task-2"],
+        )
+        assert await store.claim_coordinator_dispatch(
+            parent.id,
+            "turn-missing",
+            "coord-task-3|",
+            owner_id="coordinator-crashed-owner-3",
+            request_fingerprint="e" * 64,
+            worker_task_ids=["coord-task-3"],
+        )
+        assert await store.claim_coordinator_dispatch(
+            parent.id,
+            "turn-keyed",
+            "coord-task-4|",
+            owner_id="coordinator-crashed-owner-4",
+            request_fingerprint="d" * 64,
+        )
+        assert not await store.release_coordinator_dispatch_claim_if_no_child(
+            parent.id,
+            "turn-orphan",
+            "coord-task-2|",
+            "coordinator-crashed-owner-2",
+            "f" * 64,
+            ["coord-task-2"],
+            require_settled_parent=True,
+        )
+        parent = await store.get_session(parent.id)
+        parent.status = SessionStatus.running
+        await store.save_session(parent)
+        assert not await store.release_coordinator_dispatch_claim_if_no_child(
+            parent.id,
+            "turn-missing",
+            "coord-task-3|",
+            "coordinator-crashed-owner-3",
+            "e" * 64,
+            ["coord-task-3"],
+            require_settled_parent=True,
+        )
+        parent.status = SessionStatus.interrupted
+        await store.save_session(parent)
         service = CoordinatorRuntimeService(
             settings=settings,
             store=store,
             session_service=None,
             agent_registry=AgentRegistry(),
         )
-        assert await service.recover_orphaned_dispatches() == 1
+        assert await service.recover_orphaned_dispatches() == 4
         recovered = await store.get_session(parent.id)
         assert recovered is not None
-        dispatch = recovered.metadata["worker_dispatches"][0]
-        assert dispatch["status"] == "recovery_required"
-        assert dispatch["recovery_reason"] == "child_session_interrupted_without_safe_replay"
+        dispatches = {
+            item["task_id"]: item for item in recovered.metadata["worker_dispatches"]
+        }
+        interrupted = dispatches["coord-task-1"]
+        assert interrupted["status"] == "recovery_required"
+        assert interrupted["recovery_reason"] == "child_session_interrupted_without_safe_replay"
+        missing_receipt = dispatches["coord-task-2"]
+        assert missing_receipt["child_session_id"] == orphan_child.id
+        assert missing_receipt["status"] == "recovery_required"
+        assert missing_receipt["recovery_reason"] == (
+            "child_session_persisted_before_parent_receipt"
+        )
+        keyed_receipt = dispatches["coord-task-4"]
+        assert keyed_receipt["child_session_id"] == keyed_orphan_child.id
+        assert keyed_receipt["status"] == "recovery_required"
+        assert keyed_receipt["recovery_reason"] == (
+            "child_session_persisted_before_parent_receipt"
+        )
+        claims = recovered.metadata["coordinator_dispatch_claims"]
+        assert {(claim["turn_id"], claim["dispatch_key"]) for claim in claims} == {
+            ("turn-orphan", "coord-task-2|"),
+            ("turn-keyed", "coord-task-4|"),
+        }
+        assert await service.recover_orphaned_dispatches() == 0
         events = await store.list_events(parent.id)
         assert [event.type for event in events] == ["worker.dispatches_reconciled"]
+        assert events[0].payload["recovered_count"] == 4
     finally:
         _drop_tables(settings, list(table_names.values()))
