@@ -176,6 +176,23 @@ class Gauge(_Metric):
     def labels(self, **labels: Any) -> "LabeledGauge":
         return LabeledGauge(self, self._key(labels))
 
+    def remove(self, **labels: Any) -> None:
+        key = self._key(labels)
+        with self._lock:
+            self._children.pop(key, None)
+
+    def replace_samples(self, samples: Mapping[tuple[str, ...], float]) -> None:
+        """Publish one complete collector snapshot, removing absent label sets."""
+        replacement: dict[tuple[str, ...], float] = {}
+        for labels, value in samples.items():
+            if not isinstance(labels, tuple) or len(labels) != len(self.label_names):
+                raise ValueError(
+                    f"gauge {self.name} expects {len(self.label_names)} label values, got {labels!r}"
+                )
+            replacement[tuple(str(label) for label in labels)] = float(value)
+        with self._lock:
+            self._children = replacement
+
     def set(self, value: float) -> None:
         self._write(self._key(None), value)
 

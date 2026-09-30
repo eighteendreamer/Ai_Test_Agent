@@ -288,6 +288,29 @@ async def test_collector_exports_pool_and_stream_depth(harness):
     } == set()
 
 
+@pytest.mark.asyncio
+async def test_collector_removes_pending_sample_after_real_redis_group_deletion(harness):
+    h = harness
+    await h.queue.enqueue({"task_id": "metrics-group-transition"})
+    delivered = await h.redis.xreadgroup(
+        groupname=h.queue.group,
+        consumername="metrics-consumer",
+        streams={h.stream: ">"},
+        count=1,
+    )
+    assert len(delivered[0][1]) == 1
+
+    await metrics_collector._collect_stream(h.redis, h.stream, group=h.queue.group)
+    assert samples(render())[("qa_stream_pending", (("stream", h.stream),))] == 1
+
+    assert await h.redis.xgroup_destroy(h.stream, h.queue.group) == 1
+    await metrics_collector._collect_stream(h.redis, h.stream, group=h.queue.group)
+    values = samples(render())
+    assert ("qa_stream_pending", (("stream", h.stream),)) not in values
+    assert ("qa_stream_consumer_lag", (("stream", h.stream),)) not in values
+    assert ("qa_collector_errors_total", (("item", "stream_pending"),)) not in values
+
+
 class _CompactionStore:
     def __init__(self, *, backlog: int | None = None, error: Exception | None = None) -> None:
         self._backlog = backlog
@@ -342,6 +365,31 @@ class _LeaseManager:
         if self._error is not None:
             raise self._error
         return self._limits
+
+
+@pytest.mark.asyncio
+async def test_resource_occupancy_replaces_disappeared_types_and_exports_limit_only_types():
+    manager = _LeaseManager(
+        usage={"resource_type:browser": 3, "resource_type:docker": 1},
+        limits={"resource_type:browser": 5},
+    )
+    await metrics_collector._collect_resource_occupancy(manager)
+    assert samples(render())[("qa_resource_quota_used", (("resource_type", "browser"),))] == 3
+
+    manager._usage = {"resource_type:docker": 2}
+    manager._limits = {"resource_type:docker": 4, "resource_type:agent": 6}
+    await metrics_collector._collect_resource_occupancy(manager)
+    values = samples(render())
+    assert ("qa_resource_quota_used", (("resource_type", "browser"),)) not in values
+    assert ("qa_resource_quota_limit", (("resource_type", "browser"),)) not in values
+    assert values[("qa_resource_quota_used", (("resource_type", "agent"),))] == 0
+    assert values[("qa_resource_quota_limit", (("resource_type", "agent"),))] == 6
+    assert values[("qa_resource_quota_used", (("resource_type", "docker"),))] == 2
+
+    manager._error = RuntimeError("snapshot unavailable")
+    await metrics_collector._collect_resource_occupancy(manager)
+    assert samples(render())[("qa_resource_quota_used", (("resource_type", "docker"),))] == 2
+    assert samples(render())[("qa_collector_errors_total", (("item", "resource_occupancy"),))] == 1
 
 
 @pytest.mark.asyncio
@@ -511,15 +559,16 @@ def test_tool_dispatch_wrapper_exports_terminal_status_and_aborts():
 class _LagClient:
     """Minimal stand-in exposing only what the lag export touches."""
 
-    def __init__(self, groups=None, error: Exception | None = None) -> None:
+    def __init__(self, groups=None, error: Exception | None = None, pending: int = 0) -> None:
         self._groups = groups or []
         self._error = error
+        self._pending = pending
 
     async def xlen(self, stream: str) -> int:
         return 0
 
     async def xpending(self, stream: str, group: str) -> dict[str, object]:
-        return {"pending": 0}
+        return {"pending": self._pending}
 
     async def xinfo_groups(self, stream: str):
         if self._error is not None:
@@ -541,7 +590,7 @@ async def test_consumer_lag_exports_group_lag_and_tolerates_older_redis():
     reset_registry()
     await _collect_stream(_LagClient([{"name": "g1"}]), "legacy", group="g1")
     await _collect_stream(_LagClient([{"name": "g1", "lag": None}]), "fresh", group="g1")
-    assert "qa_stream_consumer_lag" not in render()
+    assert not any(name == "qa_stream_consumer_lag" for name, _labels in samples(render()))
 
 
 @pytest.mark.asyncio
@@ -562,5 +611,40 @@ async def test_absent_consumer_group_is_idle_queue_not_a_fault():
         "ungrouped",
         group="g1",
     )
-    assert "qa_stream_consumer_lag" not in render()
+    assert not any(name == "qa_stream_consumer_lag" for name, _labels in samples(render()))
     assert 'item="stream_consumer_lag"' not in render()
+
+
+@pytest.mark.asyncio
+async def test_stream_metrics_disappear_when_group_is_deleted_or_lag_is_unknown():
+    stream = "orders"
+    client = _LagClient([{"name": "g1", "lag": 7}], pending=3)
+    await metrics_collector._collect_stream(client, stream, group="g1")
+    assert samples(render())[("qa_stream_pending", (("stream", stream),))] == 3
+    assert samples(render())[("qa_stream_consumer_lag", (("stream", stream),))] == 7
+
+    client._groups = [{"name": "g1", "lag": None}]
+    await metrics_collector._collect_stream(client, stream, group="g1")
+    assert ("qa_stream_consumer_lag", (("stream", stream),)) not in samples(render())
+
+    client._error = RuntimeError("NOGROUP No such consumer group")
+    await metrics_collector._collect_stream(client, stream, group="g1")
+    values = samples(render())
+    assert ("qa_stream_pending", (("stream", stream),)) not in values
+    assert ("qa_stream_consumer_lag", (("stream", stream),)) not in values
+
+
+@pytest.mark.asyncio
+async def test_stream_metrics_disappear_when_xpending_reports_deleted_group():
+    class _NoGroupOnPending(_LagClient):
+        async def xpending(self, stream: str, group: str) -> dict[str, object]:
+            raise RuntimeError("NOGROUP No such consumer group")
+
+    stream = "events"
+    await metrics_collector._collect_stream(
+        _LagClient([{"name": "g1", "lag": 4}], pending=2), stream, group="g1"
+    )
+    await metrics_collector._collect_stream(_NoGroupOnPending(), stream, group="g1")
+    values = samples(render())
+    assert ("qa_stream_pending", (("stream", stream),)) not in values
+    assert ("qa_stream_consumer_lag", (("stream", stream),)) not in values

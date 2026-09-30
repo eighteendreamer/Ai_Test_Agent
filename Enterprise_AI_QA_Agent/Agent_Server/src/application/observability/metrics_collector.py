@@ -126,16 +126,21 @@ async def _collect_resource_occupancy(manager: Any | None) -> None:
     try:
         usage = await manager.usage_snapshot()
         limits = await manager.quota_limits()
+        current_usage: dict[tuple[str, ...], int] = {}
+        current_limits: dict[tuple[str, ...], int] = {}
+        for field in set(usage) | set(limits):
+            scope, separator, resource_type = str(field).partition(":")
+            if not separator or scope != QUOTA_SCOPE_RESOURCE_TYPE:
+                continue
+            labels = (resource_type,)
+            current_usage[labels] = int(usage.get(field, 0))
+            if field in limits:
+                current_limits[labels] = int(limits[field])
     except Exception as exc:
         _record_collector_error("resource_occupancy", exc)
         return
-    for field, used in usage.items():
-        scope, separator, resource_type = str(field).partition(":")
-        if not separator or scope != QUOTA_SCOPE_RESOURCE_TYPE:
-            continue
-        resource_quota_used().labels(resource_type=resource_type).set(int(used))
-        if field in limits:
-            resource_quota_limit().labels(resource_type=resource_type).set(int(limits[field]))
+    resource_quota_used().replace_samples(current_usage)
+    resource_quota_limit().replace_samples(current_limits)
 
 
 async def _collect_compaction_lag(store: Any | None) -> None:
@@ -244,6 +249,7 @@ async def _collect_stream(client: Redis, stream: str, *, group: str | None) -> N
     except Exception as exc:
         if _NOGROUP in str(exc):
             # A stream nobody has grouped yet is an idle queue, not a fault.
+            _clear_stream_group_metrics(stream)
             LOGGER.debug("metrics_collect_stream_group_absent", extra={"stream": stream})
             return
         _record_collector_error("stream_pending", exc)
@@ -256,14 +262,29 @@ async def _collect_stream(client: Redis, stream: str, *, group: str | None) -> N
     try:
         groups = await client.xinfo_groups(stream)
     except Exception as exc:
-        if _NOGROUP not in str(exc):
+        if _NOGROUP in str(exc):
+            _clear_stream_group_metrics(stream)
+            LOGGER.debug("metrics_collect_stream_group_absent", extra={"stream": stream})
+        else:
             _record_collector_error("stream_consumer_lag", exc)
         return
-    for entry in groups if isinstance(groups, list) else []:
+    if not isinstance(groups, list):
+        _record_collector_error("stream_consumer_lag", ValueError(f"XINFO GROUPS returned invalid data for {stream}"))
+        return
+    for entry in groups:
         if not isinstance(entry, dict) or entry.get("name") != group:
             continue
         lag = entry.get("lag")
         # Redis < 7.0 omits lag and 7.0 reports None before a read cursor exists.
         if lag is not None:
             stream_consumer_lag().labels(stream=stream).set(int(lag))
-        break
+        else:
+            stream_consumer_lag().remove(stream=stream)
+        return
+    _clear_stream_group_metrics(stream)
+    LOGGER.debug("metrics_collect_stream_group_absent", extra={"stream": stream})
+
+
+def _clear_stream_group_metrics(stream: str) -> None:
+    stream_pending().remove(stream=stream)
+    stream_consumer_lag().remove(stream=stream)
