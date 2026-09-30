@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 
 import { api } from "../services/api";
 import { handleRecorderSseEvent } from "../features/recorder/recorderBridge";
-import { serverDateTimestamp } from "../utils/datetime";
+import { parseServerDate, serverDateTimestamp } from "../utils/datetime";
 import { eventTurnId } from "../utils/executionEvent";
 import {
   SSE_RECONNECT_EXHAUSTED_ERROR,
@@ -58,6 +58,10 @@ interface TranscriptEntryView {
 
 function messageDeliveryStatus(message: ChatMessage | undefined) {
   return String(message?.metadata?.delivery_status || "").trim();
+}
+
+function messageCreatedAtTimestamp(message: ChatMessage) {
+  return parseServerDate(message.created_at)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
 function toolMessageCallId(message: ChatMessage | undefined) {
@@ -188,7 +192,7 @@ function hasQueuedInput(metadata: Record<string, unknown> | undefined): boolean 
   return readQueuedInputCount(metadata) > 0 || normalizePendingInputQueue(metadata?.pending_input_queue).length > 0;
 }
 
-function createOptimisticAssistantMessage() {
+function createOptimisticAssistantMessage(clientMessageId: string) {
   return {
     id: `temp-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role: "assistant" as const,
@@ -197,6 +201,7 @@ function createOptimisticAssistantMessage() {
     metadata: {
       delivery_status: "streaming",
       is_optimistic_stream: true,
+      after_client_message_id: clientMessageId,
     },
   };
 }
@@ -236,6 +241,15 @@ function mergeSessionMessages(
     serverMessages
       .map((message) => String(message.metadata?.client_message_id || "").trim())
       .filter((value) => Boolean(value)),
+  );
+  const serverUserTimestampByClientMessageId = new Map(
+    serverMessages
+      .filter((message) => message.role === "user")
+      .map((message) => [
+        String(message.metadata?.client_message_id || "").trim(),
+        messageCreatedAtTimestamp(message),
+      ] as const)
+      .filter(([clientMessageId]) => Boolean(clientMessageId)),
   );
   const serverToolCallIds = new Set(
     serverMessages
@@ -342,7 +356,37 @@ function mergeSessionMessages(
     return true;
   });
 
-  return [...merged, ...localOnlyMessages];
+  const orderedLocalMessages = localOnlyMessages
+    .map((message, index) => {
+      const clientMessageId = String(message.metadata?.after_client_message_id || "").trim();
+      const anchorTimestamp = serverUserTimestampByClientMessageId.get(clientMessageId);
+      return {
+        message,
+        index,
+        timestamp: Math.max(messageCreatedAtTimestamp(message), anchorTimestamp ?? 0),
+      };
+    })
+    .sort((left, right) => left.timestamp - right.timestamp || left.index - right.index);
+  const orderedMessages: ChatMessage[] = [];
+  let localIndex = 0;
+
+  for (const serverMessage of merged) {
+    const serverTimestamp = messageCreatedAtTimestamp(serverMessage);
+    while (
+      localIndex < orderedLocalMessages.length &&
+      orderedLocalMessages[localIndex].timestamp < serverTimestamp
+    ) {
+      orderedMessages.push(orderedLocalMessages[localIndex].message);
+      localIndex += 1;
+    }
+    orderedMessages.push(serverMessage);
+  }
+
+  for (; localIndex < orderedLocalMessages.length; localIndex += 1) {
+    orderedMessages.push(orderedLocalMessages[localIndex].message);
+  }
+
+  return orderedMessages;
 }
 
 function findToolMessageIndex(messages: ChatMessage[], event: ExecutionEvent) {
@@ -938,7 +982,7 @@ export const useSessionStore = defineStore("session", {
         },
       };
       const clientMessageId = String(optimisticMessage.metadata?.client_message_id || "");
-      const optimisticAssistantMessage = createOptimisticAssistantMessage();
+      const optimisticAssistantMessage = createOptimisticAssistantMessage(clientMessageId);
 
       this.messages = [...this.messages, optimisticMessage, optimisticAssistantMessage];
       this.isSending = true;
