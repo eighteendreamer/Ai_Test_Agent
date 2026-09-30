@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import * as QRCode from "qrcode";
 import type { SettingsPluginDefinition } from "../plugins";
@@ -41,6 +41,7 @@ const qrDataUrl = ref("");
 const pairingPollTimer = ref<number | null>(null);
 const clockTimer = ref<number | null>(null);
 const clockNow = ref(Date.now());
+let pageActive = true;
 const form = reactive(createEmptyChannelForm());
 
 const selectedStrategy = computed(() => getChannelStrategy(selectedDomain.value));
@@ -235,6 +236,7 @@ function stopClock() {
 
 function startClock() {
   stopClock();
+  if (!pageActive) return;
   clockNow.value = Date.now();
   clockTimer.value = window.setInterval(() => {
     clockNow.value = Date.now();
@@ -271,6 +273,7 @@ async function applyPairingSession(session: ChannelPairingSessionPublic | null) 
 
 function schedulePairingPoll() {
   stopPairingPoll();
+  if (!pageActive || !isUsablePairingSession(pairingSession.value)) return;
   const intervalSeconds = pairingSession.value?.interval || 3;
   pairingPollTimer.value = window.setTimeout(() => {
     pairingPollTimer.value = null;
@@ -320,6 +323,7 @@ async function pollPairing() {
   if (!sessionId) return;
   try {
     const session = await api.getChannelPairing(sessionId);
+    if (!pageActive || pairingSession.value?.session_id !== sessionId) return;
     pairingSession.value = session;
     if (session.status === "confirmed") {
       if (session.item) {
@@ -394,6 +398,7 @@ async function deleteChannel() {
 
 watch(selectedDomain, () => {
   stopPairingPoll();
+  stopClock();
   pairingSession.value = null;
   qrDataUrl.value = "";
   setupMode.value = canPairByQr.value ? "scan" : "existing";
@@ -404,10 +409,23 @@ onMounted(async () => {
   await loadSettings();
   await restoreActivePairing();
 });
-onBeforeUnmount(() => {
+onActivated(() => {
+  pageActive = true;
+  if (!pairingSession.value) return;
+  if (isUsablePairingSession(pairingSession.value)) {
+    startClock();
+    schedulePairingPoll();
+  } else {
+    void restoreActivePairing();
+  }
+});
+function stopPageActivity() {
+  pageActive = false;
   stopPairingPoll();
   stopClock();
-});
+}
+onDeactivated(stopPageActivity);
+onBeforeUnmount(stopPageActivity);
 </script>
 
 <template>
