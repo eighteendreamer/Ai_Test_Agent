@@ -256,12 +256,16 @@ class CompatibilityRunnerClient:
         return len(tasks)
 
     def serve_forever(self) -> None:
-        self.register()
+        registered = False
         while True:
             try:
+                if not registered:
+                    self.register()
+                    registered = True
                 self.run_once()
             except (error.HTTPError, error.URLError, TimeoutError) as exc:
                 print(f"runner loop error: {exc}")
+                registered = False
             time.sleep(self.poll_interval)
 
     def _dry_run_result(
@@ -468,13 +472,11 @@ def main() -> None:
         executor="none" if args.no_dry_run else args.executor,
         metadata=_parse_metadata_json(args.metadata_json),
     )
-    client.register()
     if args.once:
+        client.register()
         client.run_once()
     else:
-        while True:
-            client.run_once()
-            time.sleep(client.poll_interval)
+        client.serve_forever()
 
 
 if __name__ == "__main__":

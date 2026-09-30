@@ -461,6 +461,46 @@ def test_runner_client_default_base_url_matches_local_backend():
     assert runner_client_module.DEFAULT_BASE_URL == "http://127.0.0.1:1032"
 
 
+def test_runner_client_cli_recovers_from_transient_registration_and_heartbeat_failures(monkeypatch):
+    class _StopLoop(Exception):
+        pass
+
+    calls = {"register": 0, "heartbeat": 0, "poll": 0, "sleep": 0}
+
+    def fake_json_request(base_url: str, path: str, *, method: str = "GET", payload=None):
+        if path.endswith("/register"):
+            calls["register"] += 1
+            if calls["register"] == 1:
+                raise runner_client_module.error.URLError("temporary registration failure")
+            return {"runner_id": "runner-recovery", "status": "online"}
+        if path.endswith("/heartbeat"):
+            calls["heartbeat"] += 1
+            if calls["heartbeat"] == 1:
+                raise runner_client_module.error.URLError("temporary connection loss")
+            return {}
+        if path.endswith("/poll?limit=1"):
+            calls["poll"] += 1
+            return {"tasks": []}
+        raise AssertionError(f"unexpected runner request: {path}")
+
+    def stop_after_recovery(interval: float) -> None:
+        calls["sleep"] += 1
+        if calls["sleep"] == 3:
+            raise _StopLoop
+
+    monkeypatch.setattr("sys.argv", ["compatibility-runner", "--runner-id", "runner-recovery"])
+    monkeypatch.setattr(runner_client_module, "_json_request", fake_json_request)
+    monkeypatch.setattr(runner_client_module.time, "sleep", stop_after_recovery)
+
+    try:
+        runner_client_module.main()
+    except _StopLoop:
+        pass
+    else:
+        raise AssertionError("runner CLI did not continue after transient transport failures")
+    assert calls == {"register": 3, "heartbeat": 2, "poll": 1, "sleep": 3}
+
+
 def test_runner_client_run_once_uploads_execution_log_and_reports_uploaded_artifact_ids():
     class _CapturingRunnerClient(CompatibilityRunnerClient):
         def __init__(self) -> None:
