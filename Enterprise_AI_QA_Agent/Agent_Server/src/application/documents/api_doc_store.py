@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Protocol
+
+from pydantic import ValidationError
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.api_docs import ApiDocRecord
+
+logger = logging.getLogger(__name__)
 
 
 class ApiDocStore(Protocol):
@@ -86,46 +93,106 @@ class JsonApiDocStore(InMemoryApiDocStore):
             return
         try:
             raw = json.loads(self._catalog_path.read_text(encoding="utf-8"))
-        except Exception:
-            return
+        except Exception as exc:
+            logger.exception("api_doc_catalog_load_failed path=%s", self._catalog_path)
+            raise ValueError(f"Cannot read API document catalog: {self._catalog_path}") from exc
         if not isinstance(raw, list):
-            return
-        for item in raw:
+            logger.error("api_doc_catalog_invalid_shape path=%s", self._catalog_path)
+            raise TypeError(f"API document catalog must contain a list: {self._catalog_path}")
+        records: dict[str, ApiDocRecord] = {}
+        for index, item in enumerate(raw):
             if not isinstance(item, dict):
-                continue
-            normalized = _normalize_legacy_record(item, force_unbound=False)
+                logger.error("api_doc_catalog_invalid_item path=%s index=%d", self._catalog_path, index)
+                raise TypeError(f"Invalid API document catalog item {index}: {self._catalog_path}")
             try:
+                normalized = _normalize_legacy_record(item, force_unbound=False)
                 record = ApiDocRecord.model_validate(normalized)
-            except Exception:
-                continue
-            self._records[record.id] = record
+            except ValidationError as exc:
+                logger.error(
+                    "api_doc_catalog_invalid_item path=%s index=%d error_type=%s",
+                    self._catalog_path,
+                    index,
+                    type(exc).__name__,
+                )
+                raise ValueError(f"Invalid API document catalog item {index}: {self._catalog_path}") from None
+            records[record.id] = record
+        async with self._lock:
+            self._records = records
 
     async def create(self, record: ApiDocRecord) -> ApiDocRecord:
-        result = await super().create(record)
-        await self._flush()
-        return result
+        async with self._lock:
+            if record.id in self._records:
+                raise ValueError(f"API document already exists: {record.id}")
+            records = {**self._records, record.id: record.model_copy(deep=True)}
+            self._commit(records, operation="create", doc_id=record.id)
+        return record.model_copy(deep=True)
 
     async def update(self, record: ApiDocRecord) -> ApiDocRecord:
-        result = await super().update(record)
-        await self._flush()
-        return result
+        async with self._lock:
+            if record.id not in self._records:
+                raise KeyError(f"API document not found: {record.id}")
+            records = {**self._records, record.id: record.model_copy(deep=True)}
+            self._commit(records, operation="update", doc_id=record.id)
+        return record.model_copy(deep=True)
 
     async def delete(self, doc_id: str) -> ApiDocRecord | None:
-        result = await super().delete(doc_id)
-        await self._flush()
-        return result
+        async with self._lock:
+            record = self._records.get(doc_id)
+            if record is None:
+                return None
+            records = {key: value for key, value in self._records.items() if key != doc_id}
+            self._commit(records, operation="delete", doc_id=doc_id)
+        return record.model_copy(deep=True)
 
-    async def _flush(self) -> None:
-        self._catalog_path.parent.mkdir(parents=True, exist_ok=True)
-        records = await super().list()
-        self._catalog_path.write_text(
-            json.dumps(
-                [record.model_dump(mode="json") for record in records],
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+    def _commit(self, records: dict[str, ApiDocRecord], *, operation: str, doc_id: str) -> None:
+        try:
+            self._write_catalog(records)
+        except Exception:
+            logger.exception(
+                "api_doc_catalog_write_failed path=%s operation=%s document_id=%s",
+                self._catalog_path,
+                operation,
+                doc_id,
+            )
+            raise
+        self._records = records
+        logger.debug(
+            "api_doc_catalog_committed path=%s operation=%s document_id=%s count=%d",
+            self._catalog_path,
+            operation,
+            doc_id,
+            len(records),
         )
+
+    def _write_catalog(self, records: dict[str, ApiDocRecord]) -> None:
+        self._catalog_path.parent.mkdir(parents=True, exist_ok=True)
+        ordered = sorted(records.values(), key=lambda record: record.updated_at, reverse=True)
+        payload = json.dumps(
+            [record.model_dump(mode="json") for record in ordered],
+            ensure_ascii=False,
+            indent=2,
+        )
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._catalog_path.parent,
+                prefix=f".{self._catalog_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as output:
+                temporary_path = Path(output.name)
+                output.write(payload)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary_path, self._catalog_path)
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("api_doc_catalog_temp_cleanup_failed path=%s", temporary_path, exc_info=True)
 
 
 class PostgresApiDocStore:
