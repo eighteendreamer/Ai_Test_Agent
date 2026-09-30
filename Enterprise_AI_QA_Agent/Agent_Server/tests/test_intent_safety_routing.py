@@ -29,7 +29,13 @@ from src.core.config import Settings
 from src.graph.nodes.tool_executor import _resolve_tool_call
 from src.domain.models import SessionRecord
 from src.modes.security_testing_mode.request_interpreter import SecurityRequestInterpreter
-from src.modes.security_testing_mode.campaign_state import SecurityTask
+from src.modes.security_testing_mode.campaign_state import (
+    SecurityCampaign,
+    SecurityTask,
+    SecurityTestingRequestState,
+    SecurityTestingState,
+)
+from src.modes.security_testing_mode.runtime import SecurityTestingModeRuntime
 from src.modes.security_testing_mode.subagent_coordinator import SecuritySubagentCoordinator
 from src.modes.security_testing_mode.task_pool import SecurityTaskPool
 from src.registry.modes import ModeRegistry
@@ -39,8 +45,10 @@ from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.store import InMemorySessionStore
 from src.schemas.session import (
+    ChatMessage,
     ExecutionRequest,
     MessageKind,
+    MessageRole,
     RuntimeMode,
     SendMessageRequest,
     SessionMode,
@@ -1902,6 +1910,124 @@ async def test_security_retry_links_distinct_worker_attempt_to_second_session():
 
 
 @pytest.mark.asyncio
+async def test_security_duplicate_terminal_dispatch_reads_persisted_child_result():
+    store = InMemorySessionStore()
+    now = datetime.now(UTC)
+    child = _session("security_testing")
+    child.id = "completed-security-child"
+    child.status = SessionStatus.completed
+    child.messages = [
+        ChatMessage(
+            id="security-runner-result",
+            role=MessageRole.tool,
+            content=json.dumps({
+                "success": True,
+                "summary": "Authorized scan completed",
+                "raw_output": "No findings",
+            }),
+            created_at=now,
+            metadata={"tool_key": "web-scan-runner"},
+        )
+    ]
+    await store.save_session(child)
+
+    class Dispatcher:
+        async def dispatch(self, payload, context):
+            return {"ok": True, "status": "duplicate", "workers": [{
+                "task_id": payload["workers"][0]["task_id"],
+                "child_session_id": child.id,
+                "status": "completed",
+            }]}
+
+    task = _retry_security_task()
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([task]), coordinator_runtime_service=Dispatcher(),
+        session_store=store,
+        parent_context={"session_id": "parent", "turn_id": "turn", "context_bundle": {}},
+    )
+    await coordinator._dispatch_batch([task])
+
+    assert task.status == "completed"
+    assert task.worker_session_id == child.id
+    assert task.worker_status == SessionStatus.completed.value
+    assert task.result_summary == "Authorized scan completed"
+
+
+def test_security_failure_analysis_duplicate_terminal_receipt_reads_child_messages():
+    async def scenario():
+        store = InMemorySessionStore()
+        now = datetime.now(UTC)
+        analysis = {
+            "failure_category": "network_limit",
+            "root_cause": "Recovered result from the persisted analyst session.",
+            "retryable": False,
+            "suggested_fix": "Check the test network.",
+            "alternative_profile": "",
+            "notes": "The worker completed before parent receipt recovery.",
+        }
+        child = SessionRecord(
+            id="completed-analysis-child",
+            title="Security failure analyst",
+            status=SessionStatus.completed,
+            session_mode=SessionMode.background_task,
+            runtime_mode=RuntimeMode.background,
+            mode_key="security_testing",
+            created_at=now,
+            updated_at=now,
+            messages=[ChatMessage(
+                id="analysis-result",
+                role=MessageRole.assistant,
+                content=json.dumps(analysis),
+                created_at=now,
+            )],
+        )
+        await store.save_session(child)
+
+        class Dispatcher:
+            async def dispatch(self, payload, context):
+                return {"ok": True, "status": "duplicate", "workers": [{
+                    "task_id": payload["workers"][0]["task_id"],
+                    "child_session_id": child.id,
+                    "status": "completed",
+                }]}
+
+        task = SecurityTask(
+            task_id="failed-scan",
+            name="Baseline scan",
+            tool_family="web_scan",
+            command_profile="nuclei_baseline",
+            target="http://localhost:8089",
+            status="failed",
+            last_error="connection refused",
+        )
+        state = SecurityTestingState(
+            session_id="parent",
+            trace_id="trace",
+            request=SecurityTestingRequestState(target_fingerprint="target-hash"),
+            campaign=SecurityCampaign(campaign_id="campaign", tasks=[task]),
+        )
+        context = SimpleNamespace(
+            session_id="parent",
+            turn_id="turn",
+            trace_id="trace",
+            selected_agent_key="",
+            selected_model_key="",
+            context_bundle={},
+        )
+        runtime = SecurityTestingModeRuntime(
+            coordinator_runtime_service=Dispatcher(), session_store=store,
+        )
+        notes = await runtime._dispatch_failure_analysis_subagents(state, context, [task])
+        return task, notes
+
+    task, notes = asyncio.run(scenario())
+    assert task.failure_analysis["root_cause"] == (
+        "Recovered result from the persisted analyst session."
+    )
+    assert notes == ["Failure analyst reviewed failed-scan: network_limit."]
+
+
+@pytest.mark.asyncio
 async def test_security_unresolved_claim_disables_automatic_retry():
     class Dispatcher:
         async def dispatch(self, payload, context):
@@ -2318,6 +2444,115 @@ async def test_coordinator_restart_recovers_child_created_before_parent_receipt(
     ]
 
 
+@pytest.mark.parametrize("child_status", [SessionStatus.completed, SessionStatus.failed])
+@pytest.mark.asyncio
+async def test_coordinator_restart_recovers_terminal_child_receipt(child_status):
+    service, store, _created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    await store.save_session(parent)
+
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": parent.id, "turn_id": "turn-1", "trace_id": "trace-1"}
+    worker = service._normalize_workers(payload, parent.id, "turn-1")[0]
+    dispatch_key = "|".join((worker.task_id, ""))
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    assert await store.claim_coordinator_dispatch(
+        parent.id,
+        "turn-1",
+        dispatch_key,
+        "crashed-owner",
+        fingerprint,
+        [worker.task_id],
+    )
+
+    child = _session()
+    child.id = "terminal-orphan-child"
+    child.status = child_status
+    child.metadata = {
+        "parent_session_id": parent.id,
+        "parent_turn_id": "turn-1",
+        "coordinator_dispatch_key": dispatch_key,
+        "task_id": worker.task_id,
+        "worker_description": worker.description,
+    }
+    child.messages = [
+        ChatMessage(
+            id="terminal-result",
+            role=MessageRole.assistant,
+            content="persisted worker result",
+            created_at=datetime.now(UTC),
+        )
+    ]
+    await store.save_session(child)
+
+    assert await service.recover_orphaned_dispatches() == 1
+
+    recovered_parent = await store.get_session(parent.id)
+    recovered_record = recovered_parent.metadata["worker_dispatches"][0]
+    assert recovered_record["child_session_id"] == child.id
+    assert recovered_record["status"] == child_status.value
+    assert "recovery_reason" not in recovered_record
+
+    retry = await service.dispatch(payload, context)
+    assert retry["status"] == "duplicate"
+    assert retry["workers"][0]["status"] == child_status.value
+    assert retry["workers"][0]["child_session_id"] == child.id
+    assert service._start_child_worker.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_restart_resolves_recovery_required_child_after_it_settles():
+    service, store, _created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.interrupted
+    await store.save_session(parent)
+
+    worker = service._normalize_workers(
+        {"workers": [_batch_worker(0)]}, parent.id, "turn-1"
+    )[0]
+    dispatch_key = "|".join((worker.task_id, ""))
+    fingerprint = service._dispatch_request_fingerprint([worker], [], None)
+    assert await store.claim_coordinator_dispatch(
+        parent.id, "turn-1", dispatch_key, "crashed-owner", fingerprint, [worker.task_id]
+    )
+
+    child = _session()
+    child.id = "eventually-settled-child"
+    child.status = SessionStatus.running
+    child.metadata = {
+        "parent_session_id": parent.id,
+        "parent_turn_id": "turn-1",
+        "coordinator_dispatch_key": dispatch_key,
+        "task_id": worker.task_id,
+        "worker_description": worker.description,
+    }
+    await store.save_session(child)
+
+    assert await service.recover_orphaned_dispatches() == 1
+    parent = await store.get_session(parent.id)
+    assert parent.metadata["worker_dispatches"][0]["status"] == "recovery_required"
+
+    child = await store.get_session(child.id)
+    child.status = SessionStatus.completed
+    child.updated_at = datetime.now(UTC)
+    child.messages.append(
+        ChatMessage(
+            id="settled-result",
+            role=MessageRole.assistant,
+            content="completed after reconciliation",
+            created_at=child.updated_at,
+        )
+    )
+    await store.save_session(child)
+
+    assert await service.recover_orphaned_dispatches() == 1
+    parent = await store.get_session(parent.id)
+    recovered_record = parent.metadata["worker_dispatches"][0]
+    assert recovered_record["status"] == SessionStatus.completed.value
+    assert "recovery_reason" not in recovered_record
+
+
 @pytest.mark.asyncio
 async def test_coordinator_restart_recovers_legacy_child_receipt_after_task_id_reuse():
     service, store, _created = await _batch_capacity_coordinator()
@@ -2385,6 +2620,7 @@ async def test_coordinator_restart_recovers_child_for_legacy_claim_without_finge
     )
     child = _session()
     child.id = "legacy-fingerprint-child"
+    child.status = SessionStatus.completed
     child.metadata = {
         "parent_session_id": parent.id,
         "parent_turn_id": "legacy-turn",
@@ -2401,6 +2637,7 @@ async def test_coordinator_restart_recovers_child_for_legacy_claim_without_finge
     assert recovered_record["task_id"] == "legacy-task"
     assert recovered_record["child_session_id"] == child.id
     assert recovered_record["status"] == "recovery_required"
+    assert recovered_record["child_session_status"] == SessionStatus.completed.value
     assert recovered_record["recovery_reason"] == (
         "child_session_persisted_before_parent_receipt"
     )

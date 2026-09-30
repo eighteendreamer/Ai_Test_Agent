@@ -884,6 +884,23 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
             "worker_description": "worker persisted before legacy claim receipt",
         },
     )
+    terminal_orphan_child = SessionRecord(
+        id=f"coord-terminal-orphan-child-{suffix}",
+        title="completed child created before parent receipt",
+        status=SessionStatus.completed,
+        session_mode=SessionMode.background_task,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={
+            "parent_session_id": parent.id,
+            "parent_turn_id": "turn-terminal",
+            "coordinator_dispatch_key": "coord-task-6|",
+            "task_id": "coord-task-6",
+            "worker_description": "completed worker persisted before receipt",
+        },
+    )
     try:
         await store.initialize()
         await store.save_session(parent)
@@ -891,6 +908,7 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
         await store.save_session(orphan_child)
         await store.save_session(keyed_orphan_child)
         await store.save_session(legacy_fingerprint_child)
+        await store.save_session(terminal_orphan_child)
         assert await store.claim_coordinator_dispatch(
             parent.id,
             "turn-orphan",
@@ -919,6 +937,14 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
             "turn-legacy",
             "coord-task-5|",
             owner_id="coordinator-legacy-owner",
+        )
+        assert await store.claim_coordinator_dispatch(
+            parent.id,
+            "turn-terminal",
+            "coord-task-6|",
+            owner_id="coordinator-crashed-owner-6",
+            request_fingerprint="c" * 64,
+            worker_task_ids=["coord-task-6"],
         )
         assert not await store.release_coordinator_dispatch_claim_if_no_child(
             parent.id,
@@ -949,7 +975,7 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
             session_service=None,
             agent_registry=AgentRegistry(),
         )
-        assert await service.recover_orphaned_dispatches() == 5
+        assert await service.recover_orphaned_dispatches() == 6
         recovered = await store.get_session(parent.id)
         assert recovered is not None
         dispatches = {
@@ -976,15 +1002,20 @@ async def test_live_postgres_coordinator_recovery_reconciles_interrupted_child()
         assert legacy_receipt["recovery_reason"] == (
             "child_session_persisted_before_parent_receipt"
         )
+        terminal_receipt = dispatches["coord-task-6"]
+        assert terminal_receipt["child_session_id"] == terminal_orphan_child.id
+        assert terminal_receipt["status"] == SessionStatus.completed.value
+        assert "recovery_reason" not in terminal_receipt
         claims = recovered.metadata["coordinator_dispatch_claims"]
         assert {(claim["turn_id"], claim["dispatch_key"]) for claim in claims} == {
             ("turn-orphan", "coord-task-2|"),
             ("turn-keyed", "coord-task-4|"),
             ("turn-legacy", "coord-task-5|"),
+            ("turn-terminal", "coord-task-6|"),
         }
         assert await service.recover_orphaned_dispatches() == 0
         events = await store.list_events(parent.id)
         assert [event.type for event in events] == ["worker.dispatches_reconciled"]
-        assert events[0].payload["recovered_count"] == 5
+        assert events[0].payload["recovered_count"] == 6
     finally:
         _drop_tables(settings, list(table_names.values()))

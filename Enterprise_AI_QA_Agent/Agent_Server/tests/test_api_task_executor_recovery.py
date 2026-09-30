@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -17,7 +18,7 @@ from src.modes.api_testing_mode.runtime import ApiTestingModeRuntime
 from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.runtime.store import InMemorySessionStore
-from src.schemas.session import RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import ChatMessage, MessageRole, RuntimeMode, SessionMode, SessionStatus
 
 
 def test_executor_reuses_only_complete_matching_checkpoint():
@@ -169,6 +170,54 @@ def test_api_unresolved_dispatch_claim_stops_retry():
     assert task.status == "failed"
     assert task.attempts == 1
     assert task.last_error == "coordinator_dispatch_claim_unresolved"
+
+
+def test_api_duplicate_terminal_dispatch_reads_persisted_child_result():
+    async def scenario():
+        store = InMemorySessionStore()
+        now = datetime.now(UTC)
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        task_result = task.model_dump(mode="json")
+        task_result.update({
+            "status": "completed",
+            "response_status": 200,
+            "response_headers": {"content-type": "application/json"},
+            "response_body": {"orders": []},
+            "check_results": [],
+            "duration_ms": 5,
+        })
+        await store.save_session(SessionRecord(
+            id="completed-api-child", title="API worker", status=SessionStatus.completed,
+            session_mode=SessionMode.background_task, runtime_mode=RuntimeMode.background,
+            mode_key="api_testing", created_at=now, updated_at=now,
+            messages=[ChatMessage(
+                id="api-runner-result", role=MessageRole.tool,
+                content=json.dumps({"task_result": task_result, "summary": "HTTP 200"}),
+                created_at=now, metadata={"tool_key": "api-test-runner"},
+            )],
+        ))
+
+        class Dispatcher:
+            async def dispatch(self, payload, context):
+                return {"ok": True, "status": "duplicate", "workers": [{
+                    "task_id": payload["workers"][0]["task_id"],
+                    "child_session_id": "completed-api-child",
+                    "status": "completed",
+                }]}
+
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]), policy=ExecutionPolicy(max_retries=0),
+            coordinator_runtime_service=Dispatcher(), session_store=store,
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+        )
+        return (await coordinator.run_all())[0]
+
+    task = asyncio.run(scenario())
+    assert task.status == "completed"
+    assert task.worker_session_id == "completed-api-child"
+    assert task.worker_status == SessionStatus.completed.value
+    assert task.response_status == 200
 
 
 def test_api_failed_worker_receipt_keeps_the_launch_error():

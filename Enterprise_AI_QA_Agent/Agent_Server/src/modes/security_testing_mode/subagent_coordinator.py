@@ -455,8 +455,15 @@ class SecuritySubagentCoordinator:
             child_session_ids = [
                 str(record.get("child_session_id") or "")
                 for record in worker_records.values()
-                if str(record.get("status") or "") == "running"
+                if str(record.get("status") or "") in {
+                    "running", "completed", "failed", "interrupted", "cancelled",
+                    "waiting_approval",
+                }
                 and str(record.get("child_session_id") or "")
+                and not (
+                    str(record.get("status") or "") == "failed"
+                    and str(record.get("error") or "")
+                )
             ]
 
             # Wait for all sessions to complete
@@ -481,14 +488,16 @@ class SecuritySubagentCoordinator:
                 if not record:
                     self._fail_task(task, dispatch_result.get("error") or "worker_dispatch_missing")
                     continue
-                if str(record.get("status") or "") == "failed":
+                child_session_id = str(record.get("child_session_id") or "")
+                if str(record.get("status") or "") == "failed" and (
+                    str(record.get("error") or "") or not child_session_id
+                ):
                     self._fail_task(
                         task,
                         str(record.get("error") or dispatch_result.get("error") or "worker_launch_failed"),
                     )
                     continue
 
-                child_session_id = str(record.get("child_session_id") or "")
                 task.worker_session_id = child_session_id
 
                 session = settled_map.get(child_session_id)

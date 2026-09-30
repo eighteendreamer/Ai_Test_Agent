@@ -2993,7 +2993,15 @@ class SecurityTestingModeRuntime:
         child_session_ids = [
             str(record.get("child_session_id") or "")
             for record in records.values()
-            if str(record.get("status") or "") == "running" and str(record.get("child_session_id") or "")
+            if str(record.get("status") or "") in {
+                "running", "completed", "failed", "interrupted", "cancelled",
+                "waiting_approval",
+            }
+            and str(record.get("child_session_id") or "")
+            and not (
+                str(record.get("status") or "") == "failed"
+                and str(record.get("error") or "")
+            )
         ]
         settled_sessions = await self._wait_for_worker_sessions(
             child_session_ids,

@@ -297,7 +297,8 @@ class CoordinatorRuntimeService:
                         known_worker_keys.add((record_turn_id, task_id))
                     else:
                         known_unscoped_task_ids.add(task_id)
-                if str(record.get("status") or "") != "running":
+                record_status = str(record.get("status") or "")
+                if record_status not in {"running", "recovery_required"}:
                     reconciled.append(record)
                     continue
                 child_id = str(record.get("child_session_id") or "").strip()
@@ -306,6 +307,9 @@ class CoordinatorRuntimeService:
                     continue
                 child = await self._store.get_session(child_id)
                 if child is None:
+                    if record_status == "recovery_required":
+                        reconciled.append(record)
+                        continue
                     reconciled.append({
                         **record,
                         "status": "recovery_required",
@@ -318,25 +322,43 @@ class CoordinatorRuntimeService:
                     continue
                 child_status = child.status.value
                 if child_status in {SessionStatus.completed.value, SessionStatus.failed.value}:
-                    reconciled.append({
+                    recovered_record = {
                         **record,
                         "status": child_status,
                         "completed_at": child.updated_at.isoformat(),
                         "recovered_at": datetime.utcnow().isoformat(),
-                    })
+                    }
+                    if record_status == "recovery_required" and not self._has_fingerprinted_child_claim(
+                        claims,
+                        parent_turn_id=(record_turn_id or str(
+                            (child.metadata or {}).get("parent_turn_id") or ""
+                        ).strip()),
+                        task_id=task_id,
+                        child_dispatch_key=str(
+                            (child.metadata or {}).get("coordinator_dispatch_key") or ""
+                        ).strip(),
+                    ):
+                        reconciled.append(record)
+                        continue
+                    recovered_record.pop("recovery_reason", None)
+                    recovered_record.pop("child_session_status", None)
+                    reconciled.append(recovered_record)
                     changed = True
                     recovered += 1
                     recovered_for_parent += 1
                 elif child_status == SessionStatus.interrupted.value:
-                    reconciled.append({
-                        **record,
-                        "status": "recovery_required",
-                        "recovery_reason": "child_session_interrupted_without_safe_replay",
-                        "recovered_at": datetime.utcnow().isoformat(),
-                    })
-                    changed = True
-                    recovered += 1
-                    recovered_for_parent += 1
+                    if record_status == "recovery_required":
+                        reconciled.append(record)
+                    else:
+                        reconciled.append({
+                            **record,
+                            "status": "recovery_required",
+                            "recovery_reason": "child_session_interrupted_without_safe_replay",
+                            "recovered_at": datetime.utcnow().isoformat(),
+                        })
+                        changed = True
+                        recovered += 1
+                        recovered_for_parent += 1
                 else:
                     reconciled.append(record)
 
@@ -454,12 +476,28 @@ class CoordinatorRuntimeService:
                                 child_metadata.get("worker_description") or child.title
                             ),
                             "dispatch_role": str(child_metadata.get("dispatch_role") or "worker"),
-                            "status": "recovery_required",
+                            "status": (
+                                child.status.value
+                                if request_fingerprint
+                                and child.status.value in {
+                                    SessionStatus.completed.value,
+                                    SessionStatus.failed.value,
+                                }
+                                else "recovery_required"
+                            ),
                             "parent_turn_id": parent_turn_id,
-                            "child_session_status": child.status.value,
-                            "recovery_reason": "child_session_persisted_before_parent_receipt",
                             "recovered_at": datetime.utcnow().isoformat(),
                         }
+                        if recovery_record["status"] in {
+                            SessionStatus.completed.value,
+                            SessionStatus.failed.value,
+                        }:
+                            recovery_record["completed_at"] = child.updated_at.isoformat()
+                        else:
+                            recovery_record["child_session_status"] = child.status.value
+                            recovery_record["recovery_reason"] = (
+                                "child_session_persisted_before_parent_receipt"
+                            )
                         reconciled.append(recovery_record)
                         known_worker_keys.add((parent_turn_id, task_id))
                         changed = True
@@ -475,6 +513,7 @@ class CoordinatorRuntimeService:
                                 "child_session_id": child.id,
                                 "child_session_status": child.status.value,
                                 "request_fingerprint_available": bool(request_fingerprint),
+                                "receipt_status": recovery_record["status"],
                             },
                         )
 
@@ -516,6 +555,48 @@ class CoordinatorRuntimeService:
         if recovered:
             logger.warning("coordinator_orphaned_dispatches_reconciled", extra={"recovered_count": recovered})
         return recovered
+
+    @staticmethod
+    def _has_fingerprinted_child_claim(
+        claims: list[Any],
+        *,
+        parent_turn_id: str,
+        task_id: str,
+        child_dispatch_key: str,
+    ) -> bool:
+        """Return true only when one persisted claim identifies this child.
+
+        A terminal child can safely settle a previously unresolved receipt only
+        when the parent has a fingerprinted claim for the same task and turn.
+        Older claims without enough identity remain recovery_required.
+        """
+        if not parent_turn_id or not task_id:
+            return False
+        candidates = []
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            if str(claim.get("turn_id") or "").strip() != parent_turn_id:
+                continue
+            if not str(claim.get("request_fingerprint") or "").strip():
+                continue
+            dispatch_key = str(claim.get("dispatch_key") or "").strip()
+            worker_task_ids = claim.get("worker_task_ids")
+            claimed_task_ids = (
+                {str(item).strip() for item in worker_task_ids}
+                if isinstance(worker_task_ids, list)
+                else set()
+            )
+            if claimed_task_ids and task_id not in claimed_task_ids:
+                continue
+            if child_dispatch_key:
+                if dispatch_key != child_dispatch_key:
+                    continue
+            else:
+                if not claimed_task_ids or task_id not in claimed_task_ids:
+                    continue
+            candidates.append(claim)
+        return len(candidates) == 1
 
     @staticmethod
     def _parent_turn_is_settled(parent: SessionRecord) -> bool:
@@ -2143,7 +2224,13 @@ class CoordinatorRuntimeService:
             else:
                 identity = ("", "")
             update = updates.get(identity)
-            if update is not None and str(record.get("status") or "") == "running":
+            current_status = str(record.get("status") or "")
+            update_status = str(update.get("status") or "") if update is not None else ""
+            may_settle_recovery = (
+                current_status == "recovery_required"
+                and update_status in {SessionStatus.completed.value, SessionStatus.failed.value}
+            )
+            if update is not None and (current_status == "running" or may_settle_recovery):
                 merged.append(update)
             else:
                 merged.append(record)

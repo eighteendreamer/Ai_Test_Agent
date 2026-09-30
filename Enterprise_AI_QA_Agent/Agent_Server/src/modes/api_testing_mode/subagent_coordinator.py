@@ -229,7 +229,15 @@ class ApiSubagentCoordinator:
             child_session_ids = [
                 str(record.get("child_session_id") or "")
                 for record in worker_records.values()
-                if str(record.get("status") or "") == "running" and str(record.get("child_session_id") or "")
+                if str(record.get("status") or "") in {
+                    "running", "completed", "failed", "interrupted", "cancelled",
+                    "waiting_approval",
+                }
+                and str(record.get("child_session_id") or "")
+                and not (
+                    str(record.get("status") or "") == "failed"
+                    and str(record.get("error") or "")
+                )
             ]
             settled_sessions, timed_out_ids = await self._wait_for_sessions(child_session_ids)
             self._unsettled_child_session_ids.update(timed_out_ids)
@@ -240,13 +248,15 @@ class ApiSubagentCoordinator:
                 if not record:
                     self._fail_task(task, dispatch_result.get("error") or "worker_dispatch_missing")
                     continue
-                if str(record.get("status") or "") == "failed":
+                child_session_id = str(record.get("child_session_id") or "")
+                if str(record.get("status") or "") == "failed" and (
+                    str(record.get("error") or "") or not child_session_id
+                ):
                     self._fail_task(
                         task,
                         str(record.get("error") or dispatch_result.get("error") or "worker_launch_failed"),
                     )
                     continue
-                child_session_id = str(record.get("child_session_id") or "")
                 task.worker_session_id = child_session_id
                 if child_session_id in timed_out_ids:
                     task.worker_status = "running"
