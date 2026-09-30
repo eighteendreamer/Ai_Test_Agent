@@ -24,6 +24,11 @@ from src.application.projects.project_service import ProjectService
 
 logger = logging.getLogger(__name__)
 
+# No upstream counterpart (checked: local discovery code and HTTPX redirect limits):
+# bound the number of URLs supplied by an untrusted documentation page.
+MAX_DISCOVERY_CANDIDATES = 64
+MAX_REMOTE_REDIRECTS = 20
+
 
 class ApiDocsService:
     def __init__(
@@ -1422,10 +1427,27 @@ class ApiDocsService:
         try:
             async with httpx.AsyncClient(
                 timeout=min(self._settings.model.llm_request_timeout_seconds, 45.0),
-                follow_redirects=True,
+                follow_redirects=False,
             ) as client:
-                response = await client.get(normalized_url, headers=headers or {}, auth=client_auth)
-                response.raise_for_status()
+                current_url = normalized_url
+                for redirect_count in range(MAX_REMOTE_REDIRECTS + 1):
+                    response = await client.get(current_url, headers=headers or {}, auth=client_auth)
+                    if not response.is_redirect:
+                        response.raise_for_status()
+                        break
+                    if redirect_count == MAX_REMOTE_REDIRECTS:
+                        raise ValueError("远程文档跳转次数过多。")
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ValueError("远程文档跳转缺少 Location。")
+                    next_url = urljoin(str(response.url), location)
+                    if not self._same_http_origin(normalized_url, next_url):
+                        logger.warning(
+                            "api_doc_cross_origin_redirect_rejected",
+                            extra={"source_host": response.url.host, "target_host": urlparse(next_url).hostname},
+                        )
+                        raise ValueError("远程文档跳转到不同来源；请直接填写最终文档地址。")
+                    current_url = next_url
         except httpx.HTTPError as exc:
             raise ValueError(f"远程文档拉取失败：{exc}") from exc
 
@@ -1469,6 +1491,7 @@ class ApiDocsService:
             return fetched
 
         last_error: Exception | None = None
+        skipped_cross_origin = False
         checked_urls: set[str] = set()
         index = 0
         while index < len(candidate_urls):
@@ -1477,9 +1500,16 @@ class ApiDocsService:
             if candidate_url in checked_urls:
                 continue
             checked_urls.add(candidate_url)
+            if not self._same_http_origin(original_url, candidate_url):
+                skipped_cross_origin = True
+                logger.warning(
+                    "api_doc_cross_origin_candidate_skipped",
+                    extra={"source_host": urlparse(original_url).hostname, "target_host": urlparse(candidate_url).hostname},
+                )
+                continue
             try:
                 candidate = await self._fetch_remote_document(url=candidate_url, headers=headers, auth=auth)
-            except Exception as exc:
+            except ValueError as exc:
                 last_error = exc
                 continue
             if self._looks_like_api_document(candidate):
@@ -1499,6 +1529,8 @@ class ApiDocsService:
                 ):
                     self._append_unique_url(candidate_urls, nested_url)
 
+        if skipped_cross_origin:
+            raise ValueError("页面引用了其他来源的接口文档；请直接填写该文档地址。") from last_error
         if last_error is not None:
             raise ValueError(
                 "URL 指向的是 Swagger/Redoc 页面，但自动拉取 OpenAPI 文档失败。"
@@ -1596,8 +1628,20 @@ class ApiDocsService:
 
     def _append_unique_url(self, items: list[str], value: str) -> None:
         normalized = value.strip()
-        if normalized and normalized not in items:
+        if normalized and normalized not in items and len(items) < MAX_DISCOVERY_CANDIDATES:
             items.append(normalized)
+
+    def _same_http_origin(self, left: str, right: str) -> bool:
+        try:
+            source = httpx.URL(left)
+            target = httpx.URL(right)
+        except (httpx.InvalidURL, ValueError):
+            return False
+        return (
+            source.scheme in {"http", "https"}
+            and (source.scheme, source.host, source.port)
+            == (target.scheme, target.host, target.port)
+        )
 
     def _looks_like_api_document(self, fetched: dict[str, Any]) -> bool:
         content = fetched.get("content", b"")
