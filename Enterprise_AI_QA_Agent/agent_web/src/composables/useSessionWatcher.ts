@@ -55,6 +55,8 @@ export class SessionWatcherManager {
 
   start(): void {
     this.stop();
+    this._failures = 0;
+    this._error = "";
     this._timer = window.setInterval(() => {
       void this._tick();
     }, this._config.pollIntervalMs);
@@ -76,6 +78,7 @@ export class SessionWatcherManager {
   recordFailure(error: string): void {
     this._failures += 1;
     this._error = error;
+    if (this._failures >= this._config.maxFailures) this.stop();
   }
 
   private async _tick(): Promise<void> {

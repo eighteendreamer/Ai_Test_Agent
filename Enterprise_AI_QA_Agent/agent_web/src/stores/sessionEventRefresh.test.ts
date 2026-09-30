@@ -43,6 +43,7 @@ describe("session SSE refresh after durable state changes", () => {
   });
 
   afterEach(() => {
+    useSessionStore().stopWatcher();
     useSessionStore().disconnectEvents();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -83,5 +84,35 @@ describe("session SSE refresh after durable state changes", () => {
     expect(store.session?.status).toBe("completed");
     expect(store.pendingApprovals).toEqual([]);
     expect(refreshTooling).toHaveBeenCalledWith(includeTooling);
+  });
+
+  it("stops periodic refresh after repeated missing-session failures", async () => {
+    const store = useSessionStore();
+    store.session = {
+      id: "session-1", title: "Deleted session", status: "running",
+      messages: [], pending_approvals: [], metadata: {},
+    } as unknown as SessionDetail;
+    const getSession = vi.spyOn(api, "getSession").mockRejectedValue(new Error("Session not found"));
+
+    store.startWatcher();
+    await vi.advanceTimersByTimeAsync(55000);
+    expect(store.watcherFailures).toBe(10);
+    const callsAtLimit = getSession.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(getSession).toHaveBeenCalledTimes(callsAtLimit);
+  });
+
+  it("clears the exhausted SSE error after an explicit connection succeeds", () => {
+    const store = useSessionStore();
+    store.session = {
+      id: "session-1", title: "Recovered session", status: "running",
+      messages: [], pending_approvals: [], metadata: {},
+    } as unknown as SessionDetail;
+    store.error = "事件流连续断开，已停止自动重连。请手动重试或刷新页面。";
+
+    store.connectEvents(true);
+    FakeEventSource.instances[0].onopen?.();
+
+    expect(store.error).toBe("");
   });
 });

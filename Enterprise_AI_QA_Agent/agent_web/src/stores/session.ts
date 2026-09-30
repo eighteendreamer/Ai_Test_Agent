@@ -4,7 +4,11 @@ import { api } from "../services/api";
 import { handleRecorderSseEvent } from "../features/recorder/recorderBridge";
 import { serverDateTimestamp } from "../utils/datetime";
 import { eventTurnId } from "../utils/executionEvent";
-import { SSEStreamManager } from "../composables/useSSEStream";
+import {
+  SSE_RECONNECT_EXHAUSTED_ERROR,
+  SSE_RECONNECTING_ERROR,
+  SSEStreamManager,
+} from "../composables/useSSEStream";
 import { SessionWatcherManager } from "../composables/useSessionWatcher";
 import { ApprovalManager } from "../composables/useApprovalManager";
 import type {
@@ -781,7 +785,7 @@ export const useSessionStore = defineStore("session", {
           if (this.session?.id !== sessionId) {
             return;
           }
-          if (this.error === "事件流已断开，正在尝试重新连接。") {
+          if (this.error === SSE_RECONNECTING_ERROR || this.error === SSE_RECONNECT_EXHAUSTED_ERROR) {
             this.error = "";
           }
         },

@@ -1,13 +1,20 @@
 import type { ExecutionEvent } from "../types";
 import { api } from "../services/api";
 
+export const SSE_RECONNECTING_ERROR = "事件流已断开，正在尝试重新连接。";
+export const SSE_RECONNECT_EXHAUSTED_ERROR = "事件流连续断开，已停止自动重连。请手动重试或刷新页面。";
+
 export interface SSEStreamConfig {
   reconnectDelayMs: number;
+  maxReconnectDelayMs: number;
+  maxReconnectAttempts: number;
   receivedIdLimit: number;
 }
 
 const DEFAULT_SSE_CONFIG: SSEStreamConfig = {
   reconnectDelayMs: 1500,
+  maxReconnectDelayMs: 30000,
+  maxReconnectAttempts: 8,
   receivedIdLimit: 5000,
 };
 
@@ -21,6 +28,7 @@ export class SSEStreamManager {
   private _source: EventSource | null = null;
   private _sessionId = "";
   private _reconnectTimer: number | null = null;
+  private _reconnectFailures = 0;
   private _receivedIds = new Set<string>();
   private _receivedSessionId = "";
   private _cursorBySession: Record<string, string> = {};
@@ -68,8 +76,13 @@ export class SSEStreamManager {
   }
 
   connect(sessionId: string, force = false): void {
+    this._connect(sessionId, force, false);
+  }
+
+  private _connect(sessionId: string, force: boolean, retry: boolean): void {
     if (!sessionId) return;
     if (this._source && this._sessionId === sessionId && !force) return;
+    if (!retry || this._sessionId !== sessionId) this._reconnectFailures = 0;
 
     this._closeSource();
     if (this._receivedSessionId !== sessionId) {
@@ -88,6 +101,7 @@ export class SSEStreamManager {
 
     source.onopen = () => {
       if (this._source !== source) return;
+      this._reconnectFailures = 0;
       this._callbacks?.onConnect();
     };
 
@@ -95,8 +109,13 @@ export class SSEStreamManager {
       if (this._source !== source) return;
       source.close();
       this._source = null;
-      this._callbacks?.onError("事件流已断开，正在尝试重新连接。");
-      this.scheduleReconnect(sessionId);
+      this._reconnectFailures += 1;
+      if (this._reconnectFailures >= this._config.maxReconnectAttempts) {
+        this._callbacks?.onError(SSE_RECONNECT_EXHAUSTED_ERROR);
+      } else {
+        this._callbacks?.onError(SSE_RECONNECTING_ERROR);
+        this.scheduleReconnect(sessionId);
+      }
     };
 
     this._source = source;
@@ -112,6 +131,7 @@ export class SSEStreamManager {
 
   disconnect(): void {
     this._closeSource();
+    this._reconnectFailures = 0;
     this._receivedIds.clear();
     this._receivedSessionId = "";
   }
@@ -128,10 +148,16 @@ export class SSEStreamManager {
 
   scheduleReconnect(sessionId: string): void {
     if (!sessionId || this._reconnectTimer !== null) return;
+    if (this._sessionId !== sessionId) this._reconnectFailures = 0;
+    if (this._reconnectFailures >= this._config.maxReconnectAttempts) return;
+    const delay = Math.min(
+      this._config.maxReconnectDelayMs,
+      this._config.reconnectDelayMs * 2 ** Math.max(0, this._reconnectFailures - 1),
+    );
     this._reconnectTimer = window.setTimeout(() => {
       this._reconnectTimer = null;
-      this.connect(sessionId, true);
-    }, this._config.reconnectDelayMs);
+      this._connect(sessionId, true, true);
+    }, delay);
   }
 
   rememberIncomingEvent(event: ExecutionEvent): boolean {

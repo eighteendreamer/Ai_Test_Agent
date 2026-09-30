@@ -114,4 +114,51 @@ describe("session SSE transport", () => {
     expect(manager.receivedIds).toEqual([]);
     expect(manager.rememberReceiptEvent(event("session-2", "shared-id"))).toBe(true);
   });
+
+  it("backs off repeated connection failures and stops after the configured limit", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    const errors: string[] = [];
+    const manager = new SSEStreamManager({
+      reconnectDelayMs: 100, maxReconnectDelayMs: 400, maxReconnectAttempts: 4,
+    });
+    manager.bind({ onEvent: () => {}, onConnect: () => {}, onError: (error) => errors.push(error) });
+    manager.connect("session-1");
+
+    for (const [index, delay] of [100, 200, 400].entries()) {
+      FakeEventSource.instances[index].onerror?.();
+      expect(manager.reconnectTimer).not.toBeNull();
+      vi.advanceTimersByTime(delay - 1);
+      expect(FakeEventSource.instances).toHaveLength(index + 1);
+      vi.advanceTimersByTime(1);
+    }
+    expect(FakeEventSource.instances).toHaveLength(4);
+    FakeEventSource.instances[3].onerror?.();
+    expect(manager.reconnectTimer).toBeNull();
+    expect(errors[errors.length - 1]).toContain("停止自动重连");
+    vi.advanceTimersByTime(1000);
+    expect(FakeEventSource.instances).toHaveLength(4);
+
+    manager.ensureConnected("session-1");
+    expect(FakeEventSource.instances).toHaveLength(5);
+    manager.disconnect();
+  });
+
+  it("resets reconnect backoff after a connection opens", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    const manager = new SSEStreamManager({
+      reconnectDelayMs: 100, maxReconnectDelayMs: 400, maxReconnectAttempts: 4,
+    });
+    manager.connect("session-1");
+    FakeEventSource.instances[0].onerror?.();
+    vi.advanceTimersByTime(100);
+    FakeEventSource.instances[1].onopen?.();
+    FakeEventSource.instances[1].onerror?.();
+    vi.advanceTimersByTime(99);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(FakeEventSource.instances).toHaveLength(3);
+    manager.disconnect();
+  });
 });
