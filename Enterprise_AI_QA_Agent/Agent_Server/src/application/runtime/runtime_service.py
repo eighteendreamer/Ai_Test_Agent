@@ -1858,9 +1858,9 @@ class RuntimeService:
         )
 
     def _apply_interrupt_state(self, state: dict[str, Any]) -> None:
-        reason = self._runtime_control.get_interrupt_reason(str(state["session_id"]))
-        state["interrupt_requested"] = bool(reason)
-        state["interrupt_reason"] = reason
+        session_id = str(state["session_id"])
+        state["interrupt_requested"] = self._runtime_control.is_interrupt_requested(session_id)
+        state["interrupt_reason"] = self._runtime_control.get_interrupt_reason(session_id)
 
     def _interrupt_result(self, state: dict[str, Any]) -> dict[str, Any]:
         if state["termination_reason"] != "interrupted":

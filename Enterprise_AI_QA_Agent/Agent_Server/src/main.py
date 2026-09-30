@@ -517,6 +517,7 @@ async def lifespan(app: FastAPI):
         tool_message_max_chars=settings.orchestration.tool_message_max_chars,
         safety_gate=SafetyGate(),
         observability_service=observability_service,
+        runtime_control=runtime_control,
     )
     context_compaction_service = ContextCompactionService(
         model_runtime_service=model_runtime_service,

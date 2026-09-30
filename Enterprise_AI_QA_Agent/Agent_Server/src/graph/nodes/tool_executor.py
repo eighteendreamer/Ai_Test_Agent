@@ -17,6 +17,7 @@ from src.graph.state import AgentGraphState
 from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.registry.skills import SkillRegistry
+from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_logging import append_graph_event
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.session import MessageKind, RuntimeMode, SessionMode
@@ -31,6 +32,7 @@ def build_tool_executor_node(
     skill_runtime_service: SkillRuntimeService | None = None,
     tool_message_max_chars: int = 24000,
     safety_gate: SafetyGate | None = None,
+    runtime_control: RuntimeControlRegistry | None = None,
 ):
     async def tool_executor(state: AgentGraphState) -> AgentGraphState:
         append_graph_event(
@@ -58,15 +60,14 @@ def build_tool_executor_node(
             selected_model_key=state["selected_model_key"],
         )
 
-        for raw_tool_call in state["model_tool_calls"]:
-            if state.get("interrupt_requested"):
-                append_graph_event(
+        for index, raw_tool_call in enumerate(state["model_tool_calls"]):
+            if _interrupt_requested(state, runtime_control):
+                _append_interrupted_tool_calls(
                     state,
-                    "tool.execution_skipped",
-                    "tool_executor",
-                    "Interrupt was requested before the next tool call could start.",
-                    tool_key=str(raw_tool_call.get("name", "")),
-                    interrupt_reason=state.get("interrupt_reason", ""),
+                    state["model_tool_calls"][index:],
+                    reason=str(state.get("interrupt_reason") or ""),
+                    tool_messages=new_tool_messages,
+                    tool_results=tool_results,
                 )
                 break
             tool_call = ModelToolCall.model_validate(raw_tool_call)
@@ -153,19 +154,70 @@ def build_tool_executor_node(
                 state["assistant_tool_call_message"],
                 *[apply_tool_message_budget(item, message_budget) for item in new_tool_messages],
             ]
-            state["continue_loop"] = True
-            append_graph_event(
-                state,
-                "graph.loop_prepared",
-                "tool_executor",
-                "Tool results were appended and the runtime will re-enter the model loop.",
-                loop_iteration=state["loop_iteration"],
-                tool_result_count=len(tool_results),
-            )
+            state["continue_loop"] = not bool(state.get("interrupt_requested"))
+            if state["continue_loop"]:
+                append_graph_event(
+                    state,
+                    "graph.loop_prepared",
+                    "tool_executor",
+                    "Tool results were appended and the runtime will re-enter the model loop.",
+                    loop_iteration=state["loop_iteration"],
+                    tool_result_count=len(tool_results),
+                )
 
         return state
 
     return tool_executor
+
+
+def _interrupt_requested(
+    state: AgentGraphState,
+    runtime_control: RuntimeControlRegistry | None,
+) -> bool:
+    if runtime_control is None:
+        return bool(state.get("interrupt_requested"))
+
+    session_id = str(state.get("session_id") or "")
+    requested = runtime_control.is_interrupt_requested(session_id)
+    state["interrupt_requested"] = requested
+    state["interrupt_reason"] = runtime_control.get_interrupt_reason(session_id)
+    return requested
+
+
+def _append_interrupted_tool_calls(
+    state: AgentGraphState,
+    raw_tool_calls: list[dict[str, Any]],
+    *,
+    reason: str,
+    tool_messages: list[dict[str, Any]],
+    tool_results: list[dict[str, Any]],
+) -> None:
+    for raw_tool_call in raw_tool_calls:
+        tool_call = ModelToolCall.model_validate(raw_tool_call)
+        summary = "Tool call was not started because the turn was interrupted."
+        result = ToolExecutionRecord(
+            call_id=tool_call.id,
+            tool_key=tool_call.name,
+            tool_name=tool_call.name,
+            status="failed",
+            summary=summary,
+            input=tool_call.arguments,
+            output={
+                "error": "tool_call_interrupted",
+                "interrupt_reason": reason,
+            },
+        )
+        tool_results.append(result.model_dump(mode="python"))
+        tool_messages.append(build_tool_message(result))
+        append_graph_event(
+            state,
+            "tool.execution_skipped",
+            "tool_executor",
+            summary,
+            tool_key=tool_call.name,
+            call_id=tool_call.id,
+            interrupt_reason=reason,
+        )
 
 
 async def _resolve_tool_call(

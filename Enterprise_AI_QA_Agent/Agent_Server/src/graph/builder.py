@@ -29,6 +29,7 @@ from src.registry.agents import AgentRegistry
 from src.registry.models import ModelRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
+from src.runtime.control import RuntimeControlRegistry
 
 
 def build_agent_graph(
@@ -44,6 +45,7 @@ def build_agent_graph(
     prompt_assembly_service: PromptAssemblyService,
     model_runtime_service: ModelRuntimeService,
     tool_runtime_service: ToolRuntimeService,
+    runtime_control: RuntimeControlRegistry,
     tool_job_service: ToolJobService | None = None,
     tool_message_max_chars: int = 24000,
     safety_gate: SafetyGate | None = None,
@@ -122,6 +124,7 @@ def build_agent_graph(
             skill_runtime_service=skill_runtime_service,
             tool_message_max_chars=tool_message_max_chars,
             safety_gate=safety_gate,
+            runtime_control=runtime_control,
         )),
     )
     graph.add_node(
