@@ -14,6 +14,7 @@ from src.application.model_clients.base import (
     remap_tool_calls,
     response_to_dict,
 )
+from src.core.request_context import new_id
 from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvocationRequest, UnifiedMessage
 from src.schemas.tool_runtime import ModelToolCall
 
@@ -111,7 +112,7 @@ class GoogleGenAIClient:
         finish_reason: str | None = None
         usage: dict[str, Any] = {}
         text_parts: list[str] = []
-        tool_call_buffers: dict[int, dict[str, Any]] = {}
+        tool_calls: list[ModelToolCall] = []
 
         try:
             client = self._make_client(config, api_key)
@@ -134,29 +135,23 @@ class GoogleGenAIClient:
                 finish_reason = self._enum_to_str(getattr(first, "finish_reason", None)) or finish_reason
                 content = getattr(first, "content", None)
                 parts = getattr(content, "parts", None) or []
-                for index, part in enumerate(parts):
+                for part in parts:
                     text = getattr(part, "text", None)
                     if text:
                         text_parts.append(str(text))
                         await on_text_delta(str(text))
                     function_call = getattr(part, "function_call", None)
                     if function_call is not None and getattr(function_call, "name", None):
-                        tool_call_buffers[index] = {
-                            "id": f"gemini_call_{index}",
-                            "name": str(function_call.name or ""),
-                            "arguments": dict(getattr(function_call, "args", None) or {}),
-                        }
+                        tool_calls.append(
+                            ModelToolCall(
+                                id=str(getattr(function_call, "id", None) or new_id("gemini_call")),
+                                name=str(function_call.name),
+                                arguments=dict(getattr(function_call, "args", None) or {}),
+                            )
+                        )
         except genai_errors.APIError as exc:
             raise self._wrap_api_error(exc) from exc
 
-        tool_calls = [
-            ModelToolCall(
-                id=str(item.get("id") or f"gemini_call_{index}"),
-                name=str(item.get("name") or ""),
-                arguments=item.get("arguments") or {},
-            )
-            for index, item in sorted(tool_call_buffers.items(), key=lambda pair: pair[0])
-        ]
         return {
             "text": "".join(text_parts).strip(),
             "tool_calls": remap_tool_calls(tool_calls, tool_name_map),
@@ -247,7 +242,7 @@ class GoogleGenAIClient:
 
         text_blocks: list[str] = []
         tool_calls: list[ModelToolCall] = []
-        for index, part in enumerate(parts):
+        for part in parts:
             text = getattr(part, "text", None)
             if text:
                 text_blocks.append(str(text))
@@ -255,7 +250,7 @@ class GoogleGenAIClient:
             if function_call is not None and getattr(function_call, "name", None):
                 tool_calls.append(
                     ModelToolCall(
-                        id=f"gemini_call_{index}",
+                        id=str(getattr(function_call, "id", None) or new_id("gemini_call")),
                         name=str(function_call.name or ""),
                         arguments=dict(getattr(function_call, "args", None) or {}),
                     )
@@ -312,6 +307,7 @@ class GoogleGenAIClient:
                     parts.append(
                         {
                             "function_call": {
+                                "id": tool_call.id,
                                 "name": (tool_name_map or {}).get(tool_call.name, tool_call.name),
                                 "args": tool_call.arguments or {},
                             }
@@ -327,7 +323,11 @@ class GoogleGenAIClient:
     ) -> list[dict[str, Any]]:
         parts: list[dict[str, Any]] = []
         for part in message.parts:
-            serialized = self._serialize_part(part, tool_name_map)
+            serialized = self._serialize_part(
+                part,
+                tool_name_map,
+                tool_call_id=message.tool_call_id,
+            )
             if serialized is not None:
                 parts.append(serialized)
         return parts or [{"text": ""}]
@@ -336,6 +336,8 @@ class GoogleGenAIClient:
         self,
         part: ContentPart,
         tool_name_map: dict[str, str] | None = None,
+        *,
+        tool_call_id: str | None = None,
     ) -> dict[str, Any] | None:
         if part.type == "text":
             return {"text": part.text or ""}
@@ -360,11 +362,14 @@ class GoogleGenAIClient:
         if part.type == "tool_result":
             payload = part.payload if isinstance(part.payload, dict) else {}
             tool_name = part.tool_name or "tool_result"
+            function_response = {
+                "name": (tool_name_map or {}).get(tool_name, tool_name),
+                "response": payload or {"content": part.text or ""},
+            }
+            if tool_call_id:
+                function_response["id"] = tool_call_id
             return {
-                "function_response": {
-                    "name": (tool_name_map or {}).get(tool_name, tool_name),
-                    "response": payload or {"content": part.text or ""},
-                }
+                "function_response": function_response,
             }
         if part.type == "file":
             label = part.file_name or "file"
