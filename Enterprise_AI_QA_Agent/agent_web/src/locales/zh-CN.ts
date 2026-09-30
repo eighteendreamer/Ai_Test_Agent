@@ -107,6 +107,7 @@ export default {
   "chat.model_failure": "模型调用失败",
   "chat.expand": "展开",
   "chat.collapse": "收起",
+  "chat.session_attachment": "会话附件",
 
   // Approval Panel
   "approval.title": "待审批操作",
@@ -313,6 +314,7 @@ export default {
   "settings.dm_cleaning": "正在清理...",
   "settings.dm_cleanup_done": "清理完成，相关会话已删除。",
   "settings.data_cleanup_all": "全部",
+  "settings.action_failed": "{title}失败：{error}",
   // Tools page
   "tools.title": "Skills 与工具管理",
   "tools.subtitle": "管理 Agent 增强技能、集成接口与系统工具。",
@@ -939,6 +941,8 @@ export default {
   "plugins.form_headers_json": "请求头（JSON）",
   "plugins.ph_mcp_name": "我的 MCP 服务器",
   "plugins.ph_mcp_desc": "例如：连接远程 MCP 服务，发现工具并供模型调用",
+  "plugins.ph_api_name": "例如：用户中心 API",
+  "plugins.ph_project": "项目名称（可选）",
   "plugins.ph_document_url": "如果这个 MCP 自带可直接导入的文档地址，可填这里",
   "plugins.ph_token": "请输入令牌",
   "plugins.ph_description": "说明信息...",

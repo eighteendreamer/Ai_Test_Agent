@@ -107,6 +107,7 @@ export default {
   "chat.model_failure": "Model call failed",
   "chat.expand": "Expand",
   "chat.collapse": "Collapse",
+  "chat.session_attachment": "Session attachment",
 
   // Approval Panel
   "approval.title": "Approval Pending",
@@ -292,6 +293,8 @@ export default {
   "settings.data_import_desc": "Restore session data from a backup package, will check version and integrity first.",
   "settings.data_cleanup": "Clean up Session Data",
   "settings.data_cleanup_desc": "Clean up historical data by time range, will add dry-run and secondary confirmation before actual execution.",
+  "settings.dm_loading": "Loading...",
+  "settings.dm_session_count": "Total sessions",
   "settings.dm_export_info": "All session data (including events, snapshots, and approval records) will be exported as a JSON file.",
   "settings.dm_export_btn": "Export & Download",
   "settings.dm_exporting": "Exporting...",
@@ -308,6 +311,7 @@ export default {
   "settings.dm_cleanup_preview": "{retained} sessions retained, {delete} will be deleted (out of {total} total). This action is irreversible. Please confirm.",
   "settings.dm_cleanup_date_range": "Data range: {oldest} ~ {newest}",
   "settings.dm_cleanup_confirm": "Confirm Delete {count}",
+  "settings.dm_cleaning": "Cleaning up...",
   "settings.dm_cleanup_done": "Cleanup complete. Related sessions have been deleted.",
   "settings.data_cleanup_all": "All",
   "settings.action_failed": "{title} failed: {error}",
@@ -1118,6 +1122,8 @@ export default {
   "plugins.form_headers_json": "Headers (JSON)",
   "plugins.ph_mcp_name": "My MCP Server",
   "plugins.ph_mcp_desc": "Example: Connect to a remote MCP server and expose its tools to the model",
+  "plugins.ph_api_name": "e.g. User Center API",
+  "plugins.ph_project": "Project name (optional)",
   "plugins.ph_document_url": "If this MCP has a directly importable document address, you can fill it here",
   "plugins.ph_token": "Please enter token",
   "plugins.ph_description": "Description info...",

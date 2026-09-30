@@ -48,6 +48,7 @@ export default {
   "chat.failed_status": "送信失敗",
   "chat.expand": "展開",
   "chat.collapse": "折りたたむ",
+  "chat.session_attachment": "セッションの添付ファイル",
 
   // Approval Panel
   "approval.title": "承認待ち操作",
@@ -776,6 +777,8 @@ export default {
   "plugins.form_headers_json": "リクエストヘッダー（JSON）",
   "plugins.ph_mcp_name": "マイMCPサーバー",
   "plugins.ph_mcp_desc": "例：Postmanに接続し、ワークスペースとAPIドキュメントを取得",
+  "plugins.ph_api_name": "例：ユーザーセンター API",
+  "plugins.ph_project": "プロジェクト名（任意）",
   "plugins.ph_document_url": "このMCPに直接インポート可能なドキュメントアドレスが付属している場合は、ここに記入できます",
   "plugins.ph_token": "トークンを入力してください",
   "plugins.ph_description": "説明情報...",
