@@ -275,7 +275,7 @@ class GoogleGenAIClient:
             if message.role == "system":
                 continue
             role = "model" if message.role == "assistant" else "user"
-            parts = self._serialize_parts(message)
+            parts = self._serialize_parts(message, tool_name_map)
             if message.role == "assistant" and message.tool_calls:
                 for tool_call in message.tool_calls:
                     parts.append(
@@ -289,15 +289,23 @@ class GoogleGenAIClient:
             contents.append({"role": role, "parts": parts})
         return contents
 
-    def _serialize_parts(self, message: UnifiedMessage) -> list[dict[str, Any]]:
+    def _serialize_parts(
+        self,
+        message: UnifiedMessage,
+        tool_name_map: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         parts: list[dict[str, Any]] = []
         for part in message.parts:
-            serialized = self._serialize_part(part)
+            serialized = self._serialize_part(part, tool_name_map)
             if serialized is not None:
                 parts.append(serialized)
         return parts or [{"text": ""}]
 
-    def _serialize_part(self, part: ContentPart) -> dict[str, Any] | None:
+    def _serialize_part(
+        self,
+        part: ContentPart,
+        tool_name_map: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
         if part.type == "text":
             return {"text": part.text or ""}
         if part.type == "image_base64" and part.data_base64:
@@ -320,9 +328,10 @@ class GoogleGenAIClient:
             return {"text": f"Image URL: {part.url}"}
         if part.type == "tool_result":
             payload = part.payload if isinstance(part.payload, dict) else {}
+            tool_name = part.tool_name or "tool_result"
             return {
                 "function_response": {
-                    "name": part.tool_name or "tool_result",
+                    "name": (tool_name_map or {}).get(tool_name, tool_name),
                     "response": payload or {"content": part.text or ""},
                 }
             }
