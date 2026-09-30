@@ -1360,7 +1360,10 @@ class RuntimeService:
             "tool_results": [],
             "tool_messages": [],
             "worker_dispatches": [],
-            "context_bundle": request.context,
+            "context_bundle": {
+                **request.context,
+                "project_id": session.project_id,
+            },
             "event_log": [],
             "final_response": "",
             "pending_turn": {},
@@ -1818,7 +1821,10 @@ class RuntimeService:
             "tool_results": list(graph_state.get("tool_results") or fallback_pending_turn.get("tool_results") or []),
             "tool_messages": list(graph_state.get("tool_messages") or fallback_pending_turn.get("tool_messages") or []),
             "worker_dispatches": list(graph_state.get("worker_dispatches") or fallback_pending_turn.get("worker_dispatches") or []),
-            "context_bundle": dict(graph_state.get("context_bundle") or fallback_pending_turn.get("context_bundle") or {}),
+            "context_bundle": {
+                **dict(graph_state.get("context_bundle") or fallback_pending_turn.get("context_bundle") or {}),
+                "project_id": session.project_id,
+            },
             "event_log": list(graph_state.get("event_log") or []),
             "final_response": str(graph_state.get("final_response") or ""),
             "pending_turn": dict(graph_state.get("pending_turn") or fallback_pending_turn or {}),

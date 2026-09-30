@@ -74,7 +74,7 @@ def build_model_invoker_node(
                 "trace_id": state["trace_id"],
                 "mode_key": state["mode_key"],
                 "agent_key": state["selected_agent_key"],
-                "project_id": str(state.get("project_id") or ""),
+                "project_id": str((state.get("context_bundle") or {}).get("project_id") or ""),
                 "test_run_id": str(
                     (state.get("context_bundle") or {}).get("test_run_id") or ""
                 ),
