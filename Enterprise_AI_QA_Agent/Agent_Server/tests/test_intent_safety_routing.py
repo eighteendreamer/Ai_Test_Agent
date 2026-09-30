@@ -1630,6 +1630,48 @@ async def test_coordinator_duplicate_dispatch_returns_the_persisted_worker_recei
 
 
 @pytest.mark.asyncio
+async def test_coordinator_rejects_reused_dispatch_identity_with_changed_request():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    first = await service.dispatch(payload, context)
+    changed_payload = {
+        "workers": [{**_batch_worker(0), "prompt": "Review a different target"}]
+    }
+    second = await service.dispatch(changed_payload, context)
+
+    assert len(created) == 1
+    assert first["ok"] is True
+    assert second["ok"] is False
+    assert second["status"] == "conflict"
+    assert second["workers"] == []
+    assert second["error"] == "coordinator_dispatch_identity_conflict"
+    parent = await store.get_session("batch-parent")
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_legacy_claim_without_fingerprint_requires_recovery():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    first = await service.dispatch(payload, context)
+
+    store._sessions["batch-parent"].metadata["coordinator_dispatch_claims"][0].pop(
+        "request_fingerprint", None
+    )
+    second = await service.dispatch(payload, context)
+
+    assert first["ok"] is True
+    assert second["ok"] is False
+    assert second["status"] == "recovery_required"
+    assert second["error"] == "coordinator_dispatch_claim_unresolved"
+    assert len(created) == 1
+
+
+@pytest.mark.asyncio
 async def test_coordinator_missing_task_id_is_stable_across_identical_requests():
     service, store, created = await _batch_capacity_coordinator()
     worker = _batch_worker(0)

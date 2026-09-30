@@ -704,16 +704,23 @@ async def test_live_postgres_turn_owner_fences_stale_worker_writes():
         assert persisted.metadata["turn_result"] == "recovery-worker"
         assert "turn_lease_token" not in persisted.metadata
 
+        request_fingerprint = "c" * 64
         dispatch_claims = await asyncio.gather(*(
             candidate.claim_coordinator_dispatch(
                 session_id,
                 turn_id,
                 "worker-task-1",
                 owner_id=f"coordinator-worker-{index}",
+                request_fingerprint=request_fingerprint,
             )
             for index, candidate in enumerate(stores)
         ))
         assert sum(dispatch_claims) == 1
+        persisted_dispatch = await store.get_session(session_id)
+        assert persisted_dispatch is not None
+        assert persisted_dispatch.metadata["coordinator_dispatch_claims"][0][
+            "request_fingerprint"
+        ] == request_fingerprint
 
         crashed = SessionRecord(
             id=f"crashed-{suffix}",

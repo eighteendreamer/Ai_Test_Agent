@@ -327,6 +327,7 @@ class PostgresSessionStore:
         turn_id: str,
         dispatch_key: str,
         owner_id: str,
+        request_fingerprint: str | None = None,
     ) -> bool:
         return await asyncio.to_thread(
             self._claim_coordinator_dispatch_sync,
@@ -334,6 +335,7 @@ class PostgresSessionStore:
             turn_id,
             dispatch_key,
             owner_id,
+            request_fingerprint,
         )
 
     async def mutate_metadata(self, session_id: str, mutate) -> bool:
@@ -1538,6 +1540,7 @@ class PostgresSessionStore:
         turn_id: str,
         dispatch_key: str,
         owner_id: str,
+        request_fingerprint: str | None = None,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1553,6 +1556,7 @@ class PostgresSessionStore:
                                     'turn_id', %s::text,
                                     'dispatch_key', %s::text,
                                     'owner_id', %s::text,
+                                    'request_fingerprint', %s::text,
                                     'claimed_at', now()
                                 )
                             ),
@@ -1570,7 +1574,15 @@ class PostgresSessionStore:
                       )
                     RETURNING id
                     """,
-                    (turn_id, dispatch_key, owner_id, session_id, turn_id, dispatch_key),
+                    (
+                        turn_id,
+                        dispatch_key,
+                        owner_id,
+                        request_fingerprint,
+                        session_id,
+                        turn_id,
+                        dispatch_key,
+                    ),
                 )
                 return cur.fetchone() is not None
 

@@ -136,6 +136,7 @@ class SessionStore(Protocol):
         turn_id: str,
         dispatch_key: str,
         owner_id: str,
+        request_fingerprint: str | None = None,
     ) -> bool: ...
     async def recover_expired_turn_executions(self) -> list[str]: ...
     async def assert_turn_execution(self, session_id: str, lease_token: str) -> None: ...
@@ -627,6 +628,7 @@ class InMemorySessionStore:
         turn_id: str,
         dispatch_key: str,
         owner_id: str,
+        request_fingerprint: str | None = None,
     ) -> bool:
         async with self._lock:
             session = self._sessions.get(session_id)
@@ -648,6 +650,7 @@ class InMemorySessionStore:
                     "dispatch_key": dispatch_key,
                     "owner_id": owner_id,
                     "claimed_at": datetime.utcnow().isoformat(),
+                    "request_fingerprint": request_fingerprint,
                 }
             )
             session.metadata["coordinator_dispatch_claims"] = claims

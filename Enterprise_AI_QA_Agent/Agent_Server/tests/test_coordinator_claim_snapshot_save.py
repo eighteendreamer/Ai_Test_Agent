@@ -30,7 +30,14 @@ async def _exercise_stale_save_after_dispatch_claim(store) -> None:
     )
     await store.save_session(session)
     stale = deepcopy(await store.get_session(session_id))
-    assert await store.claim_coordinator_dispatch(session_id, "turn-1", "task-1", "worker-a")
+    request_fingerprint = "f" * 64
+    assert await store.claim_coordinator_dispatch(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-a",
+        request_fingerprint,
+    )
 
     stale.title = "updated preferences"
     await store.save_session(stale)
@@ -39,7 +46,17 @@ async def _exercise_stale_save_after_dispatch_claim(store) -> None:
     assert persisted is not None
     assert persisted.title == "updated preferences"
     assert len(persisted.metadata.get("coordinator_dispatch_claims", [])) == 1
-    assert not await store.claim_coordinator_dispatch(session_id, "turn-1", "task-1", "worker-b")
+    assert (
+        persisted.metadata["coordinator_dispatch_claims"][0]["request_fingerprint"]
+        == request_fingerprint
+    )
+    assert not await store.claim_coordinator_dispatch(
+        session_id,
+        "turn-1",
+        "task-1",
+        "worker-b",
+        request_fingerprint,
+    )
 
 
 @pytest.mark.asyncio

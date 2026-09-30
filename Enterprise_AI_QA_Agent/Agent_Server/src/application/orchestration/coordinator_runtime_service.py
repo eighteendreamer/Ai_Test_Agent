@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from collections import defaultdict
@@ -327,15 +328,24 @@ class CoordinatorRuntimeService:
                 f"completion:{completion_worker.task_id}" if completion_worker else "",
             ]
         )
+        request_fingerprint = self._dispatch_request_fingerprint(
+            workers, followup_workers, completion_worker
+        )
         claimed = await self._store.claim_coordinator_dispatch(
             parent_session_id,
             parent_turn_id,
             dispatch_key,
             self._owner_id,
+            request_fingerprint,
         )
         if not claimed:
             return await self._duplicate_dispatch_receipt(
-                parent_session_id, parent_turn_id, parent_trace_id, workers
+                parent_session_id,
+                parent_turn_id,
+                parent_trace_id,
+                dispatch_key,
+                request_fingerprint,
+                workers,
             )
 
         launch_records: list[dict[str, Any]] = []
@@ -541,6 +551,8 @@ class CoordinatorRuntimeService:
         parent_session_id: str,
         parent_turn_id: str,
         parent_trace_id: str,
+        dispatch_key: str,
+        request_fingerprint: str,
         workers: list[WorkerDispatchSpec],
     ) -> dict[str, Any]:
         requested_ids = [worker.task_id for worker in workers]
@@ -552,6 +564,77 @@ class CoordinatorRuntimeService:
             parent = await self._store.get_session(parent_session_id)
             if parent is None:
                 raise KeyError(f"Parent session not found: {parent_session_id}")
+            claims = parent.metadata.get("coordinator_dispatch_claims", [])
+            matching_claim = (
+                next(
+                    (
+                        claim
+                        for claim in claims
+                        if isinstance(claim, dict)
+                        and str(claim.get("turn_id") or "") == parent_turn_id
+                        and str(claim.get("dispatch_key") or "") == dispatch_key
+                    ),
+                    None,
+                )
+                if isinstance(claims, list)
+                else None
+            )
+            stored_fingerprint = (
+                str(matching_claim.get("request_fingerprint") or "")
+                if isinstance(matching_claim, dict)
+                else ""
+            )
+            if not stored_fingerprint:
+                logger.warning(
+                    "coordinator_dispatch_claim_fingerprint_missing",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "dispatch_key": dispatch_key,
+                    },
+                )
+                return {
+                    "ok": False,
+                    "status": "recovery_required",
+                    "trace_id": parent_trace_id,
+                    "summary": (
+                        "Coordinator dispatch claim predates request fingerprints; "
+                        "reconcile before retry."
+                    ),
+                    "workers": [],
+                    "artifacts": [],
+                    "metrics": {
+                        "worker_count": 0,
+                        "duplicate": True,
+                    },
+                    "error": "coordinator_dispatch_claim_unresolved",
+                }
+            if stored_fingerprint != request_fingerprint:
+                logger.warning(
+                    "coordinator_dispatch_identity_conflict",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "dispatch_key": dispatch_key,
+                    },
+                )
+                return {
+                    "ok": False,
+                    "status": "conflict",
+                    "trace_id": parent_trace_id,
+                    "summary": (
+                        "Coordinator dispatch identity was reused with different "
+                        "worker content."
+                    ),
+                    "workers": [],
+                    "artifacts": [],
+                    "metrics": {
+                        "worker_count": 0,
+                        "duplicate": True,
+                        "identity_conflict": True,
+                    },
+                    "error": "coordinator_dispatch_identity_conflict",
+                }
             records = {
                 str(item.get("task_id") or ""): item
                 for item in parent.metadata.get("worker_dispatches", [])
@@ -1700,6 +1783,38 @@ class CoordinatorRuntimeService:
             "skill_keys": list(worker.skill_keys),
             "context": dict(worker.context),
         }
+
+    @classmethod
+    def _dispatch_request_fingerprint(
+        cls,
+        workers: list[WorkerDispatchSpec],
+        followup_workers: list[WorkerDispatchSpec],
+        completion_worker: WorkerDispatchSpec | None,
+    ) -> str:
+        payload = {
+            "workers": [cls._pending_worker_payload(worker) for worker in workers],
+            "followup_workers": [
+                cls._pending_worker_payload(worker) for worker in followup_workers
+            ],
+            "completion_worker": (
+                cls._pending_worker_payload(completion_worker)
+                if completion_worker is not None
+                else None
+            ),
+        }
+        try:
+            serialized = json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Coordinator dispatch worker specifications must be JSON serializable."
+            ) from exc
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _worker_from_pending(item: dict[str, Any]) -> WorkerDispatchSpec:
