@@ -806,6 +806,43 @@ async def test_two_coordinators_claim_initial_overflow_once(harness):
 
 
 @pytest.mark.asyncio
+async def test_postgres_duplicate_dispatch_returns_original_worker_receipt(harness):
+    h = harness
+    created: list[str] = []
+
+    class Sessions:
+        async def create_internal_session(self, request):
+            session_id = await make_session(h.store, request.title, metadata=request.metadata)
+            created.append(session_id)
+            return await h.store.get_session(session_id)
+
+    first_coordinator = build_coordinator(h)
+    second_coordinator = build_coordinator(h)
+    for coordinator in (first_coordinator, second_coordinator):
+        coordinator._session_service = Sessions()
+        coordinator._start_child_worker = AsyncMock(return_value=None)
+    payload = {"workers": [{
+        "description": "Review the project", "prompt": "Find defects",
+        "agent_key": "qa-planner",
+    }]}
+    context = {
+        "session_id": h.parent_id, "turn_id": h.parent_turn_id,
+        "trace_id": "root-trace-1",
+    }
+
+    first = await first_coordinator.dispatch(payload, context)
+    second = await second_coordinator.dispatch(payload, context)
+
+    assert len(created) == 1
+    assert second["status"] == "duplicate"
+    assert second["ok"] is True
+    assert second["workers"] == first["workers"]
+    assert second["workers"][0]["child_session_id"] == created[0]
+    parent = await h.store.get_session(h.parent_id)
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_child_parent_cycle_and_missing_parent_guard(harness):
     h = harness
     child_session_id = await make_session(h.store, "Cyclic child")

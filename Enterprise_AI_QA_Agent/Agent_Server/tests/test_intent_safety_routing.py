@@ -29,6 +29,9 @@ from src.core.config import Settings
 from src.graph.nodes.tool_executor import _resolve_tool_call
 from src.domain.models import SessionRecord
 from src.modes.security_testing_mode.request_interpreter import SecurityRequestInterpreter
+from src.modes.security_testing_mode.campaign_state import SecurityTask
+from src.modes.security_testing_mode.subagent_coordinator import SecuritySubagentCoordinator
+from src.modes.security_testing_mode.task_pool import SecurityTaskPool
 from src.registry.modes import ModeRegistry
 from src.registry.agents import AgentRegistry
 from src.registry.models import ModelRegistry
@@ -1605,6 +1608,198 @@ def test_coordinator_dispatch_duplicate_workers_is_deduplicated_by_persistence_c
     assert first["ok"] and second["ok"]
     assert {first["status"], second["status"]} == {"completed", "duplicate"}
     assert created == ["child-1"]
+
+
+@pytest.mark.asyncio
+async def test_coordinator_duplicate_dispatch_returns_the_persisted_worker_receipt():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [_batch_worker(0)]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    first = await service.dispatch(payload, context)
+    second = await service.dispatch(payload, context)
+
+    assert len(created) == 1
+    assert first["workers"][0]["child_session_id"] == created[0]
+    assert second["status"] == "duplicate"
+    assert second["ok"] is True
+    assert second["workers"][0]["task_id"] == "worker-1-0"
+    assert second["workers"][0]["child_session_id"] == created[0]
+    parent = await store.get_session("batch-parent")
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_missing_task_id_is_stable_across_identical_requests():
+    service, store, created = await _batch_capacity_coordinator()
+    worker = _batch_worker(0)
+    worker.pop("task_id")
+    payload = {"workers": [worker]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    first = await service.dispatch(payload, context)
+    second = await service.dispatch(payload, context)
+
+    assert len(created) == 1
+    assert first["workers"][0]["task_id"] == second["workers"][0]["task_id"]
+    assert second["workers"][0]["child_session_id"] == created[0]
+    parent = await store.get_session("batch-parent")
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit_task_id", [False, True])
+async def test_coordinator_failed_precreate_claim_never_reports_duplicate_success(explicit_task_id):
+    service, store, _created = await _batch_capacity_coordinator()
+    service._session_service.create_internal_session = AsyncMock(
+        side_effect=RuntimeError("injected precreate failure")
+    )
+    worker = _batch_worker(0)
+    if not explicit_task_id:
+        worker.pop("task_id")
+    payload = {"workers": [worker]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    with pytest.raises(RuntimeError, match="injected precreate failure"):
+        await service.dispatch(payload, context)
+    second = await service.dispatch(payload, context)
+
+    assert second["ok"] is False
+    assert second["status"] == "recovery_required"
+    assert second["workers"] == []
+    assert second["error"] == "coordinator_dispatch_claim_unresolved"
+    assert service._session_service.create_internal_session.await_count == 1
+    parent = await store.get_session("batch-parent")
+    assert len(parent.metadata["coordinator_dispatch_claims"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_coordinator_old_turn_worker_cannot_satisfy_new_turn_claim():
+    service, store, created = await _batch_capacity_coordinator()
+    payload = {"workers": [_batch_worker(0)]}
+    first_context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+    await service.dispatch(payload, first_context)
+    service._session_service.create_internal_session = AsyncMock(
+        side_effect=RuntimeError("new turn precreate failure")
+    )
+    next_context = {**first_context, "turn_id": "turn-2"}
+
+    with pytest.raises(RuntimeError, match="new turn precreate failure"):
+        await service.dispatch(payload, next_context)
+    receipt = await service.dispatch(payload, next_context)
+
+    assert receipt["ok"] is False
+    assert receipt["status"] == "recovery_required"
+    assert receipt["workers"] == []
+    assert len(created) == 1
+    parent = await store.get_session("batch-parent")
+    assert parent.metadata["worker_dispatches"][0]["parent_turn_id"] == "turn-1"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_duplicate_preserves_worker_rejection_reason():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+    payload = {"workers": [{**_batch_worker(0), "agent_key": "missing-agent"}]}
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    first = await service.dispatch(payload, context)
+    second = await service.dispatch(payload, context)
+
+    assert created == []
+    assert first["ok"] is False
+    assert second["ok"] is False
+    assert second["workers"][0]["status"] == "failed"
+    assert second["workers"][0]["error"] == "Unknown agent: missing-agent"
+
+
+def _retry_security_task() -> SecurityTask:
+    return SecurityTask(
+        task_id="security-task", name="scan", surface_type="web",
+        tool_family="web_scan", command_profile="nuclei_baseline",
+        target="10.0.0.5",
+    )
+
+
+@pytest.mark.asyncio
+async def test_security_retry_links_distinct_worker_attempt_to_second_session():
+    class Dispatcher:
+        def __init__(self):
+            self.task_ids = []
+
+        async def dispatch(self, payload, context):
+            task_id = payload["workers"][0]["task_id"]
+            self.task_ids.append(task_id)
+            return {"ok": True, "workers": [{
+                "task_id": task_id,
+                "child_session_id": f"security-child-{len(self.task_ids)}",
+                "status": "running",
+            }]}
+
+    class Store:
+        async def get_session(self, session_id):
+            return SimpleNamespace(id=session_id, status=SessionStatus.completed, messages=[])
+
+    task = _retry_security_task()
+    pool = SecurityTaskPool([task])
+    dispatcher = Dispatcher()
+    coordinator = SecuritySubagentCoordinator(
+        pool=pool, coordinator_runtime_service=dispatcher, session_store=Store(),
+        parent_context={"session_id": "parent", "turn_id": "turn", "context_bundle": {}},
+        max_reflect_attempts=0,
+    )
+    await coordinator._dispatch_batch([task])
+    assert task.status == "failed"
+    assert pool.reset_for_retry(task.task_id)
+    await coordinator._dispatch_batch([task])
+
+    assert dispatcher.task_ids == ["security-task", "security-task:attempt:2"]
+    assert task.worker_session_id == "security-child-2"
+    assert task.last_error != "worker_dispatch_missing"
+
+
+@pytest.mark.asyncio
+async def test_security_unresolved_claim_disables_automatic_retry():
+    class Dispatcher:
+        async def dispatch(self, payload, context):
+            return {"ok": False, "status": "recovery_required",
+                    "error": "coordinator_dispatch_claim_unresolved", "workers": []}
+
+    task = _retry_security_task()
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([task]), coordinator_runtime_service=Dispatcher(),
+        session_store=InMemorySessionStore(),
+        parent_context={"session_id": "parent", "turn_id": "turn", "context_bundle": {}},
+    )
+    await coordinator._dispatch_batch([task])
+
+    assert task.status == "failed"
+    assert task.max_retries == 0
+    assert task.last_error == "coordinator_dispatch_claim_unresolved"
+
+
+@pytest.mark.asyncio
+async def test_security_failed_worker_receipt_keeps_the_launch_error():
+    class Dispatcher:
+        async def dispatch(self, payload, context):
+            return {"ok": False, "workers": [{
+                "task_id": payload["workers"][0]["task_id"],
+                "status": "failed", "error": "Unknown agent: security-worker",
+                "child_session_id": "",
+            }]}
+
+    task = _retry_security_task()
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([task]), coordinator_runtime_service=Dispatcher(),
+        session_store=InMemorySessionStore(),
+        parent_context={"session_id": "parent", "turn_id": "turn", "context_bundle": {}},
+    )
+    await coordinator._dispatch_batch([task])
+
+    assert task.status == "failed"
+    assert task.last_error == "Unknown agent: security-worker"
 
 
 async def _batch_capacity_coordinator():

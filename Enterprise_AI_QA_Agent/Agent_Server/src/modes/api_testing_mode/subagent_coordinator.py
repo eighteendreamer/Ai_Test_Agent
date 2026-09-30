@@ -194,6 +194,7 @@ class ApiSubagentCoordinator:
         try:
             for task in batch:
                 self._pool.mark_running(task.task_id)
+                task.attempts += 1
                 task.worker_status = "dispatching"
                 self._emit_checkpoint("task_running", task)
                 for lock in task.resource_locks:
@@ -203,10 +204,23 @@ class ApiSubagentCoordinator:
                 self._apply_input_bindings(task)
                 launched_tasks.append(task)
 
+            workers = [self._build_worker_spec(task) for task in launched_tasks]
+            dispatch_task_ids = {
+                task.task_id: worker["task_id"]
+                for task, worker in zip(launched_tasks, workers)
+            }
             dispatch_result = await self._coordinator_runtime_service.dispatch(
-                payload={"workers": [self._build_worker_spec(task) for task in launched_tasks]},
+                payload={"workers": workers},
                 context=self._parent_context,
             )
+            if dispatch_result.get("status") == "recovery_required":
+                for task in launched_tasks:
+                    self._unsettled_task_ids.add(task.task_id)
+                    self._fail_task(
+                        task,
+                        dispatch_result.get("error") or "coordinator_dispatch_claim_unresolved",
+                    )
+                return
             worker_records = {
                 str(item.get("task_id") or ""): item
                 for item in dispatch_result.get("workers", [])
@@ -222,9 +236,15 @@ class ApiSubagentCoordinator:
             settled_map = {session.id: session for session in settled_sessions}
 
             for task in launched_tasks:
-                record = worker_records.get(task.task_id)
+                record = worker_records.get(dispatch_task_ids[task.task_id])
                 if not record:
                     self._fail_task(task, dispatch_result.get("error") or "worker_dispatch_missing")
+                    continue
+                if str(record.get("status") or "") == "failed":
+                    self._fail_task(
+                        task,
+                        str(record.get("error") or dispatch_result.get("error") or "worker_launch_failed"),
+                    )
                     continue
                 child_session_id = str(record.get("child_session_id") or "")
                 task.worker_session_id = child_session_id
@@ -256,9 +276,13 @@ class ApiSubagentCoordinator:
 
     def _build_worker_spec(self, task: ApiTestTask) -> dict[str, Any]:
         current_credential = self._credential_manager.get(task.auth_ref) if task.auth_ref else None
+        task_payload = task.model_dump(mode="json")
+        # The parent reserves this dispatch attempt before launch. The runner
+        # increments attempts when it actually executes the HTTP request.
+        task_payload["attempts"] = max(0, task.attempts - 1)
         runner_args = {
             "worker_action": "execute_task",
-            "task": task.model_dump(mode="json"),
+            "task": task_payload,
             "auth_token_field": self._auth_token_field,
         }
         if current_credential is not None:
@@ -271,7 +295,7 @@ class ApiSubagentCoordinator:
             "After the tool finishes, reply with a single concise execution summary."
         )
         return {
-            "task_id": task.task_id,
+            "task_id": task.task_id if task.attempts <= 1 else f"{task.task_id}:attempt:{task.attempts}",
             "description": f"{task.method.upper()} {task.path or task.full_url}",
             "prompt": prompt,
             "agent_key": self._worker_agent_key,

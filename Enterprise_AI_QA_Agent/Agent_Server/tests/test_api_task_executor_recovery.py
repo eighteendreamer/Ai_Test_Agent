@@ -80,6 +80,121 @@ def test_api_campaign_retries_parent_and_runs_previously_skipped_dependents():
     assert calls == ["create", "create", "read", "verify"]
 
 
+def test_api_subagent_retry_has_a_distinct_dispatch_identity():
+    task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+    coordinator = ApiSubagentCoordinator(
+        pool=ApiTaskPool([task]),
+        policy=ExecutionPolicy(max_retries=1),
+        coordinator_runtime_service=None,
+        session_store=InMemorySessionStore(),
+        parent_context={"session_id": "parent", "turn_id": "turn"},
+        credential_manager=CredentialManager(),
+    )
+    task.attempts = 1
+    first = coordinator._build_worker_spec(task)
+    task.attempts = 2
+    second = coordinator._build_worker_spec(task)
+
+    assert first["task_id"] == "read"
+    assert second["task_id"] == "read:attempt:2"
+    assert first["context"]["api_task_id"] == second["context"]["api_task_id"] == "read"
+    assert '"attempts": 0' in first["prompt"]
+    assert '"attempts": 1' in second["prompt"]
+
+
+def test_api_subagent_retry_links_the_second_worker_session():
+    async def scenario():
+        store = InMemorySessionStore()
+        now = datetime.now(UTC)
+        for index in (1, 2):
+            await store.save_session(SessionRecord(
+                id=f"child-{index}", title="API worker", status=SessionStatus.completed,
+                session_mode=SessionMode.background_task, runtime_mode=RuntimeMode.background,
+                mode_key="api_testing", created_at=now, updated_at=now,
+            ))
+
+        class Dispatcher:
+            def __init__(self):
+                self.task_ids = []
+
+            async def dispatch(self, payload, context):
+                task_id = payload["workers"][0]["task_id"]
+                self.task_ids.append(task_id)
+                return {"ok": True, "workers": [{
+                    "task_id": task_id,
+                    "child_session_id": f"child-{len(self.task_ids)}",
+                    "status": "running",
+                }]}
+
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        dispatcher = Dispatcher()
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]), policy=ExecutionPolicy(max_retries=1),
+            coordinator_runtime_service=dispatcher, session_store=store,
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(), poll_interval_seconds=0.1,
+        )
+        await coordinator._dispatch_batch([task])
+        assert task.status == "failed"
+        task.status = "ready"
+        await coordinator._dispatch_batch([task])
+        return task, dispatcher.task_ids
+
+    task, task_ids = asyncio.run(scenario())
+    assert task_ids == ["read", "read:attempt:2"]
+    assert task.attempts == 2
+    assert task.worker_session_id == "child-2"
+    assert task.last_error != "worker_dispatch_missing"
+
+
+def test_api_unresolved_dispatch_claim_stops_retry():
+    class Dispatcher:
+        async def dispatch(self, payload, context):
+            return {"ok": False, "status": "recovery_required",
+                    "error": "coordinator_dispatch_claim_unresolved", "workers": []}
+
+    async def scenario():
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]), policy=ExecutionPolicy(max_retries=2),
+            coordinator_runtime_service=Dispatcher(), session_store=InMemorySessionStore(),
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+        )
+        tasks = await coordinator.run_all()
+        return tasks[0], coordinator.has_unsettled_workers
+
+    task, unsettled = asyncio.run(scenario())
+    assert unsettled is True
+    assert task.status == "failed"
+    assert task.attempts == 1
+    assert task.last_error == "coordinator_dispatch_claim_unresolved"
+
+
+def test_api_failed_worker_receipt_keeps_the_launch_error():
+    class Dispatcher:
+        async def dispatch(self, payload, context):
+            return {"ok": False, "workers": [{
+                "task_id": payload["workers"][0]["task_id"],
+                "status": "failed", "error": "Unknown agent: api-executor-worker",
+                "child_session_id": "",
+            }]}
+
+    async def scenario():
+        task = ApiTestTask(task_id="read", method="GET", path="/orders", status="ready")
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]), policy=ExecutionPolicy(max_retries=0),
+            coordinator_runtime_service=Dispatcher(), session_store=InMemorySessionStore(),
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+        )
+        return (await coordinator.run_all())[0]
+
+    task = asyncio.run(scenario())
+    assert task.status == "failed"
+    assert task.last_error == "Unknown agent: api-executor-worker"
+
+
 def test_api_coverage_excludes_tasks_that_have_not_run():
     tasks = [
         ApiTestTask(task_id="create", method="POST", path="/orders", status="ready", capability="orders.create"),

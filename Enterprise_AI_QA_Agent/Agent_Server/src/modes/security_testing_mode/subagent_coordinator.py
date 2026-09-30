@@ -411,6 +411,10 @@ class SecuritySubagentCoordinator:
 
             # Build worker specs
             workers = [self._build_worker_spec(task) for task in launched_tasks]
+            dispatch_task_ids = {
+                task.task_id: worker["task_id"]
+                for task, worker in zip(launched_tasks, workers)
+            }
             logger.info(
                 "security_workers_dispatching %s",
                 self._log_payload(
@@ -432,6 +436,14 @@ class SecuritySubagentCoordinator:
                 payload={"workers": workers},
                 context=self._parent_context,
             )
+            if dispatch_result.get("status") == "recovery_required":
+                for task in launched_tasks:
+                    task.max_retries = 0
+                    self._fail_task(
+                        task,
+                        dispatch_result.get("error") or "coordinator_dispatch_claim_unresolved",
+                    )
+                return
 
             worker_records = {
                 str(item.get("task_id") or ""): item
@@ -465,9 +477,15 @@ class SecuritySubagentCoordinator:
 
             # Process results
             for task in launched_tasks:
-                record = worker_records.get(task.task_id)
+                record = worker_records.get(dispatch_task_ids[task.task_id])
                 if not record:
-                    self._fail_task(task, "worker_dispatch_missing")
+                    self._fail_task(task, dispatch_result.get("error") or "worker_dispatch_missing")
+                    continue
+                if str(record.get("status") or "") == "failed":
+                    self._fail_task(
+                        task,
+                        str(record.get("error") or dispatch_result.get("error") or "worker_launch_failed"),
+                    )
                     continue
 
                 child_session_id = str(record.get("child_session_id") or "")
@@ -605,7 +623,7 @@ class SecuritySubagentCoordinator:
         runner_key = self._runner_lookup(task.tool_family) if self._runner_lookup else ""
 
         return {
-            "task_id": task.task_id,
+            "task_id": task.task_id if task.attempts <= 1 else f"{task.task_id}:attempt:{task.attempts}",
             "description": f"[{task.surface_type}] {task.name} -> {task.target}",
             "prompt": build_security_worker_prompt(
                 task,

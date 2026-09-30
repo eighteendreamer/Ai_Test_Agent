@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import defaultdict
 from contextlib import nullcontext
@@ -8,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 from xml.sax.saxutils import escape
 
 from src.application.observability import LangSmithObservabilityAdapter
@@ -314,11 +315,11 @@ class CoordinatorRuntimeService:
 
         if self._settings.orchestration.coordinator_max_workers < 1:
             raise ValueError("coordinator_max_workers must be at least 1")
-        workers = self._normalize_workers(payload)
+        workers = self._normalize_workers(payload, parent_session_id, parent_turn_id)
         if not workers:
             raise ValueError("subagent-dispatch requires at least one worker specification.")
-        followup_workers = self._normalize_followup_workers(payload)
-        completion_worker = self._normalize_completion_worker(payload)
+        followup_workers = self._normalize_followup_workers(payload, parent_session_id, parent_turn_id)
+        completion_worker = self._normalize_completion_worker(payload, parent_session_id, parent_turn_id)
         dispatch_key = "|".join(
             [
                 *(sorted(worker.task_id for worker in workers)),
@@ -333,16 +334,9 @@ class CoordinatorRuntimeService:
             self._owner_id,
         )
         if not claimed:
-            return {
-                "ok": True,
-                "status": "duplicate",
-                "trace_id": parent_trace_id,
-                "summary": "Coordinator dispatch was already claimed for this parent turn.",
-                "workers": [],
-                "artifacts": [],
-                "metrics": {"worker_count": 0, "duplicate": True},
-                "error": None,
-            }
+            return await self._duplicate_dispatch_receipt(
+                parent_session_id, parent_turn_id, parent_trace_id, workers
+            )
 
         launch_records: list[dict[str, Any]] = []
         immediate_failures: list[tuple[WorkerDispatchSpec, str]] = []
@@ -373,6 +367,7 @@ class CoordinatorRuntimeService:
                         "model_key": worker.model_key or "",
                         "description": worker.description,
                         "status": "failed",
+                        "error": f"Unknown agent: {worker.agent_key}",
                     }
                 )
                 immediate_failures.append((worker, f"Unknown agent: {worker.agent_key}"))
@@ -539,6 +534,80 @@ class CoordinatorRuntimeService:
                 "unresolved_worker_count": len(unresolved_launches),
             },
             "error": "; ".join(immediate_failure_errors) or None,
+        }
+
+    async def _duplicate_dispatch_receipt(
+        self,
+        parent_session_id: str,
+        parent_turn_id: str,
+        parent_trace_id: str,
+        workers: list[WorkerDispatchSpec],
+    ) -> dict[str, Any]:
+        requested_ids = [worker.task_id for worker in workers]
+        worker_records: list[dict[str, Any]] = []
+        missing_ids = requested_ids
+        # The winning caller may still be creating child sessions. Wait briefly
+        # for its persisted receipt; an unresolved claim is never safe to replay.
+        for attempt in range(21):
+            parent = await self._store.get_session(parent_session_id)
+            if parent is None:
+                raise KeyError(f"Parent session not found: {parent_session_id}")
+            records = {
+                str(item.get("task_id") or ""): item
+                for item in parent.metadata.get("worker_dispatches", [])
+                if isinstance(item, dict)
+                and str(item.get("parent_turn_id") or "") == parent_turn_id
+            }
+            worker_records = [records[task_id] for task_id in requested_ids if task_id in records]
+            missing_ids = [task_id for task_id in requested_ids if task_id not in records]
+            if not missing_ids:
+                break
+            if attempt < 20:
+                await asyncio.sleep(0.05)
+
+        unresolved = [
+            record for record in worker_records
+            if str(record.get("status") or "") in {"", "launching", "recovery_required"}
+            or (
+                str(record.get("status") or "") in {"running", "waiting_approval", "idle"}
+                and not str(record.get("child_session_id") or "")
+            )
+        ]
+        if missing_ids or unresolved:
+            logger.warning(
+                "coordinator_dispatch_claim_unresolved",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "missing_task_ids": missing_ids,
+                    "unresolved_task_ids": [str(record.get("task_id") or "") for record in unresolved],
+                },
+            )
+            return {
+                "ok": False,
+                "status": "recovery_required",
+                "trace_id": parent_trace_id,
+                "summary": "Coordinator dispatch claim has no complete worker receipt; reconcile before retry.",
+                "workers": worker_records,
+                "artifacts": [],
+                "metrics": {"worker_count": len(worker_records), "duplicate": True,
+                            "missing_worker_count": len(missing_ids)},
+                "error": "coordinator_dispatch_claim_unresolved",
+            }
+
+        accepted = [
+            record for record in worker_records
+            if str(record.get("status") or "") not in TERMINAL_WORKER_STATUSES - {"completed"}
+        ]
+        return {
+            "ok": bool(accepted),
+            "status": "duplicate",
+            "trace_id": parent_trace_id,
+            "summary": "Coordinator dispatch was already recorded for this parent turn.",
+            "workers": worker_records,
+            "artifacts": [],
+            "metrics": {"worker_count": len(accepted), "duplicate": True},
+            "error": None if accepted else "coordinator_dispatch_failed",
         }
 
     def _durable_children_enabled(self) -> bool:
@@ -1525,6 +1594,7 @@ class CoordinatorRuntimeService:
         for record in launch_records:
             if not isinstance(record, dict):
                 continue
+            record = {**record, "parent_turn_id": parent_turn_id}
             task_id = str(record.get("task_id") or "").strip()
             if not task_id:
                 anonymous.append(record)
@@ -1543,7 +1613,10 @@ class CoordinatorRuntimeService:
             # A child can settle before this registration runs, so a terminal
             # projection must never be rewound to a launch-time status.
             prior_status = str(existing_record.get("status") or "")
-            if prior_status in NON_REWINDABLE_WORKER_STATUSES and str(
+            if (
+                str(existing_record.get("parent_turn_id") or "") in {"", parent_turn_id}
+                and prior_status in NON_REWINDABLE_WORKER_STATUSES
+            ) and str(
                 record.get("status") or ""
             ) not in TERMINAL_WORKER_STATUSES:
                 merged["status"] = prior_status
@@ -1988,14 +2061,31 @@ class CoordinatorRuntimeService:
         )
         await self._store.save_session(parent_session)
 
-    def _normalize_workers(self, payload: dict[str, Any]) -> list[WorkerDispatchSpec]:
+    @staticmethod
+    def _stable_worker_task_id(
+        item: dict[str, Any], *, parent_session_id: str, parent_turn_id: str,
+        role: str, index: int,
+    ) -> str:
+        supplied = str(item.get("task_id") or "").strip()
+        if supplied:
+            return supplied
+        identity = json.dumps(
+            {"parent_session_id": parent_session_id, "parent_turn_id": parent_turn_id,
+             "role": role, "index": index, "worker": item},
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str,
+        )
+        return str(uuid5(NAMESPACE_URL, identity))
+
+    def _normalize_workers(
+        self, payload: dict[str, Any], parent_session_id: str, parent_turn_id: str
+    ) -> list[WorkerDispatchSpec]:
         if isinstance(payload.get("workers"), list):
             raw_workers = payload["workers"]
         else:
             raw_workers = [payload]
 
         workers: list[WorkerDispatchSpec] = []
-        for item in raw_workers:
+        for index, item in enumerate(raw_workers):
             if not isinstance(item, dict):
                 continue
             description = str(item.get("description") or "").strip()
@@ -2010,7 +2100,10 @@ class CoordinatorRuntimeService:
             ]
             workers.append(
                 WorkerDispatchSpec(
-                    task_id=str(item.get("task_id") or uuid4()),
+                    task_id=self._stable_worker_task_id(
+                        item, parent_session_id=parent_session_id,
+                        parent_turn_id=parent_turn_id, role="initial", index=index,
+                    ),
                     description=description,
                     prompt=prompt,
                     agent_key=agent_key,
@@ -2021,13 +2114,15 @@ class CoordinatorRuntimeService:
             )
         return workers
 
-    def _normalize_followup_workers(self, payload: dict[str, Any]) -> list[WorkerDispatchSpec]:
+    def _normalize_followup_workers(
+        self, payload: dict[str, Any], parent_session_id: str, parent_turn_id: str
+    ) -> list[WorkerDispatchSpec]:
         raw_workers = payload.get("followup_workers")
         if not isinstance(raw_workers, list):
             return []
 
         workers: list[WorkerDispatchSpec] = []
-        for item in raw_workers:
+        for index, item in enumerate(raw_workers):
             if not isinstance(item, dict):
                 continue
             description = str(item.get("description") or "").strip()
@@ -2042,7 +2137,10 @@ class CoordinatorRuntimeService:
             ]
             workers.append(
                 WorkerDispatchSpec(
-                    task_id=str(item.get("task_id") or uuid4()),
+                    task_id=self._stable_worker_task_id(
+                        item, parent_session_id=parent_session_id,
+                        parent_turn_id=parent_turn_id, role="followup", index=index,
+                    ),
                     description=description,
                     prompt=prompt,
                     agent_key=agent_key,
@@ -2053,7 +2151,9 @@ class CoordinatorRuntimeService:
             )
         return workers
 
-    def _normalize_completion_worker(self, payload: dict[str, Any]) -> WorkerDispatchSpec | None:
+    def _normalize_completion_worker(
+        self, payload: dict[str, Any], parent_session_id: str, parent_turn_id: str
+    ) -> WorkerDispatchSpec | None:
         raw_item = payload.get("completion_worker")
         if not isinstance(raw_item, dict):
             return None
@@ -2068,7 +2168,10 @@ class CoordinatorRuntimeService:
             if str(skill_key).strip()
         ]
         return WorkerDispatchSpec(
-            task_id=str(raw_item.get("task_id") or uuid4()),
+            task_id=self._stable_worker_task_id(
+                raw_item, parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id, role="completion", index=0,
+            ),
             description=description,
             prompt=prompt,
             agent_key=agent_key,
