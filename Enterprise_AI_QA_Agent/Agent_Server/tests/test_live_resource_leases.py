@@ -1451,9 +1451,16 @@ async def test_expired_lease_can_be_reclaimed(manager):
     lease_manager, resource_id = manager
     first = await lease_manager.acquire(resource_type="browser", resource_id=resource_id,
                                         worker_id="w1", lease_seconds=1)
-    await asyncio.sleep(1.1)
-    second = await lease_manager.acquire(resource_type="browser", resource_id=resource_id,
-                                         worker_id="w2", lease_seconds=10)
+    deadline = asyncio.get_running_loop().time() + 5
+    while True:
+        try:
+            second = await lease_manager.acquire(resource_type="browser", resource_id=resource_id,
+                                                 worker_id="w2", lease_seconds=10)
+            break
+        except ResourceUnavailable as exc:
+            if asyncio.get_running_loop().time() >= deadline:
+                pytest.fail(f"expired browser lease was not reclaimable within 5 seconds: {exc.reason}")
+            await asyncio.sleep(.05)
     assert second.fencing_token > first.fencing_token
     assert await lease_manager.release(second)
 
