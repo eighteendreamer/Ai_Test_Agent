@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { NModal, NDataTable, useDialog } from "naive-ui";
 
 import { api } from "../../../services/api";
@@ -26,6 +26,8 @@ const messageVisible = ref(false);
 const messageText = ref("");
 const messageTone = ref<MessageTone>("info");
 let messageTimer: ReturnType<typeof setTimeout> | null = null;
+let pageActive = true;
+let activatedOnce = false;
 
 const logsOpen = ref(false);
 const logsTarget = ref<DockerContainer | null>(null);
@@ -92,6 +94,21 @@ const cliReady = computed(() => environment.value?.cli_available ?? false);
 onMounted(() => {
   void loadOverview();
 });
+onActivated(() => {
+  pageActive = true;
+  if (activatedOnce) void loadOverview();
+  activatedOnce = true;
+});
+function stopPageActivity() {
+  pageActive = false;
+  messageVisible.value = false;
+  if (messageTimer) {
+    clearTimeout(messageTimer);
+    messageTimer = null;
+  }
+}
+onDeactivated(stopPageActivity);
+onBeforeUnmount(stopPageActivity);
 
 async function loadOverview() {
   loading.value = true;
@@ -107,8 +124,12 @@ async function loadOverview() {
 function showMessage(tone: MessageTone, text: string) {
   messageTone.value = tone;
   messageText.value = text;
-  messageVisible.value = true;
+  messageVisible.value = pageActive;
   if (messageTimer) clearTimeout(messageTimer);
+  if (!pageActive) {
+    messageTimer = null;
+    return;
+  }
   messageTimer = setTimeout(() => {
     messageVisible.value = false;
     messageTimer = null;
