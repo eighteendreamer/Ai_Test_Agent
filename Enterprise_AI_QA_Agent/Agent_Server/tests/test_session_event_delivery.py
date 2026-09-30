@@ -5,7 +5,7 @@ import json
 import multiprocessing
 import socket
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -308,6 +308,138 @@ async def test_graph_live_event_and_finalized_event_have_the_same_identity():
     live = queue.get_nowait()
     final = RuntimeService._events_from_log(object(), "s", state["event_log"])[0]
     assert final.id == live.id and final.timestamp == live.timestamp
+
+
+@pytest.mark.asyncio
+async def test_model_deltas_cross_real_sse_http_and_match_persisted_transcript(stores):
+    writer, _reader, session_id, settings = stores
+    now = datetime.now(UTC)
+    session = deepcopy(await writer.get_session(session_id))
+    session.status = SessionStatus.running
+    session.messages = [ChatMessage(
+        id="user-assistant-stream",
+        role=MessageRole.user,
+        content="生成一段用于验证流传输的回答。",
+        created_at=now,
+    )]
+    await writer.save_session(session)
+
+    service = SessionService(writer, object(), object(), object())
+    turn_id = "turn-assistant-stream"
+    assistant_message_id = "assistant-stream-result"
+    chunks = ["模型", "分片", "传输正常。"]
+    on_text_delta = service._build_stream_chunk_handler(
+        session_id,
+        turn_id,
+        assistant_message_id,
+    )
+
+    async def deterministic_model_stream():
+        for chunk in chunks:
+            await on_text_delta(chunk)
+
+    await deterministic_model_stream()
+    final_text = "".join(chunks)
+    runtime_result = SimpleNamespace(
+        events=[],
+        tool_messages=[],
+        approvals=[],
+        pending_turn={},
+        output_text=final_text,
+        snapshot=SessionSnapshot(
+            id="snapshot-assistant-stream",
+            session_id=session_id,
+            version=1,
+            stage="completed",
+            created_at=now,
+            graph_state={"turn_id": turn_id},
+        ),
+        state={
+            "turn_id": turn_id,
+            "trace_id": "trace-assistant-stream",
+            "selected_agent_key": "coordinator",
+            "selected_agent_name": "Coordinator",
+            "selected_model_key": "deterministic-stream-test",
+            "selected_model_name": "Deterministic stream test",
+            "model_response_summary": {"mode": "ok"},
+            "tool_results": [],
+            "context_bundle": {},
+            "termination_reason": "assistant_final",
+        },
+    )
+    await service._finalize_runtime_result(
+        session,
+        runtime_result,
+        assistant_message_id,
+        "生成一段用于验证流传输的回答。",
+    )
+
+    app = FastAPI()
+    app.state.session_service = service
+    app.state.settings = settings
+    app.include_router(router, prefix="/api/v1")
+    settings.orchestration.session_sse_poll_seconds = 0.02
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
+    serving = asyncio.create_task(server.serve(sockets=[listener]))
+    received = []
+    try:
+        async def wait_for_server():
+            while not server.started:
+                if serving.done():
+                    await serving
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(wait_for_server(), 5)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
+            async with client.stream(
+                "GET",
+                f"http://127.0.0.1:{port}/api/v1/sessions/{session_id}/events",
+            ) as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"].startswith("text/event-stream")
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    event_value = json.loads(line[5:].strip())
+                    received.append(event_value)
+                    if event_value["type"] == "turn.completed":
+                        break
+
+            detail_response = await client.get(
+                f"http://127.0.0.1:{port}/api/v1/sessions/{session_id}"
+            )
+        assert detail_response.status_code == 200
+        final_detail = detail_response.json()
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(serving, 5)
+        listener.close()
+
+    stream_types = [item["type"] for item in received]
+    assert stream_types[:4] == [
+        "assistant.stream.started",
+        "assistant.stream.delta",
+        "assistant.stream.delta",
+        "assistant.stream.delta",
+    ]
+    assert [
+        item["payload"]["delta"]
+        for item in received
+        if item["type"] == "assistant.stream.delta"
+    ] == chunks
+    assert stream_types[-3:] == [
+        "assistant.stream.completed",
+        "assistant.response_generated",
+        "turn.completed",
+    ]
+    final_message = next(
+        item for item in final_detail["messages"] if item["id"] == assistant_message_id
+    )
+    assert final_message["content"] == final_text
+    assert final_message["metadata"]["response_mode"] == "ok"
 
 
 @pytest.mark.asyncio

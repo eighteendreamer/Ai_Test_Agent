@@ -1,0 +1,82 @@
+import { createApp, defineComponent, h, watch } from "vue";
+import { createPinia } from "pinia";
+
+import ChatTimeline from "../src/components/chat/ChatTimeline.vue";
+import { api } from "../src/services/api";
+import { useSessionStore } from "../src/stores/session";
+
+const SESSION_ID = new URLSearchParams(window.location.search).get("session")
+  || "assistant-stream-browser-probe";
+const ASSISTANT_MESSAGE_ID = "assistant-stream-browser-answer";
+const EXPECTED_ANSWER = [
+  "这是本地确定性模型桩生成的回答：\n\n",
+  "1. 后端逐片发送 AI 文本。\n",
+  "2. SSE 实时送达浏览器。\n\n",
+  "最终正文从持久化 transcript 对账。",
+].join("");
+const statusElement = document.querySelector<HTMLElement>("#probe-status");
+const timelineElement = document.querySelector<HTMLElement>("#timeline");
+const pinia = createPinia();
+const store = useSessionStore(pinia);
+
+if (!statusElement || !timelineElement) {
+  throw new Error("Assistant stream probe page is missing its root elements.");
+}
+
+createApp(defineComponent({
+  setup: () => () => h(ChatTimeline, {
+    messages: store.messages,
+    activity: store.activity,
+  }),
+})).use(pinia).mount(timelineElement);
+
+watch(
+  () => ({
+    status: store.session?.status || "",
+    message: store.messages.find((item) => item.id === ASSISTANT_MESSAGE_ID),
+  }),
+  ({ status, message }) => {
+    if (status === "completed" && message) {
+      const assistantMessages = store.messages.filter(
+        (item) => item.role === "assistant" && item.id === ASSISTANT_MESSAGE_ID,
+      );
+      if (assistantMessages.length !== 1 || message.content !== EXPECTED_ANSWER) {
+        statusElement.dataset.result = "failed";
+        statusElement.textContent = "失败：最终 transcript 与预期分片正文不一致。";
+      } else {
+        statusElement.dataset.result = "passed";
+        statusElement.textContent = "通过：浏览器分片与最终持久化 transcript 完全一致。";
+      }
+    } else if (message?.content) {
+      statusElement.dataset.result = "streaming";
+      statusElement.textContent = `正在接收 AI 分片：${message.content}`;
+    }
+  },
+  { immediate: true, deep: true },
+);
+
+async function runProbe() {
+  try {
+    store.applySession(await api.getSession(SESSION_ID));
+    store.connectEvents();
+    statusElement.textContent = "已加载会话；正在建立 SSE 连接…";
+    window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/v1/__test__/assistant-stream/start", {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(`测试流启动失败，HTTP ${response.status}`);
+        }
+      } catch (error) {
+        statusElement.dataset.result = "failed";
+        statusElement.textContent = error instanceof Error ? error.message : String(error);
+      }
+    }, 350);
+  } catch (error) {
+    statusElement.dataset.result = "failed";
+    statusElement.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+void runProbe();

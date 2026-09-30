@@ -60,6 +60,15 @@ function messageDeliveryStatus(message: ChatMessage | undefined) {
   return String(message?.metadata?.delivery_status || "").trim();
 }
 
+function isPersistedAssistantResponse(message: ChatMessage | undefined) {
+  return (
+    message?.role === "assistant" &&
+    Boolean(message.content.trim()) &&
+    Boolean(String(message.metadata?.response_mode || "").trim()) &&
+    messageDeliveryStatus(message) !== "streaming"
+  );
+}
+
 function messageCreatedAtTimestamp(message: ChatMessage) {
   return parseServerDate(message.created_at)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
@@ -1385,6 +1394,21 @@ export const useSessionStore = defineStore("session", {
               },
             },
           ];
+        } else {
+          const existingIndex = this.messages.findIndex((message) => message.id === messageId);
+          const existingMessage = this.messages[existingIndex];
+          if (isPersistedAssistantResponse(existingMessage)) {
+            const nextMessages = [...this.messages];
+            nextMessages[existingIndex] = {
+              ...existingMessage,
+              metadata: {
+                ...existingMessage.metadata,
+                delivery_status: "completed",
+                is_optimistic_stream: false,
+              },
+            };
+            this.messages = nextMessages;
+          }
         }
         return;
       }
@@ -1392,6 +1416,10 @@ export const useSessionStore = defineStore("session", {
       if (event.type === "assistant.stream.delta") {
         const delta = String(event.payload?.delta || "");
         if (!delta) {
+          return;
+        }
+        const existingMessage = this.messages.find((message) => message.id === messageId);
+        if (isPersistedAssistantResponse(existingMessage)) {
           return;
         }
         const exists = this.messages.some((message) => message.id === messageId);
