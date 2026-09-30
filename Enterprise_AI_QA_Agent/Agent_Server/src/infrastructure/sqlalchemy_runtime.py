@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from threading import Lock
 from time import monotonic
-from typing import Any, Iterator, Literal
+from typing import Any, Literal, Self
 
 from sqlalchemy import URL, create_engine
 from sqlalchemy.engine import Engine
@@ -11,6 +13,8 @@ from sqlalchemy.exc import ResourceClosedError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.core.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 DatabaseKind = Literal["mysql", "postgres"]
@@ -124,7 +128,7 @@ class SQLAlchemyCursorConnection:
         self._database = database
 
     def cursor(self) -> SQLAlchemyCursor:
-        return SQLAlchemyCursor(self._connection)
+        return SQLAlchemyCursor(self._connection, self._database)
 
     def commit(self) -> None:
         _commit(self._connection, self._database)
@@ -134,15 +138,15 @@ class SQLAlchemyCursorConnection:
 
 
 class SQLAlchemyCursor:
-    def __init__(self, connection) -> None:
+    def __init__(self, connection, database: DatabaseKind) -> None:
         self._connection = connection
+        self._database = database
         self._result = None
-        self._rows: list[Any] = []
-        self._row_index = 0
+        self._mappings = None
         self.lastrowid: int | None = None
         self.rowcount: int = -1
 
-    def __enter__(self) -> SQLAlchemyCursor:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
@@ -164,36 +168,39 @@ class SQLAlchemyCursor:
         return self
 
     def fetchone(self):
-        if self._row_index >= len(self._rows):
+        if self._mappings is None:
             return None
-        row = self._rows[self._row_index]
-        self._row_index += 1
-        return row
+        try:
+            return self._mappings.fetchone()
+        except Exception:
+            logger.exception("sqlalchemy_cursor_fetch_failed", extra={"operation": "fetchone"})
+            raise
 
     def fetchall(self):
-        rows = self._rows[self._row_index :]
-        self._row_index = len(self._rows)
-        return rows
+        if self._mappings is None:
+            return []
+        try:
+            return list(self._mappings.fetchall())
+        except Exception:
+            logger.exception("sqlalchemy_cursor_fetch_failed", extra={"operation": "fetchall"})
+            raise
 
     def close(self) -> None:
         if self._result is not None:
             self._result.close()
             self._result = None
-        self._rows = []
-        self._row_index = 0
+        self._mappings = None
 
     def _set_result(self, result) -> None:
         self._result = result
-        self._row_index = 0
-        try:
-            self._rows = list(result.mappings().all()) if result.returns_rows else []
-        except Exception:
-            self._rows = []
+        self._mappings = result.mappings() if result.returns_rows else None
         self.rowcount = result.rowcount
-        try:
-            self.lastrowid = getattr(result, "lastrowid", None)
-        except Exception:
-            self.lastrowid = None
+        self.lastrowid = None
+        if self._database == "mysql":
+            try:
+                self.lastrowid = result.lastrowid
+            except ResourceClosedError:
+                pass
 
 
 def dispose_sqlalchemy_engines(database: DatabaseKind | None = None) -> None:
