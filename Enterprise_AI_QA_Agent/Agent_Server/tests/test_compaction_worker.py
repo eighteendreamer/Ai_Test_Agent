@@ -7,7 +7,14 @@ from src.runtime.compaction_worker import CompactionWorker
 
 class Hot:
     def __init__(self): self.cleared = False
-    async def list_events(self, session_id, limit=10000): return [{"id": "e1", "type": "message", "payload": {"role": "user", "content": "goal"}}]
+    async def list_events(self, session_id, *, after_id=None, limit=10000):
+        return [
+            {
+                "id": "e1",
+                "type": "message",
+                "payload": {"role": "user", "content": "goal"},
+            }
+        ]
     async def acquire_compaction(self, session_id, key): return True
     async def complete_compaction(self, session_id, key): pass
     async def clear_session(self, session_id): self.cleared = True
@@ -132,6 +139,51 @@ def test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavai
     assert hot.committed == ("e2:v1", "e2")
     assert memory.args["user_message"] == "goal"
     assert memory.args["assistant_message"] == "done"
+
+
+def test_hot_memory_type_error_is_logged_and_uses_durable_fallback(caplog):
+    class BrokenHot:
+        def __init__(self):
+            self.calls = 0
+
+        async def list_events(self, session_id, *, after_id=None, limit=10000):
+            self.calls += 1
+            raise TypeError("invalid event payload shape")
+
+    class DurableEvents:
+        def __init__(self):
+            self.calls = 0
+
+        async def read_event_page(self, session_id, *, limit, after_event_id=None):
+            self.calls += 1
+            return []
+
+    hot = BrokenHot()
+    durable = DurableEvents()
+    result = asyncio.run(
+        CompactionWorker(
+            hot_memory_store=hot,
+            memory_runtime_service=Memory(),
+            durable_event_store=durable,
+        ).compact_session(session_id="s1", turn_id="t1", trace_id="tr1")
+    )
+
+    assert result is False
+    assert hot.calls == 1
+    assert durable.calls == 1
+    failure = next(
+        (
+            record
+            for record in caplog.records
+            if record.name == "src.runtime.compaction_worker"
+            and record.getMessage()
+            == "session_hot_memory_read_failed_using_durable_events"
+        ),
+        None,
+    )
+    assert failure is not None
+    assert failure.session_id == "s1"
+    assert failure.error_type == "TypeError"
 
 
 def test_concurrent_compaction_writes_one_summary_per_session():

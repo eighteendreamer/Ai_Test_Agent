@@ -233,20 +233,9 @@ class CompactionWorker:
                 )
                 if hot_events:
                     return hot_events
-        except TypeError:
-            # Keep small in-memory/test stores compatible with the production
-            # cursor contract while they are migrated.
-            try:
-                hot_events = await self._hot.list_events(session_id, limit=10000)
-                if state_status == "pending" and state_last_event_id:
-                    target_index = self._event_index(hot_events, state_last_event_id)
-                    if target_index is not None:
-                        return hot_events[: target_index + 1]
-                elif hot_events:
-                    return hot_events
-            except Exception:
-                hot_available = False
-        except Exception as exc:
+        # Hot-memory adapters may raise provider-specific errors; log and fall
+        # back to the durable source rather than aborting compaction.
+        except Exception as exc:  # noqa: BLE001
             hot_available = False
             LOGGER.warning(
                 "session_hot_memory_read_failed_using_durable_events",
@@ -298,7 +287,9 @@ class CompactionWorker:
                     limit=self._durable_page_size,
                     after_event_id=cursor,
                 )
-            except Exception as exc:
+            # Stop pagination on provider errors after logging; retrying this page
+            # here could leave the worker in an unbounded retry loop.
+            except Exception as exc:  # noqa: BLE001
                 LOGGER.warning(
                     "session_durable_event_read_failed",
                     extra={"session_id": session_id, "error_type": type(exc).__name__},
