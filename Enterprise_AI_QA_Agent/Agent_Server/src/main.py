@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
+import logging
 import sys
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -163,8 +163,25 @@ from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 from src.infrastructure.redis_vector_store import RedisVectorStore
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+logger = logging.getLogger(__name__)
+
+
+async def _close_lifespan_resource(
+    resource: str, close: Callable[[], Awaitable[None]],
+) -> None:
+    try:
+        await close()
+    except Exception as exc:
+        logger.error(
+            "lifespan_resource_cleanup_failed",
+            extra={"resource": resource, "error_type": type(exc).__name__},
+        )
+        raise
+
+
+async def _initialize_lifespan_resources(
+    app: FastAPI, cleanup: AsyncExitStack, final_cleanup: AsyncExitStack,
+) -> None:
     settings = get_settings()
     container = AppContainer()
     task_queue = None
@@ -175,6 +192,7 @@ async def lifespan(app: FastAPI):
             group=settings.orchestration.redis_task_consumer_group,
             socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
         )
+        cleanup.push_async_callback(_close_lifespan_resource, "task_queue", task_queue.close)
         await task_queue.connect()
     app.state.task_queue = task_queue
     hot_memory_store = RedisHotMemoryStore(
@@ -182,6 +200,7 @@ async def lifespan(app: FastAPI):
         ttl_seconds=settings.orchestration.redis_hot_memory_ttl_seconds,
         max_events=settings.orchestration.redis_hot_memory_max_events,
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "hot_memory_store", hot_memory_store.close)
     await hot_memory_store.connect()
     app.state.hot_memory_store = hot_memory_store
     vector_store = RedisVectorStore(
@@ -189,6 +208,7 @@ async def lifespan(app: FastAPI):
         socket_timeout_seconds=settings.orchestration.redis_vector_socket_timeout_seconds,
     ) if settings.orchestration.redis_vector_enabled else None
     if vector_store is not None:
+        cleanup.push_async_callback(_close_lifespan_resource, "vector_store", vector_store.close)
         await vector_store.connect()
     app.state.vector_store = vector_store
     resource_lease_manager = RedisResourceLeaseManager(
@@ -196,6 +216,7 @@ async def lifespan(app: FastAPI):
         socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
         cleanup_stream=settings.orchestration.cleanup_task_stream,
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "resource_lease_manager", resource_lease_manager.close)
     await resource_lease_manager.connect()
     await resource_lease_manager.configure_quota(
         scope="global", identifier="all", limit=settings.orchestration.resource_global_limit,
@@ -266,6 +287,7 @@ async def lifespan(app: FastAPI):
 
     oauth_token_service = container.oauth_token_service()
     embedding_runtime_service = container.embedding_runtime_service()
+    cleanup.push_async_callback(_close_lifespan_resource, "embedding_runtime_service", embedding_runtime_service.close)
 
     email_config_store = container.email_config_store()
     email_config_store.initialize()
@@ -286,6 +308,7 @@ async def lifespan(app: FastAPI):
     await session_resource_service.initialize()
 
     mcp_runtime_service = container.mcp_runtime_service()
+    cleanup.push_async_callback(_close_lifespan_resource, "mcp_runtime_service", mcp_runtime_service.close)
     mcp_runtime_service.set_resource_lease_manager(resource_lease_manager)
     session_resource_service.set_browser_cleanup(mcp_runtime_service.close_browser_session)
 
@@ -305,6 +328,7 @@ async def lifespan(app: FastAPI):
 
     mcp_tool_bridge = container.mcp_tool_bridge()
     mcp_connection_manager = container.mcp_connection_manager()
+    cleanup.push_async_callback(_close_lifespan_resource, "mcp_connection_manager", mcp_connection_manager.shutdown)
     mcp_runtime_manager = container.mcp_runtime_manager()
     mcp_manager_service = container.mcp_manager_service()
 
@@ -413,6 +437,7 @@ async def lifespan(app: FastAPI):
 
     test_run_store = container.test_run_store()
     test_run_service = container.test_run_service()
+    cleanup.push_async_callback(_close_lifespan_resource, "test_run_lease_reaper", test_run_service.stop_lease_reaper)
     if task_queue is not None:
         test_run_service.set_task_outbox(
             task_outbox,
@@ -452,6 +477,7 @@ async def lifespan(app: FastAPI):
         runtime_control=runtime_control,
         security_bug_service=security_bug_service,
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "tool_runtime_service", tool_runtime_service.close)
 
     def resolve_case_execution_tool(mode_key: str):
         """从模式清单解析专业执行入口，避免在运行服务中复制模式映射。"""
@@ -460,6 +486,9 @@ async def lifespan(app: FastAPI):
     observability_service = LangSmithObservabilityAdapter(
         settings.langsmith,
         environment=settings.app_env,
+    )
+    final_cleanup.push_async_callback(
+        _close_lifespan_resource, "observability_service", observability_service.flush,
     )
     case_execution_adapter = CaseExecutionAdapter(
         tool_resolver=resolve_case_execution_tool,
@@ -492,6 +521,10 @@ async def lifespan(app: FastAPI):
         if settings.deep_agents.enabled and settings.deep_agents.checkpoint_enabled
         else None
     )
+    if deep_agent_checkpoint_provider is not None:
+        cleanup.push_async_callback(
+            _close_lifespan_resource, "deep_agent_checkpoint_provider", deep_agent_checkpoint_provider.close,
+        )
     deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(
         model_resolver=model_runtime_service.resolve_langchain_chat_model,
         checkpointer_factory=(
@@ -628,6 +661,7 @@ async def lifespan(app: FastAPI):
         email_config_store=email_config_store,
         registry=app.state.mail_service._registry,
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "tencent_auth_monitor", tencent_auth_monitor.shutdown)
     app.state.tencent_auth_monitor = tencent_auth_monitor
     app.state.compatibility_runner_service = compatibility_runner_service
     app.state.runtime_service = runtime_service
@@ -655,11 +689,15 @@ async def lifespan(app: FastAPI):
         ),
         turn_reaper_interval_seconds=settings.orchestration.turn_reaper_interval_seconds,
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "session_turn_reaper", session_service.stop_turn_reaper)
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
         store=store,
         session_service=session_service,
         agent_registry=agent_registry,
+    )
+    cleanup.push_async_callback(
+        _close_lifespan_resource, "coordinator_dispatch_reaper", coordinator_runtime_service.stop_dispatch_reaper,
     )
     coordinator_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_coordinator_runtime_service(coordinator_runtime_service)
@@ -670,6 +708,9 @@ async def lifespan(app: FastAPI):
     session_service.set_agent_task_store(agent_task_store)
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
+    )
+    cleanup.push_async_callback(
+        _close_lifespan_resource, "agent_task_child_reaper", app.state.agent_task_dispatcher.stop_child_reaper,
     )
     session_service.set_agent_task_dispatcher(app.state.agent_task_dispatcher)
     coordinator_runtime_service.set_agent_task_store(agent_task_store)
@@ -697,6 +738,7 @@ async def lifespan(app: FastAPI):
     await tencent_auth_monitor.startup()
     await test_run_service.start_lease_reaper()
     await app.state.agent_task_dispatcher.start_child_reaper()
+    cleanup.push_async_callback(_close_lifespan_resource, "metrics_collector", metrics_collector.stop)
     await metrics_collector.start(
         settings,
         compaction_store=compaction_record_store,
@@ -718,6 +760,7 @@ async def lifespan(app: FastAPI):
         registry=build_default_registry(embedded_bridge, settings=settings,
             resource_manager=mcp_runtime_service.browser_resources),
     )
+    cleanup.push_async_callback(_close_lifespan_resource, "recorder_service", recorder_service.close)
     app.state.recording_store = recording_store
     app.state.recording_graph_store = recording_graph_store
     app.state.embedded_bridge = embedded_bridge
@@ -758,34 +801,18 @@ async def lifespan(app: FastAPI):
 
     await session_service.start_turn_reaper()
     await coordinator_runtime_service.start_dispatch_reaper()
-    try:
-        yield
-    finally:
-        await coordinator_runtime_service.stop_dispatch_reaper()
-        await session_service.stop_turn_reaper()
-        execution_shutdown = await asyncio.gather(
-            tool_runtime_service.close(), mcp_runtime_service.close(), recorder_service.close(), return_exceptions=True,
-        )
-        if task_queue is not None:
-            await task_queue.close()
-        await hot_memory_store.close()
-        if vector_store is not None:
-            await vector_store.close()
-        await resource_lease_manager.close()
-        if deep_agent_checkpoint_provider is not None:
-            await deep_agent_checkpoint_provider.close()
-        await embedding_runtime_service.close()
-        await test_run_service.stop_lease_reaper()
-        await metrics_collector.stop()
-        child_reaper = getattr(app.state, "agent_task_dispatcher", None)
-        if child_reaper is not None:
-            await child_reaper.stop_child_reaper()
-        await tencent_auth_monitor.shutdown()
-        await mcp_connection_manager.shutdown()
-        await observability_service.flush()
-        for result in execution_shutdown:
-            if isinstance(result, BaseException):
-                raise result
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with AsyncExitStack() as final_cleanup:
+        async with AsyncExitStack() as cleanup:
+            try:
+                await _initialize_lifespan_resources(app, cleanup, final_cleanup)
+            except Exception as exc:
+                logger.error("lifespan_startup_failed", extra={"error_type": type(exc).__name__})
+                raise
+            yield
 
 
 settings = get_settings()
