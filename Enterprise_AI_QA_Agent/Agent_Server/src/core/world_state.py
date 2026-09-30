@@ -25,7 +25,7 @@ class SectionSnapshot:
     content: str
     content_hash: str = ""
 
-    def __post_init(self) -> None:
+    def __post_init__(self) -> None:
         if not self.content_hash:
             object.__setattr__(
                 self, "content_hash",
@@ -87,9 +87,12 @@ class StaticSection:
         return SectionSnapshot(key=self._key, content=self._content)
 
     def render_diff(self, prev: SectionSnapshot | None) -> str | None:
-        if prev is not None and prev.content_hash == self.snapshot().content_hash:
+        current = self.snapshot()
+        if prev is not None and prev.content_hash == current.content_hash:
             return None
-        return None
+        if prev is None:
+            return current.content
+        return f"[{self._key} updated]\n{current.content}"
 
     def render_full(self) -> str:
         return self._content
