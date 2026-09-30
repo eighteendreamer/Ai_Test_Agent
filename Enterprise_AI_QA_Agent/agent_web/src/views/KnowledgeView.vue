@@ -30,6 +30,8 @@ const detailDrawerOpen = ref(false);
 const deletingProject = ref(false);
 const deleteDialogOpen = ref(false);
 const dialog = { warning: (_options: unknown) => undefined };
+let graphRevision = 0;
+let disposed = false;
 
 const canvasViewportRef = ref<SVGSVGElement | null>(null);
 const canvasCardRef = ref<HTMLElement | null>(null);
@@ -326,12 +328,16 @@ watch([filteredNodes, activeKind], ([nodes]) => {
   }
 });
 
-watch(selectedProjectId, async (projectId) => {
+watch(selectedProjectId, (projectId) => {
+  const revision = ++graphRevision;
   if (!projectId) {
     graph.value = null;
+    activeNodeId.value = "";
+    detailDrawerOpen.value = false;
+    loadingGraph.value = false;
     return;
   }
-  await loadGraph(projectId);
+  void loadGraph(projectId, revision);
 });
 
 onMounted(async () => {
@@ -340,6 +346,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
+  ++graphRevision;
   document.removeEventListener("fullscreenchange", syncFullscreenState);
 });
 
@@ -359,22 +367,28 @@ async function loadProjects() {
   }
 }
 
-async function loadGraph(projectId: string) {
+async function loadGraph(projectId: string, revision: number) {
+  const isCurrent = () => !disposed && revision === graphRevision && projectId === selectedProjectId.value;
   loadingGraph.value = true;
   errorMessage.value = "";
+  graph.value = null;
+  activeNodeId.value = "";
+  detailDrawerOpen.value = false;
   try {
     const response = await api.getKnowledgeGraph(projectId);
+    if (!isCurrent()) return;
     graph.value = response;
     activeNodeId.value = '__GLOBAL_PAGES__';
     detailDrawerOpen.value = false;
     resetCanvasView();
   } catch (error) {
+    if (!isCurrent()) return;
     graph.value = null;
     activeNodeId.value = "";
     detailDrawerOpen.value = false;
     errorMessage.value = error instanceof Error ? error.message : "Failed to load project graph";
   } finally {
-    loadingGraph.value = false;
+    if (isCurrent()) loadingGraph.value = false;
   }
 }
 
