@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 
 from src.api.routes.recordings import router
 from src.application.recorder.drivers.embedded_bridge import EmbeddedBridge
@@ -64,6 +65,12 @@ class FakeRecorderService:
         if project_id:
             items = [s for s in items if s.project_id == project_id]
         return items[offset : offset + limit]
+
+    async def count_sessions(self, project_id: str | None = None) -> int:
+        return sum(
+            1 for session in self.sessions.values()
+            if project_id is None or session.project_id == project_id
+        )
 
     async def get_session(self, recording_id: str) -> RecordingSession | None:
         return self.sessions.get(recording_id)
@@ -223,6 +230,22 @@ def test_list_recordings_returns_items_and_count():
     body = response.json()
     assert body["count"] == 1
     assert body["items"][0]["project_id"] == "proj-1"
+
+
+def test_list_recordings_count_is_total_for_project_across_pages():
+    service = FakeRecorderService()
+    _make_session(service, project_id="proj-1")
+    _make_session(service, project_id="proj-1")
+    _make_session(service, project_id="proj-2")
+    client = TestClient(_make_app(service=service))
+
+    response = client.get(
+        "/api/v1/recordings", params={"project_id": "proj-1", "limit": 1, "offset": 1}
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["count"] == 2
 
 
 def test_get_recording_detail_includes_events():
@@ -453,9 +476,17 @@ def test_screenshot_upload_falls_back_to_local_backend(tmp_path):
     assert bridge._sessions["rec-1"].last_screenshot == b"\x89PNG-fake-bytes"
 
 
-def test_screenshot_upload_rejects_oversize(tmp_path):
+def test_screenshot_upload_rejects_oversize(tmp_path, monkeypatch):
     client = TestClient(_make_app(artifact_root=str(tmp_path)))
     oversize = b"x" * (10 * 1024 * 1024 + 1)
+    read_sizes: list[int] = []
+    original_read = UploadFile.read
+
+    async def track_read(self, size=-1):
+        read_sizes.append(size)
+        return await original_read(self, size)
+
+    monkeypatch.setattr(UploadFile, "read", track_read)
 
     response = client.post(
         "/api/v1/recordings/rec-1/screenshots",
@@ -463,6 +494,7 @@ def test_screenshot_upload_rejects_oversize(tmp_path):
     )
 
     assert response.status_code == 413
+    assert read_sizes == [10 * 1024 * 1024 + 1]
 
 
 def test_screenshot_upload_rejects_non_image(tmp_path):

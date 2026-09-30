@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 
@@ -179,6 +180,37 @@ def test_append_empty_batch_is_noop() -> None:
     assert cursor.calls == []
 
 
+def test_count_sessions_scopes_to_project() -> None:
+    cursor = FakeCursor(script=[("fetchone", {"cnt": 4})])
+    store = PostgresRecordingStore(Settings())
+    original_connect = recording_store_module.postgres_connect
+    _patch_connect(cursor)
+    try:
+        count = store._count_sessions_sync("proj-1")
+    finally:
+        _restore_connect(original_connect)
+
+    assert count == 4
+    statement, parameters = cursor.calls[0]
+    assert statement == "SELECT COUNT(*) AS cnt FROM ui_recording WHERE project_id = %s"
+    assert parameters == ("proj-1",)
+
+
+def test_count_sessions_without_project_counts_all() -> None:
+    cursor = FakeCursor(script=[("fetchone", {"cnt": 9})])
+    store = PostgresRecordingStore(Settings())
+    original_connect = recording_store_module.postgres_connect
+    _patch_connect(cursor)
+    try:
+        count = store._count_sessions_sync()
+    finally:
+        _restore_connect(original_connect)
+
+    assert count == 9
+    assert cursor.calls[0][0] == "SELECT COUNT(*) AS cnt FROM ui_recording"
+    assert cursor.calls[0][1] is None
+
+
 def test_update_status_builds_dynamic_set() -> None:
     cursor = FakeCursor(
         script=[("fetchone", None)]  # _get_session_sync 回查返回 None
@@ -295,6 +327,41 @@ def test_discard_marks_discarded_keeps_rows() -> None:
 # ----------------------------------------------------------------------
 # 连库集成（RUN_LIVE_RECORDING_PG=1）
 # ----------------------------------------------------------------------
+@LIVE_PG
+def test_live_count_sessions_matches_project_filter_and_total() -> None:
+    settings = Settings()
+    store = PostgresRecordingStore(settings)
+    store._initialize_sync()
+    project_id = f"proj-recording-count-{uuid4().hex}"
+    sessions = [
+        RecordingSession(project_id=project_id, entry_url="https://example.com")
+        for _ in range(2)
+    ]
+    other = RecordingSession(
+        project_id=f"{project_id}-other", entry_url="https://example.com"
+    )
+    sessions.append(other)
+    try:
+        for session in sessions:
+            store._create_session_sync(session)
+
+        assert store._count_sessions_sync(project_id) == 2
+        assert store._count_sessions_sync(f"{project_id}-other") == 1
+    finally:
+        from src.infrastructure.postgres_runtime import postgres_connect
+
+        with postgres_connect(settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM {settings.database.postgres_recording_event_table} WHERE recording_id = ANY(%s)",
+                    ([session.id for session in sessions],),
+                )
+                cur.execute(
+                    f"DELETE FROM {settings.database.postgres_recording_table} WHERE id = ANY(%s)",
+                    ([session.id for session in sessions],),
+                )
+
+
 @LIVE_PG
 def test_live_append_events_batch_retry_is_idempotent() -> None:
     settings = Settings()

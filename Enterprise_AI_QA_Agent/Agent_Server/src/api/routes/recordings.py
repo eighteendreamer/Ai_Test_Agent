@@ -98,9 +98,10 @@ async def list_recordings(
 ) -> dict[str, Any]:
     service = _recorder_service(request)
     sessions = await service.list_sessions(project_id=project_id, limit=limit, offset=offset)
+    total = await service.count_sessions(project_id=project_id)
     return {
         "items": [RecordingPublic.from_session(s).model_dump(mode="json") for s in sessions],
-        "count": len(sessions),
+        "count": total,
     }
 
 
@@ -215,7 +216,7 @@ async def upload_screenshot(
 ) -> dict[str, Any]:
     """multipart 截图上传：RustFS 优先，本地产物目录兜底；同时缓存最近帧。"""
     bridge = _bridge(request)
-    content = await file.read()
+    content = await file.read(_SCREENSHOT_MAX_BYTES + 1)
     if len(content) > _SCREENSHOT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="screenshot exceeds 10MB limit")
     content_type = file.content_type or "image/png"

@@ -82,6 +82,9 @@ class PostgresRecordingStore:
             self._list_sessions_sync, project_id, limit, offset
         )
 
+    async def count_sessions(self, project_id: str | None = None) -> int:
+        return await asyncio.to_thread(self._count_sessions_sync, project_id)
+
     async def get_events(self, recording_id: str) -> list[RecorderEvent]:
         return await asyncio.to_thread(self._get_events_sync, recording_id)
 
@@ -378,6 +381,18 @@ class PostgresRecordingStore:
                         (int(limit), int(offset)),
                     )
                 return [self._row_to_session(row) for row in cur.fetchall()]
+
+    def _count_sessions_sync(self, project_id: str | None = None) -> int:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                if project_id:
+                    cur.execute(
+                        f"SELECT COUNT(*) AS cnt FROM {self._session_table} WHERE project_id = %s",
+                        (project_id,),
+                    )
+                else:
+                    cur.execute(f"SELECT COUNT(*) AS cnt FROM {self._session_table}")
+                return self._count_from_row(cur.fetchone())
 
     def _get_events_sync(self, recording_id: str) -> list[RecorderEvent]:
         with postgres_connect(self._settings) as conn:

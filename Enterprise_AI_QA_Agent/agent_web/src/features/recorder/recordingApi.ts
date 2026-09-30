@@ -2,7 +2,7 @@
  * 录制域 API 封装（P0-10）。
  *
  * 后端契约：src/api/routes/recordings.py
- *   GET  /api/v1/recordings?project_id=&limit=&offset=   → { items, count }
+ *   GET  /api/v1/recordings?project_id=&limit=&offset=   → { items, count: total matching sessions }
  *   GET  /api/v1/recordings/{id}                         → 会话 + 事件流
  *   POST /api/v1/recordings/{id}/control                 → 控制条指令
  */
