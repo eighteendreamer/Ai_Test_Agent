@@ -2155,7 +2155,7 @@ class PostgresTestRunStore:
                 cur.execute(
                     f"SELECT record FROM {self._run_table} "
                     f"WHERE {' AND '.join(clauses)} "
-                    "ORDER BY created_at DESC, id ASC LIMIT %s OFFSET %s",
+                    "ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
                     tuple(params),
                 )
                 rows = cur.fetchall() or []
