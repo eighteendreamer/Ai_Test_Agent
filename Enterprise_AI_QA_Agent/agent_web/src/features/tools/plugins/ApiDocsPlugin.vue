@@ -42,6 +42,8 @@ const selectedWorkspaceId = ref("");
 const selectedImportSourceId = ref("");
 const integrationImportCatalog = ref<IntegrationImportSourcesResponse | null>(null);
 const integrationImportLoading = ref(false);
+let catalogRevision = 0;
+let disposed = false;
 
 const editTitle = ref("");
 const editProjectId = ref<string | null>(null);
@@ -102,13 +104,13 @@ const canSubmitIntegrationImport = computed(() => {
   if (!selectedIntegrationId.value || integrationImportLoading.value) {
     return false;
   }
-  if (!integrationImportCatalog.value) {
+  if (!integrationImportCatalog.value || integrationImportCatalog.value.integration_id !== selectedIntegrationId.value) {
     return false;
   }
   if (integrationImportCatalog.value.supports_workspace_selection) {
-    return Boolean(selectedWorkspaceId.value && selectedImportSourceId.value);
+    return Boolean(selectedWorkspaceId.value && selectedImportSource.value);
   }
-  return Boolean(selectedImportSourceId.value || integrationDocumentUrl.value.trim() || selectedIntegration.value?.document_url);
+  return Boolean(selectedImportSource.value || integrationDocumentUrl.value.trim() || selectedIntegration.value?.document_url);
 });
 const projectOptions = computed(() => projects.value.map(project => ({
   label: project.status === "archived" ? `${project.name}（已归档）` : project.name,
@@ -131,6 +133,8 @@ function formatBytes(value: number) {
 }
 
 function resetUploadForm() {
+  ++catalogRevision;
+  integrationImportLoading.value = false;
   uploadMode.value = "local";
   uploadFile.value = null;
   uploadTitle.value = "";
@@ -233,6 +237,10 @@ async function loadProjects() {
 }
 
 async function loadIntegrationImportCatalog(integrationId: string, workspaceId?: string | null) {
+  const revision = ++catalogRevision;
+  const isCurrent = () => !disposed && uploadOpen.value && uploadMode.value === "integration" &&
+    selectedIntegrationId.value === integrationId && revision === catalogRevision &&
+    (!workspaceId || selectedWorkspaceId.value === workspaceId);
   integrationImportLoading.value = true;
   if (!workspaceId) {
     selectedWorkspaceId.value = "";
@@ -242,25 +250,28 @@ async function loadIntegrationImportCatalog(integrationId: string, workspaceId?:
     selectedImportSourceId.value = "";
   }
   try {
-    integrationImportCatalog.value = await api.listIntegrationImportSources(integrationId, workspaceId ?? null);
+    const catalog = await api.listIntegrationImportSources(integrationId, workspaceId ?? null);
+    if (!isCurrent()) return;
+    integrationImportCatalog.value = catalog;
     if (
       !workspaceId &&
-      integrationImportCatalog.value.supports_workspace_selection &&
-      integrationImportCatalog.value.workspaces.length === 1
+      catalog.supports_workspace_selection &&
+      catalog.workspaces.length === 1
     ) {
-      selectedWorkspaceId.value = integrationImportCatalog.value.workspaces[0].id;
+      selectedWorkspaceId.value = catalog.workspaces[0].id;
     }
     if (
-      !integrationImportCatalog.value.supports_workspace_selection &&
-      integrationImportCatalog.value.sources.length === 1
+      (!catalog.supports_workspace_selection || workspaceId) &&
+      filteredImportSources.value.length === 1
     ) {
-      selectedImportSourceId.value = integrationImportCatalog.value.sources[0].id;
+      selectedImportSourceId.value = filteredImportSources.value[0].id;
     }
   } catch (err) {
+    if (!isCurrent()) return;
     integrationImportCatalog.value = null;
     toast.error(err instanceof Error ? err.message : t("apiDocs.load_import_sources_failed"));
   } finally {
-    integrationImportLoading.value = false;
+    if (isCurrent()) integrationImportLoading.value = false;
   }
 }
 
@@ -393,34 +404,37 @@ async function deleteDoc(doc: ApiDocRecord) {
   }
 }
 
-watch(selectedIntegrationId, async (integrationId) => {
+watch(selectedIntegrationId, (integrationId) => {
   integrationDocumentUrl.value = "";
   selectedWorkspaceId.value = "";
   selectedImportSourceId.value = "";
   integrationImportCatalog.value = null;
   if (!integrationId || uploadMode.value !== "integration") {
+    ++catalogRevision;
+    integrationImportLoading.value = false;
     return;
   }
-  await loadIntegrationImportCatalog(integrationId);
+  void loadIntegrationImportCatalog(integrationId);
 });
 
-watch(selectedWorkspaceId, async (workspaceId) => {
+watch(selectedWorkspaceId, (workspaceId) => {
   if (!workspaceId) {
     selectedImportSourceId.value = "";
+    if (selectedIntegrationId.value && uploadMode.value === "integration" && integrationImportCatalog.value?.supports_workspace_selection) {
+      void loadIntegrationImportCatalog(selectedIntegrationId.value);
+    }
     return;
   }
   if (!selectedIntegrationId.value || uploadMode.value !== "integration") {
     return;
   }
-  await loadIntegrationImportCatalog(selectedIntegrationId.value, workspaceId);
-  const candidates = filteredImportSources.value;
-  if (candidates.length === 1) {
-    selectedImportSourceId.value = candidates[0].id;
-  }
+  void loadIntegrationImportCatalog(selectedIntegrationId.value, workspaceId);
 });
 
 watch(uploadMode, (mode) => {
   if (mode !== "integration") {
+    ++catalogRevision;
+    integrationImportLoading.value = false;
     selectedIntegrationId.value = "";
     integrationDocumentUrl.value = "";
     selectedWorkspaceId.value = "";
@@ -437,6 +451,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
+  ++catalogRevision;
   window.removeEventListener("qa-agent:open-api-doc-upload", handleExternalOpenUpload);
 });
 </script>
