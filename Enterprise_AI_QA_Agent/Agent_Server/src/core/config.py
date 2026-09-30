@@ -1,8 +1,9 @@
 from __future__ import annotations
-from functools import lru_cache
-from pathlib import Path
+
 import platform
 import re
+from functools import lru_cache
+from pathlib import Path
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -533,6 +534,7 @@ class Settings(BaseSettings):
     app_name: str = "Enterprise AI QA Agent"
     app_env: str = "development"
     api_v1_prefix: str = "/api/v1"
+    api_auth_token: SecretStr | None = None
     data_dir: str = "data"
     channel_pairing_public_base_url: str = ""
 
@@ -554,6 +556,35 @@ class Settings(BaseSettings):
         extra="ignore",
         env_nested_delimiter="__",
     )
+
+    @field_validator("api_auth_token", mode="before")
+    @classmethod
+    def normalize_api_auth_token(
+        cls, value: str | SecretStr | None
+    ) -> SecretStr | None:
+        if value is None:
+            return None
+        token = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        token = token.strip()
+        return SecretStr(token) if token else None
+
+    @model_validator(mode="after")
+    def validate_api_auth_token(self) -> Settings:
+        token = self.api_auth_token.get_secret_value() if self.api_auth_token else None
+        if token is not None and (
+            len(token) < 32 or any(char.isspace() for char in token)
+        ):
+            raise ValueError(
+                "API_AUTH_TOKEN must contain at least 32 non-whitespace characters."
+            )
+        if (
+            self.app_env.strip().lower() in {"prod", "production"}
+            and token is None
+        ):
+            raise ValueError(
+                "API_AUTH_TOKEN must be configured when APP_ENV is production."
+            )
+        return self
 
     @field_validator(
         "docker",

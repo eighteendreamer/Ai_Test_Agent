@@ -14,6 +14,8 @@
  * （recorder.js 唯一源在后端 GET /api/v1/recordings/recorder.js，启动时拉取）
  * → Runtime.addBinding("__qaRecordEmit") 收事件。
  */
+
+import { applyApiAuthorization } from "./api-auth-proxy.mjs";
 import { BrowserWindow, WebContentsView } from "electron";
 
 export const CONTROL_BAR_HEIGHT = 56;
@@ -30,6 +32,7 @@ const sessions = new Map();
 
 let backendOrigin = "";
 let rendererOrigin = "";
+let apiAuthToken = "";
 
 class RecorderSessionState {
   constructor(recordingId) {
@@ -52,6 +55,7 @@ class RecorderSessionState {
 export function configureRecorderBridge(options) {
   backendOrigin = String(options?.backendOrigin || "").replace(/\/$/, "");
   rendererOrigin = String(options?.rendererOrigin || "").replace(/\/$/, "");
+  apiAuthToken = String(options?.apiAuthToken || "");
 }
 
 function sessionOf(recordingId) {
@@ -70,6 +74,7 @@ async function backendFetch(path, init = {}) {
   try {
     const response = await fetch(`${backendOrigin}${path}`, {
       ...init,
+      headers: applyApiAuthorization(init.headers, apiAuthToken),
       signal: controller.signal,
     });
     return response;

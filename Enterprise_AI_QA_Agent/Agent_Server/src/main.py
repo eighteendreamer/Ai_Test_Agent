@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from src.api.api_auth_middleware import APIAuthenticationMiddleware
 from src.api.routes.attachments import router as attachments_router
 from src.api.routes.api_docs import router as api_docs_router
 from src.api.routes.compatibility import router as compatibility_router
@@ -790,6 +791,18 @@ app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
     lifespan=lifespan,
+)
+
+api_auth_token = (
+    settings.api_auth_token.get_secret_value()
+    if settings.api_auth_token is not None
+    else None
+)
+app.add_middleware(
+    APIAuthenticationMiddleware,
+    api_token=api_auth_token,
+    api_v1_prefix=settings.api_v1_prefix,
+    app_env=settings.app_env,
 )
 
 app.add_middleware(

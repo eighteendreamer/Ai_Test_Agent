@@ -4,10 +4,18 @@ import asyncio
 
 from fastapi import APIRouter, Request
 
-from src.infrastructure.postgres_runtime import postgres_database_url, postgres_healthcheck
-
+from src.infrastructure.postgres_runtime import (
+    postgres_database_url,
+    postgres_healthcheck,
+)
 
 router = APIRouter(tags=["health"])
+
+
+@router.get("/health/live", include_in_schema=False)
+async def liveness():
+    """Return only process liveness for unauthenticated probes."""
+    return {"status": "ok"}
 
 
 @router.get("/health")
