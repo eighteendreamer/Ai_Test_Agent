@@ -10,6 +10,10 @@ const api = vi.hoisted(() => ({
   deleteKnowledgeProject: vi.fn(),
 }));
 vi.mock("../services/api", () => ({ api }));
+vi.mock("naive-ui", () => ({
+  NModal: { props: ["show"], template: "<div v-if='show'><slot /></div>" },
+  NButton: { template: "<button><slot /></button>" },
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -45,7 +49,7 @@ it("keeps the selected project graph when the previous project's response arrive
   const old = deferred<KnowledgeGraphResponse>();
   const current = deferred<KnowledgeGraphResponse>();
   api.getKnowledgeGraph.mockImplementation((id: string) => id === "a" ? old.promise : current.promise);
-  const wrapper = mount(KnowledgeView, { global: { stubs: { NModal: true, NButton: true } } });
+  const wrapper = mount(KnowledgeView);
   try {
     await flushPromises();
     expect(api.getKnowledgeGraph).toHaveBeenCalledWith("a");
@@ -69,7 +73,7 @@ it("keeps the selected project graph when the previous project's response arrive
 it("clears the previous graph while the newly selected project is loading", async () => {
   const current = deferred<KnowledgeGraphResponse>();
   api.getKnowledgeGraph.mockImplementation((id: string) => id === "a" ? Promise.resolve(graph(id)) : current.promise);
-  const wrapper = mount(KnowledgeView, { global: { stubs: { NModal: true, NButton: true } } });
+  const wrapper = mount(KnowledgeView);
   try {
     await flushPromises();
     expect(wrapper.find(".node-list").text()).toContain("a page");
@@ -85,7 +89,7 @@ it("clears the previous graph while the newly selected project is loading", asyn
 
 it("does not reselect a hidden node when the search has no matches", async () => {
   api.getKnowledgeGraph.mockResolvedValue(graph("a"));
-  const wrapper = mount(KnowledgeView, { global: { stubs: { NModal: true, NButton: true } } });
+  const wrapper = mount(KnowledgeView);
   try {
     await flushPromises();
     await wrapper.get(".node-row:not(.global-row)").trigger("click");
@@ -95,6 +99,24 @@ it("does not reselect a hidden node when the search has no matches", async () =>
     await flushPromises();
     expect(wrapper.findAll(".node-row:not(.global-row)")).toHaveLength(0);
     expect(wrapper.findAll(".graph-node")).toHaveLength(0);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("deletes the selected project through the wired confirmation dialog", async () => {
+  api.listKnowledgeProjects.mockResolvedValueOnce([project("a"), project("b")]).mockResolvedValueOnce([project("b")]);
+  api.getKnowledgeGraph.mockImplementation(async (id: string) => graph(id));
+  api.deleteKnowledgeProject.mockResolvedValue({ ok: true });
+  const wrapper = mount(KnowledgeView);
+  try {
+    await flushPromises();
+    await wrapper.get(".project-actions .danger-btn").trigger("click");
+    await wrapper.get(".delete-modal-confirm").trigger("click");
+    await flushPromises();
+    expect(api.deleteKnowledgeProject).toHaveBeenCalledExactlyOnceWith("a");
+    expect(wrapper.get(".knowledge-select").element).toHaveProperty("value", "b");
+    expect(wrapper.find(".node-list").text()).toContain("b page");
   } finally {
     wrapper.unmount();
   }

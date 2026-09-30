@@ -29,7 +29,6 @@ const activeNodeId = ref("");
 const detailDrawerOpen = ref(false);
 const deletingProject = ref(false);
 const deleteDialogOpen = ref(false);
-const dialog = { warning: (_options: unknown) => undefined };
 let graphRevision = 0;
 let disposed = false;
 
@@ -422,66 +421,6 @@ async function confirmDeleteProjectDialog() {
     deleteDialogOpen.value = false;
     await loadProjects();
     if (nextProjectId) {
-      selectedProjectId.value = nextProjectId;
-    }
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "Failed to delete project graph";
-  } finally {
-    deletingProject.value = false;
-  }
-}
-
-async function deleteSelectedProject() {
-  const projectId = selectedProjectId.value.trim();
-  if (!projectId || deletingProject.value) {
-    return;
-  }
-  dialog.warning({
-    title: t("knowledge.confirm_delete_title"),
-    content: `确认删除项目图谱“${scope}”吗？{{ t("knowledge.confirm_delete_warning") }}`,
-    positiveText: t("common.confirm"),
-    negativeText: t("common.cancel"),
-    maskClosable: false,
-    onPositiveClick: async () => {
-      deletingProject.value = true;
-      errorMessage.value = "";
-      try {
-        await api.deleteKnowledgeProject(projectId);
-        const nextProjectId = projects.value.find((item) => item.project_id !== projectId)?.project_id ?? "";
-        graph.value = null;
-        activeNodeId.value = "";
-        detailDrawerOpen.value = false;
-        selectedProjectId.value = "";
-        await loadProjects();
-        if (nextProjectId) {
-          selectedProjectId.value = nextProjectId;
-        }
-      } catch (error) {
-        errorMessage.value = error instanceof Error ? error.message : "Failed to delete project graph";
-        throw error;
-      } finally {
-        deletingProject.value = false;
-      }
-    },
-  });
-  return;
-  const confirmed = window.confirm(t("knowledge.confirm_delete_content", { scope }));
-  if (!confirmed) {
-    return;
-  }
-
-  deletingProject.value = true;
-  errorMessage.value = "";
-  try {
-    await api.deleteKnowledgeProject(scope);
-    const nextScope =
-      projects.value.find((item) => item.project_id !== projectId)?.project_id ?? "";
-    graph.value = null;
-    activeNodeId.value = "";
-    detailDrawerOpen.value = false;
-    selectedProjectId.value = "";
-    await loadProjects();
-    if (nextScope) {
       selectedProjectId.value = nextProjectId;
     }
   } catch (error) {
