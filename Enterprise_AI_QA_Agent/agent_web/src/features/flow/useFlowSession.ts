@@ -46,6 +46,12 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
 
   let eventSource: EventSource | null = null;
   let sideDataTimer: number | null = null;
+  let loadRevision = 0;
+  let sideDataRevision = 0;
+  let disposed = false;
+
+  const isCurrent = (revision: number, id: string) =>
+    !disposed && revision === loadRevision && id === sessionId.value;
 
   const resolvedTurnId = computed(() => turnId.value || resolveLatestTurnId(events.value));
   const statuses = computed(() => projectStageStatuses(events.value, resolvedTurnId.value));
@@ -114,13 +120,14 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     applyFlowSideData(flow);
   }
 
-  async function loadSideDataFallback(id: string) {
+  async function loadSideDataFallback(id: string, stillCurrent: () => boolean) {
     const [nextSnapshots, nextJobs, nextArtifacts, nextSession] = await Promise.all([
       api.listSessionSnapshots(id, { limit: 20, includeGraphState: true }),
       api.listToolJobs(id),
       api.listArtifacts(id),
       api.getSession(id),
     ]);
+    if (!stillCurrent()) return;
     snapshots.value = Array.isArray(nextSnapshots) ? nextSnapshots : [];
     toolJobs.value = Array.isArray(nextJobs) ? nextJobs : [];
     artifacts.value = Array.isArray(nextArtifacts) ? nextArtifacts : [];
@@ -131,56 +138,67 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     sideDataLoaded.value = true;
   }
 
-  async function loadSideData(id: string) {
+  async function loadSideData(id: string, load: number) {
+    const revision = ++sideDataRevision;
+    const stillCurrent = () => isCurrent(load, id) && revision === sideDataRevision;
     try {
       try {
-        applyFlowSideData(await api.getSessionFlow(id, { turnId: turnId.value || resolvedTurnId.value }));
+        const flow = await api.getSessionFlow(id, { turnId: turnId.value || resolvedTurnId.value });
+        if (!stillCurrent()) return;
+        applyFlowSideData(flow);
         return;
       } catch (err) {
+        if (!stillCurrent()) return;
         console.warn("[flow] aggregated flow endpoint unavailable, falling back", err);
       }
-      await loadSideDataFallback(id);
+      await loadSideDataFallback(id, stillCurrent);
     } catch (err) {
+      if (!stillCurrent()) return;
       sideDataLoaded.value = false;
       console.warn("[flow] failed to load inspector side data", err);
     }
   }
 
-  function scheduleSideDataRefresh(id: string) {
+  function scheduleSideDataRefresh(id: string, revision: number) {
+    if (!isCurrent(revision, id)) return;
     if (sideDataTimer !== null) {
       window.clearTimeout(sideDataTimer);
     }
     sideDataTimer = window.setTimeout(() => {
       sideDataTimer = null;
-      void loadSideData(id);
+      if (isCurrent(revision, id)) void loadSideData(id, revision);
     }, 400);
   }
 
-  function connect(id: string) {
+  function connect(id: string, revision: number) {
+    if (!isCurrent(revision, id)) return;
     disconnect();
     const lastEventId = events.value.map((event) => String(event.id || "").trim()).filter(Boolean).at(-1) || "";
     eventSource = api.connectEvents(
       id,
       (event) => {
+        if (!isCurrent(revision, id)) return;
         if (!rememberEvent(event)) {
           return;
         }
         events.value = [...events.value, event];
         if (SIDE_DATA_REFRESH_TYPES.has(event.type)) {
-          scheduleSideDataRefresh(id);
+          scheduleSideDataRefresh(id, revision);
         }
       },
       lastEventId,
       (message) => {
-        error.value = message;
+        if (isCurrent(revision, id)) error.value = message;
       },
     );
     eventSource.onerror = () => {
-      console.warn("[flow] SSE connection error", { sessionId: id });
+      if (isCurrent(revision, id)) console.warn("[flow] SSE connection error", { sessionId: id });
     };
   }
 
   async function load() {
+    const revision = ++loadRevision;
+    ++sideDataRevision;
     const id = sessionId.value;
     disconnect();
     events.value = [];
@@ -203,21 +221,25 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
     loading.value = true;
     try {
       try {
-        applyFlow(await api.getSessionFlow(id, { turnId: turnId.value }));
+        const flow = await api.getSessionFlow(id, { turnId: turnId.value });
+        if (!isCurrent(revision, id)) return;
+        applyFlow(flow);
       } catch (err) {
+        if (!isCurrent(revision, id)) return;
         console.warn("[flow] aggregated flow endpoint unavailable, falling back", err);
         const history = await api.listSessionEvents(id);
+        if (!isCurrent(revision, id)) return;
         events.value = Array.isArray(history) ? history : [];
         for (const event of events.value) {
           rememberEvent(event);
         }
-        await loadSideDataFallback(id);
+        await loadSideDataFallback(id, () => isCurrent(revision, id));
       }
-      connect(id);
+      connect(id, revision);
     } catch (err) {
-      error.value = err instanceof Error ? err.message : "加载事件失败。";
+      if (isCurrent(revision, id)) error.value = err instanceof Error ? err.message : "加载事件失败。";
     } finally {
-      loading.value = false;
+      if (isCurrent(revision, id)) loading.value = false;
     }
   }
 
@@ -230,6 +252,9 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
   );
 
   onBeforeUnmount(() => {
+    disposed = true;
+    ++loadRevision;
+    ++sideDataRevision;
     disconnect();
   });
 
