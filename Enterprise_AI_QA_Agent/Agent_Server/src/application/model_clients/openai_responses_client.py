@@ -166,7 +166,7 @@ class OpenAIResponsesClient:
             ]
             params["tool_choice"] = "auto"
             if config.capabilities.parallel_tool_calls:
-                params["parallel_tool_calls"] = False
+                params["parallel_tool_calls"] = True
         return params
 
     def _parse_response(self, response: Any) -> dict[str, Any]:
