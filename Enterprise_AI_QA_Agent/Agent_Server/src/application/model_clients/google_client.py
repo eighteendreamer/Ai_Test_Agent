@@ -18,20 +18,51 @@ from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvoca
 from src.schemas.tool_runtime import ModelToolCall
 
 _SCHEMA_ALLOWED_KEYS = {
-    "type",
+    "additionalProperties",
+    "anyOf",
+    "default",
+    "defs",
     "description",
-    "properties",
-    "items",
-    "required",
     "enum",
+    "example",
     "format",
-    "nullable",
-    "minimum",
+    "items",
+    "maxItems",
+    "maxLength",
+    "maxProperties",
     "maximum",
     "minItems",
-    "maxItems",
     "minLength",
-    "maxLength",
+    "minProperties",
+    "minimum",
+    "nullable",
+    "pattern",
+    "properties",
+    "propertyOrdering",
+    "ref",
+    "required",
+    "type",
+    "title",
+}
+_SCHEMA_TYPES = {
+    "array",
+    "boolean",
+    "integer",
+    "null",
+    "number",
+    "object",
+    "string",
+}
+_SCHEMA_IGNORED_KEYS = {
+    "$comment",
+    "$id",
+    "$schema",
+    "deprecated",
+    "examples",
+    "externalDocs",
+    "readOnly",
+    "writeOnly",
+    "xml",
 }
 
 
@@ -340,62 +371,218 @@ class GoogleGenAIClient:
             return {"text": f"[file:{label}]"}
         return None
 
-    def _sanitize_function_parameters(self, schema: Any) -> dict[str, Any]:
+    def _sanitize_function_parameters(
+        self,
+        schema: Any,
+        *,
+        is_root: bool = True,
+    ) -> dict[str, Any]:
         if not isinstance(schema, dict):
-            return {"type": "object", "properties": {}}
+            if is_root:
+                return {"type": "object", "properties": {}}
+            raise ProviderClientError(
+                "Gemini nested function parameter schemas must be objects."
+            )
 
         working = dict(schema)
-        for union_key in ("anyOf", "oneOf", "allOf"):
-            if union_key in working and "type" not in working:
-                candidate = self._first_supported_union_member(working.get(union_key))
-                if candidate:
-                    working = {**candidate, **{key: value for key, value in working.items() if key != union_key}}
-                else:
-                    working.pop(union_key, None)
+        if "allOf" in working:
+            raise ProviderClientError(
+                "Gemini function parameter schema uses unsupported 'allOf'; "
+                "the constraint cannot be represented without changing its meaning."
+            )
+        if "oneOf" in working:
+            if "anyOf" in working or not self._one_of_branches_are_disjoint(
+                working["oneOf"]
+            ):
+                raise ProviderClientError(
+                    "Gemini function parameter schema uses 'oneOf' branches that "
+                    "cannot be represented losslessly."
+                )
+            working["anyOf"] = working.pop("oneOf")
+
+        raw_type = working.get("type")
+        if isinstance(raw_type, list):
+            if not raw_type or any(
+                not isinstance(item, str) or item not in _SCHEMA_TYPES
+                for item in raw_type
+            ):
+                raise ProviderClientError(
+                    "Gemini function parameter schema 'type' must contain supported type names."
+                )
+            if len(set(raw_type)) != len(raw_type):
+                raise ProviderClientError(
+                    "Gemini function parameter schema 'type' must not contain duplicate types."
+                )
+            if len(raw_type) == 1:
+                working["type"] = raw_type[0]
+            else:
+                if "anyOf" in working:
+                    raise ProviderClientError(
+                        "Gemini function parameter schema combines a multi-type "
+                        "'type' list with 'anyOf', which cannot be represented losslessly."
+                    )
+                working.pop("type", None)
+                working["anyOf"] = [{"type": item} for item in raw_type]
 
         sanitized: dict[str, Any] = {}
+        raw_required = working.get("required")
         for key, value in working.items():
-            if key not in _SCHEMA_ALLOWED_KEYS:
+            if key in _SCHEMA_IGNORED_KEYS or key.startswith("x-"):
                 continue
-            if key == "properties" and isinstance(value, dict):
+            if key in {"$defs", "definitions"}:
+                key = "defs"
+            elif key == "$ref":
+                key = "ref"
+            elif key not in _SCHEMA_ALLOWED_KEYS:
+                raise ProviderClientError(
+                    f"Gemini function parameter schema contains unsupported keyword '{key}'."
+                )
+
+            if key == "properties":
+                if not isinstance(value, dict):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'properties' must be an object."
+                    )
                 sanitized["properties"] = {
-                    str(name): self._sanitize_function_parameters(child_schema)
+                    str(name): self._sanitize_function_parameters(
+                        child_schema,
+                        is_root=False,
+                    )
                     for name, child_schema in value.items()
                     if isinstance(name, str)
                 }
                 continue
             if key == "items":
-                sanitized["items"] = self._sanitize_function_parameters(value)
+                sanitized["items"] = self._sanitize_function_parameters(
+                    value,
+                    is_root=False,
+                )
                 continue
-            if key == "required" and isinstance(value, list):
-                known = set((sanitized.get("properties") or {}).keys()) if isinstance(sanitized.get("properties"), dict) else None
-                required = [str(item) for item in value if isinstance(item, str)]
-                sanitized["required"] = [item for item in required if known is None or item in known]
+            if key == "required":
+                if not isinstance(value, list):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'required' must be an array."
+                    )
+                if any(not isinstance(item, str) for item in value):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'required' entries must be strings."
+                    )
+                continue
+            if key == "anyOf":
+                sanitized["anyOf"] = self._sanitize_union_branches(value)
+                continue
+            if key == "defs":
+                if not is_root:
+                    raise ProviderClientError(
+                        "Gemini function parameter schema permits 'defs' only at the root."
+                    )
+                if not isinstance(value, dict):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'defs' must be an object."
+                    )
+                converted_defs = {
+                    str(name): self._sanitize_function_parameters(
+                        definition,
+                        is_root=False,
+                    )
+                    for name, definition in value.items()
+                    if isinstance(name, str)
+                }
+                existing_defs = sanitized.get("defs", {})
+                if set(existing_defs).intersection(converted_defs):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema definition names collide "
+                        "after normalizing '$defs' and 'definitions'."
+                    )
+                sanitized["defs"] = {**existing_defs, **converted_defs}
+                continue
+            if key == "ref":
+                if not isinstance(value, str):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'ref' must be a string."
+                    )
+                sanitized["ref"] = self._normalize_schema_ref(value)
+                continue
+            if key == "additionalProperties" and isinstance(value, dict):
+                sanitized[key] = self._sanitize_function_parameters(
+                    value,
+                    is_root=False,
+                )
+                continue
+            if key == "additionalProperties":
+                if not isinstance(value, bool):
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'additionalProperties' "
+                        "must be a boolean or schema object."
+                    )
+                sanitized[key] = value
                 continue
             if key == "type":
-                if isinstance(value, list):
-                    preferred = next((item for item in value if isinstance(item, str) and item != "null"), None)
-                    if preferred:
-                        sanitized["type"] = preferred
-                elif isinstance(value, str):
-                    sanitized["type"] = value
+                if not isinstance(value, str) or value not in _SCHEMA_TYPES:
+                    raise ProviderClientError(
+                        "Gemini function parameter schema 'type' must be a supported type name."
+                    )
+                sanitized["type"] = value
                 continue
-            sanitized[key] = value
+            if key in _SCHEMA_ALLOWED_KEYS:
+                sanitized[key] = value
+
+        if isinstance(raw_required, list):
+            sanitized["required"] = list(raw_required)
 
         if sanitized.get("type") == "object":
             sanitized.setdefault("properties", {})
-        return sanitized or {"type": "object", "properties": {}}
+        if sanitized or not is_root:
+            return sanitized
+        return {"type": "object", "properties": {}}
 
-    def _first_supported_union_member(self, value: Any) -> dict[str, Any] | None:
-        if not isinstance(value, list):
-            return None
+    def _sanitize_union_branches(
+        self,
+        value: Any,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(value, list) or not value:
+            raise ProviderClientError(
+                "Gemini function parameter schema union must contain at least one branch."
+            )
+
+        branches: list[dict[str, Any]] = []
         for item in value:
             if not isinstance(item, dict):
-                continue
-            item_type = item.get("type")
-            if item_type == "null":
-                continue
-            if isinstance(item_type, list) and all(part == "null" for part in item_type):
-                continue
-            return item
-        return None
+                raise ProviderClientError(
+                    "Gemini function parameter schema union branches must be objects."
+                )
+            branches.append(
+                self._sanitize_function_parameters(item, is_root=False)
+            )
+        return branches
+
+    @staticmethod
+    def _one_of_branches_are_disjoint(value: Any) -> bool:
+        if not isinstance(value, list) or len(value) < 2:
+            return False
+        used_types: set[str] = set()
+        for branch in value:
+            if not isinstance(branch, dict):
+                return False
+            branch_type = branch.get("type")
+            if isinstance(branch_type, str):
+                branch_types = {branch_type}
+            elif isinstance(branch_type, list) and all(
+                isinstance(item, str) for item in branch_type
+            ):
+                branch_types = set(branch_type)
+            else:
+                return False
+            if "number" in branch_types:
+                branch_types.add("integer")
+            if used_types.intersection(branch_types):
+                return False
+            used_types.update(branch_types)
+        return True
+
+    @staticmethod
+    def _normalize_schema_ref(value: str) -> str:
+        return (
+            value.replace("#/$defs/", "#/defs/")
+            .replace("#/definitions/", "#/defs/")
+        )
