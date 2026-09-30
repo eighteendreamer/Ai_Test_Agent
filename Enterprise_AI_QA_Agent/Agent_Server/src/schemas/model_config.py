@@ -20,6 +20,14 @@ ModelTransport = Literal[
 ModelAuthType = Literal["api_key", "oauth2"]
 ModelApplication = Literal["task_execution", "embedding_retrieval"]
 
+MODEL_FAILURE_MODES = frozenset(
+    {"missing_active_model", "auth_error", "missing_api_key", "http_error"}
+)
+
+
+def is_model_failure_summary(summary: dict[str, Any] | None) -> bool:
+    return str((summary or {}).get("mode") or "") in MODEL_FAILURE_MODES
+
 
 ContentPartType = Literal[
     "text",

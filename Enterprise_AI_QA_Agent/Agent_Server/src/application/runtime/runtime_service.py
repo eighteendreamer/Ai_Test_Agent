@@ -39,7 +39,7 @@ from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_logging import append_graph_event, truncate_text
-from src.schemas.model_config import ModelConfigRecord
+from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
     ChatMessage,
     ExecutionEvent,
@@ -1840,18 +1840,19 @@ class RuntimeService:
 
     def _convert_model_interruption_to_resumable(self, state: dict[str, Any]) -> None:
         summary = dict(state.get("model_response_summary") or {})
-        if str(summary.get("mode") or "") != "http_error":
+        if not is_model_failure_summary(summary):
             return
         state["continue_loop"] = False
         state["termination_reason"] = "interrupted"
         state["control_state"] = "interrupted"
-        state["interrupt_reason"] = str(summary.get("error") or summary.get("error_type") or "model_interrupted")
+        state["interrupt_reason"] = str(summary["mode"])
         state["pending_turn"] = self._build_pending_turn(state, stage="interrupted")
         append_graph_event(
             state,
             "model.invocation_interrupted",
             "runtime",
             "Model invocation failed and the turn was preserved for resume.",
+            response_mode=str(summary["mode"]),
             error_type=str(summary.get("error_type") or ""),
             status_code=summary.get("status_code"),
             provider=str(summary.get("provider") or ""),

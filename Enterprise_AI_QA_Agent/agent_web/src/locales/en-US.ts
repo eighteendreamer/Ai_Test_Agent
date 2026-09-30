@@ -104,6 +104,7 @@ export default {
   "chat.sending_status": "Sending...",
   "chat.streaming_status": "Generating...",
   "chat.failed_status": "Send failed",
+  "chat.model_failure": "Model call failed",
   "chat.expand": "Expand",
   "chat.collapse": "Collapse",
 

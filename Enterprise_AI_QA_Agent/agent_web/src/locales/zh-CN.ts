@@ -104,6 +104,7 @@ export default {
   "chat.sending_status": "发送中...",
   "chat.streaming_status": "生成中...",
   "chat.failed_status": "发送失败",
+  "chat.model_failure": "模型调用失败",
   "chat.expand": "展开",
   "chat.collapse": "收起",
 

@@ -3,10 +3,15 @@ from __future__ import annotations
 from src.graph.state import AgentGraphState
 from src.application.security.output_safety_policy import OutputSafetyPolicy
 from src.runtime.execution_logging import append_graph_event, truncate_text
+from src.schemas.model_config import is_model_failure_summary
 
 
 def responder(state: AgentGraphState) -> AgentGraphState:
-    if state["continue_loop"] or not state["final_response"].strip():
+    if (
+        state["continue_loop"]
+        or not state["final_response"].strip()
+        or is_model_failure_summary(state.get("model_response_summary"))
+    ):
         return state
 
     plan_text = "\n".join(f"{index}. {item}" for index, item in enumerate(state["plan_steps"], start=1))

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.application.prompting.untrusted_content import wrap_untrusted_content
+from src.schemas.model_config import is_model_failure_summary
 from src.schemas.session import ChatMessage
 
 
@@ -47,7 +48,7 @@ class TranscriptHygieneService:
             return False
         if message.role.value == "assistant":
             response_mode = str(metadata.get("response_mode") or "").strip()
-            if response_mode == "http_error":
+            if is_model_failure_summary({"mode": response_mode}):
                 return False
             if content.startswith("Model invocation failed for '"):
                 return False

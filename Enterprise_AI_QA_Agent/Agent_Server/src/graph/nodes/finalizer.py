@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.graph.state import AgentGraphState
 from src.runtime.execution_logging import append_graph_event
+from src.schemas.model_config import is_model_failure_summary
 
 
 def build_finalizer_node(
@@ -10,6 +11,13 @@ def build_finalizer_node(
     async def finalizer(state: AgentGraphState) -> AgentGraphState:
         if state.get("interrupt_requested"):
             state["continue_loop"] = False
+            return state
+
+        if is_model_failure_summary(state.get("model_response_summary")):
+            state["final_response"] = state["model_response_text"]
+            state["continue_loop"] = False
+            state["termination_reason"] = "interrupted"
+            state["control_state"] = "interrupted"
             return state
 
         if not state["model_tool_calls"]:

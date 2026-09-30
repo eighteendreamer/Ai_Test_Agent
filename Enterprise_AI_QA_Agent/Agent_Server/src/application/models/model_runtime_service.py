@@ -2,6 +2,7 @@
 
 import contextvars
 import json
+import logging
 import os
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
@@ -33,6 +34,8 @@ _stream_handler_var: contextvars.ContextVar[StreamChunkHandler | None] = context
     "model_stream_handler",
     default=None,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRuntimeService:
@@ -92,10 +95,14 @@ class ModelRuntimeService:
         try:
             config = self._model_registry.get_runtime_config(model_key)
         except KeyError:
+            logger.warning(
+                "model_invocation_failed",
+                extra={"model_key": model_key, "mode": "missing_active_model"},
+            )
             return ModelInvocationResult(
                 text=(
-                    f"No active model configuration found for '{model_key}'. "
-                    "Activate a row in the MySQL model config table before running this turn."
+                    "No active model configuration was found for this turn. "
+                    "Activate a model and retry."
                 ),
                 request_payload={
                     "requested_model_key": model_key,
@@ -107,21 +114,36 @@ class ModelRuntimeService:
         try:
             api_key = await self._resolve_auth_token(config)
         except Exception as exc:
+            logger.warning(
+                "model_invocation_failed",
+                extra={
+                    "model_key": config.key,
+                    "mode": "auth_error",
+                    "error_type": type(exc).__name__,
+                },
+            )
             return ModelInvocationResult(
-                text=(
-                    f"Model '{config.name}' authentication failed: {exc}"
-                ),
+                text="Model authentication failed. Check its credentials and retry.",
                 request_payload=self._summarize_request(config, request),
-                response_summary={"mode": "auth_error", "model_key": config.key},
-                raw_response={"mode": "auth_error", "model_key": config.key},
+                response_summary={
+                    "mode": "auth_error",
+                    "model_key": config.key,
+                    "error_type": type(exc).__name__,
+                },
+                raw_response={
+                    "mode": "auth_error",
+                    "model_key": config.key,
+                    "error_type": type(exc).__name__,
+                },
             )
 
         if not api_key:
+            logger.warning(
+                "model_invocation_failed",
+                extra={"model_key": config.key, "mode": "missing_api_key"},
+            )
             return ModelInvocationResult(
-                text=(
-                    f"Model '{config.name}' is active in the database but has no usable API key. "
-                    f"Configure `api_key` or set environment variable `{config.api_key_env}`."
-                ),
+                text="The active model has no usable API key. Configure its credentials and retry.",
                 request_payload=self._summarize_request(config, request),
                 response_summary={"mode": "missing_api_key", "model_key": config.key},
                 raw_response={"mode": "missing_api_key", "model_key": config.key},
@@ -518,12 +540,18 @@ class ModelRuntimeService:
     ) -> ModelInvocationResult:
         response_body = truncate_text(exc.response_body or "", 400)
         status_code = exc.status_code
+        logger.warning(
+            "model_invocation_failed",
+            extra={
+                "model_key": config.key,
+                "mode": "http_error",
+                "provider": config.provider,
+                "error_type": type(exc).__name__,
+                "status_code": status_code,
+            },
+        )
         return ModelInvocationResult(
-            text=(
-                f"Model invocation failed for '{config.name}' via provider '{config.provider}': "
-                f"{truncate_text(str(exc), 180)}"
-                + (f" | response={response_body}" if response_body else "")
-            ),
+            text="Model invocation failed. Check the model provider and retry.",
             request_payload=self._summarize_request(config, request),
             response_summary={
                 "mode": "http_error",

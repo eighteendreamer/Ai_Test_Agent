@@ -5,7 +5,7 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.graph.state import AgentGraphState
 from src.registry.tools import ToolRegistry
 from src.runtime.execution_logging import append_graph_event, summarize_messages, truncate_text
-from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.model_config import ModelInvocationRequest, is_model_failure_summary
 from src.schemas.prompting import PromptSection
 
 
@@ -142,6 +142,20 @@ def build_model_invoker_node(
             state.get("turn_token_usage") or {}
         ).merge_latest(latest_usage)
         state["turn_token_usage"] = accumulated_usage.model_dump(mode="python")
+
+        if is_model_failure_summary(invocation_result.response_summary):
+            append_graph_event(
+                state,
+                "model.invocation_failed",
+                "model_invoker",
+                "Model invocation failed before an assistant response was generated.",
+                model_key=state["selected_model_key"],
+                response_mode=invocation_result.response_summary.get("mode", ""),
+                error_type=invocation_result.response_summary.get("error_type", ""),
+                status_code=invocation_result.response_summary.get("status_code"),
+                loop_iteration=state["loop_iteration"],
+            )
+            return state
 
         append_graph_event(
             state,

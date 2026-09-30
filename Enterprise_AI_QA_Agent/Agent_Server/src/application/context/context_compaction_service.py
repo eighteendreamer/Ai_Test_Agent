@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -8,7 +9,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.domain.models import SessionRecord
-from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.model_config import ModelInvocationRequest, is_model_failure_summary
 
 _SUMMARY_SYSTEM_PROMPT = (
     "You maintain the running summary of an agent work session. "
@@ -26,6 +27,7 @@ _MIN_COMPACTABLE_MESSAGES = 4
 _MESSAGE_EXCERPT_CHARS = 600
 # Total transcript excerpt cap inside the compaction prompt.
 _TRANSCRIPT_EXCERPT_CHARS = 24000
+logger = logging.getLogger(__name__)
 
 
 class ContextCompactionService:
@@ -95,9 +97,21 @@ class ContextCompactionService:
             return None
         try:
             result = await self._model_runtime_service.invoke(model_config.key, request)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "context_compaction_model_failed",
+                extra={"model_key": model_config.key, "error_type": type(exc).__name__},
+            )
             return None
-        if str(result.response_summary.get("mode") or "") == "http_error":
+        if is_model_failure_summary(result.response_summary):
+            logger.warning(
+                "context_compaction_model_failed",
+                extra={
+                    "model_key": model_config.key,
+                    "response_mode": result.response_summary.get("mode", ""),
+                    "status_code": result.response_summary.get("status_code"),
+                },
+            )
             return None
         summary_text = str(result.text or "").strip()
         if not summary_text:

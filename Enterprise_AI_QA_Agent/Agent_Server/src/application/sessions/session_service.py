@@ -23,6 +23,7 @@ from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
 from src.runtime.store import ContinuationLeaseLostError, SessionStore
 from src.registry.modes import ModeRegistry
+from src.schemas.model_config import is_model_failure_summary
 from src.schemas.observation import SessionObservationResponse
 from src.schemas.session import (
     ApprovalDecisionRequest,
@@ -2664,7 +2665,7 @@ class SessionService:
 
     def _session_status_from_runtime_result(self, runtime_result) -> SessionStatus:
         model_response_summary = runtime_result.state.get("model_response_summary", {})
-        if str(model_response_summary.get("mode") or "") == "http_error":
+        if is_model_failure_summary(model_response_summary):
             return SessionStatus.interrupted
         if runtime_result.state.get("termination_reason") == "interrupted":
             return SessionStatus.interrupted
@@ -2674,7 +2675,7 @@ class SessionService:
 
     def _control_state_from_runtime_result(self, runtime_result) -> str:
         model_response_summary = runtime_result.state.get("model_response_summary", {})
-        if str(model_response_summary.get("mode") or "") == "http_error":
+        if is_model_failure_summary(model_response_summary):
             return "interrupted"
         if runtime_result.state.get("termination_reason") == "interrupted":
             return "interrupted"

@@ -16,6 +16,7 @@ from enum import IntEnum
 from typing import Any
 
 from src.application.context.context_compaction_service import ContextCompactionService
+from src.schemas.model_config import is_model_failure_summary
 
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ class ErrorRecoveryCascade:
 
     def _is_http_or_output_error(self, error_str: str, error_type: str, state: dict) -> bool:
         summary = dict(state.get("model_response_summary") or {})
-        if str(summary.get("mode") or "") == "http_error":
+        if is_model_failure_summary(summary):
             return True
         http_keywords = ("http error", "status code", "api error", "provider error")
         return any(kw in error_str for kw in http_keywords)

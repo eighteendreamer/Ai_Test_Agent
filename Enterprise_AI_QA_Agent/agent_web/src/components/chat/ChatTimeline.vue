@@ -13,6 +13,13 @@ const props = defineProps<{
   activity?: ExecutionEvent[];
 }>();
 
+const MODEL_FAILURE_MODES = new Set([
+  "missing_active_model",
+  "auth_error",
+  "missing_api_key",
+  "http_error",
+]);
+
 const EXECUTION_EVENT_TYPES = new Set([
   "runtime.turn_started",
   "graph.execution_started",
@@ -200,7 +207,12 @@ function messageKind(message: ChatMessage) {
   return String(message.metadata?.message_kind || "").trim();
 }
 
+function isModelFailureMessage(message: ChatMessage) {
+  return MODEL_FAILURE_MODES.has(String(message.metadata?.response_mode || "").trim());
+}
+
 function assistantKindLabel(message: ChatMessage) {
+  if (isModelFailureMessage(message)) return t("chat.model_failure");
   const kind = messageKind(message);
   if (kind === "task_notification") return t("chat.worker_notification");
   if (kind === "coordinator_assignment") return t("chat.worker_assignment");
@@ -409,8 +421,9 @@ function toolHeadline(message: ChatMessage) {
       <article
         v-else-if="entry.kind === 'message' && entry.message.role === 'assistant'"
         class="chat-turn chat-assistant-message"
+        :class="{ 'is-model-failure': isModelFailureMessage(entry.message) }"
       >
-        <span v-if="assistantKindLabel(entry.message)" class="chat-kind-chip">{{ assistantKindLabel(entry.message) }}</span>
+        <span v-if="assistantKindLabel(entry.message)" class="chat-kind-chip" :class="{ 'is-error': isModelFailureMessage(entry.message) }">{{ assistantKindLabel(entry.message) }}</span>
         <div
           :class="[
             'chat-answer',
