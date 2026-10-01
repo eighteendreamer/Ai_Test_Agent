@@ -702,6 +702,9 @@ async def _initialize_lifespan_resources(
     cleanup.push_async_callback(
         _close_lifespan_resource, "coordinator_dispatch_reaper", coordinator_runtime_service.stop_dispatch_reaper,
     )
+    cleanup.push_async_callback(
+        _close_lifespan_resource, "coordinator_child_watchers", coordinator_runtime_service.stop_child_watchers,
+    )
     coordinator_runtime_service.set_observability_service(observability_service)
     tool_runtime_service.set_coordinator_runtime_service(coordinator_runtime_service)
     tool_runtime_service.set_model_registry(model_registry)

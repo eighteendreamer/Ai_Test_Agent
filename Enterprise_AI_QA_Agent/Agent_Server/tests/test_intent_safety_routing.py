@@ -1555,6 +1555,140 @@ def test_coordinator_cancel_workers_cancels_task_and_marks_child_interrupted():
     assert [event.type for event in events] == ["worker.interrupted"]
 
 
+@pytest.mark.asyncio
+async def test_coordinator_cancel_workers_stops_waiting_approval_watcher() -> None:
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "watch-parent"
+    await store.save_session(parent)
+    child = _session("security_testing")
+    child.id = "watch-child"
+    child.status = SessionStatus.waiting_approval
+    await store.save_session(child)
+    service = CoordinatorRuntimeService(
+        Settings(), store, SimpleNamespace(get_session=store.get_session), AgentRegistry()
+    )
+    service._deliver_notification = AsyncMock()
+    worker = SimpleNamespace(task_id="watch-task", agent_key="qa-planner", description="review")
+    watch_task = asyncio.create_task(service._watch_child_session_until_settled(
+        parent_session_id=parent.id,
+        parent_turn_id="turn-1",
+        parent_trace_id="trace-1",
+        child_session_id=child.id,
+        worker=worker,
+    ))
+    service._watch_tasks[child.id] = watch_task
+    await asyncio.sleep(0)
+
+    await service.cancel_workers(
+        task_ids=[worker.task_id], child_session_ids=[child.id], reason="parent interrupted"
+    )
+    await asyncio.sleep(1.1)
+
+    assert watch_task.cancelled()
+    service._deliver_notification.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_watcher_stops_when_parent_is_terminal() -> None:
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "settled-watch-parent"
+    parent.status = SessionStatus.interrupted
+    await store.save_session(parent)
+    child = _session("security_testing")
+    child.id = "settled-watch-child"
+    child.status = SessionStatus.waiting_approval
+    await store.save_session(child)
+    service = CoordinatorRuntimeService(
+        Settings(), store, SimpleNamespace(get_session=store.get_session), AgentRegistry()
+    )
+    service._sync_child_approvals_to_parent = AsyncMock()
+    worker = SimpleNamespace(task_id="settled-watch-task", agent_key="qa-planner", description="review")
+    watch_task = asyncio.create_task(service._watch_child_session_until_settled(
+        parent_session_id=parent.id,
+        parent_turn_id="turn-1",
+        parent_trace_id="trace-1",
+        child_session_id=child.id,
+        worker=worker,
+    ))
+    try:
+        await asyncio.wait_for(watch_task, timeout=1.5)
+    finally:
+        if not watch_task.done():
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
+
+    service._sync_child_approvals_to_parent.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_shutdown_stops_registered_child_watchers() -> None:
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "shutdown-watch-parent"
+    await store.save_session(parent)
+    child = _session("security_testing")
+    child.id = "shutdown-watch-child"
+    child.status = SessionStatus.waiting_approval
+    await store.save_session(child)
+    service = CoordinatorRuntimeService(
+        Settings(), store, SimpleNamespace(get_session=store.get_session), AgentRegistry()
+    )
+    worker = SimpleNamespace(task_id="shutdown-watch-task", agent_key="qa-planner", description="review")
+    kwargs = {
+        "parent_session_id": parent.id,
+        "parent_turn_id": "turn-1",
+        "parent_trace_id": "trace-1",
+        "child_session_id": child.id,
+        "worker": worker,
+    }
+    service._start_child_watch(**kwargs)
+    first = service._watch_tasks[child.id]
+    service._start_child_watch(**kwargs)
+    assert service._watch_tasks[child.id] is first
+
+    await service.stop_child_watchers()
+
+    assert first.cancelled()
+    assert service._watch_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_coordinator_completed_parent_keeps_watching_approval_child() -> None:
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "completed-watch-parent"
+    parent.status = SessionStatus.completed
+    await store.save_session(parent)
+    child = _session("security_testing")
+    child.id = "completed-watch-child"
+    child.status = SessionStatus.waiting_approval
+    await store.save_session(child)
+    service = CoordinatorRuntimeService(
+        Settings(), store, SimpleNamespace(get_session=store.get_session), AgentRegistry()
+    )
+
+    async def settle_after_approval(**_kwargs) -> None:
+        child.status = SessionStatus.completed
+        await store.save_session(child)
+
+    service._sync_child_approvals_to_parent = AsyncMock(side_effect=settle_after_approval)
+    service._deliver_notification = AsyncMock()
+    worker = SimpleNamespace(task_id="completed-watch-task", agent_key="qa-planner", description="review")
+
+    await asyncio.wait_for(service._watch_child_session_until_settled(
+        parent_session_id=parent.id,
+        parent_turn_id="turn-1",
+        parent_trace_id="trace-1",
+        child_session_id=child.id,
+        worker=worker,
+    ), timeout=3)
+
+    service._sync_child_approvals_to_parent.assert_awaited_once()
+    service._deliver_notification.assert_awaited_once()
+
+
 def test_coordinator_dispatch_duplicate_workers_is_deduplicated_by_persistence_claim():
     async def scenario():
         store = InMemorySessionStore()

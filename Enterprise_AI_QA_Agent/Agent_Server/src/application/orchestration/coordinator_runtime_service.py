@@ -120,6 +120,16 @@ class CoordinatorRuntimeService:
         await task
         logger.info("coordinator_dispatch_reaper_stopped")
 
+    async def stop_child_watchers(self) -> None:
+        """Stop approval watchers before their session store is closed."""
+        tasks = list(set(self._watch_tasks.values()))
+        self._watch_tasks.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("coordinator_child_watchers_stopped", extra={"watcher_count": len(tasks)})
+
     async def _dispatch_reaper_loop(self) -> None:
         stop = self._dispatch_reaper_stop
         if stop is None:
@@ -163,6 +173,20 @@ class CoordinatorRuntimeService:
         reason: str,
     ) -> None:
         """Cancel coordinator-owned coroutines and settle their child sessions."""
+        watch_tasks = [
+            task
+            for child_session_id in child_session_ids
+            for task in [self._watch_tasks.pop(child_session_id, None)]
+            if task is not None
+        ]
+        for task in watch_tasks:
+            task.cancel()
+        if watch_tasks:
+            await asyncio.gather(*watch_tasks, return_exceptions=True)
+            logger.info(
+                "coordinator_child_watchers_cancelled",
+                extra={"child_session_ids": child_session_ids, "reason": reason},
+            )
         await self._cancel_durable_children(child_session_ids, reason=reason)
         tasks = [
             task
@@ -1389,18 +1413,12 @@ class CoordinatorRuntimeService:
             failure_reason=result_text if notification_status == "failed" else "",
         )
         if notification_status == SessionStatus.waiting_approval.value:
-            watch_task = asyncio.create_task(
-                self._watch_child_session_until_settled(
-                    parent_session_id=parent_session_id,
-                    parent_turn_id=parent_turn_id,
-                    parent_trace_id=parent_trace_id,
-                    child_session_id=child_session_id,
-                    worker=worker,
-                )
-            )
-            self._watch_tasks[worker.task_id] = watch_task
-            watch_task.add_done_callback(
-                lambda _finished, task_id=worker.task_id: self._watch_tasks.pop(task_id, None)
+            self._start_child_watch(
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                parent_trace_id=parent_trace_id,
+                child_session_id=child_session_id,
+                worker=worker,
             )
 
     async def _project_worker_notification(
@@ -1804,18 +1822,12 @@ class CoordinatorRuntimeService:
             if status == SessionStatus.waiting_approval.value:
                 # An approval continuation is its own task type and carries no
                 # child result; keep watching in-process until it truly settles.
-                watch_task = asyncio.create_task(
-                    self._watch_child_session_until_settled(
-                        parent_session_id=parent_session_id,
-                        parent_turn_id=parent_turn_id,
-                        parent_trace_id=str(notification.get("child_trace_id") or parent_task.trace_id),
-                        child_session_id=child_session_id,
-                        worker=worker,
-                    )
-                )
-                self._watch_tasks[worker.task_id] = watch_task
-                watch_task.add_done_callback(
-                    lambda _finished, task_id=worker.task_id: self._watch_tasks.pop(task_id, None)
+                self._start_child_watch(
+                    parent_session_id=parent_session_id,
+                    parent_turn_id=parent_turn_id,
+                    parent_trace_id=str(notification.get("child_trace_id") or parent_task.trace_id),
+                    child_session_id=child_session_id,
+                    worker=worker,
                 )
                 return
             # Debate rounds stay registered here: both helpers only append
@@ -1951,6 +1963,49 @@ class CoordinatorRuntimeService:
             },
         )
 
+    def _start_child_watch(
+        self,
+        *,
+        parent_session_id: str,
+        parent_turn_id: str,
+        parent_trace_id: str,
+        child_session_id: str,
+        worker: WorkerDispatchSpec,
+    ) -> None:
+        existing = self._watch_tasks.get(child_session_id)
+        if existing is not None and not existing.done():
+            return
+        watch_task = asyncio.create_task(
+            self._watch_child_session_until_settled(
+                parent_session_id=parent_session_id,
+                parent_turn_id=parent_turn_id,
+                parent_trace_id=parent_trace_id,
+                child_session_id=child_session_id,
+                worker=worker,
+            )
+        )
+        self._watch_tasks[child_session_id] = watch_task
+
+        def completed(task: asyncio.Task[None]) -> None:
+            if self._watch_tasks.get(child_session_id) is task:
+                self._watch_tasks.pop(child_session_id, None)
+            if task.cancelled():
+                return
+            try:
+                task.result()
+            except Exception:
+                logger.exception(
+                    "coordinator_child_watch_failed",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "child_session_id": child_session_id,
+                        "task_id": worker.task_id,
+                    },
+                )
+
+        watch_task.add_done_callback(completed)
+
     async def _watch_child_session_until_settled(
         self,
         parent_session_id: str,
@@ -1962,6 +2017,20 @@ class CoordinatorRuntimeService:
         running_marked = False
         while True:
             await asyncio.sleep(1)
+            parent_session = await self._store.get_session(parent_session_id)
+            if parent_session is None or parent_session.status in {
+                SessionStatus.failed, SessionStatus.interrupted,
+            }:
+                logger.info(
+                    "coordinator_child_watch_parent_settled",
+                    extra={
+                        "parent_session_id": parent_session_id,
+                        "parent_turn_id": parent_turn_id,
+                        "child_session_id": child_session_id,
+                        "parent_status": parent_session.status.value if parent_session else "missing",
+                    },
+                )
+                return
             child_session = await self._store.get_session(child_session_id)
             if child_session is None:
                 return
