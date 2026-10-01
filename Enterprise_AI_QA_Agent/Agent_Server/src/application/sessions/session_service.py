@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from collections import defaultdict
 from datetime import datetime
 import logging
 import os
@@ -21,6 +20,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
+from src.runtime.session_lock_map import SessionLockMap
 from src.runtime.store import ContinuationLeaseLostError, SessionStore
 from src.registry.modes import ModeRegistry
 from src.schemas.model_config import is_model_failure_summary
@@ -128,7 +128,7 @@ class SessionService:
         self._worker_owner_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4()}"
         # UI 录制审批回调（方案 4.2 环节④/⑤，P0-8）：main.py 在 recorder 域初始化后注入
         self._recording_approval_service = None
-        self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._session_locks = SessionLockMap()
         self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_resume_tasks: dict[str, asyncio.Task[None]] = {}

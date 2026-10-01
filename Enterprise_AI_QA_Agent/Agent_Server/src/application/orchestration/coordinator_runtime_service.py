@@ -23,6 +23,7 @@ from src.core.request_context import get_request_context, new_id
 from src.core.worker_pool import WorkerPool
 from src.domain.models import SessionRecord
 from src.registry.agents import AgentRegistry
+from src.runtime.session_lock_map import SessionLockMap
 from src.runtime.store import SessionStore
 from src.schemas.session import (
     ChatMessage,
@@ -73,7 +74,7 @@ class CoordinatorRuntimeService:
         self._store = store
         self._session_service = session_service
         self._agent_registry = agent_registry
-        self._parent_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._parent_locks = SessionLockMap()
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
         self._watch_tasks: dict[str, asyncio.Task[None]] = {}
         self._max_consecutive_failures = 3
