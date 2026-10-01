@@ -63,6 +63,7 @@ async def test_startup_failure_closes_all_created_redis_resources(
     monkeypatch.setattr(main_module, "AppContainer", object)
     monkeypatch.setattr(main_module, "RedisTaskQueue", resource_type("queue"))
     monkeypatch.setattr(main_module, "RedisHotMemoryStore", resource_type("hot"))
+    monkeypatch.setattr(main_module, "RedisExportTaskStore", resource_type("export"))
     monkeypatch.setattr(main_module, "RedisVectorStore", resource_type("vector"))
     monkeypatch.setattr(main_module, "RedisResourceLeaseManager", resource_type("lease"))
 
@@ -78,11 +79,12 @@ async def test_startup_failure_closes_all_created_redis_resources(
     expected_attempts = [
         "connect:queue",
         "connect:hot",
+        "connect:export",
         "connect:vector",
     ]
     if fail_stage == "quota":
         expected_attempts.extend(["connect:lease", "close:lease"])
-    expected_attempts.extend(["close:vector", "close:hot", "close:queue"])
+    expected_attempts.extend(["close:vector", "close:export", "close:hot", "close:queue"])
     assert attempts == expected_attempts
     if fail_hot_close:
         assert any(

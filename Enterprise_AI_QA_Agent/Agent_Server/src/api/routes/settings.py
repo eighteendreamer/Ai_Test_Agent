@@ -4,9 +4,12 @@ import asyncio
 import html
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from concurrent.futures import Future
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -379,38 +382,79 @@ async def save_general_settings(payload: GeneralSettingsPayload, request: Reques
 # ---------------------------------------------------------------------------
 
 
-_export_tasks: dict[str, dict] = {}
-
-
 @router.post("/data/export/start")
 async def export_start(request: Request):
     """Start a background export task, return task_id for progress polling."""
     store = request.app.state.store
     total = await store.count_sessions()
-    task_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    _export_tasks[task_id] = {"progress": 0, "total": total, "status": "running", "data": None}
+    task_id = uuid4().hex
+    task_store = request.app.state.export_task_store
+    try:
+        await task_store.create_task(task_id, total=total)
+    except Exception as exc:
+        logger.exception(
+            "settings_export_task_create_failed",
+            extra={"task_id": task_id, "error_type": type(exc).__name__},
+        )
+        raise HTTPException(status_code=503, detail="Export service temporarily unavailable.") from exc
 
     async def _run() -> None:
+        loop = asyncio.get_running_loop()
+        progress_futures: list[Future] = []
+        progress_lock = Lock()
+
         try:
             def _on_progress(n: int) -> None:
-                _export_tasks[task_id]["progress"] = n
+                future = asyncio.run_coroutine_threadsafe(
+                    task_store.update_progress(task_id, int(n)),
+                    loop,
+                )
+                with progress_lock:
+                    progress_futures.append(future)
 
             bundle = await store.bulk_export(progress_fn=_on_progress)
-            _export_tasks[task_id]["data"] = bundle
-            _export_tasks[task_id]["progress"] = total
-            _export_tasks[task_id]["status"] = "done"
+            with progress_lock:
+                pending_progress = list(progress_futures)
+            for future in pending_progress:
+                await asyncio.wrap_future(future)
+            await task_store.complete_task(task_id, bundle)
+            logger.info(
+                "settings_export_completed",
+                extra={"task_id": task_id, "session_count": len(bundle)},
+            )
         except Exception as exc:
-            _export_tasks[task_id]["status"] = "error"
-            _export_tasks[task_id]["error"] = str(exc)
+            logger.exception(
+                "settings_export_failed",
+                extra={"task_id": task_id, "error_type": type(exc).__name__},
+            )
+            try:
+                await task_store.fail_task(
+                    task_id,
+                    message="Export failed. Check server logs.",
+                )
+            except Exception as status_exc:
+                logger.exception(
+                    "settings_export_failure_status_write_failed",
+                    extra={"task_id": task_id, "error_type": type(status_exc).__name__},
+                )
 
-    asyncio.get_event_loop().create_task(_run())
+    background_tasks = getattr(request.app.state, "export_background_tasks", None)
+    if background_tasks is None:
+        background_tasks = set()
+        request.app.state.export_background_tasks = background_tasks
+    task = asyncio.create_task(_run(), name=f"settings-export:{task_id}")
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
     return {"ok": True, "task_id": task_id, "total": total}
 
 
 @router.get("/data/export/progress/{task_id}")
-async def export_progress(task_id: str):
+async def export_progress(task_id: str, request: Request):
     """Poll export progress."""
-    task = _export_tasks.get(task_id)
+    try:
+        task = await request.app.state.export_task_store.get_task(task_id)
+    except ValueError:
+        task = None
     if not task:
         raise HTTPException(status_code=404, detail="Export task not found.")
     return {
@@ -422,34 +466,65 @@ async def export_progress(task_id: str):
 
 
 @router.get("/data/export/download/{task_id}")
-async def export_download(task_id: str):
+async def export_download(task_id: str, request: Request):
     """Download completed export data via streaming JSON."""
-    task = _export_tasks.get(task_id)
+    task_store = request.app.state.export_task_store
+    try:
+        task = await task_store.get_task(task_id)
+    except ValueError:
+        task = None
     if not task:
         raise HTTPException(status_code=404, detail="Export task not found.")
     if task["status"] != "done":
         raise HTTPException(status_code=409, detail="Export not yet complete.")
 
-    bundle: list[dict] = task["data"]
-    _export_tasks.pop(task_id, None)
+    session_count = int(task["session_count"])
+    if await task_store.result_count(task_id) != session_count:
+        logger.error(
+            "settings_export_result_missing",
+            extra={"task_id": task_id, "session_count": session_count},
+        )
+        raise HTTPException(status_code=410, detail="Export data is no longer available.")
+    exported_at = str(task.get("exported_at") or datetime.now(UTC).isoformat())
 
-    def _stream():
+    async def _stream():
         header = json.dumps({
             "version": "1.0",
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "session_count": len(bundle),
+            "exported_at": exported_at,
+            "session_count": session_count,
         }, ensure_ascii=False)
         yield header[:-1].encode("utf-8")
         yield b',"sessions":['
 
-        for i, session in enumerate(bundle):
-            if i > 0:
-                yield b","
-            yield json.dumps(session, ensure_ascii=False).encode("utf-8")
+        sent = 0
+        while sent < session_count:
+            try:
+                batch = await task_store.read_result_batch(
+                    task_id,
+                    start=sent,
+                    count=min(64, session_count - sent),
+                )
+            except Exception as exc:
+                logger.exception(
+                    "settings_export_stream_failed",
+                    extra={"task_id": task_id, "session_offset": sent, "error_type": type(exc).__name__},
+                )
+                raise
+            if not batch:
+                logger.error(
+                    "settings_export_stream_truncated",
+                    extra={"task_id": task_id, "session_offset": sent, "session_count": session_count},
+                )
+                raise RuntimeError(f"Export task '{task_id}' result ended before session {sent}.")
+            for session in batch:
+                if sent > 0:
+                    yield b","
+                yield session
+                sent += 1
 
         yield b"]}"
 
-    filename = f"qa-agent-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
+    filename = f"qa-agent-backup-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.json"
     return StreamingResponse(
         _stream(),
         media_type="application/json",

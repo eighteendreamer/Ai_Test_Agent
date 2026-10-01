@@ -127,6 +127,7 @@ from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+from src.infrastructure.redis_export_task_store import RedisExportTaskStore
 from src.infrastructure.postgres_test_case_embedding_store import (
     PostgresTestCaseEmbeddingStore,
 )
@@ -203,6 +204,11 @@ async def _initialize_lifespan_resources(
     cleanup.push_async_callback(_close_lifespan_resource, "hot_memory_store", hot_memory_store.close)
     await hot_memory_store.connect()
     app.state.hot_memory_store = hot_memory_store
+    export_task_store = RedisExportTaskStore(settings.database.redis_url)
+    cleanup.push_async_callback(
+        _close_lifespan_resource, "export_task_store", export_task_store.close,
+    )
+    await export_task_store.connect()
     vector_store = RedisVectorStore(
         settings.database.redis_url,
         socket_timeout_seconds=settings.orchestration.redis_vector_socket_timeout_seconds,
@@ -594,6 +600,7 @@ async def _initialize_lifespan_resources(
 
     app.state.settings = settings
     app.state.store = store
+    app.state.export_task_store = export_task_store
     app.state.agent_registry = agent_registry
     app.state.tool_registry = tool_registry
     app.state.model_config_store = model_config_store
