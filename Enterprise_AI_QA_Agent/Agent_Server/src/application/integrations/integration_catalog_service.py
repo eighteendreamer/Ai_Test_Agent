@@ -23,6 +23,18 @@ from src.schemas.integration import (
 from src.schemas.mcp_management import ResolvedImportDocument
 
 
+class IntegrationNotFoundError(KeyError):
+    """The catalog was read successfully but contains no requested ID."""
+
+
+class IntegrationValidationError(ValueError):
+    """An explicitly checked integration input violates a business constraint."""
+
+
+class IntegrationCatalogReadError(RuntimeError):
+    """A stored catalog cannot be read; it must not be treated as empty."""
+
+
 class IntegrationCatalogService:
     def __init__(self, *, settings: Settings) -> None:
         self._settings = settings
@@ -50,12 +62,12 @@ class IntegrationCatalogService:
             item = self._find_item(catalog, integration_id)
         record = IntegrationRecord.model_validate(item)
         if record.kind != "api":
-            raise ValueError("MCP servers must be managed through /registry/mcp/managed.")
+            raise IntegrationValidationError("MCP servers must be managed through /registry/mcp/managed.")
         return record
 
     async def create_integration(self, payload: IntegrationCreateRequest) -> IntegrationRecord:
         if payload.kind != "api":
-            raise ValueError("MCP servers must be managed through /registry/mcp/managed.")
+            raise IntegrationValidationError("MCP servers must be managed through /registry/mcp/managed.")
         now = datetime.now(timezone.utc)
         record = IntegrationRecord(
             id=str(uuid4()),
@@ -91,7 +103,7 @@ class IntegrationCatalogService:
             catalog = self._load_catalog()
             item = self._find_item(catalog, integration_id)
             if str(item.get("kind") or "") != "api":
-                raise ValueError("MCP servers must be managed through /registry/mcp/managed.")
+                raise IntegrationValidationError("MCP servers must be managed through /registry/mcp/managed.")
             updated = dict(item)
 
             for field in ("name", "description", "project_name", "document_url", "endpoint_url", "command", "base_url"):
@@ -129,7 +141,7 @@ class IntegrationCatalogService:
             catalog = self._load_catalog()
             item = self._find_item(catalog, integration_id)
             if str(item.get("kind") or "") != "api":
-                raise ValueError("MCP servers must be managed through /registry/mcp/managed.")
+                raise IntegrationValidationError("MCP servers must be managed through /registry/mcp/managed.")
             catalog = [item for item in catalog if str(item.get("id") or "") != integration_id]
             self._save_catalog(catalog)
         return {"ok": True, "deleted_id": integration_id}
@@ -502,21 +514,21 @@ class IntegrationCatalogService:
                 if source.id != normalized_source_id:
                     continue
                 if normalized_workspace_id and source.workspace_id and source.workspace_id != normalized_workspace_id:
-                    raise ValueError("所选导入源不属于当前工作区。")
+                    raise IntegrationValidationError("所选导入源不属于当前工作区。")
                 return source.document_url
-            raise ValueError("未找到所选的导入源，请重新选择。")
+            raise IntegrationValidationError("未找到所选的导入源，请重新选择。")
 
         if normalized_override:
             return normalized_override
 
         if import_sources.supports_workspace_selection:
-            raise ValueError("当前 MCP 接入需要先选择工作区和接口文档，不能直接导入。")
+            raise IntegrationValidationError("当前 MCP 接入需要先选择工作区和接口文档，不能直接导入。")
 
         default_url = self._normalize_optional_text(record.document_url)
         if default_url:
             return default_url
 
-        raise ValueError("当前接入未配置可导入的文档源。")
+        raise IntegrationValidationError("当前接入未配置可导入的文档源。")
 
     def _build_import_source_descriptor(
         self,
@@ -554,23 +566,25 @@ class IntegrationCatalogService:
 
     def _validate_record(self, record: IntegrationRecord) -> None:
         if not record.name:
-            raise ValueError("接入名称不能为空。")
+            raise IntegrationValidationError("接入名称不能为空。")
         if record.kind == "mcp":
             if record.transport == "stdio" and not record.command:
-                raise ValueError("stdio 类型的 MCP 接入必须填写启动命令。")
+                raise IntegrationValidationError("stdio 类型的 MCP 接入必须填写启动命令。")
             if record.transport in {"http", "websocket"} and not (record.endpoint_url or record.document_url):
-                raise ValueError("HTTP/WebSocket 类型的 MCP 接入必须填写 Endpoint URL 或文档地址。")
+                raise IntegrationValidationError("HTTP/WebSocket 类型的 MCP 接入必须填写 Endpoint URL 或文档地址。")
         if record.kind == "api" and not (record.base_url or record.document_url):
-            raise ValueError("API 接入至少需要填写基础地址或文档地址。")
+            raise IntegrationValidationError("API 接入至少需要填写基础地址或文档地址。")
 
     def _load_catalog(self) -> list[dict[str, Any]]:
         if not self._catalog_path.exists():
             return []
         try:
             raw = json.loads(self._catalog_path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        return raw if isinstance(raw, list) else []
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise IntegrationCatalogReadError("Integration catalog could not be read.") from exc
+        if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
+            raise IntegrationCatalogReadError("Integration catalog must contain a list of records.")
+        return raw
 
     def _save_catalog(self, catalog: list[dict[str, Any]]) -> None:
         self._catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -579,7 +593,7 @@ class IntegrationCatalogService:
         for item in catalog:
             if str(item.get("id") or "") == integration_id:
                 return item
-        raise ValueError(f"未找到第三方接入：{integration_id}")
+        raise IntegrationNotFoundError("Integration not found.")
 
     def _normalize_optional_text(self, value: Any) -> str | None:
         if value is None:
