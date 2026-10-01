@@ -1004,14 +1004,13 @@ class RuntimeService:
         # Deep Agents' official SkillsMiddleware owns staged skill loading;
         # the legacy graph-only ``skill`` dispatcher must not be exposed as a
         # business tool with a non-existent ToolRuntime handler.
-        keys = list(dict.fromkeys([*mode_keys, *requested]))
+        keys = [*mode_keys, *requested]
         if self._skill_registry is not None:
             keys.extend(
                 tool_key
                 for skill in self._skill_registry.get_many(skill_keys)
                 for tool_key in skill.tool_keys
             )
-        descriptors = self._tool_registry.get_many(keys)
         agent = None
         if self._agent_registry is not None:
             agent = self._agent_registry.resolve_for_message(
@@ -1021,14 +1020,12 @@ class RuntimeService:
             state["selected_agent_key"] = agent.key
             state["selected_agent_name"] = agent.name
             if self._skill_registry is not None:
-                descriptors.extend(
-                    self._tool_registry.get_many(
-                        tool_key
-                        for skill in self._skill_registry.get_many(agent.supported_skills)
-                        for tool_key in skill.tool_keys
-                    )
+                keys.extend(
+                    tool_key
+                    for skill in self._skill_registry.get_many(agent.supported_skills)
+                    for tool_key in skill.tool_keys
                 )
-                descriptors = list({item.key: item for item in descriptors}.values())
+        descriptors = self._tool_registry.get_many(list(dict.fromkeys(keys)))
         descriptors = CapabilityResolver().eligible_tools(
             tools=descriptors,
             active_mode_key=str(state.get("mode_key") or request.mode_key or "default"),

@@ -591,6 +591,43 @@ def test_da_e4_unknown_requested_skill_is_ignored_like_skill_registry_get_many()
     assert state["model_visible_tool_keys"] == []
 
 
+def test_da_e4_requested_tool_and_skill_expose_each_tool_only_once():
+    from src.application.permissions.permission_service import PermissionService
+
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        deep_agent_governed_tools_enabled=True,
+        permission_service=PermissionService(),
+        skill_registry=SkillRegistry(),
+    )
+    session = _runtime_session("session-e4-overlapping-tools")
+    request = ExecutionRequest(
+        turn_id="turn-e4-overlapping-tools",
+        session_id=session.id,
+        user_message="Review the CI pipeline.",
+        normalized_input="Review the CI pipeline.",
+        mode_key="code_review",
+        skill_keys=["ci-pipeline-review", "tdd-review"],
+        context={"requested_tool_keys": ["knowledge-rag", "report-writer"]},
+    )
+    state = runtime._build_initial_state(session, request)
+
+    runtime._prepare_deep_agent_governed_tools(session, request, state)
+
+    for field in (
+        "available_tool_keys", "model_visible_tool_keys", "allowed_tool_keys",
+        "approval_required_tool_keys", "denied_tool_keys",
+    ):
+        assert len(state[field]) == len(set(state[field])), field
+    assert state["model_visible_tool_keys"].count("knowledge-rag") == 1
+    assert state["model_visible_tool_keys"].count("report-writer") == 1
+    assert len(state["permission_decisions"]) == len(state["available_tool_keys"])
+
+
 def test_da_e4_latest_assistant_tool_call_ids_preserve_declared_order():
     messages = [
         {
