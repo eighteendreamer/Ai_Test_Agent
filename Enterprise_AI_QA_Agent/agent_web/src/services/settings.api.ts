@@ -175,10 +175,11 @@ export async function importData(file: File): Promise<Record<string, unknown>> {
 }
 
 export function cleanupData(payload: {
-  action: string;
+  action: "cleanup";
   dry_run: boolean;
-  time_range_days?: number | null;
+  time_range_days: number;
   confirm?: boolean;
+  confirm_all_sessions?: boolean;
 }): Promise<Record<string, unknown>> {
   return request("/api/v1/settings/data/cleanup", { method: "POST", body: JSON.stringify(payload) });
 }

@@ -317,7 +317,7 @@ const cleanupDaysOptions = [
 async function doCleanupPreview() {
   cleanupLoading.value = true;
   try {
-    const res = await api.cleanupData({ action: "cleanup", dry_run: true, time_range_days: cleanupDays.value || null }) as Record<string, unknown>;
+    const res = await api.cleanupData({ action: "cleanup", dry_run: true, time_range_days: cleanupDays.value }) as Record<string, unknown>;
     const details = (res.details || {}) as Record<string, unknown>;
     cleanupPreview.value = {
       affected_count: Number(res.affected_count || 0),
@@ -336,7 +336,10 @@ async function doCleanupPreview() {
 async function doCleanupConfirm() {
   cleanupLoading.value = true;
   try {
-    await api.cleanupData({ action: "cleanup", dry_run: false, time_range_days: cleanupDays.value || null, confirm: true });
+    await api.cleanupData({
+      action: "cleanup", dry_run: false, time_range_days: cleanupDays.value,
+      confirm: true, confirm_all_sessions: cleanupDays.value === 0,
+    });
     cleanupDone.value = true;
   } catch (error) {
     notice.value = error instanceof Error ? error.message : "Cleanup failed";

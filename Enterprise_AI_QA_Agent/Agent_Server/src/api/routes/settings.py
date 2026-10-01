@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
 from src.schemas.channel_config import (
     ChannelAdvancedSettings,
     ChannelConfigCreateRequest,
@@ -23,6 +25,7 @@ from src.schemas.email_config import EmailConfigCreateRequest, EmailConfigUpdate
 from src.schemas.settings import ModelConfigUpdateRequest
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/models")
@@ -315,10 +318,11 @@ class GeneralSettingsPayload(BaseModel):
 
 
 class DataManagementRequest(BaseModel):
-    action: str  # backup / import / cleanup
+    action: Literal["cleanup"]
     dry_run: bool = True
-    time_range_days: int | None = None
+    time_range_days: int = Field(ge=0)
     confirm: bool = False
+    confirm_all_sessions: bool = False
 
 
 class DataManagementResponse(BaseModel):
@@ -572,8 +576,12 @@ async def cleanup_data(payload: DataManagementRequest, request: Request):
     """Clean up historical session data with dry-run and confirmation support."""
     store = request.app.state.store
 
+    if not payload.dry_run and payload.confirm and payload.time_range_days == 0 and not payload.confirm_all_sessions:
+        logger.warning("session_cleanup_all_scope_confirmation_missing")
+        raise HTTPException(status_code=400, detail="Cleaning all sessions requires confirm_all_sessions=true.")
+
     cutoff: datetime | None = None
-    if payload.time_range_days and payload.time_range_days > 0:
+    if payload.time_range_days > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=payload.time_range_days)
 
     total_count = await store.count_sessions()
@@ -610,6 +618,10 @@ async def cleanup_data(payload: DataManagementRequest, request: Request):
         )
 
     deleted_count = await store.delete_sessions_before(cutoff)
+    logger.info(
+        "session_cleanup_completed",
+        extra={"time_range_days": payload.time_range_days, "deleted_count": deleted_count},
+    )
 
     return DataManagementResponse(
         ok=True,
