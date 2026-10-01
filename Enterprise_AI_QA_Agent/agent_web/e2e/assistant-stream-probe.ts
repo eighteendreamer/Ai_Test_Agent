@@ -15,14 +15,15 @@ const EXPECTED_ANSWER = [
   "2. SSE 实时送达浏览器。\n\n",
   "最终正文从持久化 transcript 对账。",
 ].join("");
-const statusElement = document.querySelector<HTMLElement>("#probe-status");
-const timelineElement = document.querySelector<HTMLElement>("#timeline");
+function requiredElement(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (!element) throw new Error(`Assistant stream probe element is missing: ${selector}`);
+  return element;
+}
+const statusElement = requiredElement("#probe-status");
+const timelineElement = requiredElement("#timeline");
 const pinia = createPinia();
 const store = useSessionStore(pinia);
-
-if (!statusElement || !timelineElement) {
-  throw new Error("Assistant stream probe page is missing its root elements.");
-}
 
 let completionCheckStarted = false;
 

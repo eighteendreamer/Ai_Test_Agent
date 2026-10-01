@@ -11,6 +11,7 @@ import {
 } from "../composables/useSSEStream";
 import { SessionWatcherManager } from "../composables/useSessionWatcher";
 import { ApprovalManager } from "../composables/useApprovalManager";
+import { AssistantDeltaBuffer } from "../composables/useAssistantDeltaBuffer";
 import type {
   AgentDescriptor,
   ChatMessage,
@@ -227,6 +228,37 @@ const _sseStream = new SSEStreamManager({
 });
 const _watcher = new SessionWatcherManager({ pollIntervalMs: WATCHER_INTERVAL_MS });
 const _approvalManager = new ApprovalManager();
+
+interface AssistantDeltaConsumer {
+  session: { id: string } | null;
+  activity: ExecutionEvent[];
+  applyStreamingEvent(event: ExecutionEvent): void;
+}
+
+const _assistantDeltaBuffers = new WeakMap<AssistantDeltaConsumer, AssistantDeltaBuffer>();
+
+function assistantDeltaBuffer(store: AssistantDeltaConsumer): AssistantDeltaBuffer {
+  let buffer = _assistantDeltaBuffers.get(store);
+  if (!buffer) {
+    buffer = new AssistantDeltaBuffer((events) => {
+      if (store.session?.id !== events[0].session_id) {
+        console.warn("[assistant-stream] stale_delta_batch", { sessionId: events[0].session_id, count: events.length });
+        return;
+      }
+      // Activity and the SSE cursor retain original events; only the text reducer
+      // receives a combined delta. No synthetic event is persisted or replayed.
+      store.activity = [...events.slice(-50).reverse(), ...store.activity].slice(0, 50);
+      const last = events[events.length - 1];
+      store.applyStreamingEvent({
+        ...last,
+        timestamp: events[0].timestamp,
+        payload: { ...last.payload, delta: events.map((event) => String(event.payload.delta || "")).join("") },
+      });
+    });
+    _assistantDeltaBuffers.set(store, buffer);
+  }
+  return buffer;
+}
 
 function isActiveSessionStatus(status: SessionLifecycleStatus) {
   return status === "running" || status === "waiting_approval";
@@ -534,6 +566,18 @@ export const useSessionStore = defineStore("session", {
     error: "",
   }),
   getters: {
+    messagesById(state): Map<string, ChatMessage> {
+      return new Map(state.messages.map((message) => [message.id, message]));
+    },
+    unboundPendingUser(state): ChatMessage | null {
+      for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+        const message = state.messages[index];
+        if (message.role === "user" &&
+          (messageDeliveryStatus(message) === "pending" || message.metadata?.is_optimistic === true) &&
+          !String(message.metadata?.turn_id || "").trim()) return message;
+      }
+      return null;
+    },
     activeAgent(state) {
       return state.agents.find((item) => item.key === state.selectedAgentKey) ?? null;
     },
@@ -753,6 +797,14 @@ export const useSessionStore = defineStore("session", {
     },
     applySession(session: SessionDetail) {
       const previousSessionId = this.session?.id || "";
+      const buffer = _assistantDeltaBuffers.get(this);
+      if (previousSessionId && previousSessionId !== session.id) {
+        const discarded = buffer?.clear() || 0;
+        if (discarded) console.debug("[assistant-stream] session_changed", { sessionId: previousSessionId, discarded });
+        _assistantDeltaBuffers.delete(this);
+      } else {
+        buffer?.flush();
+      }
       let nextSession = session;
       const resolvedApprovalIds = this.resolvedApprovalIdsBySession[session.id] || [];
       if (resolvedApprovalIds.length > 0) {
@@ -819,6 +871,15 @@ export const useSessionStore = defineStore("session", {
           if (this.session?.id !== sessionId) {
             return;
           }
+          const buffer = assistantDeltaBuffer(this);
+          if (event.type === "assistant.stream.delta") {
+            const messageId = String(event.payload.message_id || "").trim();
+            if (this.messagesById.get(messageId)?.content) {
+              buffer.push(event);
+              return;
+            }
+          }
+          buffer.flush();
           this.activity = [event, ...this.activity].slice(0, 50);
           this.applyStreamingEvent(event);
           if (event.type?.startsWith("recorder.")) {
@@ -887,6 +948,7 @@ export const useSessionStore = defineStore("session", {
           }
         },
         onError: (errorMessage) => {
+          _assistantDeltaBuffers.get(this)?.flush();
           this.error = errorMessage;
         },
       });
@@ -915,6 +977,8 @@ export const useSessionStore = defineStore("session", {
       this.activity = [...unseen.reverse(), ...this.activity].slice(0, 50);
     },
     disconnectEvents() {
+      _assistantDeltaBuffers.get(this)?.flush();
+      _assistantDeltaBuffers.delete(this);
       _sseStream.disconnect();
     },
     scheduleRefresh(includeTooling = false, delayMs = EVENT_REFRESH_DEBOUNCE_MS) {
@@ -1268,31 +1332,9 @@ export const useSessionStore = defineStore("session", {
     },
     applyStreamingEvent(event: ExecutionEvent) {
       const currentTurnId = eventTurnId(event);
-      if (currentTurnId) {
-        let pendingUserIndex = -1;
-        for (let index = this.messages.length - 1; index >= 0; index -= 1) {
-          const message = this.messages[index];
-          if (
-            message.role === "user" &&
-            (messageDeliveryStatus(message) === "pending" || message.metadata?.is_optimistic === true) &&
-            !String(message.metadata?.turn_id || "").trim()
-          ) {
-            pendingUserIndex = index;
-            break;
-          }
-        }
-        if (pendingUserIndex >= 0) {
-          const nextMessages = [...this.messages];
-          nextMessages[pendingUserIndex] = {
-            ...nextMessages[pendingUserIndex],
-            metadata: {
-              ...nextMessages[pendingUserIndex].metadata,
-              turn_id: currentTurnId,
-              is_optimistic: true,
-            },
-          };
-          this.messages = nextMessages;
-        }
+      const pendingUser = this.unboundPendingUser;
+      if (currentTurnId && pendingUser) {
+        pendingUser.metadata = { ...pendingUser.metadata, turn_id: currentTurnId, is_optimistic: true };
       }
 
       if (
@@ -1425,41 +1467,27 @@ export const useSessionStore = defineStore("session", {
         if (!delta) {
           return;
         }
-        const existingMessage = this.messages.find((message) => message.id === messageId);
+        const existingMessage = this.messagesById.get(messageId);
         if (isPersistedAssistantResponse(existingMessage)) {
           return;
         }
-        const exists = this.messages.some((message) => message.id === messageId);
-        if (!exists) {
-          this.messages = [
-            ...this.messages,
-            {
-              id: messageId,
-              role: "assistant",
-              content: delta,
-              created_at: event.timestamp,
-              metadata: {
-                turn_id: currentTurnId,
-                delivery_status: "streaming",
-                is_optimistic_stream: false,
-              },
+        if (!existingMessage) {
+          this.messages.push({
+            id: messageId,
+            role: "assistant",
+            content: delta,
+            created_at: event.timestamp,
+            metadata: {
+              turn_id: currentTurnId,
+              delivery_status: "streaming",
+              is_optimistic_stream: false,
             },
-          ];
+          });
           return;
         }
-        this.messages = this.messages.map((message) =>
-          message.id === messageId
-            ? {
-                ...message,
-                content: `${message.content}${delta}`,
-                metadata: {
-                  ...message.metadata,
-                  delivery_status: "streaming",
-                  is_optimistic_stream: false,
-                },
-              }
-            : message,
-        );
+        existingMessage.content += delta;
+        existingMessage.metadata.delivery_status = "streaming";
+        existingMessage.metadata.is_optimistic_stream = false;
         return;
       }
 

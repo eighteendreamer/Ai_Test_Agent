@@ -140,6 +140,134 @@ describe("assistant SSE replay after loading a persisted transcript", () => {
       .toBe("已经持久化的完整答案。");
   });
 
+  it("coalesces a burst of real SSE callback deltas while preserving the first and final text", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const source = FakeEventSource.instances[0];
+    const apply = vi.spyOn(store, "applyStreamingEvent");
+    source.emit(assistantEvent("burst-start", "assistant.stream.started", { message_id: "burst-answer" }));
+    apply.mockClear();
+    for (let index = 0; index < 200; index += 1) {
+      source.emit(assistantEvent(`burst-${index}`, "assistant.stream.delta", {
+        message_id: "burst-answer", delta: `${index},`,
+      }));
+    }
+    expect(store.messages[0].content).toBe("0,");
+    expect(apply).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(40);
+    expect(apply).toHaveBeenCalledTimes(2);
+    source.emit(assistantEvent("last-delta", "assistant.stream.delta", { message_id: "burst-answer", delta: "end" }));
+    source.emit(assistantEvent("burst-completed", "assistant.stream.completed", { message_id: "burst-answer" }));
+    expect(store.messages[0].content).toBe(Array.from({ length: 200 }, (_, i) => `${i},`).join("") + "end");
+    expect(store.messages[0].metadata.delivery_status).toBe("completed");
+    expect(store.activity[0].id).toBe("burst-completed");
+    expect(store.activity[1].id).toBe("last-delta");
+    expect(store.activity).toHaveLength(50);
+  });
+
+  it("flushes interleaved answers and turns without joining their text", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const source = FakeEventSource.instances[0];
+    const emit = (id: string, messageId: string, delta: string, turnId = "turn-stream-replay") =>
+      source.emit(assistantEvent(id, "assistant.stream.delta", { message_id: messageId, delta }, "session-stream-replay", turnId));
+    emit("a-first", "answer-a", "A");
+    emit("a-pending", "answer-a", "1");
+    emit("b-first", "answer-b", "B");
+    expect(store.messagesById.get("answer-a")?.content).toBe("A1");
+    emit("b-pending", "answer-b", "2");
+    emit("a-next", "answer-a", "3");
+    emit("a-new-turn", "answer-a", "4", "another-turn");
+    expect(store.messagesById.get("answer-a")?.content).toBe("A13");
+    expect(store.messagesById.get("answer-b")?.content).toBe("B2");
+    await vi.advanceTimersByTimeAsync(40);
+    expect(store.messagesById.get("answer-a")?.content).toBe("A134");
+    expect(store.activity.slice(0, 3).map((event) => event.id)).toEqual(["a-new-turn", "a-next", "b-pending"]);
+  });
+
+  it("keeps the message list and unrelated messages stable when reducing a delta", () => {
+    const store = useSessionStore();
+    store.messages = [{ id: "history", role: "user", content: "history", created_at: "2026-09-30T08:00:00Z", metadata: {} }];
+    store.applyStreamingEvent(assistantEvent("stable-start", "assistant.stream.started", { message_id: "stable-answer" }));
+    const list = store.messages;
+    const history = store.messages[0];
+    store.applyStreamingEvent(assistantEvent("stable-delta", "assistant.stream.delta", { message_id: "stable-answer", delta: "new" }));
+    expect(store.messages).toBe(list);
+    expect(store.messages[0]).toBe(history);
+    expect(store.messages[1].content).toBe("new");
+  });
+
+  it("flushes bounded buffers even when the browser does not run its timer", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const source = FakeEventSource.instances[0];
+    source.emit(assistantEvent("bounded-start", "assistant.stream.started", { message_id: "bounded-answer" }));
+    for (let i = 0; i < 1000; i += 1) {
+      source.emit(assistantEvent(`bounded-${i}`, "assistant.stream.delta", { message_id: "bounded-answer", delta: "x" }));
+    }
+    expect(store.messages[0].content.length).toBe(769);
+    source.emit(assistantEvent("large-delta", "assistant.stream.delta", { message_id: "bounded-answer", delta: "y".repeat(20000) }));
+    expect(store.messages[0].content).toBe("x".repeat(1000) + "y".repeat(20000));
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(store.messages[0].content.length).toBe(21000);
+  });
+
+  it("discards an old session buffer before a different session is displayed", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const oldSource = FakeEventSource.instances[0];
+    oldSource.emit(assistantEvent("switch-start", "assistant.stream.started", { message_id: "switch-answer" }));
+    oldSource.emit(assistantEvent("switch-first", "assistant.stream.delta", { message_id: "switch-answer", delta: "old" }));
+    oldSource.emit(assistantEvent("switch-pending", "assistant.stream.delta", { message_id: "switch-answer", delta: "pending" }));
+    store.applySession(sessionDetail("session-next", "completed", []));
+    store.connectEvents();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(store.messages).toEqual([]);
+    expect(store.activity.some((event) => event.id === "switch-pending")).toBe(false);
+  });
+
+  it("flushes received text on disconnect and deduplicates it after reconnect", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const source = FakeEventSource.instances[0];
+    source.emit(assistantEvent("error-start", "assistant.stream.started", { message_id: "error-answer" }));
+    source.emit(assistantEvent("error-first", "assistant.stream.delta", { message_id: "error-answer", delta: "first" }));
+    const pending = assistantEvent("error-pending", "assistant.stream.delta", { message_id: "error-answer", delta: "pending" });
+    source.emit(pending);
+    source.onerror?.();
+    expect(store.messages[0].content).toBe("firstpending");
+    await vi.advanceTimersByTimeAsync(1500);
+    const reconnected = FakeEventSource.instances[1];
+    expect(reconnected.url).toContain("last_event_id=error-pending");
+    reconnected.emit(pending);
+    reconnected.emit(assistantEvent("error-final", "assistant.stream.completed", { message_id: "error-answer" }));
+    expect(store.messages[0].content).toBe("firstpending");
+    expect(store.messages[0].metadata.delivery_status).toBe("completed");
+  });
+
+  it("uses an authoritative final snapshot even with a pending delta timer", async () => {
+    const store = useSessionStore();
+    store.session = sessionDetail("session-stream-replay", "running", []);
+    store.connectEvents();
+    const source = FakeEventSource.instances[0];
+    source.emit(assistantEvent("snapshot-start", "assistant.stream.started", { message_id: "snapshot-answer" }));
+    source.emit(assistantEvent("snapshot-first", "assistant.stream.delta", { message_id: "snapshot-answer", delta: "prefix" }));
+    source.emit(assistantEvent("snapshot-pending", "assistant.stream.delta", { message_id: "snapshot-answer", delta: "pending" }));
+    store.applySession(sessionDetail("session-stream-replay", "completed", [{
+      id: "snapshot-answer", role: "assistant", content: "authoritative final answer",
+      created_at: "2026-09-30T08:00:00Z", metadata: { response_mode: "ok", delivery_status: "completed" },
+    }]));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(store.messages[0].content).toBe("authoritative final answer");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("continues appending deltas when existing assistant text has no final response marker", () => {
     const store = useSessionStore();
     const partialMessage = {
@@ -168,6 +296,7 @@ describe("assistant SSE replay after loading a persisted transcript", () => {
       message_id: "assistant-message-partial",
       delta: "仍在生成",
     }));
+    store.disconnectEvents();
 
     const updatedMessage = store.messages.find((message) => message.id === "assistant-message-partial");
     expect(updatedMessage?.content).toBe("已有分片仍在生成");
@@ -229,6 +358,7 @@ describe("assistant SSE replay after loading a persisted transcript", () => {
     }, sessionId, turnId);
     source.emit(secondDelta);
     source.emit(secondDelta);
+    await vi.advanceTimersByTimeAsync(40);
     await nextTick();
     expect(store.messages.find((message) => message.id === assistantMessageId)?.content)
       .toBe("模型分片实时显示。");

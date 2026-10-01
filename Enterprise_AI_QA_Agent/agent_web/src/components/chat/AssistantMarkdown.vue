@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 
-import { renderAssistantMarkdown } from "../../utils/markdown";
+import { displayAssistantContent, renderAssistantMarkdown } from "../../utils/markdown";
 
 const props = defineProps<{
   content: string;
@@ -11,7 +11,8 @@ const props = defineProps<{
 const rootRef = ref<HTMLElement | null>(null);
 
 const streamingRef = computed(() => Boolean(props.streaming));
-const html = computed(() => renderAssistantMarkdown(props.content));
+const streamingText = computed(() => displayAssistantContent(props.content));
+const html = computed(() => streamingRef.value ? "" : renderAssistantMarkdown(props.content));
 
 // Event delegation for the per-code-block copy button.
 function handleClick(event: MouseEvent) {
@@ -44,10 +45,22 @@ function handleClick(event: MouseEvent) {
 
 <template>
   <div
+    v-if="streamingRef"
+    ref="rootRef"
+    class="assistant-markdown assistant-markdown-streaming"
+  >{{ streamingText }}</div>
+  <div
+    v-else
     ref="rootRef"
     class="assistant-markdown"
-    :class="{ 'assistant-markdown-streaming': streamingRef }"
     @click="handleClick"
     v-html="html"
   />
 </template>
+
+<style scoped>
+.assistant-markdown-streaming {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>
