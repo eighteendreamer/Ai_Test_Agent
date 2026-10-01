@@ -7,10 +7,12 @@ import json
 import logging
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from src.application.mail.contracts import MailCapability
+from src.infrastructure.mail.providers.rest_base import MailProviderHTTPError
 from src.schemas.email_config import EmailConfigUpdateRequest
 
 router = APIRouter(prefix="/mail", tags=["mail"])
@@ -121,6 +123,9 @@ async def provider_setup_action(
             config_id,
         )
         if record is None:
+            if body.action == "provision_inbox":
+                logger.warning("mail_inbox_provision_config_missing", extra={"provider": provider})
+                raise HTTPException(status_code=409, detail="No enabled mailbox configuration for provisioning.")
             return {"ok": False, "error": "no_enabled_config", "provider": provider}
 
         # Existing Tencent records created before mailbox-isolated credentials
@@ -140,15 +145,38 @@ async def provider_setup_action(
 
         if body.action == "provision_inbox":
             if not adapter.supports(MailCapability.PROVISION_INBOX):
-                return {"ok": False, "provider": provider, "error": "capability_not_supported"}
+                logger.info("mail_inbox_provision_unsupported", extra={"provider": provider})
+                raise HTTPException(status_code=501, detail="Inbox provisioning is not supported by this provider.")
             try:
                 result = await _run_provider_call(
                     adapter.provision_inbox,
                     record,
                     body.payload.get("options") or {},
                 )
+            except MailProviderHTTPError as exc:
+                logger.warning(
+                    "mail_provider_provision_failed",
+                    extra={"provider": provider, "upstream_status": exc.status_code},
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Mail provider inbox provisioning failed (upstream HTTP {exc.status_code}).",
+                ) from exc
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "mail_provider_provision_transport_failed",
+                    extra={"provider": provider, "error_type": type(exc).__name__},
+                )
+                raise HTTPException(status_code=502, detail="Mail provider inbox provisioning failed.") from exc
             except RuntimeError as exc:
-                return {"ok": False, "provider": provider, "error": str(exc)}
+                logger.error(
+                    "mail_inbox_provision_failed",
+                    extra={"provider": provider, "error_type": type(exc).__name__},
+                )
+                raise HTTPException(status_code=500, detail="Inbox provisioning failed.") from exc
+            if result.get("ok") is False:
+                logger.warning("mail_provider_provision_rejected", extra={"provider": provider})
+                raise HTTPException(status_code=502, detail="Mail provider inbox provisioning failed.")
             mailbox_id = str(result.get("mailbox_id") or "").strip()
             email = str(result.get("email") or record.sender_email or "").strip()
             if mailbox_id:

@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from src.schemas.email_config import EmailConfigRecord
 
 
+class MailProviderHTTPError(RuntimeError):
+    def __init__(self, *, provider_key: str, provider_name: str, status_code: int, detail: str) -> None:
+        self.provider_key = provider_key
+        self.status_code = status_code
+        super().__init__(f"{provider_name} API returned HTTP {status_code}: {detail}")
+
+
 class RestMailAdapterBase(MailProviderAdapter):
     default_base_url = ""
     default_timeout = 30
@@ -112,8 +119,11 @@ class RestMailAdapterBase(MailProviderAdapter):
             if not detail:
                 detail = response.text.strip()[:500] or response.reason_phrase
             provider = self.display_name or self.provider_key
-            raise RuntimeError(
-                f"{provider} API returned HTTP {response.status_code}: {detail}"
+            raise MailProviderHTTPError(
+                provider_key=self.provider_key,
+                provider_name=provider,
+                status_code=response.status_code,
+                detail=detail,
             ) from exc
 
     @staticmethod

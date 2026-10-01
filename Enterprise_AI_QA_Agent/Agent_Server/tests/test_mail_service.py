@@ -8,8 +8,9 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
-from src.api.routes.mail import ProviderSetupActionRequest, provider_setup_action
+from src.api.routes.mail import ProviderSetupActionRequest, provider_setup_action, router as mail_router
 from src.application.mail import MailService, build_default_mail_provider_registry
 from src.application.mail.contracts import (
     CapabilityNotSupported,
@@ -23,6 +24,7 @@ from src.infrastructure.mail.providers.tencent_agently import TencentAgentlyMail
 from src.infrastructure.mail.providers.agentmail import AgentMailAdapter
 from src.infrastructure.mail.providers.dead_simple_email import DeadSimpleEmailAdapter
 from src.infrastructure.mail.providers.openmail import OpenMailAdapter
+from src.infrastructure.mail.providers.rest_base import MailProviderHTTPError
 from src.infrastructure.mail.providers.robotomail import RobotomailAdapter
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.schemas.email_config import EmailConfigRecord, EmailConfigUpdateRequest
@@ -437,11 +439,13 @@ def test_rest_provider_http_error_includes_vendor_response():
         json={"error": "inbox_limit_reached", "message": "Upgrade to create more."},
     )
 
-    with pytest.raises(RuntimeError, match="HTTP 422: inbox_limit_reached - Upgrade"):
+    with pytest.raises(MailProviderHTTPError, match="HTTP 422: inbox_limit_reached - Upgrade") as caught:
         adapter._raise_provider_error(response)
+    assert caught.value.status_code == 422
 
 
-def test_provider_setup_action_returns_provision_error_instead_of_500():
+@pytest.mark.asyncio
+async def test_provider_setup_action_reports_local_provision_failure_as_server_error():
     class FailingProvisionAdapter(_CapturingAdapter):
         provider_key = "openmail"
 
@@ -454,29 +458,155 @@ def test_provider_setup_action_returns_provision_error_instead_of_500():
     record = _record(
         id=8,
         provider="openmail",
-        api_key="secret",
+        api_key="example-key",
         enabled=False,
         is_default=False,
     )
     service = MailService(_StubStore([record]), MailProviderRegistry([FailingProvisionAdapter()]))
-    request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(mail_service=service))
-    )
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
 
-    result = asyncio.run(provider_setup_action(
-        "openmail",
-        ProviderSetupActionRequest(
-            action="provision_inbox",
-            payload={"config_id": 8, "options": {}},
-        ),
-        request,
-    ))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/mail/providers/openmail/setup-action",
+            json={"action": "provision_inbox", "payload": {"config_id": 8, "options": {}}},
+        )
 
-    assert result == {
-        "ok": False,
-        "provider": "openmail",
-        "error": "OpenMail API returned HTTP 422: inbox_limit_reached",
-    }
+    assert response.status_code == 500
+    assert "inbox_limit_reached" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_action_reports_upstream_provision_failure_as_gateway_error(monkeypatch):
+    record = _record(id=8, provider="openmail", api_key="example-key", enabled=False, is_default=False)
+    service = MailService(_StubStore([record]), MailProviderRegistry([OpenMailAdapter()]))
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
+
+    def fail_upstream_request(_method, _url, **_kwargs):
+        return httpx.Response(
+            422,
+            request=httpx.Request("POST", "https://api.openmail.sh/v1/inboxes"),
+            json={"error": "inbox_limit_reached", "message": "Upgrade to create more."},
+        )
+
+    monkeypatch.setattr("src.infrastructure.mail.providers.rest_base.httpx.request", fail_upstream_request)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/mail/providers/openmail/setup-action",
+            json={"action": "provision_inbox", "payload": {"config_id": 8, "options": {}}},
+        )
+
+    assert response.status_code == 502
+    assert "upstream HTTP 422" in response.text
+    assert "inbox_limit_reached" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_provider_provision_transport_failure_is_a_gateway_error(monkeypatch):
+    record = _record(id=8, provider="openmail", api_key="example-key", enabled=False, is_default=False)
+    service = MailService(_StubStore([record]), MailProviderRegistry([OpenMailAdapter()]))
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
+
+    def fail_upstream_request(_method, _url, **_kwargs):
+        request = httpx.Request("POST", "https://api.openmail.sh/v1/inboxes")
+        raise httpx.ReadTimeout("private transport error", request=request)
+
+    monkeypatch.setattr("src.infrastructure.mail.providers.rest_base.httpx.request", fail_upstream_request)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/mail/providers/openmail/setup-action",
+            json={"action": "provision_inbox", "payload": {"config_id": 8}},
+        )
+
+    assert response.status_code == 502
+    assert "private transport error" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_status_without_enabled_config_remains_a_readable_state():
+    service = MailService(_StubStore([]), MailProviderRegistry([_CapturingAdapter()]))
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        status = await client.post(
+            "/api/v1/mail/providers/capture/setup-action",
+            json={"action": "status", "payload": {}},
+        )
+        provision = await client.post(
+            "/api/v1/mail/providers/capture/setup-action",
+            json={"action": "provision_inbox", "payload": {}},
+        )
+
+    assert status.status_code == 200
+    assert status.json()["ok"] is False
+    assert provision.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_provision_without_provider_capability_returns_not_implemented():
+    record = _record(id=8, provider="capture")
+    service = MailService(_StubStore([record]), MailProviderRegistry([_CapturingAdapter()]))
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/mail/providers/capture/setup-action",
+            json={"action": "provision_inbox", "payload": {"config_id": 8}},
+        )
+
+    assert response.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_provider_provision_rejection_is_not_reported_as_success():
+    class RejectingProvisionAdapter(_CapturingAdapter):
+        def capabilities(self):
+            return {MailCapability.SEND, MailCapability.PROVISION_INBOX}
+
+        def provision_inbox(self, record, options=None):
+            return {"ok": False, "error": "private provider payload"}
+
+    record = _record(id=8, provider="capture")
+    service = MailService(_StubStore([record]), MailProviderRegistry([RejectingProvisionAdapter()]))
+    app = FastAPI()
+    app.state.mail_service = service
+    app.include_router(mail_router, prefix="/api/v1")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/mail/providers/capture/setup-action",
+            json={"action": "provision_inbox", "payload": {"config_id": 8}},
+        )
+
+    assert response.status_code == 502
+    assert "private provider payload" not in response.text
 
 
 def test_provider_status_does_not_block_the_async_event_loop():
