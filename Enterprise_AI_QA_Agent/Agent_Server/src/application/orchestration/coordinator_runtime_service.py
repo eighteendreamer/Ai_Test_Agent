@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -2174,28 +2175,42 @@ class CoordinatorRuntimeService:
         rebuilt.extend(anonymous)
         metadata["worker_dispatches"] = rebuilt
 
+    async def _mutate_parent_metadata(
+        self,
+        parent_session_id: str,
+        mutate: Callable[[dict[str, Any]], None],
+        *,
+        operation: str,
+    ) -> bool:
+        atomic_mutate = getattr(self._store, "mutate_metadata", None)
+        if not callable(atomic_mutate):
+            logger.error(
+                "coordinator_atomic_metadata_store_required",
+                extra={
+                    "parent_session_id": parent_session_id,
+                    "operation": operation,
+                    "store_type": type(self._store).__name__,
+                },
+            )
+            raise TypeError(
+                f"Coordinator {operation} requires atomic mutate_metadata on "
+                f"{type(self._store).__name__}."
+            )
+        return await atomic_mutate(parent_session_id, mutate)
+
     async def _register_worker_dispatches(
         self,
         parent_session_id: str,
         parent_turn_id: str,
         launch_records: list[dict[str, Any]],
     ) -> None:
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            await mutate(
-                parent_session_id,
-                lambda metadata: self._merge_worker_dispatches(
-                    metadata, parent_turn_id, launch_records
-                ),
-            )
-            return
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
-        self._merge_worker_dispatches(
-            parent_session.metadata, parent_turn_id, launch_records
+        await self._mutate_parent_metadata(
+            parent_session_id,
+            lambda metadata: self._merge_worker_dispatches(
+                metadata, parent_turn_id, launch_records
+            ),
+            operation="register_worker_dispatches",
         )
-        await self._store.save_session(parent_session)
 
     def _apply_reconciled_dispatches(
         self,
@@ -2245,15 +2260,11 @@ class CoordinatorRuntimeService:
         reconciled: list[dict[str, Any]],
     ) -> None:
         """Reap orphaned dispatches without rewinding a concurrently settled child."""
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            await mutate(
-                parent_session.id,
-                lambda metadata: self._apply_reconciled_dispatches(metadata, reconciled),
-            )
-            return
-        parent_session.metadata["worker_dispatches"] = reconciled
-        await self._store.save_session(parent_session)
+        await self._mutate_parent_metadata(
+            parent_session.id,
+            lambda metadata: self._apply_reconciled_dispatches(metadata, reconciled),
+            operation="reconcile_worker_dispatches",
+        )
 
     @staticmethod
     def _pending_worker_payload(worker: WorkerDispatchSpec) -> dict[str, Any]:
@@ -2352,16 +2363,10 @@ class CoordinatorRuntimeService:
             metadata["pending_initial_workers_parent_turn_id"] = parent_turn_id
             metadata["pending_initial_workers_parent_trace_id"] = parent_trace_id
 
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            if not await mutate(parent_session_id, register):
-                raise KeyError(f"Parent session not found: {parent_session_id}")
-            return
-        parent = await self._store.get_session(parent_session_id)
-        if parent is None:
+        if not await self._mutate_parent_metadata(
+            parent_session_id, register, operation="register_initial_worker_queue"
+        ):
             raise KeyError(f"Parent session not found: {parent_session_id}")
-        register(parent.metadata)
-        await self._store.save_session(parent)
 
     async def _claim_initial_worker_slots(
         self, parent_session_id: str, parent_turn_id: str
@@ -2397,15 +2402,9 @@ class CoordinatorRuntimeService:
                 ],
             )
 
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            await mutate(parent_session_id, claim)
-        else:
-            parent = await self._store.get_session(parent_session_id)
-            if parent is not None:
-                claim(parent.metadata)
-                if claimed:
-                    await self._store.save_session(parent)
+        await self._mutate_parent_metadata(
+            parent_session_id, claim, operation="claim_initial_worker_slots"
+        )
         return claimed
 
     async def _record_unlaunched_worker_failure(
@@ -2654,32 +2653,18 @@ class CoordinatorRuntimeService:
         worker: WorkerDispatchSpec | None,
         parent_turn_id: str,
     ) -> None:
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            await mutate(
-                parent_session_id,
-                lambda metadata: self._apply_worker_status(
-                    metadata,
-                    task_id,
-                    status,
-                    child_session_id,
-                    worker,
-                    parent_turn_id=parent_turn_id,
-                ),
-            )
-            return
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
-        self._apply_worker_status(
-            parent_session.metadata,
-            task_id,
-            status,
-            child_session_id,
-            worker,
-            parent_turn_id=parent_turn_id,
+        await self._mutate_parent_metadata(
+            parent_session_id,
+            lambda metadata: self._apply_worker_status(
+                metadata,
+                task_id,
+                status,
+                child_session_id,
+                worker,
+                parent_turn_id=parent_turn_id,
+            ),
+            operation="mark_worker_status",
         )
-        await self._store.save_session(parent_session)
 
     @staticmethod
     def _stable_worker_task_id(
@@ -3026,15 +3011,9 @@ class CoordinatorRuntimeService:
                 peer_review_count=len(prior),
             )
 
-        mutate = getattr(self._store, "mutate_metadata", None)
-        if callable(mutate):
-            await mutate(parent_session_id, claim)
-        else:
-            parent = await self._store.get_session(parent_session_id)
-            if parent is not None:
-                claim(parent.metadata)
-                if claimed:
-                    await self._store.save_session(parent)
+        await self._mutate_parent_metadata(
+            parent_session_id, claim, operation="claim_followup_worker_slots"
+        )
         return claimed, source_dispatches
 
     async def _maybe_launch_followup_workers(

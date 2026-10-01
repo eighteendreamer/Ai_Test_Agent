@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
+from src.application.orchestration.coordinator_runtime_service import (
+    CoordinatorRuntimeService,
+)
 from src.core.config import Settings
 from src.domain.models import SessionRecord
+from src.registry.agents import AgentRegistry
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.store import InMemorySessionStore
 from src.schemas.session import RuntimeMode, SessionMode, SessionStatus
@@ -16,7 +20,7 @@ from tests.test_live_postgres_concurrency import _drop_tables
 
 
 async def _exercise_stale_save_after_dispatch_claim(store) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     session_id = f"claim-snapshot-{uuid4().hex}"
     session = SessionRecord(
         id=session_id,
@@ -110,6 +114,97 @@ async def _exercise_stale_save_after_dispatch_claim(store) -> None:
 @pytest.mark.asyncio
 async def test_memory_stale_session_save_preserves_dispatch_claim() -> None:
     await _exercise_stale_save_after_dispatch_claim(InMemorySessionStore())
+
+
+@pytest.mark.asyncio
+async def test_memory_concurrent_worker_registration_keeps_both_records() -> None:
+    class CopyOnReadStore(InMemorySessionStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.hold_reads = False
+            self.read_count = 0
+            self.both_reads = asyncio.Event()
+
+        async def get_session(self, session_id: str) -> SessionRecord | None:
+            session = deepcopy(await super().get_session(session_id))
+            if self.hold_reads:
+                self.read_count += 1
+                if self.read_count == 2:
+                    self.both_reads.set()
+                await asyncio.wait_for(self.both_reads.wait(), timeout=2)
+            return session
+
+    store = CopyOnReadStore()
+    now = datetime.now(UTC)
+    parent_id = f"worker-registration-{uuid4().hex}"
+    await store.save_session(SessionRecord(
+        id=parent_id,
+        title="concurrent worker registration",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.coordinator,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+    ))
+    coordinators = [
+        CoordinatorRuntimeService(Settings(), store, None, AgentRegistry())
+        for _ in range(2)
+    ]
+    store.hold_reads = True
+    await asyncio.gather(*(
+        coordinator._register_worker_dispatches(
+            parent_id, "turn-1", [{"task_id": f"worker-{index}", "status": "running"}]
+        )
+        for index, coordinator in enumerate(coordinators)
+    ))
+    store.hold_reads = False
+    parent = await store.get_session(parent_id)
+    assert parent is not None
+    assert {record["task_id"] for record in parent.metadata["worker_dispatches"]} == {
+        "worker-0", "worker-1"
+    }
+
+
+@pytest.mark.asyncio
+async def test_memory_atomic_metadata_mutation_does_not_commit_partial_failure() -> None:
+    store = InMemorySessionStore()
+    now = datetime.now(UTC)
+    parent_id = f"failed-metadata-mutation-{uuid4().hex}"
+    await store.save_session(SessionRecord(
+        id=parent_id,
+        title="metadata mutation rollback",
+        status=SessionStatus.idle,
+        session_mode=SessionMode.coordinator,
+        runtime_mode=RuntimeMode.background,
+        mode_key="default",
+        created_at=now,
+        updated_at=now,
+        metadata={"worker_dispatches": [{"task_id": "existing"}]},
+    ))
+
+    def fail_after_mutation(metadata: dict) -> None:
+        metadata["worker_dispatches"].append({"task_id": "partial"})
+        raise RuntimeError("injected metadata mutation failure")
+
+    with pytest.raises(RuntimeError, match="injected metadata mutation failure"):
+        await store.mutate_metadata(parent_id, fail_after_mutation)
+    parent = await store.get_session(parent_id)
+    assert parent is not None
+    assert parent.metadata["worker_dispatches"] == [{"task_id": "existing"}]
+
+
+@pytest.mark.asyncio
+async def test_coordinator_rejects_store_without_atomic_metadata_mutation() -> None:
+    class LegacyStore:
+        async def get_session(self, _session_id):
+            raise AssertionError("Unsafe fallback read must not run")
+
+    coordinator = CoordinatorRuntimeService(Settings(), LegacyStore(), None, AgentRegistry())
+    with pytest.raises(TypeError, match="register_worker_dispatches requires atomic mutate_metadata"):
+        await coordinator._register_worker_dispatches(
+            "parent-1", "turn-1", [{"task_id": "worker-1", "status": "running"}]
+        )
 
 
 @pytest.mark.skipif(

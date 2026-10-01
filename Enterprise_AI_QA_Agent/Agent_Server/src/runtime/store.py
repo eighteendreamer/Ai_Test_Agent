@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Callable, Protocol
 
 from src.domain.models import SessionRecord
@@ -46,6 +46,9 @@ class SessionStore(Protocol):
         turn_lease_token: str | None = None,
     ) -> SessionRecord: ...
     async def get_session(self, session_id: str) -> SessionRecord | None: ...
+    async def mutate_metadata(
+        self, session_id: str, mutate: Callable[[dict], None]
+    ) -> bool: ...
     async def list_sessions(
         self,
         limit: int | None = None,
@@ -268,6 +271,19 @@ class InMemorySessionStore:
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return self._sessions.get(session_id)
+
+    async def mutate_metadata(
+        self, session_id: str, mutate: Callable[[dict], None]
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            metadata = deepcopy(session.metadata)
+            mutate(metadata)
+            session.metadata = metadata
+            session.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            return True
 
     async def list_sessions(
         self,
