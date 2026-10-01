@@ -75,13 +75,15 @@ class AgentTaskDispatcher:
             queue=self._settings.orchestration.agent_task_stream,
         ).inc()
 
-    async def submit(self, session_id, payload):
+    async def submit(self, session_id, payload, *, execution_request=None):
         session = await self._sessions._require_session(session_id)
         if session.project_id:
             await self._sessions._require_active_project(session.project_id)
         # Pure normalization validates modes, attachments and empty input. Model
         # intent enrichment runs later, under Worker admission and ownership.
-        request = self._sessions._input_orchestrator_service.orchestrate(session, payload)
+        request = execution_request or self._sessions._input_orchestrator_service.orchestrate(
+            session, payload
+        )
         context = get_request_context()
         command = AgentTaskCommand(
             task_id=new_id("task"),

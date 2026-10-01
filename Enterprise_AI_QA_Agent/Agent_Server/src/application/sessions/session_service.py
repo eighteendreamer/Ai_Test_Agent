@@ -7,7 +7,7 @@ import logging
 import os
 import socket
 from typing import Any, Awaitable, Callable
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
@@ -354,6 +354,10 @@ class SessionService:
     async def start_turn_reaper(self) -> None:
         if self._turn_reaper_task is not None and not self._turn_reaper_task.done():
             return
+        try:
+            await self._schedule_pending_input_drains()
+        except Exception:
+            logger.exception("pending_input_queue_startup_scan_failed")
         self._turn_reaper_stop = asyncio.Event()
         self._turn_reaper_task = asyncio.create_task(
             self._turn_reaper_loop(), name="session-turn-lease-reaper",
@@ -387,8 +391,16 @@ class SessionService:
                 return
             try:
                 await self.recover_expired_turn_executions(recovery_source="periodic_reaper")
+                await self._schedule_pending_input_drains()
             except Exception:
                 logger.exception("session_turn_reaper_failed")
+
+    async def _schedule_pending_input_drains(self) -> None:
+        sessions = await self._store.list_sessions_with_pending_input_queue()
+        for session in sessions:
+            if session.status in {SessionStatus.running, SessionStatus.waiting_approval}:
+                continue
+            self._maybe_schedule_pending_input_drain(session.id)
 
     async def get_session(self, session_id: str) -> SessionDetail:
         session = await self._store.get_session(session_id)
@@ -1775,6 +1787,17 @@ class SessionService:
                 "interrupt_requested": request_interrupt,
             },
         )
+        if self._agent_task_dispatcher is not None:
+            return await self._submit_durable_pending_input(
+                session_id,
+                payload,
+                idempotency_key=self._durable_pending_input_idempotency_key(
+                    session_id, payload
+                ),
+                request_interrupt=request_interrupt,
+                execution_request=execution_request,
+            )
+
         queued_event = self._make_event(
             session_id,
             "input.queued",
@@ -1811,10 +1834,89 @@ class SessionService:
         ):
             raise KeyError(session_id)
         if request_interrupt:
+            await self._request_queued_input_interrupt(
+                session_id, queue_entry_id=queue_entry.id
+            )
+
+        refreshed = await self._require_session(session_id)
+        if refreshed.status not in {SessionStatus.running, SessionStatus.waiting_approval}:
+            self._maybe_schedule_pending_input_drain(session_id)
+        return await self._build_queued_response(session, queue_entry)
+
+    @staticmethod
+    def _durable_pending_input_idempotency_key(
+        session_id: str,
+        payload: SendMessageRequest,
+    ) -> str | None:
+        if "client_message_id" in payload.metadata:
+            return payload.metadata["client_message_id"]
+        metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+        context = payload.context if isinstance(payload.context, dict) else {}
+        message_kind = str(metadata.get("message_kind") or payload.message_kind.value)
+        task_id = str(metadata.get("task_id") or context.get("task_id") or "").strip()
+        parent_turn_id = str(
+            metadata.get("parent_turn_id") or context.get("parent_turn_id") or ""
+        ).strip()
+        if (
+            message_kind not in {"coordinator_assignment", "task_notification"}
+            or not task_id
+            or not parent_turn_id
+        ):
+            return None
+        return str(
+            uuid5(
+                NAMESPACE_URL,
+                f"enterprise-ai-qa-agent:queued-message:{session_id}:"
+                f"{parent_turn_id}:{message_kind}:{task_id}",
+            )
+        )
+
+    async def _submit_durable_pending_input(
+        self,
+        session_id: str,
+        payload: SendMessageRequest,
+        *,
+        idempotency_key: str | None,
+        request_interrupt: bool,
+        execution_request=None,
+    ):
+        queued_payload = payload.model_copy(deep=True)
+        queued_payload.submit_mode = "queued"
+        queued_payload.interrupt_if_busy = (
+            queued_payload.interrupt_if_busy or request_interrupt
+        )
+        metadata = dict(queued_payload.metadata)
+        if "client_message_id" not in metadata and idempotency_key:
+            metadata["client_message_id"] = idempotency_key
+        queued_payload.metadata = metadata
+        receipt = await self._agent_task_dispatcher.submit(
+            session_id,
+            queued_payload,
+            execution_request=execution_request,
+        )
+        if request_interrupt:
+            task = getattr(receipt, "task", None)
+            await self._request_queued_input_interrupt(
+                session_id,
+                queue_entry_id=str(getattr(task, "id", "") or idempotency_key or ""),
+            )
+        return receipt
+
+    async def _request_queued_input_interrupt(
+        self, session_id: str, *, queue_entry_id: str
+    ) -> None:
+        try:
             self._runtime_service.request_interrupt(
                 session_id,
                 "Queued retry requested by a follow-up input.",
             )
+        except Exception:
+            logger.exception(
+                "queued_input_runtime_interrupt_failed",
+                extra={"session_id": session_id, "queue_entry_id": queue_entry_id},
+            )
+            return
+        try:
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -1824,15 +1926,15 @@ class SessionService:
                         "message": "Interrupt requested so the queued input can run next.",
                         "reason": "Queued retry requested by a follow-up input.",
                         "source": "queued_input",
-                        "queue_entry_id": queue_entry.id,
+                        "queue_entry_id": queue_entry_id,
                     },
                 ),
             )
-
-        refreshed = await self._require_session(session_id)
-        if refreshed.status not in {SessionStatus.running, SessionStatus.waiting_approval}:
-            self._maybe_schedule_pending_input_drain(session_id)
-        return await self._build_queued_response(session, queue_entry)
+        except Exception:
+            logger.exception(
+                "queued_input_interrupt_event_failed",
+                extra={"session_id": session_id, "queue_entry_id": queue_entry_id},
+            )
 
     async def _build_queued_response(
         self,
@@ -1902,42 +2004,141 @@ class SessionService:
 
         task.add_done_callback(_cleanup)
 
+    async def _remove_pending_input_entry(
+        self,
+        session_id: str,
+        entry: PendingInputQueueEntry,
+        *,
+        agent_task_id: str | None = None,
+    ) -> bool:
+        event = self._make_event(
+            session_id,
+            "input.dequeued",
+            {
+                "queue_entry_id": entry.id,
+                "agent_task_id": agent_task_id or "",
+                "message": (
+                    "Queued input was handed to the durable Agent task queue."
+                    if agent_task_id
+                    else "Queued input was claimed for local execution."
+                ),
+            },
+        )
+
+        def remove_entry(metadata: dict[str, Any]) -> bool:
+            entries = self._parse_pending_input_queue(
+                metadata.get("pending_input_queue", [])
+            )
+            if not entries or entries[0].id != entry.id:
+                return False
+            remaining = entries[1:]
+            metadata["pending_input_queue"] = [
+                item.model_dump(mode="python") for item in remaining
+            ]
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control["queued_input_count"] = len(remaining)
+            metadata["control"] = control
+            return True
+
+        return await self._store.update_metadata_and_append_event(
+            session_id, remove_entry, event
+        )
+
     async def _drain_pending_inputs(self, session_id: str) -> None:
         while True:
             async with self._session_locks[session_id]:
                 session = await self._require_session(session_id)
                 queue_entries = self._get_pending_input_queue(session)
                 if not queue_entries:
-                    self._ensure_control_metadata(session)["queued_input_count"] = 0
-                    await self._store.save_session(session)
+                    def refresh_queued_input_count(metadata: dict[str, Any]) -> None:
+                        control = metadata.get("control")
+                        control = dict(control) if isinstance(control, dict) else {}
+                        control["queued_input_count"] = len(
+                            self._parse_pending_input_queue(
+                                metadata.get("pending_input_queue", [])
+                            )
+                        )
+                        metadata["control"] = control
+
+                    if not await self._store.mutate_metadata(
+                        session_id, refresh_queued_input_count
+                    ):
+                        logger.warning(
+                            "pending_input_queue_session_missing",
+                            extra={"session_id": session_id},
+                        )
                     return
                 if session.status in {SessionStatus.running, SessionStatus.waiting_approval}:
                     return
 
-                next_entry = queue_entries.pop(0)
-                self._set_pending_input_queue(session, queue_entries)
-                await self._store.save_session(session)
-                await self._store.append_event(
-                    session_id,
-                    self._make_event(
-                        session_id,
-                        "input.dequeued",
-                        {
+                next_entry = queue_entries[0]
+                if self._agent_task_dispatcher is not None:
+                    try:
+                        execution_request = (
+                            await self._input_orchestrator_service.orchestrate_async(
+                                session,
+                                next_entry.payload,
+                            )
+                        )
+                        receipt = await self._submit_durable_pending_input(
+                            session_id,
+                            next_entry.payload,
+                            idempotency_key=next_entry.id,
+                            request_interrupt=False,
+                            execution_request=execution_request,
+                        )
+                        task = getattr(receipt, "task", None)
+                        task_id = str(getattr(task, "id", "") or "")
+                        removed = await self._remove_pending_input_entry(
+                            session_id, next_entry, agent_task_id=task_id
+                        )
+                    except Exception:
+                        logger.exception(
+                            "pending_input_durable_handoff_failed",
+                            extra={
+                                "session_id": session_id,
+                                "queue_entry_id": next_entry.id,
+                            },
+                        )
+                        return
+                    if not removed:
+                        continue
+                    logger.info(
+                        "pending_input_handed_to_durable_agent_task",
+                        extra={
+                            "session_id": session_id,
                             "queue_entry_id": next_entry.id,
-                            "remaining_queue_depth": len(queue_entries),
-                            "busy_status": next_entry.busy_status,
-                            "queue_behavior": next_entry.queue_behavior,
+                            "agent_task_id": task_id,
                         },
-                    ),
-                )
+                    )
+                    continue
+
+                try:
+                    execution_request = (
+                        await self._input_orchestrator_service.orchestrate_async(
+                            session,
+                            next_entry.payload,
+                        )
+                    )
+                except Exception:
+                    logger.exception(
+                        "pending_input_orchestration_failed",
+                        extra={
+                            "session_id": session_id,
+                            "queue_entry_id": next_entry.id,
+                            "turn_id": str(next_entry.metadata.get("turn_id") or ""),
+                        },
+                    )
+                    return
+                if not await self._remove_pending_input_entry(session_id, next_entry):
+                    continue
+                current_session = await self._require_session(session_id)
                 await self._run_submission_locked(
-                    session=session,
+                    session=current_session,
                     payload=next_entry.payload,
-                    execution_request=await self._input_orchestrator_service.orchestrate_async(
-                        session,
-                        next_entry.payload,
-                    ),
-                    allow_interrupted=session.status == SessionStatus.interrupted,
+                    execution_request=execution_request,
+                    allow_interrupted=current_session.status == SessionStatus.interrupted,
                 )
 
     async def _finalize_runtime_result(

@@ -103,6 +103,7 @@ class SessionStore(Protocol):
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
     ) -> list[SessionRecord]: ...
+    async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]: ...
     async def list_task_pool_sessions(
         self,
         limit: int = 24,
@@ -406,6 +407,15 @@ class InMemorySessionStore:
         if size <= 0:
             return []
         return sessions[start : start + size]
+
+    async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]:
+        return [
+            session
+            for session in self._sessions.values()
+            if isinstance(session.metadata, dict)
+            and isinstance(session.metadata.get("pending_input_queue"), list)
+            and bool(session.metadata.get("pending_input_queue"))
+        ]
 
     async def list_task_pool_sessions(
         self,

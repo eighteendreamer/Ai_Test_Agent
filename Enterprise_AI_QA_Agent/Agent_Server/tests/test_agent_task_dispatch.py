@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,7 +14,9 @@ from redis.asyncio import Redis
 
 from src.api.routes.sessions import router
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
-from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+from src.application.orchestration.input_orchestrator_service import (
+    InputOrchestratorService,
+)
 from src.application.runtime.runtime_service import RuntimeTurnResult
 from src.application.sessions.session_service import SessionService
 from src.core.config import get_settings
@@ -31,8 +33,9 @@ from src.runtime.resource_lease_manager import RedisResourceLeaseManager
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import (
     ApprovalDecisionRequest,
-    InterruptSessionRequest,
     HeadlessExecutionRequest,
+    InterruptSessionRequest,
+    PendingInputQueueEntry,
     ResumeSessionRequest,
     RuntimeMode,
     SendMessageRequest,
@@ -297,6 +300,65 @@ async def test_http_submission_is_atomic_idempotent_and_does_not_execute(harness
     assert len(await h.store.list_events(h.session_id)) == 1
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}")
+        assert cur.fetchone()["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_input_handoff_recovers_after_committed_submit_loses_ack(
+    harness, monkeypatch
+):
+    h = harness
+    session = await h.store.get_session(h.session_id)
+    assert session is not None
+    session.metadata["pending_input_queue"] = [
+        PendingInputQueueEntry(
+            id="legacy-entry-real-store",
+            created_at=datetime.now(UTC),
+            busy_status="running",
+            queue_behavior="enqueue_if_busy",
+            interrupt_policy="wait_for_active_turn",
+            payload=SendMessageRequest(content="legacy queued content"),
+            metadata={"turn_id": "legacy-turn-real-store"},
+        ).model_dump(mode="python")
+    ]
+    await h.store.save_session(session)
+
+    original_submit = h.tasks.submit
+    submission_count = 0
+
+    async def commit_then_lose_ack(command, payload, message, *, idempotency_key):
+        nonlocal submission_count
+        submission_count += 1
+        task = await original_submit(
+            command,
+            payload,
+            message,
+            idempotency_key=idempotency_key,
+        )
+        if submission_count == 1:
+            raise RuntimeError("injected post-commit acknowledgement loss")
+        return task
+
+    monkeypatch.setattr(h.tasks, "submit", commit_then_lose_ack)
+
+    await h.sessions._drain_pending_inputs(h.session_id)
+    retained = await h.store.get_session(h.session_id)
+    assert retained is not None
+    assert [
+        item.id for item in h.sessions._get_pending_input_queue(retained)
+    ] == ["legacy-entry-real-store"]
+    assert len(await h.tasks.list_session(h.session_id)) == 1
+
+    await h.sessions._drain_pending_inputs(h.session_id)
+    recovered = await h.store.get_session(h.session_id)
+    assert recovered is not None
+    assert recovered.metadata.get("pending_input_queue", []) == []
+    assert submission_count == 2
+    assert len(await h.tasks.list_session(h.session_id)) == 1
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(*) AS count FROM {h.settings.database.postgres_task_outbox_table}"
+        )
         assert cur.fetchone()["count"] == 1
 
 

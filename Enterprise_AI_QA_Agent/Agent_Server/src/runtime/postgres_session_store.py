@@ -143,6 +143,9 @@ class PostgresSessionStore:
     ) -> list[SessionRecord]:
         return await asyncio.to_thread(self._list_sessions_sync, limit, offset, mode_key, cursor_before)
 
+    async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]:
+        return await asyncio.to_thread(self._list_sessions_with_pending_input_queue_sync)
+
     async def list_task_pool_sessions(
         self,
         limit: int = 24,
@@ -957,6 +960,23 @@ class PostgresSessionStore:
                 else:
                     cur.execute(query)
                 rows = cur.fetchall() or []
+        return [_session_from_row(item, []) for item in rows]
+
+    def _list_sessions_with_pending_input_queue_sync(self) -> list[SessionRecord]:
+        table = self._settings.database.postgres_session_table
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT * FROM {table}
+                WHERE CASE
+                    WHEN jsonb_typeof(metadata->'pending_input_queue') = 'array'
+                    THEN jsonb_array_length(metadata->'pending_input_queue') > 0
+                    ELSE FALSE
+                END
+                ORDER BY updated_at DESC
+                """
+            )
+            rows = cur.fetchall() or []
         return [_session_from_row(item, []) for item in rows]
 
     def _list_task_pool_sessions_sync(

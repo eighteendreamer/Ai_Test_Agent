@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,8 +12,13 @@ from src.application.orchestration.input_orchestrator_service import (
 )
 from src.application.sessions.session_service import SessionService
 from src.registry.modes import ModeRegistry
-from src.schemas.session import SendMessageRequest, SessionStatus
-from tests.test_session_event_delivery import stores
+from src.schemas.session import (
+    PendingInputQueueEntry,
+    SendMessageRequest,
+    SessionStatus,
+)
+
+pytest_plugins = ["tests.test_session_event_delivery"]
 
 
 @pytest.mark.asyncio
@@ -49,3 +57,237 @@ async def test_busy_internal_submissions_keep_both_queued_inputs(stores, monkeyp
     payloads = persisted.metadata.get("pending_input_queue", [])
     assert {item["payload"]["content"] for item in payloads} == {"queued-a", "queued-b"}
     assert [event.type for event in await reader.list_events(session_id)] == ["input.queued", "input.queued"]
+
+
+@pytest.mark.asyncio
+async def test_internal_queue_keeps_head_and_followers_if_orchestration_fails(stores) -> None:
+    store, reader, session_id, _ = stores
+    session = await store.get_session(session_id)
+    assert session is not None
+    session.metadata["pending_input_queue"] = [
+        PendingInputQueueEntry(
+            id=f"queued-{index}",
+            created_at=datetime.now(UTC),
+            busy_status="running",
+            queue_behavior="enqueue_if_busy",
+            interrupt_policy="wait_for_active_turn",
+            payload=SendMessageRequest(content=f"queued-{index}"),
+            metadata={"turn_id": f"turn-{index}"},
+        ).model_dump(mode="python")
+        for index in (1, 2)
+    ]
+    await store.save_session(session)
+
+    class FailingOrchestrator:
+        async def orchestrate_async(self, _session, _payload):
+            raise RuntimeError("injected queue orchestration failure")
+
+    modes = ModeRegistry()
+    service = SessionService(store, FailingOrchestrator(), object(), modes)
+
+    await service._drain_pending_inputs(session_id)
+
+    persisted = await reader.get_session(session_id)
+    assert persisted is not None
+    assert [item.id for item in service._get_pending_input_queue(persisted)] == [
+        "queued-1",
+        "queued-2",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enqueue_after_read", [False, True])
+async def test_empty_pending_queue_cleanup_preserves_concurrent_session_status(
+    stores, monkeypatch, enqueue_after_read
+) -> None:
+    store, reader, session_id, _ = stores
+    original_get = store.get_session
+    injected_worker_transition = False
+
+    async def get_with_concurrent_worker_transition(requested_id):
+        nonlocal injected_worker_transition
+        snapshot = deepcopy(await original_get(requested_id))
+        if not injected_worker_transition:
+            injected_worker_transition = True
+            current = await original_get(requested_id)
+            assert current is not None
+            current.status = SessionStatus.running
+            if enqueue_after_read:
+                current.metadata["pending_input_queue"] = [
+                    PendingInputQueueEntry(
+                        id="concurrently-queued-entry",
+                        created_at=datetime.now(UTC),
+                        busy_status="running",
+                        queue_behavior="enqueue_if_busy",
+                        interrupt_policy="wait_for_active_turn",
+                        payload=SendMessageRequest(content="concurrent queued input"),
+                    ).model_dump(mode="python")
+                ]
+                current.metadata["control"] = {"queued_input_count": 1}
+            await store.save_session(current)
+        return snapshot
+
+    monkeypatch.setattr(store, "get_session", get_with_concurrent_worker_transition)
+    modes = ModeRegistry()
+    service = SessionService(store, InputOrchestratorService(modes), object(), modes)
+
+    await service._drain_pending_inputs(session_id)
+
+    persisted = await reader.get_session(session_id)
+    assert persisted is not None
+    assert persisted.status == SessionStatus.running
+    assert persisted.metadata["control"]["queued_input_count"] == int(enqueue_after_read)
+
+
+@pytest.mark.asyncio
+async def test_busy_internal_submission_uses_durable_dispatcher(stores) -> None:
+    store, reader, session_id, _ = stores
+    session = await store.get_session(session_id)
+    assert session is not None
+    session.status = SessionStatus.running
+    await store.save_session(session)
+
+    accepted = object()
+    submissions = []
+
+    class DurableDispatcher:
+        async def submit(self, submitted_session_id, payload, *, execution_request=None):
+            submissions.append((submitted_session_id, payload))
+            return accepted
+
+    modes = ModeRegistry()
+    service = SessionService(store, InputOrchestratorService(modes), object(), modes)
+    service.set_agent_task_dispatcher(DurableDispatcher())
+    payload = SendMessageRequest(
+        content="worker result notification",
+        submit_mode="queued",
+        context={"task_id": "worker-1", "parent_turn_id": "turn-1"},
+        metadata={
+            "message_kind": "task_notification",
+            "task_id": "worker-1",
+            "worker_status": "completed",
+        },
+    )
+
+    async with service._session_locks[session_id]:
+        first = await service.send_message(session_id, payload)
+        second = await service.send_message(session_id, payload)
+
+    assert first is accepted
+    assert second is accepted
+    assert len(submissions) == 2
+    assert all(item[0] == session_id for item in submissions)
+    queued_payloads = [item[1] for item in submissions]
+    assert all(item.submit_mode == "queued" for item in queued_payloads)
+    assert queued_payloads[0].metadata["client_message_id"] == queued_payloads[1].metadata[
+        "client_message_id"
+    ]
+    persisted = await reader.get_session(session_id)
+    assert persisted is not None
+    assert persisted.metadata.get("pending_input_queue", []) == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_input_handoff_reuses_idempotency_key_after_lost_ack(stores) -> None:
+    store, reader, session_id, _ = stores
+    session = await store.get_session(session_id)
+    assert session is not None
+    session.metadata["pending_input_queue"] = [
+        PendingInputQueueEntry(
+            id="legacy-queue-entry",
+            created_at=datetime.now(UTC),
+            busy_status="running",
+            queue_behavior="enqueue_if_busy",
+            interrupt_policy="wait_for_active_turn",
+            payload=SendMessageRequest(content="legacy queued input"),
+            metadata={"turn_id": "legacy-turn"},
+        ).model_dump(mode="python")
+    ]
+    await store.save_session(session)
+
+    submissions = []
+    durable_tasks = {}
+
+    class CommitThenLoseAckDispatcher:
+        async def submit(self, submitted_session_id, payload, *, execution_request=None):
+            key = payload.metadata["client_message_id"]
+            submissions.append(key)
+            durable_tasks.setdefault(
+                key, SimpleNamespace(task=SimpleNamespace(id=f"task-{key}"))
+            )
+            if len(submissions) == 1:
+                raise RuntimeError("injected lost acknowledgement after commit")
+            return durable_tasks[key]
+
+    modes = ModeRegistry()
+    service = SessionService(store, InputOrchestratorService(modes), object(), modes)
+    service.set_agent_task_dispatcher(CommitThenLoseAckDispatcher())
+
+    await service._drain_pending_inputs(session_id)
+    still_queued = await reader.get_session(session_id)
+    assert still_queued is not None
+    assert [item.id for item in service._get_pending_input_queue(still_queued)] == [
+        "legacy-queue-entry"
+    ]
+
+    await service._drain_pending_inputs(session_id)
+    recovered = await reader.get_session(session_id)
+    assert recovered is not None
+    assert recovered.metadata.get("pending_input_queue", []) == []
+    assert submissions == ["legacy-queue-entry", "legacy-queue-entry"]
+    assert len(durable_tasks) == 1
+
+
+@pytest.mark.asyncio
+async def test_startup_reaper_hands_off_legacy_pending_input_queue(stores) -> None:
+    store, reader, session_id, _ = stores
+    session = await store.get_session(session_id)
+    assert session is not None
+    session.metadata["pending_input_queue"] = [
+        PendingInputQueueEntry(
+            id="legacy-startup-entry",
+            created_at=datetime.now(UTC),
+            busy_status="running",
+            queue_behavior="enqueue_if_busy",
+            interrupt_policy="wait_for_active_turn",
+            payload=SendMessageRequest(content="recover after restart"),
+            metadata={"turn_id": "legacy-startup-turn"},
+        ).model_dump(mode="python")
+    ]
+    await store.save_session(session)
+
+    submitted = asyncio.Event()
+    submissions = []
+
+    class DurableDispatcher:
+        async def submit(self, submitted_session_id, payload, *, execution_request=None):
+            submissions.append((submitted_session_id, payload.content))
+            submitted.set()
+            return SimpleNamespace(task=SimpleNamespace(id="recovered-task"))
+
+    modes = ModeRegistry()
+    service = SessionService(
+        store,
+        InputOrchestratorService(modes),
+        object(),
+        modes,
+        turn_reaper_interval_seconds=60,
+    )
+    service.set_agent_task_dispatcher(DurableDispatcher())
+
+    await service.start_turn_reaper()
+    try:
+        await asyncio.wait_for(submitted.wait(), timeout=2)
+        async with asyncio.timeout(2):
+            while True:
+                recovered = await reader.get_session(session_id)
+                assert recovered is not None
+                if recovered.metadata.get("pending_input_queue", []) == []:
+                    break
+                await asyncio.sleep(0.01)
+        assert submissions == [(session_id, "recover after restart")]
+        assert [event.type for event in await reader.list_events(session_id)] == [
+            "input.dequeued"
+        ]
+    finally:
+        await service.stop_turn_reaper()
