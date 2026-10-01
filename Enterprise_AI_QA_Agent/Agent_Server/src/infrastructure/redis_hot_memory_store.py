@@ -88,6 +88,14 @@ return 1
 """
 
 
+_RENEW_COMPACTION_SCRIPT = """
+local ok, claim = pcall(cjson.decode, redis.call('GET', KEYS[1]) or '')
+if not ok or type(claim) ~= 'table' or claim['status'] ~= 'running'
+   or ARGV[1] == '' or claim['owner_id'] ~= ARGV[1] then return 0 end
+return redis.call('EXPIRE', KEYS[1], ARGV[2])
+"""
+
+
 class RedisHotMemoryStore:
     def __init__(
         self,
@@ -315,6 +323,26 @@ class RedisHotMemoryStore:
             return True
         acquired = await self._client.set(marker, claim, ex=lease_seconds, nx=True)
         return bool(acquired)
+
+    async def renew_compaction(self, session_id: str, key: str, *, owner_id: str, lease_seconds: int) -> bool:
+        self._require_session(session_id)
+        marker = self._key(session_id, f"compaction:{key}")
+        lease_seconds = max(1, int(lease_seconds))
+        if hasattr(self._client, "eval"):
+            return bool(await self._client.eval(
+                _RENEW_COMPACTION_SCRIPT, 1, marker, owner_id, lease_seconds,
+            ))
+        # Compatibility for deterministic client doubles without EVAL.
+        raw = await self._client.get(marker)
+        try:
+            claim = json.loads(raw) if raw else None
+        except (TypeError, json.JSONDecodeError):
+            claim = None
+        if not owner_id or not isinstance(claim, dict) or (
+            claim.get("owner_id") != owner_id or claim.get("status") != "running"
+        ):
+            return False
+        return bool(await self._client.expire(marker, lease_seconds))
 
     async def complete_compaction(self, session_id: str, key: str, *, owner_id: str = "") -> bool:
         self._require_session(session_id)

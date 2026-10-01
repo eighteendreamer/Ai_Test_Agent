@@ -16,6 +16,7 @@ class Hot:
             }
         ]
     async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds): return True
+    async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds): return True
     async def complete_compaction(self, session_id, key, *, owner_id): pass
     async def clear_session(self, session_id): self.cleared = True
 
@@ -44,6 +45,19 @@ def test_fallback_marker_rejects_old_owner_before_hot_data_clear():
     assert hot.cleared is False
 
 
+def test_rejected_initial_renewal_does_not_start_memory_write(caplog):
+    class LostHot(Hot):
+        async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds):
+            return False
+
+    hot, memory = LostHot(), Memory()
+    assert not asyncio.run(CompactionWorker(hot_memory_store=hot, memory_runtime_service=memory).compact_session(
+        session_id="s1", turn_id="t1", trace_id="tr1",
+    ))
+    assert memory.args is None and hot.cleared is False
+    assert any(r.getMessage() == "session_hot_memory_compaction_failed" for r in caplog.records)
+
+
 def test_compaction_uses_cursor_commit_and_stable_key_for_idempotency():
     class CursorHot:
         def __init__(self):
@@ -62,6 +76,9 @@ def test_compaction_uses_cursor_commit_and_stable_key_for_idempotency():
 
         async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
             self.key = key
+            return True
+
+        async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds):
             return True
 
         async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):
@@ -99,6 +116,9 @@ def test_failed_compaction_retries_the_same_pending_prefix():
             assert key == "e2:v1"
             return True
 
+        async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds):
+            return True
+
         async def commit_compaction(self, session_id, *, key, last_event_id, owner_id, allow_missing_cursor):
             assert (key, last_event_id) == ("e2:v1", "e2")
             return True
@@ -121,6 +141,9 @@ def test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavai
             raise ConnectionError("redis unavailable")
 
         async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
+            return True
+
+        async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds):
             return True
 
         async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):
@@ -221,6 +244,9 @@ def test_concurrent_compaction_writes_one_summary_per_session():
             if key in self.holders:
                 return False
             self.holders[key] = session_id
+            return True
+
+        async def renew_compaction(self, session_id, key, *, owner_id, lease_seconds):
             return True
 
         async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):

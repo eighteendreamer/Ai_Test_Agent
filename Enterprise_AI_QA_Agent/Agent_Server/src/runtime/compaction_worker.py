@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from time import perf_counter
 from typing import Any
@@ -117,7 +118,8 @@ class CompactionWorker:
                 user_message = self._first_text(events, "user")
             if not assistant_message:
                 assistant_message = self._last_text(events, "assistant")
-            memory_ids = await self._memory.write_turn_memory(
+            memory_ids = await self._write_with_lease_watch(
+                key=key, owner_id=owner_id, lease_seconds=lease_seconds,
                 session_id=session_id,
                 turn_id=turn_id,
                 trace_id=trace_id,
@@ -157,6 +159,9 @@ class CompactionWorker:
             LOGGER.info("session_hot_memory_compacted", extra={"session_id": session_id, "last_event_id": last_event_id, "compression_version": self._compression_version})
             self._record_cycle("completed", started=started, events=len(events))
             return True
+        except asyncio.CancelledError:
+            LOGGER.info("session_hot_memory_compaction_cancelled", extra={"session_id": session_id, "compaction_key": key})
+            raise
         except Exception as exc:
             failed_marker = getattr(self._hot, "mark_compaction_failed", None)
             if callable(failed_marker):
@@ -182,6 +187,52 @@ class CompactionWorker:
             LOGGER.exception("session_hot_memory_compaction_failed", extra={"session_id": session_id, "last_event_id": last_event_id, "error_type": type(exc).__name__})
             self._record_cycle("failed", started=started, events=0)
             return False
+
+    async def _write_with_lease_watch(self, *, key: str, owner_id: str, lease_seconds: int, **kwargs):
+        session_id = kwargs["session_id"]
+        interval = lease_seconds / 3
+
+        async def renew():
+            if self._record_store is not None and not await self._record_store.renew(
+                f"{session_id}:{key}", owner_id=owner_id,
+            ):
+                raise ContinuationLeaseLostError("Compaction record renewal lost ownership")
+            if not await self._hot.renew_compaction(
+                session_id, key, owner_id=owner_id, lease_seconds=lease_seconds,
+            ):
+                raise ContinuationLeaseLostError("Compaction marker renewal lost ownership")
+            LOGGER.debug("compaction_lease_renewed", extra={"session_id": session_id, "compaction_key": key})
+
+        async def heartbeat():
+            while True:
+                await asyncio.sleep(interval)
+                await asyncio.wait_for(renew(), timeout=interval)
+
+        # Confirm admission, then follow RedisTaskWorker's FIRST_COMPLETED watch.
+        await asyncio.wait_for(renew(), timeout=interval)
+        execution = asyncio.create_task(self._memory.write_turn_memory(**kwargs))
+        renewal = asyncio.create_task(heartbeat())
+        try:
+            done, _ = await asyncio.wait({execution, renewal}, return_when=asyncio.FIRST_COMPLETED)
+            if renewal in done:
+                LOGGER.warning("compaction_lease_watch_stopped", extra={"session_id": session_id, "compaction_key": key})
+                await renewal
+                raise ContinuationLeaseLostError("Compaction lease watch stopped")
+            return await execution
+        finally:
+            execution.cancel()
+            renewal.cancel()
+            # Await memory cleanup even if the caller is cancelled again, as in
+            # TestRunExecutionService._execute_with_lease_watch.
+            settled = asyncio.gather(execution, renewal, return_exceptions=True)
+            cancelled = False
+            while not settled.done():
+                try:
+                    await asyncio.shield(settled)
+                except asyncio.CancelledError:
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
 
     @staticmethod
     def _record_cycle(result: str, *, started: float, events: int) -> None:

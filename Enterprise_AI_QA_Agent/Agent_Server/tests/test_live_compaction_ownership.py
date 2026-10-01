@@ -386,3 +386,198 @@ async def test_expired_worker_can_be_replaced_and_late_success_is_rejected(
     finally:
         release.set()
         await asyncio.gather(first, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_slow_compression_keeps_both_claims_alive(compaction_harness):
+    h = compaction_harness
+    h.records = PostgresCompactionRecordStore(h.settings, lease_seconds=1)
+
+    class SlowMemory:
+        async def write_turn_memory(self, **kwargs):
+            await asyncio.sleep(1.2)
+            record = await h.records.get(f"{h.session_id}:e2:v1")
+            assert record.status == "running"
+            assert not await h.records.begin(
+                compaction_key=record.compaction_key,
+                session_id=h.session_id,
+                last_event_id="e2",
+                compression_version="v1",
+                owner_id="competing-worker",
+            )
+            assert not await h.hot.acquire_compaction(
+                h.session_id, "e2:v1", owner_id="competing-worker", lease_seconds=1
+            )
+            await asyncio.sleep(1)
+            return ["slow-memory"]
+
+    worker = CompactionWorker(
+        hot_memory_store=h.hot,
+        memory_runtime_service=SlowMemory(),
+        record_store=h.records,
+    )
+    assert await worker.compact_session(
+        session_id=h.session_id, turn_id="t1", trace_id="trace"
+    )
+    record = await h.records.get(f"{h.session_id}:e2:v1")
+    assert record.status == "completed" and record.memory_ids == ["slow-memory"]
+    assert await h.hot.list_events(h.session_id) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["pg_owner", "redis_owner", "transport", "timeout"])
+async def test_lost_heartbeat_cancels_memory_and_retains_events(
+    compaction_harness, monkeypatch, fault, caplog
+):
+    h = compaction_harness
+    h.records = PostgresCompactionRecordStore(h.settings, lease_seconds=1)
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    key = f"{h.session_id}:e2:v1"
+
+    class Memory:
+        async def write_turn_memory(self, **kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    worker = CompactionWorker(
+        hot_memory_store=h.hot, memory_runtime_service=Memory(), record_store=h.records
+    )
+    execution = asyncio.create_task(
+        worker.compact_session(session_id=h.session_id, turn_id="t1", trace_id="trace")
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        if fault == "pg_owner":
+            with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE {h.settings.database.postgres_compaction_table} "
+                    "SET claimed_by='new-owner' WHERE compaction_key=%s",
+                    (key,),
+                )
+        elif fault == "redis_owner":
+            await h.hot._client.delete(h.hot._key(h.session_id, "compaction:e2:v1"))
+            assert await h.hot.acquire_compaction(
+                h.session_id, "e2:v1", owner_id="new-owner", lease_seconds=10
+            )
+        else:
+
+            async def broken_renew(*args, **kwargs):
+                if fault == "timeout":
+                    await asyncio.Event().wait()
+                raise ConnectionError("injected renewal transport failure")
+
+            monkeypatch.setattr(h.hot, "renew_compaction", broken_renew)
+        assert await asyncio.wait_for(execution, timeout=3) is False
+        assert cancelled.is_set()
+        assert [row["id"] for row in await h.hot.list_events(h.session_id)] == [
+            "e1",
+            "e2",
+        ]
+        record = await h.records.get(key)
+        assert record.status != "completed" and record.memory_ids == []
+        if fault == "pg_owner":
+            assert record.status == "running" and record.claimed_by == "new-owner"
+        assert any(
+            r.getMessage() == "compaction_lease_watch_stopped" for r in caplog.records
+        )
+    finally:
+        execution.cancel()
+        await asyncio.gather(execution, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_waits_for_memory_cleanup_and_stops_heartbeat(
+    compaction_harness,
+):
+    h = compaction_harness
+    h.records = PostgresCompactionRecordStore(h.settings, lease_seconds=1)
+    entered, cleanup_started, release, cleaned = (asyncio.Event() for _ in range(4))
+
+    class Memory:
+        async def write_turn_memory(self, **kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_started.set()
+                await release.wait()
+                cleaned.set()
+
+    worker = CompactionWorker(
+        hot_memory_store=h.hot, memory_runtime_service=Memory(), record_store=h.records
+    )
+    execution = asyncio.create_task(
+        worker.compact_session(session_id=h.session_id, turn_id="t1", trace_id="trace")
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        execution.cancel()
+        await asyncio.wait_for(cleanup_started.wait(), timeout=3)
+        execution.cancel()
+        await asyncio.sleep(0)
+        assert not execution.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(execution, timeout=3)
+        assert cleaned.is_set()
+        before = await h.records.get(f"{h.session_id}:e2:v1")
+        await asyncio.sleep(0.5)
+        after = await h.records.get(before.compaction_key)
+        assert after.claimed_until == before.claimed_until
+    finally:
+        release.set()
+        execution.cancel()
+        await asyncio.gather(execution, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_renewals_do_not_revive_expired_or_settled_owners(compaction_harness):
+    h = compaction_harness
+    key = f"{h.session_id}:e2:v1"
+    assert await h.records.begin(
+        compaction_key=key,
+        session_id=h.session_id,
+        last_event_id="e2",
+        compression_version="v1",
+        owner_id="owner",
+    )
+    assert not await h.records.renew(key, owner_id="different-owner")
+    assert await h.records.renew(key, owner_id="owner")
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_compaction_table} "
+            "SET claimed_until=NOW()-INTERVAL '1 second' WHERE compaction_key=%s",
+            (key,),
+        )
+    assert not await h.records.renew(key, owner_id="owner")
+    assert await h.records.begin(
+        compaction_key=key,
+        session_id=h.session_id,
+        last_event_id="e2",
+        compression_version="v1",
+        owner_id="new-owner",
+    )
+    assert await h.records.complete(key, [], owner_id="new-owner")
+    assert not await h.records.renew(key, owner_id="new-owner")
+
+    assert await h.hot.acquire_compaction(h.session_id, "e2:v1", owner_id="owner")
+    assert not await h.hot.renew_compaction(
+        h.session_id, "e2:v1", owner_id="different", lease_seconds=300
+    )
+    assert not await h.hot.renew_compaction(
+        h.session_id, "e2:v1", owner_id="", lease_seconds=300
+    )
+    assert await h.hot.renew_compaction(
+        h.session_id, "e2:v1", owner_id="owner", lease_seconds=300
+    )
+    assert await h.hot.complete_compaction(h.session_id, "e2:v1", owner_id="owner")
+    assert not await h.hot.renew_compaction(
+        h.session_id, "e2:v1", owner_id="owner", lease_seconds=300
+    )
+    await h.hot._client.delete(h.hot._key(h.session_id, "compaction:e2:v1"))
+    assert not await h.hot.renew_compaction(
+        h.session_id, "e2:v1", owner_id="owner", lease_seconds=300
+    )

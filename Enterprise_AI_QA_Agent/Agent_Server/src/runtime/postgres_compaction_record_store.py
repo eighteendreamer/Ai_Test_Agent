@@ -65,6 +65,9 @@ class PostgresCompactionRecordStore:
     async def complete(self, compaction_key: str, memory_ids: list[str], *, owner_id: str) -> bool:
         return await asyncio.to_thread(self._complete_sync, compaction_key, memory_ids, owner_id)
 
+    async def renew(self, compaction_key: str, *, owner_id: str) -> bool:
+        return await asyncio.to_thread(self._renew_sync, compaction_key, owner_id)
+
     async def fail(self, compaction_key: str, error: str, *, owner_id: str) -> bool:
         return await asyncio.to_thread(self._fail_sync, compaction_key, error, owner_id)
 
@@ -156,6 +159,23 @@ class PostgresCompactionRecordStore:
                 claimed = cur.rowcount == 1
             conn.commit()
         return claimed
+
+    def _renew_sync(self, compaction_key: str, owner_id: str) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._table_name}
+                    SET claimed_until = NOW() + %s * INTERVAL '1 second',
+                        updated_at = NOW()
+                    WHERE compaction_key = %s AND status = 'running'
+                      AND claimed_by = %s AND claimed_until > NOW()
+                    """,
+                    (self._lease_seconds, compaction_key, owner_id),
+                )
+                renewed = cur.rowcount == 1
+            conn.commit()
+        return renewed
 
     def _complete_sync(self, compaction_key: str, memory_ids: list[str], owner_id: str) -> bool:
         with postgres_connect(self._settings) as conn:
