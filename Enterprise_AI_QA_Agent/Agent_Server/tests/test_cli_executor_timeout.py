@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import src.application.runtime.tool_runtime_service as tool_runtime_module
 from src.application.runtime.tool_runtime_service import (
     ToolExecutionContext,
     ToolRuntimeService,
@@ -24,6 +25,33 @@ def test_cli_executor_keeps_successful_output(tmp_path: Path) -> None:
     assert (stdout.strip(), stderr.strip(), exit_code, timed_out) == (
         "ready", "detail", 0, False,
     )
+
+
+@pytest.mark.asyncio
+async def test_cli_executor_explicit_zero_timeout_uses_configured_minimum(tmp_path: Path, monkeypatch) -> None:
+    service = ToolRuntimeService.__new__(ToolRuntimeService)
+    service._resolve_cli_cwd = lambda requested: tmp_path
+    service._prepare_local_artifact_dir = lambda context, key: tmp_path
+    service._build_cli_invocation = lambda shell, command: (sys.executable, ["-c", "pass"])
+    captured_timeout: list[float] = []
+
+    def fake_subprocess(command, cwd, timeout_seconds):
+        captured_timeout.append(timeout_seconds)
+        return "", "", 0, False
+
+    monkeypatch.setattr(tool_runtime_module, "_run_cli_subprocess", fake_subprocess)
+    context = ToolExecutionContext(
+        session_id="zero-timeout", turn_id="zero-timeout", trace_id="zero-timeout",
+        user_message="", normalized_input="", context_bundle={},
+    )
+
+    result = await service._run_cli_executor(
+        {"command": "no real subprocess", "timeout_seconds": 0}, context,
+    )
+    await service._run_cli_executor({"command": "no real subprocess"}, context)
+
+    assert result["status"] == "completed"
+    assert captured_timeout == [1.0, 20.0]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows process-tree regression")

@@ -2071,7 +2071,8 @@ class ToolRuntimeService:
             }
 
         shell_name = str(arguments.get("shell") or "powershell").strip().lower()
-        timeout_seconds = float(arguments.get("timeout_seconds") or 20)
+        requested_timeout = arguments.get("timeout_seconds")
+        timeout_seconds = float(20 if requested_timeout is None else requested_timeout)
         timeout_seconds = max(1.0, min(timeout_seconds, 300.0))
         cwd = self._resolve_cli_cwd(arguments.get("cwd"))
         artifact_dir = self._prepare_local_artifact_dir(context, "cli-executor")
