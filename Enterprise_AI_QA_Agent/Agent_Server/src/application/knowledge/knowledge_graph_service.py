@@ -112,45 +112,37 @@ class KnowledgeGraphService:
             raise ValueError(f"Project has no graph_scope_key: {value}")
         return {"project_id": str(project.id), "project_scope": scope}
 
-    def _migrate_legacy_records(self, identity: dict[str, str | None]) -> None:
-        if not identity.get("project_id"):
-            return
-        self._provider.execute_write(
-            """
-            MATCH (n)
-            WHERE n.project_id IS NULL AND n.project_scope = $project_scope
-            SET n.project_id = $project_id
-            """,
-            identity,
-        )
-        self._provider.execute_write(
-            """
-            MATCH ()-[r]->()
-            WHERE r.project_id IS NULL AND r.project_scope = $project_scope
-            SET r.project_id = $project_id
-            """,
-            identity,
-        )
+    @staticmethod
+    def _project_filter(alias: str, identity: dict[str, str | None]) -> str:
+        if identity.get("project_id"):
+            return (
+                f"({alias}.project_id = $project_id OR "
+                f"({alias}.project_id IS NULL AND {alias}.project_scope = $project_scope))"
+            )
+        return f"{alias}.project_scope = $project_scope"
 
     def _get_project_summary_sync(self, identity: dict[str, str | None]) -> KnowledgeProjectSummary:
         project_id = identity.get("project_id")
         project_scope = str(identity.get("project_scope") or "")
-        self._migrate_legacy_records(identity)
-        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
+        node_filter = self._project_filter("n", identity)
+        relation_filter = self._project_filter("r", identity)
         parameters = identity
         rows = self._provider.execute(
             f"""
-            MATCH (n:Page {{{selector}}})
+            MATCH (n:Page)
+            WHERE {node_filter}
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'page_count' AS count_field
             UNION ALL
-            MATCH (n:Element {{{selector}}})
+            MATCH (n:Element)
+            WHERE {node_filter}
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'element_count' AS count_field
             UNION ALL
-            MATCH (n:Entity {{{selector}}})
+            MATCH (n:Entity)
+            WHERE {node_filter}
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'entity_count' AS count_field
             UNION ALL
             MATCH ()-[r]->()
-            WHERE r.{('project_id' if project_id else 'project_scope')} = ${('project_id' if project_id else 'project_scope')}
+            WHERE {relation_filter}
             RETURN count(r) AS total, max(r.updated_at) AS latest_updated_at, 'edge_count' AS count_field
             """,
             parameters,
@@ -180,13 +172,15 @@ class KnowledgeGraphService:
         summary = self._get_project_summary_sync(identity)
         project_id = identity.get("project_id")
         project_scope = str(identity.get("project_scope") or "")
-        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
+        node_filter = self._project_filter("n", identity)
+        relation_filter = self._project_filter("r", identity)
         per_kind_limit = max(1, node_limit // 3)
         nodes: list[dict[str, Any]] = []
         for label, kind in (("Page", "page"), ("Element", "element"), ("Entity", "entity")):
             rows = self._provider.execute(
                 f"""
-                MATCH (n:{label} {{{selector}}})
+                MATCH (n:{label})
+                WHERE {node_filter}
                 RETURN n.id AS id, n.label AS label, n.url AS url,
                        n.role AS role, n.type AS type
                 ORDER BY n.updated_at DESC
@@ -209,7 +203,7 @@ class KnowledgeGraphService:
         edge_rows = self._provider.execute(
             f"""
             MATCH (a)-[r]->(b)
-            WHERE r.{('project_id' if project_id else 'project_scope')} = ${('project_id' if project_id else 'project_scope')}
+            WHERE {relation_filter}
             RETURN a.id AS source_id, b.id AS target_id, type(r) AS relation
             ORDER BY r.updated_at DESC
             LIMIT {edge_limit}
@@ -310,19 +304,18 @@ class KnowledgeGraphService:
     def _get_graph_sync(self, identity: dict[str, str | None]) -> KnowledgeGraphResponse:
         project_id = identity.get("project_id")
         scope = str(identity.get("project_scope") or "")
-        self._migrate_legacy_records(identity)
-        selector = "project_id: $project_id" if project_id else "project_scope: $project_scope"
-        relation_key = "project_id" if project_id else "project_scope"
+        node_filter = self._project_filter("n", identity)
+        relation_filter = self._project_filter("r", identity)
         pages = self._provider.execute(
-            f"MATCH (n:Page {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            f"MATCH (n:Page) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC",
             identity,
         )
         elements = self._provider.execute(
-            f"MATCH (n:Element {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            f"MATCH (n:Element) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC",
             identity,
         )
         entities = self._provider.execute(
-            f"MATCH (n:Entity {{{selector}}}) RETURN n ORDER BY n.updated_at DESC",
+            f"MATCH (n:Entity) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC",
             identity,
         )
         if not pages and not elements and not entities:
@@ -330,7 +323,7 @@ class KnowledgeGraphService:
         edge_rows = self._provider.execute(
             f"""
             MATCH (a)-[r]->(b)
-            WHERE r.{relation_key} = ${relation_key}
+            WHERE {relation_filter}
             RETURN a.id AS source_id, b.id AS target_id, type(r) AS relation, r
             ORDER BY r.updated_at DESC
             """,
@@ -380,11 +373,11 @@ class KnowledgeGraphService:
             "entities": graph.summary.entity_count,
             "edges": graph.summary.edge_count,
         }
-        relation_key = "project_id" if identity.get("project_id") else "project_scope"
+        node_filter = self._project_filter("n", identity)
         self._provider.execute_write(
             f"""
             MATCH (n)
-            WHERE n.{relation_key} = ${relation_key}
+            WHERE {node_filter}
             DETACH DELETE n
             """,
             identity,
