@@ -15,8 +15,8 @@ class Hot:
                 "payload": {"role": "user", "content": "goal"},
             }
         ]
-    async def acquire_compaction(self, session_id, key): return True
-    async def complete_compaction(self, session_id, key): pass
+    async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds): return True
+    async def complete_compaction(self, session_id, key, *, owner_id): pass
     async def clear_session(self, session_id): self.cleared = True
 
 
@@ -30,6 +30,18 @@ def test_compaction_writes_durable_memory_then_clears_hot_data():
     assert asyncio.run(CompactionWorker(hot_memory_store=hot, memory_runtime_service=memory).compact_session(session_id="s1", turn_id="t1", trace_id="tr1"))
     assert memory.args["user_message"] == "goal"
     assert hot.cleared is True
+
+
+def test_fallback_marker_rejects_old_owner_before_hot_data_clear():
+    class LostHot(Hot):
+        async def complete_compaction(self, session_id, key, *, owner_id):
+            return False
+
+    hot = LostHot()
+    assert not asyncio.run(CompactionWorker(hot_memory_store=hot, memory_runtime_service=Memory()).compact_session(
+        session_id="s1", turn_id="t1", trace_id="tr1",
+    ))
+    assert hot.cleared is False
 
 
 def test_compaction_uses_cursor_commit_and_stable_key_for_idempotency():
@@ -48,14 +60,14 @@ def test_compaction_uses_cursor_commit_and_stable_key_for_idempotency():
                 {"id": "e3", "type": "tool.result", "payload": {"status": "completed"}},
             ]
 
-        async def acquire_compaction(self, session_id, key):
+        async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
             self.key = key
             return True
 
-        async def mark_compaction_pending(self, session_id, *, last_event_id):
+        async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):
             self.pending = last_event_id
 
-        async def commit_compaction(self, session_id, *, key, last_event_id):
+        async def commit_compaction(self, session_id, *, key, last_event_id, owner_id, allow_missing_cursor):
             self.committed = (key, last_event_id)
             return True
 
@@ -83,11 +95,11 @@ def test_failed_compaction_retries_the_same_pending_prefix():
                 {"id": "e3", "type": "message", "payload": {"role": "user", "content": "new"}},
             ]
 
-        async def acquire_compaction(self, session_id, key):
+        async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
             assert key == "e2:v1"
             return True
 
-        async def commit_compaction(self, session_id, *, key, last_event_id):
+        async def commit_compaction(self, session_id, *, key, last_event_id, owner_id, allow_missing_cursor):
             assert (key, last_event_id) == ("e2:v1", "e2")
             return True
 
@@ -108,13 +120,13 @@ def test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavai
         async def list_events(self, session_id, *, after_id=None, limit=10000):
             raise ConnectionError("redis unavailable")
 
-        async def acquire_compaction(self, session_id, key):
+        async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
             return True
 
-        async def mark_compaction_pending(self, session_id, *, last_event_id):
+        async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):
             self.pending = last_event_id
 
-        async def commit_compaction(self, session_id, *, key, last_event_id):
+        async def commit_compaction(self, session_id, *, key, last_event_id, owner_id, allow_missing_cursor):
             self.committed = (key, last_event_id)
             return True
 
@@ -204,17 +216,17 @@ def test_concurrent_compaction_writes_one_summary_per_session():
                 "payload": {"role": "user", "content": f"goal {session_id}"},
             }]
 
-        async def acquire_compaction(self, session_id, key):
+        async def acquire_compaction(self, session_id, key, *, owner_id, lease_seconds):
             # Redis SETNX semantics: the key, not the session, is the lock identity.
             if key in self.holders:
                 return False
             self.holders[key] = session_id
             return True
 
-        async def mark_compaction_pending(self, session_id, *, last_event_id):
+        async def mark_compaction_pending(self, session_id, *, last_event_id, key, owner_id):
             return None
 
-        async def commit_compaction(self, session_id, *, key, last_event_id):
+        async def commit_compaction(self, session_id, *, key, last_event_id, owner_id, allow_missing_cursor):
             return True
 
         async def clear_session(self, session_id):

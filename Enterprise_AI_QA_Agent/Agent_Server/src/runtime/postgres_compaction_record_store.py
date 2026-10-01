@@ -40,6 +40,10 @@ class PostgresCompactionRecordStore:
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
 
+    @property
+    def lease_seconds(self) -> int:
+        return self._lease_seconds
+
     async def begin(
         self,
         *,
@@ -58,11 +62,11 @@ class PostgresCompactionRecordStore:
             owner_id or f"compactor_{uuid.uuid4().hex}",
         )
 
-    async def complete(self, compaction_key: str, memory_ids: list[str]) -> bool:
-        return await asyncio.to_thread(self._complete_sync, compaction_key, memory_ids)
+    async def complete(self, compaction_key: str, memory_ids: list[str], *, owner_id: str) -> bool:
+        return await asyncio.to_thread(self._complete_sync, compaction_key, memory_ids, owner_id)
 
-    async def fail(self, compaction_key: str, error: str) -> bool:
-        return await asyncio.to_thread(self._fail_sync, compaction_key, error)
+    async def fail(self, compaction_key: str, error: str, *, owner_id: str) -> bool:
+        return await asyncio.to_thread(self._fail_sync, compaction_key, error, owner_id)
 
     async def get(self, compaction_key: str) -> CompactionRecord | None:
         return await asyncio.to_thread(self._get_sync, compaction_key)
@@ -153,7 +157,7 @@ class PostgresCompactionRecordStore:
             conn.commit()
         return claimed
 
-    def _complete_sync(self, compaction_key: str, memory_ids: list[str]) -> bool:
+    def _complete_sync(self, compaction_key: str, memory_ids: list[str], owner_id: str) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -170,8 +174,9 @@ class PostgresCompactionRecordStore:
                             {self._table_name}.last_compacted_event_sequence
                         )
                     WHERE compaction_key = %s AND status = 'running'
+                      AND claimed_by = %s AND claimed_until > NOW()
                     """,
-                    (json.dumps(memory_ids, ensure_ascii=False), compaction_key),
+                    (json.dumps(memory_ids, ensure_ascii=False), compaction_key, owner_id),
                 )
                 updated = cur.rowcount == 1
             conn.commit()
@@ -206,7 +211,7 @@ class PostgresCompactionRecordStore:
                 row = cur.fetchone()
         return int(row["uncompacted_events"]) if row else 0
 
-    def _fail_sync(self, compaction_key: str, error: str) -> bool:
+    def _fail_sync(self, compaction_key: str, error: str, owner_id: str) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -215,8 +220,9 @@ class PostgresCompactionRecordStore:
                     SET status = 'failed', last_error = %s,
                         claimed_by = NULL, claimed_until = NULL, updated_at = NOW()
                     WHERE compaction_key = %s AND status = 'running'
+                      AND claimed_by = %s AND claimed_until > NOW()
                     """,
-                    (str(error)[:4000], compaction_key),
+                    (str(error)[:4000], compaction_key, owner_id),
                 )
                 updated = cur.rowcount == 1
             conn.commit()

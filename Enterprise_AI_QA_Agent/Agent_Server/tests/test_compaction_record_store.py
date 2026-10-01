@@ -65,7 +65,7 @@ def test_compaction_record_claim_is_idempotent_and_can_reclaim_failed(monkeypatc
     cursor._rowcounts = iter([0, 1])
     assert store._begin_sync("s1:e1:v1", "s1", "e1", "v1", "worker-2")
     cursor._rowcounts = iter([1])
-    assert store._complete_sync("s1:e1:v1", ["m1"])
+    assert store._complete_sync("s1:e1:v1", ["m1"], "worker-2")
     completion = cursor.statements[-1][0]
     assert "status = 'completed'" in completion
     # The watermark is resolved by PostgreSQL, which owns event_sequence.

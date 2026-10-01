@@ -15,6 +15,20 @@ from redis.asyncio import Redis
 
 
 _COMMIT_COMPACTION_SCRIPT = """
+local marker = redis.call('GET', KEYS[3])
+if ARGV[5] ~= '' then
+  local ok, claim = pcall(cjson.decode, marker or '')
+  if not ok or type(claim) ~= 'table' or claim['owner_id'] ~= ARGV[5]
+     or (claim['status'] ~= 'running' and claim['status'] ~= 'completed') then return 0 end
+elseif marker then
+  local ok, claim = pcall(cjson.decode, marker)
+  if ok and type(claim) == 'table' and (claim['owner_id'] or '') ~= '' then return 0 end
+end
+local state_raw = redis.call('GET', KEYS[2])
+local state_ok, state = pcall(cjson.decode, state_raw or '')
+if state_ok and type(state) == 'table' and state['status'] == 'pending' then
+  if state['key'] ~= ARGV[6] or (state['owner_id'] or '') ~= ARGV[5] then return 0 end
+end
 local rows = redis.call('LRANGE', KEYS[1], 0, -1)
 local target_index = -1
 for index, row in ipairs(rows) do
@@ -26,9 +40,10 @@ for index, row in ipairs(rows) do
 end
 if target_index < 0 then
   if redis.call('GET', KEYS[2]) == ARGV[2] then return 1 end
-  return 0
+  if ARGV[7] ~= '1' then return 0 end
+else
+  redis.call('LTRIM', KEYS[1], target_index + 1, -1)
 end
-redis.call('LTRIM', KEYS[1], target_index + 1, -1)
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
 redis.call('SET', KEYS[3], ARGV[4], 'EX', ARGV[3])
 return 1
@@ -37,16 +52,39 @@ return 1
 _ACQUIRE_COMPACTION_SCRIPT = """
 local current = redis.call('GET', KEYS[1])
 if not current then
-  redis.call('SET', KEYS[1], 'running', 'EX', ARGV[1], 'NX')
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[1], 'NX')
   return 1
 end
-if current == 'running' or current == 'completed' then return 0 end
+if current == 'completed' then return 0 end
+if current == 'running' then
+  local ttl = redis.call('TTL', KEYS[1])
+  if ttl < 0 or ttl > tonumber(ARGV[1]) then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+  return 0
+end
 local ok, payload = pcall(cjson.decode, current)
 if ok and type(payload) == 'table' and payload['status'] == 'failed' then
-  redis.call('SET', KEYS[1], 'running', 'EX', ARGV[1])
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[1])
   return 1
 end
 return 0
+"""
+
+_UPDATE_COMPACTION_SCRIPT = """
+local current = redis.call('GET', KEYS[1])
+local ok, claim = pcall(cjson.decode, current or '')
+if ARGV[1] ~= '' then
+  if not ok or type(claim) ~= 'table' or claim['owner_id'] ~= ARGV[1]
+     or claim['status'] ~= 'running' then return 0 end
+elseif ok and type(claim) == 'table' and (claim['owner_id'] or '') ~= '' then
+  return 0
+end
+if ARGV[4] == 'pending' then
+  local state_ok, state = pcall(cjson.decode, redis.call('GET', KEYS[2]) or '')
+  if state_ok and type(state) == 'table' and state['status'] == 'pending'
+     and state['key'] ~= ARGV[5] then return 0 end
+end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+return 1
 """
 
 
@@ -57,12 +95,14 @@ class RedisHotMemoryStore:
         *,
         ttl_seconds: int = 86400,
         max_events: int = 2000,
+        compaction_lease_seconds: int = 300,
         client: Redis | Any | None = None,
     ) -> None:
         self._redis_url = redis_url
         self._client = client
         self._ttl_seconds = max(1, int(ttl_seconds))
         self._max_events = max(1, int(max_events))
+        self._compaction_lease_seconds = max(1, int(compaction_lease_seconds))
 
     async def connect(self) -> None:
         if self._client is None:
@@ -111,13 +151,15 @@ class RedisHotMemoryStore:
         *,
         last_event_id: str | None = None,
         key: str | None = None,
-    ) -> None:
+        owner_id: str = "",
+    ) -> bool:
         self._require_session(session_id)
         payload = {"status": "pending", "last_event_id": last_event_id, "key": key}
-        await self._client.set(
-            self._key(session_id, "compaction_state"),
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-            ex=self._ttl_seconds,
+        if owner_id:
+            payload["owner_id"] = owner_id
+        return await self._update_compaction(
+            session_id, key=str(key or ""), owner_id=owner_id,
+            target_key=self._key(session_id, "compaction_state"), payload=payload,
         )
 
     async def get_compaction_state(self, session_id: str) -> dict[str, Any] | None:
@@ -134,6 +176,8 @@ class RedisHotMemoryStore:
         *,
         key: str,
         last_event_id: str,
+        owner_id: str = "",
+        allow_missing_cursor: bool = False,
     ) -> bool:
         """Commit durable compaction and retain events appended afterward.
 
@@ -162,10 +206,20 @@ class RedisHotMemoryStore:
                 last_event_id,
                 state,
                 self._ttl_seconds,
-                "completed",
+                json.dumps({"status": "completed", "owner_id": owner_id}, separators=(",", ":")),
+                owner_id,
+                key,
+                "1" if allow_missing_cursor else "0",
             )
             return bool(result)
 
+        if not await self._owns_compaction(session_id, key, owner_id):
+            return False
+        current_state = await self.get_compaction_state(session_id) or {}
+        if current_state.get("status") == "pending" and (
+            current_state.get("key") != key or current_state.get("owner_id", "") != owner_id
+        ):
+            return False
         rows = await self._client.lrange(event_key, 0, -1)
         target_index = None
         for index, row in enumerate(rows):
@@ -177,23 +231,53 @@ class RedisHotMemoryStore:
                 target_index = index
                 break
         if target_index is None:
-            return bool((await self.get_compaction_state(session_id) or {}).get("key") == key)
-        await self._client.ltrim(event_key, target_index + 1, -1)
+            if current_state.get("status") == "completed" and current_state.get("key") == key:
+                return True
+            if not allow_missing_cursor:
+                return False
+        else:
+            await self._client.ltrim(event_key, target_index + 1, -1)
         await self._client.set(state_key, state, ex=self._ttl_seconds)
-        await self._client.set(marker_key, "completed", ex=self._ttl_seconds)
-        return True
-
-    async def mark_compaction_failed(self, session_id: str, *, key: str, error: str) -> None:
-        self._require_session(session_id)
         await self._client.set(
-            self._key(session_id, f"compaction:{key}"),
-            json.dumps(
-                {"status": "failed", "error": str(error)[:1000]},
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
+            marker_key, json.dumps({"status": "completed", "owner_id": owner_id}),
             ex=self._ttl_seconds,
         )
+        return True
+
+    async def mark_compaction_failed(self, session_id: str, *, key: str, error: str, owner_id: str = "") -> bool:
+        self._require_session(session_id)
+        return await self._update_compaction(
+            session_id, key=key, owner_id=owner_id,
+            target_key=self._key(session_id, f"compaction:{key}"),
+            payload={"status": "failed", "error": str(error)[:1000], "owner_id": owner_id},
+        )
+
+    async def _owns_compaction(self, session_id: str, key: str, owner_id: str) -> bool:
+        raw = await self._client.get(self._key(session_id, f"compaction:{key}"))
+        try:
+            claim = json.loads(raw) if raw else None
+        except (TypeError, json.JSONDecodeError):
+            claim = None
+        if owner_id:
+            return isinstance(claim, dict) and claim.get("owner_id") == owner_id
+        return not isinstance(claim, dict) or not claim.get("owner_id")
+
+    async def _update_compaction(self, session_id: str, *, key: str, owner_id: str, target_key: str, payload: dict) -> bool:
+        marker = self._key(session_id, f"compaction:{key}")
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        if hasattr(self._client, "eval"):
+            return bool(await self._client.eval(
+                _UPDATE_COMPACTION_SCRIPT, 2, marker, target_key,
+                owner_id, body, self._ttl_seconds, payload["status"], key,
+            ))
+        if not await self._owns_compaction(session_id, key, owner_id):
+            return False
+        if payload["status"] == "pending":
+            state = await self.get_compaction_state(session_id) or {}
+            if state.get("status") == "pending" and state.get("key") != key:
+                return False
+        await self._client.set(target_key, body, ex=self._ttl_seconds)
+        return True
 
     async def clear_session(self, session_id: str) -> None:
         self._require_session(session_id)
@@ -204,16 +288,19 @@ class RedisHotMemoryStore:
             self._key(session_id, "compaction_state"),
         )
 
-    async def acquire_compaction(self, session_id: str, key: str) -> bool:
+    async def acquire_compaction(self, session_id: str, key: str, *, owner_id: str = "", lease_seconds: int | None = None) -> bool:
         self._require_session(session_id)
         marker = self._key(session_id, f"compaction:{key}")
+        lease_seconds = self._compaction_lease_seconds if lease_seconds is None else max(1, int(lease_seconds))
+        claim = json.dumps({"status": "running", "owner_id": owner_id}, separators=(",", ":"))
         if hasattr(self._client, "eval"):
             return bool(
                 await self._client.eval(
                     _ACQUIRE_COMPACTION_SCRIPT,
                     1,
                     marker,
-                    self._ttl_seconds,
+                    lease_seconds,
+                    claim,
                 )
             )
         existing = await self._client.get(marker)
@@ -224,15 +311,18 @@ class RedisHotMemoryStore:
                 state = None
             if not isinstance(state, dict) or state.get("status") != "failed":
                 return False
-            await self._client.set(marker, "running", ex=self._ttl_seconds)
+            await self._client.set(marker, claim, ex=lease_seconds)
             return True
-        acquired = await self._client.set(marker, "running", ex=self._ttl_seconds, nx=True)
+        acquired = await self._client.set(marker, claim, ex=lease_seconds, nx=True)
         return bool(acquired)
 
-    async def complete_compaction(self, session_id: str, key: str) -> None:
+    async def complete_compaction(self, session_id: str, key: str, *, owner_id: str = "") -> bool:
         self._require_session(session_id)
         marker = self._key(session_id, f"compaction:{key}")
-        await self._client.set(marker, "completed", ex=self._ttl_seconds)
+        return await self._update_compaction(
+            session_id, key=key, owner_id=owner_id,
+            target_key=marker, payload={"status": "completed", "owner_id": owner_id},
+        )
 
     @staticmethod
     def _require_session(session_id: str) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from src.application.observability.business_metrics import (
     compaction_duration_seconds,
@@ -12,6 +13,7 @@ from src.application.observability.business_metrics import (
     compaction_total,
 )
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
+from src.runtime.store import ContinuationLeaseLostError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +56,7 @@ class CompactionWorker:
         state_last_event_id = (
             str(state.get("last_event_id") or "") if isinstance(state, dict) else ""
         )
-        pending_key = str(state.get("key") or "") if isinstance(state, dict) else ""
+        pending_key = str(state.get("key") or "") if state_status == "pending" else ""
         events = await self._load_events(
             session_id=session_id,
             state_status=state_status,
@@ -72,39 +74,45 @@ class CompactionWorker:
             self._record_cycle("skipped", started=started, events=0)
             return False
         key = pending_key or f"{last_event_id}:{self._compression_version}"
-        if not await self._hot.acquire_compaction(session_id, key):
+        owner_id = f"{self._owner_id or 'compactor'}:{uuid4().hex}"
+        lease_seconds = self._record_store.lease_seconds if self._record_store is not None else 300
+        if not await self._hot.acquire_compaction(
+            session_id, key, owner_id=owner_id, lease_seconds=lease_seconds,
+        ):
             self._record_cycle("not_owner", started=started, events=0)
             return False
-        if self._record_store is not None:
-            began = await self._record_store.begin(
-                compaction_key=f"{session_id}:{key}",
-                session_id=session_id,
-                last_event_id=last_event_id,
-                compression_version=self._compression_version,
-                owner_id=self._owner_id,
-            )
-            if not began:
-                await self._hot.complete_compaction(session_id, key)
-                existing = await self._record_store.get(f"{session_id}:{key}")
-                if existing is not None and existing.status == "completed":
-                    commit = getattr(self._hot, "commit_compaction", None)
-                    if callable(commit):
-                        await commit(
-                            session_id,
-                            key=key,
-                            last_event_id=last_event_id,
-                        )
-                    self._record_cycle("completed", started=started, events=0)
-                    return True
-                self._record_cycle("not_owner", started=started, events=0)
-                return False
-        pending_marker = getattr(self._hot, "mark_compaction_pending", None)
-        if callable(pending_marker):
-            try:
-                await pending_marker(session_id, last_event_id=last_event_id, key=key)
-            except TypeError:
-                await pending_marker(session_id, last_event_id=last_event_id)
         try:
+            record_completed = False
+            if self._record_store is not None:
+                began = await self._record_store.begin(
+                    compaction_key=f"{session_id}:{key}",
+                    session_id=session_id,
+                    last_event_id=last_event_id,
+                    compression_version=self._compression_version,
+                    owner_id=owner_id,
+                )
+                if not began:
+                    existing = await self._record_store.get(f"{session_id}:{key}")
+                    record_completed = existing is not None and existing.status == "completed"
+                    if not record_completed:
+                        raise ContinuationLeaseLostError("Compaction record belongs to another attempt")
+            pending_marker = getattr(self._hot, "mark_compaction_pending", None)
+            if callable(pending_marker):
+                pending = await pending_marker(
+                    session_id, last_event_id=last_event_id, key=key, owner_id=owner_id,
+                )
+                if pending is False:
+                    raise ContinuationLeaseLostError("Compaction pending cursor belongs to another attempt")
+            if record_completed:
+                # The durable commit may have succeeded before Redis failed.
+                # Repair its projection without running compression again.
+                if not await self._hot.commit_compaction(
+                    session_id, key=key, last_event_id=last_event_id,
+                    owner_id=owner_id, allow_missing_cursor=True,
+                ):
+                    raise ContinuationLeaseLostError("Completed compaction projection lost ownership")
+                self._record_cycle("completed", started=started, events=0)
+                return True
             if not user_message:
                 user_message = self._first_text(events, "user")
             if not assistant_message:
@@ -122,29 +130,30 @@ class CompactionWorker:
                 },
                 compaction_key=f"{session_id}:{key}",
             )
+            # PostgreSQL confirms ownership before any destructive cache trim.
+            # After completion the same key cannot be claimed by another owner.
+            if self._record_store is not None and not await self._record_store.complete(
+                f"{session_id}:{key}", [str(item) for item in (memory_ids or [])],
+                owner_id=owner_id,
+            ):
+                raise ContinuationLeaseLostError("Compaction record completion lost ownership")
             commit = getattr(self._hot, "commit_compaction", None)
             if callable(commit):
                 committed = await commit(
                     session_id,
                     key=key,
                     last_event_id=last_event_id,
+                    owner_id=owner_id,
+                    allow_missing_cursor=self._record_store is not None,
                 )
                 if not committed:
-                    raise RuntimeError(
-                        "Compaction cursor is no longer present; hot memory was retained."
+                    raise ContinuationLeaseLostError(
+                        "Compaction cache ownership or cursor was lost; hot memory was retained."
                     )
             else:
-                await self._hot.complete_compaction(session_id, key)
+                if await self._hot.complete_compaction(session_id, key, owner_id=owner_id) is False:
+                    raise ContinuationLeaseLostError("Compaction marker completion lost ownership")
                 await self._hot.clear_session(session_id)
-            if self._record_store is not None:
-                completed = await self._record_store.complete(
-                    f"{session_id}:{key}",
-                    [str(item) for item in (memory_ids or [])],
-                )
-                if not completed:
-                    existing = await self._record_store.get(f"{session_id}:{key}")
-                    if existing is None or existing.status != "completed":
-                        raise RuntimeError("Compaction record completion lost ownership")
             LOGGER.info("session_hot_memory_compacted", extra={"session_id": session_id, "last_event_id": last_event_id, "compression_version": self._compression_version})
             self._record_cycle("completed", started=started, events=len(events))
             return True
@@ -152,7 +161,9 @@ class CompactionWorker:
             failed_marker = getattr(self._hot, "mark_compaction_failed", None)
             if callable(failed_marker):
                 try:
-                    await failed_marker(session_id, key=key, error=str(exc))
+                    marked = await failed_marker(session_id, key=key, error=str(exc), owner_id=owner_id)
+                    if marked is False:
+                        LOGGER.warning("compaction_failure_marker_fencing_rejected", extra={"session_id": session_id, "compaction_key": key})
                 except Exception:
                     LOGGER.exception(
                         "session_hot_memory_compaction_failure_marker_failed",
@@ -160,7 +171,9 @@ class CompactionWorker:
                     )
             if self._record_store is not None:
                 try:
-                    await self._record_store.fail(f"{session_id}:{key}", str(exc))
+                    marked = await self._record_store.fail(f"{session_id}:{key}", str(exc), owner_id=owner_id)
+                    if not marked:
+                        LOGGER.warning("compaction_record_failure_fencing_rejected", extra={"session_id": session_id, "compaction_key": key})
                 except Exception:
                     LOGGER.exception(
                         "session_hot_memory_compaction_record_failed",
@@ -225,12 +238,16 @@ class CompactionWorker:
                 if target_index is not None:
                     return hot_events[: target_index + 1]
             else:
-                after_id = state_last_event_id if state_status == "completed" else ""
                 hot_events = await self._hot.list_events(
                     session_id,
-                    after_id=after_id or None,
                     limit=10000,
                 )
+                if state_status == "completed" and state_last_event_id:
+                    # Atomic commit trims the cursor itself. If it is absent,
+                    # the remaining hot rows are the next uncompressed prefix.
+                    target_index = self._event_index(hot_events, state_last_event_id)
+                    if target_index is not None:
+                        hot_events = hot_events[target_index + 1:]
                 if hot_events:
                     return hot_events
         # Hot-memory adapters may raise provider-specific errors; log and fall
