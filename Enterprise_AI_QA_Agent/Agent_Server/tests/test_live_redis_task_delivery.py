@@ -1,16 +1,18 @@
 """Real Redis/PG delivery faults on test-owned streams/tables only."""
 import asyncio
+import json
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from redis.exceptions import ConnectionError as RedisConnectionError, ResponseError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import ResponseError
 
 from src.core.config import get_settings
 from src.core.request_context import get_request_context
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
-from src.infrastructure.redis_task_scripts import TRANSFER
+from src.infrastructure.redis_task_scripts import QUARANTINE, TRANSFER
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.run_dispatch import RunDispatchTask
@@ -210,3 +212,133 @@ async def test_retry_after_database_commit_preserves_one_durable_result(queue):
         with postgres_connect(settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(f"DROP TABLE {table}")
+
+
+@pytest.mark.parametrize("delivery", ["consume", "reclaim"])
+@pytest.mark.parametrize("bad_fields, reason", [
+    ({"unexpected": "preserve-this-field"}, "missing_payload"),
+    ({"payload": "{broken-private-body"}, "invalid_json"),
+    ({"payload": "[]"}, "payload_not_object"),
+    ({"payload": '{"task_id":"bad"}', "retry_count": "invalid"}, "invalid_delivery_metadata"),
+    ({"payload": '{"task_id":"bad"}', "not_before_ms": "invalid"}, "invalid_delivery_metadata"),
+])
+@pytest.mark.asyncio
+async def test_malformed_delivery_does_not_stop_valid_batch(queue, delivery, bad_fields, reason, caplog):
+    """P1-68: inject a bad Redis entry between two real worker deliveries."""
+    await queue.enqueue({"task_id": "before"})
+    bad_id = await queue._client.xadd(queue.stream, bad_fields)
+    await queue.enqueue({"task_id": "after"})
+    if delivery == "reclaim":
+        await queue._client.xreadgroup(queue.group, "abandoned", {queue.stream: ">"}, count=3)
+        await asyncio.sleep(.02)
+    handled = []
+
+    async def handler(task):
+        handled.append(task.payload["task_id"])
+
+    current = RedisTaskWorker(queue, consumer="worker-test", handler=handler,
+                              batch_size=3, block_ms=0, reclaim_idle_ms=1)
+    assert await current.run_once() == 2
+    assert handled == ["before", "after"]
+    assert not await queue.pending()
+    letters = await queue._client.xrange(f"{queue.stream}:dead_letter")
+    assert len(letters) == 1
+    archived = json.loads(letters[0][1]["payload"])
+    assert archived["source_message_id"] == bad_id
+    assert archived["source_group"] == queue.group
+    assert archived["dead_letter_reason"] == reason
+    raw_fields = archived["source_fields"]
+    assert dict(zip(raw_fields[::2], raw_fields[1::2])) == bad_fields
+    assert "broken-private-body" not in caplog.text
+    assert "preserve-this-field" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_quarantine_archive_failure_retains_entire_batch_for_recovery(queue):
+    before = await queue.enqueue({"task_id": "before"})
+    bad_id = await queue._client.xadd(queue.stream, {"unexpected": "bad"})
+    after = await queue.enqueue({"task_id": "after"})
+    destination = f"{queue.stream}:dead_letter"
+    await queue._client.set(destination, "wrong-type-for-fault-test")
+    with pytest.raises(ResponseError, match="WRONGTYPE"):
+        await queue.consume(consumer="original", count=3, block_ms=0)
+    assert {row["message_id"] for row in await queue.pending()} == {before, bad_id, after}
+    await queue._client.delete(destination)
+    await asyncio.sleep(.02)
+    handled = []
+
+    async def handler(task):
+        handled.append(task.payload["task_id"])
+
+    current = RedisTaskWorker(queue, consumer="replacement", handler=handler,
+                              batch_size=3, block_ms=0, reclaim_idle_ms=1)
+    assert await current.run_once() == 2
+    assert handled == ["before", "after"] and not await queue.pending()
+    assert await queue._client.xlen(destination) == 1
+
+
+@pytest.mark.asyncio
+async def test_quarantine_reply_loss_preserves_valid_deliveries_without_duplicate_archive(queue):
+    before = await queue.enqueue({"task_id": "before"})
+    await queue._client.xadd(queue.stream, {"payload": "{broken"})
+    after = await queue.enqueue({"task_id": "after"})
+    real_eval = queue._client.eval
+
+    async def lose_quarantine_reply(script, *args):
+        result = await real_eval(script, *args)
+        if script == QUARANTINE:
+            raise RedisConnectionError("reply lost after archive committed")
+        return result
+
+    queue._client.eval = lose_quarantine_reply
+    try:
+        with pytest.raises(RedisConnectionError):
+            await queue.consume(consumer="original", count=3, block_ms=0)
+    finally:
+        queue._client.eval = real_eval
+    assert {row["message_id"] for row in await queue.pending()} == {before, after}
+    await asyncio.sleep(.02)
+    tasks = await queue.reclaim(consumer="replacement", count=3, min_idle_ms=1)
+    assert [task.payload["task_id"] for task in tasks] == ["before", "after"]
+    for task in tasks:
+        assert await queue.ack_owned(task, consumer="replacement") == 1
+    assert not await queue.pending()
+    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
+
+
+@pytest.mark.asyncio
+async def test_quarantine_checks_current_owner_and_does_not_archive_twice(queue):
+    bad_id = await queue._client.xadd(queue.stream, {"payload": "null"})
+    real_eval = queue._client.eval
+
+    async def steal_before_quarantine(script, *args):
+        if script == QUARANTINE:
+            await queue._client.xclaim(queue.stream, queue.group, "replacement", 0, [bad_id], justid=True)
+        return await real_eval(script, *args)
+
+    queue._client.eval = steal_before_quarantine
+    try:
+        assert await queue.consume(consumer="original", block_ms=0) == []
+    finally:
+        queue._client.eval = real_eval
+    assert (await queue.pending())[0]["consumer"] == "replacement"
+    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 0
+    assert await queue.consume(consumer="replacement", stream_id="0", block_ms=0) == []
+    assert not await queue.pending()
+    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
+    assert await queue._quarantine(bad_id, consumer="replacement", reason="payload_not_object") is None
+    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
+
+
+@pytest.mark.asyncio
+async def test_deleted_pending_body_is_archived_as_missing_before_ack(queue):
+    message_id = await queue.enqueue({"task_id": "deleted-by-fault-test"})
+    await queue.consume(consumer="original", block_ms=0)
+    await queue._client.xdel(queue.stream, message_id)
+    assert await queue.consume(consumer="original", stream_id="0", block_ms=0) == []
+    assert not await queue.pending()
+    letters = await queue._client.xrange(f"{queue.stream}:dead_letter")
+    assert len(letters) == 1
+    archived = json.loads(letters[0][1]["payload"])
+    assert archived["source_message_id"] == message_id
+    assert archived["source_entry_missing"] is True

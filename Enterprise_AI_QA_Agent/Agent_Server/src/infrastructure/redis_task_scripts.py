@@ -20,6 +20,25 @@ redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])
 return successor
 """
 
+# Reuse TRANSFER's publish-before-ACK and ownership contract for entries that
+# cannot be decoded into a business envelope. Read the original fields inside
+# Redis so neither malformed JSON nor delivery metadata needs reinterpretation.
+QUARANTINE = _OWNER_CHECK + """
+local entries = redis.call('XRANGE', KEYS[1], ARGV[3], ARGV[3])
+local fields = {}
+if #entries > 0 then fields = entries[1][2] end
+local body = cjson.encode({
+    source_message_id = ARGV[3], source_group = ARGV[1],
+    source_fields = fields, source_entry_missing = #entries == 0,
+    dead_letter_reason = ARGV[4]
+})
+local successor = redis.call('XADD', KEYS[2], '*',
+    'payload', body, 'failure_type', ARGV[4],
+    'source_message_id', ARGV[3], 'source_group', ARGV[1])
+redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])
+return successor
+"""
+
 CONTROL = _OWNER_CHECK + """
 if ARGV[4] == 'ack' then
     return redis.call('XACK', KEYS[1], ARGV[1], ARGV[3])

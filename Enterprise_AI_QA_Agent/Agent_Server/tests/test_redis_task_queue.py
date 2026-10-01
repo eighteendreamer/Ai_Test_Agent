@@ -32,6 +32,10 @@ class FakeRedis:
         self.calls.append(("xautoclaim", args, kwargs))
         return ["2-0", [("1-0", {"payload": '{"task_id":"t1"}'})], []]
 
+    async def eval(self, *args):
+        self.calls.append(("eval", args))
+        return "2-0"
+
 
 @pytest.mark.asyncio
 async def test_queue_enqueues_consumes_ack_and_reclaims() -> None:
@@ -49,15 +53,19 @@ async def test_queue_enqueues_consumes_ack_and_reclaims() -> None:
 
 
 @pytest.mark.asyncio
-async def test_queue_rejects_malformed_payload() -> None:
+async def test_queue_quarantines_malformed_payload() -> None:
     class BadRedis(FakeRedis):
         async def xreadgroup(self, **kwargs):
             return [("stream:test", [("1-0", {"unexpected": "value"})])]
 
-    queue = RedisTaskQueue("redis://unused", stream="stream:test", group="workers", client=BadRedis())
+    client = BadRedis()
+    queue = RedisTaskQueue("redis://unused", stream="stream:test", group="workers", client=client)
     await queue.connect()
-    with pytest.raises(ValueError, match="has no payload"):
-        await queue.consume(consumer="worker-1")
+    assert await queue.consume(consumer="worker-1") == []
+    assert client.calls[-1][0] == "eval"
+    assert client.calls[-1][1][2:] == (
+        "stream:test", "stream:test:dead_letter", "workers", "worker-1", "1-0", "missing_payload",
+    )
 
 
 @pytest.mark.asyncio
@@ -77,3 +85,10 @@ def test_delivery_metadata_is_separate_from_business_payload():
     })])])[0]
     assert task.payload == {"task_id": "t"}
     assert task.retry_count == 2 and task.not_before_ms == 123
+
+
+def test_legacy_retry_decode_does_not_mutate_received_fields():
+    fields = {"payload": {"task_id": "t", "retry_count": 2}}
+    task = RedisTaskQueue._decode_rows([("test", [("1-0", fields)])])[0]
+    assert task.payload == {"task_id": "t"} and task.retry_count == 2
+    assert fields["payload"] == {"task_id": "t", "retry_count": 2}

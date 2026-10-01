@@ -8,18 +8,26 @@ recovery of unacknowledged messages.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+
 from src.application.observability.business_metrics import (
     redis_errors_total,
     task_claimed_total,
     task_dead_letter_total,
     task_reclaimed_total,
 )
-from src.infrastructure.redis_task_scripts import CONTROL, TRANSFER
+from src.infrastructure.redis_task_scripts import CONTROL, QUARANTINE, TRANSFER
+
+LOGGER = logging.getLogger(__name__)
+
+
+class InvalidTaskMessage(ValueError):
+    """A deterministic wire-format error, carrying no private payload text."""
 
 
 @dataclass(frozen=True)
@@ -169,7 +177,7 @@ class RedisTaskQueue:
         except RedisError:
             redis_errors_total().labels(operation="consume").inc()
             raise
-        tasks = self._decode_rows(rows)
+        tasks = await self._decode_deliveries(rows, consumer=consumer)
         if tasks:
             task_claimed_total().labels(stream=self.stream).inc(len(tasks))
         return tasks
@@ -215,28 +223,65 @@ class RedisTaskQueue:
         if isinstance(rows, (list, tuple)) and rows and rows[0]:
             self._reclaim_cursor = str(rows[0])
         messages = rows[1] if isinstance(rows, (list, tuple)) and len(rows) > 1 else []
-        tasks = self._decode_rows([(self.stream, messages)])
+        tasks = await self._decode_deliveries([(self.stream, messages)], consumer=consumer)
         if tasks:
             task_reclaimed_total().labels(stream=self.stream).inc(len(tasks))
         return tasks
 
-    @staticmethod
-    def _decode_rows(rows: Any) -> list[QueuedTask]:
+    async def _decode_deliveries(self, rows: Any, *, consumer: str) -> list[QueuedTask]:
         decoded: list[QueuedTask] = []
         for _stream_name, messages in rows or []:
             for message_id, fields in messages or []:
-                raw = fields.get("payload") if isinstance(fields, dict) else None
-                if raw is None:
-                    raise ValueError(f"Redis task message {message_id} has no payload")
-                payload = json.loads(raw) if isinstance(raw, str) else raw
-                if not isinstance(payload, dict):
-                    raise ValueError(f"Redis task message {message_id} payload is not an object")
-                # Retry state belongs to delivery, not the strict business envelope.
-                # Drain messages produced by the previous payload-based retry writer.
-                legacy_count = payload.pop("retry_count", 0)
-                decoded.append(QueuedTask(
-                    message_id=str(message_id), payload=payload,
-                    retry_count=max(0, int(fields.get("retry_count", legacy_count))),
-                    not_before_ms=max(0, int(fields.get("not_before_ms", 0))),
-                ))
+                try:
+                    task = self._decode_message(message_id, fields)
+                except InvalidTaskMessage as exc:
+                    await self._quarantine(str(message_id), consumer=consumer, reason=str(exc))
+                else:
+                    decoded.append(task)
         return decoded
+
+    async def _quarantine(self, message_id: str, *, consumer: str, reason: str) -> str | None:
+        context = {"stream": self.stream, "group": self.group, "worker_id": consumer,
+                   "message_id": message_id, "failure_type": reason}
+        try:
+            successor = await self._client.eval(
+                QUARANTINE, 2, self.stream, f"{self.stream}:dead_letter",
+                self.group, consumer, message_id, reason,
+            )
+        except RedisError:
+            redis_errors_total().labels(operation="quarantine").inc()
+            LOGGER.warning("redis_task_quarantine_failed", extra=context)
+            raise  # Keep the original pending when the archive cannot be committed.
+        if not successor:
+            LOGGER.warning("redis_task_quarantine_owner_lost", extra=context)
+            return None
+        task_dead_letter_total().labels(stream=self.stream).inc()
+        LOGGER.warning("redis_task_message_quarantined", extra={**context, "successor_id": str(successor)})
+        return str(successor)
+
+    @staticmethod
+    def _decode_rows(rows: Any) -> list[QueuedTask]:
+        return [RedisTaskQueue._decode_message(message_id, fields)
+                for _stream_name, messages in rows or [] for message_id, fields in messages or []]
+
+    @staticmethod
+    def _decode_message(message_id: Any, fields: Any) -> QueuedTask:
+        raw = fields.get("payload") if isinstance(fields, dict) else None
+        if raw is None:
+            raise InvalidTaskMessage("missing_payload")
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else raw
+        except (ValueError, RecursionError) as exc:
+            raise InvalidTaskMessage("invalid_json") from exc
+        if not isinstance(payload, dict):
+            raise InvalidTaskMessage("payload_not_object")
+        # Retry state belongs to delivery, not the strict business envelope.
+        # Drain messages produced by the previous payload-based retry writer.
+        payload = dict(payload)
+        legacy_count = payload.pop("retry_count", 0)
+        try:
+            retry_count = max(0, int(fields.get("retry_count", legacy_count)))
+            not_before_ms = max(0, int(fields.get("not_before_ms", 0)))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise InvalidTaskMessage("invalid_delivery_metadata") from exc
+        return QueuedTask(str(message_id), payload, retry_count, not_before_ms)
