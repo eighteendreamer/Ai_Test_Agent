@@ -2987,18 +2987,32 @@ class CoordinatorRuntimeService:
             return None
         if child_task_id:
             launch_record["child_task_id"] = child_task_id
-        self._merge_worker_dispatches(
-            parent_session.metadata, parent_turn_id, [launch_record]
+        def register_completion(metadata: dict[str, Any]) -> None:
+            # Whole-session saves preserve SQL-owned worker_dispatches. Commit
+            # the receipt and completion flags together through the same atomic
+            # metadata operation used by initial and followup worker dispatches.
+            self._merge_worker_dispatches(metadata, parent_turn_id, [launch_record])
+            metadata["completion_worker_dispatched"] = True
+            metadata["completion_worker_task_id"] = worker.task_id
+            metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
+                stage="summary_resolution",
+                status="running",
+                current_round_index=int(worker.context.get("debate_round_index") or 0),
+                total_round_count=int(worker.context.get("debate_total_round_count") or 0),
+            )
+
+        await self._mutate_parent_metadata(
+            parent_session_id, register_completion, operation="register_completion_worker"
         )
-        parent_session.metadata["completion_worker_dispatched"] = True
-        parent_session.metadata["completion_worker_task_id"] = worker.task_id
-        parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
-            stage="summary_resolution",
-            status="running",
-            current_round_index=int(worker.context.get("debate_round_index") or 0),
-            total_round_count=int(worker.context.get("debate_total_round_count") or 0),
+        logger.info(
+            "coordinator_completion_worker_registered",
+            extra={
+                "parent_session_id": parent_session_id,
+                "parent_turn_id": parent_turn_id,
+                "task_id": worker.task_id,
+                "child_session_id": child_session.id,
+            },
         )
-        await self._store.save_session(parent_session)
         return launch_record
 
     async def _claim_followup_worker_slots(

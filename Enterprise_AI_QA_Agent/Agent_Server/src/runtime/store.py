@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Callable, Protocol
 
 from src.domain.models import SessionImportBundle, SessionRecord
+from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import (
     ExecutionEvent,
     SessionMode,
@@ -71,6 +72,11 @@ def validate_session_import_bundle(bundle: SessionImportBundle) -> None:
 
 
 class SessionStore(Protocol):
+    """Records are detached values; changes require a store write operation.
+
+    Save methods may update and return their input (as PostgreSQL does), but
+    neither input nor output may expose the backend's stored mutable state.
+    """
     async def initialize(self) -> None: ...
     async def save_session(
         self,
@@ -291,7 +297,7 @@ class InMemorySessionStore:
                     bundle.session.snapshot_count,
                     max((snapshot.version for snapshot in bundle.snapshots), default=0),
                 )
-                staged.append(bundle)
+                staged.append(deepcopy(bundle))
 
             # All validation and duplicate checks finish before any visible state changes.
             for bundle in staged:
@@ -357,7 +363,7 @@ class InMemorySessionStore:
 
     def _save_session_locked(self, session: SessionRecord) -> SessionRecord:
         current = self._sessions.get(session.id)
-        if current is not None and current is not session:
+        if current is not None:
             # Snapshot saves cannot replace lease ownership or SQL-style
             # coordinator claims advanced by another operation.
             for key in (
@@ -365,15 +371,28 @@ class InMemorySessionStore:
                 "turn_lease_expires_at", "coordinator_dispatch_claims",
             ):
                 if key in current.metadata:
-                    session.metadata[key] = current.metadata[key]
+                    session.metadata[key] = deepcopy(current.metadata[key])
                 else:
                     session.metadata.pop(key, None)
+            if "worker_dispatches" in current.metadata:
+                session.metadata["worker_dispatches"] = deepcopy(current.metadata["worker_dispatches"])
+            session.event_count = max(current.event_count, session.event_count)
+            session.snapshot_count = max(current.snapshot_count, session.snapshot_count)
         session.updated_at = datetime.utcnow()
-        self._sessions[session.id] = session
+        stored = deepcopy(session)
+        # PostgreSQL upserts transcript rows by message ID; a stale document
+        # must not delete messages saved by another operation. Context-only
+        # messages remain in the caller's working value, never the transcript.
+        messages = {item.id: deepcopy(item) for item in current.messages} if current else {}
+        for item in stored.messages:
+            if bool(item.metadata.get("persist_transcript", True)):
+                messages[item.id] = item
+        stored.messages = sorted(messages.values(), key=lambda item: ensure_utc_datetime(item.created_at))
+        self._sessions[session.id] = stored
         return session
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
-        return self._sessions.get(session_id)
+        return deepcopy(self._sessions.get(session_id))
 
     async def mutate_metadata(
         self, session_id: str, mutate: Callable[[dict], None]
@@ -384,7 +403,7 @@ class InMemorySessionStore:
                 return False
             metadata = deepcopy(session.metadata)
             mutate(metadata)
-            session.metadata = metadata
+            session.metadata = deepcopy(metadata)
             session.updated_at = datetime.now(UTC).replace(tzinfo=None)
             return True
 
@@ -402,20 +421,20 @@ class InMemorySessionStore:
             sessions = [s for s in sessions if s.updated_at < cursor_before]
         start = max(int(offset or 0), 0)
         if limit is None:
-            return sessions[start:]
+            return deepcopy(sessions[start:])
         size = max(int(limit or 0), 0)
         if size <= 0:
             return []
-        return sessions[start : start + size]
+        return deepcopy(sessions[start : start + size])
 
     async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]:
-        return [
+        return deepcopy([
             session
             for session in self._sessions.values()
             if isinstance(session.metadata, dict)
             and isinstance(session.metadata.get("pending_input_queue"), list)
             and bool(session.metadata.get("pending_input_queue"))
-        ]
+        ])
 
     async def list_task_pool_sessions(
         self,
@@ -439,7 +458,7 @@ class InMemorySessionStore:
         for session in visible:
             metadata = session.metadata if isinstance(session.metadata, dict) else {}
             workers = [
-                dict(item)
+                deepcopy(item)
                 for item in metadata.get("worker_dispatches", [])
                 if isinstance(item, dict)
             ]
@@ -544,7 +563,7 @@ class InMemorySessionStore:
             previous_session = deepcopy(session)
             previous_events = list(self._events[session_id])
             try:
-                session.metadata = metadata
+                session.metadata = deepcopy(metadata)
                 self._append_event_locked(session_id, event)
             except Exception:
                 self._sessions[session_id] = previous_session
@@ -559,7 +578,7 @@ class InMemorySessionStore:
         if session is not None:
             session.event_count += 1
             session.updated_at = datetime.utcnow()
-        self._events[session_id].append(event)
+        self._events[session_id].append(event.model_copy(deep=True))
 
     async def list_events(
         self,
@@ -580,7 +599,7 @@ class InMemorySessionStore:
             if size <= 0:
                 return []
             events = events[:size] if has_cursor else events[-size:]
-        return events
+        return deepcopy(events)
 
     async def read_event_page(self, session_id: str, *, limit: int, after_event_id: str | None = None) -> list[ExecutionEvent]:
         events = self._events.get(session_id, [])
@@ -591,7 +610,7 @@ class InMemorySessionStore:
                 raise EventCursorNotFoundError(session_id)
             else:
                 start = index + 1
-        return list(events[start:start + max(0, limit)])
+        return deepcopy(events[start:start + max(0, limit)])
 
     async def save_snapshot(
         self,
@@ -613,7 +632,7 @@ class InMemorySessionStore:
             if session is not None:
                 session.snapshot_count = max(session.snapshot_count, snapshot.version)
                 session.updated_at = datetime.utcnow()
-            self._snapshots[session_id].append(snapshot)
+            self._snapshots[session_id].append(snapshot.model_copy(deep=True))
 
     def _assert_turn_lease_locked(self, session_id: str, lease_token: str) -> None:
         session = self._sessions.get(session_id)
@@ -653,21 +672,23 @@ class InMemorySessionStore:
                 return []
             snapshots = snapshots[-size:]
         if not include_graph_state:
-            snapshots = [snapshot.model_copy(update={"graph_state": {}}) for snapshot in snapshots]
-        return snapshots
+            snapshots = [snapshot.model_copy(update={"graph_state": {}}, deep=True) for snapshot in snapshots]
+            return snapshots
+        return deepcopy(snapshots)
 
     async def get_latest_snapshot(self, session_id: str) -> SessionSnapshot | None:
         snapshots = self._snapshots.get(session_id, [])
-        return snapshots[-1] if snapshots else None
+        return snapshots[-1].model_copy(deep=True) if snapshots else None
 
     async def save_approval(self, session_id: str, approval: ToolApprovalRequest) -> None:
-        self._approvals[session_id][approval.id] = approval
-        session = self._sessions.get(session_id)
-        if session is not None:
-            session.updated_at = datetime.utcnow()
+        async with self._lock:
+            self._approvals[session_id][approval.id] = approval.model_copy(deep=True)
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.updated_at = datetime.utcnow()
 
     async def list_approvals(self, session_id: str) -> list[ToolApprovalRequest]:
-        return sorted(self._approvals.get(session_id, {}).values(), key=lambda item: item.created_at)
+        return deepcopy(sorted(self._approvals.get(session_id, {}).values(), key=lambda item: item.created_at))
 
     async def resolve_approval(
         self,
@@ -682,12 +703,15 @@ class InMemorySessionStore:
             approval = self._approvals[session_id][approval_id]
             if approval.status != ToolApprovalStatus.pending:
                 if approval.status == status:
-                    return approval
+                    return approval.model_copy(deep=True)
                 raise ValueError(f"Approval already resolved: {approval_id}")
             approval.status = status
             approval.decision_note = reason
             approval.resolved_at = datetime.utcnow()
-            return approval
+            session = self._sessions.get(session_id)
+            if session is not None:
+                session.updated_at = approval.resolved_at
+            return approval.model_copy(deep=True)
 
     async def claim_turn_execution(
         self,
@@ -720,7 +744,7 @@ class InMemorySessionStore:
             })
             session.status = type(session.status).running
             session.updated_at = datetime.utcnow()
-            return session
+            return deepcopy(session)
 
     async def renew_turn_execution(
         self,
@@ -1072,7 +1096,7 @@ class InMemorySessionStore:
                     for a in sorted(self._approvals.get(sid, {}).values(), key=lambda x: x.created_at)
                 ],
             })
-        return bundle
+        return deepcopy(bundle)
 
 
 def _session_history_context(session: SessionRecord) -> dict:

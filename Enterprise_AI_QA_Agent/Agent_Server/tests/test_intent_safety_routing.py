@@ -2235,8 +2235,8 @@ async def test_security_failed_worker_receipt_keeps_the_launch_error():
     assert task.last_error == "Unknown agent: security-worker"
 
 
-async def _batch_capacity_coordinator(*, turn_reaper_interval_seconds: float | None = None):
-    store = InMemorySessionStore()
+async def _batch_capacity_coordinator(*, turn_reaper_interval_seconds: float | None = None, store=None):
+    store = store if store is not None else InMemorySessionStore()
     parent = _session()
     parent.id = "batch-parent"
     parent.session_mode = SessionMode.coordinator
@@ -2406,10 +2406,10 @@ async def test_coordinator_followup_overflow_uses_next_available_slot():
     assert len(created) == 4
     assert [item["task_id"] for item in parent.metadata["pending_followup_workers"]] == ["worker-2-4"]
 
-    next(record for record in parent.metadata["worker_dispatches"] if record["task_id"] == "worker-2-0")[
-        "status"
-    ] = "completed"
-    await store.save_session(parent)
+    await store.mutate_metadata(parent.id, lambda metadata: next(
+        record for record in metadata["worker_dispatches"] if record["task_id"] == "worker-2-0"
+    ).update(status="completed"))
+    parent = await store.get_session(parent.id)
     second = await service._maybe_launch_followup_workers(parent, "turn-1")
     parent = await store.get_session("batch-parent")
     assert [record["task_id"] for record in second] == ["worker-2-4"]
@@ -2473,8 +2473,8 @@ async def test_coordinator_completion_waits_for_initial_queue():
 
 
 @pytest.mark.asyncio
-async def test_coordinator_five_reviewer_campaign_reaches_summary_without_dropping_work():
-    service, store, created = await _batch_capacity_coordinator()
+async def test_coordinator_five_reviewer_campaign_reaches_summary_without_dropping_work(store_override=None):
+    service, store, created = await _batch_capacity_coordinator(store=store_override)
     service._build_peer_review_bundle = AsyncMock(return_value="peer findings")
     initial = [_batch_worker(index) for index in range(5)]
     followup = [_batch_worker(index, 2) for index in range(5)]
@@ -2831,9 +2831,9 @@ async def test_coordinator_restart_releases_only_unmaterialized_settled_claims()
         worker_task_ids,
     )
 
+    assert await store.claim_turn_execution("batch-parent", "turn-1", "live-owner", "live-turn-owner", 30)
     parent = await store.get_session("batch-parent")
     parent.status = SessionStatus.interrupted
-    parent.metadata["turn_lease_token"] = "live-turn-owner"
     await store.save_session(parent)
     assert await service.recover_orphaned_dispatches() == 0
     assert not await store.release_coordinator_dispatch_claim_if_no_child(
@@ -2846,9 +2846,9 @@ async def test_coordinator_restart_releases_only_unmaterialized_settled_claims()
         require_settled_parent=True,
     )
 
+    assert await store.complete_turn_execution("batch-parent", "live-turn-owner")
     parent = await store.get_session("batch-parent")
     parent.status = SessionStatus.interrupted
-    parent.metadata.pop("turn_lease_token", None)
     parent.metadata["pending_initial_workers"] = [
         service._pending_worker_payload(worker)
     ]
