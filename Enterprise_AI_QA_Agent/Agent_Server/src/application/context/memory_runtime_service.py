@@ -477,6 +477,7 @@ class MemoryRuntimeService:
             await self._vector_store.create_index(entity="memory", embedding_version=version, dimension=len(vector))
             await self._vector_store.upsert(
                 entity="memory", embedding_version=version, point_id=point.id,
+                source_updated_at=point.updated_at,
                 vector=list(vector), metadata={
                     "project_id": str(request.metadata.get("project_id") or ""),
                     "case_version_id": str(request.metadata.get("case_version_id") or ""),

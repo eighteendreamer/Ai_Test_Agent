@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from redis.exceptions import ResponseError
 
@@ -49,6 +50,7 @@ class FakeRedis:
     async def hset(self, key, mapping):
         self.commands.append(("HSET", key, mapping))
         self.hashes[key] = mapping
+    async def hget(self, key, field): return self.hashes.get(key, {}).get(field)
 
 
 def test_vector_index_uses_dynamic_dimension_and_versioned_names():
@@ -60,6 +62,22 @@ def test_vector_index_uses_dynamic_dimension_and_versioned_names():
         assert "DIM" in client.commands[0] and "4096" in client.commands[0]
         assert client.commands[-1][0] == "HSET"
     asyncio.run(run())
+
+
+@pytest.mark.asyncio
+async def test_replica_orders_utc_microseconds_and_upgrades_legacy_hash():
+    client = FakeRedis()
+    store = RedisVectorStore("unused", client=client)
+    await store.create_index(entity="memory", embedding_version="v1", dimension=2)
+    common = {"entity": "memory", "embedding_version": "v1", "point_id": "p1"}
+    key = await store.upsert(**common, vector=[1., 0.])
+    timestamp = datetime(2026, 10, 1, 12, tzinfo=UTC)
+    await store.upsert(**common, vector=[0., 1.], source_updated_at=timestamp)
+    await store.upsert(**common, vector=[1., 0.], source_updated_at=timestamp-timedelta(microseconds=1))
+    await store.upsert(**common, vector=[1., 0.])
+    assert client.hashes[key]["embedding"] == store.pack_vector([0., 1.])
+    await store.upsert(**common, vector=[0., 1.], source_updated_at=timestamp.astimezone(timezone(timedelta(hours=8))))
+    assert client.hashes[key]["_source_updated_at"] == "2026-10-01T12:00:00.000000"
 
 
 @pytest.mark.asyncio

@@ -11,10 +11,15 @@ import pytest
 import pytest_asyncio
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.context.memory_vector_rebuild_service import (
+    MemoryVectorRebuildService,
+)
 from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
+from src.infrastructure.redis_vector_store import RedisVectorStore
+from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
 from src.runtime.store import ContinuationLeaseLostError
@@ -810,3 +815,221 @@ def test_runtime_carries_compaction_proof_without_serializing_owner():
         assert "compaction_key" not in request.model_dump()
         assert "compaction_owner_id" not in request.model_dump()
         assert "compaction_owner_id" not in request.metadata
+
+
+@pytest_asyncio.fixture
+async def vector_harness(compaction_harness):
+    h = compaction_harness
+    suffix = h.session_id.removeprefix("ownership-")
+
+    class IsolatedVector(RedisVectorStore):
+        def index_name(self, entity, embedding_version):
+            return f"qa:ownership:{suffix}:index:{embedding_version}"
+
+        def prefix(self, entity, embedding_version):
+            return f"qa:ownership:{suffix}:doc:{embedding_version}:"
+
+        def active_key(self, entity):
+            return f"qa:ownership:{suffix}:active:{entity}"
+
+    vector = IsolatedVector(h.settings.database.redis_url)
+    store = PostgresVectorMemoryStore(h.settings)
+    index = None
+    try:
+        await store.initialize()
+        await vector.connect()
+        index = await vector.create_index(
+            entity="memory", embedding_version="test-v1", dimension=2
+        )
+        yield SimpleNamespace(h=h, store=store, vector=vector)
+    finally:
+        if index is not None:
+            await vector._client.execute_command("FT.DROPINDEX", index, "DD")
+            await vector._client.delete(vector.active_key("memory"))
+        await vector.close()
+
+
+@pytest.mark.asyncio
+async def test_late_old_replica_cannot_replace_new_compaction_vector(
+    vector_harness, monkeypatch
+):
+    h, store, vector = vector_harness.h, vector_harness.store, vector_harness.vector
+    key = f"{h.session_id}:e2:v1"
+    assert await h.records.begin(
+        compaction_key=key,
+        session_id=h.session_id,
+        last_event_id="e2",
+        compression_version="v1",
+        owner_id="old-owner",
+    )
+    entered, release = asyncio.Event(), asyncio.Event()
+    upsert = vector.upsert
+
+    async def paused_upsert(**kwargs):
+        if kwargs["vector"] == [1.0, 0.0]:
+            entered.set()
+            await release.wait()
+        return await upsert(**kwargs)
+
+    monkeypatch.setattr(vector, "upsert", paused_upsert)
+    service = MemoryRuntimeService(store, vector_store=vector)
+
+    def request(owner, content, embedding):
+        return MemoryWriteRequest(
+            session_id=h.session_id,
+            compaction_key=key,
+            compaction_owner_id=owner,
+            content=content,
+            metadata={
+                "memory_id": "same-compaction-point",
+                "embedding": embedding,
+                "embedding_version": "test-v1",
+                "embedding_dimension": 2,
+            },
+        )
+
+    old = asyncio.create_task(
+        service._write_point(request("old-owner", "old", [1.0, 0.0]))
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_compaction_table} "
+                "SET claimed_until=NOW()-INTERVAL '1 second' WHERE compaction_key=%s",
+                (key,),
+            )
+        assert await h.records.begin(
+            compaction_key=key,
+            session_id=h.session_id,
+            last_event_id="e2",
+            compression_version="v1",
+            owner_id="new-owner",
+        )
+        await service._write_point(request("new-owner", "new", [0.0, 1.0]))
+        assert await h.records.complete(
+            key, ["same-compaction-point"], owner_id="new-owner"
+        )
+        release.set()
+        await asyncio.wait_for(old, timeout=3)
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT content FROM {h.settings.database.postgres_memory_table} WHERE id=%s",
+                ("same-compaction-point",),
+            )
+            assert cur.fetchone()["content"] == "new"
+        raw = await vector._client.hget(
+            vector.prefix("memory", "test-v1") + "same-compaction-point", "embedding"
+        )
+        assert raw == vector.pack_vector([0.0, 1.0])
+    finally:
+        release.set()
+        await asyncio.gather(old, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_stale_rebuild_snapshot_does_not_replace_new_replica_or_activate(
+    vector_harness, monkeypatch
+):
+    store, vector = vector_harness.store, vector_harness.vector
+    service = MemoryRuntimeService(store, vector_store=vector)
+
+    def request(embedding):
+        return MemoryWriteRequest(
+            content="point",
+            metadata={
+                "memory_id": "p1",
+                "embedding": embedding,
+                "embedding_version": "test-v1",
+                "embedding_dimension": 2,
+            },
+        )
+
+    await service._write_point(request([1.0, 0.0]))
+    snapshot = await store.list_vector_records("test-v1")
+    newer = await service._write_point(request([0.0, 1.0]))
+    assert newer.updated_at > snapshot[0].updated_at
+    export = store.list_vector_records
+
+    async def old_export(version, *, after_id=None, limit=64):
+        if after_id is None:
+            return snapshot
+        return await export(version, after_id=after_id, limit=limit)
+
+    monkeypatch.setattr(store, "list_vector_records", old_export)
+    with pytest.raises(ValueError, match="probe vector"):
+        await MemoryVectorRebuildService(store, vector).rebuild(
+            "test-v1", execute=True, activate=True
+        )
+    raw = await vector._client.hget(
+        vector.prefix("memory", "test-v1") + "p1", "embedding"
+    )
+    assert raw == vector.pack_vector([0.0, 1.0])
+    assert await vector.get_active_version(entity="memory") is None
+
+
+@pytest.mark.asyncio
+async def test_current_rebuild_restores_versioned_replica_and_rejects_unversioned_overwrite(
+    vector_harness,
+):
+    store, vector = vector_harness.store, vector_harness.vector
+    service = MemoryRuntimeService(store, vector_store=vector)
+    point = await service._write_point(
+        MemoryWriteRequest(
+            content="point",
+            metadata={
+                "memory_id": "p1",
+                "embedding": [0.0, 1.0],
+                "embedding_version": "test-v1",
+                "embedding_dimension": 2,
+            },
+        )
+    )
+    key = vector.prefix("memory", "test-v1") + "p1"
+    await vector._client.delete(key)
+    result = await MemoryVectorRebuildService(store, vector).rebuild(
+        "test-v1", execute=True
+    )
+    assert result.status == "validated"
+    assert (
+        await vector._client.hget(key, "_source_updated_at")
+        == point.updated_at.isoformat(timespec="microseconds").encode()
+    )
+    await vector.upsert(
+        entity="memory", embedding_version="test-v1", point_id="p1", vector=[1.0, 0.0]
+    )
+    assert await vector._client.hget(key, "embedding") == vector.pack_vector([0.0, 1.0])
+    # Equal authoritative revisions remain repairable and idempotent.
+    await vector.upsert(
+        entity="memory",
+        embedding_version="test-v1",
+        point_id="p1",
+        vector=[0.0, 1.0],
+        source_updated_at=point.updated_at,
+    )
+    assert await vector._client.hget(key, "embedding") == vector.pack_vector([0.0, 1.0])
+
+
+@pytest.mark.asyncio
+async def test_memory_row_revision_is_monotonic_and_embedding_backfill_advances_it(
+    vector_harness,
+):
+    h, store = vector_harness.h, vector_harness.store
+    request = MemoryWriteRequest(content="point", metadata={"memory_id": "p1"})
+    first = await store.write(request)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_memory_table} SET updated_at=clock_timestamp()+INTERVAL '1 day' WHERE id='p1' RETURNING updated_at"
+        )
+        future = cur.fetchone()["updated_at"]
+    second = await store.write(request)
+    assert second.updated_at > first.updated_at
+    assert second.updated_at > ensure_utc_datetime(future)
+    metadata = {"embedding_version": "test-v1", "embedding_dimension": 2}
+    assert await store.update_embeddings([("p1", [1.0, 0.0], metadata)]) == 1
+    exported = await store.list_vector_records("test-v1")
+    assert exported[0].updated_at > second.updated_at
+    assert await store.update_embeddings([("p1", [0.0, 1.0], metadata)]) == 0
+    assert (await store.list_vector_records("test-v1"))[0].updated_at == exported[
+        0
+    ].updated_at

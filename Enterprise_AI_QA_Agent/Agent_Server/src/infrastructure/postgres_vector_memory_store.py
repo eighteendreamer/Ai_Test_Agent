@@ -102,7 +102,7 @@ class PostgresVectorMemoryStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id, embedding::text AS embedding, stale, metadata "
+                    f"SELECT id, embedding::text AS embedding, stale, metadata, updated_at "
                     f"FROM {self._settings.database.postgres_memory_table} "
                     "WHERE embedding IS NOT NULL AND metadata->>'embedding_version' = %s "
                     "AND (%s::text IS NULL OR id > %s) ORDER BY id LIMIT %s",
@@ -111,6 +111,7 @@ class PostgresVectorMemoryStore:
                 return [MemoryVectorRecord(
                     id=row["id"], embedding=json.loads(row["embedding"]),
                     stale=row["stale"], metadata=row["metadata"],
+                    updated_at=ensure_utc_datetime(row["updated_at"]),
                 ) for row in cur.fetchall()]
 
     async def count_documents(self, request: MemorySearchRequest) -> int:
@@ -252,7 +253,7 @@ class PostgresVectorMemoryStore:
                         source, stale, mode_key, metadata, embedding, created_at, updated_at
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s::jsonb, %s, %s, %s
+                        %s, %s, %s, %s::jsonb, %s, %s, clock_timestamp()
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         scope = EXCLUDED.scope,
@@ -268,7 +269,11 @@ class PostgresVectorMemoryStore:
                         mode_key = EXCLUDED.mode_key,
                         metadata = EXCLUDED.metadata,
                         embedding = COALESCE(EXCLUDED.embedding, {self._settings.database.postgres_memory_table}.embedding),
-                        updated_at = EXCLUDED.updated_at
+                        updated_at = GREATEST(
+                            clock_timestamp(),
+                            {self._settings.database.postgres_memory_table}.updated_at + INTERVAL '1 microsecond'
+                        )
+                    RETURNING updated_at
                     """,
                     (
                         point.id,
@@ -286,9 +291,10 @@ class PostgresVectorMemoryStore:
                         metadata_json,
                         embedding,
                         point.created_at,
-                        point.updated_at,
                     ),
                 )
+                row = cur.fetchone()
+                point.updated_at = ensure_utc_datetime(row["updated_at"])
         return point
 
     def _assert_compaction_owner(self, cur, request: MemoryWriteRequest) -> None:
@@ -465,7 +471,8 @@ class PostgresVectorMemoryStore:
                     f"""
                     UPDATE {self._settings.database.postgres_memory_table}
                     SET embedding=%s::vector,
-                        metadata=metadata || %s::jsonb
+                        metadata=metadata || %s::jsonb,
+                        updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
                     WHERE id=%s AND embedding IS NULL
                     """,
                     values,

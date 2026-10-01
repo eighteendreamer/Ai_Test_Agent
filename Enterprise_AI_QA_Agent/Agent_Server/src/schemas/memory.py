@@ -48,6 +48,7 @@ class MemoryVectorRecord(BaseModel):
     embedding: list[float]
     stale: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime | None = None
 
 
 class MemorySearchResult(BaseModel):

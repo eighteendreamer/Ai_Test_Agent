@@ -7,6 +7,7 @@ import logging
 import math
 import re
 import struct
+from datetime import datetime
 from time import perf_counter
 from typing import Any
 
@@ -18,9 +19,20 @@ from src.application.observability.business_metrics import (
     vector_queries_total,
     vector_query_seconds,
 )
+from src.infrastructure.storage_utils import ensure_utc_datetime
 
 
 LOGGER = logging.getLogger(__name__)
+
+# No upstream counterpart (checked: MemoryVectorRebuildService, resource lease
+# Lua, PostgreSQL INSERT/date-time docs, Redis scripting docs): this replica
+# protocol orders updates by the authoritative memory row's updated_at.
+_UPSERT_REPLICA_SCRIPT = """
+local current = redis.call('HGET', KEYS[1], '_source_updated_at')
+if current and (ARGV[1] == '' or current > ARGV[1]) then return 0 end
+redis.call('HSET', KEYS[1], unpack(ARGV, 2))
+return 1
+"""
 
 
 class RedisVectorStore:
@@ -236,13 +248,30 @@ class RedisVectorStore:
         point_id: str,
         vector: list[float],
         metadata: dict[str, str] | None = None,
+        source_updated_at: datetime | None = None,
     ) -> str:
         blob = self.pack_vector(vector)
         await self.validate_index(entity=entity, embedding_version=embedding_version, dimension=len(vector))
         key = f"{self.prefix(entity, embedding_version)}{point_id}"
         fields: dict[str, Any] = {"embedding": blob}
         fields.update({name: str(value) for name, value in (metadata or {}).items() if name in {"project_id", "case_version_id", "status", "environment"}})
-        await self._client.hset(key, mapping=fields)
+        timestamp = ensure_utc_datetime(source_updated_at)
+        revision = timestamp.isoformat(timespec="microseconds") if timestamp is not None else ""
+        if revision:
+            fields["_source_updated_at"] = revision
+        if hasattr(self._client, "eval"):
+            args = [value for item in fields.items() for value in item]
+            updated = bool(await self._client.eval(_UPSERT_REPLICA_SCRIPT, 1, key, revision, *args))
+        else:
+            # Compatibility for deterministic client doubles without EVAL.
+            current = await self._client.hget(key, "_source_updated_at")
+            updated = not current or bool(revision and _text(current) <= revision)
+            if updated:
+                await self._client.hset(key, mapping=fields)
+        if not updated:
+            LOGGER.info("memory_vector_replica_outdated_update_skipped", extra={
+                "entity": entity, "embedding_version": embedding_version, "point_id": point_id,
+            })
         return key
 
     async def search(

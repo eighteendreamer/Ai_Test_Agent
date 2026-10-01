@@ -117,6 +117,7 @@ class MemoryVectorRebuildService:
                         entity=self._entity,
                         embedding_version=embedding_version,
                         point_id=record.id,
+                        source_updated_at=getattr(record, "updated_at", None),
                         vector=record.embedding,
                         metadata={
                             "project_id": str(record.metadata.get("project_id") or ""),

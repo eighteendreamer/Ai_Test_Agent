@@ -2,7 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.application.context.memory_vector_rebuild_service import MemoryVectorRebuildService
+from src.application.context.memory_vector_rebuild_service import (
+    MemoryVectorRebuildService,
+)
+from src.infrastructure.postgres_test_case_embedding_store import (
+    TestCaseVectorRecord as CaseVectorRecord,
+)
 from src.infrastructure.redis_vector_store import RedisVectorStore
 from src.schemas.memory import MemoryVectorRecord
 
@@ -57,6 +62,20 @@ async def test_rebuild_keyset_pages_and_retry_is_idempotent():
     vector.validate_replica.assert_awaited_once()
     second = await service.rebuild("v1", execute=True)
     assert second.replicated == 5 and len(vector.docs) == 5
+
+
+@pytest.mark.asyncio
+async def test_test_case_export_without_memory_revision_can_rebuild():
+    memory, vector = Memory(), Vector()
+    memory.records = [CaseVectorRecord(
+        id=record.id, embedding=record.embedding, metadata=record.metadata,
+    ) for record in memory.records]
+    result = await MemoryVectorRebuildService(
+        memory, vector, entity="test_case",
+    ).rebuild("v1", execute=True, activate=True)
+    assert result.status == "activated" and result.replicated == 5
+    assert all(doc["source_updated_at"] is None for doc in vector.docs.values())
+    assert all(doc["entity"] == "test_case" for doc in vector.docs.values())
 
 
 @pytest.mark.asyncio
