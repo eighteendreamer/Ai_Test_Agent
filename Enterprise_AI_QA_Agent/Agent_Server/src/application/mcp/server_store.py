@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from src.application.mcp.errors import (
+    MCPCatalogReadError,
+    MCPManagementValidationError,
+    MCPServerNotFoundError,
+)
 from src.core.config import Settings
 from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
 from src.schemas.integration import IntegrationRecord
@@ -185,7 +190,7 @@ class MCPServerStore:
 
     def _extract_import_entries(self, payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         if not isinstance(payload, dict):
-            raise ValueError("MCP import payload must be a JSON object.")
+            raise MCPManagementValidationError("MCP import payload must be a JSON object.")
         raw_servers = payload.get("mcpServers")
         if isinstance(raw_servers, dict):
             return self._server_entries(raw_servers)
@@ -200,7 +205,7 @@ class MCPServerStore:
             if isinstance(value, dict):
                 entries.append((str(name), value))
         if not entries:
-            raise ValueError("No importable MCP server configs found.")
+            raise MCPManagementValidationError("No importable MCP server configs found.")
         return entries
 
     def _normalize_transport(self, config: dict[str, Any]) -> MCPServerTransport:
@@ -215,24 +220,26 @@ class MCPServerStore:
 
     def _validate_record(self, record: MCPServerRecord) -> None:
         if not record.name:
-            raise ValueError("MCP server name is required.")
+            raise MCPManagementValidationError("MCP server name is required.")
         config = record.config or self._config_from_record_fields(record)
         transport = record.transport or self._normalize_transport(config)
         if transport == "stdio" and not self._normalize_text(config.get("command")):
-            raise ValueError("stdio MCP server requires a command.")
+            raise MCPManagementValidationError("stdio MCP server requires a command.")
         if transport == "streamable_http" and not self._normalize_text(config.get("endpoint_url") or config.get("url")):
-            raise ValueError("Streamable HTTP MCP server requires endpoint_url.")
+            raise MCPManagementValidationError("Streamable HTTP MCP server requires endpoint_url.")
         if transport == "sse" and not self._normalize_text(config.get("endpoint_url") or config.get("url")):
-            raise ValueError("SSE MCP server requires endpoint_url.")
+            raise MCPManagementValidationError("SSE MCP server requires endpoint_url.")
 
     def _load_catalog(self) -> list[dict[str, Any]]:
         if not self._catalog_path.exists():
             return []
         try:
             raw = json.loads(self._catalog_path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        return raw if isinstance(raw, list) else []
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise MCPCatalogReadError("MCP catalog could not be read.") from exc
+        if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
+            raise MCPCatalogReadError("MCP catalog must contain a list of records.")
+        return raw
 
     def _save_catalog(self, catalog: list[dict[str, Any]]) -> None:
         self._catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -241,7 +248,7 @@ class MCPServerStore:
         for item in catalog:
             if str(item.get("id") or "") == server_id:
                 return item
-        raise ValueError(f"MCP server '{server_id}' was not found.")
+        raise MCPServerNotFoundError("MCP server not found.")
 
     def _normalize_text(self, value: Any) -> str | None:
         if value is None:
@@ -359,7 +366,7 @@ class PostgresMCPServerStore:
     async def get_server(self, server_id: str) -> MCPServerRecord:
         server = await asyncio.to_thread(self._get_server_sync, server_id)
         if server is None:
-            raise ValueError(f"MCP server '{server_id}' was not found.")
+            raise MCPServerNotFoundError("MCP server not found.")
         return server
 
     async def create_server(self, payload: MCPServerCreateRequest) -> MCPServerRecord:
@@ -446,7 +453,7 @@ class PostgresMCPServerStore:
     async def delete_server(self, server_id: str) -> dict[str, Any]:
         deleted = await asyncio.to_thread(self._delete_server_sync, server_id)
         if not deleted:
-            raise ValueError(f"MCP server '{server_id}' was not found.")
+            raise MCPServerNotFoundError("MCP server not found.")
         return {"ok": True, "deleted_id": server_id}
 
     async def import_servers(self, request: MCPServerImportRequest) -> MCPServerImportResponse:
@@ -865,12 +872,12 @@ def _normalize_transport(config: dict[str, Any]) -> MCPServerTransport:
 
 def _validate_record(record: MCPServerRecord) -> None:
     if not record.name:
-        raise ValueError("MCP server name is required.")
+        raise MCPManagementValidationError("MCP server name is required.")
     config = record.config or _config_from_record_fields(record)
     transport = record.transport or _normalize_transport(config)
     if transport == "stdio" and not _normalize_text(config.get("command")):
-        raise ValueError("stdio MCP server requires a command.")
+        raise MCPManagementValidationError("stdio MCP server requires a command.")
     if transport == "streamable_http" and not _normalize_text(config.get("endpoint_url") or config.get("url")):
-        raise ValueError("Streamable HTTP MCP server requires endpoint_url.")
+        raise MCPManagementValidationError("Streamable HTTP MCP server requires endpoint_url.")
     if transport == "sse" and not _normalize_text(config.get("endpoint_url") or config.get("url")):
-        raise ValueError("SSE MCP server requires endpoint_url.")
+        raise MCPManagementValidationError("SSE MCP server requires endpoint_url.")

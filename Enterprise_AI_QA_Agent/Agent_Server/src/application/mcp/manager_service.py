@@ -2,23 +2,28 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from src.application.mcp.errors import (
+    MCPManagementUnavailableError,
+    MCPManagementValidationError,
+    MCPServerNotFoundError,
+)
 from src.application.mcp.host.connection_manager import McpConnectionManager
 from src.application.mcp.runtime_manager import MCPRuntimeManager
 from src.application.mcp.server_store import MCPServerStore
 from src.registry.mcp import MCPRegistry
 from src.schemas.mcp_management import (
+    ManagedMCPPromptsResponse,
+    ManagedMCPResourcesResponse,
+    ManagedMCPServerDescriptor,
+    ManagedMCPTestResponse,
+    ManagedMCPToolCallResponse,
+    ManagedMCPToolsResponse,
+    MCPProviderDescriptor,
     MCPServerCreateRequest,
     MCPServerImportRequest,
     MCPServerImportResponse,
     MCPServerRecord,
     MCPServerUpdateRequest,
-    ManagedMCPServerDescriptor,
-    MCPProviderDescriptor,
-    ManagedMCPPromptsResponse,
-    ManagedMCPResourcesResponse,
-    ManagedMCPTestResponse,
-    ManagedMCPToolCallResponse,
-    ManagedMCPToolsResponse,
 )
 
 
@@ -81,9 +86,9 @@ class MCPManagerService:
     async def reconnect_server(self, server_key: str) -> ManagedMCPServerDescriptor:
         record = await self._record_for_server_key(server_key)
         if not record.enabled:
-            raise ValueError("Cannot reconnect a disabled MCP server.")
+            raise MCPManagementValidationError("Cannot reconnect a disabled MCP server.")
         if self._connection_manager is None:
-            raise ValueError("MCP Host connection manager is not configured.")
+            raise MCPManagementUnavailableError("MCP Host connection manager is not configured.")
         try:
             await self._connection_manager.reconnect(server_key)
         except Exception:
@@ -190,16 +195,16 @@ class MCPManagerService:
         if server_key.startswith("mcp:"):
             return self._from_external(await self._record_for_server_key(server_key))
 
-        raise ValueError(f"MCP server '{server_key}' was not found.")
+        raise MCPServerNotFoundError("MCP server not found.")
 
     async def _record_for_server_key(self, server_key: str) -> MCPServerRecord:
         if not server_key.startswith("mcp:"):
-            raise ValueError(f"MCP server '{server_key}' is not an external Host server.")
+            raise MCPManagementValidationError("Only external MCP Host servers support this operation.")
         return await self._mcp_server_store.get_server(server_key.split(":", 1)[1])
 
     def _require_runtime_manager(self) -> MCPRuntimeManager:
         if self._runtime_manager is None:
-            raise ValueError("MCP runtime manager is not configured.")
+            raise MCPManagementUnavailableError("MCP runtime manager is not configured.")
         return self._runtime_manager
 
     def _credential_summary(self, server: MCPServerRecord) -> dict[str, object]:

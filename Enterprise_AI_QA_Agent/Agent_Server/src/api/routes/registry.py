@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+
+from src.application.mcp.errors import (
+    MCPManagementUnavailableError,
+    MCPManagementValidationError,
+    MCPServerNotFoundError,
+)
 from src.schemas.mcp_management import (
     MCPServerCreateRequest,
     MCPServerImportRequest,
@@ -11,6 +18,22 @@ from src.schemas.mcp_management import (
 )
 
 router = APIRouter(prefix="/registry", tags=["registry"])
+logger = logging.getLogger(__name__)
+
+
+def _raise_mcp_management_error(exc: Exception, *, operation: str) -> None:
+    details = {"operation": operation, "error_type": type(exc).__name__}
+    if isinstance(exc, MCPServerNotFoundError):
+        logger.info("mcp_server_not_found", extra=details)
+        raise HTTPException(status_code=404, detail="MCP server not found.") from exc
+    if isinstance(exc, MCPManagementValidationError):
+        logger.info("mcp_management_input_invalid", extra=details)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if isinstance(exc, MCPManagementUnavailableError):
+        logger.warning("mcp_management_unavailable", extra=details)
+        raise HTTPException(status_code=503, detail="MCP runtime component is unavailable.") from exc
+    logger.error("mcp_management_operation_failed", extra=details)
+    raise HTTPException(status_code=500, detail="MCP management operation failed.") from exc
 
 
 class SkillUpsertRequest(BaseModel):
@@ -232,23 +255,26 @@ async def list_mcp_servers(request: Request):
 
 @router.get("/mcp/managed")
 async def list_managed_mcp_servers(request: Request):
-    return await request.app.state.registry_service.list_managed_mcp_servers()
+    try:
+        return await request.app.state.registry_service.list_managed_mcp_servers()
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="list_servers")
 
 
 @router.post("/mcp/managed")
 async def create_managed_mcp_server(payload: MCPServerCreateRequest, request: Request):
     try:
         return await request.app.state.mcp_manager_service.create_server(payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="create")
 
 
 @router.post("/mcp/managed/import")
 async def import_managed_mcp_servers(payload: MCPServerImportRequest, request: Request):
     try:
         return await request.app.state.mcp_manager_service.import_servers(payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="import")
 
 
 @router.get("/mcp/providers")
@@ -260,64 +286,64 @@ async def list_mcp_providers(request: Request):
 async def list_managed_mcp_tools(server_key: str, request: Request):
     try:
         return await request.app.state.registry_service.list_managed_mcp_tools(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="list_tools")
 
 
 @router.get("/mcp/managed/{server_key}/resources")
 async def list_managed_mcp_resources(server_key: str, request: Request):
     try:
         return await request.app.state.registry_service.list_managed_mcp_resources(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="list_resources")
 
 
 @router.get("/mcp/managed/{server_key}/prompts")
 async def list_managed_mcp_prompts(server_key: str, request: Request):
     try:
         return await request.app.state.registry_service.list_managed_mcp_prompts(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="list_prompts")
 
 
 @router.post("/mcp/managed/{server_key}/test")
 async def test_managed_mcp_server(server_key: str, request: Request):
     try:
         return await request.app.state.registry_service.test_managed_mcp_server(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="test")
 
 
 @router.patch("/mcp/managed/{server_key}")
 async def update_managed_mcp_server(server_key: str, payload: MCPServerUpdateRequest, request: Request):
     try:
         return await request.app.state.mcp_manager_service.update_server(server_key, payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="update")
 
 
 @router.delete("/mcp/managed/{server_key}")
 async def delete_managed_mcp_server(server_key: str, request: Request):
     try:
         return await request.app.state.mcp_manager_service.delete_server(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="delete")
 
 
 @router.post("/mcp/managed/{server_key}/confirm-stdio")
 async def confirm_managed_mcp_stdio_server(server_key: str, request: Request):
     try:
         return await request.app.state.mcp_manager_service.confirm_stdio_server(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="confirm_stdio")
 
 
 @router.post("/mcp/managed/{server_key}/reconnect")
 async def reconnect_managed_mcp_server(server_key: str, request: Request):
     try:
         return await request.app.state.mcp_manager_service.reconnect_server(server_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="reconnect")
 
 
 @router.post("/mcp/managed/{server_key}/tools/{tool_name}/call")
@@ -333,5 +359,5 @@ async def call_managed_mcp_tool(
             tool_name,
             payload.arguments,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_mcp_management_error(exc, operation="call_tool")

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from src.application.mcp.errors import MCPManagementUnavailableError
 from src.application.mcp.manager_service import MCPManagerService
 from src.application.security.command_profiles import get_profile_registry
 from src.application.security.tool_catalog import FAMILY_RUNNER_MAP, SURFACE_FAMILY_MAP
 from src.registry.agents import AgentRegistry
 from src.registry.mcp import MCPRegistry
-from src.registry.modes import ModeRegistry
 from src.registry.models import ModelRegistry
+from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.schemas.session import RuntimeMode, SessionMode
@@ -81,27 +82,27 @@ class RegistryService:
 
     async def list_managed_mcp_tools(self, server_key: str):
         if self._mcp_manager_service is None:
-            raise ValueError("Managed MCP service is not configured.")
+            raise MCPManagementUnavailableError("Managed MCP service is not configured.")
         return await self._mcp_manager_service.list_server_tools(server_key)
 
     async def list_managed_mcp_resources(self, server_key: str):
         if self._mcp_manager_service is None:
-            raise ValueError("Managed MCP service is not configured.")
+            raise MCPManagementUnavailableError("Managed MCP service is not configured.")
         return await self._mcp_manager_service.list_server_resources(server_key)
 
     async def list_managed_mcp_prompts(self, server_key: str):
         if self._mcp_manager_service is None:
-            raise ValueError("Managed MCP service is not configured.")
+            raise MCPManagementUnavailableError("Managed MCP service is not configured.")
         return await self._mcp_manager_service.list_server_prompts(server_key)
 
     async def test_managed_mcp_server(self, server_key: str):
         if self._mcp_manager_service is None:
-            raise ValueError("Managed MCP service is not configured.")
+            raise MCPManagementUnavailableError("Managed MCP service is not configured.")
         return await self._mcp_manager_service.test_server(server_key)
 
     async def call_managed_mcp_tool(self, server_key: str, tool_name: str, arguments: dict[str, object]):
         if self._mcp_manager_service is None:
-            raise ValueError("Managed MCP service is not configured.")
+            raise MCPManagementUnavailableError("Managed MCP service is not configured.")
         return await self._mcp_manager_service.call_server_tool(
             server_key,
             tool_name=tool_name,
