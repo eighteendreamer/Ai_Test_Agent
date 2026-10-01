@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 import os
 import socket
-from typing import Any, Awaitable, Callable
+from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
@@ -14,6 +14,7 @@ from src.application.context.observation_runtime_service import ObservationRunti
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.runtime.runtime_service import RuntimeService
 from src.runtime.session_event_sink import SessionEventSink
+from src.runtime.session_assistant_stream import SessionAssistantStream
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -669,6 +670,7 @@ class SessionService:
             runtime_result = await self._await_owned_execution(
                 session_id,
                 heartbeat_task,
+                stream_chunk_handler.run,
                 self._event_sink(session_id, turn_lease_token=turn_lease_token).run,
                 self._runtime_service.resume_turn,
                 session,
@@ -999,6 +1001,7 @@ class SessionService:
             continuation = await self._await_owned_execution(
                 session_id,
                 heartbeat_task,
+                stream_chunk_handler.run,
                 self._event_sink(session_id, turn_lease_token=turn_lease_token).run,
                 self._runtime_service.resume_after_approval,
                 session,
@@ -1102,6 +1105,7 @@ class SessionService:
                 )
                 continuation = await self._await_owned_execution(
                     session_id, heartbeat_task,
+                    stream_chunk_handler.run,
                     self._event_sink(session_id, continuation_approval_id=approval.id,
                         continuation_lease_token=continuation_token).run,
                     self._runtime_service.resume_after_approval,
@@ -1647,7 +1651,8 @@ class SessionService:
             turn_lease_token=turn_lease_token,
         )
         try:
-            runtime_result = await self._event_sink(session_id, **turn_fenced_write).run(
+            runtime_result = await stream_chunk_handler.run(
+                self._event_sink(session_id, **turn_fenced_write).run,
                 self._runtime_service.execute_turn,
                 session,
                 execution_request,
@@ -2722,47 +2727,17 @@ class SessionService:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> Callable[[str], Awaitable[None]]:
-        started = False
+    ) -> SessionAssistantStream:
         fenced_write = {
             "continuation_approval_id": continuation_approval_id,
             "continuation_lease_token": continuation_lease_token,
             "turn_lease_token": turn_lease_token,
         }
 
-        async def emit_chunk(chunk: str) -> None:
-            nonlocal started
-            if not chunk:
-                return
-            if not started:
-                started = True
-                await self._store.append_event(
-                    session_id,
-                    self._make_event(
-                        session_id,
-                        "assistant.stream.started",
-                        {
-                            "turn_id": turn_id,
-                            "message_id": assistant_message_id,
-                        },
-                    ),
-                    **fenced_write,
-                )
-            await self._store.append_event(
-                session_id,
-                self._make_event(
-                    session_id,
-                    "assistant.stream.delta",
-                    {
-                        "turn_id": turn_id,
-                        "message_id": assistant_message_id,
-                        "delta": chunk,
-                    },
-                ),
-                **fenced_write,
-            )
-
-        return emit_chunk
+        return SessionAssistantStream(
+            self._store, session_id, turn_id, assistant_message_id, self._make_event,
+            fence=fenced_write,
+        )
 
     async def _persist_turn_memory(
         self,

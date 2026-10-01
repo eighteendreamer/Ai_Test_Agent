@@ -338,7 +338,7 @@ async def test_model_deltas_cross_real_sse_http_and_match_persisted_transcript(s
         for chunk in chunks:
             await on_text_delta(chunk)
 
-    await deterministic_model_stream()
+    await on_text_delta.run(deterministic_model_stream)
     final_text = "".join(chunks)
     runtime_result = SimpleNamespace(
         events=[],
@@ -419,17 +419,14 @@ async def test_model_deltas_cross_real_sse_http_and_match_persisted_transcript(s
         listener.close()
 
     stream_types = [item["type"] for item in received]
-    assert stream_types[:4] == [
-        "assistant.stream.started",
-        "assistant.stream.delta",
-        "assistant.stream.delta",
-        "assistant.stream.delta",
-    ]
-    assert [
+    assert stream_types[:2] == ["assistant.stream.started", "assistant.stream.delta"]
+    received_chunks = [
         item["payload"]["delta"]
         for item in received
         if item["type"] == "assistant.stream.delta"
-    ] == chunks
+    ]
+    assert received_chunks[0] == chunks[0]
+    assert "".join(received_chunks) == final_text
     assert stream_types[-3:] == [
         "assistant.stream.completed",
         "assistant.response_generated",

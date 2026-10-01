@@ -326,7 +326,8 @@ def create_app() -> FastAPI:
                 TURN_ID,
                 ASSISTANT_MESSAGE_ID,
             )
-            runtime_result = await service._event_sink(SESSION_ID).run(
+            runtime_result = await on_text_delta.run(
+                service._event_sink(SESSION_ID).run,
                 runtime_service.execute_turn,
                 session,
                 request,

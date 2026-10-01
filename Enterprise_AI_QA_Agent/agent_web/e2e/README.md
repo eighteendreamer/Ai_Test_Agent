@@ -21,6 +21,17 @@
 
 后端自动回归为 `Agent_Server/tests/test_assistant_stream_browser_probe.py`。这条链路验证的是确定性模型和知识工具替身下的应用执行及浏览器传输，不代表真实模型供应商或真实知识库服务已通过端到端验证。
 
+P1-82 的后端回归在 `Agent_Server/tests/test_assistant_stream_persistence.py`。它把上述固定回答拆成字符级 SDK 分片，注入每次 delta 写入 5ms 延迟，验证合并后正文及模型/工具链一致。后端首片持久化后才返回回调，后续按 40ms、16384 UTF-8 字节或 256 分片合并成一条正式 delta；SSE 的 event ID 对应持久化批次，客户端按 delta 内容顺序拼接，不依赖供应商原始分片边界。生产中普通提交、手动续跑和审批续跑均等待 writer 结束再进入最终正文与完成事件的原子提交。
+
+在 `Agent_Server` 目录显式开启真实 PostgreSQL 回归（其中一个用例同时连接项目配置的真实 Redis）：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+uv run --no-sync python -m pytest -q -s tests/test_assistant_stream_persistence.py tests/test_session_event_delivery.py tests/test_assistant_stream_browser_probe.py
+```
+
+覆盖合并、首片、UTF-8 边界、有界反压、闲置模型的定时刷新、写库失败取消执行、重复取消清理、租约失效拒绝旧尾部、SSE 游标回放和 PG/Redis 事实一致。单个上游超大分片保持原文，可能超过字节窗口；进程被强杀时未提交的内存尾部仍可能丢失，历史事件保留期尚未调整。测试不使用真实模型凭据或外部知识服务，也不能据此宣称真实供应商吞吐或崩溃零丢失。
+
 ## 前端分片处理性能
 
 P1-83 的固定输入在 `assistant-stream-performance.ts`：100 条历史消息，依次输入 100、500、1000 个分片，正文包含代码和公式。它复用 SSE 解码后的回调、Pinia Store 和正式 ChatTimeline；每次更新等待 Vue DOM 提交，最后检查正文完全一致。记录首片 DOM 可见时间、总处理时间、字符处理吞吐、逐片更新 P50/P95/P99 与错误数。生成时使用转义的纯文本，首片立即显示，后续按 40ms 合并；终态刷新待处理文本并恢复 Markdown、代码高亮、公式及复制按钮。
