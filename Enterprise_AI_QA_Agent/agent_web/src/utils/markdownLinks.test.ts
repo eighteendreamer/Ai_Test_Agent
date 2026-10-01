@@ -29,4 +29,21 @@ describe("assistant markdown link protocols", () => {
     expect(html).toContain('href="//example.org/docs"');
     expect(html).toContain('target="_blank"');
   });
+
+  it("does not rewrite the destination of an existing artifact link", () => {
+    const html = renderAssistantMarkdown(
+      "[report](/api/v1/sessions/session-1/artifacts/artifact-1/content)",
+    );
+    expect(html).toContain('href="/api/v1/sessions/session-1/artifacts/artifact-1/content"');
+    expect(html.match(/<a\s/g)).toHaveLength(1);
+    expect(html).toContain('artifact-download-link');
+  });
+
+  it("links a bare artifact URL in prose but leaves code alone", () => {
+    const url = "/api/v1/sessions/session-1/artifacts/artifact-1/content";
+    const html = renderAssistantMarkdown(`Evidence (${url}). Inline code: \`${url}\`.`);
+    expect(html).toContain(`href="${url}"`);
+    expect(html.match(/artifact-download-link/g)).toHaveLength(1);
+    expect(html).toContain(`<code>${url}</code>`);
+  });
 });

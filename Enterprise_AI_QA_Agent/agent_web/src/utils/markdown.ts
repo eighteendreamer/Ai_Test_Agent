@@ -72,10 +72,51 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return defaultLinkRender(tokens, idx, options, env, self);
 };
 
-function linkBareArtifactUrls(content: string): string {
-  const pattern = /(^|[\s(：:])(\/api\/v1\/sessions\/[^/\s]+\/artifacts\/[^/\s]+\/content)(?=[\s).,;:!?？。”》、]|$)/g;
-  return content.replace(pattern, (_match, prefix: string, url: string) => `${prefix}[点击下载](${url})`);
-}
+const bareArtifactUrlPattern = /(^|[\s(：:])(\/api\/v1\/sessions\/[^/\s]+\/artifacts\/[^/\s]+\/content)(?=[\s).,;:!?？。”》、]|$)/g;
+md.core.ruler.after("linkify", "bare_artifact_links", (state) => {
+  for (const block of state.tokens) {
+    if (block.type !== "inline" || !block.children) continue;
+    const rewritten: typeof block.children = [];
+    let linkDepth = 0;
+    for (const token of block.children) {
+      if (token.type === "link_open") linkDepth += 1;
+      if (token.type === "link_close") linkDepth -= 1;
+      if (token.type !== "text" || linkDepth > 0) {
+        rewritten.push(token);
+        continue;
+      }
+
+      const source = token.content;
+      let consumed = 0;
+      const addText = (content: string, level: number) => {
+        if (!content) return;
+        const text = new state.Token("text", "", 0);
+        text.content = content;
+        text.level = level;
+        rewritten.push(text);
+      };
+      for (const match of source.matchAll(bareArtifactUrlPattern)) {
+        const href = state.md.normalizeLink(match[2]);
+        if (!state.md.validateLink(href)) continue;
+        const start = (match.index ?? 0) + match[1].length;
+        addText(source.slice(consumed, start), token.level);
+
+        const open = new state.Token("link_open", "a", 1);
+        open.attrs = [["href", href]];
+        open.level = token.level;
+        rewritten.push(open);
+        addText("点击下载", token.level + 1);
+        const close = new state.Token("link_close", "a", -1);
+        close.level = token.level;
+        rewritten.push(close);
+        consumed = start + match[2].length;
+      }
+      if (consumed) addText(source.slice(consumed), token.level);
+      else rewritten.push(token);
+    }
+    block.children = rewritten;
+  }
+});
 
 /** Strip the internal framework marker before rendering. */
 export function displayAssistantContent(content: string): string {
@@ -84,7 +125,7 @@ export function displayAssistantContent(content: string): string {
 }
 
 export function renderAssistantMarkdown(content: string): string {
-  const source = linkBareArtifactUrls(displayAssistantContent(content));
+  const source = displayAssistantContent(content);
   if (!source) {
     return "";
   }
