@@ -12,7 +12,13 @@ from datetime import datetime, timezone
 
 from src.application.recorder.recording_approval_service import RecordingApprovalService
 from src.schemas.recording import RecordingSession, RecordingStatus
-from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
+from src.schemas.session import (
+    ApprovalDecisionRequest,
+    CreateSessionRequest,
+    SessionStatus,
+    ToolApprovalRequest,
+    ToolApprovalStatus,
+)
 
 
 class FakeStore:
@@ -212,6 +218,86 @@ def test_resolve_approval_ui_recording_without_service_emits_unavailable_event()
     assert resolved.status == ToolApprovalStatus.denied
     events = [e.type for e in asyncio.run(store.list_events(session_id, limit=None))]
     assert "recorder.approval_unavailable" in events
+
+
+def test_recording_decision_preserves_completed_turn_state():
+    service, store = _build_session_service()
+
+    async def scenario():
+        detail = await service.create_session(CreateSessionRequest(title="录制会话"))
+        session = await store.get_session(detail.id)
+        session.status = SessionStatus.completed
+        session.metadata["control"] = {"control_state": "completed", "is_resumable": False}
+        await store.save_session(session)
+
+        recorder = FakeRecorderService()
+        approval_service = RecordingApprovalService(recorder_service=recorder, session_store=store)
+        service.set_recording_approval_service(approval_service)
+        approval = await approval_service.create_approval(
+            session_id=detail.id,
+            turn_id="turn-completed",
+            request=_Request(),
+            knowledge_gate=KNOWLEDGE_GATE,
+        )
+
+        await service.resolve_approval(
+            detail.id,
+            approval.id,
+            ApprovalDecisionRequest(decision=ToolApprovalStatus.approved),
+        )
+        after = await service.get_session(detail.id)
+        assert len(recorder.launch_calls) == 1
+        assert after.status == SessionStatus.completed
+        assert after.control_state == "completed"
+        assert after.is_resumable is False
+
+    asyncio.run(scenario())
+
+
+def test_recording_decision_preserves_unrelated_graph_approval():
+    service, store = _build_session_service()
+
+    async def scenario():
+        detail = await service.create_session(CreateSessionRequest(title="双审批会话"))
+        session = await store.get_session(detail.id)
+        session.status = SessionStatus.waiting_approval
+        session.metadata["pending_turn"] = {
+            "turn_id": "turn-graph",
+            "pending_approval_ids": ["appr-1"],
+        }
+        session.metadata["control"] = {
+            "control_state": "waiting_approval",
+            "is_resumable": True,
+        }
+        await store.save_session(session)
+        graph_approval = _make_approval(approval_type="tool_call")
+        graph_approval.session_id = detail.id
+        await store.save_approval(detail.id, graph_approval)
+
+        approval_service = RecordingApprovalService(
+            recorder_service=FakeRecorderService(), session_store=store
+        )
+        service.set_recording_approval_service(approval_service)
+        recording_approval = await approval_service.create_approval(
+            session_id=detail.id,
+            turn_id="turn-recording",
+            request=_Request(),
+            knowledge_gate=KNOWLEDGE_GATE,
+        )
+
+        await service.resolve_approval(
+            detail.id,
+            recording_approval.id,
+            ApprovalDecisionRequest(decision=ToolApprovalStatus.denied),
+        )
+        after = await service.get_session(detail.id)
+        assert after.status == SessionStatus.waiting_approval
+        assert after.control_state == "waiting_approval"
+        assert after.is_resumable is True
+        assert (await store.get_session(detail.id)).metadata["pending_turn"]["pending_approval_ids"] == ["appr-1"]
+        assert [item.id for item in after.pending_approvals] == ["appr-1"]
+
+    asyncio.run(scenario())
 
 
 def test_resolve_approval_regular_tool_approval_keeps_default_resume_path():

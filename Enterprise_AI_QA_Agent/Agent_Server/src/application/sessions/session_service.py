@@ -859,17 +859,15 @@ class SessionService:
             # approved → RecorderSessionService.launch；denied → 降级事件。
             if approval.metadata.get("approval_type") == "ui_recording":
                 await self._append_approval_resolved_event(session_id, approval)
-                session.status = SessionStatus.idle
-                control = self._ensure_control_metadata(session)
-                control.update(
-                    {
-                        "control_state": "idle",
-                        "is_interrupted": False,
-                        "last_approval_id": approval.id,
-                    }
+                logger.info(
+                    "ui_recording_approval_decision_recorded",
+                    extra={
+                        "session_id": session_id,
+                        "approval_id": approval.id,
+                        "decision": approval.status.value,
+                        "session_status": session.status.value,
+                    },
                 )
-                session.metadata["control"] = control
-                await self._store.save_session(session)
                 if self._recording_approval_service is None:
                     await self._store.append_event(
                         session_id,
