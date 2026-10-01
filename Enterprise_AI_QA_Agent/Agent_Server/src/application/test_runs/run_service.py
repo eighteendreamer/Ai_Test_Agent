@@ -51,8 +51,8 @@ from src.schemas.run_management import (
     TestRunStats,
     TestRunStatus,
 )
-from src.schemas.session import ExecutionEvent, ToolApprovalStatus
-from src.schemas.tool_job import ToolJobStatus
+from src.schemas.session import ExecutionEvent, ToolApprovalRequest, ToolApprovalStatus
+from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
 from src.schemas.run_dispatch import RunDispatchTask
 
 if TYPE_CHECKING:
@@ -899,6 +899,37 @@ class TestRunService:
             },
         )
         await self._emit_for_item(item, "test_run.item_waiting_approval")
+        return item
+
+    @property
+    def supports_atomic_approval_wait(self) -> bool:
+        settings = getattr(self._store, "_settings", None)
+        return (
+            callable(getattr(self._store, "commit_approval_wait", None))
+            and callable(getattr(self._sessions, "save_approval_in_transaction", None))
+            and getattr(self._sessions, "_settings", None) == settings
+            and self._jobs is not None
+            and self._jobs.supports_approval_transaction(settings)
+        )
+
+    async def commit_approval_wait(
+        self, item_id: str, lease_token: str, approval: ToolApprovalRequest, job: ToolJobRecord,
+    ) -> TestRunItemRecord:
+        if not self.supports_atomic_approval_wait:
+            raise RuntimeError("Atomic approval suspension requires stores in the same PostgreSQL database")
+        try:
+            item = await self._store.commit_approval_wait(
+                item_id, lease_token, approval, job, self._sessions, self._jobs,
+            )
+        except BaseException:
+            logger.exception("test_run_approval_wait_commit_failed", extra={
+                "run_item_id": item_id, "approval_id": approval.id, "tool_job_id": job.id,
+            })
+            raise
+        logger.info("test_run_approval_wait_committed", extra={
+            "run_id": item.run_id, "run_item_id": item_id,
+            "approval_id": approval.id, "tool_job_id": job.id,
+        })
         return item
 
     async def resume_waiting_approval(

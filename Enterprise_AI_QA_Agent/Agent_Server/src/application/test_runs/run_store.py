@@ -11,6 +11,8 @@ from src.core.config import Settings
 from src.application.test_runs.timing import add_active_duration, add_waiting_duration, elapsed_ms
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
+from src.schemas.session import ExecutionEvent, ToolApprovalRequest
+from src.schemas.tool_job import ToolJobRecord
 from src.schemas.run_management import (
     LatestRegressionRecord,
     RegressionBatchRecord,
@@ -2515,52 +2517,139 @@ class PostgresTestRunStore:
     ) -> TestRunItemRecord:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                item = self._lock_item(cur, item_id)
-                self._validate_lease(item, lease_token, now, {"running"})
-                attempt = self._lock_attempt(cur, item_id, lease_token)
-                active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
-                item = item.model_copy(
-                    update={
-                        "status": "waiting_approval",
-                        "lease_expires_at": None,
-                        "heartbeat_at": now,
-                        "approval_id": approval_id,
-                        "tool_job_id": tool_job_id,
-                        "active_duration_ms": add_active_duration(
-                            active_duration_ms=item.active_duration_ms,
-                            active_started_at=item.active_started_at,
-                            now=now,
-                        ),
-                        "active_started_at": None,
-                        "waiting_started_at": now,
-                        "updated_at": now,
-                    }
+                return self._mark_waiting_approval_in_transaction(
+                    cur, item_id, lease_token, approval_id, tool_job_id, now,
                 )
-                attempt = attempt.model_copy(
-                    update={
-                        "status": "waiting_approval",
-                        "heartbeat_at": now,
-                        "approval_id": approval_id,
-                        "tool_job_id": tool_job_id,
-                        "active_duration_ms": add_active_duration(
-                            active_duration_ms=attempt.active_duration_ms,
-                            active_started_at=attempt.active_started_at,
-                            now=now,
-                        ),
-                        "active_started_at": None,
-                        "waiting_started_at": now,
-                    }
-                )
-                self._write_item(cur, item)
-                self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(
-                    cur,
-                    item.run_id,
-                    now,
-                    status_deltas=[("running", "waiting_approval")],
-                    active_duration_delta_ms=active_duration_delta_ms,
-                )
+
+    def _mark_waiting_approval_in_transaction(
+        self, cur, item_id: str, lease_token: str, approval_id: str,
+        tool_job_id: str, now: datetime,
+    ) -> TestRunItemRecord:
+        item = self._lock_item(cur, item_id)
+        self._validate_lease(item, lease_token, now, {"running"})
+        attempt = self._lock_attempt(cur, item_id, lease_token)
+        active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
+        item = item.model_copy(
+            update={
+                "status": "waiting_approval",
+                "lease_expires_at": None,
+                "heartbeat_at": now,
+                "approval_id": approval_id,
+                "tool_job_id": tool_job_id,
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=item.active_duration_ms,
+                    active_started_at=item.active_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
+                "waiting_started_at": now,
+                "updated_at": now,
+            }
+        )
+        attempt = attempt.model_copy(
+            update={
+                "status": "waiting_approval",
+                "heartbeat_at": now,
+                "approval_id": approval_id,
+                "tool_job_id": tool_job_id,
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=attempt.active_duration_ms,
+                    active_started_at=attempt.active_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
+                "waiting_started_at": now,
+            }
+        )
+        self._write_item(cur, item)
+        self._write_attempt(cur, attempt)
+        self._refresh_run_in_cursor(
+            cur,
+            item.run_id,
+            now,
+            status_deltas=[("running", "waiting_approval")],
+            active_duration_delta_ms=active_duration_delta_ms,
+        )
         return item
+
+    async def commit_approval_wait(
+        self, item_id: str, lease_token: str, approval: ToolApprovalRequest,
+        job: ToolJobRecord, session_store, job_service,
+    ) -> TestRunItemRecord:
+        item, event = await asyncio.to_thread(
+            self._commit_approval_wait_sync, item_id, lease_token, approval, job,
+            session_store, job_service,
+        )
+        if event is not None:
+            await session_store._publish_hot_event(approval.session_id, event)
+        return item
+
+    def _commit_approval_wait_sync(
+        self, item_id: str, lease_token: str, approval: ToolApprovalRequest,
+        job: ToolJobRecord, session_store, job_service,
+    ) -> tuple[TestRunItemRecord, ExecutionEvent | None]:
+        # Reuse append_event_in_transaction and the existing item/attempt/run
+        # transition so every approval prerequisite commits or rolls back together.
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id FROM {self._settings.database.postgres_session_table} "
+                "WHERE id=%s FOR UPDATE", (approval.session_id,),
+            )
+            if cur.fetchone() is None:
+                raise KeyError(approval.session_id)
+            item = self._lock_item(cur, item_id)
+            if item.lease_token != lease_token:
+                raise ValueError(f"Run item approval lease changed: {item_id}")
+            cur.execute(f"SELECT record FROM {self._run_table} WHERE id=%s", (item.run_id,))
+            run = TestRunRecord.model_validate(cur.fetchone()["record"])
+            if (
+                run.session_id != approval.session_id or job.session_id != approval.session_id
+                or approval.metadata.get("run_item_id") != item_id
+                or job.metadata.get("run_item_id") != item_id
+                or approval.metadata.get("tool_job_id") != job.id
+                or approval.tool_key != job.tool_key
+                or approval.metadata.get("case_version_id") != item.case_version_id
+            ):
+                raise ValueError(f"Run item approval resources do not match: {item_id}")
+            if item.status == "waiting_approval":
+                if item.approval_id != approval.id or item.tool_job_id != job.id:
+                    raise ValueError(f"Run item already waits for another approval: {item_id}")
+                cur.execute(
+                    f"SELECT metadata FROM {self._settings.database.postgres_approval_table} "
+                    "WHERE id=%s AND session_id=%s", (approval.id, approval.session_id),
+                )
+                stored = cur.fetchone()
+                if not stored or stored["metadata"].get("approval_scope_hash") != approval.metadata.get("approval_scope_hash"):
+                    raise ValueError(f"Run item approval scope changed: {item_id}")
+                cur.execute(
+                    f"SELECT session_id, tool_key, input_payload FROM {self._settings.database.postgres_tool_job_table} "
+                    "WHERE id=%s", (job.id,),
+                )
+                stored_job = cur.fetchone()
+                if (
+                    not stored_job or stored_job["session_id"] != job.session_id
+                    or stored_job["tool_key"] != job.tool_key or stored_job["input_payload"] != job.input_payload
+                ):
+                    raise ValueError(f"Run item approval ToolJob missing or changed: {item_id}")
+                return item, None
+            cur.execute("SELECT clock_timestamp() AS now")
+            now = cur.fetchone()["now"].astimezone(UTC)
+            self._validate_lease(item, lease_token, now, {"running"})
+            if item.approval_id or item.tool_job_id:
+                raise ValueError(f"Run item must resume its existing approval: {item_id}")
+            job_service.save_job_in_transaction(cur, job)
+            session_store.save_approval_in_transaction(cur, approval.session_id, approval)
+            waiting = self._mark_waiting_approval_in_transaction(
+                cur, item_id, lease_token, approval.id, job.id, now,
+            )
+            event = ExecutionEvent(
+                id=f"test-run-approval-wait:{approval.id}",
+                type="test_run.item_waiting_approval", session_id=approval.session_id,
+                timestamp=now,
+                payload={"run_id": item.run_id, "run_item_id": item.id, "status": waiting.status},
+            )
+            session_store.append_event_in_transaction(cur, approval.session_id, event)
+            return waiting, event
 
     def _resume_waiting_approval_sync(
         self,

@@ -45,6 +45,21 @@ class ToolJobService:
         attempt: int = 1,
         once_per_call: bool = False,
     ) -> ToolJobRecord:
+        job = self.build_job(
+            tool=tool, call_id=call_id, session_id=session_id, turn_id=turn_id,
+            trace_id=trace_id, input_payload=input_payload, metadata=metadata,
+            attempt=attempt, once_per_call=once_per_call,
+        )
+        if once_per_call:
+            return await self._store.create_job_if_absent(job)
+        return await self._store.save_job(job)
+
+    def build_job(
+        self, tool: ToolDescriptor, call_id: str, session_id: str, turn_id: str,
+        trace_id: str, input_payload: dict[str, Any], metadata: dict[str, Any] | None = None,
+        attempt: int = 1, once_per_call: bool = False,
+    ) -> ToolJobRecord:
+        """Prepare a record without publishing it before its owning transaction."""
         now = datetime.utcnow()
         job = ToolJobRecord(
             id=(
@@ -64,9 +79,16 @@ class ToolJobService:
             updated_at=now,
             metadata=metadata or {},
         )
-        if once_per_call:
-            return await self._store.create_job_if_absent(job)
-        return await self._store.save_job(job)
+        return job
+
+    def supports_approval_transaction(self, settings) -> bool:
+        return (
+            callable(getattr(self._store, "save_job_in_transaction", None))
+            and getattr(self._store, "_settings", None) == settings
+        )
+
+    def save_job_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+        return self._store.save_job_in_transaction(cur, job)
 
     async def mark_running(self, job: ToolJobRecord) -> ToolJobRecord:
         now = datetime.utcnow()

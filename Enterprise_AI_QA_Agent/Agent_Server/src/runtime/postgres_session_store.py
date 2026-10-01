@@ -1537,43 +1537,47 @@ class PostgresSessionStore:
         return _snapshot_from_row(row) if row else None
 
     def _save_approval_sync(self, session_id: str, approval: ToolApprovalRequest) -> None:
-        now = datetime.utcnow()
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_approval_table} (
-                        id, session_id, tool_key, tool_name, reason, status,
-                        created_at, resolved_at, decision_note, metadata
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (id) DO UPDATE SET
-                        session_id = EXCLUDED.session_id,
-                        tool_key = EXCLUDED.tool_key,
-                        tool_name = EXCLUDED.tool_name,
-                        reason = EXCLUDED.reason,
-                        status = EXCLUDED.status,
-                        created_at = EXCLUDED.created_at,
-                        resolved_at = EXCLUDED.resolved_at,
-                        decision_note = EXCLUDED.decision_note,
-                        metadata = EXCLUDED.metadata
-                    """,
-                    (
-                        approval.id,
-                        session_id,
-                        approval.tool_key,
-                        approval.tool_name,
-                        approval.reason,
-                        approval.status.value,
-                        approval.created_at,
-                        approval.resolved_at,
-                        approval.decision_note,
-                        json.dumps(make_json_safe(approval.metadata), ensure_ascii=False),
-                    ),
-                )
-                cur.execute(
-                    f"UPDATE {self._settings.database.postgres_session_table} SET updated_at = %s WHERE id = %s",
-                    (now, session_id),
-                )
+                self.save_approval_in_transaction(cur, session_id, approval)
+
+    def save_approval_in_transaction(self, cur, session_id: str, approval: ToolApprovalRequest) -> None:
+        """Save approval and its session timestamp in the caller's transaction."""
+        now = datetime.utcnow()
+        cur.execute(
+            f"""
+            INSERT INTO {self._settings.database.postgres_approval_table} (
+                id, session_id, tool_key, tool_name, reason, status,
+                created_at, resolved_at, decision_note, metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (id) DO UPDATE SET
+                session_id = EXCLUDED.session_id,
+                tool_key = EXCLUDED.tool_key,
+                tool_name = EXCLUDED.tool_name,
+                reason = EXCLUDED.reason,
+                status = EXCLUDED.status,
+                created_at = EXCLUDED.created_at,
+                resolved_at = EXCLUDED.resolved_at,
+                decision_note = EXCLUDED.decision_note,
+                metadata = EXCLUDED.metadata
+            """,
+            (
+                approval.id,
+                session_id,
+                approval.tool_key,
+                approval.tool_name,
+                approval.reason,
+                approval.status.value,
+                approval.created_at,
+                approval.resolved_at,
+                approval.decision_note,
+                json.dumps(make_json_safe(approval.metadata), ensure_ascii=False),
+            ),
+        )
+        cur.execute(
+            f"UPDATE {self._settings.database.postgres_session_table} SET updated_at = %s WHERE id = %s",
+            (now, session_id),
+        )
 
     def _list_approvals_sync(self, session_id: str) -> list[ToolApprovalRequest]:
         with postgres_connect(self._settings) as conn:

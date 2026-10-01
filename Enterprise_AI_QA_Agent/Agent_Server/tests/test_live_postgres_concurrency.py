@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from contextlib import asynccontextmanager
 import math
 import multiprocessing
 import os
 import queue as queue_module
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from time import perf_counter
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -31,6 +33,262 @@ from src.schemas.run_management import (
 from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, ToolApprovalStatus
 from src.schemas.memory import MemoryWriteRequest
 from tests.live_postgres_config import LivePostgresTestConfig
+
+
+@asynccontextmanager
+async def _approval_suspension_harness(*, start=True):
+    from src.application.permissions.permission_service import PermissionService
+    from src.application.runtime.tool_runtime_service import ToolExecutionContext
+    from src.application.test_runs.execution_service import TestRunExecutionService
+    from src.application.test_runs.run_service import TestRunService
+    from src.schemas.agent import ToolDescriptor
+    from src.schemas.tool_runtime import ModelToolCall
+
+    suffix = uuid4().hex[:10]
+    fields = [
+        "session", "message", "event", "snapshot", "approval", "tool_job", "tool_artifact",
+        "test_run", "test_run_item", "test_run_attempt",
+    ]
+    overrides = {f"postgres_{name}_table": f"approval_{name}_{suffix}" for name in fields}
+    settings = _settings_with_database_overrides(**overrides)
+    sessions, jobs_store = PostgresSessionStore(settings), PostgresToolJobStore(settings)
+    runs_store = PostgresTestRunStore(settings)
+    jobs = ToolJobService(jobs_store)
+    runs = TestRunService(
+        store=runs_store, project_service=None, suite_service=None, test_case_service=None,
+        session_store=sessions, tool_job_service=jobs,
+    )
+    now = datetime.now(UTC)
+    run = _RunRecord(
+        id=str(uuid4()), project_id=str(uuid4()), suite_id=str(uuid4()),
+        mode_key="security_testing", session_id=f"approval-session-{suffix}",
+        stats={"total": 1, "queued": 1}, created_at=now, updated_at=now,
+    )
+    item = _RunItemRecord(
+        id=str(uuid4()), run_id=run.id, case_id=str(uuid4()), case_version_id=str(uuid4()),
+        position=1, created_at=now, updated_at=now,
+    )
+    tool = ToolDescriptor(
+        key="security-scan-runner", name="Security Scan Runner", description="approval test",
+        category="execution", owner_mode_key="security_testing",
+    )
+    version = SimpleNamespace(
+        id=item.case_version_id,
+        test_data={"runner_arguments": {
+            "command_profile": "hydra_basic_login", "target": "https://example.test",
+        }},
+    )
+
+    class Adapter:
+        def build_invocation(self, **kwargs):
+            call = ModelToolCall(
+                id=f"test-run-item:{item.id}:attempt:{kwargs['item'].attempt_no}",
+                name=tool.key, arguments=version.test_data["runner_arguments"],
+            )
+            return SimpleNamespace(
+                tool=tool, call=call,
+                context=ToolExecutionContext(
+                    session_id=run.session_id, turn_id=call.id, trace_id="approval-trace",
+                    user_message="approval test", normalized_input="approval test",
+                    context_bundle=kwargs["trusted_context_bundle"],
+                ),
+            )
+
+        async def execute(self, **kwargs):
+            raise AssertionError("runner must not execute while requesting approval")
+
+    class Cases:
+        async def get_case(self, case_id):
+            return SimpleNamespace(id=item.case_id)
+
+        async def get_version(self, version_id):
+            return version
+
+    execution = TestRunExecutionService(
+        run_service=runs, test_case_service=Cases(), adapter=Adapter(),
+        session_store=sessions, permission_service=PermissionService(), tool_job_service=jobs,
+        security_settings=settings.model_copy(update={"security": settings.security.model_copy(
+            update={"security_target_allowlist": "example.test"},
+        )}),
+    )
+    try:
+        _create_claim_tables(settings)
+        await sessions.initialize()
+        await jobs_store.initialize()
+        await sessions.save_session(SessionRecord(
+            id=run.session_id, title="approval suspension", status=SessionStatus.idle,
+            session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive,
+            mode_key="security_testing", created_at=now, updated_at=now,
+        ))
+        await runs_store.create_run(run, [item])
+        [(claimed, _)] = await runs_store.claim_items(
+            run_id=run.id, worker_id="approval-worker", limit=1, lease_seconds=120, now=now,
+        )
+        item = await runs_store.start_item(item.id, claimed.lease_token, now) if start else claimed
+        yield SimpleNamespace(
+            settings=settings, sessions=sessions, jobs=jobs, jobs_store=jobs_store,
+            runs=runs, runs_store=runs_store, execution=execution, run=run, item=item,
+            case=SimpleNamespace(id=item.case_id), version=version,
+        )
+    finally:
+        _drop_tables(settings, list(reversed(list(overrides.values()))))
+
+
+async def _request_item_approval(h):
+    return await h.execution._suspend_for_approval_if_required(
+        run=h.run, case=h.case, version=h.version, item=h.item,
+        lease_token=h.item.lease_token, trusted_context_bundle={}, approved_approval_id=None,
+    )
+
+
+@pytest.mark.skipif(
+    not LivePostgresTestConfig().run_live_postgres_tests,
+    reason="requires real PostgreSQL",
+)
+@pytest.mark.asyncio
+async def test_live_approval_suspension_failure_does_not_leave_orphan_resources(monkeypatch):
+    async with _approval_suspension_harness() as h:
+        write_attempt = h.runs_store._write_attempt
+
+        def fail_waiting_attempt(cur, attempt):
+            if attempt.status == "waiting_approval":
+                raise RuntimeError("injected approval attempt write failure")
+            return write_attempt(cur, attempt)
+
+        monkeypatch.setattr(h.runs_store, "_write_attempt", fail_waiting_attempt)
+        with pytest.raises(RuntimeError, match="injected approval attempt"):
+            await _request_item_approval(h)
+        assert (await h.runs_store.get_item(h.item.id)).status == "running"
+        assert await h.sessions.list_approvals(h.run.session_id) == []
+        assert await h.jobs.list_jobs(h.run.session_id) == []
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests, reason="requires real PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["job", "approval", "run_stats", "event"])
+async def test_live_approval_suspension_rolls_back_every_committed_prerequisite(monkeypatch, stage):
+    async with _approval_suspension_harness() as h:
+        published = []
+
+        class HotProjectionProbe:
+            async def append_event(self, session_id, event):
+                assert (await h.runs_store.get_item(h.item.id)).status == "waiting_approval"
+                assert len(await h.sessions.list_approvals(session_id)) == 1
+                assert len(await h.jobs.list_jobs(session_id)) == 1
+                published.append(event)
+
+        h.sessions.set_hot_memory_store(HotProjectionProbe())
+        target, name = {
+            "job": (h.jobs_store, "save_job_in_transaction"),
+            "approval": (h.sessions, "save_approval_in_transaction"),
+            "run_stats": (h.runs_store, "_refresh_run_in_cursor"),
+            "event": (h.sessions, "append_event_in_transaction"),
+        }[stage]
+        original = getattr(target, name)
+
+        def write_then_fail(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError(f"injected {stage} transaction failure")
+
+        monkeypatch.setattr(target, name, write_then_fail)
+        with pytest.raises(RuntimeError, match=f"injected {stage}"):
+            await _request_item_approval(h)
+        assert await h.sessions.list_approvals(h.run.session_id) == []
+        assert await h.jobs.list_jobs(h.run.session_id) == []
+        assert (await h.runs_store.get_item(h.item.id)).status == "running"
+        assert (await h.runs_store.get_latest_attempt(h.item.id)).status == "running"
+        run = await h.runs_store.get_run_record(h.run.id)
+        assert run.stats.running == 1 and run.stats.waiting_approval == 0
+        assert (await h.sessions.get_session(h.run.session_id)).event_count == 0
+        assert published == []
+        monkeypatch.setattr(target, name, original)
+        pending = await _request_item_approval(h)
+        assert pending.status == "waiting_approval"
+        assert len(await h.sessions.list_approvals(h.run.session_id)) == 1
+        assert len(await h.jobs.list_jobs(h.run.session_id)) == 1
+        assert len(published) == 1 and published[0]["type"] == "test_run.item_waiting_approval"
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests, reason="requires real PostgreSQL")
+@pytest.mark.asyncio
+async def test_live_concurrent_approval_suspensions_commit_once_and_preserve_decision():
+    async with _approval_suspension_harness() as h:
+        first, second = await asyncio.gather(_request_item_approval(h), _request_item_approval(h))
+        assert first.approval_id == second.approval_id and first.tool_job_id == second.tool_job_id
+        assert len(await h.sessions.list_approvals(h.run.session_id)) == 1
+        assert len(await h.jobs.list_jobs(h.run.session_id)) == 1
+        assert (await h.sessions.get_session(h.run.session_id)).event_count == 1
+        run = await h.runs_store.get_run_record(h.run.id)
+        assert run.stats.waiting_approval == 1 and run.stats.running == 0
+        await h.sessions.resolve_approval(h.run.session_id, first.approval_id, ToolApprovalStatus.approved)
+        assert (await _request_item_approval(h)).approval_id == first.approval_id
+        assert (await h.sessions.list_approvals(h.run.session_id))[0].status == ToolApprovalStatus.approved
+        h.version.test_data["runner_arguments"]["target"] = "https://changed.example.test"
+        with pytest.raises(ValueError, match="scope changed"):
+            await _request_item_approval(h)
+        assert (await h.sessions.list_approvals(h.run.session_id))[0].status == ToolApprovalStatus.approved
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests, reason="requires real PostgreSQL")
+@pytest.mark.asyncio
+async def test_live_committed_approval_receipt_loss_replays_through_execution_entry(monkeypatch):
+    from src.schemas.run_management import RunItemExecuteRequest
+
+    async with _approval_suspension_harness() as h:
+        original = h.runs_store.commit_approval_wait
+
+        async def commit_then_lose_receipt(*args, **kwargs):
+            await original(*args, **kwargs)
+            raise ConnectionError("injected committed approval receipt loss")
+
+        monkeypatch.setattr(h.runs_store, "commit_approval_wait", commit_then_lose_receipt)
+        with pytest.raises(ConnectionError, match="receipt loss"):
+            await _request_item_approval(h)
+        monkeypatch.setattr(h.runs_store, "commit_approval_wait", original)
+        pending = await h.execution.execute_item(
+            h.item.id, RunItemExecuteRequest(lease_token=h.item.lease_token),
+        )
+        approvals, jobs = await h.sessions.list_approvals(h.run.session_id), await h.jobs.list_jobs(h.run.session_id)
+        assert len(approvals) == len(jobs) == 1
+        assert pending.approval_id == approvals[0].id and pending.tool_job_id == jobs[0].id
+        assert (await h.sessions.get_session(h.run.session_id)).event_count == 1
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests, reason="requires real PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["expired", "wrong_owner", "wrong_case"])
+async def test_live_approval_wait_rejects_invalid_identity_before_resource_writes(invalid):
+    async with _approval_suspension_harness() as h:
+        if invalid == "expired":
+            expired = h.item.model_copy(update={"lease_expires_at": datetime.now(UTC)-timedelta(seconds=1)})
+            with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                h.runs_store._write_item(cur, expired)
+        elif invalid == "wrong_owner":
+            h.item = h.item.model_copy(update={"lease_token": "stale-lease"})
+        else:
+            h.version.id = str(uuid4())
+        with pytest.raises(ValueError):
+            await _request_item_approval(h)
+        assert await h.sessions.list_approvals(h.run.session_id) == []
+        assert await h.jobs.list_jobs(h.run.session_id) == []
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests, reason="requires real PostgreSQL")
+@pytest.mark.asyncio
+async def test_live_approval_wait_uses_the_formal_execution_entry_without_runner():
+    from src.schemas.run_management import RunItemExecuteRequest
+
+    async with _approval_suspension_harness(start=False) as h:
+        pending = await h.execution.execute_item(
+            h.item.id, RunItemExecuteRequest(lease_token=h.item.lease_token),
+        )
+        assert pending.status == "waiting_approval"
+        assert (await h.runs_store.get_item(h.item.id)).approval_id == pending.approval_id
+        assert (await h.jobs.get_job(pending.tool_job_id)).metadata["approval_id"] == pending.approval_id
+        assert (await h.sessions.get_session(h.run.session_id)).event_count == 2
+        events = await h.sessions.list_events(h.run.session_id)
+        assert events[-1].type == "test_run.item_waiting_approval"
+        assert events[-1].payload["run_item_id"] == h.item.id
 
 
 LIVE_POSTGRES = LivePostgresTestConfig().run_live_postgres_tests

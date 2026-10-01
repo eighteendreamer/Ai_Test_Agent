@@ -194,61 +194,65 @@ class PostgresToolJobStore:
     def _save_job_sync(self, job: ToolJobRecord) -> ToolJobRecord:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_tool_job_table} (
-                        id, session_id, turn_id, trace_id, call_id, tool_key, tool_name, status,
-                        attempt, summary, error_message, artifact_count, input_payload, output_payload,
-                        metadata, created_at, updated_at, heartbeat_at, started_at, completed_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s::jsonb, %s::jsonb,
-                        %s::jsonb, %s, %s, %s, %s, %s
-                    )
-                    ON CONFLICT (id) DO UPDATE SET
-                        session_id = EXCLUDED.session_id,
-                        turn_id = EXCLUDED.turn_id,
-                        trace_id = EXCLUDED.trace_id,
-                        call_id = EXCLUDED.call_id,
-                        tool_key = EXCLUDED.tool_key,
-                        tool_name = EXCLUDED.tool_name,
-                        status = EXCLUDED.status,
-                        attempt = EXCLUDED.attempt,
-                        summary = EXCLUDED.summary,
-                        error_message = EXCLUDED.error_message,
-                        artifact_count = EXCLUDED.artifact_count,
-                        input_payload = EXCLUDED.input_payload,
-                        output_payload = EXCLUDED.output_payload,
-                        metadata = EXCLUDED.metadata,
-                        created_at = EXCLUDED.created_at,
-                        updated_at = EXCLUDED.updated_at,
-                        heartbeat_at = EXCLUDED.heartbeat_at,
-                        started_at = EXCLUDED.started_at,
-                        completed_at = EXCLUDED.completed_at
-                    """,
-                    (
-                        job.id,
-                        job.session_id,
-                        job.turn_id,
-                        job.trace_id,
-                        job.call_id,
-                        job.tool_key,
-                        job.tool_name,
-                        job.status.value,
-                        job.attempt,
-                        job.summary,
-                        job.error_message,
-                        job.artifact_count,
-                        json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
-                        json.dumps(make_json_safe(job.output_payload), ensure_ascii=False),
-                        json.dumps(make_json_safe(job.metadata), ensure_ascii=False),
-                        job.created_at,
-                        job.updated_at,
-                        job.heartbeat_at,
-                        job.started_at,
-                        job.completed_at,
-                    ),
-                )
+                return self.save_job_in_transaction(cur, job)
+
+    def save_job_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+        """Save using the caller's transaction, without committing independently."""
+        cur.execute(
+            f"""
+            INSERT INTO {self._settings.database.postgres_tool_job_table} (
+                id, session_id, turn_id, trace_id, call_id, tool_key, tool_name, status,
+                attempt, summary, error_message, artifact_count, input_payload, output_payload,
+                metadata, created_at, updated_at, heartbeat_at, started_at, completed_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s::jsonb, %s::jsonb,
+                %s::jsonb, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                session_id = EXCLUDED.session_id,
+                turn_id = EXCLUDED.turn_id,
+                trace_id = EXCLUDED.trace_id,
+                call_id = EXCLUDED.call_id,
+                tool_key = EXCLUDED.tool_key,
+                tool_name = EXCLUDED.tool_name,
+                status = EXCLUDED.status,
+                attempt = EXCLUDED.attempt,
+                summary = EXCLUDED.summary,
+                error_message = EXCLUDED.error_message,
+                artifact_count = EXCLUDED.artifact_count,
+                input_payload = EXCLUDED.input_payload,
+                output_payload = EXCLUDED.output_payload,
+                metadata = EXCLUDED.metadata,
+                created_at = EXCLUDED.created_at,
+                updated_at = EXCLUDED.updated_at,
+                heartbeat_at = EXCLUDED.heartbeat_at,
+                started_at = EXCLUDED.started_at,
+                completed_at = EXCLUDED.completed_at
+            """,
+            (
+                job.id,
+                job.session_id,
+                job.turn_id,
+                job.trace_id,
+                job.call_id,
+                job.tool_key,
+                job.tool_name,
+                job.status.value,
+                job.attempt,
+                job.summary,
+                job.error_message,
+                job.artifact_count,
+                json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
+                json.dumps(make_json_safe(job.output_payload), ensure_ascii=False),
+                json.dumps(make_json_safe(job.metadata), ensure_ascii=False),
+                job.created_at,
+                job.updated_at,
+                job.heartbeat_at,
+                job.started_at,
+                job.completed_at,
+            ),
+        )
         return job
 
     def _get_job_sync(self, job_id: str) -> ToolJobRecord | None:

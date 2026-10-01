@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import logging
 from datetime import datetime, timezone
 from time import monotonic
+from uuid import NAMESPACE_URL, uuid5
 
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.tool_job_service import ToolJobService
@@ -42,6 +43,7 @@ from src.schemas.session import (
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
+from src.schemas.tool_job import ToolJobStatus
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,18 @@ class TestRunExecutionService:
         payload: RunItemExecuteRequest,
     ) -> TestCaseResultRecord | RunItemApprovalPending:
         execution_clock = monotonic()
+        if getattr(self._runs, "supports_atomic_approval_wait", False) and not payload.approval_id:
+            current = await self._runs.get_item(item_id)
+            if current.status == "waiting_approval" and current.lease_token == payload.lease_token:
+                logger.info("test_run_approval_wait_receipt_replayed", extra={
+                    "run_id": current.run_id, "run_item_id": item_id,
+                    "approval_id": current.approval_id, "tool_job_id": current.tool_job_id,
+                })
+                return RunItemApprovalPending(
+                    run_id=current.run_id, run_item_id=item_id, attempt_no=current.attempt_no,
+                    approval_id=current.approval_id, tool_job_id=current.tool_job_id,
+                    summary="Security test run item is waiting for its existing approval.",
+                )
         item = await self._runs.start_item(
             item_id,
             RunItemLeaseRequest(lease_token=payload.lease_token),
@@ -949,20 +963,25 @@ class TestRunExecutionService:
             f"Security profile {profile_key} requires explicit approval before "
             f"test run item execution."
         )
-        job = await self._jobs.create_job(
-            tool=invocation.tool,
-            call_id=invocation.call.id,
-            session_id=invocation.context.session_id,
-            turn_id=invocation.context.turn_id,
-            trace_id=invocation.context.trace_id,
-            input_payload=invocation.call.arguments,
-            metadata={
+        atomic_wait = bool(getattr(self._runs, "supports_atomic_approval_wait", False))
+        job_arguments = {
+            "tool": invocation.tool,
+            "call_id": invocation.call.id,
+            "session_id": invocation.context.session_id,
+            "turn_id": invocation.context.turn_id,
+            "trace_id": invocation.context.trace_id,
+            "input_payload": invocation.call.arguments,
+            "metadata": {
                 "phase": "approval_pending",
                 "source": "test_run_case_execution",
                 "run_id": run.id,
                 "run_item_id": item.id,
                 "case_version_id": version.id,
             },
+        }
+        job = (
+            self._jobs.build_job(**job_arguments, once_per_call=True)
+            if atomic_wait else await self._jobs.create_job(**job_arguments)
         )
         scope_hash = self._approval_scope.build_hash(
             mode_key=run.mode_key,
@@ -986,26 +1005,36 @@ class TestRunExecutionService:
                 "approval_scope_hash": scope_hash,
             },
         )
-        await self._sessions.save_approval(run.session_id, approval)
-        await self._jobs.mark_waiting_approval(
-            job.id,
-            summary=reason,
-            metadata={
-                "approval_id": approval.id,
-                "approval_scope_hash": scope_hash,
-                "run_item_id": item.id,
-            },
-        )
-        waiting = await self._runs.mark_waiting_approval(
-            item.id,
-            RunItemApprovalWaitRequest(
-                lease_token=lease_token,
-                approval_id=approval.id,
-                tool_job_id=job.id,
-                reason=reason,
-                approval_scope_hash=scope_hash,
-            ),
-        )
+        job_metadata = {
+            "approval_id": approval.id, "approval_scope_hash": scope_hash, "run_item_id": item.id,
+        }
+        if atomic_wait:
+            approval.id = str(uuid5(NAMESPACE_URL, f"test-run-approval:{job.id}"))
+            job_metadata["approval_id"] = approval.id
+            job.status = ToolJobStatus.waiting_approval
+            job.summary = reason
+            job.metadata.update(job_metadata)
+            waiting = await self._runs.commit_approval_wait(item.id, lease_token, approval, job)
+        else:
+            logger.warning("test_run_approval_wait_non_atomic_compatibility", extra={
+                "run_id": run.id, "run_item_id": item.id,
+            })
+            await self._sessions.save_approval(run.session_id, approval)
+            await self._jobs.mark_waiting_approval(
+                job.id,
+                summary=reason,
+                metadata=job_metadata,
+            )
+            waiting = await self._runs.mark_waiting_approval(
+                item.id,
+                RunItemApprovalWaitRequest(
+                    lease_token=lease_token,
+                    approval_id=approval.id,
+                    tool_job_id=job.id,
+                    reason=reason,
+                    approval_scope_hash=scope_hash,
+                ),
+            )
         logger.info(
             "security_test_run_item_approval_created",
             extra={
