@@ -99,6 +99,7 @@ class StorageConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     upload_scan_max_bytes: int = 10 * 1024 * 1024
+    data_import_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     upload_scan_medium_risk_threshold: int = 30
     upload_scan_high_risk_threshold: int = 70
 

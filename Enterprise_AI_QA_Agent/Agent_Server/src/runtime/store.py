@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Callable, Protocol
 
-from src.domain.models import SessionRecord
+from src.domain.models import SessionImportBundle, SessionRecord
 from src.schemas.session import (
     ExecutionEvent,
     SessionMode,
@@ -24,6 +24,50 @@ class ContinuationLeaseLostError(RuntimeError):
 
 class EventCursorNotFoundError(ValueError):
     """The SSE cursor is absent from the requested session's durable history."""
+
+
+def validate_session_import_bundle(bundle: SessionImportBundle) -> None:
+    session_id = bundle.session.id
+    if not isinstance(session_id, str):
+        raise TypeError("Imported session ID must be a string.")
+    if not session_id.strip():
+        raise ValueError("Imported session ID must be a non-empty string.")
+
+    children = (
+        ("message", bundle.session.messages, False),
+        ("event", bundle.events, True),
+        ("snapshot", bundle.snapshots, True),
+        ("approval", bundle.approvals, True),
+    )
+    for label, records, has_session_id in children:
+        seen: set[str] = set()
+        for record in records:
+            if has_session_id and record.session_id != session_id:
+                raise ValueError(f"Imported {label} belongs to a different session.")
+            record_id = record.id
+            if not isinstance(record_id, str):
+                raise TypeError(f"Imported {label} ID must be a string.")
+            if not record_id.strip():
+                raise ValueError(f"Imported {label} ID must be a non-empty string.")
+            if record_id in seen:
+                raise ValueError(f"Imported session contains duplicate {label} IDs.")
+            seen.add(record_id)
+
+    versions = [snapshot.version for snapshot in bundle.snapshots]
+    if any(type(version) is not int for version in versions):
+        raise TypeError("Imported snapshot versions must be integers.")
+    if any(version < 1 or version > 2_147_483_647 for version in versions):
+        raise ValueError("Imported snapshot versions must be positive PostgreSQL integers.")
+    if len(versions) != len(set(versions)):
+        raise ValueError("Imported session contains duplicate snapshot versions.")
+    for field_name, count in (
+        ("event_count", bundle.session.event_count),
+        ("snapshot_count", bundle.session.snapshot_count),
+    ):
+        if type(count) is not int:
+            raise TypeError(f"Imported {field_name} must be an integer.")
+        if count < 0 or count > 2_147_483_647:
+            raise ValueError(f"Imported {field_name} must be a non-negative PostgreSQL integer.")
 
 
 class SessionStore(Protocol):
@@ -45,6 +89,9 @@ class SessionStore(Protocol):
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
     ) -> SessionRecord: ...
+    async def import_session_bundles(
+        self, bundles: list[SessionImportBundle]
+    ) -> tuple[int, int]: ...
     async def get_session(self, session_id: str) -> SessionRecord | None: ...
     async def mutate_metadata(
         self, session_id: str, mutate: Callable[[dict], None]
@@ -201,6 +248,61 @@ class InMemorySessionStore:
 
     async def initialize(self) -> None:
         return None
+
+    async def import_session_bundles(
+        self, bundles: list[SessionImportBundle]
+    ) -> tuple[int, int]:
+        async with self._lock:
+            staged: list[SessionImportBundle] = []
+            skipped = 0
+            seen_sessions: set[str] = set()
+            seen_child_ids: dict[str, set[str]] = {
+                "message": set(),
+                "event": set(),
+                "snapshot": set(),
+                "approval": set(),
+            }
+
+            for bundle in bundles:
+                session_id = bundle.session.id
+                if session_id in self._sessions or session_id in seen_sessions:
+                    skipped += 1
+                    continue
+
+                validate_session_import_bundle(bundle)
+                for label, records in (
+                    ("message", bundle.session.messages),
+                    ("event", bundle.events),
+                    ("snapshot", bundle.snapshots),
+                    ("approval", bundle.approvals),
+                ):
+                    record_ids = {record.id for record in records}
+                    if record_ids & seen_child_ids[label]:
+                        raise ValueError(f"Imported backup contains duplicate {label} IDs.")
+                    seen_child_ids[label].update(record_ids)
+
+                seen_sessions.add(session_id)
+                bundle.session.event_count = max(
+                    bundle.session.event_count,
+                    len(bundle.events),
+                )
+                bundle.session.snapshot_count = max(
+                    bundle.session.snapshot_count,
+                    max((snapshot.version for snapshot in bundle.snapshots), default=0),
+                )
+                staged.append(bundle)
+
+            # All validation and duplicate checks finish before any visible state changes.
+            for bundle in staged:
+                session_id = bundle.session.id
+                self._sessions[session_id] = bundle.session
+                self._events[session_id] = list(bundle.events)
+                self._snapshots[session_id] = list(bundle.snapshots)
+                self._approvals[session_id] = {
+                    approval.id: approval for approval in bundle.approvals
+                }
+
+            return len(staged), skipped
 
     async def save_session(
         self,

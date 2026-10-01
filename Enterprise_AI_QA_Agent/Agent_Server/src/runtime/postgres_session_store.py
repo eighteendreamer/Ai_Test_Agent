@@ -8,9 +8,15 @@ from datetime import datetime
 from typing import Callable
 
 from src.core.config import Settings
-from src.domain.models import SessionRecord
+from src.core.request_context import get_request_context
+from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
+from src.runtime.store import (
+    ContinuationLeaseLostError,
+    EventCursorNotFoundError,
+    validate_session_import_bundle,
+)
 from src.schemas.session import (
     ChatMessage,
     ExecutionEvent,
@@ -23,8 +29,6 @@ from src.schemas.session import (
     ToolApprovalStatus,
 )
 from src.schemas.task_pool import TaskPoolSessionSummary
-from src.runtime.store import ContinuationLeaseLostError, EventCursorNotFoundError
-from src.core.request_context import get_request_context
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +90,11 @@ class PostgresSessionStore:
         for event in inserted:
             await self._publish_hot_event(session.id, event)
         return session
+
+    async def import_session_bundles(
+        self, bundles: list[SessionImportBundle]
+    ) -> tuple[int, int]:
+        return await asyncio.to_thread(self._import_session_bundles_sync, bundles)
 
     def create_session_in_transaction(self, cur, session: SessionRecord) -> bool:
         """Insert a new session as part of a caller-owned PostgreSQL transaction."""
@@ -608,6 +617,148 @@ class PostgresSessionStore:
                     continuation_lease_token, turn_lease_token,
                 )
         return session
+
+    def _import_session_bundles_sync(
+        self, bundles: list[SessionImportBundle]
+    ) -> tuple[int, int]:
+        """Restore session rows and all children in one PostgreSQL transaction."""
+        if not bundles:
+            return 0, 0
+
+        seen_sessions: set[str] = set()
+        child_ids: dict[str, dict[str, str]] = {
+            "message": {},
+            "event": {},
+            "snapshot": {},
+            "approval": {},
+        }
+        for bundle in bundles:
+            session_id = bundle.session.id
+            if session_id in seen_sessions:
+                continue
+            validate_session_import_bundle(bundle)
+            for label, records in (
+                ("message", bundle.session.messages),
+                ("event", bundle.events),
+                ("snapshot", bundle.snapshots),
+                ("approval", bundle.approvals),
+            ):
+                for record in records:
+                    existing_owner = child_ids[label].get(record.id)
+                    if existing_owner is not None and existing_owner != session_id:
+                        raise ValueError(f"Imported backup contains duplicate {label} IDs.")
+                    child_ids[label][record.id] = session_id
+            seen_sessions.add(session_id)
+
+        imported = 0
+        skipped = 0
+        message_table = self._settings.database.postgres_message_table
+        event_table = self._settings.database.postgres_event_table
+        snapshot_table = self._settings.database.postgres_snapshot_table
+        approval_table = self._settings.database.postgres_approval_table
+
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            for bundle in bundles:
+                session = bundle.session
+                session.event_count = max(session.event_count, len(bundle.events))
+                session.snapshot_count = max(
+                    session.snapshot_count,
+                    max((snapshot.version for snapshot in bundle.snapshots), default=0),
+                )
+                if not self.create_session_in_transaction(cur, session):
+                    skipped += 1
+                    continue
+
+                for message in session.messages:
+                    cur.execute(
+                        f"""
+                        INSERT INTO {message_table} (
+                            id, session_id, role, content, created_at, metadata
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (
+                            message.id,
+                            session.id,
+                            message.role.value,
+                            message.content,
+                            message.created_at,
+                            json.dumps(make_json_safe(message.metadata), ensure_ascii=False),
+                        ),
+                    )
+
+                for event in bundle.events:
+                    event_payload = dict(event.payload)
+                    context_fields = {
+                        name: getattr(event, name)
+                        for name in (
+                            "request_id",
+                            "trace_id",
+                            "turn_id",
+                            "run_id",
+                            "run_item_id",
+                            "attempt_id",
+                            "worker_id",
+                            "resource_id",
+                        )
+                        if getattr(event, name) is not None
+                    }
+                    if context_fields:
+                        event_payload["_harness_context"] = context_fields
+                    cur.execute(
+                        f"""
+                        INSERT INTO {event_table} (id, session_id, type, timestamp, payload)
+                        VALUES (%s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (
+                            event.id,
+                            session.id,
+                            event.type,
+                            event.timestamp,
+                            json.dumps(make_json_safe(event_payload), ensure_ascii=False),
+                        ),
+                    )
+
+                for snapshot in bundle.snapshots:
+                    cur.execute(
+                        f"""
+                        INSERT INTO {snapshot_table} (
+                            id, session_id, version, stage, created_at, graph_state
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (
+                            snapshot.id,
+                            session.id,
+                            snapshot.version,
+                            snapshot.stage,
+                            snapshot.created_at,
+                            json.dumps(make_json_safe(snapshot.graph_state), ensure_ascii=False),
+                        ),
+                    )
+
+                for approval in bundle.approvals:
+                    cur.execute(
+                        f"""
+                        INSERT INTO {approval_table} (
+                            id, session_id, tool_key, tool_name, reason, status,
+                            created_at, resolved_at, decision_note, metadata
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        """,
+                        (
+                            approval.id,
+                            session.id,
+                            approval.tool_key,
+                            approval.tool_name,
+                            approval.reason,
+                            approval.status.value,
+                            approval.created_at,
+                            approval.resolved_at,
+                            approval.decision_note,
+                            json.dumps(make_json_safe(approval.metadata), ensure_ascii=False),
+                        ),
+                    )
+                imported += 1
+
+        return imported, skipped
 
     def _save_session_with_events_sync(
         self,

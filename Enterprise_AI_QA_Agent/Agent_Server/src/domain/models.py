@@ -4,7 +4,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.schemas.session import ChatMessage, RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import (
+    ChatMessage,
+    ExecutionEvent,
+    RuntimeMode,
+    SessionMode,
+    SessionSnapshot,
+    SessionStatus,
+    ToolApprovalRequest,
+)
 
 
 @dataclass
@@ -24,3 +32,13 @@ class SessionRecord:
     messages: list[ChatMessage] = field(default_factory=list)
     event_count: int = 0
     snapshot_count: int = 0
+
+
+@dataclass
+class SessionImportBundle:
+    """A complete session and its persisted child records for backup restore."""
+
+    session: SessionRecord
+    events: list[ExecutionEvent] = field(default_factory=list)
+    snapshots: list[SessionSnapshot] = field(default_factory=list)
+    approvals: list[ToolApprovalRequest] = field(default_factory=list)
