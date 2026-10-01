@@ -25,7 +25,8 @@ vi.mock("@vue-flow/core", async () => {
     }),
     VueFlow: defineComponent({
       name: "VueFlow",
-      emits: ["init", "update:nodes", "update:edges"],
+      props: ["nodes", "edges"],
+      emits: ["init", "update:nodes", "update:edges", "nodeDragStop"],
       setup(_, { emit, slots }) {
         onMounted(() => {
           emit("init", {
@@ -45,6 +46,7 @@ vi.mock("@vue-flow/core", async () => {
 });
 
 import FlowCanvas from "./FlowCanvas.vue";
+import { loadSavedPositions } from "./layout";
 
 function mountCanvas() {
   return mount(FlowCanvas, {
@@ -76,10 +78,31 @@ function dispatchWheel(
 
 describe("FlowCanvas wheel viewport controls", () => {
   beforeEach(() => {
+    localStorage.clear();
     flowStore.fitView.mockClear();
     flowStore.getViewport.mockClear();
     flowStore.getViewport.mockReturnValue({ x: 100, y: 200, zoom: 1 });
     flowStore.setViewport.mockClear();
+  });
+
+  it("publishes graph updates and retains dragged positions across status and selection changes", async () => {
+    const wrapper = mountCanvas();
+    await wrapper.setProps({ stages: [{ id: "planner", phase: "planner", status: "running" }] });
+    const flow = wrapper.findComponent({ name: "VueFlow" });
+    expect(flow.props("nodes")).toEqual([
+      expect.objectContaining({ id: "planner", data: expect.objectContaining({ status: "running" }) }),
+    ]);
+
+    flow.vm.$emit("nodeDragStop", { node: { id: "planner", position: { x: 500, y: 600 } } });
+    await wrapper.setProps({ selectedNodeId: "planner" });
+    expect(loadSavedPositions("session-1", "turn-1").planner).toEqual({ x: 500, y: 600 });
+    expect(flow.props("nodes")[0]).toMatchObject({ selected: true, position: { x: 500, y: 600 } });
+
+    await wrapper.setProps({ stages: [{ id: "planner", phase: "planner", status: "done" }] });
+    expect(flow.props("nodes")[0]).toMatchObject({
+      position: { x: 500, y: 600 }, data: { status: "done" },
+    });
+    wrapper.unmount();
   });
 
   it("routes wheel modifiers to vertical pan, horizontal pan, and cursor zoom", async () => {

@@ -707,7 +707,8 @@ async function deleteModel(item: ModelConfigPublic) {
             <label class="settings-provider-field">
               <span>{{ t("modelSettings.transport") }}</span>
               <DropdownSelect
-                v-model="modelDraft.transport"
+                :model-value="modelDraft.transport ?? null"
+                @update:model-value="(value) => { modelDraft.transport = value === null ? null : String(value); }"
                 button-class="settings-provider-select"
                 menu-class="settings-provider-select-menu"
                 :options="TRANSPORT_OPTIONS"
@@ -733,7 +734,7 @@ async function deleteModel(item: ModelConfigPublic) {
             <label class="full settings-provider-field">
               <span>{{ t("modelSettings.oauth_provider") }}</span>
               <DropdownSelect
-                :model-value="modelDraft.oauth_provider"
+                :model-value="modelDraft.oauth_provider ?? null"
                 button-class="settings-provider-select"
                 menu-class="settings-provider-select-menu"
                 :options="oauthProviderOptions"

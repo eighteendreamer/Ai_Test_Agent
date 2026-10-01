@@ -42,7 +42,7 @@ const plans = computed(() => {
         cases,
       };
     })
-    .filter((item): item is NonNullable<typeof item> => Boolean(item?.planId) && Number.isInteger(item.version) && item.version > 0)
+    .filter((item): item is NonNullable<typeof item> => item !== null && Boolean(item.planId) && Number.isInteger(item.version) && item.version > 0)
     .slice(0, 3);
 });
 

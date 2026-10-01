@@ -202,7 +202,7 @@ export interface ApiTestingTaskEvent {
 // Helper: detect if a tool output is from api-test-runner
 // ---------------------------------------------------------------------------
 
-export function isApiTestRunnerOutput(output: Record<string, unknown>): output is ApiTestRunnerOutput {
+export function isApiTestRunnerOutput(output: Record<string, unknown>): output is ApiTestRunnerOutput & Record<string, unknown> {
   return (
     typeof output.phase === "string" &&
     typeof output.summary === "string" &&

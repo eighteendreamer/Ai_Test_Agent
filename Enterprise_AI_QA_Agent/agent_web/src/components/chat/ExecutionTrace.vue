@@ -54,7 +54,7 @@ const groups = computed<TraceGroup[]>(() => {
   );
 
   const latestSummary = (events: ExecutionEvent[], fallback: string) => {
-    const latest = events.at(-1);
+    const latest = events[events.length - 1];
     const summary = String(latest?.payload?.summary || latest?.payload?.message || "").trim();
     return summary || fallback;
   };
@@ -125,7 +125,7 @@ function toggle() {
       </span>
       <span class="chat-execution-trace-label">{{ title }}</span>
       <span class="chat-execution-trace-count">{{ totalCount }} 步</span>
-      <span v-if="!open" class="chat-execution-trace-summary">{{ groups.at(-1)?.summary }}</span>
+      <span v-if="!open" class="chat-execution-trace-summary">{{ groups[groups.length - 1]?.summary }}</span>
     </button>
     <div v-if="open" class="chat-execution-trace-list">
       <div v-for="group in groups" :key="group.kind" class="chat-execution-step" :class="`is-${group.status}`">

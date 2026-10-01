@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { KeyboardEvent } from "vue";
 import { computed, ref } from "vue";
 import { NDropdown, useMessage } from "naive-ui";
 

@@ -173,7 +173,8 @@ export function useFlowSession(sessionId: Ref<string>, turnId: Ref<string>) {
   function connect(id: string, revision: number) {
     if (!isCurrent(revision, id)) return;
     disconnect();
-    const lastEventId = events.value.map((event) => String(event.id || "").trim()).filter(Boolean).at(-1) || "";
+    const eventIds = events.value.map((event) => String(event.id || "").trim()).filter(Boolean);
+    const lastEventId = eventIds[eventIds.length - 1] || "";
     eventSource = api.connectEvents(
       id,
       (event) => {

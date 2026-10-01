@@ -289,7 +289,7 @@ export interface CompatibilityExecutionReport {
   markdown: string;
 }
 
-export function isCompatibilityTestRunnerOutput(output: Record<string, unknown>): output is CompatibilityTestRunnerOutput {
+export function isCompatibilityTestRunnerOutput(output: Record<string, unknown>): output is CompatibilityTestRunnerOutput & Record<string, unknown> {
   return (
     typeof output.phase === "string" &&
     typeof output.summary === "string" &&

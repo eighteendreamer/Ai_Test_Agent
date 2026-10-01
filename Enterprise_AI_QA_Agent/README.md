@@ -886,7 +886,9 @@ uv run --locked --directory Agent_Server python -m pytest tests
 
 cd agent_web
 npm test                   # vitest run（含 tests/recorder/recorder.test.mjs）
-npm run build              # vite build（注意：脚本里没有 vue-tsc，类型检查需另行执行）
+npm run typecheck          # vue-tsc：严格检查 TS 与 Vue SFC 脚本/模板
+npm run build              # 类型检查通过后执行 vite build
+npm run desktop:build      # 复用同一类型检查，再构建桌面 renderer 与文档
 ```
 
 `Agent_Server/tests/` 覆盖性能测试全链路（runner / coordinator / adapter / parser / guard / report）、**UI 录制域**（`recording_store` / `recording_graph_store` / `recordings` 路由 / 契约 schema / 三种 recorder 驱动 / `replay_executor` 纯函数与真实 Chromium live 回放 / P0 端到端串联 / `ui_resource_assessor` / `assertion_suggester`）、邮件、知识图谱、任务池、报告、会话存储、渠道配置等模块。
@@ -903,7 +905,7 @@ npm run build              # vite build（注意：脚本里没有 vue-tsc，类
 2. **P3 ego-lite 驱动 ⛔ 阻塞**：依赖方 ego-lite 目前仅提供 macOS 实现，当前 Windows/Linux 环境无法推进，需要先决定替代方案或等上游
 3. **安全测试闭环**：攻击链与漏洞台账已有，但实验/验证与复现包质量仍缺一轮真实目标回归
 4. **6 个占位模式补专用 Runner**：`integration_testing` / `unit_component_testing` / `mobile_testing` / `visual_regression_testing` / `accessibility_testing` / `reliability_testing` 目前只注册 Skills，需要各自的 harness 与执行链路才能从"占位"转"实装"
-5. **前端类型检查**：`npm run build` 只有 `vite build`，未接 `vue-tsc`，类型回归目前靠人工
+5. **发布质量门继续补齐**：Web/桌面构建已接入 `vue-tsc`；真实外部服务传输、依赖公告可达性和生产环境验收仍需继续推进
 
 > 文档口径已于 2026-08-30 与代码对齐：`docs/` 下进度与方案文档里的 MinIO 已统一改为 RustFS，`recordings` 端点数改为按装饰器实测的 11，`docker compose up -d` 这类项目内并不存在的步骤已换成设置页 Docker 面板。后续改代码请同步这几份文档。
 

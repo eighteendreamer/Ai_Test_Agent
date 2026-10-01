@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h } from "vue";
-import { NDropdown } from "naive-ui";
+import { NDropdown, type DropdownProps } from "naive-ui";
 
 type DropdownValue = string | number;
 
@@ -50,14 +50,14 @@ const dropdownOptions = computed(() =>
   })),
 );
 
-function renderOptionLabel(option: { key?: string | number; label?: string }) {
+const renderOptionLabel: NonNullable<DropdownProps["renderLabel"]> = (option) => {
   return h("span", { class: "app-dropdown-option-label" }, [
     h("span", { class: "app-dropdown-option-text" }, String(option.label || "")),
     option.key === props.modelValue
       ? h("i", { class: "fa-solid fa-check app-dropdown-option-check" })
       : null,
   ]);
-}
+};
 
 function handleSelect(key: string | number) {
   emit("update:modelValue", key);

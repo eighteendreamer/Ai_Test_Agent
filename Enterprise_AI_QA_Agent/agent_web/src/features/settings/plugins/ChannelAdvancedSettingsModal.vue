@@ -187,7 +187,7 @@ function syncDraftListsFromText() {
 function parseList(value: string | undefined): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const item of String(value || "").replaceAll(",", "\n").split(/\r?\n/)) {
+  for (const item of String(value || "").split(/,|\r?\n/)) {
     const text = item.trim();
     if (!text || seen.has(text)) continue;
     seen.add(text);

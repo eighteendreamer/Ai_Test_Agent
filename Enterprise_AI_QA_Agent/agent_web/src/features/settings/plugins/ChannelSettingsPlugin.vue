@@ -100,7 +100,7 @@ const credentialSummaryItems = computed(() => {
   return items;
 });
 
-function statusLabel(domain: ChannelDomain, config?: ChannelConfigPublic) {
+function statusLabel(domain: ChannelDomain, config?: ChannelConfigPublic | null) {
   return getChannelStrategy(domain).statusLabel(config?.status);
 }
 
@@ -194,7 +194,7 @@ function formatRemaining(value?: string | null, now = Date.now()) {
   return minutes > 0 ? t("channels.qr_remaining_minutes", { minutes, seconds }) : t("channels.qr_remaining_seconds", { seconds });
 }
 
-function isUsablePairingSession(session: ChannelPairingSessionPublic | null) {
+function isUsablePairingSession(session: ChannelPairingSessionPublic | null): session is ChannelPairingSessionPublic {
   if (!session || session.status !== "pending") return false;
   const now = Date.now();
   return parseTime(session.expires_at) > now && parseTime(session.destroy_at) > now;

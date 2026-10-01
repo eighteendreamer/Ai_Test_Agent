@@ -44,7 +44,7 @@ export function t(key: string, params?: Record<string, string | number>): string
   let text = messages[locale]?.[key] || messages["en-US"]?.[key] || messages["zh-CN"]?.[key] || key;
   if (params) {
     for (const [param, value] of Object.entries(params)) {
-      text = text.replaceAll(`{${param}}`, String(value));
+      text = text.split(`{${param}}`).join(String(value));
     }
   }
   return text;

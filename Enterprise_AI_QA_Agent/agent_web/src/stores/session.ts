@@ -601,7 +601,14 @@ export const useSessionStore = defineStore("session", {
       }
       return value as CodeReviewDebateProgressMeta;
     },
-    codeReviewWorkerStats() {
+    codeReviewWorkerStats(): {
+      reviewer_count: number;
+      running_count: number;
+      waiting_approval_count: number;
+      completed_count: number;
+      failed_count: number;
+      completion_dispatch: WorkerDispatchRecord | null;
+    } {
       const workerDispatches = this.workerDispatches;
       const reviewerDispatches = workerDispatches.filter((item) => !item.is_completion_worker);
       const completionDispatch = workerDispatches.find((item) => item.is_completion_worker) ?? null;
@@ -885,8 +892,8 @@ export const useSessionStore = defineStore("session", {
       });
       _sseStream.connect(sessionId, force);
     },
-    scheduleEventReconnect(sessionId = this.session?.id || "") {
-      _sseStream.scheduleReconnect(sessionId);
+    scheduleEventReconnect(sessionId?: string) {
+      _sseStream.scheduleReconnect(sessionId ?? this.session?.id ?? "");
     },
     ensureEventStreamConnected() {
       if (!this.session) {

@@ -1,4 +1,4 @@
-import type { ToolApprovalRequest } from "../types";
+import type { AgentTaskAccepted, ToolApprovalRequest } from "../types";
 import { api } from "../services/api";
 
 export class ApprovalManager {
@@ -21,7 +21,7 @@ export class ApprovalManager {
     approvalId: string,
     decision: "approved" | "denied",
     reason?: string,
-  ): Promise<ToolApprovalRequest> {
+  ): Promise<ToolApprovalRequest | AgentTaskAccepted> {
     if (this._resolvingIds.includes(approvalId)) {
       throw new Error("该审批正在处理中，请勿重复点击。");
     }

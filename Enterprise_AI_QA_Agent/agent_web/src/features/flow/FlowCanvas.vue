@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
-import type { Edge, Node, NodeDragEvent, NodeMouseEvent, VueFlowStore } from "@vue-flow/core";
+import { nextTick, ref, shallowRef, watch } from "vue";
+import type { Edge, GraphNode, Node, NodeDragEvent, NodeMouseEvent, VueFlowStore } from "@vue-flow/core";
 import { Panel, VueFlow } from "@vue-flow/core";
 
 import type { WorkerDispatchRecord } from "../../types";
@@ -43,9 +43,9 @@ const emit = defineEmits<{
   drillWorker: [workerId: string];
 }>();
 
-type FlowGraphNode = Node<StageNodeData | WorkerNodeData>;
+type FlowGraphNode = Node<StageNodeData | WorkerNodeData> & Partial<Pick<GraphNode, "selected">>;
 
-const nodes = ref<FlowGraphNode[]>([]);
+const nodes = shallowRef<FlowGraphNode[]>([]);
 const edges = ref<Edge[]>([]);
 let flowStore: VueFlowStore | null = null;
 

@@ -376,7 +376,7 @@ function toolHeadline(message: ChatMessage) {
   <div ref="historyRef" class="home-history" v-if="visibleMessages.length || currentExecutionTrace.length">
     <template
       v-for="entry in timelineEntries"
-      :key="entry.kind === 'message' ? entry.message.id : entry.id"
+      :key="entry.message.id"
     >
       <!-- 用户消息：右对齐气泡（Kun ds-user-message / ds-user-message-bubble） -->
       <article

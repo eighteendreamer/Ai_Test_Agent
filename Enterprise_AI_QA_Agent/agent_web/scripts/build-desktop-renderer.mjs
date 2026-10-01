@@ -19,7 +19,7 @@ function run(command, args, env = {}) {
   }
 }
 
-run("vite", ["build"], {
+run("npm", ["run", "build"], {
   VITE_QA_AGENT_DESKTOP: "1",
 });
 run("vitepress", ["build", "docs"], {

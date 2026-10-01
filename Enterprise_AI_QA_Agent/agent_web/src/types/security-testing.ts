@@ -185,7 +185,7 @@ export interface SecurityTaskEvent {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function isSecurityScanRunnerOutput(output: Record<string, unknown>): output is SecurityScanRunnerOutput {
+export function isSecurityScanRunnerOutput(output: Record<string, unknown>): output is SecurityScanRunnerOutput & Record<string, unknown> {
   return (
     typeof output.phase === "string" &&
     typeof output.summary === "string" &&
