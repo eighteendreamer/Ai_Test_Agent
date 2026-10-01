@@ -6,6 +6,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import removeMarkdown from "remove-markdown";
 import { applyApiAuthorization } from "./api-auth-proxy.mjs";
+import { externalWebUrl } from "./external-url-policy.mjs";
 import {
   captureRecorderScreenshot,
   closeRecorderSession,
@@ -298,7 +299,19 @@ function createBrowserWindow(options) {
       openOrFocusFlowWindow(parseFlowWindowPayload(url));
       return { action: "deny" };
     }
-    shell.openExternal(url);
+    const webUrl = externalWebUrl(url);
+    if (webUrl) {
+      setImmediate(() => {
+        void shell.openExternal(webUrl).catch((error) => {
+          console.warn(
+            "[Desktop] Failed to open external web URL.",
+            error instanceof Error ? error.name : "UnknownError",
+          );
+        });
+      });
+    } else {
+      console.warn("[Desktop] Blocked unsupported external URL protocol.");
+    }
     return { action: "deny" };
   });
   win.webContents.on("before-input-event", (event, input) => {

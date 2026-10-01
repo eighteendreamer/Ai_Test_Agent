@@ -48,6 +48,12 @@ md.use(texmath, {
   katexOptions: { throwOnError: false, errorColor: "#ef4444" },
 });
 
+const defaultValidateLink = md.validateLink.bind(md);
+md.validateLink = (url: string): boolean => {
+  const scheme = /^([a-z][a-z\d+.-]*):/i.exec(url);
+  return defaultValidateLink(url) && (!scheme || ["http", "https"].includes(scheme[1].toLowerCase()));
+};
+
 // Open links in a new tab safely.
 const defaultLinkRender =
   md.renderer.rules.link_open ||
@@ -55,7 +61,7 @@ const defaultLinkRender =
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
   const href = token.attrGet("href") || "";
-  if (/^https?:\/\//i.test(href)) {
+  if (/^https?:\/\//i.test(href) || href.startsWith("//")) {
     token.attrSet("target", "_blank");
     token.attrSet("rel", "noreferrer noopener");
   }
