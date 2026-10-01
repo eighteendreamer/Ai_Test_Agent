@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -24,6 +24,11 @@ async def _run_provider_call(func, *args, **kwargs):
     """Keep slow vendor CLI/HTTP calls off the event loop and cap thread usage."""
     async with _PROVIDER_CALL_LIMIT:
         return await asyncio.to_thread(func, *args, **kwargs)
+
+
+def _reject_unsupported_setup_action(provider: str, action: str) -> NoReturn:
+    logger.info("mail_setup_action_unsupported", extra={"provider": provider, "action": action})
+    raise HTTPException(status_code=501, detail="This setup action is not supported by the mail provider.")
 
 
 class ProviderSetupActionRequest(BaseModel):
@@ -126,6 +131,9 @@ async def provider_setup_action(
             if body.action == "provision_inbox":
                 logger.warning("mail_inbox_provision_config_missing", extra={"provider": provider})
                 raise HTTPException(status_code=409, detail="No enabled mailbox configuration for provisioning.")
+            if body.action == "auth_login":
+                logger.warning("mail_auth_config_missing", extra={"provider": provider, "action": body.action})
+                raise HTTPException(status_code=409, detail="No enabled mailbox configuration for authorization.")
             return {"ok": False, "error": "no_enabled_config", "provider": provider}
 
         # Existing Tencent records created before mailbox-isolated credentials
@@ -205,12 +213,7 @@ async def provider_setup_action(
         if body.action == "auth_login":
             if hasattr(adapter, "auth_login"):
                 return await _run_provider_call(adapter.auth_login, record)
-            return {
-                "ok": False,
-                "provider": provider,
-                "action": body.action,
-                "error": "setup_action_not_supported",
-            }
+            _reject_unsupported_setup_action(provider, body.action)
 
         if body.action == "auth_login_status":
             session_id = str(body.payload.get("session_id") or "").strip()
@@ -222,22 +225,12 @@ async def provider_setup_action(
                     record,
                     session_id,
                 )
-            return {
-                "ok": False,
-                "provider": provider,
-                "action": body.action,
-                "error": "setup_action_not_supported",
-            }
+            _reject_unsupported_setup_action(provider, body.action)
 
         if body.action == "whoami":
             if hasattr(adapter, "whoami"):
                 return await _run_provider_call(adapter.whoami, record)
-            return {
-                "ok": False,
-                "provider": provider,
-                "action": body.action,
-                "error": "setup_action_not_supported",
-            }
+            _reject_unsupported_setup_action(provider, body.action)
 
     raise HTTPException(status_code=400, detail=f"Unsupported setup action: {body.action}")
 
