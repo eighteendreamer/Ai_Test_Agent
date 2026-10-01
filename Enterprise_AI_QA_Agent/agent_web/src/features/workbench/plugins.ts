@@ -1,6 +1,5 @@
-import { markRaw, type Component } from "vue";
+import { defineAsyncComponent, markRaw, type Component } from "vue";
 
-import ConversationWorkbenchPlugin from "./plugins/ConversationWorkbenchPlugin.vue";
 import IdleWorkbenchPlugin from "./plugins/IdleWorkbenchPlugin.vue";
 
 export type WorkbenchPluginKey = "idle" | "conversation";
@@ -17,6 +16,6 @@ export const workbenchPlugins: Record<WorkbenchPluginKey, WorkbenchPluginDefinit
   },
   conversation: {
     key: "conversation",
-    component: markRaw(ConversationWorkbenchPlugin),
+    component: markRaw(defineAsyncComponent(() => import("./plugins/ConversationWorkbenchPlugin.vue"))),
   },
 };
