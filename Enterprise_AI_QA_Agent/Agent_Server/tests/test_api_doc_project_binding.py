@@ -6,8 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from fastapi import FastAPI
-
 from src.api.routes.api_docs import router as api_docs_router
 from src.application.documents.api_doc_store import InMemoryApiDocStore
 from src.application.documents.api_docs_service import ApiDocsService
@@ -53,9 +53,9 @@ def _build_app(tmp_path: Path):
     return app, project_service
 
 
-def _request(app: FastAPI, method: str, path: str, **kwargs):
+def _request(app: FastAPI, method: str, path: str, *, raise_app_exceptions: bool = True, **kwargs):
     async def send():
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.request(method, path, **kwargs)
 
@@ -164,3 +164,82 @@ def test_json_compatibility_store_preserves_formal_binding_on_restart(tmp_path):
     _run(restarted.initialize())
 
     assert _run(restarted.get_document(created.id)).project_id == project.id
+
+
+@pytest.mark.parametrize("method", ["GET", "PATCH", "DELETE"])
+def test_missing_api_document_returns_404(tmp_path: Path, method: str) -> None:
+    app, _ = _build_app(tmp_path)
+    response = _request(
+        app,
+        method,
+        "/api/v1/registry/api-docs/missing-document",
+        **({"json": {"title": "Changed"}} if method == "PATCH" else {}),
+    )
+
+    assert response.status_code == 404
+
+
+def test_existing_api_document_can_still_be_deleted(tmp_path: Path) -> None:
+    app, _ = _build_app(tmp_path)
+    created = _upload(app, project_id=None).json()
+
+    deleted = _request(app, "DELETE", f"/api/v1/registry/api-docs/{created['id']}")
+
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True, "deleted_id": created["id"]}
+
+
+@pytest.mark.parametrize(("method", "store_method"), [("GET", "get"), ("DELETE", "delete")])
+def test_api_document_catalog_failure_is_not_reported_as_client_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, store_method: str
+) -> None:
+    app, _ = _build_app(tmp_path)
+
+    async def fail_catalog_access(_doc_id: str):
+        raise ValueError("private catalog corruption path")
+
+    monkeypatch.setattr(app.state.api_docs_service._catalog_store, store_method, fail_catalog_access)
+    response = _request(
+        app,
+        method,
+        "/api/v1/registry/api-docs/existing-document",
+        raise_app_exceptions=False,
+    )
+
+    assert response.status_code == 500
+    assert "private catalog corruption path" not in response.text
+
+
+@pytest.mark.parametrize("import_mode", ["url", "integration"])
+def test_api_document_import_unexpected_failure_is_not_reported_as_bad_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, import_mode: str
+) -> None:
+    app, _ = _build_app(tmp_path)
+
+    async def fail_import(**_kwargs):
+        raise OSError("private storage failure path")
+
+    if import_mode == "url":
+        monkeypatch.setattr(app.state.api_docs_service, "import_document_from_url", fail_import)
+        path = "/api/v1/registry/api-docs/import-url"
+        payload = {"url": "https://example.test/openapi.json"}
+    else:
+        async def fail_catalog_access(_integration_id: str):
+            raise OSError("private integration catalog path")
+
+        app.state.integration_catalog_service = SimpleNamespace(get_integration=fail_catalog_access)
+        path = "/api/v1/registry/api-docs/import-integration"
+        payload = {"integration_id": "example-integration"}
+
+    response = _request(app, "POST", path, json=payload, raise_app_exceptions=False)
+
+    assert response.status_code == 500
+    assert "private" not in response.text
+
+
+def test_empty_import_url_remains_a_client_error(tmp_path: Path) -> None:
+    app, _ = _build_app(tmp_path)
+
+    response = _request(app, "POST", "/api/v1/registry/api-docs/import-url", json={"url": ""})
+
+    assert response.status_code == 400

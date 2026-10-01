@@ -30,6 +30,10 @@ MAX_DISCOVERY_CANDIDATES = 64
 MAX_REMOTE_REDIRECTS = 20
 
 
+class ApiDocNotFoundError(ValueError):
+    """The requested API document is absent from the catalog."""
+
+
 class ApiDocsService:
     def __init__(
         self,
@@ -73,7 +77,7 @@ class ApiDocsService:
     async def get_document(self, doc_id: str) -> ApiDocRecord:
         record = await self._catalog_store.get(doc_id)
         if record is None:
-            raise ValueError(f"未找到 API 文档：{doc_id}")
+            raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
         return record
 
     async def read_document_content(self, doc_id: str, *, max_chars: int | None = None) -> dict[str, Any]:
@@ -524,7 +528,7 @@ class ApiDocsService:
     async def delete_document(self, doc_id: str) -> dict[str, Any]:
         item = await self._catalog_store.delete(doc_id)
         if item is None:
-            raise ValueError(f"未找到 API 文档：{doc_id}")
+            raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
         uri = item.storage_uri
         if uri:
             try:

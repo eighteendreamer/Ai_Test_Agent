@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+import logging
 
+from fastapi import APIRouter, HTTPException, Query, Request
+from src.application.documents.api_docs_service import ApiDocNotFoundError
 from src.schemas.api_docs import (
     ApiDocImportIntegrationRequest,
     ApiDocImportUrlRequest,
@@ -9,8 +11,16 @@ from src.schemas.api_docs import (
     ApiDocUploadRequest,
 )
 
-
 router = APIRouter(prefix="/registry/api-docs", tags=["api-docs"])
+logger = logging.getLogger(__name__)
+
+
+def _raise_api_doc_internal_error(exc: Exception, *, operation: str, doc_id: str | None = None) -> None:
+    logger.error(
+        "api_doc_operation_failed",
+        extra={"operation": operation, "api_doc_id": doc_id, "error_type": type(exc).__name__},
+    )
+    raise HTTPException(status_code=500, detail="API 文档操作失败。") from exc
 
 
 @router.get("")
@@ -29,8 +39,10 @@ async def list_api_docs(
 async def get_api_doc(doc_id: str, request: Request):
     try:
         return await request.app.state.api_docs_service.get_document(doc_id)
-    except Exception as exc:
+    except ApiDocNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - sanitize unexpected failures at the HTTP boundary.
+        _raise_api_doc_internal_error(exc, operation="get", doc_id=doc_id)
 
 
 @router.post("/upload")
@@ -58,7 +70,7 @@ async def update_api_doc(doc_id: str, payload: ApiDocUpdateRequest, request: Req
             doc_id,
             **payload.model_dump(exclude_unset=True),
         )
-    except KeyError as exc:
+    except (ApiDocNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
@@ -79,8 +91,8 @@ async def import_api_doc_from_url(payload: ApiDocImportUrlRequest, request: Requ
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - sanitize unexpected failures at the HTTP boundary.
+        _raise_api_doc_internal_error(exc, operation="import_url")
 
 
 @router.post("/import-integration")
@@ -121,13 +133,15 @@ async def import_api_doc_from_integration(payload: ApiDocImportIntegrationReques
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - sanitize unexpected failures at the HTTP boundary.
+        _raise_api_doc_internal_error(exc, operation="import_integration")
 
 
 @router.delete("/{doc_id}")
 async def delete_api_doc(doc_id: str, request: Request):
     try:
         return await request.app.state.api_docs_service.delete_document(doc_id)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - sanitize unexpected failures at the HTTP boundary.
+        _raise_api_doc_internal_error(exc, operation="delete", doc_id=doc_id)
