@@ -26,6 +26,12 @@ class DockerUnavailableError(RuntimeError):
     pass
 
 
+class DockerCommandError(RuntimeError):
+    def __init__(self, message: str, *, exit_code: int | None = None) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
 class DockerManagementService:
     """Lists and manages Docker resources without invoking a host shell."""
 
@@ -292,7 +298,7 @@ class DockerManagementService:
             check=False,
         )
         if proc.returncode != 0:
-            raise RuntimeError(self._error_detail(proc))
+            raise DockerCommandError(self._error_detail(proc), exit_code=proc.returncode)
         combined = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
         return {"ok": True, "container_id": target, "tail": safe_tail, "logs": combined}
 
@@ -342,8 +348,9 @@ class DockerManagementService:
         if payload.start:
             started = await self._run(["start", container_id or name], timeout=60, check=False)
             if started.returncode != 0:
-                raise RuntimeError(
-                    f"Container was created but could not be started: {self._error_detail(started)}"
+                raise DockerCommandError(
+                    f"Container was created but could not be started: {self._error_detail(started)}",
+                    exit_code=started.returncode,
                 )
         return {
             "ok": True,
@@ -381,9 +388,9 @@ class DockerManagementService:
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"Docker command timed out after {timeout}s.") from exc
+            raise DockerCommandError(f"Docker command timed out after {timeout}s.") from exc
         if check and proc.returncode != 0:
-            raise RuntimeError(self._error_detail(proc))
+            raise DockerCommandError(self._error_detail(proc), exit_code=proc.returncode)
         return proc
 
     def _required_image_specs(self) -> list[dict[str, Any]]:
