@@ -787,11 +787,15 @@ npm run dev:app    # 只启动应用
 
 ### 3. 桌面端（可选）
 
+前端依赖安装与桌面构建要求 **Node.js ≥22.12.0**。Electron 使用受支持的 42 稳定线；新版本按需下载二进制，Windows 打包入口会先执行 `desktop:runtime`，并校验下载包。离线构建需提前准备对应运行时缓存。本轮验证范围为 Windows x64；其他平台的通知、签名与系统兼容性未验证。
+
 ```bash
 cd agent_web
 npm run desktop        # 本地运行 Electron 桌面端
 npm run desktop:pack   # 打包 Windows 桌面安装目录
 ```
+
+桌面隔离启动与录制兼容探针见 [e2e 说明](agent_web/e2e/README.md)。探针使用独立 profile 和本地服务夹具，不读取真实会话、发送通知或打开外部浏览器。
 
 ## API 路由概览
 

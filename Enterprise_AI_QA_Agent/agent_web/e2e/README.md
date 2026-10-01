@@ -1,5 +1,22 @@
 # AI 流式传输浏览器探针
 
+## 桌面运行时与便携包兼容
+
+在 `agent_web` 中完成 `npm run desktop:pack` 后执行：
+
+```powershell
+node e2e/electron-runtime-smoke.mjs --output artifacts/dependency-audit/electron-source.json
+node e2e/electron-runtime-smoke.mjs --package-app release-build/win-unpacked/resources/app --output artifacts/dependency-audit/electron-portable.json
+```
+
+输出文件必须尚不存在，历史失败记录不会覆盖。第二种模式原样复制发行 app 目录至独立 Temp，不借用开发 node_modules 或建立 junction；使用相同 Electron 二进制、正式 main/preload/recorder 和生产 renderer 验证可启动性。主进程数据、快捷方式与持久录制 partition 放在临时 profile，结束后校验路径再清理。测试窗口保持正常可见状态但移至屏幕外；为了避免 DevTools 窗口，只在测试 bootstrap 中模拟 packaged 的调试策略。这个探针不是安装器、通知权限或人工可见界面巡检。
+
+本地 HTTP 夹具提供成功 API 响应与合成录制页面，认证值每次在内存中随机生成，不写报告。检查聊天公式/高亮、preload 隔离与缩放、Flow 窗口复用、正式录制 CDP 初始化/脚本注入/程序化 DOM click 批量传输/PNG 上传/关闭、代理与录制请求鉴权。shell.openExternal 仅收集调用，验证 mailto 被拒绝和 HTTPS 进入既有分支，不启动 OS 外部浏览器。没有真实模型、知识库、录制后端持久化或人工截图内容对账。报告保存运行时版本、输入源码/lock SHA-256、Git 起点与完整 stdout/stderr。
+
+运行时升级中确认首次创建的 WebContentsView 在首次导航前等待 Page.enable 无法完成；当前先加载 about:blank 初始化 renderer，再注册 binding/脚本，最后导航目标，保持首个目标文档可录制。便携包同时包含主进程必需的 remove-markdown 及许可证。
+
+## AI 分片与工具传输
+
 这个本地探针用确定性模型替身产生两轮响应：先请求已注册的 `knowledge-rag` 工具，再依据工具结果生成回答。正式 `InputOrchestratorService`、LangGraph 图节点、权限门、`ToolRuntimeService` 派发、`ToolJobService` 生命周期、`SessionService` 分片回调、正式 SSE 路由、Vite API 代理和前端 Pinia Store/`ChatTimeline` 都会参与执行；只有模型供应商和知识库提供方由本地替身隔离，因此不会访问外部服务。
 
 1. 在 `Agent_Server` 目录启动只绑定环回地址的测试后端：

@@ -411,6 +411,11 @@ export async function createRecorderWindow(payload = {}) {
 
   try {
     const script = await fetchRecorderScript();
+    // A new WebContentsView has no initialized renderer yet. Page.enable can
+    // wait for that renderer, so navigate a blank page before awaiting CDP.
+    // Install the binding/script before the first target navigation as before.
+    await state.view.webContents.loadURL("about:blank");
+    log(state, "renderer initialized for debugger");
     await attachDebuggerWithScript(state, script);
     await state.view.webContents.loadURL(entryUrl);
     await postAttachRegistry(state);

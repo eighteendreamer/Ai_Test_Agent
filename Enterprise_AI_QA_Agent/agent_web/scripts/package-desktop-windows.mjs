@@ -1,8 +1,12 @@
 import { createRequire } from "node:module";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const require = createRequire(import.meta.url);
+// main.js imports this dependency in the Electron main process. The renderer
+// bundle cannot supply it when the portable app leaves the development tree.
+const markdownPackagePath = require.resolve("remove-markdown/package.json");
+const markdownPackage = JSON.parse(readFileSync(markdownPackagePath, "utf8"));
 const rceditModule = require("rcedit");
 const rcedit = rceditModule.rcedit || rceditModule;
 
@@ -40,6 +44,7 @@ mkdirSync(packagedAppRoot, { recursive: true });
 cpSync(sourceRoot, resolve(packagedAppRoot, "electron"), { recursive: true });
 cpSync(rendererRoot, resolve(packagedAppRoot, "dist"), { recursive: true });
 cpSync(assetsRoot, resolve(packagedAppRoot, "desktop-assets"), { recursive: true });
+cpSync(dirname(markdownPackagePath), resolve(packagedAppRoot, "node_modules", "remove-markdown"), { recursive: true });
 
 writeFileSync(
   resolve(packagedAppRoot, "package.json"),
@@ -49,6 +54,7 @@ writeFileSync(
       version: "0.1.0",
       type: "module",
       main: "electron/main.js",
+      dependencies: { "remove-markdown": markdownPackage.version },
     },
     null,
     2,

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "node scripts/dev-all.mjs",
     "dev:app": "vite",
@@ -13,9 +16,10 @@
     "test:watch": "vitest",
     "desktop:build": "node scripts/build-desktop-renderer.mjs",
     "desktop:assets": "node scripts/prepare-desktop-assets.mjs",
+    "desktop:runtime": "install-electron",
     "desktop": "npm run desktop:build && npm run desktop:assets && electron electron/main.js",
     "desktop:dev": "node scripts/desktop-dev.mjs",
-    "desktop:pack": "npm run desktop:build && npm run desktop:assets && node scripts/package-desktop-windows.mjs",
+    "desktop:pack": "npm run desktop:runtime && npm run desktop:build && npm run desktop:assets && node scripts/package-desktop-windows.mjs",
     "desktop:dist": "npm run desktop:pack",
     "preview": "vite preview",
     "docs:dev": "vitepress dev docs",
@@ -40,7 +44,7 @@
     "@types/markdown-it": "^14.1.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.11",
-    "electron": "^31.7.7",
+    "electron": "^42.11.10",
     "jsdom": "^29.1.1",
     "mermaid": "^11.16.1",
     "png-to-ico": "^3.0.1",
