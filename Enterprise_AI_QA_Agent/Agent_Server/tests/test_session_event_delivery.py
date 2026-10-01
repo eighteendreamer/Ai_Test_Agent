@@ -512,17 +512,56 @@ async def test_event_persistence_failure_cancels_runner_and_is_not_silenced():
 
 
 @pytest.mark.asyncio
-async def test_event_buffer_overflow_is_visible_and_flushes_accepted_events():
-    store = InMemorySessionStore()
+async def test_event_buffer_overflow_defers_suffix_until_final_flush(stores):
+    writer, reader, session_id, _ = stores
+    first_written = asyncio.Event()
+    original_append = writer.append_event
+
+    async def signal_append(target_session_id, value, **fence):
+        await original_append(target_session_id, value, **fence)
+        first_written.set()
+
+    writer.append_event = signal_append
+    sink = SessionEventSink(writer, session_id, capacity=1, fence={})
+
+    async def runtime(*, event_queue):
+        state = {"session_id": session_id, "_event_queue": event_queue}
+        append_graph_event(state, "first", "tool", "one")
+        append_graph_event(state, "second", "tool", "two")
+        await first_written.wait()
+        while sink._pending:
+            await asyncio.sleep(0)
+        append_graph_event(state, "third", "tool", "three")
+        return RuntimeService._events_from_log(object(), session_id, state["event_log"])
+
+    final_events = await sink.run(runtime)
+    assert [item.type for item in await reader.list_events(session_id)] == ["first"]
+    for item in final_events:
+        await writer.append_event(session_id, item)
+    assert [item.type for item in await reader.list_events(session_id)] == ["first", "second", "third"]
+
+
+@pytest.mark.asyncio
+async def test_event_buffer_overflow_does_not_hide_writer_failure():
+    class Store:
+        async def append_event(self, *args, **kwargs):
+            raise RuntimeError("injected event database outage")
 
     async def runtime(*, event_queue):
         state = {"session_id": "s", "_event_queue": event_queue}
         append_graph_event(state, "first", "tool", "one")
         append_graph_event(state, "second", "tool", "two")
+        return RuntimeService._events_from_log(object(), "s", state["event_log"])
 
+    with pytest.raises(RuntimeError, match="injected event database outage"):
+        await SessionEventSink(Store(), "s", capacity=1, fence={}).run(runtime)
+
+
+def test_plain_event_queue_overflow_still_fails_explicitly():
+    state = {"session_id": "s", "_event_queue": asyncio.Queue(maxsize=1)}
+    append_graph_event(state, "first", "tool", "one")
     with pytest.raises(RuntimeError, match="persistence buffer is full"):
-        await SessionEventSink(store, "s", capacity=1, fence={}).run(runtime)
-    assert [item.type for item in await store.list_events("s")] == ["first"]
+        append_graph_event(state, "second", "tool", "two")
 
 
 @pytest.mark.asyncio

@@ -18,13 +18,27 @@ class SessionEventSink:
         self._pending = deque()
         self._ready = asyncio.Event()
         self._closed = False
+        self._deferred_to_final_flush = False
+
+    @property
+    def deferred_to_final_flush(self) -> bool:
+        return self._deferred_to_final_flush
 
     def put_nowait(self, event) -> None:
         if self._closed:
             raise RuntimeError("Session event writer is closed")
         if event.session_id != self._session_id:
             raise ValueError("Session event cannot cross its execution scope")
+        if self._deferred_to_final_flush:
+            raise asyncio.QueueFull
         if len(self._pending) >= self._capacity:
+            # The runtime result carries the complete event log. Keep the live
+            # writer's prefix ordered; finalization will append the suffix.
+            self._deferred_to_final_flush = True
+            LOGGER.warning(
+                "session_event_live_flush_deferred",
+                extra={"session_id": self._session_id, "capacity": self._capacity, "event_id": event.id},
+            )
             raise asyncio.QueueFull
         self._pending.append(event)
         self._ready.set()

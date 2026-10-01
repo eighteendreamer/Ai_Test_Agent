@@ -11,6 +11,7 @@ from src.application.security.output_safety_policy import OutputSafetyPolicy
 _AUDIT_OUTPUT_POLICY = OutputSafetyPolicy()
 
 from src.graph.state import AgentGraphState
+from src.runtime.session_event_sink import SessionEventSink
 from src.schemas.session import ExecutionEvent
 
 
@@ -54,13 +55,15 @@ def append_graph_event(
     event_log.append({"id": event.id, "timestamp": event.timestamp.isoformat(),
                       "type": event_type, "payload": event_payload})
 
-    # The bounded sink persists events while the runner is active; SSE reads
-    # only committed facts with the same event ID used at finalization.
+    # The bounded sink persists a live prefix; finalization appends any
+    # overflow suffix with the same IDs before the turn is settled.
     event_queue: asyncio.Queue | None = state.get("_event_queue")
     if event_queue is not None:
         try:
             event_queue.put_nowait(event)
         except asyncio.QueueFull:
+            if isinstance(event_queue, SessionEventSink) and event_queue.deferred_to_final_flush:
+                return
             logging.getLogger(__name__).error("runtime_event_buffer_full", extra={
                 "session_id": event.session_id, "event_id": event.id,
             })
