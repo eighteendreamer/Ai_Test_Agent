@@ -905,6 +905,29 @@ def test_artifact_content_response_sanitizes_object_storage_filename_header():
         assert "\n" not in disposition
         assert "filename*=UTF-8''" in disposition
         assert "route-log%0D%0Abad%22%E5%90%8D.txt" in disposition
+
+        missing = client.get("/api/v1/compatibility/artifacts/unknown-artifact/content")
+        assert missing.status_code == 404
+
+        uploaded = service._artifacts[artifact_id]
+        service._artifacts[artifact_id] = uploaded.model_copy(
+            update={
+                "uri": "local://missing",
+                "metadata": {"local_path": str(root / "artifacts" / "missing.log")},
+            }
+        )
+        missing_content = client.get(f"/api/v1/compatibility/artifacts/{artifact_id}/content")
+        assert missing_content.status_code == 404
+        assert "missing.log" not in missing_content.text
+        service._artifacts[artifact_id] = uploaded
+
+        async def fail_object_read(_uri: str):
+            raise OSError("private RustFS connection failure")
+
+        storage.read_object_uri = fail_object_read
+        unavailable = client.get(f"/api/v1/compatibility/artifacts/{artifact_id}/content")
+        assert unavailable.status_code == 500
+        assert "private RustFS connection failure" not in unavailable.text
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

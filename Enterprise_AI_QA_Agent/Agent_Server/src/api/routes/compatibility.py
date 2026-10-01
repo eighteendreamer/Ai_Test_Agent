@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 from types import SimpleNamespace
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
-from src.application.compatibility.runner_service import CompatibilityRunnerNotFound
+from src.application.compatibility.runner_service import CompatibilityArtifactContentUnavailable, CompatibilityRunnerNotFound
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
 from src.modes.compatibility_testing_mode.runtime import CompatibilityTestingModeRuntime
 from src.schemas.tool_runtime import ModelToolCall
@@ -31,6 +32,7 @@ from src.schemas.compatibility_runner import (
 
 
 router = APIRouter(prefix="/compatibility", tags=["compatibility"])
+logger = logging.getLogger(__name__)
 
 
 def _content_disposition_inline(filename: str) -> str:
@@ -330,8 +332,15 @@ async def get_artifact_content(artifact_id: str, request: Request):
         content = await request.app.state.compatibility_runner_service.read_artifact_content(artifact_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Artifact not found") from exc
+    except CompatibilityArtifactContentUnavailable as exc:
+        logger.warning("compatibility_artifact_content_missing", extra={"artifact_id": artifact_id})
+        raise HTTPException(status_code=404, detail="Artifact content not found") from exc
     except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.error(
+            "compatibility_artifact_content_read_failed",
+            extra={"artifact_id": artifact_id, "error_type": type(exc).__name__},
+        )
+        raise HTTPException(status_code=500, detail="Artifact content unavailable") from exc
     if content.get("path"):
         return FileResponse(
             path=content["path"],

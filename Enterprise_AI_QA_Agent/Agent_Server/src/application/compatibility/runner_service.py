@@ -38,6 +38,10 @@ class CompatibilityRunnerNotFound(KeyError):
     pass
 
 
+class CompatibilityArtifactContentUnavailable(ValueError):
+    """An artifact record exists, but its local content cannot be served."""
+
+
 class CompatibilityRunnerService:
     def __init__(self, *, settings=None, artifact_storage_service=None) -> None:
         self._settings = settings
@@ -562,13 +566,13 @@ class CompatibilityRunnerService:
             root = self._local_artifact_root.resolve()
             if path == root or root in path.parents:
                 if not path.exists() or not path.is_file():
-                    raise ValueError(f"Artifact file is missing: {artifact_id}.")
+                    raise CompatibilityArtifactContentUnavailable(f"Artifact file is missing: {artifact_id}.")
                 return {
                     "path": path,
                     "content_type": artifact.mime_type or self._content_type(path.name),
                     "filename": artifact.metadata.get("original_filename") or path.name,
                 }
-        raise ValueError(f"Artifact content is not available for {artifact_id}.")
+        raise CompatibilityArtifactContentUnavailable(f"Artifact content is not available for {artifact_id}.")
 
     async def summarize_tasks(
         self,
