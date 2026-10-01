@@ -1998,6 +1998,38 @@ async def test_coordinator_duplicate_preserves_worker_rejection_reason():
     assert second["workers"][0]["error"] == "Unknown agent: missing-agent"
 
 
+@pytest.mark.asyncio
+async def test_coordinator_failure_guard_blocks_third_unknown_agent_dispatch():
+    service, store, created = await _batch_capacity_coordinator()
+    parent = await store.get_session("batch-parent")
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+    context = {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"}
+
+    for index in range(2):
+        result = await service.dispatch(
+            {"workers": [{**_batch_worker(index), "agent_key": "missing-agent"}]},
+            context,
+        )
+        assert result["ok"] is False
+
+    blocked = await service.dispatch(
+        {"workers": [{**_batch_worker(2), "agent_key": "missing-agent"}]},
+        context,
+    )
+    parent = await store.get_session("batch-parent")
+
+    assert created == []
+    assert parent.metadata["worker_failure_guard"]["count"] == 2
+    assert parent.metadata["worker_failure_guard"]["blocked"] is True
+    assert blocked["ok"] is False
+    assert blocked["workers"] == []
+    assert blocked["metrics"]["consecutive_failures"] == 2
+    assert [event.type for event in await store.list_events("batch-parent")].count(
+        "worker.auto_stopped"
+    ) == 1
+
+
 def _retry_security_task() -> SecurityTask:
     return SecurityTask(
         task_id="security-task", name="scan", surface_type="web",
