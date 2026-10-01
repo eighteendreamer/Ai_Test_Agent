@@ -12,7 +12,11 @@ from src.core.config import get_settings
 from src.core.request_context import get_request_context
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
-from src.infrastructure.redis_task_scripts import QUARANTINE, TRANSFER
+from src.infrastructure.redis_task_scripts import (
+    QUARANTINE,
+    TRANSFER,
+    TRIM_ACKNOWLEDGED,
+)
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.run_dispatch import RunDispatchTask
@@ -342,3 +346,182 @@ async def test_deleted_pending_body_is_archived_as_missing_before_ack(queue):
     archived = json.loads(letters[0][1]["payload"])
     assert archived["source_message_id"] == message_id
     assert archived["source_entry_missing"] is True
+
+
+@pytest.mark.asyncio
+async def test_idle_poll_recycles_old_acknowledged_history_without_losing_unread_tail(queue):
+    seconds, _micros = await queue._client.time()
+    old_ms = (seconds - 2 * 86400) * 1000
+    old_ids = [await queue._client.xadd(queue.stream, {"payload": '{"task_id":"old"}'},
+                                      id=f"{old_ms}-{index}") for index in range(200)]
+    unread = await queue.enqueue({"task_id": "unread"})
+    tasks = await queue.consume(consumer="worker", count=200, block_ms=0)
+    for task in tasks:
+        assert await queue.ack_owned(task, consumer="worker") == 1
+    assert await queue._client.xlen(queue.stream) == 201  # XACK alone retains bodies.
+    queue._next_retention_at = 0  # Make the regular queue maintenance interval due.
+    tail = await queue.consume(consumer="worker", block_ms=0)
+    assert [task.message_id for task in tail] == [unread]
+    assert [message_id for message_id, _fields in await queue._client.xrange(queue.stream)] == [old_ids[-1], unread]
+
+
+async def old_deliveries(queue, *, count=6, first_sequence=0):
+    seconds, _micros = await queue._client.time()
+    old_ms = (seconds - 2 * 86400) * 1000
+    return [await queue._client.xadd(queue.stream, {"payload": '{"task_id":"old"}'},
+                                    id=f"{old_ms}-{first_sequence + index}") for index in range(count)]
+
+
+@pytest.mark.asyncio
+async def test_retention_respects_every_groups_unread_and_pending_boundary(queue):
+    ids = await old_deliveries(queue)
+    tail = await queue.enqueue({"task_id": "fresh"})
+    tasks = await queue.consume(consumer="fast", count=6, block_ms=0)
+    for task in tasks:
+        await queue.ack_owned(task, consumer="fast")
+    slow_group = "slow-workers"
+    await queue._client.xgroup_create(queue.stream, slow_group, id="0")
+    assert await queue.trim_acknowledged() == 0
+    slow_rows = await queue._client.xreadgroup(slow_group, "slow", {queue.stream: ">"}, count=4)
+    assert [row[0] for row in slow_rows[0][1]] == ids[:4]
+    await queue._client.xack(queue.stream, slow_group, ids[0], ids[1], ids[3])
+    assert await queue.trim_acknowledged() == 2
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == [*ids[2:], tail]
+    pending = await queue._client.xreadgroup(slow_group, "slow", {queue.stream: "0"})
+    assert pending[0][1][0] == (ids[2], {"payload": '{"task_id":"old"}'})
+    await queue._client.xack(queue.stream, slow_group, ids[2])
+    rest = await queue._client.xreadgroup(slow_group, "slow", {queue.stream: ">"}, count=2)
+    assert [row[0] for row in rest[0][1]] == ids[4:]
+    await queue._client.xack(queue.stream, slow_group, *ids[4:])
+    assert await queue.trim_acknowledged() == 3
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == [ids[-1], tail]
+
+
+@pytest.mark.asyncio
+async def test_retention_limits_each_batch_and_preserves_fresh_and_dead_letter_entries(queue):
+    ids = await old_deliveries(queue, count=10)
+    tail = await queue.enqueue({"task_id": "fresh"})
+    letter = await queue.dead_letter({"task_id": "evidence"}, reason="retain_for_operator")
+    tasks = await queue.consume(consumer="worker", count=10, block_ms=0)
+    for task in tasks:
+        await queue.ack_owned(task, consumer="worker")
+    queue._retention_batch_size = 3
+    assert [await queue.trim_acknowledged() for _ in range(4)] == [3, 3, 3, 0]
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == [ids[-1], tail]
+    assert (await queue._client.xrange(f"{queue.stream}:dead_letter"))[0][0] == letter
+    assert await queue.ack_owned((await queue.consume(consumer="worker", block_ms=0))[0], consumer="worker") == 1
+    assert await queue.trim_acknowledged() == 1  # The older boundary can now be released.
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == [tail]
+
+
+@pytest.mark.asyncio
+async def test_retention_preserves_pending_and_compares_large_id_sequences_exactly(queue):
+    ids = await old_deliveries(queue, count=4, first_sequence=9007199254740992)
+    tasks = await queue.consume(consumer="worker", count=4, block_ms=0)
+    for task in [tasks[0], tasks[2], tasks[3]]:
+        await queue.ack_owned(task, consumer="worker")
+    assert await queue.trim_acknowledged() == 1
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == ids[1:]
+    assert (await queue.consume(consumer="worker", stream_id="0", block_ms=0))[0].message_id == ids[1]
+    await queue.ack_owned(tasks[1], consumer="worker")
+    assert await queue.trim_acknowledged() == 2
+    assert (await queue._client.xrange(queue.stream))[0][0] == ids[-1]
+
+
+@pytest.mark.asyncio
+async def test_retention_rechecks_new_group_in_the_same_redis_operation(queue):
+    ids = await old_deliveries(queue)
+    tasks = await queue.consume(consumer="worker", count=6, block_ms=0)
+    for task in tasks:
+        await queue.ack_owned(task, consumer="worker")
+    real_eval = queue._client.eval
+    async def add_group_before_script(script, *args):
+        if script == TRIM_ACKNOWLEDGED:
+            await queue._client.xgroup_create(queue.stream, "new-workers", id="0")
+        return await real_eval(script, *args)
+
+    queue._client.eval = add_group_before_script
+    try:
+        assert await queue.trim_acknowledged() == 0
+    finally:
+        queue._client.eval = real_eval
+    assert [row[0] for row in await queue._client.xrange(queue.stream)] == ids
+
+
+@pytest.mark.asyncio
+async def test_formal_outbox_publisher_does_not_create_phantom_consumer_groups(queue, monkeypatch):
+    from src.cli import run_task_outbox_relay as relay_module
+
+    streams = (f"{queue.stream}:publisher:a", f"{queue.stream}:publisher:b")
+    settings = get_settings()
+    orchestration = settings.orchestration.model_copy(update={
+        "redis_task_stream": streams[0], "agent_task_stream": streams[0],
+        "redis_task_outbox_streams": streams[1],
+    })
+    isolated = settings.model_copy(update={"orchestration": orchestration})
+
+    class EmptyOutbox:
+        def __init__(self, settings):
+            pass
+
+        async def initialize(self):
+            pass
+
+        async def relay_once(self, primary_queue, *, limit, queue_for_stream):
+            for stream in streams:
+                await queue_for_stream(stream).enqueue({"task_id": "isolated-publish"})
+            return 2
+
+    monkeypatch.setattr(relay_module, "get_settings", lambda: isolated)
+    monkeypatch.setattr(relay_module, "PostgresTaskOutbox", EmptyOutbox)
+    try:
+        await relay_module._run(once=True, batch_size=2)
+        for stream in streams:
+            assert await queue._client.xlen(stream) == 1
+            assert await queue._client.xinfo_groups(stream) == []
+    finally:
+        await queue._client.delete(*streams)
+
+
+@pytest.mark.asyncio
+async def test_retention_preserves_old_delayed_delivery_until_it_is_committed(queue):
+    seconds, _micros = await queue._client.time()
+    old_ms = (seconds - 2 * 86400) * 1000
+    message_id = await queue._client.xadd(queue.stream, {
+        "payload": '{"task_id":"delayed"}', "not_before_ms": str((seconds + 3600) * 1000),
+    }, id=f"{old_ms}-0")
+    await queue._client.xadd(queue.stream, {"payload": '{"task_id":"completed"}'}, id=f"{old_ms}-1")
+    tasks = await queue.consume(consumer="worker", count=2, block_ms=0)
+    assert not await queue.ready(tasks[0], consumer="worker")
+    await queue.ack_owned(tasks[1], consumer="worker")
+    assert await queue.trim_acknowledged() == 0
+    reclaimed = await queue.reclaim(consumer="replacement", min_idle_ms=1)
+    if not reclaimed:
+        await asyncio.sleep(.02)
+        reclaimed = await queue.reclaim(consumer="replacement", min_idle_ms=1)
+    assert reclaimed[0].message_id == message_id
+    assert not await queue.ready(reclaimed[0], consumer="replacement")
+    assert (await queue._client.xrange(queue.stream))[0][1]["not_before_ms"] == str((seconds + 3600) * 1000)
+
+
+@pytest.mark.asyncio
+async def test_retention_keeps_unread_stream_without_groups_and_disabled_history(queue):
+    stream = f"{queue.stream}:ungrouped"
+    seconds, _micros = await queue._client.time()
+    old_id = f"{(seconds - 2 * 86400) * 1000}-0"
+    producer = RedisTaskQueue(get_settings().database.redis_url, stream=stream, group="unused", client=queue._client)
+    try:
+        await queue._client.xadd(stream, {"payload": '{"task_id":"unread"}'}, id=old_id)
+        assert await producer.trim_acknowledged() == 0
+        assert (await queue._client.xrange(stream))[0][0] == old_id
+        tasks = await queue.consume(consumer="worker", block_ms=0)  # no task in the primary stream
+        assert tasks == []
+        ids = await old_deliveries(queue)
+        tasks = await queue.consume(consumer="worker", count=6, block_ms=0)
+        for task in tasks:
+            await queue.ack_owned(task, consumer="worker")
+        queue._retention_seconds = 0
+        assert await queue.trim_acknowledged() == 0
+        assert [row[0] for row in await queue._client.xrange(queue.stream)] == ids
+    finally:
+        await queue._client.delete(stream)

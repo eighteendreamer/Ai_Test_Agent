@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from src.core.config import OrchestrConfig
 from src.infrastructure.redis_task_queue import RedisTaskQueue
+from src.infrastructure.redis_task_scripts import TRIM_ACKNOWLEDGED
 
 
 class FakeRedis:
@@ -11,6 +13,10 @@ class FakeRedis:
 
     async def xgroup_create(self, **kwargs):
         self.calls.append(("xgroup_create", kwargs))
+
+    async def ping(self):
+        self.calls.append(("ping",))
+        return True
 
     async def xadd(self, stream, fields, **kwargs):
         self.calls.append(("xadd", stream, fields, kwargs))
@@ -34,6 +40,8 @@ class FakeRedis:
 
     async def eval(self, *args):
         self.calls.append(("eval", args))
+        if args[0] == TRIM_ACKNOWLEDGED:
+            return [0, "0-0", ""]
         return "2-0"
 
 
@@ -92,3 +100,49 @@ def test_legacy_retry_decode_does_not_mutate_received_fields():
     task = RedisTaskQueue._decode_rows([("test", [("1-0", fields)])])[0]
     assert task.payload == {"task_id": "t"} and task.retry_count == 2
     assert fields["payload"] == {"task_id": "t", "retry_count": 2}
+
+
+@pytest.mark.asyncio
+async def test_producer_connect_does_not_create_an_unused_group():
+    client = FakeRedis()
+    queue = RedisTaskQueue("unused", stream="test", group="unused", client=client)
+    await queue.connect(create_group=False)
+    assert client.calls == [("ping",)]
+
+
+@pytest.mark.asyncio
+async def test_retention_failure_does_not_change_delivery_success(caplog):
+    from redis.exceptions import ResponseError
+
+    class TrimFailure(FakeRedis):
+        async def eval(self, *args):
+            raise ResponseError("trim fault")
+
+    queue = RedisTaskQueue("unused", stream="test", group="workers", client=TrimFailure())
+    assert await queue.enqueue({"task_id": "t"}) == "1-0"
+    assert (await queue.consume(consumer="worker", block_ms=0))[0].message_id == "1-0"
+    assert caplog.text.count("redis_task_history_trim_failed") == 1
+
+
+@pytest.mark.asyncio
+async def test_retention_can_be_disabled_and_obeys_interval():
+    client = FakeRedis()
+    queue = RedisTaskQueue("unused", stream="test", group="workers", client=client, retention_seconds=0)
+    await queue.enqueue({"task_id": "t"})
+    assert await queue.trim_acknowledged() == 0
+    assert not any(call[0] == "eval" for call in client.calls)
+    enabled = RedisTaskQueue("unused", stream="test", group="workers", client=client)
+    await enabled.enqueue({"task_id": "t"})
+    await enabled.consume(consumer="worker", block_ms=0)
+    assert len([call for call in client.calls if call[0] == "eval"]) == 1
+
+
+@pytest.mark.parametrize("options", [
+    {"redis_task_retention_seconds": -1},
+    {"redis_task_retention_interval_seconds": 0},
+    {"redis_task_retention_batch_size": 0},
+    {"redis_task_retention_batch_size": 10001},
+])
+def test_retention_settings_reject_unsafe_configuration(options):
+    with pytest.raises(ValueError):
+        OrchestrConfig(**options)

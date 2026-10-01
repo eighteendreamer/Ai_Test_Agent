@@ -38,6 +38,9 @@ async def _run(*, once: bool, worker_id: str) -> None:
             socket_timeout_seconds=(
                 settings.orchestration.redis_task_socket_timeout_seconds
             ),
+            retention_seconds=settings.orchestration.redis_task_retention_seconds,
+            retention_interval_seconds=settings.orchestration.redis_task_retention_interval_seconds,
+            retention_batch_size=settings.orchestration.redis_task_retention_batch_size,
         )
         await queue.connect()
         worker = RedisTaskWorker.from_settings(

@@ -224,7 +224,13 @@ uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
 uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay --once --batch-size 100
 ```
 
-主 Stream 由 `ORCHESTRATION__REDIS_TASK_STREAM` 配置，额外 Stream 通过逗号分隔的 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS` 配置。Relay 会按 Outbox 记录中的 `stream` 精确投递；目标 Stream 不存在或不匹配时保留 Outbox 记录并等待重试，不会静默改投默认 Stream。租约和重试窗口分别由 `ORCHESTRATION__TASK_OUTBOX_LEASE_SECONDS`、`ORCHESTRATION__TASK_OUTBOX_RETRY_SECONDS` 管理。
+主 Stream 由 `ORCHESTRATION__REDIS_TASK_STREAM` 配置，额外 Stream 通过逗号分隔的 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS` 配置。Relay 会按 Outbox 记录中的 `stream` 精确投递；目标 Stream 未配置或不匹配时保留 Outbox 记录并等待重试，不会静默改投默认 Stream。租约和重试窗口分别由 `ORCHESTRATION__TASK_OUTBOX_LEASE_SECONDS`、`ORCHESTRATION__TASK_OUTBOX_RETRY_SECONDS` 管理。Relay 只连接 Redis，首次发布由 XADD 创建流；消费组由对应 Worker 创建，发布器不再创建未使用的消费组。
+
+任务 Stream 的过期交付历史默认保留 24 小时，以 Redis Stream ID 的服务器时间为准，而不是任务完成时间。发布或消费时最多每 60 秒执行一次维护，每次最多删除 1000 条；配置项为 `ORCHESTRATION__REDIS_TASK_RETENTION_SECONDS`（默认 86400，0 禁用）、`ORCHESTRATION__REDIS_TASK_RETENTION_INTERVAL_SECONDS`（默认 60）和 `ORCHESTRATION__REDIS_TASK_RETENTION_BATCH_SIZE`（默认 1000，范围 1–10000）。所有正式队列入口使用相同配置。
+
+回收在同一 Lua 操作内检查所有现有消费组，只删除同时早于保留期、各组读取游标和最早 pending 消息的前缀，并保留边界记录。没有消费组、未读取的组、旧 pending 或超过 128 个消费组时可能不回收；这项策略不会保证停滞队列的容量固定。它使用 Redis 6.2 起的 MINID 能力，避免未经 pending 检查直接按 MAXLEN 截断。[Redis XTRIM 说明](https://redis.io/docs/latest/commands/xtrim/)
+
+Redis 是交付层，长期运行结果和证据仍在 PostgreSQL；新建消费组或手动回拨游标不能保证重放已回收历史。旧部署由 Relay 创建的闲置基础组仍会阻挡回收，需核查真实消费者后单独制定迁移，程序不会自动销毁组。死信流保存人工恢复材料，旧向量索引与死信流的保留策略仍待治理。维护失败会记录 `redis_task_history_trim_failed`，业务投递继续；持续失败和旧 pending 应单独排查。
 
 启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED=true` 后，普通/回归 TestRun 的运行记录、RunItem 与首次 dispatch intent 会在同一个 PostgreSQL 事务中提交；Redis 暂时不可用时不会丢失任务意图。
 

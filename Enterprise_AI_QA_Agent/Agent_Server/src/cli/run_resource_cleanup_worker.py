@@ -52,6 +52,9 @@ async def _run(*, once: bool, worker_id: str) -> None:
         stream=settings.orchestration.cleanup_task_stream,
         group=f"{settings.orchestration.redis_task_consumer_group}:cleanup",
         socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
+        retention_seconds=settings.orchestration.redis_task_retention_seconds,
+        retention_interval_seconds=settings.orchestration.redis_task_retention_interval_seconds,
+        retention_batch_size=settings.orchestration.redis_task_retention_batch_size,
     )
     store = PostgresResourceCleanupStore(settings)
     allocations = PostgresResourceAllocationStore(settings)
@@ -60,7 +63,10 @@ async def _run(*, once: bool, worker_id: str) -> None:
     browser_queue = RedisTaskQueue(settings.database.redis_url,
         stream=settings.orchestration.browser_cleanup_task_stream,
         group=f"{settings.orchestration.redis_task_consumer_group}:browser-cleanup",
-        socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds)
+        socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
+        retention_seconds=settings.orchestration.redis_task_retention_seconds,
+        retention_interval_seconds=settings.orchestration.redis_task_retention_interval_seconds,
+        retention_batch_size=settings.orchestration.redis_task_retention_batch_size)
     reaper = ResourceCleanupWorker(
         manager,
         interval_seconds=settings.orchestration.resource_cleanup_interval_seconds,

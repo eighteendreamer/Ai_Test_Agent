@@ -184,6 +184,11 @@ class OrchestrConfig(BaseModel):
     redis_task_retry_max_ms: int = Field(default=60000, gt=0)
     redis_task_timeout_seconds: float = Field(default=900, gt=0)
     redis_task_socket_timeout_seconds: float = Field(default=5, gt=0)
+    # Retention is based on the Stream ID's server-time age; 0 disables cleanup.
+    # Unread and pending messages are retained regardless of age.
+    redis_task_retention_seconds: int = Field(default=86400, ge=0)
+    redis_task_retention_interval_seconds: float = Field(default=60, gt=0)
+    redis_task_retention_batch_size: int = Field(default=1000, ge=1, le=10000)
     task_outbox_lease_seconds: int = Field(default=30, gt=0)
     task_outbox_retry_seconds: int = Field(default=5, gt=0)
     redis_hot_memory_ttl_seconds: int = 86400

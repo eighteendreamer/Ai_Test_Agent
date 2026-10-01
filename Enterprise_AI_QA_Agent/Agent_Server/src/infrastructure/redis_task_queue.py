@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from redis.asyncio import Redis
@@ -21,7 +22,12 @@ from src.application.observability.business_metrics import (
     task_dead_letter_total,
     task_reclaimed_total,
 )
-from src.infrastructure.redis_task_scripts import CONTROL, QUARANTINE, TRANSFER
+from src.infrastructure.redis_task_scripts import (
+    CONTROL,
+    QUARANTINE,
+    TRANSFER,
+    TRIM_ACKNOWLEDGED,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +53,9 @@ class RedisTaskQueue:
         group: str,
         client: Redis | Any | None = None,
         socket_timeout_seconds: float = 5,
+        retention_seconds: int = 86400,
+        retention_interval_seconds: float = 60,
+        retention_batch_size: int = 1000,
     ) -> None:
         self.stream = stream
         self.group = group
@@ -56,14 +65,25 @@ class RedisTaskQueue:
             raise ValueError("Redis task socket timeout must be positive")
         self._socket_timeout_seconds = socket_timeout_seconds
         self._reclaim_cursor = "0-0"
+        if retention_seconds < 0 or retention_interval_seconds <= 0 or not 1 <= retention_batch_size <= 10000:
+            raise ValueError("Invalid Redis task retention configuration")
+        self._retention_seconds = retention_seconds
+        self._retention_interval_seconds = retention_interval_seconds
+        self._retention_batch_size = retention_batch_size
+        self._next_retention_at = 0.0
 
-    async def connect(self) -> None:
+    async def connect(self, *, create_group: bool = True) -> None:
         if self._client is None:
             self._client = Redis.from_url(
                 self._redis_url, decode_responses=True,
                 socket_timeout=self._socket_timeout_seconds,
                 socket_connect_timeout=self._socket_timeout_seconds,
             )
+        if not create_group:
+            # Publishers do not consume. An unused group at ID 0 would prevent
+            # safe history reclamation for the actual worker groups forever.
+            await self._client.ping()
+            return
         try:
             await self._client.xgroup_create(
                 name=self.stream,
@@ -88,6 +108,7 @@ class RedisTaskQueue:
             raise RuntimeError("RedisTaskQueue is not connected")
         if maxlen is not None:
             raise ValueError("Task streams must not use MAXLEN: it can delete pending deliveries")
+        await self._maintain_retention()
         fields = {"payload": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}
         try:
             message_id = await self._client.xadd(self.stream, fields)
@@ -95,6 +116,44 @@ class RedisTaskQueue:
             redis_errors_total().labels(operation="enqueue").inc()
             raise
         return str(message_id)
+
+    async def trim_acknowledged(self) -> int:
+        """Remove old history strictly before every group's unread/PEL boundary.
+
+        No group, an idle group at ID 0 or old pending work blocks deletion.
+        Dead letters are operator evidence and are not automatically trimmed.
+        """
+        if self._client is None:
+            raise RuntimeError("RedisTaskQueue is not connected")
+        if self._retention_seconds == 0:
+            return 0
+        try:
+            removed, threshold, blocked_reason = await self._client.eval(
+                TRIM_ACKNOWLEDGED, 1, self.stream,
+                self._retention_seconds, self._retention_batch_size,
+            )
+        except RedisError:
+            redis_errors_total().labels(operation="trim_acknowledged").inc()
+            raise
+        context = {"stream": self.stream, "trimmed_count": int(removed),
+                   "threshold": threshold, "retention_seconds": self._retention_seconds,
+                   "blocked_reason": blocked_reason}
+        if removed:
+            LOGGER.info("redis_task_history_trimmed", extra=context)
+        else:
+            LOGGER.debug("redis_task_history_trim_skipped", extra=context)
+        return int(removed)
+
+    async def _maintain_retention(self) -> None:
+        if self._retention_seconds == 0 or monotonic() < self._next_retention_at:
+            return
+        self._next_retention_at = monotonic() + self._retention_interval_seconds
+        try:
+            await self.trim_acknowledged()
+        except RedisError as exc:
+            LOGGER.warning("redis_task_history_trim_failed", extra={
+                "stream": self.stream, "error_type": type(exc).__name__,
+            })  # Maintenance failure must not turn a successful delivery into a retry.
 
     async def transfer(
         self, task: QueuedTask, *, consumer: str, retry_count: int,
@@ -166,6 +225,7 @@ class RedisTaskQueue:
     ) -> list[QueuedTask]:
         if self._client is None:
             raise RuntimeError("RedisTaskQueue is not connected")
+        await self._maintain_retention()
         try:
             rows = await self._client.xreadgroup(
                 groupname=self.group,
