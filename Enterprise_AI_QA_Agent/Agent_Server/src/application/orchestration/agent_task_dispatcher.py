@@ -954,7 +954,8 @@ class AgentTaskDispatcher:
             status = str(payload.get("status") or task.status)
             summary = (
                 self._child_summary(task, "failed")
-                + f" Timeout after {self._settings.orchestration.coordinator_child_timeout_seconds}s."
+                + f" Timeout after {self._settings.orchestration.coordinator_child_timeout_seconds}s"
+                " without execution progress or a live lease."
                 if timed_out else str(payload.get("summary") or self._child_summary(task, status))
             )
             notification = self._child_notification(
@@ -975,7 +976,7 @@ class AgentTaskDispatcher:
         return retried
 
     async def reap_coordinator_children(self) -> int:
-        """Fail overdue children and resume their parents exactly once."""
+        """Fail stalled unowned children and notify their parents."""
         config = self._settings.orchestration
         rows = await self._tasks.reap_expired_children(
             now=datetime.now(timezone.utc),
@@ -994,7 +995,8 @@ class AgentTaskDispatcher:
                 task,
                 status="failed",
                 summary=self._child_summary(task, "failed")
-                + f" Timeout after {config.coordinator_child_timeout_seconds}s.",
+                + f" Timeout after {config.coordinator_child_timeout_seconds}s"
+                " without execution progress or a live lease.",
                 result_text="coordinator_child_timeout",
             )
             if notification is None:

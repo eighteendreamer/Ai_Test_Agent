@@ -150,6 +150,7 @@ class PostgresAgentTaskStore:
         now: datetime,
         timeout_seconds: int,
     ) -> list[dict]:
+        """Reap stalled claimed work; queue wait and live leases are not timeout."""
         return await asyncio.to_thread(self._reap_expired_children_sync, now, timeout_seconds)
 
     async def claim(self, task_id: str, *, worker_id: str) -> AgentTaskExecution:
@@ -878,19 +879,42 @@ class PostgresAgentTaskStore:
 
     def _reap_expired_children_sync(self, now, timeout_seconds):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            expired_condition = """
+                task.operation='coordinator_child'
+                AND task.status IN ('claimed','running')
+                AND task.updated_at < %s - make_interval(secs=>%s)
+                AND NOT COALESCE(
+                    session.metadata->>'turn_lease_token'=task.lease_token
+                    AND (session.metadata->>'turn_lease_expires_at')::timestamptz
+                        >= %s - make_interval(secs=>%s), FALSE)
+            """
+            cutoff_params = (now, timeout_seconds, now, timeout_seconds)
+            # Claim/finish lock session before task. Take the same locks here,
+            # so renewals cannot race the timeout decision or deadlock finish.
             cur.execute(
-                f"SELECT * FROM {self._tasks} WHERE operation='coordinator_child' "
-                "AND status IN ('queued','waiting_resource','claimed','running') "
-                "AND created_at < %s - make_interval(secs=>%s) "
-                "ORDER BY sequence FOR UPDATE SKIP LOCKED LIMIT 50",
-                (now, timeout_seconds),
+                f"""SELECT session.id FROM {self._session_table} AS session
+                WHERE EXISTS (SELECT 1 FROM {self._tasks} AS task
+                    WHERE task.session_id=session.id AND {expired_condition})
+                ORDER BY session.id FOR UPDATE OF session SKIP LOCKED LIMIT 50""",
+                cutoff_params,
             )
-            rows = cur.fetchall()
+            sessions = cur.fetchall()
+            rows = []
+            for session in sessions:
+                cur.execute(
+                    f"""SELECT task.* FROM {self._tasks} AS task
+                    JOIN {self._session_table} AS session ON session.id=task.session_id
+                    WHERE session.id=%s AND {expired_condition}
+                    ORDER BY task.sequence FOR UPDATE OF task SKIP LOCKED LIMIT %s""",
+                    (session["id"], *cutoff_params, 50 - len(rows)),
+                )
+                rows.extend(cur.fetchall())
+                if len(rows) == 50:
+                    break
             reaped = []
             for row in rows:
-                if row["status"] in {"claimed", "running"}:
-                    self._end_attempt(cur, row, "failed", "coordinator_child_timeout")
-                    self._clear_lease(cur, row)
+                self._end_attempt(cur, row, "failed", "coordinator_child_timeout")
+                self._interrupt_expired_session(cur, row)
                 cur.execute(
                     f"""UPDATE {self._tasks} SET status='failed', result_status=NULL,
                     waiting_reason=NULL, error_code='coordinator_child_timeout',

@@ -7,7 +7,7 @@ stream to prove the parent/child facts survive a process boundary.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -28,6 +28,7 @@ from src.registry.agents import AgentRegistry
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.resource_lease_manager import RedisResourceLeaseManager
+from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.session import (
     RuntimeMode,
     SendMessageRequest,
@@ -499,6 +500,7 @@ async def test_timed_out_child_recovery_uses_durable_result_after_notify_failure
     child_session_id = await make_session(h.store, "Timed out recovery child")
     spec = worker("worker-timeout-recovery")
     child = await submit_child(h, h.parent_task_id, spec, child_session_id)
+    await h.tasks.claim(child.id, worker_id="expired-worker")
     coordinator = build_coordinator(h)
     h.dispatcher.set_coordinator_service(coordinator)
     parent = await h.store.get_session(h.parent_id)
@@ -514,8 +516,14 @@ async def test_timed_out_child_recovery_uses_durable_result_after_notify_failure
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
         cur.execute(
             f"UPDATE {h.settings.database.postgres_agent_task_table} "
-            "SET created_at = NOW() - INTERVAL '3600 seconds' WHERE id=%s",
+            "SET created_at=NOW()-INTERVAL '3600 seconds', "
+            "updated_at=NOW()-INTERVAL '3600 seconds' WHERE id=%s",
             (child.id,),
+        )
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set("
+            "metadata,'{turn_lease_expires_at}',to_jsonb(NOW()-INTERVAL '3600 seconds')) WHERE id=%s",
+            (child_session_id,),
         )
     submit_resume = h.dispatcher.submit_coordinator_resume
 
@@ -892,18 +900,62 @@ async def test_cancel_parent_children_only_cancels_unstarted_rows(harness):
 
 
 @pytest.mark.asyncio
-async def test_reap_expired_children_fails_and_notifies(harness):
+@pytest.mark.parametrize("status", ["queued", "waiting_resource", "claimed", "running"])
+async def test_child_reaper_preserves_queue_wait_and_live_execution_lease(harness, status):
     h = harness
-    child_session_id = await make_session(h.store, "Overdue child")
-    record = await submit_child(h, h.parent_task_id, worker("worker-overdue-1"), child_session_id)
+    child_session_id = await make_session(h.store, f"Old {status} child")
+    record = await submit_child(h, h.parent_task_id, worker(f"worker-old-{status}"), child_session_id)
+    if status != "queued":
+        claim = await h.tasks.claim(record.id, worker_id="live-worker")
+        if status == "waiting_resource":
+            await h.tasks.defer(claim, "agent quota occupied")
+        elif status == "running":
+            await h.tasks.begin(claim, resource_id=f"turn:{record.id}", fencing_token=1)
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
         cur.execute(
             f"UPDATE {h.settings.database.postgres_agent_task_table} "
-            "SET created_at = NOW() - INTERVAL '3600 seconds' WHERE id=%s",
+            "SET created_at=NOW()-INTERVAL '3600 seconds', "
+            "updated_at=NOW()-INTERVAL '3600 seconds' WHERE id=%s",
             (record.id,),
         )
+    if status in {"claimed", "running"}:
+        assert await h.store.renew_turn_execution(child_session_id, claim.lease_token, 300)
 
-    assert await h.dispatcher.reap_coordinator_children() == 1
+    assert await h.dispatcher.reap_coordinator_children() == 0
+    assert (await h.tasks.get(record.id)).status == status
+    assert h.coordinator.finished == []
+    assert not any(event.type == "agent_task.failed" for event in await h.store.list_events(child_session_id))
+    if status == "running":
+        await h.tasks.finish(claim, status="completed")
+        assert (await h.tasks.get(record.id)).status == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("started", [False, True])
+async def test_reap_expired_children_fails_and_notifies(harness, started):
+    h = harness
+    child_session_id = await make_session(h.store, "Overdue child")
+    record = await submit_child(h, h.parent_task_id, worker("worker-overdue-1"), child_session_id)
+    claim = await h.tasks.claim(record.id, worker_id="expired-worker")
+    if started:
+        await h.tasks.begin(claim, resource_id=f"turn:{record.id}", fencing_token=1)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_task_table} "
+            "SET created_at=NOW()-INTERVAL '3600 seconds', "
+            "updated_at=NOW()-INTERVAL '3600 seconds' WHERE id=%s",
+            (record.id,),
+        )
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set("
+            "metadata,'{turn_lease_expires_at}',to_jsonb(NOW()-INTERVAL '3600 seconds')) WHERE id=%s",
+            (child_session_id,),
+        )
+
+    counts = await asyncio.gather(
+        h.dispatcher.reap_coordinator_children(), h.dispatcher.reap_coordinator_children(),
+    )
+    assert sum(counts) == 1
     assert await h.dispatcher.reap_coordinator_children() == 0
 
     failed = await h.tasks.get(record.id)
@@ -917,6 +969,112 @@ async def test_reap_expired_children_fails_and_notifies(harness):
     assert notification["worker_task_id"] == "worker-overdue-1"
     assert notification["parent_task_id"] == h.parent_task_id
     assert "Timeout" in notification["summary"]
+    session = await h.store.get_session(child_session_id)
+    assert session.status == SessionStatus.interrupted
+    assert "turn_lease_token" not in session.metadata
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT status,finished_at FROM {h.settings.database.postgres_agent_attempt_table} WHERE id=%s",
+            (claim.attempt_id,),
+        )
+        attempt = cur.fetchone()
+    assert attempt["status"] == "failed" and attempt["finished_at"] is not None
+    # An old worker cannot overwrite the timeout, nor can redelivery replay it.
+    with pytest.raises(ContinuationLeaseLostError):
+        await h.tasks.finish(claim, status="completed")
+    await execute_command(h, record.id, "coordinator_child", worker_id="late-worker")
+    assert (await h.tasks.get(record.id)).status == "failed"
+    assert h.runtime.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recent", ["progress", "lease"])
+async def test_child_reaper_grants_timeout_from_recent_activity_not_creation(harness, recent):
+    h = harness
+    child_session_id = await make_session(h.store, "Recently active child")
+    record = await submit_child(h, h.parent_task_id, worker("worker-recent"), child_session_id)
+    claim = await h.tasks.claim(record.id, worker_id="recent-worker")
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_task_table} "
+            "SET created_at=NOW()-INTERVAL '3600 seconds', updated_at=%s WHERE id=%s",
+            (claim.updated_at if recent == "progress" else claim.updated_at - timedelta(hours=1), record.id),
+        )
+    assert await h.store.renew_turn_execution(child_session_id, claim.lease_token, 0)
+    if recent == "progress":
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set("
+                "metadata,'{turn_lease_expires_at}',to_jsonb(NOW()-INTERVAL '3600 seconds')) WHERE id=%s",
+                (child_session_id,),
+            )
+    # Use a 60s grace so a slow CI machine cannot consume the test window.
+    h.settings.orchestration.coordinator_child_timeout_seconds = 60
+
+    assert await h.dispatcher.reap_coordinator_children() == 0
+    assert (await h.tasks.get(record.id)).status == "claimed"
+    assert h.coordinator.finished == []
+
+
+@pytest.mark.asyncio
+async def test_child_reaper_skips_locked_session_and_preserves_concurrent_renewal(harness):
+    h = harness
+    child_session_id = await make_session(h.store, "Renewing child")
+    record = await submit_child(h, h.parent_task_id, worker("worker-renewing"), child_session_id)
+    claim = await h.tasks.claim(record.id, worker_id="renewing-worker")
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_task_table} "
+            "SET created_at=NOW()-INTERVAL '3600 seconds', updated_at=NOW()-INTERVAL '3600 seconds' WHERE id=%s",
+            (record.id,),
+        )
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set("
+            "metadata,'{turn_lease_expires_at}',to_jsonb(NOW()-INTERVAL '3600 seconds')) WHERE id=%s",
+            (child_session_id,),
+        )
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT id FROM {h.settings.database.postgres_session_table} WHERE id=%s FOR UPDATE", (child_session_id,))
+        assert await asyncio.wait_for(h.dispatcher.reap_coordinator_children(), timeout=3) == 0
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set("
+            "metadata,'{turn_lease_expires_at}',to_jsonb(NOW()+INTERVAL '300 seconds')) WHERE id=%s",
+            (child_session_id,),
+        )
+
+    assert await h.dispatcher.reap_coordinator_children() == 0
+    session = await h.store.get_session(child_session_id)
+    assert session.metadata["turn_lease_token"] == claim.lease_token
+    assert (await h.tasks.get(record.id)).status == "claimed"
+    assert h.coordinator.finished == []
+
+
+@pytest.mark.asyncio
+async def test_child_reaper_does_not_clear_another_turns_lease(harness):
+    h = harness
+    child_session_id = await make_session(h.store, "Old child with another owner")
+    record = await submit_child(h, h.parent_task_id, worker("worker-old-owner"), child_session_id)
+    await h.tasks.claim(record.id, worker_id="old-worker")
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_task_table} "
+            "SET updated_at=NOW()-INTERVAL '3600 seconds' WHERE id=%s",
+            (record.id,),
+        )
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_session_table} SET status='running', "
+            "metadata=metadata || jsonb_build_object('turn_lease_token','other-token', "
+            "'turn_lease_turn_id','other-turn', 'turn_lease_owner','other-worker', "
+            "'turn_lease_expires_at',to_jsonb(NOW()+INTERVAL '300 seconds')) WHERE id=%s",
+            (child_session_id,),
+        )
+
+    assert await h.dispatcher.reap_coordinator_children() == 1
+    assert (await h.tasks.get(record.id)).status == "failed"
+    session = await h.store.get_session(child_session_id)
+    assert session.status == SessionStatus.running
+    assert session.metadata["turn_lease_token"] == "other-token"
+    assert session.metadata["turn_lease_turn_id"] == "other-turn"
 
 
 @pytest.mark.asyncio

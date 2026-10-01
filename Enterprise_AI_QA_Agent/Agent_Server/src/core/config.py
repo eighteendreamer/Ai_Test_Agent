@@ -254,7 +254,14 @@ class OrchestrConfig(BaseModel):
     runtime_max_iterations: int = 8
     coordinator_max_workers: int = 4
     coordinator_durable_children: bool = False
-    coordinator_child_timeout_seconds: int = Field(default=1800, gt=0)
+    coordinator_child_timeout_seconds: int = Field(
+        default=1800,
+        gt=0,
+        description=(
+            "Stalled claimed child timeout without task progress or a matching "
+            "execution lease; excludes queue wait."
+        ),
+    )
 
     context_compaction_watermark: float = 0.7
     context_max_tail_messages: int = 24
