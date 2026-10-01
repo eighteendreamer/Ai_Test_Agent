@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
 
+from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 from src.runtime.compaction_worker import CompactionWorker
 from src.runtime.postgres_compaction_record_store import PostgresCompactionRecordStore
+from src.runtime.store import ContinuationLeaseLostError
+from src.schemas.memory import MemoryWriteRequest
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_live_postgres_concurrency import _drop_tables
 
@@ -26,9 +31,11 @@ async def compaction_harness():
     suffix = uuid4().hex[:12]
     settings.database.postgres_compaction_table = f"ownership_compaction_{suffix}"
     settings.database.postgres_event_table = f"ownership_event_{suffix}"
+    settings.database.postgres_memory_table = f"ownership_memory_{suffix}"
     tables = [
         settings.database.postgres_compaction_table,
         settings.database.postgres_event_table,
+        settings.database.postgres_memory_table,
     ]
     records = PostgresCompactionRecordStore(settings, lease_seconds=300)
     hot = RedisHotMemoryStore(settings.database.redis_url, ttl_seconds=86400)
@@ -581,3 +588,225 @@ async def test_renewals_do_not_revive_expired_or_settled_owners(compaction_harne
     assert not await h.hot.renew_compaction(
         h.session_id, "e2:v1", owner_id="owner", lease_seconds=300
     )
+
+
+@pytest.mark.asyncio
+async def test_cancelled_memory_thread_cannot_overwrite_completed_takeover(
+    compaction_harness, monkeypatch
+):
+    h = compaction_harness
+    memory_store = PostgresVectorMemoryStore(h.settings)
+    await memory_store.initialize()
+    memory = MemoryRuntimeService(memory_store)
+    entered, release, finished = (threading.Event() for _ in range(3))
+    errors = []
+    write = memory_store._write_sync
+
+    def paused_write(request):
+        if request.content != "User goal: old-user":
+            return write(request)
+        entered.set()
+        try:
+            if not release.wait(timeout=10):
+                raise TimeoutError("test thread release was not delivered")
+            return write(request)
+        except Exception as exc:
+            errors.append(exc)
+            raise
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(memory_store, "_write_sync", paused_write)
+    worker = CompactionWorker(
+        hot_memory_store=h.hot, memory_runtime_service=memory, record_store=h.records
+    )
+    old = asyncio.create_task(
+        worker.compact_session(
+            session_id=h.session_id,
+            turn_id="old-turn",
+            trace_id="trace-old",
+            user_message="old-user",
+            assistant_message="old-answer",
+        )
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 3)
+        old.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await old
+        # asyncio cancellation does not stop the already running memory thread.
+        assert not finished.is_set()
+        key = f"{h.session_id}:e2:v1"
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_compaction_table} "
+                "SET claimed_until=NOW()-INTERVAL '1 second' WHERE compaction_key=%s",
+                (key,),
+            )
+        await h.hot._client.delete(h.hot._key(h.session_id, "compaction:e2:v1"))
+        assert await worker.compact_session(
+            session_id=h.session_id,
+            turn_id="new-turn",
+            trace_id="trace-new",
+            user_message="new-user",
+            assistant_message="new-answer",
+        )
+        assert (await h.records.get(key)).status == "completed"
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 3)
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT content FROM {h.settings.database.postgres_memory_table} "
+                "WHERE source='session.user' AND session_id=%s",
+                (h.session_id,),
+            )
+            assert cur.fetchone()["content"] == "User goal: new-user"
+        assert len(errors) == 1 and isinstance(errors[0], ContinuationLeaseLostError)
+    finally:
+        release.set()
+        old.cancel()
+        await asyncio.gather(old, return_exceptions=True)
+        await asyncio.to_thread(finished.wait, 3)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    ["expired", "completed", "failed", "wrong_owner", "wrong_session", "missing_claim"],
+)
+async def test_stale_memory_write_is_rejected_before_vector_replication(
+    compaction_harness, fault
+):
+    h = compaction_harness
+    store = PostgresVectorMemoryStore(h.settings)
+    await store.initialize()
+    key = f"{h.session_id}:e2:v1"
+    assert await h.records.begin(
+        compaction_key=key,
+        session_id=h.session_id,
+        last_event_id="e2",
+        compression_version="v1",
+        owner_id="owner",
+    )
+    if fault == "expired":
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_compaction_table} "
+                "SET claimed_until=NOW()-INTERVAL '1 second' WHERE compaction_key=%s",
+                (key,),
+            )
+    elif fault == "completed":
+        assert await h.records.complete(key, [], owner_id="owner")
+    elif fault == "failed":
+        assert await h.records.fail(key, "injected failure", owner_id="owner")
+
+    class Replica:
+        def __init__(self):
+            self.calls = []
+
+        async def create_index(self, **kwargs):
+            self.calls.append("index")
+
+        async def upsert(self, **kwargs):
+            self.calls.append("upsert")
+
+    replica = Replica()
+    service = MemoryRuntimeService(store, vector_store=replica)
+    request = MemoryWriteRequest(
+        content="stale-memory",
+        session_id="other-session" if fault == "wrong_session" else h.session_id,
+        compaction_key=key + ":missing" if fault == "missing_claim" else key,
+        compaction_owner_id="other-owner" if fault == "wrong_owner" else "owner",
+        metadata={
+            "memory_id": "stale-memory",
+            "embedding": [1.0, 0.0],
+            "embedding_version": "test-v1",
+        },
+    )
+    with pytest.raises(ContinuationLeaseLostError):
+        await service._write_point(request)
+    assert replica.calls == []
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) AS total FROM {h.settings.database.postgres_memory_table}"
+        )
+        assert cur.fetchone()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_memory_lease_expiry_is_checked_after_waiting_for_claim_lock(
+    compaction_harness,
+):
+    h = compaction_harness
+    h.records = PostgresCompactionRecordStore(h.settings, lease_seconds=1)
+    store = PostgresVectorMemoryStore(h.settings)
+    await store.initialize()
+    key = f"{h.session_id}:e2:v1"
+    assert await h.records.begin(
+        compaction_key=key,
+        session_id=h.session_id,
+        last_event_id="e2",
+        compression_version="v1",
+        owner_id="owner",
+    )
+    request = MemoryWriteRequest(
+        content="late",
+        session_id=h.session_id,
+        compaction_key=key,
+        compaction_owner_id="owner",
+    )
+    execution = None
+    try:
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT 1 FROM {h.settings.database.postgres_compaction_table} "
+                "WHERE compaction_key=%s FOR UPDATE",
+                (key,),
+            )
+            execution = asyncio.create_task(store.write(request))
+            await asyncio.sleep(1.2)
+            assert not execution.done()
+        with pytest.raises(ContinuationLeaseLostError):
+            await asyncio.wait_for(execution, timeout=3)
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM {h.settings.database.postgres_memory_table}"
+            )
+            assert cur.fetchone()["total"] == 0
+    finally:
+        if execution is not None:
+            await asyncio.gather(execution, return_exceptions=True)
+
+
+def test_runtime_carries_compaction_proof_without_serializing_owner():
+    class Store:
+        def __init__(self):
+            self.requests = []
+
+        async def write(self, request):
+            self.requests.append(request)
+
+    store = Store()
+    service = MemoryRuntimeService(store)
+    asyncio.run(
+        service.write_turn_memory(
+            "s1",
+            "t1",
+            "trace",
+            "goal",
+            "answer",
+            [],
+            {},
+            compaction_key="s1:e2:v1",
+            compaction_owner_id="owner",
+        )
+    )
+    assert len(store.requests) == 3
+    for request in store.requests:
+        assert (
+            request.compaction_key == "s1:e2:v1"
+            and request.compaction_owner_id == "owner"
+        )
+        assert "compaction_key" not in request.model_dump()
+        assert "compaction_owner_id" not in request.model_dump()
+        assert "compaction_owner_id" not in request.metadata

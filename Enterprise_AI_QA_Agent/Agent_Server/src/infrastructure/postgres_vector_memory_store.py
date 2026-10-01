@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from datetime import datetime
 from time import perf_counter
@@ -18,6 +19,8 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, recent_day_buckets
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest, MemoryVectorRecord
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PostgresVectorMemoryStore:
@@ -240,6 +243,8 @@ class PostgresVectorMemoryStore:
                         raise ContinuationLeaseLostError(
                             "Turn execution lease is no longer active for memory write."
                         )
+                if request.compaction_key or request.compaction_owner_id:
+                    self._assert_compaction_owner(cur, request)
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_memory_table} (
@@ -285,6 +290,32 @@ class PostgresVectorMemoryStore:
                     ),
                 )
         return point
+
+    def _assert_compaction_owner(self, cur, request: MemoryWriteRequest) -> None:
+        if not request.compaction_key or not request.compaction_owner_id or not request.session_id:
+            raise ValueError("Compaction memory write requires key, owner and session")
+        table = self._settings.database.postgres_compaction_table
+        # Hold the same claim row that begin/renew/complete update until the
+        # memory UPSERT commits, as turn writes hold the owning session row.
+        cur.execute(
+            f"SELECT 1 FROM {table} WHERE compaction_key = %s AND session_id = %s FOR UPDATE",
+            (request.compaction_key, request.session_id),
+        )
+        locked = cur.fetchone() is not None
+        if locked:
+            # Evaluate expiry after acquiring the lock, using the server clock;
+            # a blocked transaction's NOW() can predate lease expiry.
+            cur.execute(
+                f"SELECT 1 FROM {table} WHERE compaction_key = %s "
+                "AND status = 'running' AND claimed_by = %s "
+                "AND claimed_until > clock_timestamp()",
+                (request.compaction_key, request.compaction_owner_id),
+            )
+        if not locked or cur.fetchone() is None:
+            LOGGER.warning("compaction_memory_write_fencing_rejected", extra={
+                "session_id": request.session_id, "compaction_key": request.compaction_key,
+            })
+            raise ContinuationLeaseLostError("Compaction execution lease is no longer active for memory write")
 
     def _search_sync(
         self, request: MemorySearchRequest, point_ids: list[str] | None = None,

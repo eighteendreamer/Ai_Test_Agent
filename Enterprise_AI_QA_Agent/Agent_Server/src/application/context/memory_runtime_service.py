@@ -353,7 +353,10 @@ class MemoryRuntimeService:
         context_bundle: dict[str, Any],
         turn_lease_token: str | None = None,
         compaction_key: str | None = None,
+        compaction_owner_id: str | None = None,
     ) -> list[str]:
+        if compaction_owner_id and not compaction_key:
+            raise ValueError("Compaction memory owner requires a compaction key")
         write_ids: list[str] = []
         requests = self._build_turn_write_policy(
             session_id=session_id,
@@ -368,6 +371,11 @@ class MemoryRuntimeService:
         requests = await self._attach_embeddings(requests)
         if turn_lease_token:
             requests = [item.model_copy(update={"turn_lease_token": turn_lease_token}) for item in requests]
+        if compaction_owner_id:
+            requests = [item.model_copy(update={
+                "compaction_key": compaction_key,
+                "compaction_owner_id": compaction_owner_id,
+            }) for item in requests]
         for request in requests:
             point = await self._write_point(request)
             if point is not None:

@@ -73,4 +73,6 @@ class MemoryWriteRequest(BaseModel):
     source: str | None = None
     stale: bool = False
     turn_lease_token: str | None = Field(default=None, exclude=True)
+    compaction_key: str | None = Field(default=None, exclude=True)
+    compaction_owner_id: str | None = Field(default=None, exclude=True)
     metadata: dict[str, Any] = Field(default_factory=dict)

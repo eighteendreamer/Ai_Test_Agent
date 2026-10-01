@@ -131,6 +131,7 @@ class CompactionWorker:
                     "compaction_key": f"{session_id}:{key}",
                 },
                 compaction_key=f"{session_id}:{key}",
+                compaction_owner_id=owner_id if self._record_store is not None else None,
             )
             # PostgreSQL confirms ownership before any destructive cache trim.
             # After completion the same key cannot be claimed by another owner.
