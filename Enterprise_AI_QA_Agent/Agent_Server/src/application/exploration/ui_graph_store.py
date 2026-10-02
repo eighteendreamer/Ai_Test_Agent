@@ -18,6 +18,9 @@ class UIGraphStore:
         self._settings = settings
         self._provider = MemgraphRuntimeProvider(settings)
 
+    async def close(self) -> None:
+        await asyncio.to_thread(self._provider.close)
+
     async def write_exploration_graph(
         self,
         graph: dict[str, Any],

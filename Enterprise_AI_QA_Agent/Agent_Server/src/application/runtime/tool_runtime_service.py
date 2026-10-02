@@ -3923,10 +3923,17 @@ class ToolRuntimeService:
         return payload
 
     async def close(self) -> None:
-        operations = [self._mock_target_runner.close(), self._security_execution_environment.close()]
+        operations = [
+            self._mock_target_runner.close(), self._security_execution_environment.close(),
+            self._security_testing_mode_runtime.close(),
+        ]
         if self._ui_exploration_service is not None:
             operations.append(self._ui_exploration_service.close())
-        results = await asyncio.gather(*operations, return_exceptions=True)
+        try:
+            results = await asyncio.gather(*operations, return_exceptions=True)
+        finally:
+            if self._ui_graph_store is not None:
+                await self._ui_graph_store.close()
         for result in results:
             if isinstance(result, BaseException):
                 raise result

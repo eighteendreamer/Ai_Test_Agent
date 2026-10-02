@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -172,6 +173,7 @@ async def _close_lifespan_resource(
 ) -> None:
     try:
         await close()
+        logger.info("lifespan_resource_closed", extra={"resource": resource})
     except Exception as exc:
         logger.error(
             "lifespan_resource_cleanup_failed",
@@ -381,6 +383,7 @@ async def _initialize_lifespan_resources(
     await security_bug_service.initialize()
 
     knowledge_graph_service = container.knowledge_graph_service()
+    cleanup.push_async_callback(_close_lifespan_resource, "knowledge_graph_service", knowledge_graph_service.close)
     knowledge_graph_service.set_project_service(project_service)
 
     tool_job_service = container.tool_job_service()
@@ -767,6 +770,7 @@ async def _initialize_lifespan_resources(
     recording_store = PostgresRecordingStore(settings)
     await recording_store.initialize()
     recording_graph_store = RecordingGraphStore(settings)
+    cleanup.push_async_callback(_close_lifespan_resource, "recording_graph_store", recording_graph_store.close)
     embedded_bridge = EmbeddedBridge()
     recorder_service = RecorderSessionService(
         settings=settings,
@@ -795,11 +799,17 @@ async def _initialize_lifespan_resources(
         session_store=store,
     )
     session_service.set_recording_approval_service(recording_approval_service)
+    ui_assessor_memgraph_provider = MemgraphRuntimeProvider(settings)
+
+    async def close_ui_assessor_memgraph() -> None:
+        await asyncio.to_thread(ui_assessor_memgraph_provider.close)
+
+    cleanup.push_async_callback(_close_lifespan_resource, "ui_assessor_memgraph", close_ui_assessor_memgraph)
     ui_resource_assessor = UIResourceAssessor(
         settings=settings,
         test_case_service=test_case_service,
         memory_runtime_service=memory_runtime_service,
-        memgraph_provider=MemgraphRuntimeProvider(settings),
+        memgraph_provider=ui_assessor_memgraph_provider,
     )
 
     async def _project_catalog() -> list[dict[str, Any]]:

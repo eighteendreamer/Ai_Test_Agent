@@ -34,6 +34,9 @@ class RecordingGraphStore:
         self._settings = settings
         self._provider = MemgraphRuntimeProvider(settings)
 
+    async def close(self) -> None:
+        await asyncio.to_thread(self._provider.close)
+
     # ------------------------------------------------------------------ API
 
     async def finalize(

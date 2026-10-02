@@ -30,6 +30,9 @@ class KnowledgeGraphService:
         self._last_failure: tuple[float, str] | None = None
         self._projects = None
 
+    async def close(self) -> None:
+        await asyncio.to_thread(self._provider.close)
+
     def set_project_service(self, project_service) -> None:  # noqa: ANN001
         self._projects = project_service
 

@@ -17,7 +17,12 @@ class SecurityGraphStore:
     """Write campaign entities to Memgraph without storing secret values."""
 
     def __init__(self, settings: Any, *, provider: Any = None) -> None:
+        self._owns_provider = provider is None
         self._provider = provider or MemgraphRuntimeProvider(settings)
+
+    async def close(self) -> None:
+        if self._owns_provider:
+            await asyncio.to_thread(self._provider.close)
 
     async def persist_campaign(self, campaign: SecurityCampaign) -> SecurityGraphPersistenceState:
         return await asyncio.to_thread(self._persist_sync, campaign.model_copy(deep=True))

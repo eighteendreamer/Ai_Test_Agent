@@ -211,6 +211,7 @@ class SecurityTestingModeRuntime:
         self._callback_broker_enabled = bool(
             getattr(security_settings, "security_callback_broker_enabled", False)
         )
+        self._owns_callback_broker = callback_broker is None
         self._callback_broker = callback_broker or SecurityCallbackBroker(
             port_range=str(
                 getattr(security_settings, "security_callback_port_range", "28000-28100")
@@ -224,6 +225,7 @@ class SecurityTestingModeRuntime:
         self._security_graph_memory_enabled = bool(
             getattr(security_settings, "security_graph_memory_enabled", False)
         )
+        self._owns_security_graph_store = security_graph_store is None
         self._security_graph_store = security_graph_store or (
             SecurityGraphStore(settings) if self._security_graph_memory_enabled and settings is not None else None
         )
@@ -251,6 +253,15 @@ class SecurityTestingModeRuntime:
         # state makes the completed result idempotent within the runtime.
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._state_cache: dict[str, SecurityTestingState] = {}
+
+    async def close(self) -> None:
+        try:
+            if self._owns_callback_broker:
+                await self._callback_broker.close()
+        finally:
+            if self._owns_security_graph_store and self._security_graph_store is not None:
+                await self._security_graph_store.close()
+        logger.info("security_mode_resources_closed")
 
     def set_coordinator_runtime_service(self, coordinator_runtime_service: Any) -> None:
         self._coordinator_runtime_service = coordinator_runtime_service

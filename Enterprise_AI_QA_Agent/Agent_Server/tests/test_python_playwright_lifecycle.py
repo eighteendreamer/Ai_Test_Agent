@@ -154,10 +154,14 @@ def test_tool_runtime_closes_browser_when_other_resource_close_fails():
         runtime._mock_target_runner = SimpleNamespace(close=AsyncMock(side_effect=RuntimeError("mock close failed")))
         runtime._security_execution_environment = SimpleNamespace(close=AsyncMock())
         runtime._ui_exploration_service = SimpleNamespace(close=AsyncMock())
+        runtime._ui_graph_store = SimpleNamespace(close=AsyncMock())
+        runtime._security_testing_mode_runtime = SimpleNamespace(close=AsyncMock())
         with pytest.raises(RuntimeError, match="mock close failed"):
             await runtime.close()
         runtime._security_execution_environment.close.assert_awaited_once()
         runtime._ui_exploration_service.close.assert_awaited_once()
+        runtime._ui_graph_store.close.assert_awaited_once()
+        runtime._security_testing_mode_runtime.close.assert_awaited_once()
     asyncio.run(run())
 
 
