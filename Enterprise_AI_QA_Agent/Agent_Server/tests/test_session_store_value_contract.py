@@ -6,24 +6,75 @@ Editing a draft must require an explicit save, irrespective of the backend.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 
-from src.domain.models import SessionImportBundle
+from src.application.projects.project_service import ProjectService
+from src.application.projects.project_store import (
+    InMemoryProjectStore,
+    PostgresProjectStore,
+)
+from src.core.config import get_settings
+from src.domain.models import SessionImportBundle, SessionRecord
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.storage_utils import ensure_utc_datetime
+from src.runtime.postgres_session_store import PostgresSessionStore
+from src.runtime.store import InMemorySessionStore
+from src.schemas.project import ProjectCreateRequest
 from src.schemas.session import (
     ChatMessage,
     ExecutionEvent,
     MessageRole,
+    RuntimeMode,
+    SessionMode,
     SessionSnapshot,
+    SessionStatus,
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
+from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_intent_safety_routing import (
     test_coordinator_five_reviewer_campaign_reaches_summary_without_dropping_work as run_campaign,
 )
+from tests.test_live_postgres_concurrency import _drop_tables
 
 pytest_plugins = ["tests.test_session_event_delivery"]
+
+
+@pytest_asyncio.fixture(params=["memory", "postgres"])
+async def dated_stores(request):
+    settings = get_settings().model_copy(deep=True)
+    tables = []
+    if request.param == "postgres":
+        if not LivePostgresTestConfig().run_live_postgres_tests:
+            pytest.skip("set RUN_LIVE_POSTGRES_TESTS=1 for date contract integration")
+        suffix = uuid4().hex[:12]
+        for name in ("session", "message", "event", "snapshot", "approval", "project"):
+            table = f"live_dates_{name}_{suffix}"
+            setattr(settings.database, f"postgres_{name}_table", table)
+            tables.append(table)
+        project_store = PostgresProjectStore(settings)
+        writer, reader = PostgresSessionStore(settings), PostgresSessionStore(settings)
+    else:
+        project_store = InMemoryProjectStore()
+        writer = reader = InMemorySessionStore()
+    try:
+        projects = ProjectService(store=project_store)
+        await projects.initialize()
+        project = await projects.create(ProjectCreateRequest(project_key="date-contract", name="Date contract"))
+        await writer.initialize()
+        now = datetime.now(UTC)
+        session = SessionRecord(id="dates-" + uuid4().hex, title="dated backup", status=SessionStatus.idle,
+                                session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive,
+                                mode_key="code_review", created_at=now, updated_at=now, project_id=project.id)
+        await writer.save_session(session)
+        yield writer, reader, session.id
+    finally:
+        if tables:
+            _drop_tables(settings, tables)
 
 
 @pytest.mark.asyncio
@@ -200,3 +251,75 @@ async def test_context_only_message_is_not_added_to_transcript(stores):
                                         metadata={"persist_transcript": False, "context_eligible": False}))
     await writer.save_session(session)
     assert (await reader.get_session(session_id)).messages == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", [
+    "list", "task_pool", "project_history", "history", "export", "date_range", "count", "delete",
+])
+async def test_imported_aware_dates_coexist_with_new_sessions(dated_stores, operation):
+    """Valid dated backup plus an ordinary save; no injected errors or clock patches."""
+    writer, reader, session_id = dated_stores
+    current = await reader.get_session(session_id)
+    current.mode_key = "code_review"
+    await writer.save_session(current)
+    imported = deepcopy(current)
+    imported.id += "-backup"
+    imported.created_at = imported.updated_at = datetime.now(UTC) - timedelta(hours=1)
+    assert await writer.import_session_bundles([SessionImportBundle(session=imported)]) == (1, 0)
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
+    if operation == "list":
+        assert [s.id for s in await reader.list_sessions()] == [current.id, imported.id]
+        assert [s.id for s in await reader.list_sessions(cursor_before=cutoff)] == [imported.id]
+    elif operation == "task_pool":
+        assert [s.id for s in await reader.list_task_pool_sessions()] == [current.id, imported.id]
+    elif operation == "project_history":
+        rows = await reader.list_project_history_context(current.project_id, limit=10)
+        assert [s["session_id"] for s in rows] == [current.id, imported.id]
+    elif operation == "history":
+        assert [s["session_id"] for s in await reader.list_history_overviews()] == [current.id, imported.id]
+    elif operation == "export":
+        assert [s["id"] for s in await reader.bulk_export()] == [current.id, imported.id]
+    elif operation == "date_range":
+        dates = await reader.get_session_date_range()
+        assert ensure_utc_datetime(dates["oldest"]) == ensure_utc_datetime(imported.updated_at)
+        assert ensure_utc_datetime(dates["newest"]) > ensure_utc_datetime(cutoff)
+    elif operation == "count":
+        assert await reader.count_sessions(before=cutoff) == 1
+        assert await reader.count_sessions(after=cutoff) == 1
+    else:
+        # Only this fixture's own sessions/tables are eligible for removal.
+        assert await writer.delete_sessions_before(cutoff) == 1
+        assert await reader.get_session(imported.id) is None
+        assert await reader.get_session(current.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_recent_questions_order_actual_instants_across_timezones(stores):
+    writer, reader, session_id, _ = stores
+    session = await reader.get_session(session_id)
+    base = datetime.now(UTC)
+    session.messages = [
+        ChatMessage(id="older-local", role=MessageRole.user, content="earlier question",
+                    created_at=base.astimezone(timezone(timedelta(hours=8)))),
+        ChatMessage(id="newer-utc", role=MessageRole.user, content="later question",
+                    created_at=base + timedelta(minutes=1)),
+    ]
+    await writer.save_session(session)
+    assert [item["content"] for item in await reader.list_recent_questions()] == [
+        "later question", "earlier question",
+    ]
+
+
+@pytest.mark.skipif(not LivePostgresTestConfig().run_live_postgres_tests,
+                    reason="set RUN_LIVE_POSTGRES_TESTS=1 for UTC connection contract")
+@pytest.mark.parametrize("zone", [None, UTC, timezone(timedelta(hours=8))])
+def test_postgres_connection_interprets_legacy_naive_dates_as_utc(zone):
+    """Read-only cast verifies the common pool boundary, without changing server settings."""
+    instant = datetime.now(UTC)
+    value = instant.astimezone(zone) if zone is not None else instant.replace(tzinfo=None)
+    with postgres_connect(get_settings()) as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting('TimeZone') AS timezone, %s::timestamptz AS instant", (value,))
+        result = cursor.fetchone()
+    assert result["timezone"] == "UTC"
+    assert ensure_utc_datetime(result["instant"]) == instant.replace(tzinfo=None)

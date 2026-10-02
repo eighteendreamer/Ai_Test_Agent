@@ -87,6 +87,9 @@ def postgres_engine(settings: Settings) -> Engine:
             max_overflow=0,
             connect_args={
                 "connect_timeout": settings.database.postgres_connect_timeout_seconds,
+                # Legacy stores write naive UTC; TIMESTAMPTZ must interpret it
+                # consistently rather than inherit the server/role timezone.
+                "options": "-c timezone=UTC",
             },
         ),
     )
@@ -304,6 +307,9 @@ def _get_or_create_engine(key: tuple[Any, ...], factory) -> Engine:
         if engine is None:
             engine = factory()
             _ENGINES[key] = engine
+            logger.info("sqlalchemy_engine_created", extra={
+                "database": key[0], "session_timezone": "UTC" if key[0] == "postgres" else None,
+            })
         return engine
 
 

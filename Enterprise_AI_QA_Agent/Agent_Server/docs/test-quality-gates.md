@@ -5,6 +5,7 @@
 ```powershell
 uv run --no-sync python scripts/run_test_quality_gate.py --profile diagnostic
 uv run --no-sync python scripts/run_test_quality_gate.py --profile postgres-core
+uv run --no-sync python scripts/run_test_quality_gate.py --profile session-store
 uv run --no-sync python scripts/run_test_quality_gate.py --profile sql-lifecycle
 uv run --no-sync python scripts/run_test_quality_gate.py --profile redis-core
 uv run --no-sync python scripts/run_test_quality_gate.py --profile browser-core
@@ -16,6 +17,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile model-hitl
 | --- | --- | --- |
 | diagnostic | 当前 `tests/` 的全部可收集用例，包含本机未入 Git 的用例 | 所有声明的 live 开关关闭；仍有未加开关的本机 Redis 用例，不能当作离线套件。跳过/排除/xfail/未执行记 `partial`，不是全部通过。 |
 | postgres-core | `test_live_compaction_ownership.py` | 真实 PG/Redis 的压缩领取、续租、所有权与向量写入契约；不代表全部数据库或模型链路。 |
+| session-store | `test_session_store_value_contract.py` | 内存与真实 PG 的值隔离、计数、正文、汇总回执、正常备份时间排序/筛选与 UTC 连接契约；项目和会话使用隔离表，未覆盖历史部署时间迁移或完整模型业务。 |
 | sql-lifecycle | `test_lifespan_resource_cleanup.py` | 启用 PG/MySQL 开关，只读查询验证正式 lifespan 的池释放、共享所有权及无关配置保留；业务初始化用成功替身，另有受控异常/取消用例，不代表完整业务启动或生产关闭故障复现。 |
 | redis-core | `test_live_redis_task_delivery.py`、`test_live_hot_memory_store.py` | 真实 Redis 队列、毒消息、保留和热记忆契约；按既有测试启用 PG 开关，PG 连接也须可用。 |
 | browser-core | `test_live_browser_lifecycle.py` | 已安装 Chromium 的生命周期、作用域与边界契约；不代表前端 GUI、Electron 或真实模型端到端。 |
@@ -41,5 +43,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile targeted --ta
 先保存 `running` 元数据，执行结束再写终态；进程被强杀留下 `running`，不能当作成功。重跑创建新目录，不覆盖原失败记录。配置凭据、`.env` 和模型密钥不进入版本清单；运行环境的完整隔离与配置签名仍需后续治理。
 
 CI 可上传整个单次结果目录，并检查对应分组的 `gate_exit_code` 和 `status`。当前没有新增或宣称已运行 GitHub CI：本项目是父 Git 仓库中的子目录，其 `.github/workflows/code-governance.yml` 不位于 Git 根目录，且内容仅做治理扫描；实际托管 CI 的入口、运行器和完整发布矩阵仍待接入。
+
+存储时间验证沿用 `storage_utils.ensure_utc_datetime` 的既有约定：无时区时间表示 UTC，带时区时间转换为对应的 UTC 时刻。应用 PostgreSQL 池通过 libpq `options=-c timezone=UTC` 固定连接时区，避免服务器/角色默认时区改变无时区 UTC 的含义；不修改数据库全局配置。内存排序和时间筛选采用同一比较规则，保留已有返回字段格式。此前在非 UTC 连接中写入的历史记录不会被自动纠正，需要结合原始事件来源核查，不能一律平移 8 小时。依据：[PostgreSQL 时区解释](https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-TIMEZONES) 与 [libpq options](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-OPTIONS)。
 
 依据：项目内 `项目借鉴/llm-testing-course/评测工程化与CICD.html` 的数据/标准/基线版本化与结果归档要求；pytest 官方 [公开 hooks/API](https://docs.pytest.org/en/stable/reference/reference.html) 和 [JUnit XML 输出](https://docs.pytest.org/en/stable/how-to/output.html#creating-junitxml-format-files)。不新增报告插件依赖。

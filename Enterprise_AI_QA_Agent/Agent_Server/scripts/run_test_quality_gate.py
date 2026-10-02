@@ -39,6 +39,10 @@ PROFILES = {
         "targets": ("tests/test_live_compaction_ownership.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS",),
     },
+    "session-store": {
+        "targets": ("tests/test_session_store_value_contract.py",),
+        "flags": ("RUN_LIVE_POSTGRES_TESTS",),
+    },
     "sql-lifecycle": {
         "targets": ("tests/test_lifespan_resource_cleanup.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_MYSQL_TESTS"),

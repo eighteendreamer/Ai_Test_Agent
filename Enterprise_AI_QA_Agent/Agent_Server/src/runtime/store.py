@@ -414,11 +414,11 @@ class InMemorySessionStore:
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
     ) -> list[SessionRecord]:
-        sessions = sorted(self._sessions.values(), key=lambda item: item.updated_at, reverse=True)
+        sessions = sorted(self._sessions.values(), key=lambda item: ensure_utc_datetime(item.updated_at), reverse=True)
         if mode_key:
             sessions = [item for item in sessions if item.mode_key == mode_key]
         if cursor_before is not None:
-            sessions = [s for s in sessions if s.updated_at < cursor_before]
+            sessions = [s for s in sessions if ensure_utc_datetime(s.updated_at) < ensure_utc_datetime(cursor_before)]
         start = max(int(offset or 0), 0)
         if limit is None:
             return deepcopy(sessions[start:])
@@ -448,7 +448,7 @@ class InMemorySessionStore:
                 if item.mode_key == "code_review"
                 or item.session_mode == SessionMode.background_task
             ),
-            key=lambda item: item.updated_at,
+            key=lambda item: ensure_utc_datetime(item.updated_at),
             reverse=True,
         )
         start = max(int(offset or 0), 0)
@@ -522,7 +522,7 @@ class InMemorySessionStore:
                         "created_at": message.created_at.isoformat(),
                     }
                 )
-        items.sort(key=lambda item: item["created_at"], reverse=True)
+        items.sort(key=lambda item: ensure_utc_datetime(item["created_at"]), reverse=True)
         return items[: max(int(question_limit), 1)]
 
     async def append_event(
@@ -1002,10 +1002,10 @@ class InMemorySessionStore:
             return len(self._sessions)
         count = 0
         for s in self._sessions.values():
-            t = s.updated_at or s.created_at
-            if after and t < after:
+            t = ensure_utc_datetime(s.updated_at or s.created_at)
+            if after and t < ensure_utc_datetime(after):
                 continue
-            if before and t >= before:
+            if before and t >= ensure_utc_datetime(before):
                 continue
             count += 1
         return count
@@ -1028,7 +1028,7 @@ class InMemorySessionStore:
     ) -> list[dict]:
         sessions = sorted(
             (session for session in self._sessions.values() if session.project_id == project_id),
-            key=lambda session: session.updated_at,
+            key=lambda session: ensure_utc_datetime(session.updated_at),
             reverse=True,
         )[: max(1, min(limit, 50))]
         return [_session_history_context(session) for session in sessions]
@@ -1038,7 +1038,8 @@ class InMemorySessionStore:
             if cutoff is None:
                 ids = list(self._sessions.keys())
             else:
-                ids = [sid for sid, s in self._sessions.items() if (s.updated_at or s.created_at) < cutoff]
+                ids = [sid for sid, s in self._sessions.items()
+                       if ensure_utc_datetime(s.updated_at or s.created_at) < ensure_utc_datetime(cutoff)]
             for sid in ids:
                 del self._sessions[sid]
                 self._events.pop(sid, None)
@@ -1050,10 +1051,10 @@ class InMemorySessionStore:
         if not self._sessions:
             return {"oldest": None, "newest": None}
         dates = [s.updated_at or s.created_at for s in self._sessions.values()]
-        return {"oldest": min(dates), "newest": max(dates)}
+        return {"oldest": min(dates, key=ensure_utc_datetime), "newest": max(dates, key=ensure_utc_datetime)}
 
     async def bulk_export(self, progress_fn=None) -> list[dict]:
-        sessions = sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
+        sessions = sorted(self._sessions.values(), key=lambda s: ensure_utc_datetime(s.updated_at), reverse=True)
         bundle: list[dict] = []
         for s in sessions:
             def _iso(v: object) -> str | None:
