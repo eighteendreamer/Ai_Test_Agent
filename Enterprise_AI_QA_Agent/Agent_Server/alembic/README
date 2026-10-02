@@ -1,1 +1,51 @@
-Generic single-database configuration.
+PostgreSQL schema migrations for Enterprise AI QA Agent.
+
+20261002_0001 covers only the durable task outbox and its two pending indexes.
+It bootstraps a fresh table or adds claim columns to the supported legacy table;
+existing rows, IDs, payloads, attempts and publication state are preserved.
+This is not a baseline for the remaining application schemas. Store initializers
+remain active until their own frozen revisions and deployment policy are added.
+
+From Agent_Server, with the same PostgreSQL configuration as the application:
+
+    uv sync --extra dev
+
+The dev extra declares Alembic (verified with 1.20.0, MIT, Python >=3.10,
+SQLAlchemy >=2.0). Review the resolved environment before upgrading a deployment.
+Then inspect the current version and the SQL without modifying business tables:
+
+    uv run --no-sync alembic current
+    uv run --no-sync alembic heads
+    uv run --no-sync alembic upgrade head --sql
+
+Review the offline SQL and back up the database before a deployment operator runs:
+
+    uv run --no-sync alembic upgrade head
+
+Only current/heads/offline SQL are read-only. Do not stamp head to pretend that
+unmigrated application tables are covered, and do not call runtime initializers
+from a revision. Revision SQL is frozen; later schema changes need new revisions.
+
+Online migrations use the actual SQLAlchemy URL object (not a diagnostic URL with
+a hidden password), UTC connections and a transaction-scoped advisory lock per
+database/current schema. Alembic Config.attributes['connection'] allows a caller
+to supply its own transaction; Config.attributes['settings'] supplies the usual
+table configuration. The caller owns such a connection and its commit/rollback.
+Loading the migration logging configuration leaves application loggers enabled.
+
+The first revision intentionally refuses destructive downgrade because queued
+work can predate the migration. Use a reviewed backup restore/forward repair for
+rollback; an offline downgrade is not a data-preserving recovery plan.
+
+OrmBase has no mapped tables. Autogenerate is disabled rather than comparing an
+empty metadata against a populated database and proposing table drops. Add
+explicit reviewed revisions for the raw SQL stores.
+
+Verification uses random PostgreSQL schemas and actual Alembic commands:
+
+    uv run --no-sync python scripts/run_test_quality_gate.py --profile migration-core
+
+It does not upgrade or stamp application-owned tables. The quality report pins
+alembic/env.py, revisions and alembic.ini in addition to the application/test
+sources. Real production upgrade, all store schemas, MySQL and coordinated
+runtime-DDL removal are still separate work.

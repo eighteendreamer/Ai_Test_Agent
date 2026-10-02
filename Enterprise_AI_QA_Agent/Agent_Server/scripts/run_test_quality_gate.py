@@ -51,6 +51,10 @@ PROFILES = {
         "targets": ("tests/test_mcp_management_route_status.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS",),
     },
+    "migration-core": {
+        "targets": ("tests/test_schema_migrations.py",),
+        "flags": ("RUN_LIVE_POSTGRES_TESTS",),
+    },
     "sql-lifecycle": {
         "targets": ("tests/test_lifespan_resource_cleanup.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_MYSQL_TESTS"),
@@ -142,8 +146,9 @@ def source_manifest() -> dict:
     tracked = set(git_output("ls-files", "--", "tests").splitlines())
     entries = []
     paths = [*PROJECT_ROOT.joinpath("src").rglob("*.py"), *PROJECT_ROOT.joinpath("tests").rglob("*.py")]
+    paths += list(PROJECT_ROOT.joinpath("alembic").rglob("*.py"))
     paths += list(PROJECT_ROOT.joinpath("scripts").glob("*.py"))
-    paths += [PROJECT_ROOT / "pyproject.toml"]
+    paths += [PROJECT_ROOT / "pyproject.toml", PROJECT_ROOT / "alembic.ini"]
     for path in sorted(paths):
         if "__pycache__" in path.parts or not path.is_file():
             continue
