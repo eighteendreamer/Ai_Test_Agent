@@ -132,6 +132,78 @@ def test_runner_queue_artifact_report_and_requeue():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_retried_task_waits_behind_existing_queue_after_reload(tmp_path):
+    async def exercise():
+        service = CompatibilityRunnerService(settings=_Settings(tmp_path))
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="fair-runner", capabilities=["local_browser"],
+        ))
+        plan = CompatibilityDispatchPlan(
+            plan_id="fair-plan",
+            tasks=[CompatibilityRunnerTask(
+                task_id=task_id, environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            ) for task_id in ["first-task", "waiting-task"]],
+        )
+        await service.enqueue_dispatch_plan(plan)
+        first = await service.poll_tasks("fair-runner")
+        assert [task.task_id for task in first.tasks] == ["first-task"]
+        await service.report_task("fair-runner", "first-task", CompatibilityRunnerTaskReportRequest(
+            status="completed", result={"summary": "Normal dry-run completion."},
+        ))
+        retry = await service.requeue_tasks(CompatibilityTaskRequeueRequest(
+            task_ids=["first-task"], statuses=["completed"],
+        ))
+        assert retry.requeued_count == 1
+        # File reload also must preserve the order of actual enqueue operations.
+        restored = CompatibilityRunnerService(settings=_Settings(tmp_path))
+        second = await restored.poll_tasks("fair-runner")
+        assert [task.task_id for task in second.tasks] == ["waiting-task"]
+        await restored.report_task("fair-runner", "waiting-task", CompatibilityRunnerTaskReportRequest(
+            status="completed", result={"summary": "Normal dry-run completion."},
+        ))
+        third = await restored.poll_tasks("fair-runner")
+        assert [task.task_id for task in third.tasks] == ["first-task"]
+    asyncio.run(exercise())
+
+
+def test_restart_recovery_joins_existing_queue_tail(tmp_path):
+    asyncio.run(_exercise_recovered_queue_order(tmp_path, recovery="restart"))
+
+
+def test_heartbeat_recovery_joins_existing_queue_tail(tmp_path):
+    asyncio.run(_exercise_recovered_queue_order(tmp_path, recovery="heartbeat"))
+
+
+async def _exercise_recovered_queue_order(root: Path, *, recovery: str):
+    service = CompatibilityRunnerService(settings=_Settings(root))
+    await service.register_runner(CompatibilityRunnerRegistrationRequest(
+        runner_id="recovery-runner", capabilities=["local_browser"],
+    ))
+    await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+        plan_id="recovery-plan",
+        tasks=[CompatibilityRunnerTask(
+            task_id=task_id, environment_id="local",
+            runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+        ) for task_id in ["recovering-task", "waiting-task"]],
+    ))
+    first = await service.poll_tasks("recovery-runner")
+    assert [task.task_id for task in first.tasks] == ["recovering-task"]
+    # Controlled recovery contracts, not evidence of a real Runner outage.
+    if recovery == "restart":
+        service = CompatibilityRunnerService(settings=_Settings(root))
+    else:
+        runner = service._runners["recovery-runner"]
+        service._runners[runner.runner_id] = runner.model_copy(update={"heartbeat_at": "2000-01-01T00:00:00Z"})
+    await service.register_runner(CompatibilityRunnerRegistrationRequest(
+        runner_id="recovery-runner", capabilities=["local_browser"],
+    ))
+    # Both recovery paths persist queue order, not only their in-memory state.
+    restored = CompatibilityRunnerService(settings=_Settings(root))
+    second = await restored.poll_tasks("recovery-runner")
+    assert [task.task_id for task in second.tasks] == ["waiting-task"]
+
+
 def test_runner_restart_requeues_assigned_tasks_without_stale_capacity():
     root = Path(__file__).resolve().parent / ".tmp" / f"runner_restart_{uuid4().hex}"
     try:

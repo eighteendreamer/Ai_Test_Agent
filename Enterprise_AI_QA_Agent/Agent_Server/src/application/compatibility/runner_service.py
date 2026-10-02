@@ -489,7 +489,7 @@ class CompatibilityRunnerService:
                     if wanted_task_ids:
                         skipped_reasons[task_id] = f"status_{task.status}_not_requeueable"
                     continue
-                self._tasks[task_id] = self._build_requeued_task(
+                self._stage_requeued_task(
                     task, now=now, reason=payload.reason, source="manual",
                 )
                 requeued.append(task_id)
@@ -822,7 +822,7 @@ class CompatibilityRunnerService:
                 continue
             if task.assigned_runner_id not in stale_runner_ids and task.assigned_runner_id in self._runners:
                 continue
-            self._tasks[task_id] = self._build_requeued_task(
+            self._stage_requeued_task(
                 task, now=now, reason="runner_heartbeat_timeout", source="heartbeat",
             )
             requeued.append(task_id)
@@ -835,9 +835,9 @@ class CompatibilityRunnerService:
                 self._save_state()
         return requeued
 
-    def _build_requeued_task(
+    def _stage_requeued_task(
         self, task: CompatibilityQueuedTask, *, now: str, reason: str, source: str,
-    ) -> CompatibilityQueuedTask:
+    ) -> None:
         # All three retry paths retire the same evidence value before clearing
         # current-attempt fields. Keep the existing recent-ten retention policy.
         retry_history = deepcopy(list(task.metadata.get("retry_history") or []))
@@ -870,11 +870,15 @@ class CompatibilityRunnerService:
                 "retry_history": retry_history[-10:],
             },
         })
+        # dict preserves insertion order; replacing a value keeps its old
+        # position. Remove/reinsert so each retry joins the queue tail. The
+        # existing state-file task list persists this order across reloads.
+        self._tasks.pop(task.task_id)
+        self._tasks[task.task_id] = updated
         logger.info("compatibility_task_requeue_staged", extra={
             "task_id": task.task_id, "requeue_source": source, "retry_count": retry_count,
             "previous_status": task.status, "previous_artifact_count": len(task.artifacts),
         })
-        return updated
 
     def _parse_utc_timestamp(self, value: str) -> datetime | None:
         raw = str(value or "").strip()
@@ -1137,14 +1141,17 @@ class CompatibilityRunnerService:
                     continue
                 try:
                     task = CompatibilityQueuedTask.model_validate(item)
-                    if task.status == "assigned":
-                        state_changed = True
-                        task = self._build_requeued_task(
-                            task, now=_utc_now(), reason="runner_service_restart", source="restart",
-                        )
                     self._tasks[task.task_id] = task
                 except Exception:
                     continue
+        # Restore the full queue before appending recovered assignments, or a
+        # task early in the file could jump ahead of work already waiting.
+        for task in list(self._tasks.values()):
+            if task.status == "assigned":
+                state_changed = True
+                self._stage_requeued_task(
+                    task, now=_utc_now(), reason="runner_service_restart", source="restart",
+                )
         if isinstance(artifacts, list):
             for item in artifacts:
                 if not isinstance(item, dict):
