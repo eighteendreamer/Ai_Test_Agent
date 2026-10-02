@@ -10,6 +10,12 @@
 
 该实现仍是单服务实例的 JSON 存储：没有新增跨进程锁、数据库事务或掉电持久化保证。内存保留一份已提交 JSON 值用于撤销失败保存，历史保留/大目录容量和多个进程共享同一路径仍需单独治理。
 
+心跳过期和启动恢复共用 `orchestration.compatibility_runner_max_automatic_retries` 自动预算，环境变量为 `ORCHESTRATION__COMPATIBILITY_RUNNER_MAX_AUTOMATIC_RETRIES`，默认 3、最小 0。0 表示中断后不自动重新入队；预算是自动恢复次数，不含首次领取。人工明确重排队开启新的自动预算，累计 `retry_count` 继续保留。未有 automatic_retry_count 的旧文件从 0 开始统计，不凭最近十条历史猜测全部过往次数。
+
+预算耗尽进入新状态 `recovery_required`：保留上一轮 Runner 身份、结果、工件和模式调用状态，记录原因、来源、次数和上限；不会归为工具执行成功/失败，也不会继续被 poll 领取或再次开始模式调用。报告和环境状态显示待核查，前端列出数量并提示核验副作用；人工 requeue 请求需明确包含该状态。其他排队任务可继续领取。人工重试会按既有历史快照方式归档本轮，再清空当前执行字段。
+
+预算和核查字段归服务器所有，派发元数据/Runner report 不能覆盖。正式 Settings 的预算与心跳超时均读取 orchestration；简化兼容调用的平面设置仍受支持。预算只限制现有自动恢复，不保证剩余预算内的重复执行一定无副作用；旧尝试回执隔离和供应商对账仍需后续实现。
+
 在 `Agent_Server` 目录运行：
 
 ```powershell

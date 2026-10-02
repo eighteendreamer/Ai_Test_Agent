@@ -54,6 +54,7 @@ class CompatibilityRunnerStateError(RuntimeError):
 class CompatibilityRunnerService:
     def __init__(self, *, settings=None, artifact_storage_service=None) -> None:
         self._settings = settings
+        self._orchestration_settings = getattr(settings, "orchestration", settings)
         self._artifact_storage_service = artifact_storage_service
         self._runners: dict[str, CompatibilityRunnerRecord] = {}
         self._tasks: dict[str, CompatibilityQueuedTask] = {}
@@ -213,6 +214,11 @@ class CompatibilityRunnerService:
                     metadata={
                         "plan_version": dispatch_plan.plan_version,
                         **task.metadata,
+                        "automatic_retry_count": 0,
+                        "automatic_retry_limit": None,
+                        "recovery_reason": None,
+                        "recovery_required_at": None,
+                        "recovery_source": None,
                     },
                 )
                 self._tasks[queued_task.task_id] = queued_task
@@ -427,6 +433,8 @@ class CompatibilityRunnerService:
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
+            if task.status == "recovery_required":
+                raise PermissionError(f"Task {task_id} requires recovery review before mode calls can execute.")
             execution_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
             if execution_status in {"running", "completed", "failed", "partial"}:
                 raise PermissionError(f"Mode calls for task {task_id} have already been executed or are running.")
@@ -649,7 +657,7 @@ class CompatibilityRunnerService:
             if failed:
                 status = "failed"
             elif pending:
-                status = "running"
+                status = "recovery_required" if any(task.status == "recovery_required" for task in tasks) else "running"
             elif cancelled and completed:
                 status = "partial"
             elif cancelled:
@@ -814,7 +822,7 @@ class CompatibilityRunnerService:
         return (datetime.now(UTC).replace(tzinfo=None) - heartbeat_at).total_seconds()
 
     def _runner_heartbeat_timeout_seconds(self) -> int:
-        return max(30, int(getattr(self._settings, "compatibility_runner_heartbeat_timeout_seconds", 120) or 120))
+        return max(30, int(getattr(self._orchestration_settings, "compatibility_runner_heartbeat_timeout_seconds", 120) or 120))
 
     def _requeue_stale_assigned_tasks_locked(self, now: str | None = None, *, persist: bool = True) -> list[str]:
         now = now or _utc_now()
@@ -845,12 +853,35 @@ class CompatibilityRunnerService:
     def _stage_requeued_task(
         self, task: CompatibilityQueuedTask, *, now: str, reason: str, source: str,
     ) -> None:
+        automatic_retry_count = int(task.metadata.get("automatic_retry_count", 0))
+        retry_limit = int(getattr(self._orchestration_settings, "compatibility_runner_max_automatic_retries", 3))
+        if source != "manual" and automatic_retry_count >= retry_limit:
+            # An interrupted assignment has an unknown outcome. Preserve its
+            # evidence and identity for review instead of claiming tool failure.
+            self._tasks[task.task_id] = task.model_copy(update={
+                "status": "recovery_required",
+                "updated_at": now,
+                "metadata": {
+                    **task.metadata,
+                    "automatic_retry_count": automatic_retry_count,
+                    "automatic_retry_limit": retry_limit,
+                    "recovery_reason": "automatic_retry_budget_exhausted",
+                    "recovery_required_at": now,
+                    "recovery_source": source,
+                },
+            })
+            logger.warning("compatibility_task_recovery_required_staged", extra={
+                "task_id": task.task_id, "requeue_source": source,
+                "automatic_retry_count": automatic_retry_count, "automatic_retry_limit": retry_limit,
+            })
+            return
         # All three retry paths retire the same evidence value before clearing
         # current-attempt fields. Keep the existing recent-ten retention policy.
         retry_history = deepcopy(list(task.metadata.get("retry_history") or []))
         retry_history.append({
             "at": now,
             "reason": reason,
+            "source": source,
             "previous_status": task.status,
             "previous_runner_id": task.assigned_runner_id,
             "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
@@ -874,6 +905,11 @@ class CompatibilityRunnerService:
             "metadata": {
                 **self._clear_mode_call_execution_metadata(task.metadata),
                 "retry_count": retry_count,
+                "automatic_retry_count": 0 if source == "manual" else automatic_retry_count + 1,
+                "automatic_retry_limit": None,
+                "recovery_reason": None,
+                "recovery_required_at": None,
+                "recovery_source": None,
                 "retry_history": retry_history[-10:],
             },
         })
@@ -978,6 +1014,11 @@ class CompatibilityRunnerService:
             "mode_calls_execution_status",
             "retry_count",
             "retry_history",
+            "automatic_retry_count",
+            "automatic_retry_limit",
+            "recovery_reason",
+            "recovery_required_at",
+            "recovery_source",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 
@@ -994,7 +1035,7 @@ class CompatibilityRunnerService:
             if failed:
                 status = "failed"
             elif pending:
-                status = "running"
+                status = "recovery_required" if any(task.status == "recovery_required" for task in items) else "running"
             elif cancelled and completed:
                 status = "partial"
             elif cancelled:
@@ -1016,12 +1057,14 @@ class CompatibilityRunnerService:
         return reports
 
     def _is_recoverable_task(self, task: CompatibilityQueuedTask) -> bool:
-        if task.status in {"failed", "cancelled"}:
+        if task.status in {"failed", "cancelled", "recovery_required"}:
             return True
         bridge_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
         return task.status == "assigned" and bridge_status in {"failed", "partial"}
 
     def _recoverable_task_summary(self, task: CompatibilityQueuedTask) -> str:
+        if task.status == "recovery_required":
+            return "Automatic recovery budget exhausted; review the previous attempt before manually requeuing."
         if task.result.get("summary") or task.error:
             return str(task.result.get("summary") or task.error)
         bridge_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()

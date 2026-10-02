@@ -554,11 +554,13 @@ function recoverableTaskSummary(report: CompatibilityExecutionReport) {
   const failed = tasks.filter((task) => task.status === "failed").length;
   const cancelled = tasks.filter((task) => task.status === "cancelled").length;
   const interrupted = tasks.filter((task) => task.status === "assigned").length;
+  const needsReview = tasks.filter((task) => task.status === "recovery_required").length;
   return {
     total: tasks.length,
     failed,
     cancelled,
     interrupted,
+    needsReview,
   };
 }
 
@@ -569,6 +571,7 @@ function requeueStatusLabel(status: string) {
     completed: "已完成",
     failed: "失败",
     queued: "排队中",
+    recovery_required: "待核查",
   };
   return labels[status] ?? status;
 }
@@ -765,7 +768,7 @@ async function requeueRecoverableTasks() {
   try {
     const result = await api.requeueCompatibilityTasks({
       task_ids: recoverableTaskIds,
-      statuses: ["failed", "cancelled", "assigned"],
+      statuses: ["failed", "cancelled", "assigned", "recovery_required"],
       reason: "manual_retry_recoverable_from_compatibility_report",
     });
     await refreshRunnerState();
@@ -1206,7 +1209,11 @@ onUnmounted(() => {
         可重跑 {{ recoverableTaskSummary(executionReport).total }} 个任务：
         失败 {{ recoverableTaskSummary(executionReport).failed }}，
         取消 {{ recoverableTaskSummary(executionReport).cancelled }}，
-        中断 {{ recoverableTaskSummary(executionReport).interrupted }}
+        中断 {{ recoverableTaskSummary(executionReport).interrupted }}，
+        待核查 {{ recoverableTaskSummary(executionReport).needsReview }}
+      </p>
+      <p v-if="recoverableTaskSummary(executionReport).needsReview" class="compatibility-risk">
+        自动重试已停止。请先核查上一轮执行结果与外部副作用，再决定是否手动重跑。
       </p>
       <div v-if="executionReport.environments.length" class="compatibility-matrix">
         <div

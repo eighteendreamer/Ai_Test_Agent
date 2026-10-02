@@ -243,6 +243,7 @@ class OrchestrConfig(BaseModel):
     turn_reaper_interval_seconds: float = Field(default=30.0, gt=0)
     test_run_lease_reaper_interval_seconds: float = 30.0
     compatibility_runner_heartbeat_timeout_seconds: int = 120
+    compatibility_runner_max_automatic_retries: int = Field(default=3, ge=0)
 
     mcp_stdio_command_allowlist: list[str] = Field(
         default_factory=lambda: ["npx", "uvx", "node", "python", "python3"]

@@ -8,15 +8,22 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from src.api.routes.compatibility import router
 from src.application.compatibility.runner_service import CompatibilityRunnerService
+from src.core.config import OrchestrConfig
 from src.modes.compatibility_testing_mode.contracts import (
     CompatibilityDispatchPlan,
     CompatibilityRunnerTask,
     RunnerSelector,
 )
-from src.schemas.compatibility_runner import CompatibilityRunnerRegistrationRequest
+from src.schemas.compatibility_runner import (
+    CompatibilityArtifactUploadRequest,
+    CompatibilityRunnerRegistrationRequest,
+    CompatibilityRunnerTaskReportRequest,
+    CompatibilityTaskRequeueRequest,
+)
 
 
 def settings_for(root):
@@ -25,6 +32,47 @@ def settings_for(root):
         storage=SimpleNamespace(artifact_root_dir=str(root / "artifacts")),
         compatibility_runner_heartbeat_timeout_seconds=120,
     )
+
+
+def test_runner_uses_nested_orchestration_settings_and_accepts_zero_retry_limit(tmp_path):
+    settings = settings_for(tmp_path)
+    settings.orchestration = OrchestrConfig(
+        compatibility_runner_heartbeat_timeout_seconds=300,
+        compatibility_runner_max_automatic_retries=0,
+    )
+    service = CompatibilityRunnerService(settings=settings)
+    assert service._runner_heartbeat_timeout_seconds() == 300
+    assert service._orchestration_settings.compatibility_runner_max_automatic_retries == 0
+    with pytest.raises(ValidationError):
+        OrchestrConfig(compatibility_runner_max_automatic_retries=-1)
+
+
+def test_runner_report_cannot_override_server_recovery_budget(tmp_path):
+    async def exercise():
+        service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="runner", capabilities=["local_browser"],
+        ))
+        untrusted_metadata = {
+            "automatic_retry_count": 999, "automatic_retry_limit": 999,
+            "recovery_reason": "forged", "recovery_required_at": "forged", "recovery_source": "forged",
+        }
+        await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="metadata-plan",
+            tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local", metadata=untrusted_metadata,
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        ))
+        assigned = (await service.poll_tasks("runner")).tasks[0]
+        assert assigned.metadata["automatic_retry_count"] == 0
+        assert assigned.metadata["recovery_reason"] is None
+        reported = await service.report_task("runner", "task", CompatibilityRunnerTaskReportRequest(
+            status="completed", result={"summary": "Normal dry-run completion."}, metadata=untrusted_metadata,
+        ))
+        assert reported.metadata["automatic_retry_count"] == 0
+        assert reported.metadata["recovery_reason"] is None
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("content", [
@@ -158,3 +206,87 @@ def test_failed_commit_rolls_back_memory_and_api_allows_safe_retry(tmp_path, cap
     restored = CompatibilityRunnerService(settings=settings)
     assert set(restored._tasks) == set(service._tasks)
     assert set(restored._runners) == set(service._runners)
+
+
+@pytest.mark.parametrize("recovery", ["restart", "heartbeat"])
+@pytest.mark.parametrize("limit", [0, 2])
+def test_automatic_retry_budget_preserves_uncertain_attempt_for_review(tmp_path, recovery, limit):
+    async def exercise():
+        settings = settings_for(tmp_path)
+        settings.compatibility_runner_max_automatic_retries = limit
+        service = CompatibilityRunnerService(settings=settings)
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="runner", capabilities=["local_browser"],
+        ))
+        await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="retry-budget-plan",
+            tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        ))
+        for attempt in range(limit + 1):
+            assert (await service.poll_tasks("runner")).tasks[0].task_id == "task"
+            artifact = await service.upload_task_artifact("runner", "task", CompatibilityArtifactUploadRequest(
+                filename="evidence.txt", content_base64=base64.b64encode(b"safe evidence").decode(),
+            ))
+            await service.begin_mode_call_execution("runner", "task")
+            await service.finish_mode_call_execution("runner", "task", status="partial", result_count=1)
+            before = service._tasks["task"].model_dump(mode="json")
+            if recovery == "restart":
+                # Controlled process-recovery contract; no Runner is crashed.
+                service = CompatibilityRunnerService(settings=settings)
+            else:
+                # Existing stale-heartbeat fixture, not an observed outage.
+                runner = service._runners["runner"]
+                service._runners["runner"] = runner.model_copy(update={"heartbeat_at": "2000-01-01T00:00:00Z"})
+                await service.list_tasks()
+            if attempt < limit:
+                assert service._tasks["task"].status == "queued"
+                await service.register_runner(CompatibilityRunnerRegistrationRequest(
+                    runner_id="runner", capabilities=["local_browser"],
+                ))
+        paused = service._tasks["task"]
+        assert paused.status == "recovery_required"
+        assert paused.assigned_runner_id == "runner"
+        assert paused.result == before["result"]
+        assert [item.model_dump(mode="json") for item in paused.artifacts] == before["artifacts"]
+        assert paused.artifacts[0].artifact_id == artifact.artifact_id
+        assert paused.metadata["mode_calls_execution_status"] == "partial"
+        assert paused.metadata["automatic_retry_count"] == limit
+        assert paused.metadata["recovery_reason"] == "automatic_retry_budget_exhausted"
+        assert paused.error == before["error"]
+        assert (await service.summarize_tasks()).failed == 0
+        report = await service.build_report()
+        assert report.status == "recovery_required"
+        assert report.pending_tasks == 1
+        assert [task.status for task in report.recoverable_tasks] == ["recovery_required"]
+        assert report.environments[0].status == "recovery_required"
+        with pytest.raises(PermissionError, match="requires recovery review"):
+            await service.begin_mode_call_execution("runner", "task")
+        restored = CompatibilityRunnerService(settings=settings)
+        assert restored._tasks["task"].model_dump(mode="json") == paused.model_dump(mode="json")
+        await restored.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="runner", capabilities=["local_browser"],
+        ))
+        assert (await restored.poll_tasks("runner")).tasks == []
+        await restored.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="unrelated-plan",
+            tasks=[CompatibilityRunnerTask(
+                task_id="unrelated-task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        ))
+        assert [(task.task_id) for task in (await restored.poll_tasks("runner")).tasks] == ["unrelated-task"]
+        await restored.report_task("runner", "unrelated-task", CompatibilityRunnerTaskReportRequest(
+            status="completed", result={"summary": "Normal unrelated dry-run completion."},
+        ))
+        retry = await restored.requeue_tasks(CompatibilityTaskRequeueRequest(
+            task_ids=["task"], statuses=["recovery_required"], reason="reviewed_fixture_no_external_side_effects",
+        ))
+        assert retry.task_ids == ["task"]
+        renewed = (await restored.poll_tasks("runner")).tasks[0]
+        assert renewed.metadata["automatic_retry_count"] == 0
+        assert renewed.metadata["recovery_reason"] is None
+        assert renewed.metadata["retry_history"][-1]["previous_artifacts"] == before["artifacts"]
+    asyncio.run(exercise())

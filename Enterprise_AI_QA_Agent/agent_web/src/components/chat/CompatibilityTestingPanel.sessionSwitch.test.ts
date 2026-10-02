@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   getCompatibilitySummary: vi.fn(),
   getCompatibilityReport: vi.fn(),
   draftCompatibilityPlan: vi.fn(),
+  requeueCompatibilityTasks: vi.fn(),
 }));
 const store = reactive({
   session: { id: "a" } as { id: string } | null,
@@ -37,6 +38,7 @@ beforeEach(() => {
   api.getCompatibilitySummary.mockResolvedValue({ total: 0 });
   api.getCompatibilityReport.mockResolvedValue({ total_tasks: 0, artifacts: [] });
   api.draftCompatibilityPlan.mockImplementation(() => new Promise(() => {}));
+  api.requeueCompatibilityTasks.mockResolvedValue({ requeued_count: 1, skipped_task_ids: [] });
 });
 
 it("does not treat another session's historical confirmation as a new draft request", async () => {
@@ -80,6 +82,31 @@ it("drafts once for a new confirmation in the active session", async () => {
     store.messages = [...store.messages, userMessage("a-repeat", "再次生成")];
     await nextTick();
     expect(api.draftCompatibilityPlan).toHaveBeenCalledOnce();
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("shows automatic recovery requiring review and includes it in manual retry", async () => {
+  api.getCompatibilityReport.mockResolvedValue({
+    total_tasks: 1, status: "recovery_required", pass_rate: 0,
+    summary: "An interrupted task needs review.", environments: [], failures: [], artifacts: [], markdown: "",
+    recoverable_tasks: [{ task_id: "paused-task", status: "recovery_required" }],
+  });
+  const wrapper = mount(CompatibilityTestingPanel);
+  try {
+    await flushPromises();
+    expect(wrapper.text()).toContain("待核查 1");
+    expect(wrapper.text()).toContain("自动重试已停止");
+    expect(api.requeueCompatibilityTasks).not.toHaveBeenCalled();
+    const retryButton = wrapper.findAll("button").find((button) => button.text() === "重跑可恢复任务");
+    expect(retryButton).toBeDefined();
+    await retryButton!.trigger("click");
+    await flushPromises();
+    expect(api.requeueCompatibilityTasks).toHaveBeenCalledWith({
+      task_ids: ["paused-task"], statuses: ["failed", "cancelled", "assigned", "recovery_required"],
+      reason: "manual_retry_recoverable_from_compatibility_report",
+    });
   } finally {
     wrapper.unmount();
   }
