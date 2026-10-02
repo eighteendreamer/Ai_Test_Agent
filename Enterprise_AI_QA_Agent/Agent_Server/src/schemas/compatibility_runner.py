@@ -120,6 +120,7 @@ class CompatibilityArtifactUploadRequest(BaseModel):
     filename: str
     content_base64: str
     assignment_id: str | None = None
+    upload_id: str | None = Field(default=None, min_length=1, max_length=128)
     type: str = "evidence"
     label: str = ""
     mime_type: str | None = None

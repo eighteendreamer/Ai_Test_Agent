@@ -96,7 +96,7 @@ class CompatibilityRunnerService:
                 active_task_ids=existing_active_task_ids,
                 registered_at=existing.registered_at if existing else now,
                 heartbeat_at=now,
-                metadata=payload.metadata,
+                metadata={**payload.metadata, "artifact_upload_idempotency_version": 1},
             )
             self._runners[record.runner_id] = record
             self._save_state()
@@ -375,15 +375,24 @@ class CompatibilityRunnerService:
         payload: CompatibilityArtifactUploadRequest,
     ) -> CompatibilityArtifactRecord:
         now = _utc_now()
+        if payload.upload_id and not payload.assignment_id:
+            raise ValueError("Idempotent artifact upload requires assignment_id.")
         async with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
             self._ensure_assignment_matches(task, payload.assignment_id)
+            content = self._decode_base64(payload.content_base64)
+            receipt_payload = payload.model_dump(mode="json", exclude={"content_base64"})
+            receipt_payload["content_sha256"] = sha256(content).hexdigest()
+            receipt = sha256(json.dumps(receipt_payload, ensure_ascii=False, sort_keys=True,
+                                        allow_nan=False).encode("utf-8")).hexdigest()
+            existing = self._artifact_upload_receipt(task, payload, receipt)
+            if existing is not None:
+                return existing
             task_snapshot = task
 
-        content = self._decode_base64(payload.content_base64)
         artifact_id = new_id("artifact")
         uri, metadata = await self._store_uploaded_artifact(
             artifact_id=artifact_id,
@@ -399,39 +408,65 @@ class CompatibilityRunnerService:
                     raise KeyError(task_id)
                 self._ensure_runner_can_write_task(runner_id, task)
                 self._ensure_assignment_matches(task, task_snapshot.metadata.get("assignment_id"), strict=True)
-                artifact = CompatibilityArtifactRecord(
-                    artifact_id=artifact_id,
-                    task_id=task.task_id,
-                    dispatch_id=task.dispatch_id,
-                    plan_id=task.plan_id,
-                    runner_id=runner_id,
-                    environment_id=task.environment_id,
-                    type=payload.type or "evidence",
-                    uri=uri,
-                    mime_type=payload.mime_type or self._content_type(payload.filename),
-                    label=payload.label or payload.filename or payload.type or "artifact",
-                    created_at=now,
-                    metadata={
-                        **payload.metadata,
-                        **metadata,
-                        "case_ids": task.case_ids,
-                        "original_filename": payload.filename,
-                        "size_bytes": len(content),
-                    },
-                )
-                self._artifacts[artifact.artifact_id] = artifact
-                updated = task.model_copy(
-                    update={
-                        "artifacts": [*task.artifacts, artifact],
-                        "updated_at": now,
-                    }
-                )
-                self._tasks[task_id] = updated
-                self._save_state()
-                return artifact
+                existing = self._artifact_upload_receipt(task, payload, receipt)
+                if existing is None:
+                    artifact = CompatibilityArtifactRecord(
+                        artifact_id=artifact_id,
+                        task_id=task.task_id,
+                        dispatch_id=task.dispatch_id,
+                        plan_id=task.plan_id,
+                        runner_id=runner_id,
+                        environment_id=task.environment_id,
+                        type=payload.type or "evidence",
+                        uri=uri,
+                        mime_type=payload.mime_type or self._content_type(payload.filename),
+                        label=payload.label or payload.filename or payload.type or "artifact",
+                        created_at=now,
+                        metadata={
+                            **payload.metadata,
+                            **metadata,
+                            "case_ids": task.case_ids,
+                            "original_filename": payload.filename,
+                            "size_bytes": len(content),
+                            "upload_id": payload.upload_id,
+                            "upload_assignment_id": payload.assignment_id,
+                            "upload_receipt_sha256": receipt if payload.upload_id else None,
+                        },
+                    )
+                    self._artifacts[artifact.artifact_id] = artifact
+                    updated = task.model_copy(
+                        update={
+                            "artifacts": [*task.artifacts, artifact],
+                            "updated_at": now,
+                        }
+                    )
+                    self._tasks[task_id] = updated
+                    self._save_state()
+                    logger.info("compatibility_artifact_upload_committed", extra={
+                        "task_id": task_id, "artifact_id": artifact_id, "idempotent": bool(payload.upload_id),
+                    })
+                    return artifact
+            # The winner is already indexed. Only this request's distinct
+            # storage object is compensated, outside the service state lock.
+            await self._delete_stored_artifact(uri, metadata)
+            return existing
         except Exception:
             await self._delete_stored_artifact(uri, metadata)
             raise
+
+    def _artifact_upload_receipt(
+        self, task: CompatibilityQueuedTask, payload: CompatibilityArtifactUploadRequest, receipt: str,
+    ) -> CompatibilityArtifactRecord | None:
+        if not payload.upload_id:
+            return None
+        for artifact in task.artifacts:
+            if (artifact.metadata.get("upload_id") == payload.upload_id
+                    and artifact.metadata.get("upload_assignment_id") == payload.assignment_id):
+                if artifact.metadata.get("upload_receipt_sha256") != receipt:
+                    raise PermissionError("Artifact upload identity was reused with different content.")
+                logger.info("compatibility_artifact_upload_reused", extra={"task_id": task.task_id})
+                return artifact
+        return None
 
     async def list_tasks(self, *, dispatch_id: str | None = None, runner_id: str | None = None) -> list[CompatibilityQueuedTask]:
         async with self._lock:
@@ -1036,6 +1071,9 @@ class CompatibilityRunnerService:
             "original_filename",
             "size_bytes",
             "storage_backend",
+            "upload_id",
+            "upload_assignment_id",
+            "upload_receipt_sha256",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 
@@ -1311,7 +1349,7 @@ class CompatibilityRunnerService:
     ) -> tuple[str, dict[str, Any]]:
         filename = self._safe_filename(payload.filename or f"{artifact_id}.bin")
         content_type = payload.mime_type or self._content_type(filename)
-        object_prefix = f"compatibility/{task.plan_id}/{task.dispatch_id}/{task.task_id}"
+        object_prefix = f"compatibility/{task.plan_id}/{task.dispatch_id}/{task.task_id}/{artifact_id}"
         if self._artifact_storage_service is not None and getattr(self._artifact_storage_service, "enabled", False):
             stored = await self._artifact_storage_service.store_uploaded_bytes(
                 content=content,

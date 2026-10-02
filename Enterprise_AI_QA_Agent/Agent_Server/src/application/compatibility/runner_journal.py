@@ -87,10 +87,10 @@ class RunnerJournal:
         for entry in entries:
             task, payload = entry["task"], entry["payload"]
             if (
-                entry["phase"] not in {"queued", "executing", "executed", "uploading", "report_ready", "review", "conflict"}
+                entry["phase"] not in {"queued", "executing", "executed", "uploading", "uploading_idempotent", "report_ready", "review", "conflict"}
                 or not isinstance(task, dict) or not task.get("task_id")
                 or (self.durable and (task.get("metadata") or {}).get("assignment_id") != entry["assignment"])
-                or (entry["phase"] in {"executed", "uploading", "report_ready"} and not isinstance(payload, dict))
+                or (entry["phase"] in {"executed", "uploading", "uploading_idempotent", "report_ready"} and not isinstance(payload, dict))
             ):
                 raise RuntimeError("Runner journal contains an invalid entry; preserve it for recovery review.")
         return entries

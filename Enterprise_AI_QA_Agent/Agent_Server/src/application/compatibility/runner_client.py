@@ -54,6 +54,7 @@ class CompatibilityRunnerClient:
         self.executor = executor
         self.metadata = metadata or {}
         self.active_task_ids: list[str] = []
+        self._idempotent_uploads = False
         self.journal = RunnerJournal(state_file, base_url=base_url, runner_id=runner_id)
 
     def close(self) -> None:
@@ -72,7 +73,7 @@ class CompatibilityRunnerClient:
                 "devices": self.devices,
                 "max_parallel": self.max_parallel,
                 "metadata": {
-                    **self.metadata,
+                    **{key: value for key, value in self.metadata.items() if key != "artifact_upload_idempotency_version"},
                     "runner_kind": "compatibility_runner_client",
                     "executor": self.executor,
                     "python": platform.python_version(),
@@ -80,6 +81,7 @@ class CompatibilityRunnerClient:
                 },
             },
         )
+        self._idempotent_uploads = (record.get("metadata") or {}).get("artifact_upload_idempotency_version") == 1
         print(f"registered runner={record.get('runner_id')} status={record.get('status')}")
 
     def heartbeat(self, status: str = "online") -> None:
@@ -121,6 +123,7 @@ class CompatibilityRunnerClient:
         mime_type: str,
         metadata: dict[str, Any] | None = None,
         assignment_id: str | None = None,
+        upload_id: str | None = None,
     ) -> dict[str, Any]:
         return _json_request(
             self.base_url,
@@ -134,6 +137,7 @@ class CompatibilityRunnerClient:
                 "mime_type": mime_type,
                 "metadata": metadata or {},
                 "assignment_id": assignment_id,
+                "upload_id": upload_id,
             },
         )
 
@@ -238,7 +242,8 @@ class CompatibilityRunnerClient:
     def run_once(self) -> int:
         self.heartbeat()
         for entry in self.journal.entries():
-            if entry["phase"] in {"executing", "uploading"}:
+            if (entry["phase"] in {"executing", "uploading"}
+                    or (entry["phase"] == "uploading_idempotent" and not self._idempotent_uploads)):
                 self.journal.update(entry["assignment"], "review", reason="unknown_" + entry["phase"])
                 print(f"runner_recovery_review task={entry['task']['task_id']} phase={entry['phase']}")
         pending = [entry for entry in self.journal.entries() if entry["phase"] not in {"review", "conflict"}]
@@ -278,8 +283,9 @@ class CompatibilityRunnerClient:
                     self.journal.update(assignment, "executed", payload=payload)
                     entry["phase"], entry["payload"] = "executed", payload
                 payload = entry["payload"]
-                if entry["phase"] == "executed":
-                    self.journal.update(assignment, "uploading")
+                if entry["phase"] in {"executed", "uploading_idempotent"}:
+                    idempotent = self._idempotent_uploads and bool((task.get("metadata") or {}).get("assignment_id"))
+                    self.journal.update(assignment, "uploading_idempotent" if idempotent else "uploading")
                     uploaded = self._upload_execution_artifacts(task, payload)
                     if uploaded:
                         payload["artifacts"] = []
@@ -452,6 +458,7 @@ class CompatibilityRunnerClient:
             mime_type="application/json",
             metadata={"preview": summary[:240]},
             assignment_id=metadata.get("assignment_id"),
+            upload_id="runner-log-v1" if self._idempotent_uploads and metadata.get("assignment_id") else None,
         )
         return [artifact]
 

@@ -74,6 +74,7 @@ export function reportCompatibilityRunnerTask(
   taskId: string,
   payload: {
     status: string;
+    assignment_id?: string | null;
     result?: Record<string, unknown>;
     artifacts?: Record<string, unknown>[];
     error?: string | null;
@@ -92,6 +93,8 @@ export function uploadCompatibilityArtifact(
   payload: {
     filename: string;
     content_base64: string;
+    assignment_id?: string | null;
+    upload_id?: string | null;
     type?: string;
     label?: string;
     mime_type?: string | null;

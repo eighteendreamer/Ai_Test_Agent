@@ -41,7 +41,7 @@ def settings_for(root):
     )
 
 
-@pytest.mark.parametrize("lost_response", ["report", "upload"])
+@pytest.mark.parametrize("lost_response", ["report", "upload", "legacy-upload"])
 def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_path, monkeypatch, lost_response):
     """Controlled lost ACK after a real commit; not a reported provider outage."""
     service = CompatibilityRunnerService(settings=settings_for(tmp_path))
@@ -61,7 +61,11 @@ def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_
             if path.endswith(suffix) and not dropped:
                 dropped = True
                 raise error.URLError("Controlled loss of a committed response")
-            return response.json()
+            body = response.json()
+            if lost_response == "legacy-upload" and path.endswith("/register"):
+                # Old server has no capability announcement; never infer safe replay.
+                body["metadata"].pop("artifact_upload_idempotency_version", None)
+            return body
 
         monkeypatch.setattr(runner_client_module, "_json_request", transport)
         client = CompatibilityRunnerClient(
@@ -90,6 +94,7 @@ def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_
             devices=[], max_parallel=2, poll_interval=1, executor="dry-run", state_file=tmp_path / "client.sqlite3",
         )
         monkeypatch.setattr(client, "execute_task", tracked_execute)
+        client.register()
         client.run_once()
         assert executions == ["task-1", "task-2"]
         assert service._tasks["task-2"].status == "completed"
@@ -97,6 +102,10 @@ def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_
         assert all(body["status"] == "completed" for body in reports)
         if lost_response == "report":
             assert reports[0] == reports[1]
+            assert len(service._artifacts) == 2
+        elif lost_response == "upload":
+            assert client.journal.entries() == []
+            assert service._tasks["task-1"].status == "completed"
             assert len(service._artifacts) == 2
         else:
             retained = client.journal.entries()
@@ -223,6 +232,109 @@ def test_saved_queued_assignment_is_checked_before_execution_after_manual_retry(
             assert service._artifacts == {}
         finally:
             client.close()
+
+
+def test_identical_identified_upload_reuses_persisted_artifact_without_duplicate_storage(tmp_path):
+    """Two normal API calls; no dropped response or execution fault."""
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as http:
+        prefix = "/api/v1/compatibility"
+        http.post(f"{prefix}/runners/register", json={"runner_id": "runner", "capabilities": ["local_browser"]})
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="upload-receipt-plan", tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        )))
+        task = http.post(f"{prefix}/runners/runner/tasks/poll").json()["tasks"][0]
+        payload = {"filename": "safe.txt", "content_base64": base64.b64encode(b"safe evidence").decode(),
+                   "assignment_id": task["metadata"]["assignment_id"], "upload_id": "runner-log"}
+        path = f"{prefix}/runners/runner/tasks/task/artifacts/upload"
+        first = http.post(path, json=payload)
+        second = http.post(path, json=payload)
+        assert first.status_code == second.status_code == 200
+        assert first.json() == second.json()
+        assert len(service._artifacts) == 1
+        assert len(list((tmp_path / "artifacts" / "compatibility").rglob("artifact_*"))) == 1
+        assert http.post(f"{prefix}/runners/runner/tasks/task/report", json={
+            "assignment_id": payload["assignment_id"], "status": "completed",
+        }).status_code == 200
+        # Startup deliberately revokes unfinished assignments. A completed
+        # assignment retains its receipt; do not change that recovery rule.
+        app.state.compatibility_runner_service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+        assert http.post(path, json=payload).json() == first.json()
+        assert http.post(path, json={**payload, "content_base64": base64.b64encode(b"changed").decode()}).status_code == 409
+        assert http.post(path, json={**payload, "assignment_id": None}).status_code == 400
+        assert http.post(f"{prefix}/tasks/requeue", json={"task_ids": ["task"], "statuses": ["completed"]}).status_code == 200
+        http.post(f"{prefix}/runners/runner/tasks/poll")
+        assert http.post(path, json=payload).status_code == 409
+
+
+def test_concurrent_identical_uploads_share_one_receipt_and_compensate_only_loser(tmp_path):
+    async def exercise():
+        ready, release = asyncio.Event(), asyncio.Event()
+
+        class Storage:
+            enabled = True
+
+            def __init__(self):
+                self.stored, self.deleted = [], []
+
+            async def store_uploaded_bytes(self, **kwargs):
+                uri = "rustfs://fixture/" + kwargs["object_prefix"] + "/" + kwargs["filename"]
+                self.stored.append(uri)
+                if len(self.stored) == 2:
+                    ready.set()
+                await release.wait()
+                return {"uri": uri}
+
+            async def delete_object_uri(self, uri):
+                self.deleted.append(uri)
+
+        storage = Storage()
+        service = CompatibilityRunnerService(settings=settings_for(tmp_path), artifact_storage_service=storage)
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(runner_id="runner", capabilities=["local_browser"]))
+        await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(plan_id="race-plan", tasks=[CompatibilityRunnerTask(
+            task_id="task", environment_id="local",
+            runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+        )]))
+        task = (await service.poll_tasks("runner")).tasks[0]
+        payload = CompatibilityArtifactUploadRequest(
+            filename="safe.txt", content_base64=base64.b64encode(b"safe evidence").decode(),
+            assignment_id=task.metadata["assignment_id"], upload_id="runner-log",
+        )
+        calls = [asyncio.create_task(service.upload_task_artifact("runner", "task", payload)) for _ in range(2)]
+        try:
+            await asyncio.wait_for(ready.wait(), timeout=5)
+        finally:
+            release.set()
+        first, second = await asyncio.gather(*calls)
+        assert first == second
+        assert len(service._artifacts) == 1
+        assert len(set(storage.stored)) == 2
+        assert len(storage.deleted) == 1
+        assert first.uri not in storage.deleted
+        assert storage.deleted[0] in storage.stored
+    asyncio.run(exercise())
+
+
+def test_old_server_cannot_echo_client_metadata_as_upload_capability(monkeypatch):
+    def transport(base_url, path, *, method="GET", payload=None):
+        return {"runner_id": "runner", "status": "online", "metadata": payload["metadata"]}
+
+    monkeypatch.setattr(runner_client_module, "_json_request", transport)
+    client = CompatibilityRunnerClient(
+        base_url="http://test", runner_id="runner", name="Old server", capabilities=[], devices=[],
+        max_parallel=1, poll_interval=1, executor="dry-run", metadata={"artifact_upload_idempotency_version": 1},
+    )
+    try:
+        client.register()
+        assert client._idempotent_uploads is False
+    finally:
+        client.close()
 
 
 def test_runner_uses_nested_orchestration_settings_and_accepts_zero_retry_limit(tmp_path):
