@@ -43,6 +43,10 @@ PROFILES = {
         "targets": ("tests/test_session_store_value_contract.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS",),
     },
+    "metrics-core": {
+        "targets": ("tests/test_metrics_core.py", "tests/test_metrics_business.py", "tests/test_metrics_multiprocess.py"),
+        "flags": ("RUN_LIVE_POSTGRES_TESTS",),
+    },
     "sql-lifecycle": {
         "targets": ("tests/test_lifespan_resource_cleanup.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_MYSQL_TESTS"),

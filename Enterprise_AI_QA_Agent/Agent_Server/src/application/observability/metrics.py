@@ -1,4 +1,4 @@
-"""Process-local Prometheus registry in text exposition format 0.0.4.
+"""Prometheus registry in text exposition format 0.0.4, with optional process aggregation.
 
 No upstream counterpart (checked: pyproject deps, src-wide grep for an existing
 prometheus/metrics registry, official FastAPI docs): the project ships no metrics
@@ -10,10 +10,17 @@ suffix) so call sites own the final metric name.
 from __future__ import annotations
 
 import math
+import os
 import re
 import threading
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+
+from src.application.observability.metrics_multiprocess import (
+    MetricSnapshotError,
+    ProcessSnapshots,
+)
 
 DEFAULT_BUCKETS: tuple[float, ...] = (
     0.05,
@@ -95,6 +102,7 @@ class _Metric:
         self.label_names = _check_label_names(self.name, label_names)
         self._lock = threading.Lock()
         self._children: dict[tuple[str, ...], Any] = {}
+        self._updated_ns = 0
 
     def _key(self, labels: Mapping[str, Any] | None) -> tuple[str, ...]:
         provided = dict(labels or {})
@@ -118,6 +126,19 @@ class _Metric:
 
     def _snapshot(self, sample: Any) -> Any:
         return sample
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            record = {
+                "name": self.name, "help": self.help, "type": self.metric_type,
+                "labels": self.label_names, "buckets": getattr(self, "buckets", None),
+                "aggregation": getattr(self, "aggregation", "sum"), "updated_ns": self._updated_ns,
+                "children": [[key, self._snapshot(value)] for key, value in self._children.items()],
+            }
+            if isinstance(self, Gauge):
+                record["replacement_ns"] = self._replacement_ns
+                record["updates"] = list(self._sample_updates.items())
+            return record
 
     def render(self) -> list[str]:
         with self._lock:
@@ -173,6 +194,14 @@ class LabeledCounter:
 class Gauge(_Metric):
     metric_type = "gauge"
 
+    def __init__(self, name: str, help: str = "", label_names: Iterable[str] = (), *, aggregation: str = "sum") -> None:
+        super().__init__(name, help, label_names)
+        if aggregation not in {"sum", "latest"}:
+            raise ValueError("Gauge aggregation must be sum or latest.")
+        self.aggregation = aggregation
+        self._replacement_ns = 0
+        self._sample_updates: dict[tuple[str, ...], int] = {}
+
     def labels(self, **labels: Any) -> "LabeledGauge":
         return LabeledGauge(self, self._key(labels))
 
@@ -180,6 +209,8 @@ class Gauge(_Metric):
         key = self._key(labels)
         with self._lock:
             self._children.pop(key, None)
+            self._updated_ns = time.monotonic_ns()
+            self._sample_updates[key] = self._updated_ns
 
     def replace_samples(self, samples: Mapping[tuple[str, ...], float]) -> None:
         """Publish one complete collector snapshot, removing absent label sets."""
@@ -192,6 +223,9 @@ class Gauge(_Metric):
             replacement[tuple(str(label) for label in labels)] = float(value)
         with self._lock:
             self._children = replacement
+            self._updated_ns = time.monotonic_ns()
+            self._replacement_ns = self._updated_ns
+            self._sample_updates = dict.fromkeys(replacement, self._updated_ns)
 
     def set(self, value: float) -> None:
         self._write(self._key(None), value)
@@ -205,6 +239,8 @@ class Gauge(_Metric):
     def _bump(self, key: tuple[str, ...], delta: float) -> None:
         with self._lock:
             self._children[key] = self._children.get(key, 0.0) + delta
+            self._updated_ns = time.monotonic_ns()
+            self._sample_updates[key] = self._updated_ns
 
     def _read(self, key: tuple[str, ...]) -> float:
         with self._lock:
@@ -213,6 +249,8 @@ class Gauge(_Metric):
     def _write(self, key: tuple[str, ...], value: float) -> None:
         with self._lock:
             self._children[key] = float(value)
+            self._updated_ns = time.monotonic_ns()
+            self._sample_updates[key] = self._updated_ns
 
     def value(self, **labels: Any) -> float:
         return self._read(self._key(labels))
@@ -309,9 +347,15 @@ _METRIC_CLASSES: dict[str, type[_Metric]] = {
 
 
 class Registry:
-    def __init__(self) -> None:
+    def __init__(self, *, multiprocess_directory: str | None = None) -> None:
         self._lock = threading.Lock()
         self._metrics: dict[str, _Metric] = {}
+        self._publisher = ProcessSnapshots(multiprocess_directory, self._snapshots) if multiprocess_directory else None
+
+    def _snapshots(self) -> list[dict[str, Any]]:
+        with self._lock:
+            metrics = list(self._metrics.values())
+        return [metric.snapshot() for metric in metrics]
 
     def get_or_create(
         self,
@@ -320,6 +364,8 @@ class Registry:
         help: str = "",
         label_names: Iterable[str] = (),
         buckets: Iterable[float] | None = None,
+        *,
+        aggregation: str = "sum",
     ) -> Any:
         if metric_cls not in _METRIC_CLASSES.values():
             raise ValueError(f"unsupported metric type: {metric_cls!r}")
@@ -329,9 +375,13 @@ class Registry:
             existing = self._metrics.get(name)
             if existing is not None:
                 self._reject_conflict(name, existing, metric_cls, names, normalized)
+                if isinstance(existing, Gauge) and existing.aggregation != aggregation:
+                    raise ValueError(f"metric {name!r} already registered with a different aggregation mode")
                 return existing
             if metric_cls is Histogram:
                 created: _Metric = Histogram(name, help, names, buckets=normalized)
+            elif metric_cls is Gauge:
+                created = Gauge(name, help, names, aggregation=aggregation)
             else:
                 created = metric_cls(name, help, names)
             self._metrics[name] = created
@@ -359,24 +409,82 @@ class Registry:
             raise ValueError(f"metric {name!r} already registered with buckets {list(existing.buckets)}")
 
     def render(self) -> str:
+        if self._publisher is not None:
+            self._publisher.publish()
+            return self._render_aggregate(self._publisher.read())
         with self._lock:
             metrics = list(self._metrics.values())
         return "".join(f"{line}\n" for metric in metrics for line in metric.render())
+
+    @staticmethod
+    def _render_aggregate(snapshots: list[tuple[bool, list[dict[str, Any]]]]) -> str:
+        aggregate = Registry()
+        try:
+            for active, records in snapshots:
+                for record in records:
+                    if not isinstance(record["help"], str) or not isinstance(record["labels"], (list, tuple)):
+                        raise TypeError("Metric definition does not match the snapshot format.")
+                    metric = aggregate.get_or_create(
+                        _METRIC_CLASSES[record["type"]], record["name"], record["help"], record["labels"],
+                        record["buckets"], aggregation=record["aggregation"],
+                    )
+                    children = {tuple(key): value for key, value in record["children"]}
+                    if any(len(key) != len(metric.label_names) or any(not isinstance(label, str) for label in key)
+                           for key in children):
+                        raise ValueError("Metric snapshot label count does not match its definition.")
+                    if isinstance(metric, Gauge):
+                        if not active:
+                            continue
+                        if metric.aggregation == "latest":
+                            replacement = int(record["replacement_ns"])
+                            if replacement > metric._replacement_ns:
+                                # A full replacement also removes labels omitted by this collector.
+                                for key, updated in list(metric._sample_updates.items()):
+                                    if updated < replacement:
+                                        metric._children.pop(key, None)
+                                        metric._sample_updates.pop(key)
+                                metric._replacement_ns = replacement
+                            for raw_key, updated in record["updates"]:
+                                key, updated = tuple(raw_key), int(updated)
+                                if len(key) != len(metric.label_names) or any(not isinstance(label, str) for label in key):
+                                    raise ValueError("Metric update labels do not match its definition.")
+                                if updated >= metric._replacement_ns and updated > metric._sample_updates.get(key, 0):
+                                    metric._sample_updates[key] = updated
+                                    if key in children:
+                                        metric._children[key] = float(children[key])
+                                    else:
+                                        metric._children.pop(key, None)
+                            continue
+                    for key, value in children.items():
+                        if isinstance(metric, Histogram):
+                            if len(value) != len(metric.buckets) + 2:
+                                raise ValueError("Metric snapshot bucket count does not match its definition.")
+                            previous = metric._children.get(key, [0] * len(value))
+                            metric._children[key] = [before + float(after) for before, after in zip(previous, value)]
+                        else:
+                            metric._children[key] = metric._children.get(key, 0.0) + float(value)
+            return aggregate.render()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MetricSnapshotError("Shared metric definitions or samples conflict.") from exc
+
+    def close(self) -> None:
+        if self._publisher is not None:
+            self._publisher.close()
 
     def reset(self) -> None:
         with self._lock:
             self._metrics.clear()
 
 
-REGISTRY = Registry()
+REGISTRY = Registry(multiprocess_directory=os.getenv("QA_METRICS_MULTIPROCESS_DIR") or None)
 
 
 def get_or_create_counter(name: str, help: str = "", label_names: Iterable[str] = ()) -> Counter:
     return REGISTRY.get_or_create(Counter, name, help, label_names)
 
 
-def get_or_create_gauge(name: str, help: str = "", label_names: Iterable[str] = ()) -> Gauge:
-    return REGISTRY.get_or_create(Gauge, name, help, label_names)
+def get_or_create_gauge(name: str, help: str = "", label_names: Iterable[str] = (), *, aggregation: str = "sum") -> Gauge:
+    return REGISTRY.get_or_create(Gauge, name, help, label_names, aggregation=aggregation)
 
 
 def get_or_create_histogram(

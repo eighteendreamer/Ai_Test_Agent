@@ -77,8 +77,8 @@ def _counter(name: str, help: str, *labels: str) -> Callable[[], Counter]:
     return lambda: get_or_create_counter(name, help, labels)
 
 
-def _gauge(name: str, help: str, *labels: str) -> Callable[[], Gauge]:
-    return lambda: get_or_create_gauge(name, help, labels)
+def _gauge(name: str, help: str, *labels: str, aggregation: str = "latest") -> Callable[[], Gauge]:
+    return lambda: get_or_create_gauge(name, help, labels, aggregation=aggregation)
 
 
 def _histogram(name: str, help: str, *labels: str) -> Callable[[], Histogram]:
@@ -166,7 +166,7 @@ resource_quota_limit = _gauge(
 )
 
 sse_connections_active = _gauge(
-    SSE_CONNECTIONS_ACTIVE, "Session event streams currently open."
+    SSE_CONNECTIONS_ACTIVE, "Session event streams currently open.", aggregation="sum"
 )
 
 compaction_total = _counter(
@@ -207,9 +207,9 @@ langsmith_reports_total = _counter(
 )
 
 pg_pool_checked_out = _gauge(
-    PG_POOL_CHECKED_OUT, "PostgreSQL pool connections checked out."
+    PG_POOL_CHECKED_OUT, "PostgreSQL pool connections checked out.", aggregation="sum"
 )
-pg_pool_size = _gauge(PG_POOL_SIZE, "PostgreSQL pool configured size.")
+pg_pool_size = _gauge(PG_POOL_SIZE, "PostgreSQL pool configured size.", aggregation="sum")
 redis_used_memory_bytes = _gauge(
     REDIS_USED_MEMORY_BYTES, "Redis used_memory reported by INFO memory."
 )
@@ -248,7 +248,7 @@ tool_call_seconds = _histogram(
 )
 
 worker_active = _gauge(
-    WORKER_ACTIVE, "Task deliveries a worker slot is executing right now.", "stream"
+    WORKER_ACTIVE, "Task deliveries a worker slot is executing right now.", "stream", aggregation="sum"
 )
 stream_consumer_lag = _gauge(
     STREAM_CONSUMER_LAG,

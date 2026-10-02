@@ -905,6 +905,33 @@ npm run desktop:build      # 复用同一类型检查，再构建桌面 renderer
 
 > 需要真实浏览器的验收用例（`tests/test_replay_live.py`）由 `RUN_LIVE_REPLAY=1` 门控，默认干净跳过而不是失败；要跑真实回放链路请显式设置该变量。
 
+## 多进程指标
+
+`/metrics` 沿用中央 API 的 Bearer 鉴权。默认注册表只统计当前进程；部署多个 API worker 或独立 CLI worker 时，须在父 shell 中、启动 Python 之前导出 `QA_METRICS_MULTIPROCESS_DIR`，所有参与统计的进程使用同一目录。仅写入 `Agent_Server/.env` 不会启用此功能，因为注册表在模块导入时初始化。
+
+PowerShell 示例（目录必须是本次部署新建的专用本地目录）：
+
+```powershell
+$env:QA_METRICS_MULTIPROCESS_DIR = Join-Path $env:TEMP ("qa-metrics-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $env:QA_METRICS_MULTIPROCESS_DIR | Out-Null
+# 从这个 shell 启动 API 及各 CLI worker，或向它们传入同一环境变量。
+```
+
+进程每秒原子写入一份快照，抓取进程先刷新自己的快照，再汇总同目录快照。Counter 和 Histogram 按进程相加；SSE 活跃数、worker 活跃数和 PostgreSQL 连接池等本地 Gauge 只汇总存活进程。Redis、队列、资源配额等共享状态按标签取最近一次更新，整组替换和标签删除同样参与合并，避免把全局读数重复相加或恢复已经删除的标签。
+
+正常退出保存最后计数，后续 worker 继续计入同一次部署的累计值；退出进程的本地 Gauge 不再计入。进程存活检测同时核对 PID 和创建时间。快照无法读取或定义冲突时，抓取返回 503 并记录安全日志，不能把不完整结果作为成功指标。
+
+此模式只支持同一主机、独立启动或 spawn 的进程；不支持预加载后 fork、跨主机共享目录或网络盘。共享目录只授予运行账户写权限，不得与不同服务/部署混用。部署整体重启时使用新目录；程序不会自动删除旧目录，保留的退出快照用于避免累计计数倒退。进程强制退出可能损失上次后台刷新后尚未保存的增量，磁盘故障也可能延长快照滞后；这不是业务结果的持久化机制。长时间运行下的目录容量和抓取性能仍需部署验证。
+
+指标专项质量门（包含真实 PostgreSQL/Redis，因此服务必须可连接）：
+
+```powershell
+cd Agent_Server
+uv run --no-sync python scripts/run_test_quality_gate.py --profile metrics-core
+```
+
+每次执行保留独立的 `artifacts/test-gates/` 报告、源码哈希和 JUnit 结果。真实进程回归使用正式指标路由与 HTTP 中间件的 ASGI 请求，尚不等同于生产 Uvicorn/反向代理和 Prometheus 抓取验收。
+
 ## 当前进度与下一步
 
 已完成并带测试的骨架：`session + event + snapshot + approval` 协议、LangGraph 编排与 interrupt/resume、Coordinator/Worker 调度、8 种实装测试模式（另有 6 种占位待补 Runner）、54 个 Skill、前端工作台可观测性、知识图谱与 pgvector 记忆、用例驱动八表、UI 录制 P0~P2（契约/存储/注入脚本/三种驱动/固化/审批编排/API/桌面端窗口/回放执行器/录制转草稿/断言建议）。
