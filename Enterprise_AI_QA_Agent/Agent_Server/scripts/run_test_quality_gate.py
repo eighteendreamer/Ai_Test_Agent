@@ -29,6 +29,7 @@ LIVE_FLAGS = (
     "RUN_LIVE_POSTGRES_SOAK", "RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_RECORDING_MEMGRAPH",
     "RUN_LIVE_RECORDING_PG", "RUN_LIVE_REDIS_VECTOR_TESTS", "RUN_LIVE_REPLAY",
     "RUN_LIVE_TEST_CASE_EMBEDDING_TESTS", "RUN_LIVE_VECTOR_REBUILD_PIPELINE_TESTS",
+    "RUN_LIVE_MODEL_TOOL_TESTS",
 )
 # Core groups are intentionally explicit, rather than claiming every external
 # service has been exercised merely because one PostgreSQL test passed.
@@ -83,6 +84,10 @@ PROFILES = {
     "model-hitl": {
         "targets": ("tests/test_live_deep_agents_hitl.py",),
         "flags": ("RUN_LIVE_DEEP_AGENTS_HITL", "RUN_LIVE_POSTGRES_TESTS"),
+    },
+    "model-tools": {
+        "targets": ("tests/test_live_model_tool_stream.py",),
+        "flags": ("RUN_LIVE_MODEL_TOOL_TESTS",),
     },
 }
 
@@ -207,6 +212,8 @@ def main() -> int:
     run_id = f"{started.strftime('%Y%m%dT%H%M%S')}-{args.profile}-{uuid4().hex[:12]}"
     output = args.output_root.resolve() / run_id
     output.mkdir(parents=True, exist_ok=False)
+    # Tests may archive explicitly safe observations beside their pinned report.
+    os.environ["QA_TEST_GATE_OUTPUT_DIR"] = str(output)
     targets = args.target or list(PROFILES[args.profile]["targets"])
     pytest_args = [*targets, "-q", "--tb=short", "-o", "addopts=", f"--junitxml={output / 'junit.xml'}"]
     manifest = source_manifest()
