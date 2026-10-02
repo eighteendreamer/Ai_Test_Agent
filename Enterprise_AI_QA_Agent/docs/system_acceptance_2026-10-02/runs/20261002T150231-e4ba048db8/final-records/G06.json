@@ -1,0 +1,1158 @@
+{
+  "id": "G06",
+  "domain": "运行基础设施",
+  "name": "版本迁移与测试质量门",
+  "source": "Agent_Server/src/main.py",
+  "backend_test_files": [
+    "test_schema_migrations.py",
+    "test_quality_gate_reporting.py",
+    "test_release_rollback_preflight.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 31,
+    "skipped": 22
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_quality_gate_reporting.py::test_real_route_regression_report_preserves_versions_and_results",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001214599993545562
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 3.702663699979894
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005908999883104116
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_quality_gate_reporting.py::test_existing_opt_in_browser_tests_are_not_reported_as_passed",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0017374000162817538
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.5753344999975525
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00026259999140165746
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_quality_gate_reporting.py::test_reporter_does_not_count_successful_call_with_failed_teardown",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0017239000007975847
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.4578458000032697
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00027749998844228685
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_quality_gate_reporting.py::test_reporter_records_collection_failure_without_passing_empty_suite",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001960900000995025
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.5228924000111874
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003192000149283558
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_release_rollback_preflight.py::test_f_string_split_ddl_and_banlist_strings_are_classified_correctly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0017628000059630722
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.016120900021633133
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00024530000519007444
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_offline_upgrade_contains_real_ddl_and_version_without_a_database_url",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003243999963160604
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012485199986258522
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001728000061120838
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_current_command_uses_the_real_configured_credentials",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01830970001174137,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017159999697469175
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[task_outbox]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018591799977002665,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00019779999274760485
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[TASK_OUTBOX]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01843130000634119,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00019359998987056315
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[\"Task.Outbox\"]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02000190000399016,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017139999545179307
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_existing_legacy_rows_survive_upgrade_and_repeated_upgrade",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019333799980813637,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00019229997997172177
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_caller_transaction_rollback_removes_schema_changes_and_version",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01883720001205802,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032400002237409353
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_downgrade_refuses_to_delete_preexisting_durable_work",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01906379999127239,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001959000073838979
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0001]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019517899985658005,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002330999996047467
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0002]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.017744299984769896,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016399999731220305
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0003]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01911419999669306,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002057999954558909
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_offline_head_includes_all_three_frozen_revisions",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015929999062791467
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.006575500010512769
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001621000119484961
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names0]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018473600008292124,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021680002100765705
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names1]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01878390001365915,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017210000078193843
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names2]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018275199981871992,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015639999764971435
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_upgrade_preserves_existing_rows_and_outbox_revision",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019184600008884445,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021150000975467265
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_rollback_keeps_committed_outbox_version",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01855110001633875,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015730000450275838
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_downgrade_refuses_to_remove_saved_results_and_evidence",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01796880000620149,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001545000122860074
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[compaction_records]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01902830001199618,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014620000729337335
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[COMPACTION_RECORDS]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018482199986465275,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017260000458918512
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[\"Compaction.Records\"]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018519699980970472,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020050001330673695
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_upgrade_preserves_supported_legacy_claims_and_receipts",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01837350000278093,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020730000687763095
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_rollback_keeps_committed_tool_tables",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020011200016597286,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002992000081576407
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_downgrade_preserves_preexisting_claim",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018469300004653633,
+          "reason": "Skipped: requires actual PostgreSQL; migration-core enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00019099999917671084
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_offline_upgrade_contains_real_ddl_and_version_without_a_database_url",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002314999874215573
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03744159999769181
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00018430000636726618
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_current_command_uses_the_real_configured_credentials",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.11406220000935718
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.05016260000411421
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.004401499987579882
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[task_outbox]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0249490000132937
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.052098300016950816
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00790569998207502
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[TASK_OUTBOX]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.024592000001575798
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04063860001042485
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0075551999907474965
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_fresh_migration_is_usable_by_real_outbox_without_initialize[\"Task.Outbox\"]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.024441499990643933
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04182109999237582
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.007383599993772805
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_existing_legacy_rows_survive_upgrade_and_repeated_upgrade",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.023076399986166507
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.033033200015779585
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.007362299977103248
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_caller_transaction_rollback_removes_schema_changes_and_version",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02582460001576692
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.02224479999858886
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00439889999688603
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_downgrade_refuses_to_delete_preexisting_durable_work",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025568700017174706
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03853320001508109
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.007009099994320422
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0001]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02647470001829788
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7882525000022724
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0070866000023670495
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0002]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025888400006806478
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7868919000029564
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009414600004674867
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_two_real_migration_processes_serialize_first_upgrade[20261002_0003]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02467899999464862
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7728176000236999
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009748399985255674
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_offline_head_includes_all_three_frozen_revisions",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016220001270994544
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.004936100012855604
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012099999003112316
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names0]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.026102600008016452
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.11632870000903495
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.008739800017792732
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names1]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025470699998550117
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08506599999964237
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009832200012169778
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_supports_real_execution_and_evidence_without_initialize[names2]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025897300016367808
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.078940400009742
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00938299999688752
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_upgrade_preserves_existing_rows_and_outbox_revision",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025833699997747317
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.07200690000900067
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009674700006144121
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_revision_rollback_keeps_committed_outbox_version",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025854299979982898
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.05278840000391938
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.007839900004910305
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_tool_downgrade_refuses_to_remove_saved_results_and_evidence",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02930340002058074
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.07480929998564534
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00998599999002181
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[compaction_records]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025700800004415214
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.09130499997991137
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009622200013836846
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[COMPACTION_RECORDS]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02513090000138618
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.09296089998679236
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.012268399994354695
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_supports_real_claim_and_receipt_without_initialize[\"Compaction.Records\"]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025239899987354875
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08903239999199286
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.009081500000320375
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_upgrade_preserves_supported_legacy_claims_and_receipts",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025035800004843622
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04937160000554286
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.008993800001917407
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_revision_rollback_keeps_committed_tool_tables",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025180900003761053
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04920889998902567
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.007031399989500642
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    },
+    {
+      "nodeid": "tests/test_schema_migrations.py::test_compaction_downgrade_preserves_preexisting_claim",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.02817589999176562
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.06574049999471754
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.010240300005534664
+        }
+      ],
+      "outcome": "passed",
+      "profile": "migration-core",
+      "evidence": "../gates/20261002T150444-migration-core-bdf08e88bf2d/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

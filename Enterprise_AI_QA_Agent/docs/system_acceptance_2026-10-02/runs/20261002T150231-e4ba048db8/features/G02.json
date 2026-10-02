@@ -1,0 +1,1613 @@
+{
+  "id": "G02",
+  "domain": "运行基础设施",
+  "name": "Redis 投递、重试与 Outbox",
+  "source": "Agent_Server/src/main.py",
+  "backend_test_files": [
+    "test_redis_task_queue.py",
+    "test_redis_task_retry.py",
+    "test_postgres_task_outbox_relay.py",
+    "test_live_redis_task_delivery.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "skipped": 29,
+    "passed": 45
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_atomic_dead_letter_failure_and_owner_fencing",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00011289998656138778,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001385000068694353
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_publish_reply_loss_does_not_drop_or_duplicate_retry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010760000441223383,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012430001515895128
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_not_before_and_abandoned_pending_recovery",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010579999070614576,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012909999350085855
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_running_delivery_heartbeat_prevents_reclaim",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010629999451339245,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012030001380480826
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_timeout_and_deferred_delivery_are_distinct",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010420000762678683,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013680002302862704
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_worker_stops_execution_after_ownership_loss",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010829998063854873,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001196000084746629
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retry_after_database_commit_preserves_one_durable_result",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010149998706765473,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012900002184323967
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields0-missing_payload-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00014940000255592167,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013459997717291117
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields0-missing_payload-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001086000120267272,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001194999786093831
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields1-invalid_json-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010430000838823617,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001267999759875238
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields1-invalid_json-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010490001295693219,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001238000113517046
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields2-payload_not_object-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010260002454742789,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011870000162161887
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields2-payload_not_object-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001036000030580908,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001247999898623675
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields3-invalid_delivery_metadata-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001024999946821481,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014089999604038894
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields3-invalid_delivery_metadata-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010629999451339245,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012069998774677515
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields4-invalid_delivery_metadata-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010379997547715902,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012240000069141388
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields4-invalid_delivery_metadata-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00019109999993816018,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001244999875780195
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_archive_failure_retains_entire_batch_for_recovery",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010490001295693219,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011870000162161887
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_reply_loss_preserves_valid_deliveries_without_duplicate_archive",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001078000059351325,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012129999231547117
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_checks_current_owner_and_does_not_archive_twice",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001078000059351325,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011490000179037452
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_deleted_pending_body_is_archived_as_missing_before_ack",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010050000855699182,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001477000187151134
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_idle_poll_recycles_old_acknowledged_history_without_losing_unread_tail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 9.850002243183553e-05,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001939999929163605
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_respects_every_groups_unread_and_pending_boundary",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001154000055976212,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011839999933727086
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_limits_each_batch_and_preserves_fresh_and_dead_letter_entries",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00012700000661425292,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012280000373721123
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_preserves_pending_and_compares_large_id_sequences_exactly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 9.580000187270343e-05,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020199999562464654
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_rechecks_new_group_in_the_same_redis_operation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010749997454695404,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011779999476857483
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_formal_outbox_publisher_does_not_create_phantom_consumer_groups",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010770000517368317,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011419999646022916
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_preserves_old_delayed_delivery_until_it_is_committed",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0001002000062726438,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011059999815188348
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_keeps_unread_stream_without_groups_and_disabled_history",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 9.980000322684646e-05,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for real Redis/PostgreSQL delivery faults"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011680001625791192
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_postgres_task_outbox_relay.py::test_relay_marks_success_and_preserves_failed",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017409998690709472
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0013758999994024634
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015949999215081334
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_queue_enqueues_consumes_ack_and_reclaims",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005830999871250242
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00036540001747198403
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00035200000274926424
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_queue_quarantines_malformed_payload",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007329999934881926
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00037670001620426774
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00031609999132342637
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_nonblocking_read_and_pending_safe_enqueue",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006735000060871243
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003085000207647681
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003842000151053071
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_delivery_metadata_is_separate_from_business_payload",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014519999967887998
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001297999988310039
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012020001304335892
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_legacy_retry_decode_does_not_mutate_received_fields",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013229998876340687
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001202999847009778
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004698999982792884
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_producer_connect_does_not_create_an_unused_group",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.020253099995898083
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000350900023477152
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00035489999572746456
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_failure_does_not_change_delivery_success",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.012682200002018362
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008542999858036637
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004354999982751906
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_can_be_disabled_and_obeys_interval",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006158000032883137
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00028199999360367656
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003974999999627471
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_settings_reject_unsafe_configuration[options0]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021649998961947858
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00023350000265054405
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014180000289343297
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_settings_reject_unsafe_configuration[options1]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003158999898005277
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001776999852154404
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012229999992996454
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_settings_reject_unsafe_configuration[options2]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018530001398175955
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002148999774362892
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003955000138375908
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_queue.py::test_retention_settings_reject_unsafe_configuration[options3]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003614999877754599
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016840000171214342
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001269000058528036
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_retry.py::test_worker_requeues_failed_task_until_retry_limit",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005436000064946711
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007036000024527311
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00038049998693168163
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_retry.py::test_worker_dead_letters_after_retry_limit",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000531600002432242
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005241999751888216
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003434999962337315
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_redis_task_retry.py::test_retry_publish_failure_must_not_ack_original",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005403000104706734
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00048370001604780555
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00030380001408047974
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_atomic_dead_letter_failure_and_owner_fencing",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.038521100010257214
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011484599992400035
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0017704000056255609
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_publish_reply_loss_does_not_drop_or_duplicate_retry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005836199998157099
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08969659998547286
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0017274999991059303
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_not_before_and_abandoned_pending_recovery",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005554700008360669
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.276723499991931
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.001451499992981553
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_running_delivery_heartbeat_prevents_reclaim",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005256499978713691
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5334258000075351
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014220000011846423
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_timeout_and_deferred_delivery_are_distinct",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005544799991184846
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.036553400015691295
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.001329899998381734
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_worker_stops_execution_after_ownership_loss",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0055404999875463545
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03370630001882091
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014637999993283302
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retry_after_database_commit_preserves_one_durable_result",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00550860000657849
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.22015390000888146
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0015480000001844019
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields0-missing_payload-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0056486000248696655
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010754799994174391
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0011627999774646014
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields0-missing_payload-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005288599990308285
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.033252499997615814
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013555999903474003
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields1-invalid_json-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00662430000375025
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010973800002830103
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0015493999817408621
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields1-invalid_json-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0062639000243507326
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.033610699989367276
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014092999917920679
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields2-payload_not_object-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0053023000073153526
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00936960001126863
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014517000236082822
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields2-payload_not_object-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005266599997412413
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04083169999648817
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0012294999905861914
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields3-invalid_delivery_metadata-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.006113599985837936
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.009977000008802861
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013011999835725874
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields3-invalid_delivery_metadata-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005139400018379092
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03754489999846555
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0012074000260327011
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields4-invalid_delivery_metadata-consume]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005407600023318082
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.009092899999814108
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013380000018514693
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_malformed_delivery_does_not_stop_valid_batch[bad_fields4-invalid_delivery_metadata-reclaim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005595099995844066
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03139650000957772
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014241999888326973
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_archive_failure_retains_entire_batch_for_recovery",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004889500007266179
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03819890000158921
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013769000070169568
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_reply_loss_preserves_valid_deliveries_without_duplicate_archive",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005032399989431724
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04111450002528727
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0012832999927923083
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_quarantine_checks_current_owner_and_does_not_archive_twice",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005017399991629645
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00884669998777099
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0012531999964267015
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_deleted_pending_body_is_archived_as_missing_before_ack",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004930000024614856
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01014599998597987
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.001128700008848682
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_idle_poll_recycles_old_acknowledged_history_without_losing_unread_tail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004859200009377673
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.2339407000108622
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013433999847620726
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_respects_every_groups_unread_and_pending_boundary",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004654499993193895
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.015729000006103888
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.001389399985782802
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_limits_each_batch_and_preserves_fresh_and_dead_letter_entries",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004559799999697134
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.019577599974581972
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0012796000228263438
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_preserves_pending_and_compares_large_id_sequences_exactly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004428800020832568
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.008995499985758215
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000994300004094839
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_rechecks_new_group_in_the_same_redis_operation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005620999989332631
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.009565900021698326
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013535000034607947
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_formal_outbox_publisher_does_not_create_phantom_consumer_groups",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004490299994358793
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.016542800003662705
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0013179999950807542
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_preserves_old_delayed_delivery_until_it_is_committed",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004955699987476692
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.007737700012512505
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0011990999919362366
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_redis_task_delivery.py::test_retention_keeps_unread_stream_without_groups_and_disabled_history",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0048463999992236495
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.014268500002799556
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0011295999865978956
+        }
+      ],
+      "outcome": "passed",
+      "profile": "redis-core",
+      "evidence": "gates/20261002T150527-redis-core-12aecfd6ec53/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ]
+}

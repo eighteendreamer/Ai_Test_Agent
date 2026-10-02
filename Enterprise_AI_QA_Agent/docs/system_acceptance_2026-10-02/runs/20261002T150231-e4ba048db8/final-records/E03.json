@@ -1,0 +1,2085 @@
+{
+  "id": "E03",
+  "domain": "知识、文档与工件",
+  "name": "上下文压缩与索引重建",
+  "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+  "backend_test_files": [
+    "test_context_compaction.py",
+    "test_compaction_worker.py",
+    "test_memory_vector_rebuild.py",
+    "test_live_compaction_ownership.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 63,
+    "skipped": 32
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_compaction_writes_durable_memory_then_clears_hot_data",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017450001905672252
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009219000057782978
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001382000045850873
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_fallback_marker_rejects_old_owner_before_hot_data_clear",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014720001490786672
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0013948999985586852
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000142700009746477
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_rejected_initial_renewal_does_not_start_memory_write",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002306999813299626
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.009250600007362664
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00022259997786022723
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_compaction_uses_cursor_commit_and_stable_key_for_idempotency",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018039997667074203
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0011181999871041626
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001379000023007393
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_failed_compaction_retries_the_same_pending_prefix",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013830000534653664
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008703999919816852
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012889999197795987
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_compaction_falls_back_to_durable_events_when_redis_hot_memory_is_unavailable",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014489999739453197
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009079999872483313
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013149998267181218
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_hot_memory_type_error_is_logged_and_uses_durable_fallback",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00022680000984109938
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008776999893598258
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021860000560991466
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_compaction_worker.py::test_concurrent_compaction_writes_one_summary_per_session",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001700999855529517
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009831000061240047
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014849999570287764
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_should_compact_false_when_not_enough_messages",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018619999173097312
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00019599997904151678
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012939999578520656
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_should_compact_true_when_watermark_exceeded",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014020001981407404
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002162999880965799
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011789999553002417
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_should_compact_false_below_watermark_and_small_backlog",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012650000280700624
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001839999749790877
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011160000576637685
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_should_compact_true_on_message_count_fallback_without_usage",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012050001532770693
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00022449999232776463
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001249000197276473
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_maybe_compact_writes_summary_metadata",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006139999895822257
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005231999966781586
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003208999987691641
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_maybe_compact_merges_previous_summary_into_prompt",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005540999991353601
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007066999969538301
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00031010000384412706
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_compaction_excludes_ineligible_tool_output_and_fences_transcript",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005429000011645257
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000440800009528175
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003071000101044774
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_persisted_summary_replays_as_untrusted_context",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014050002209842205
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00019520000205375254
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00027940000290982425
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_maybe_compact_skips_on_model_failure_without_blocking",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006166999810375273
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005289999826345593
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00038490002043545246
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_maybe_compact_skips_on_http_error_result",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005939000111538917
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005188999930396676
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00031640002271160483
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_build_runtime_messages_injects_summary_and_tail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015979999443516135
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00020229999790899456
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001303000026382506
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_context_compaction.py::test_build_runtime_messages_without_summary_keeps_legacy_behavior",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015499998698942363
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002195000124629587
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011819999781437218
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_old_worker_cannot_settle_a_new_owners_claim_or_trim_hot_memory[complete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020355199987534434,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006659999780822545
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_old_worker_cannot_settle_a_new_owners_claim_or_trim_hot_memory[fail]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019858999992720783,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006318000087048858
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_running_marker_uses_execution_lease_instead_of_hot_data_retention",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02130560000659898,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006661999796051532
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_new_cycle_does_not_reuse_a_completed_compaction_key",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019858400017255917,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006649999995715916
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_redis_owner_cannot_commit_mark_pending_or_fail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0197084000101313,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005536999960895628
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_completed_pg_record_repairs_failed_cache_commit_without_recompressing",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018952400016132742,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004788000078406185
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_legacy_running_marker_is_bounded_on_first_retry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019842400011839345,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006291999889072031
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_settled_marker_keeps_owner_and_rejects_unowned_mutation[completed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0192459000099916,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006118000019341707
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_settled_marker_keeps_owner_and_rejects_unowned_mutation[failed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019717699993634596,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005561000143643469
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_durable_completion_without_hot_cursor_preserves_new_events",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01977799998712726,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007396999862976372
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_pg_rejects_expired_owner_even_before_takeover[complete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019571200013160706,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007027000247035176
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_pg_rejects_expired_owner_even_before_takeover[fail]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01911290001589805,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00048240000614896417
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_expired_worker_can_be_replaced_and_late_success_is_rejected",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018701399996643886,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004834999854210764
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_slow_compression_keeps_both_claims_alive",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020284099999116734,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007027999963611364
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[pg_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019233200000599027,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005636999849230051
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[redis_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019594899989897385,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000530699995579198
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[transport]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019808499986538664,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005454000202007592
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[timeout]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02043889998458326,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006916999991517514
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_repeated_cancellation_waits_for_memory_cleanup_and_stops_heartbeat",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019157799979439005,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005497000238392502
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_renewals_do_not_revive_expired_or_settled_owners",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019676299998536706,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00067559999297373
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_cancelled_memory_thread_cannot_overwrite_completed_takeover",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01967549999244511,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005241000035312027
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[expired]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019227700016926974,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004692999937105924
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[completed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019049499998800457,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004375999851617962
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[failed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02062530000694096,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006686999986413866
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[wrong_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020086500007892027,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005082999996375293
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[wrong_session]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019338299985975027,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006950999959371984
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[missing_claim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.03535259998170659,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005606999911833555
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_memory_lease_expiry_is_checked_after_waiting_for_claim_lock",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01933330000611022,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00041310000233352184
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_runtime_carries_compaction_proof_without_serializing_owner",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015060001169331372
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.02050699997926131
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017870002193376422
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_late_old_replica_cannot_replace_new_compaction_vector",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02085949998581782,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006821999850217253
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_rebuild_snapshot_does_not_replace_new_replica_or_activate",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019122700003208593,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.001341600000159815
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_current_rebuild_restores_versioned_replica_and_rejects_unversioned_overwrite",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01917499999399297,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005376999906729907
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_memory_row_revision_is_monotonic_and_embedding_backfill_advances_it",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.04040759999770671,
+          "reason": "Skipped: requires real PostgreSQL and Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006865999894216657
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_preview_never_touches_redis_or_exports_vectors",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006124000065028667
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0026156000094488263
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003535000141710043
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_rebuild_keyset_pages_and_retry_is_idempotent",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00066970000625588
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.004961700004059821
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005185999907553196
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_test_case_export_without_memory_revision_can_rebuild",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006340999971143901
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0036404999846126884
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003376999811735004
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_failure_is_not_reported_as_success_and_can_restart",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006856000109110028
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.004737700015539303
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005126000032760203
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_activation_happens_only_after_replica_validation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.025738700001966208
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00441659998614341
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004388999950606376
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_failed_validation_does_not_switch_active_index",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007752999954391271
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0037062999908812344
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003606999816838652
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_mixed_dimensions_block_before_index_creation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000658300006762147
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0036533999955281615
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003412000078242272
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_missing_version_is_empty_not_fake_rebuild",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001146599999628961
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0024476000107824802
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003795000084210187
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_memory_vector_rebuild.py::test_activation_requires_execute",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006267999997362494
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.002971599984448403
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004116999916732311
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_old_worker_cannot_settle_a_new_owners_claim_or_trim_hot_memory[complete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.13806619998649694
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03719530001399107
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.8068296999845188
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_old_worker_cannot_settle_a_new_owners_claim_or_trim_hot_memory[fail]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.05000470002414659
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.032478899986017495
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7251591000240296
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_running_marker_uses_execution_lease_instead_of_hot_data_retention",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.043253199983155355
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0018185000226367265
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7261315000068862
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_new_cycle_does_not_reuse_a_completed_compaction_key",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04351189997396432
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04119160000118427
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6899321000091732
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_redis_owner_cannot_commit_mark_pending_or_fail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04304839999531396
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.009754199971212074
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6852743000199553
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_completed_pg_record_repairs_failed_cache_commit_without_recompressing",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04305949999252334
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03825349998078309
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7012032000056934
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_legacy_running_marker_is_bounded_on_first_retry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.045010300003923476
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0023988000175449997
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7178010999923572
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_settled_marker_keeps_owner_and_rejects_unowned_mutation[completed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.05441229999996722
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0027581999893300235
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7365126999793574
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_settled_marker_keeps_owner_and_rejects_unowned_mutation[failed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04489280001143925
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.003359399997862056
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6960678000177722
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_durable_completion_without_hot_cursor_preserves_new_events",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.044908299983944744
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.023803799995221198
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7349036000086926
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_pg_rejects_expired_owner_even_before_takeover[complete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04184240000904538
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.015083100006449968
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6876925999822561
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_pg_rejects_expired_owner_even_before_takeover[fail]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04318830001284368
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.014530200016452
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7332846999925096
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_expired_worker_can_be_replaced_and_late_success_is_rejected",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04339639999670908
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04752939997706562
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.733627500012517
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_slow_compression_keeps_both_claims_alive",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04647020000265911
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 2.2438893000071403
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7467319999996107
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[pg_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.042768599989358336
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.37769129997468553
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6997034999949392
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[redis_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04537379997782409
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.36831570000504144
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.67914560000645
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[transport]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.042441400000825524
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.3642708999977913
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7107582000026014
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_lost_heartbeat_cancels_memory_and_retains_events[timeout]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.054824399994686246
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7274381000024732
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7201104999985546
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_repeated_cancellation_waits_for_memory_cleanup_and_stops_heartbeat",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04438599999411963
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5229841000109445
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7674679000047036
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_renewals_do_not_revive_expired_or_settled_owners",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.045285900007002056
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03548260001116432
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.748737899994012
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_cancelled_memory_thread_cannot_overwrite_completed_takeover",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04227470001205802
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08991529999184422
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7629183999961242
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[expired]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.046437299984972924
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.029309700010344386
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7790964000159875
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[completed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.045514099998399615
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.028817900019930676
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.759368800005177
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[failed]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04177819998585619
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.029289199999766424
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6983881000196561
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[wrong_owner]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04696559999138117
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.024263300001621246
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.663484700024128
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[wrong_session]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.041775999998208135
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.025419400015380234
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.8401923999772407
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_memory_write_is_rejected_before_vector_replication[missing_claim]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.043587899999693036
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.027319599990732968
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7173631000041496
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_memory_lease_expiry_is_checked_after_waiting_for_claim_lock",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.04408190000685863
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.242330299981404
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.6844633999862708
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_runtime_carries_compaction_proof_without_serializing_owner",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00023710000095888972
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0013775000115856528
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015639999764971435
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_late_old_replica_cannot_replace_new_compaction_vector",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.07595949998358265
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0496141999901738
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.774482300010277
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_stale_rebuild_snapshot_does_not_replace_new_replica_or_activate",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.06615369999781251
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.06216990001848899
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7285405999864452
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_current_rebuild_restores_versioned_replica_and_rejects_unversioned_overwrite",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.06619459998910315
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.05737369999405928
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7193837000231724
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_compaction_ownership.py::test_memory_row_revision_is_monotonic_and_embedding_backfill_advances_it",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.06783000001451
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0281875999935437
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.7551669999957085
+        }
+      ],
+      "outcome": "passed",
+      "profile": "postgres-core",
+      "evidence": "../gates/20261002T150450-postgres-core-8ae9216545a2/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

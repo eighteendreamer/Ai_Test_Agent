@@ -1,0 +1,99 @@
+{
+  "id": "H04",
+  "domain": "前端与桌面体验",
+  "name": "正式构建、包拆分与外部协议",
+  "source": "agent_web/src/router/index.ts",
+  "backend_test_files": [],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {},
+  "cases": [],
+  "additional_evidence": [
+    {
+      "type": "formal_build",
+      "evidence": "../frontend-build.log",
+      "status": "passed",
+      "scope": "vue-tsc + Vite；Electron GUI 未执行"
+    }
+  ],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": [
+    {
+      "source": "agent_web/scripts/build-typecheck.test.mjs",
+      "name": "production build type checks blocks build before replacing artifacts when TS or Vue templates have errors",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/scripts/build-typecheck.test.mjs",
+      "name": "production build type checks blocks desktop:build before replacing artifacts when TS or Vue templates have errors",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy allows canonical HTTP and HTTPS links",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: ms-settings:privacy",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: mailto:user@example.org",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: file:///C:/Windows/system.ini",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: javascript:alert(1)",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: data:text/html,unsafe",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: C:\\Windows\\system.ini",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: //example.org/path",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: /local/path",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/externalUrlPolicy.test.mjs",
+      "name": "desktop external URL policy rejects a non-web external target: not a URL",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    }
+  ]
+}

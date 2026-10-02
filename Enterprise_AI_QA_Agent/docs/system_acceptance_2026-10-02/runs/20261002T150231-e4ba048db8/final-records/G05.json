@@ -1,0 +1,1637 @@
+{
+  "id": "G05",
+  "domain": "运行基础设施",
+  "name": "观测、Token 与多进程指标",
+  "source": "Agent_Server/src/main.py",
+  "backend_test_files": [
+    "test_observability_contracts.py",
+    "test_token_usage.py",
+    "test_metrics_core.py",
+    "test_metrics_multiprocess.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 70
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_metrics_core.py::test_counter_renders_help_type_and_labels",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001804000057745725
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00018010000349022448
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001281999866478145
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_get_or_create_is_idempotent_and_rejects_redefinition",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016610001330263913
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00018770000315271318
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012779998360201716
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_histogram_renders_cumulative_buckets_with_pos_inf",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015619999612681568
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016140000661835074
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012250000145286322
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_default_buckets_end_at_pos_inf",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017409998690709472
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003467000206001103
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000149200001033023
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_render_output_is_machine_readable_and_escapes_label_values",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00019290001364424825
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001745999907143414
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001314000110141933
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_gauge_and_convenience_helpers_write_registry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018130001262761652
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002367999986745417
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014730001566931605
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_counter_refuses_negative_increment",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001604999997653067
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016460000188089907
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013760000001639128
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_registry_is_thread_safe_under_concurrent_writes",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021379999816417694
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.013800099986838177
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002528000040911138
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_reset_registry_empties_exposition",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00027019999106414616
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00021840000408701599
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014290001126937568
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_http_metrics_middleware_records_route_templates",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009621999925002456
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.006145599996671081
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0010379999876022339
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_context_filter_injects_correlation_fields",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003115000145044178
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003223000094294548
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002376999764237553
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_configured_formatter_renders_without_bound_context",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000298400002066046
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005550000059884042
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020020001102238894
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_two_real_workers_scrape_same_totals_and_retire_local_gauges",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002513100014766678
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7642293999961112
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00027260000933893025
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_global_gauges_merge_independent_labels_and_removals",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0018306999991182238
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.691188400000101
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003121000190731138
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_peer_publishes_without_scrapes_and_saves_final_counter_on_exit",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002925999986473471
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.581971200008411
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00025809998624026775
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_conflicting_gauge_modes_are_rejected",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021630001720041037
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00022879999596625566
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012770001194439828
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[not json]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001879099989309907
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5447241000074428
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00028989999555051327
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[{\"version\": 999}]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0019677999953273684
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5079499999992549
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004123999970033765
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[[]]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002210400009062141
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.6002501999901142
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00027879999834112823
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_conflicting_snapshot_definitions_fail_visibly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002046999870799482
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00022990000434219837
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001618000096641481
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_langsmith_config_is_safe_by_default",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016029999824240804
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00014999997802078724
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012290000449866056
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_langsmith_config_accepts_secret_from_settings_without_exposing_repr",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018630002159625292
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00018259999342262745
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001281999866478145
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_settings_loads_nested_langsmith_values_from_environment",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00020059998496435583
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.031858200003625825
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00029590001213364303
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_langsmith_config_validates_mode_sampling_and_timeout",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00020550002227537334
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00019619998056441545
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013610001769848168
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_context_projects_stable_business_metadata",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013959998614154756
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00021130000823177397
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012159999459981918
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_context_requires_local_correlation_ids",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012680000509135425
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013990001752972603
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011690001701936126
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_context_deduplicates_tags_without_reordering",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013550001312978566
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001343000039923936
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011150000500492752
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_langsmith_adapter_is_noop_when_disabled",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002893999917432666
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016960001084953547
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011250001261942089
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_langsmith_adapter_degrades_when_api_key_is_missing",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016530000721104443
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0006233000021893531
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001443000219296664
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_scope_sanitizes_outputs_without_ending_the_parent_run",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014560000272467732
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000142700009746477
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012069998774677515
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_scope_does_not_capture_outputs_by_default",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000139000010676682
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00012469998910091817
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011409999569877982
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_scope_always_records_non_sensitive_business_outcome",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012769998284056783
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013760000001639128
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00010939998901449144
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_scope_records_waiting_approval_as_non_terminal_outcome",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013460000627674162
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013199998647905886
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00010870001278817654
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_scope_exposes_only_external_run_reference_fields",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012389998300932348
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00012070001685060561
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00010880001354962587
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_trace_transport_failure_does_not_block_business_callback",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002175999979954213
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.020448600000236183
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00026169998454861343
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_node_transport_failure_does_not_block_business_callback",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00026110000908374786
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0013117000053171068
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002319000195711851
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_full_trace_posts_root_and_nested_node_with_actual_sdk",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00025110002025030553
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007335999980568886
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001669999910518527
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_test_run_item_trace_is_bounded_and_carries_attempt_thread_metadata",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00024870000197552145
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00047369999811053276
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00026369999977760017
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_errors_only_posts_failed_root_with_actual_sdk",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002835000050254166
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007066999969538301
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014450002345256507
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_errors_only_item_trace_keeps_item_name",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017389998538419604
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0006933999829925597
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014829999417997897
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_configured_langsmith_api_key_is_used_without_process_secret",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00019259998225606978
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001792000257410109
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013630001922138035
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_flush_waits_for_buffered_sdk_runs",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013940001372247934
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0018048000056296587
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015730000450275838
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_errors_only_does_not_trace_successful_turn",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00019160000374540687
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00017729998216964304
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013959998614154756
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_observability_contracts.py::test_errors_only_records_failed_turn_without_replacing_exception",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001908999984152615
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0004175000067334622
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014340001507662237
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_normalize_usage_openai_shape",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003614999877754599
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016930000856518745
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012760001118294895
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_normalize_usage_anthropic_shape",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001354999840259552
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00014359998749569058
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013120000949129462
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_normalize_usage_gemini_shape",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00012849998893216252
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013539998326450586
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011480000102892518
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_normalize_usage_handles_missing_or_invalid_payload",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015189999248832464
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000145500001963228
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011590000940486789
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_merge_latest_keeps_latest_prompt_and_accumulates_output",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013259999104775488
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013069997658021748
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011110000195913017
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_token_usage.py::test_estimate_tokens_heuristic",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013899998157285154
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00014440002269111574
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011850000009872019
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_counter_renders_help_type_and_labels",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002877000079024583
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00021200001356191933
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016339999274350703
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_get_or_create_is_idempotent_and_rejects_redefinition",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002744000230450183
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00019749999046325684
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013830000534653664
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_histogram_renders_cumulative_buckets_with_pos_inf",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001677999971434474
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001748999929986894
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001188000023830682
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_default_buckets_end_at_pos_inf",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016200001118704677
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002899999963119626
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011560000712051988
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_render_output_is_machine_readable_and_escapes_label_values",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015619999612681568
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00015659999917261302
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011160000576637685
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_gauge_and_convenience_helpers_write_registry",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000145500001963228
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000221800000872463
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013599998783320189
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_counter_refuses_negative_increment",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016399999731220305
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001317000132985413
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00010870001278817654
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_registry_is_thread_safe_under_concurrent_writes",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000135600013891235
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012910499994177371
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002069000038318336
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_reset_registry_empties_exposition",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00016659998800605536
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00015140001778490841
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011850000009872019
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_http_metrics_middleware_records_route_templates",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001140400010626763
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.005330200016032904
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007737000123597682
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_context_filter_injects_correlation_fields",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00023639999562874436
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002666999935172498
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001543999824207276
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_core.py::test_configured_formatter_renders_without_bound_context",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00024320001830346882
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00044800000614486635
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021630001720041037
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_two_real_workers_scrape_same_totals_and_retire_local_gauges",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.004706900013843551
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.7288205999939237
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021430000197142363
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_global_gauges_merge_independent_labels_and_removals",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010692999931052327
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.6418701999937184
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00022310001077130437
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_peer_publishes_without_scrapes_and_saves_final_counter_on_exit",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010897000029217452
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.5705671999894548
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000222400005441159
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_conflicting_gauge_modes_are_rejected",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001942999952007085
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002460000105202198
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012630000128410757
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[not json]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0011239000014029443
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5193599000049289
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00023189999046735466
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[{\"version\": 999}]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001285900012589991
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5200847999949474
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002586999908089638
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_controlled_invalid_snapshot_is_visible_without_leaking_its_content[[]]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013968999846838415
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.5046349000185728
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00022460002219304442
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    },
+    {
+      "nodeid": "tests/test_metrics_multiprocess.py::test_conflicting_snapshot_definitions_fail_visibly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017400001524947584
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00021109997760504484
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001677999971434474
+        }
+      ],
+      "outcome": "passed",
+      "profile": "metrics-core",
+      "evidence": "../gates/20261002T150530-metrics-core-a6661629f1f0/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

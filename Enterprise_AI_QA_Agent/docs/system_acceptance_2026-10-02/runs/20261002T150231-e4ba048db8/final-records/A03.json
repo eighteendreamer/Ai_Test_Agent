@@ -1,0 +1,521 @@
+{
+  "id": "A03",
+  "domain": "会话工作台",
+  "name": "审批、继续与中断",
+  "source": "Agent_Server/src/application/sessions/session_service.py",
+  "backend_test_files": [
+    "test_runtime_interrupt_tool_calls.py",
+    "test_security_approval_boundary.py",
+    "test_cancelled_run_missing_approval_recovery.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 19,
+    "skipped": 3
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_cancelled_run_missing_approval_recovery.py::test_memory_reconciliation_pages_keep_all_items",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008356999896932393
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.14194910001242533
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006240000075194985
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_cancelled_run_missing_approval_recovery.py::test_postgres_reconciliation_pages_keep_all_items",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00021260001813061535,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 to use local PostgreSQL"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017939999816007912
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_cancelled_run_missing_approval_recovery.py::test_postgres_restart_cleans_cancelled_item_with_missing_resource[approval]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00012149999383836985,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 to use local PostgreSQL"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013180001405999064
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_cancelled_run_missing_approval_recovery.py::test_postgres_restart_cleans_cancelled_item_with_missing_resource[job]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00010740000288933516,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 to use local PostgreSQL"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013559998478740454
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_interrupt_between_tool_calls_skips_later_call_and_closes_model_protocol[operator requested stop]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010967999987769872
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011840399994980544
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006668999849352986
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_interrupt_between_tool_calls_skips_later_call_and_closes_model_protocol[]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008350999851245433
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011654900008579716
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008359999919775873
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[success-execute_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.003828899993095547
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010479000047780573
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003479000006336719
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[success-resume_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009852999937720597
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010393999982625246
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00035439999192021787
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[success-resume_after_approval]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000758999987738207
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008397999918088317
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003313000197522342
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[error-execute_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007335999980568886
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008051999902818352
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032140000257641077
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[error-resume_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007822000188753009
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007661999843548983
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00034509997931309044
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[error-resume_after_approval]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006611999997403473
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008289999968837947
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003918999864254147
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[cancelled-execute_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010252000065520406
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008553999941796064
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003273999900557101
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[cancelled-resume_turn]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.013483199989423156
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0014739999896846712
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003622000222094357
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_runtime_control_scope_releases_all_entry_points[cancelled-resume_after_approval]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006360000115819275
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000823500013211742
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006884000031277537
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_runtime_interrupt_tool_calls.py::test_overlapping_control_owner_cannot_clear_running_execution",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014609997742809355
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00036460001138038933
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001320999872405082
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_model_approval_flag_cannot_start_full_scan_without_approval",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002190100000007078
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.3014184999919962
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00026679999427869916
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_runtime_uses_only_trusted_context_for_approval",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0018614000000525266
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.8635824000230059
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00025969999842345715
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_deep_agent_governance_passes_approval_outside_model_arguments",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00022499999613501132
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0030934000096749514
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015930001973174512
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_model_risk_tolerance_cannot_override_low_risk_session",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0028242999978829175
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.8790617999911774
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002699999895412475
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_security_worker_inherits_campaign_risk_tolerance",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00023400000645779073
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007939999923110008
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016690001939423382
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_security_approval_boundary.py::test_worker_task_profile_cannot_be_replaced_by_model_argument",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0018623000069055706
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.8818769000063185
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00024110000231303275
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

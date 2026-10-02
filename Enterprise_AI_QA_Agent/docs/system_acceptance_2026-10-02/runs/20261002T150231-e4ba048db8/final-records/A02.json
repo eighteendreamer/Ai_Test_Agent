@@ -1,0 +1,1115 @@
+{
+  "id": "A02",
+  "domain": "会话工作台",
+  "name": "消息、流式输出与正文对账",
+  "source": "Agent_Server/src/application/sessions/session_service.py",
+  "backend_test_files": [
+    "test_session_event_delivery.py",
+    "test_assistant_stream_persistence.py",
+    "test_execution_event_context.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 29,
+    "skipped": 21
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_fragmented_model_output_coalesces_slow_store_writes",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00022220000391826034
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 1.6184426000108942
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003252000024076551
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_burst_flushes_before_return_and_replays_exact_unicode_text[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013964000099804252
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0014850000152364373
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004794999840669334
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_burst_flushes_before_return_and_replays_exact_unicode_text[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02099859999725595,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006567999953404069
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_idle_model_flushes_a_tail_while_execution_remains_running[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013011000119149685
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04485679999925196
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006776999798603356
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_idle_model_flushes_a_tail_while_execution_remains_running[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02226840000366792,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007984999974723905
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_storage_failure_cancels_an_idle_model_and_is_visible",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000888400012627244
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04857430001720786
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00111270000343211
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_slow_store_backpressure_is_bounded_and_preserves_all_chunks",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0020062999974470586
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0028252000047359616
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007656000088900328
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_repeated_cancel_waits_for_accepted_tail_and_writer_cleanup",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008530999766662717
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.05503999997745268
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006569999968633056
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_provider_error_flushes_accepted_prefix_without_publishing_completion[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013666000158991665
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007459999760612845
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000438000017311424
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_provider_error_flushes_accepted_prefix_without_publishing_completion[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019602200016379356,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004327000060584396
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_empty_stream_creates_no_events_and_rejects_late_chunks",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006773999775759876
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0004802999901585281
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032460002694278955
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_first_commit_failure_stops_execution_and_cannot_be_replayed[assistant.stream.started]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006751000182703137
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007925000099930912
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032220000866800547
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_first_commit_failure_stops_execution_and_cannot_be_replayed[assistant.stream.delta]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005844999977853149
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0012781999830622226
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007367999933194369
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_buffered_tail_cannot_write_after_execution_lease_is_replaced[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.014419300016015768
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0014709999959450215
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004374999844003469
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_buffered_tail_cannot_write_after_execution_lease_is_replaced[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0194103000103496,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00048489999608136714
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_postgres_and_redis_publish_the_same_coalesced_facts[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010145000123884529
+        },
+        {
+          "phase": "call",
+          "outcome": "skipped",
+          "seconds": 0.00023350000265054405,
+          "reason": "Skipped: requires the opt-in PostgreSQL fixture and live Redis"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003823000006377697
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_assistant_stream_persistence.py::test_postgres_and_redis_publish_the_same_coalesced_facts[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020162599976174533,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006690999725833535
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_execution_event_context.py::test_execution_event_serializes_harness_context_for_sse",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013770000077784061
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001768999791238457
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017309997929260135
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_cursor_follows_append_order_even_with_late_and_equal_timestamps[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009302999824285507
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003590000269468874
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003470000228844583
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_cursor_follows_append_order_even_with_late_and_equal_timestamps[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019925099972169846,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000528500007931143
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_repeated_event_id_is_idempotent_and_does_not_inflate_counts[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010565000120550394
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003310000174678862
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003580999909900129
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_repeated_event_id_is_idempotent_and_does_not_inflate_counts[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020650099992053583,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005056999798398465
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_final_response_commit_failure_cannot_publish_completion_events",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009269999864045531
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008299000037368387
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00034520000917837024
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_final_response_and_completion_events_commit_together[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009999999892897904
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00048019998939707875
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003527000080794096
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_final_response_and_completion_events_commit_together[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02012910001212731,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005562999867834151
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_final_response_transaction_rolls_back_when_second_event_fails[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001348099991446361
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000694399990607053
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00039060000563040376
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_final_response_transaction_rolls_back_when_second_event_fails[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02062669998849742,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005142000154592097
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_projection_status_and_notification_event_commit_once[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013624999846797436
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0006678999925497919
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003927999932784587
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_projection_status_and_notification_event_commit_once[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0197825999930501,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006286000134423375
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_two_sse_clients_each_receive_events_from_another_store_instance[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009751000034157187
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.047163100010948256
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006788999889977276
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_two_sse_clients_each_receive_events_from_another_store_instance[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019647300010547042,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000461499992525205
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_graph_live_event_and_finalized_event_have_the_same_identity",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006464000034611672
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003149000112898648
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003536999865900725
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_model_deltas_cross_real_sse_http_and_match_persisted_transcript[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009387999889440835
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.27642030001152307
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008758000039961189
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_model_deltas_cross_real_sse_http_and_match_persisted_transcript[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.018941699992865324,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004493999877013266
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_sse_reconnect_pages_all_events_and_keeps_session_scope[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009982000046875328
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08084320000489242
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005623000033665448
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_sse_reconnect_pages_all_events_and_keeps_session_scope[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.02008889999706298,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005991999933030456
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_runtime_events_are_durable_while_runner_is_still_active[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010810999956447631
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0004810999962501228
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004504999960772693
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_runtime_events_are_durable_while_runner_is_still_active[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.026315499999327585,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005163000023458153
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_persistence_failure_cancels_runner_and_is_not_silenced",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0006714999908581376
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.002298699982929975
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032789999386295676
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_buffer_overflow_defers_suffix_until_final_flush[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008940999978221953
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0006483000179287046
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00040350001654587686
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_buffer_overflow_defers_suffix_until_final_flush[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.019645799999125302,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005136999825481325
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_buffer_overflow_does_not_hide_writer_failure",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008519999973941594
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008350000134669244
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004065999819431454
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_plain_event_queue_overflow_still_fails_explicitly",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018850000924430788
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0004135000053793192
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012630000128410757
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_repeated_cancellation_waits_for_pending_event_write",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005206999776419252
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03282329998910427
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006673999887425452
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_sequence_cannot_jump_an_uncommitted_writer[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001583700010087341
+        },
+        {
+          "phase": "call",
+          "outcome": "skipped",
+          "seconds": 0.0008667999936733395,
+          "reason": "Skipped: transaction ordering requires PostgreSQL"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00036509998608380556
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_event_sequence_cannot_jump_an_uncommitted_writer[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.0184268000011798,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00039760000072419643
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_real_http_clients_receive_events_from_separate_worker_process[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008888999873306602
+        },
+        {
+          "phase": "call",
+          "outcome": "skipped",
+          "seconds": 0.00021949998335912824,
+          "reason": "Skipped: cross-process delivery requires PostgreSQL"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00033389998134225607
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_real_http_clients_receive_events_from_separate_worker_process[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.020466099987970665,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006243999814614654
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_normal_session_creation_response_matches_committed_event_counts[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0013881000049877912
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012292400002479553
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00044239999260753393
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_event_delivery.py::test_normal_session_creation_response_matches_committed_event_counts[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.01841940000304021,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004212000058032572
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [
+    {
+      "type": "workbench_ui_time",
+      "evidence": "../ui-followup/workbench-time.json",
+      "status": "passed",
+      "scope": "Real SessionService, memory store, HTTP and SSE, production renderer; auxiliary catalogs are fixtures; no model or external provider."
+    }
+  ],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

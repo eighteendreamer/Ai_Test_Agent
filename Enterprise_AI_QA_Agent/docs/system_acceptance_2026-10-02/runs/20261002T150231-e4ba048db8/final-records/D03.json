@@ -1,0 +1,946 @@
+{
+  "id": "D03",
+  "domain": "模型与扩展接入",
+  "name": "Skill 管理、重载与路径边界",
+  "source": "Agent_Server/src/application/registries/registry_service.py",
+  "backend_test_files": [
+    "test_skill_management_boundaries.py",
+    "test_skill_registry_reload.py",
+    "test_skill_route_error_classification.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 40
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[.-GET]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002351600007386878
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.017341300001135096
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005889000021852553
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[.-PUT]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0026347999810241163
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01172389998100698
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000510600017150864
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[.-DELETE]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0024277000047732145
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012708800000837073
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004366000066511333
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[..-GET]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0073182999913115054
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011509699979797006
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004919999919366091
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[..-PUT]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002375099982600659
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01178619998972863
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005021000106353313
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_root_and_parent_are_not_manageable_skill_directories[..-DELETE]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002322099986486137
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011202900001080707
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005420000234153122
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_valid_skill_crud_and_idempotent_delete_keep_their_contract",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023487999860662967
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0253771000134293
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005231999966781586
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_controlled_skill_read_failure_is_not_reported_as_missing[filesystem]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00238679998437874
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01072689998545684
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00044689999776892364
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_controlled_skill_read_failure_is_not_reported_as_missing[decoding]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0025385000044479966
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.013504100003046915
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005243000050541013
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_skill_file_symlink_follows_managed_root_boundary[inside-GET]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023732999979984015
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012355299986666068
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00060450000455603
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_skill_file_symlink_follows_managed_root_boundary[inside-PUT]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0022003999911248684
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.013801900000544265
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00048489999608136714
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_skill_file_symlink_follows_managed_root_boundary[outside-GET]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002641400002175942
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012837699992815033
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00041500001680105925
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_management_boundaries.py::test_skill_file_symlink_follows_managed_root_boundary[outside-PUT]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0027280999929644167
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012375699996482581
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00046660000225529075
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_registry_reload.py::test_bad_utf8_skill_does_not_block_registry_startup",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0026843000086955726
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.017826299997977912
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000503200019011274
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_registry_reload.py::test_reload_publishes_healthy_skills_when_one_file_becomes_unreadable",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.003913199994713068
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.03740760000073351
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0003175000019837171
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[OSError-update]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00305499997921288
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.022914900007890537
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007066000252962112
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[OSError-delete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0031521999917458743
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01408559997798875
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005923999997321516
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[OSError-local_install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002927499997895211
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012796300026820973
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008014999912120402
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[OSError-upload]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0025117000041063875
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011712199979228899
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00046629999997094274
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[ValueError-update]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002292499993927777
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011773100006394088
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006177000177558511
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[ValueError-delete]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002512100007152185
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011145800002850592
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004909000126644969
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[ValueError-local_install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0022628000006079674
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011494000005768612
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009577000164426863
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_local_execution_failure_is_not_bad_input[ValueError-upload]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023702000034973025
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012250600004335865
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00048439999227412045
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[http-install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023384999949485064
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01185740000801161
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0010198000236414373
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[http-search]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023683999897912145
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01031360001070425
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009278000215999782
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[http-preview]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0022776999976485968
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011991800012765452
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009738999942783266
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[http-marketplace_install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0025997999764513224
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011176400003023446
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007723000016994774
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[transport-install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0024249000125564635
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010556199995335191
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006782000127714127
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[transport-search]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002266700001200661
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012827600003220141
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009985000069718808
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[transport-preview]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0028623999969568104
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011761500005377457
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008388000132981688
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[transport-marketplace_install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0029807000246364623
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011635800008662045
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008034000056795776
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[timeout-install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002535899984650314
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010876699991058558
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009849000198300928
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[timeout-search]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0031082000059541315
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010488899977644905
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007424000068567693
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[timeout-preview]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0030955999973230064
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.011157099972479045
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008569000056013465
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_remote_download_failure_is_visible[timeout-marketplace_install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.002542600006563589
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.012565199984237552
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008005000127013773
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_marketplace_payload_error_is_not_input_validation[skillsmp-search]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00235280001652427
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.010763500002212822
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009047000203281641
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_marketplace_payload_error_is_not_input_validation[anthropic-search]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0025217000220436603
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.019742899981793016
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000845799979288131
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_controlled_marketplace_payload_error_is_not_input_validation[anthropic-install]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00244470001780428
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.013404700002865866
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008038000087253749
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_explicit_validation_and_successful_local_install_keep_http_contract",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023313999990932643
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.023546700016595423
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000990300002740696
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_skill_route_error_classification.py::test_archive_install_keeps_partial_success_contract",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0023469000007025898
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.04340399999637157
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0010904000082518905
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

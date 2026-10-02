@@ -1,0 +1,741 @@
+{
+  "id": "D01",
+  "domain": "模型与扩展接入",
+  "name": "模型配置、流式协议与错误",
+  "source": "Agent_Server/src/application/registries/registry_service.py",
+  "backend_test_files": [
+    "test_model_settings_routes.py",
+    "test_model_clients.py",
+    "test_model_failure_lifecycle.py",
+    "test_google_stream_tool_call_identity.py",
+    "test_openai_parallel_tool_capability.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 31
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_google_stream_tool_call_identity.py::test_google_stream_keeps_complete_calls_from_separate_chunks",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00026849997811950743
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.023175600013928488
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020780001068487763
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_google_stream_tool_call_identity.py::test_google_provider_call_id_survives_response_and_history",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017099999240599573
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007105999975465238
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012930002412758768
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_google_stream_tool_call_identity.py::test_google_missing_provider_ids_get_distinct_local_ids",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013070000568404794
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00022299998090602458
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001126999850384891
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_resolve_client_dispatches_by_transport",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015300000086426735
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00024900000425986946
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012390001211315393
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_openai_client_maps_request_and_parses_response",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017659997683949769
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0013672999921254814
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00017189999925903976
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_openai_client_wraps_api_status_error",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001846000086516142
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.001053999993018806
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015410000924021006
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_responses_client_maps_request_and_parses_response",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017949999892152846
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.001185600005555898
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00018740000086836517
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_responses_client_stream_collects_deltas_and_final_response",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021689999266527593
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008898000232875347
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001720000000204891
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_responses_client_wraps_api_status_error",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018060000729747117
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010181000106967986
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015949999215081334
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_anthropic_client_maps_request_and_parses_response",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002479999966453761
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009348999883513898
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016230001347139478
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_google_client_maps_request_and_parses_response",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00020519999088719487
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009580000187270343
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00020740000763908029
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_google_client_wraps_api_error",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00019809999503195286
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0009540999890305102
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001647000026423484
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_google_tool_name_map_and_remap_round_trip",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018210001871921122
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00016379999578930438
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013000000035390258
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_tool_name_map_handles_colliding_long_names_without_truncation_loop",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00015830001211725175
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0001621000119484961
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001666999887675047
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_tool_name_map_long_collisions_preserve_limit_and_uniqueness",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001618000096641481
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00015130001702345908
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011809999705292284
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_tool_name_map_collision_suffix_uses_original_base",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001357999863103032
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00013470000703819096
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001252999936696142
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_model_runtime_reports_gemini_400_without_removing_tools",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00017480002134107053
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010979999788105488
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016510000568814576
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_clients.py::test_model_runtime_reports_http_error_result",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00018179998733103275
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010389999952167273
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000159399991389364
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_model_failure_does_not_complete_assistant_turn[missing_active_model]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000757400004658848
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0015455999819096178
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00040279998211190104
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_model_failure_does_not_complete_assistant_turn[auth_error]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000690699991537258
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0011178000131621957
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00040770001942291856
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_model_failure_does_not_complete_assistant_turn[missing_api_key]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008328999974764884
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.002224199997726828
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007821999897714704
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_model_failure_does_not_complete_assistant_turn[http_error]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008487000013701618
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0015535999846179038
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0004099000070709735
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_failed_model_result_is_not_saved_as_context_summary",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0008288999961223453
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0007579000084660947
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00033260000054724514
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_old_model_failure_message_is_not_replayed_to_model[missing_active_model]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000309199996991083
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00023520001559518278
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015219999477267265
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_old_model_failure_message_is_not_replayed_to_model[auth_error]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021399999968707561
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00014449999434873462
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014650000957772136
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_old_model_failure_message_is_not_replayed_to_model[missing_api_key]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00019720001728273928
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00020559999393299222
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00016850000247359276
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_failure_lifecycle.py::test_old_model_failure_message_is_not_replayed_to_model[http_error]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00020549999317154288
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00014109999756328762
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001432000135537237
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_settings_routes.py::test_model_name_with_slash_is_supported_by_model_settings_routes",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013800000306218863
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.020073299994692206
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002544000162743032
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_model_settings_routes.py::test_channel_pairing_start_uses_nested_pairing_route",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00020000000949949026
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.01477599999634549
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00029399999766610563
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_openai_parallel_tool_capability.py::test_openai_clients_enable_parallel_calls_when_capability_is_true[OpenAIChatClient-openai_chat_completions]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002623999898787588
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00023209999199025333
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013949998538009822
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_openai_parallel_tool_capability.py::test_openai_clients_enable_parallel_calls_when_capability_is_true[OpenAIResponsesClient-openai_responses]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00024819999816827476
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00026190001517534256
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00014009998994879425
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}

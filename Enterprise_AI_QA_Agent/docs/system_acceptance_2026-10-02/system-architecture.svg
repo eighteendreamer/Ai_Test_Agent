@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1510" viewBox="0 0 1600 1510">
+<title>御策天检：系统技术架构（当前源码）</title>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#54657a"/></marker></defs>
+<rect width="1600" height="1510" fill="#f5f8fc"/>
+<g font-family="Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="34" fill="#21344b" font-weight="700">御策天检 · 系统技术架构</text>
+<text x="40" y="88" font-size="20" fill="#21344b" font-weight="400">箭头表示主要请求/数据方向；SSE 返回运行事件；Redis 不作为业务事实主库</text>
+<rect x="40" y="120" width="960" height="125" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="121" width="958" height="44" rx="11" fill="#e8f0fb"/>
+<text x="58" y="150" font-size="22" fill="#21344b" font-weight="700">用户入口 · Vue 3 / Pinia / Vue Router</text>
+<text x="58" y="196" font-size="19" fill="#21344b" font-weight="400">工作台、项目、任务池、知识、工具、报告、设置、流程、录制窗口</text>
+<text x="58" y="228" font-size="19" fill="#21344b" font-weight="400">Electron 包装同一前端；HTTP 提交与查询，SSE 订阅运行事件</text>
+<rect x="1040" y="120" width="520" height="125" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="1041" y="121" width="518" height="44" rx="11" fill="#fff2d7"/>
+<text x="1058" y="150" font-size="22" fill="#21344b" font-weight="700">外部入口</text>
+<text x="1058" y="196" font-size="19" fill="#21344b" font-weight="400">兼容性 CLI runner · 渠道入口</text>
+<text x="1058" y="228" font-size="19" fill="#21344b" font-weight="400">供应商 webhook 处理仍有缺口</text>
+<rect x="40" y="300" width="1520" height="155" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="301" width="1518" height="44" rx="11" fill="#e8f0fb"/>
+<text x="58" y="330" font-size="22" fill="#21344b" font-weight="700">API 与应用服务 · FastAPI / 中央鉴权 / CORS / 请求上下文</text>
+<text x="58" y="376" font-size="19" fill="#21344b" font-weight="400">25 个 router 注册；211 个 REST 装饰器定义（源码计数）</text>
+<text x="58" y="408" font-size="19" fill="#21344b" font-weight="400">会话 / 项目 / 用例 / 套件 / 运行 / 审批 / 工具任务 / 工件 / 报告 / 配额 / 设置</text>
+<text x="58" y="440" font-size="19" fill="#21344b" font-weight="400">文档 / 知识 / 录制 / 兼容性 / 邮件 / OAuth / Docker / 接入目录 / 指标</text>
+<rect x="40" y="515" width="470" height="235" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="516" width="468" height="44" rx="11" fill="#e8f0fb"/>
+<text x="58" y="545" font-size="22" fill="#21344b" font-weight="700">Agent 编排与模型</text>
+<text x="58" y="591" font-size="19" fill="#21344b" font-weight="400">SessionService → 持久任务派发</text>
+<text x="58" y="623" font-size="19" fill="#21344b" font-weight="400">InputOrchestrator / Coordinator</text>
+<text x="58" y="655" font-size="19" fill="#21344b" font-weight="400">LangGraph / Deep Agent 适配</text>
+<text x="58" y="687" font-size="19" fill="#21344b" font-weight="400">权限、Prompt、上下文、工具协议</text>
+<text x="58" y="719" font-size="19" fill="#21344b" font-weight="400">模型注册表 → 真实模型供应商</text>
+<rect x="550" y="515" width="500" height="235" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="551" y="516" width="498" height="44" rx="11" fill="#e8f0fb"/>
+<text x="568" y="545" font-size="22" fill="#21344b" font-weight="700">用例驱动与模式运行</text>
+<text x="568" y="591" font-size="19" fill="#21344b" font-weight="400">草稿 → 评审 → 启用固定版本</text>
+<text x="568" y="623" font-size="19" fill="#21344b" font-weight="400">套件冻结 → 运行条目原子领取</text>
+<text x="568" y="655" font-size="19" fill="#21344b" font-weight="400">结果与证据 → 新建失败项回归</text>
+<text x="568" y="687" font-size="19" fill="#21344b" font-weight="400">8 种运行模式；6 种目录占位</text>
+<text x="568" y="719" font-size="19" fill="#21344b" font-weight="400">录制 → 审批 → 回放 → 用例草稿</text>
+<rect x="1090" y="515" width="470" height="235" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="1091" y="516" width="468" height="44" rx="11" fill="#e8f0fb"/>
+<text x="1108" y="545" font-size="22" fill="#21344b" font-weight="700">工具与外部执行</text>
+<text x="1108" y="591" font-size="19" fill="#21344b" font-weight="400">ToolRuntime / ToolJob / Artifact</text>
+<text x="1108" y="623" font-size="19" fill="#21344b" font-weight="400">MCP / Skills / 注册工具目录</text>
+<text x="1108" y="655" font-size="19" fill="#21344b" font-weight="400">Docker、浏览器、SSH、CLI</text>
+<text x="1108" y="687" font-size="19" fill="#21344b" font-weight="400">API / 性能 / 安全 / 兼容性 runner</text>
+<text x="1108" y="719" font-size="19" fill="#21344b" font-weight="400">配额、资源租约、回收与心跳</text>
+<rect x="40" y="815" width="1520" height="150" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="816" width="1518" height="44" rx="11" fill="#e8f0fb"/>
+<text x="58" y="845" font-size="22" fill="#21344b" font-weight="700">异步派发与观测</text>
+<text x="58" y="891" font-size="19" fill="#21344b" font-weight="400">PostgreSQL 任务 / attempt / Outbox → Relay → Redis Stream → Worker → 编排与工具执行</text>
+<text x="58" y="923" font-size="19" fill="#21344b" font-weight="400">业务终态、消息与事件持久化 → SSE → Pinia → ChatTimeline；HTTP 回执与事件关联去重</text>
+<text x="58" y="955" font-size="19" fill="#21344b" font-weight="400">指标 / Token / 运行轨迹 / 工件证据；压缩、Embedding、索引重建为独立任务</text>
+<rect x="40" y="1030" width="470" height="215" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="1031" width="468" height="44" rx="11" fill="#e8f0fb"/>
+<text x="58" y="1060" font-size="22" fill="#21344b" font-weight="700">PostgreSQL · 持久业务事实</text>
+<text x="58" y="1106" font-size="19" fill="#21344b" font-weight="400">会话、消息、事件、审批与快照</text>
+<text x="58" y="1138" font-size="19" fill="#21344b" font-weight="400">项目、版本、套件、运行与证据</text>
+<text x="58" y="1170" font-size="19" fill="#21344b" font-weight="400">任务、attempt、Outbox、工具工件</text>
+<text x="58" y="1202" font-size="19" fill="#21344b" font-weight="400">压缩记录、向量与 Embedding</text>
+<text x="58" y="1234" font-size="19" fill="#21344b" font-weight="400">Alembic 接入部分表，非全库</text>
+<rect x="550" y="1030" width="500" height="215" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="551" y="1031" width="498" height="44" rx="11" fill="#fff2d7"/>
+<text x="568" y="1060" font-size="22" fill="#21344b" font-weight="700">Redis / Memgraph</text>
+<text x="568" y="1106" font-size="19" fill="#21344b" font-weight="400">Redis：Stream、PEL、缓存、租约</text>
+<text x="568" y="1138" font-size="19" fill="#21344b" font-weight="400">Redis：热记忆与向量副本</text>
+<text x="568" y="1170" font-size="19" fill="#21344b" font-weight="400">Memgraph：项目知识与录制图</text>
+<text x="568" y="1202" font-size="19" fill="#21344b" font-weight="400">图查询容量、旧索引保留</text>
+<text x="568" y="1234" font-size="19" fill="#21344b" font-weight="400">与死信策略仍需部署治理</text>
+<rect x="1090" y="1030" width="470" height="215" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="1091" y="1031" width="468" height="44" rx="11" fill="#e8f0fb"/>
+<text x="1108" y="1060" font-size="22" fill="#21344b" font-weight="700">MySQL / RustFS / 文件</text>
+<text x="1108" y="1106" font-size="19" fill="#21344b" font-weight="400">MySQL：模型、邮件、渠道配置</text>
+<text x="1108" y="1138" font-size="19" fill="#21344b" font-weight="400">RustFS：工件与扫描隔离桶</text>
+<text x="1108" y="1170" font-size="19" fill="#21344b" font-weight="400">本地文档目录、临时执行工作区</text>
+<text x="1108" y="1202" font-size="19" fill="#21344b" font-weight="400">兼容性 CLI 持久状态与回执</text>
+<text x="1108" y="1234" font-size="19" fill="#21344b" font-weight="400">供应商及历史部署另行验收</text>
+<rect x="40" y="1310" width="1520" height="145" rx="12" fill="white" stroke="#c3d0df" stroke-width="2"/>
+<rect x="41" y="1311" width="1518" height="44" rx="11" fill="#fff2d7"/>
+<text x="58" y="1340" font-size="22" fill="#21344b" font-weight="700">系统边界与验收口径</text>
+<text x="58" y="1386" font-size="19" fill="#21344b" font-weight="400">真实模型、邮件/渠道、对象存储、Docker、MCP、SSH 等按具体执行证据分层验收</text>
+<text x="58" y="1418" font-size="19" fill="#21344b" font-weight="400">未知副作用 claim 不直接重放；数据保留、全库迁移、完整 CI 矩阵及旧部署迁移未闭环</text>
+<text x="58" y="1450" font-size="19" fill="#21344b" font-weight="400">本轮只新增文档、测试脚本与记录；发现问题留档，不修改产品代码</text>
+<path d="M275,249 L275,293" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M800,249 L800,293" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M1325,249 L1325,293" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M275,459 L275,508" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M800,459 L800,508" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M1325,459 L1325,508" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M275,754 L275,808" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M800,754 L800,808" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M1325,754 L1325,808" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M275,969 L275,1023" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M800,969 L800,1023" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M1325,969 L1325,1023" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M275,1249 L275,1303" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M800,1249 L800,1303" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<path d="M1325,1249 L1325,1303" stroke="#54657a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="65" y="282" font-size="17" fill="#21344b" font-weight="400">HTTP ↓  /  SSE ↑</text>
+</g></svg>

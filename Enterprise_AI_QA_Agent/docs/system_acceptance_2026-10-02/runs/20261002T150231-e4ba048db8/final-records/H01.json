@@ -1,0 +1,159 @@
+{
+  "id": "H01",
+  "domain": "前端与桌面体验",
+  "name": "页面切换与异步生命周期",
+  "source": "agent_web/src/router/index.ts",
+  "backend_test_files": [],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {},
+  "cases": [],
+  "additional_evidence": [
+    {
+      "type": "project_crud_ui",
+      "evidence": "../ui-followup/project-crud-retry2/report.json",
+      "status": "passed_declared_crud_scope",
+      "scope": "Built ProjectsView; actual HTTP project CRUD, overview and empty cases; memory stores; empty auxiliary fixtures; resource monitor not wired; no model, PostgreSQL or full application lifecycle."
+    }
+  ],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": [
+    {
+      "source": "agent_web/src/composables/useSessionWatcher.test.ts",
+      "name": "session watcher failures stops polling after repeated refresh failures and can be restarted explicitly",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/views/KnowledgeView.projectSwitch.test.ts",
+      "name": "keeps the selected project graph when the previous project's response arrives last",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/views/KnowledgeView.projectSwitch.test.ts",
+      "name": "clears the previous graph while the newly selected project is loading",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/views/KnowledgeView.projectSwitch.test.ts",
+      "name": "does not reselect a hidden node when the search has no matches",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/views/KnowledgeView.projectSwitch.test.ts",
+      "name": "deletes the selected project through the wired confirmation dialog",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts",
+      "name": "does not treat another session's historical confirmation as a new draft request",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts",
+      "name": "drafts once for a new confirmation in the active session",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts",
+      "name": "shows automatic recovery requiring review and includes it in manual retry",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/flow/useFlowSession.lifecycle.test.ts",
+      "name": "keeps the newer session when the previous flow response arrives last",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/flow/useFlowSession.lifecycle.test.ts",
+      "name": "ignores late SSE callbacks from a closed session",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/flow/useFlowSession.lifecycle.test.ts",
+      "name": "does not connect an SSE stream after the view is destroyed",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/flow/useFlowSession.lifecycle.test.ts",
+      "name": "does not enter history fallback when a rejected response belongs to an old session",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/flow/useFlowSession.lifecycle.test.ts",
+      "name": "keeps the latest inspector refresh when two responses overlap",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard shows authoritative item totals, waiting reasons and retained cleanup quota",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard rejects late responses from the previously selected project",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard shows Agent task limits separately from physical capacity",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard preserves known data with an explicit stale warning when Redis fails",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard bounds a stalled request and stops automatic work after unmount",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/projects/ProjectExecutionDashboard.test.ts",
+      "name": "project execution dashboard keeps project/run quota reasons distinct",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/settings/plugins/ChannelSettingsPlugin.lifecycle.test.ts",
+      "name": "stops pairing timers while cached and resumes them on activation",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/settings/plugins/DockerManagementPlugin.lifecycle.test.ts",
+      "name": "clears message timers while cached and refreshes on return",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/features/settings/plugins/DockerManagementPlugin.lifecycle.test.ts",
+      "name": "does not schedule a new message timer from a late inactive response",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    }
+  ]
+}

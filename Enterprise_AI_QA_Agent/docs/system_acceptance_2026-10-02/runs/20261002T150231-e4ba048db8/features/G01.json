@@ -1,0 +1,163 @@
+{
+  "id": "G01",
+  "domain": "运行基础设施",
+  "name": "鉴权、CORS 与请求关联",
+  "source": "Agent_Server/src/main.py",
+  "backend_test_files": [
+    "test_api_authentication.py",
+    "test_cors_credentials.py",
+    "test_request_context_middleware.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 6
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_api_authentication.py::test_real_app_protects_api_and_preserves_only_required_public_routes",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00021120000747032464
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 4.887202900019474
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00025209999876096845
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_api_authentication.py::test_production_settings_require_a_strong_api_auth_token",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002038000093307346
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.3362321000022348
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00023010000586509705
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_cors_credentials.py::test_real_app_cors_credentials_follow_origin_scope[[\"*\"]-*-None]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00035200000274926424
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 4.1697767000005115
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00029639998683705926
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_cors_credentials.py::test_real_app_cors_credentials_follow_origin_scope[[\"https://trusted.example\"]-https://trusted.example-true]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000364200008334592
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 4.1833767000061926
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002959999837912619
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_request_context_middleware.py::test_request_context_generates_and_returns_ids",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000582000007852912
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00037659998633898795
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00033039998379535973
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_request_context_middleware.py::test_request_context_forwards_client_ids",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005039999959990382
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0003563000063877553
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00032750001992098987
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ]
+}

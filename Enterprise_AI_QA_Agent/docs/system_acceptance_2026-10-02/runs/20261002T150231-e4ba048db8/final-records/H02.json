@@ -1,0 +1,210 @@
+{
+  "id": "H02",
+  "domain": "前端与桌面体验",
+  "name": "流式消息、Markdown 与链接",
+  "source": "agent_web/src/router/index.ts",
+  "backend_test_files": [
+    "test_assistant_stream_browser_probe.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 1
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_assistant_stream_browser_probe.py::test_probe_runs_model_tool_loop_and_persists_stream_events",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002001000102609396
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 2.0668882000027224
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00021960001322440803
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": [
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport reports a malformed frame, keeps its cursor unchanged, and accepts the next valid event",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport rejects a parseable frame with the wrong session instead of advancing the cursor",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport deduplicates a receipt event without advancing the SSE reconnect cursor",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport scopes recent event IDs to the session and clears them on explicit disconnect",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport backs off repeated connection failures and stops after the configured limit",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/composables/useSSEStream.test.ts",
+      "name": "session SSE transport resets reconnect backoff after a connection opens",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript does not append historical deltas to an already loaded completed answer",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript coalesces a burst of real SSE callback deltas while preserving the first and final text",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript flushes interleaved answers and turns without joining their text",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript keeps the message list and unrelated messages stable when reducing a delta",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript flushes bounded buffers even when the browser does not run its timer",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript discards an old session buffer before a different session is displayed",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript flushes received text on disconnect and deduplicates it after reconnect",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript uses an authoritative final snapshot even with a pending delta timer",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript continues appending deltas when existing assistant text has no final response marker",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionAssistantStreamReplay.test.ts",
+      "name": "assistant SSE replay after loading a persisted transcript renders live deltas once and replaces them with the final server transcript",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionStreaming.test.ts",
+      "name": "session tool execution events binds an optimistic user message from a top-level turn ID",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionStreaming.test.ts",
+      "name": "session tool execution events finalizes a running tool when the backend skips it after an interrupt",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/stores/sessionStreaming.test.ts",
+      "name": "session tool execution events shows safety gate denial and approval wait from tool execution events",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/utils/markdownLinks.test.ts",
+      "name": "assistant markdown link protocols does not turn model-supplied desktop protocols into clickable links",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/utils/markdownLinks.test.ts",
+      "name": "assistant markdown link protocols keeps relative artifact downloads available",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/utils/markdownLinks.test.ts",
+      "name": "assistant markdown link protocols opens protocol-relative web links outside the desktop window",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/utils/markdownLinks.test.ts",
+      "name": "assistant markdown link protocols does not rewrite the destination of an existing artifact link",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/utils/markdownLinks.test.ts",
+      "name": "assistant markdown link protocols links a bare artifact URL in prose but leaves code alone",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/AssistantMarkdown.streaming.test.ts",
+      "name": "assistant rendering during generation defers Markdown, highlighting and math until completion without losing text",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/AssistantMarkdown.streaming.test.ts",
+      "name": "assistant rendering during generation restores code copying when streaming switches to the formatted answer",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/components/chat/ChatTimeline.modelFailure.test.ts",
+      "name": "model failure transcript labels a persisted model failure instead of presenting it as a normal answer",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    }
+  ]
+}

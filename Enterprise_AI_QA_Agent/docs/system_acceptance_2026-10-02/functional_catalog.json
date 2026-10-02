@@ -1,0 +1,604 @@
+[
+  {
+    "id": "A01",
+    "domain": "会话工作台",
+    "name": "会话创建与项目绑定",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_session_project_binding.py",
+      "test_project_management_api.py",
+      "test_session_store_value_contract.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "A02",
+    "domain": "会话工作台",
+    "name": "消息、流式输出与正文对账",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_session_event_delivery.py",
+      "test_assistant_stream_persistence.py",
+      "test_execution_event_context.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "A03",
+    "domain": "会话工作台",
+    "name": "审批、继续与中断",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_runtime_interrupt_tool_calls.py",
+      "test_security_approval_boundary.py",
+      "test_cancelled_run_missing_approval_recovery.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "A04",
+    "domain": "会话工作台",
+    "name": "持久派发、排队与恢复",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_agent_task_dispatch.py",
+      "test_busy_session_queue_concurrency.py",
+      "test_coordinator_durable_children.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "A05",
+    "domain": "会话工作台",
+    "name": "任务池与执行流程投影",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_task_pool_service.py",
+      "test_session_flow_projection.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "A06",
+    "domain": "会话工作台",
+    "name": "会话时间、生命周期与清理",
+    "source": "Agent_Server/src/application/sessions/session_service.py",
+    "backend_test_files": [
+      "test_session_turn_reaper.py",
+      "test_session_lock_retention.py",
+      "test_lifespan_resource_cleanup.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B01",
+    "domain": "项目与用例驱动测试",
+    "name": "项目管理与执行总览",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_project_management_api.py",
+      "test_project_overview.py",
+      "test_project_execution_summary.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B02",
+    "domain": "项目与用例驱动测试",
+    "name": "用例草稿生成与来源",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_test_case_generation_pipeline.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B03",
+    "domain": "项目与用例驱动测试",
+    "name": "评审、启用与固定版本",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_test_case_lifecycle.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B04",
+    "domain": "项目与用例驱动测试",
+    "name": "套件冻结版本",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_test_suite_version_freeze.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B05",
+    "domain": "项目与用例驱动测试",
+    "name": "运行领取、执行、结果与证据",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_test_run_lifecycle.py",
+      "test_test_run_postgres_claim.py",
+      "test_test_run_outbox_transaction.py",
+      "test_case_execution_verification.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "B06",
+    "domain": "项目与用例驱动测试",
+    "name": "失败项创建新回归运行",
+    "source": "Agent_Server/src/application/test_runs/run_service.py",
+    "backend_test_files": [
+      "test_test_run_regression.py",
+      "test_project_regression_frontend_contract.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C01",
+    "domain": "已接入的测试模式",
+    "name": "默认 Agent 与工具协议",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_model_tool_visibility.py",
+      "test_deep_agent_runtime_adapter.py",
+      "test_invalid_tool_plan_visibility.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C02",
+    "domain": "已接入的测试模式",
+    "name": "代码治理与 SSH 源码",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_code_review_skills.py",
+      "test_code_review_ssh_source.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C03",
+    "domain": "已接入的测试模式",
+    "name": "API 测试与断言",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_api_request_body_contract.py",
+      "test_api_task_executor_recovery.py",
+      "test_api_tester_free_text_assertions.py",
+      "test_api_mode_session_isolation.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C04",
+    "domain": "已接入的测试模式",
+    "name": "性能测试与多引擎报告",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_performance_runner.py",
+      "test_performance_k6_adapter.py",
+      "test_performance_jmeter_adapter.py",
+      "test_performance_report_builder.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C05",
+    "domain": "已接入的测试模式",
+    "name": "安全测试、授权与缺陷复测",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_security_target_guard.py",
+      "test_security_profile_capabilities.py",
+      "test_security_bug_reproduction_package_api.py",
+      "test_security_execution_environment_upgrade.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C06",
+    "domain": "已接入的测试模式",
+    "name": "兼容性 runner 与持久回执",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_compatibility_runner_service.py",
+      "test_compatibility_runner_persistence.py",
+      "test_compatibility_mode_skills.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C07",
+    "domain": "已接入的测试模式",
+    "name": "冒烟方案审批与冻结执行",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_smoke_plan_execution_boundary.py",
+      "test_smoke_project_isolation.py",
+      "test_smoke_mode_skills.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "C08",
+    "domain": "已接入的测试模式",
+    "name": "UI 自动化、录制与回放",
+    "source": "Agent_Server/src/modes",
+    "backend_test_files": [
+      "test_ui_mode_skills.py",
+      "test_recording_approval_service.py",
+      "test_recorder_session_service.py",
+      "test_replay_executor.py",
+      "test_recording_case_draft.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "D01",
+    "domain": "模型与扩展接入",
+    "name": "模型配置、流式协议与错误",
+    "source": "Agent_Server/src/application/registries/registry_service.py",
+    "backend_test_files": [
+      "test_model_settings_routes.py",
+      "test_model_clients.py",
+      "test_model_failure_lifecycle.py",
+      "test_google_stream_tool_call_identity.py",
+      "test_openai_parallel_tool_capability.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "D02",
+    "domain": "模型与扩展接入",
+    "name": "OAuth 回调与授权状态",
+    "source": "Agent_Server/src/application/registries/registry_service.py",
+    "backend_test_files": [
+      "test_oauth_callback_html.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "D03",
+    "domain": "模型与扩展接入",
+    "name": "Skill 管理、重载与路径边界",
+    "source": "Agent_Server/src/application/registries/registry_service.py",
+    "backend_test_files": [
+      "test_skill_management_boundaries.py",
+      "test_skill_registry_reload.py",
+      "test_skill_route_error_classification.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "D04",
+    "domain": "模型与扩展接入",
+    "name": "MCP 管理与工具目录",
+    "source": "Agent_Server/src/application/registries/registry_service.py",
+    "backend_test_files": [
+      "test_mcp_management_route_status.py",
+      "test_tool_registry_lazy_catalog.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "D05",
+    "domain": "模型与扩展接入",
+    "name": "意图识别、权限与工具治理",
+    "source": "Agent_Server/src/application/registries/registry_service.py",
+    "backend_test_files": [
+      "test_intent_safety_routing.py",
+      "test_semantic_intent_failure_visibility.py",
+      "test_tool_executor_safety_gate.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E01",
+    "domain": "知识、文档与工件",
+    "name": "项目知识图谱查询与编辑",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_knowledge_graph_service.py",
+      "test_knowledge_graph_read_only.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E02",
+    "domain": "知识、文档与工件",
+    "name": "长期记忆与向量检索",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_memory_vector_retrieval.py",
+      "test_memory_vector_replica.py",
+      "test_memory_embedding_runtime.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E03",
+    "domain": "知识、文档与工件",
+    "name": "上下文压缩与索引重建",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_context_compaction.py",
+      "test_compaction_worker.py",
+      "test_memory_vector_rebuild.py",
+      "test_live_compaction_ownership.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E04",
+    "domain": "知识、文档与工件",
+    "name": "API 文档导入、解析与项目绑定",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_api_doc_resolution.py",
+      "test_api_doc_project_binding.py",
+      "test_api_docs_bom.py",
+      "test_api_docs_origin_security.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E05",
+    "domain": "知识、文档与工件",
+    "name": "附件选择、上传与工件下载",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_attachment_reader_selection.py",
+      "test_artifact_storage_service.py",
+      "test_xlsx_artifact_download.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "E06",
+    "domain": "知识、文档与工件",
+    "name": "测试报表与模板渲染",
+    "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+    "backend_test_files": [
+      "test_report_service.py",
+      "test_performance_report_builder.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "F01",
+    "domain": "接入渠道与配置",
+    "name": "邮件配置、授权与发送",
+    "source": "Agent_Server/src/application/settings/settings_service.py",
+    "backend_test_files": [
+      "test_mail_service.py",
+      "test_mail_send_error_classification.py",
+      "test_mail_setup_action_validation.py",
+      "test_tencent_auth_persistence.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "F02",
+    "domain": "接入渠道与配置",
+    "name": "渠道凭据、配对与接入策略",
+    "source": "Agent_Server/src/application/settings/settings_service.py",
+    "backend_test_files": [
+      "test_channel_config.py",
+      "test_channel_credential_rotation.py",
+      "test_channel_gateway_policy.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "F03",
+    "domain": "接入渠道与配置",
+    "name": "供应商 webhook 接入",
+    "source": "Agent_Server/src/application/settings/settings_service.py",
+    "backend_test_files": [
+      "test_mail_webhook_contract.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "F04",
+    "domain": "接入渠道与配置",
+    "name": "设置、导出、导入与清理",
+    "source": "Agent_Server/src/application/settings/settings_service.py",
+    "backend_test_files": [
+      "test_settings_data_export.py",
+      "test_settings_data_import.py",
+      "test_settings_cleanup_contract.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "F05",
+    "domain": "接入渠道与配置",
+    "name": "赞助信息配置与展示",
+    "source": "Agent_Server/src/application/settings/settings_service.py",
+    "backend_test_files": [
+      "test_sponsor_config.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G01",
+    "domain": "运行基础设施",
+    "name": "鉴权、CORS 与请求关联",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_api_authentication.py",
+      "test_cors_credentials.py",
+      "test_request_context_middleware.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G02",
+    "domain": "运行基础设施",
+    "name": "Redis 投递、重试与 Outbox",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_redis_task_queue.py",
+      "test_redis_task_retry.py",
+      "test_postgres_task_outbox_relay.py",
+      "test_live_redis_task_delivery.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G03",
+    "domain": "运行基础设施",
+    "name": "配额、租约与资源占用",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_resource_quota_api.py",
+      "test_resource_lease_manager.py",
+      "test_resource_occupancy.py",
+      "test_execution_resource_waiting.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G04",
+    "domain": "运行基础设施",
+    "name": "Docker 与浏览器执行环境",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_docker_route_error_status.py",
+      "test_browser_resource_harness.py",
+      "test_python_playwright_lifecycle.py",
+      "test_live_browser_lifecycle.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G05",
+    "domain": "运行基础设施",
+    "name": "观测、Token 与多进程指标",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_observability_contracts.py",
+      "test_token_usage.py",
+      "test_metrics_core.py",
+      "test_metrics_multiprocess.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "G06",
+    "domain": "运行基础设施",
+    "name": "版本迁移与测试质量门",
+    "source": "Agent_Server/src/main.py",
+    "backend_test_files": [
+      "test_schema_migrations.py",
+      "test_quality_gate_reporting.py",
+      "test_release_rollback_preflight.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "H01",
+    "domain": "前端与桌面体验",
+    "name": "页面切换与异步生命周期",
+    "source": "agent_web/src/router/index.ts",
+    "backend_test_files": [],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "H02",
+    "domain": "前端与桌面体验",
+    "name": "流式消息、Markdown 与链接",
+    "source": "agent_web/src/router/index.ts",
+    "backend_test_files": [
+      "test_assistant_stream_browser_probe.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "H03",
+    "domain": "前端与桌面体验",
+    "name": "多语言与 UTC 时间显示",
+    "source": "agent_web/src/router/index.ts",
+    "backend_test_files": [],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "H04",
+    "domain": "前端与桌面体验",
+    "name": "正式构建、包拆分与外部协议",
+    "source": "agent_web/src/router/index.ts",
+    "backend_test_files": [],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "I01",
+    "domain": "目录能力与联合验收",
+    "name": "六种扩展模式：目录占位",
+    "source": "Agent_Server/src/registry/modes.py",
+    "backend_test_files": [],
+    "scope": "catalog_only",
+    "full_ui_status": "not_executed"
+  },
+  {
+    "id": "I02",
+    "domain": "目录能力与联合验收",
+    "name": "全系统联合验收与故障矩阵",
+    "source": "Agent_Server/src/registry/modes.py",
+    "backend_test_files": [
+      "test_live_model_durable_dispatch.py",
+      "test_live_model_tool_stream.py"
+    ],
+    "scope": "declared_test_assertions_only",
+    "full_ui_status": "not_executed"
+  }
+]

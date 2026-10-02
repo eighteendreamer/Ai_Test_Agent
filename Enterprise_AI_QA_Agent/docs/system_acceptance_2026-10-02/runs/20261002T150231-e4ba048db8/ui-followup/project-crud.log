@@ -1,0 +1,21 @@
+ERROR:root:project_ui_acceptance_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\system_acceptance_2026-10-02\project_ui_acceptance.py", line 124, in run
+    await page.get_by_role("button", name="新建项目", exact=True).click()
+  File "E:\Python_UV\venvs\default\Lib\site-packages\playwright\async_api\_generated.py", line 17894, in click
+    await self._impl_obj.click(
+  File "E:\Python_UV\venvs\default\Lib\site-packages\playwright\_impl\_locator.py", line 165, in click
+    return await self._frame._click(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\venvs\default\Lib\site-packages\playwright\_impl\_frame.py", line 593, in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+  File "E:\Python_UV\venvs\default\Lib\site-packages\playwright\_impl\_connection.py", line 76, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\venvs\default\Lib\site-packages\playwright\_impl\_connection.py", line 632, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="新建项目", exact=True)
+
+{"output": "G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\system_acceptance_2026-10-02\\runs\\20261002T150231-e4ba048db8\\ui-followup\\project-crud", "status": "failed", "cases": []}

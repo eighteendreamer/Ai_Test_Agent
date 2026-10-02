@@ -1,0 +1,105 @@
+{
+  "id": "I02",
+  "domain": "目录能力与联合验收",
+  "name": "全系统联合验收与故障矩阵",
+  "source": "Agent_Server/src/registry/modes.py",
+  "backend_test_files": [
+    "test_live_model_durable_dispatch.py",
+    "test_live_model_tool_stream.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "skipped": 3,
+    "passed": 1
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_live_model_durable_dispatch.py::test_formal_message_admission_executes_live_model_via_outbox_and_redis[http]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00015269999857991934,
+          "reason": "Skipped: requires configured live model, PostgreSQL and Redis; model-dispatch enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013760000001639128
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_model_durable_dispatch.py::test_formal_message_admission_executes_live_model_via_outbox_and_redis[chromium]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00011160000576637685,
+          "reason": "Skipped: requires configured live model, PostgreSQL and Redis; model-dispatch enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0001824999926611781
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_model_tool_stream.py::test_current_model_executes_read_only_tool_and_stream_matches_final_transcript",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00014769998961128294,
+          "reason": "Skipped: requires an active configured model and actual provider access; model-tools enables it"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015040001017041504
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_live_model_durable_dispatch.py::test_formal_message_admission_executes_live_model_via_outbox_and_redis[chromium]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.005362800002330914
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 15.577396299981046
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014780999918002635
+        }
+      ],
+      "outcome": "passed",
+      "profile": "model-browser",
+      "evidence": "gates/20261002T150629-model-browser-e9daf881704a/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ]
+}

@@ -1,0 +1,497 @@
+{
+  "id": "A06",
+  "domain": "会话工作台",
+  "name": "会话时间、生命周期与清理",
+  "source": "Agent_Server/src/application/sessions/session_service.py",
+  "backend_test_files": [
+    "test_session_turn_reaper.py",
+    "test_session_lock_retention.py",
+    "test_lifespan_resource_cleanup.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 18,
+    "skipped": 3
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[quota-False]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007179999956861138
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0011334999871905893
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008021000248845667
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[quota-True]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000744799996027723
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.002440400014165789
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007410999969579279
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[vector_connect-False]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007984999974723905
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0008988999761641026
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0006700999801978469
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_shutdown_flushes_after_other_cleanup_failure",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0005652999971061945
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0011716000153683126
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008105000015348196
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_lifespan_disposes_only_last_owners_sql_pool[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00014719998580403626,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013830000534653664
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_lifespan_disposes_only_last_owners_sql_pool[mysql]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.00011170000652782619,
+          "reason": "Skipped: set RUN_LIVE_MYSQL_TESTS=1"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011990001075901091
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_sql_pool_cleanup_settles_before_shutdown_cancellation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.000611600000411272
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010961999942082912
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008032999758142978
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_sql_disposal_attempts_other_pool_after_one_failure",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00039809997542761266
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0005480000108946115
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013559998478740454
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_lock_retention.py::test_idle_per_session_locks_are_released_without_eviction_races[session]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00022629997693002224
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.1615256000077352
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0002609000075608492
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_lock_retention.py::test_idle_per_session_locks_are_released_without_eviction_races[coordinator]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0003026999766007066
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.18952600000193343
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00024090000079013407
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_lock_retention.py::test_waiting_session_coroutines_keep_the_same_lock",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001116100000217557
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00046919999294914305
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00044750000233761966
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_turn_reaper.py::test_expired_turn_recovers_while_service_stays_running[memory]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0010956000187434256
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.08353629999328405
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0010192000190727413
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_session_turn_reaper.py::test_expired_turn_recovers_while_service_stays_running[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "skipped",
+          "seconds": 0.03201749999425374,
+          "reason": "Skipped: set RUN_LIVE_POSTGRES_TESTS=1 for event delivery integration"
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0005723000213038176
+        }
+      ],
+      "outcome": "skipped",
+      "profile": "diagnostic",
+      "evidence": "gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[quota-False]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0020736999867949635
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0016425999929197133
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0014346000098157674
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[quota-True]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0009103000047616661
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010996999917551875
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0007951000006869435
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_startup_failure_closes_all_created_redis_resources[vector_connect-False]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0016010999970603734
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.001212100003613159
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.000808400014648214
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_shutdown_flushes_after_other_cleanup_failure",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007551999879069626
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010848999954760075
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008504000143148005
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_lifespan_disposes_only_last_owners_sql_pool[postgres]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007139000226743519
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.1734643999952823
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009969999955501407
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_lifespan_disposes_only_last_owners_sql_pool[mysql]",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.001125699986005202
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.17094470001757145
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0009744999988470227
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_sql_pool_cleanup_settles_before_shutdown_cancellation",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0007579999801237136
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0010395999997854233
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.0008205999911297113
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    },
+    {
+      "nodeid": "tests/test_lifespan_resource_cleanup.py::test_sql_disposal_attempts_other_pool_after_one_failure",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0002571999793872237
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0006044000037945807
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00015759997768327594
+        }
+      ],
+      "outcome": "passed",
+      "profile": "sql-lifecycle",
+      "evidence": "gates/20261002T150607-sql-lifecycle-58b713f95890/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ]
+}

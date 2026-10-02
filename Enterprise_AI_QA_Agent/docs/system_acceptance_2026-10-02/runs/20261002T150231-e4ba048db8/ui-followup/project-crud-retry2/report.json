@@ -1,0 +1,56 @@
+{
+  "started_at": "2026-10-02T15:10:36.643106+00:00",
+  "feature_ids": [
+    "B01",
+    "H01"
+  ],
+  "scope": "Built ProjectsView; actual HTTP project CRUD, overview and empty cases; memory stores; empty auxiliary fixtures; resource monitor not wired; no model, PostgreSQL or full application lifecycle.",
+  "full_feature_accepted": false,
+  "status": "passed_declared_crud_scope",
+  "browser": "151.0.7922.34",
+  "finished_at": "2026-10-02T15:10:40.158464+00:00",
+  "cases": [
+    {
+      "case": "project_create",
+      "http_status": 201,
+      "result": "passed"
+    },
+    {
+      "case": "project_search",
+      "result": "passed"
+    },
+    {
+      "case": "project_update",
+      "result": "passed"
+    },
+    {
+      "case": "project_archive",
+      "result": "passed",
+      "history_preserved": true
+    }
+  ],
+  "page_errors": [],
+  "harness_unavailable_http": [
+    {
+      "path": "/api/v1/registry/agents",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/registry/tools/summary",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/projects/70663877-d120-4156-a135-5f399eec89c4/execution-summary",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/resource-occupancy?project_id=70663877-d120-4156-a135-5f399eec89c4",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/projects/70663877-d120-4156-a135-5f399eec89c4/resource-quotas",
+      "status": 404
+    }
+  ],
+  "limitation": "Unavailable auxiliary resource APIs belong to this harness; do not infer production defects."
+}

@@ -1,0 +1,81 @@
+{
+  "id": "H03",
+  "domain": "前端与桌面体验",
+  "name": "多语言与 UTC 时间显示",
+  "source": "agent_web/src/router/index.ts",
+  "backend_test_files": [],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {},
+  "cases": [],
+  "additional_evidence": [
+    {
+      "type": "workbench_ui_time",
+      "evidence": "../ui-followup/workbench-time.json",
+      "status": "passed",
+      "scope": "Real SessionService, memory store, HTTP and SSE, production renderer; auxiliary catalogs are fixtures; no model or external provider."
+    }
+  ],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": [
+    {
+      "source": "agent_web/src/App.datetime.test.ts",
+      "name": "renders a captured normal session event at its UTC instant in UTC",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/App.datetime.test.ts",
+      "name": "renders a captured normal session event at its UTC instant in Asia/Shanghai",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/App.datetime.test.ts",
+      "name": "renders a captured normal session event at its UTC instant in America/New_York",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/tests/i18nKeys.test.ts",
+      "name": "defines every static UI translation key in a base locale",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/tests/i18nKeys.test.ts",
+      "name": "keeps the Chinese and English base dictionaries aligned",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/i18n.lazy.test.ts",
+      "name": "on-demand locale dictionaries lists unloaded locales and loads the selected real dictionary once",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/i18n.lazy.test.ts",
+      "name": "on-demand locale dictionaries updates existing reactive translations when the selected dictionary arrives",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/i18n.lazy.test.ts",
+      "name": "on-demand locale dictionaries keeps the newest language selected when an earlier download finishes late",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    },
+    {
+      "source": "agent_web/src/services/i18n.lazy.test.ts",
+      "name": "on-demand locale dictionaries logs a download failure, retains fallback text and allows a later retry",
+      "outcome": "passed",
+      "evidence": "../frontend-tests.json"
+    }
+  ]
+}

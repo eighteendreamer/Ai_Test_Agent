@@ -1,0 +1,94 @@
+{
+  "id": "E06",
+  "domain": "知识、文档与工件",
+  "name": "测试报表与模板渲染",
+  "source": "Agent_Server/src/application/knowledge/knowledge_graph_service.py",
+  "backend_test_files": [
+    "test_report_service.py",
+    "test_performance_report_builder.py"
+  ],
+  "scope": "declared_test_assertions_only",
+  "full_ui_status": "not_executed",
+  "acceptance_status": "partial",
+  "backend_counts": {
+    "passed": 3
+  },
+  "cases": [
+    {
+      "nodeid": "tests/test_performance_report_builder.py::test_regression_report_fails_on_sla_violation_and_compares_baseline",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00014020001981407404
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.0002770999853964895
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00012450001668184996
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_performance_report_builder.py::test_probe_report_is_baseline_even_without_sla_pass_fail",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.0001453000004403293
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.00020929999300278723
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00011759999324567616
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    },
+    {
+      "nodeid": "tests/test_report_service.py::test_report_page_uses_lightweight_session_data_and_batches_artifacts",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "passed",
+          "seconds": 0.00013420000323094428
+        },
+        {
+          "phase": "call",
+          "outcome": "passed",
+          "seconds": 0.000985999999102205
+        },
+        {
+          "phase": "teardown",
+          "outcome": "passed",
+          "seconds": 0.00013309999485500157
+        }
+      ],
+      "outcome": "passed",
+      "profile": "diagnostic",
+      "evidence": "../gates/20261002T150232-diagnostic-e20108ff78bc/report.json"
+    }
+  ],
+  "additional_evidence": [],
+  "limitations": [
+    "partial 表示有断言执行，尚非整项验收通过；通过个数可能含不同环境重复执行。",
+    "模块测试包含替身；真实依赖仅以相应 profile 和断言为准。",
+    "完整业务 UI、真实供应商操作及故障矩阵未被本记录推定为通过。"
+  ],
+  "frontend_cases": []
+}
