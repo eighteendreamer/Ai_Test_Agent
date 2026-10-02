@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.api.routes.compatibility import router
+from src.application.compatibility import runner_client as runner_client_module
+from src.application.compatibility.runner_client import CompatibilityRunnerClient
 from src.application.compatibility.runner_service import CompatibilityRunnerService
 from src.core.config import OrchestrConfig
 from src.modes.compatibility_testing_mode.contracts import (
@@ -72,6 +74,174 @@ def test_runner_report_cannot_override_server_recovery_budget(tmp_path):
         ))
         assert reported.metadata["automatic_retry_count"] == 0
         assert reported.metadata["recovery_reason"] is None
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("operation", ["report", "upload", "mode_calls"])
+def test_previous_assignment_cannot_write_to_same_runner_retry(tmp_path, operation):
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    # The task has no mode calls; runtime objects are unused success fixtures.
+    app.state.tool_runtime_service = object()
+    app.state.tool_registry = object()
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as client:
+        prefix = "/api/v1/compatibility"
+        assert client.post(f"{prefix}/runners/register", json={
+            "runner_id": "runner", "capabilities": ["local_browser"],
+            "metadata": {"assignment_fencing_version": 1},
+        }).status_code == 200
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="assignment-plan",
+            tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        )))
+        first = client.post(f"{prefix}/runners/runner/tasks/poll").json()["tasks"][0]
+        assert client.post(f"{prefix}/tasks/requeue", json={
+            "task_ids": ["task"], "statuses": ["assigned"], "reason": "normal_manual_retry",
+        }).status_code == 200
+        second = client.post(f"{prefix}/runners/runner/tasks/poll").json()["tasks"][0]
+        first_id = first["metadata"].get("assignment_id")
+        second_id = second["metadata"].get("assignment_id")
+
+        def submit(assignment_id):
+            if operation == "report":
+                return client.post(f"{prefix}/runners/runner/tasks/task/report", json={
+                    "assignment_id": assignment_id, "status": "completed", "result": {"summary": "Dry-run result."},
+                })
+            if operation == "upload":
+                return client.post(f"{prefix}/runners/runner/tasks/task/artifacts/upload", json={
+                    "assignment_id": assignment_id, "filename": "evidence.txt",
+                    "content_base64": base64.b64encode(b"safe evidence").decode(),
+                })
+            params = {"assignment_id": assignment_id} if assignment_id is not None else {}
+            return client.post(f"{prefix}/runners/runner/tasks/task/mode-calls/execute", params=params)
+
+        # Ordinary manual retry with a delayed first result; no method, clock,
+        # filesystem or execution exception is replaced to produce failure.
+        stale = submit(first_id)
+        assert stale.status_code == 409, stale.text
+        assert first_id and second_id and first_id != second_id
+        assert service._tasks["task"].model_dump(mode="json") == second
+        assert submit(None).status_code == 409
+        assert submit(second_id).status_code == 200
+
+
+def test_cli_transmits_assignment_identity_through_formal_api(tmp_path, monkeypatch):
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.state.tool_runtime_service = object()
+    app.state.tool_registry = object()
+    app.include_router(router, prefix="/api/v1")
+    calls = []
+    with TestClient(app) as http:
+        def transport(base_url, path, *, method="GET", payload=None):
+            calls.append((path, payload))
+            response = http.request(method, path, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+        # Successful ASGI transport only; the CLI, API and service are real.
+        monkeypatch.setattr(runner_client_module, "_json_request", transport)
+        client = CompatibilityRunnerClient(
+            base_url="http://test", runner_id="runner", name="Protocol fixture", capabilities=["local_browser"],
+            devices=[], max_parallel=1, poll_interval=1, executor="dry-run",
+        )
+        client.register()
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="cli-plan", tasks=[CompatibilityRunnerTask(
+                task_id="cli-task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        )))
+        assert client.run_once() == 1
+        task = service._tasks["cli-task"]
+        assert task.status == "completed"
+        assert task.metadata["assignment_fencing_required"] is True
+        assignment_id = task.metadata["assignment_id"]
+        for suffix in ("/report", "/artifacts/upload"):
+            transmitted = next(body for path, body in calls if path.endswith(suffix))
+            assert transmitted["assignment_id"] == assignment_id
+        # Empty approved mode-call list: verifies query transport with no tool
+        # execution, browser, model or provider request.
+        assert client.execute_mode_calls(task.model_dump(mode="json"))["status"] == "completed"
+        assert calls[-1][0].endswith("?assignment_id=" + assignment_id)
+
+
+def test_mode_finish_from_previous_assignment_does_not_modify_new_attempt(tmp_path):
+    async def exercise():
+        service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="runner", capabilities=["local_browser"],
+        ))
+        await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="finish-plan", tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        ))
+        original = (await service.poll_tasks("runner")).tasks[0]
+        await service.begin_mode_call_execution("runner", "task")
+        await service.requeue_tasks(CompatibilityTaskRequeueRequest(task_ids=["task"], statuses=["assigned"]))
+        current = (await service.poll_tasks("runner")).tasks[0]
+        with pytest.raises(PermissionError, match="assignment no longer matches"):
+            await service.finish_mode_call_execution(
+                "runner", "task", status="completed", result_count=1,
+                assignment_id=original.metadata["assignment_id"],
+            )
+        assert service._tasks["task"].model_dump(mode="json") == current.model_dump(mode="json")
+    asyncio.run(exercise())
+
+
+def test_upload_checks_assignment_again_after_storage_await(tmp_path):
+    async def exercise():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        class DelayedStorage:
+            enabled = True
+
+            def __init__(self):
+                self.deleted = []
+
+            async def store_uploaded_bytes(self, **kwargs):
+                started.set()
+                await release.wait()
+                return {"uri": "rustfs://fixture/old-artifact"}
+
+            async def delete_object_uri(self, uri):
+                self.deleted.append(uri)
+
+        storage = DelayedStorage()
+        service = CompatibilityRunnerService(settings=settings_for(tmp_path), artifact_storage_service=storage)
+        await service.register_runner(CompatibilityRunnerRegistrationRequest(
+            runner_id="runner", capabilities=["local_browser"],
+        ))
+        await service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="upload-race-plan", tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        ))
+        await service.poll_tasks("runner")
+        # Controlled storage-await scheduling; no real RustFS fault is claimed.
+        upload = asyncio.create_task(service.upload_task_artifact("runner", "task", CompatibilityArtifactUploadRequest(
+            filename="evidence.txt", content_base64=base64.b64encode(b"safe evidence").decode(),
+        )))
+        try:
+            await asyncio.wait_for(started.wait(), timeout=2)
+            await service.requeue_tasks(CompatibilityTaskRequeueRequest(task_ids=["task"], statuses=["assigned"]))
+            current = (await service.poll_tasks("runner")).tasks[0]
+        finally:
+            release.set()
+        with pytest.raises(PermissionError, match="assignment no longer matches"):
+            await upload
+        assert service._tasks["task"].model_dump(mode="json") == current.model_dump(mode="json")
+        assert storage.deleted == ["rustfs://fixture/old-artifact"]
+        assert service._artifacts == {}
     asyncio.run(exercise())
 
 

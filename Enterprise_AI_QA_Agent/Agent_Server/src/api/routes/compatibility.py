@@ -204,6 +204,7 @@ async def execute_runner_task_mode_calls(
     runner_id: str,
     task_id: str,
     request: Request,
+    assignment_id: str | None = Query(None),
 ):
     tool_runtime_service = getattr(request.app.state, "tool_runtime_service", None)
     tool_registry = getattr(request.app.state, "tool_registry", None)
@@ -211,7 +212,9 @@ async def execute_runner_task_mode_calls(
         raise HTTPException(status_code=503, detail="Mode invocation runtime is not configured.")
 
     try:
-        task = await request.app.state.compatibility_runner_service.begin_mode_call_execution(runner_id, task_id)
+        task = await request.app.state.compatibility_runner_service.begin_mode_call_execution(
+            runner_id, task_id, assignment_id=assignment_id,
+        )
     except CompatibilityRunnerNotFound as exc:
         raise HTTPException(status_code=404, detail="Runner not found") from exc
     except KeyError as exc:
@@ -284,9 +287,12 @@ async def execute_runner_task_mode_calls(
                 task_id,
                 status="failed",
                 result_count=len(results),
+                assignment_id=task.metadata.get("assignment_id"),
             )
-        except (CompatibilityRunnerNotFound, KeyError, PermissionError):
-            pass
+        except (CompatibilityRunnerNotFound, KeyError, PermissionError) as finish_exc:
+            logger.warning("compatibility_mode_call_finish_rejected", extra={
+                "task_id": task_id, "runner_id": runner_id, "error_type": type(finish_exc).__name__,
+            })
         raise HTTPException(
             status_code=500,
             detail=f"Mode call execution failed unexpectedly: {exc}",
@@ -302,9 +308,12 @@ async def execute_runner_task_mode_calls(
             task_id,
             status=status,
             result_count=len(results),
+            assignment_id=task.metadata.get("assignment_id"),
         )
-    except (CompatibilityRunnerNotFound, KeyError, PermissionError):
-        pass
+    except (CompatibilityRunnerNotFound, KeyError, PermissionError) as finish_exc:
+        logger.warning("compatibility_mode_call_finish_rejected", extra={
+            "task_id": task_id, "runner_id": runner_id, "error_type": type(finish_exc).__name__,
+        })
     return {
         "status": status,
         "ok": status == "completed",

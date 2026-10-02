@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Any
 from urllib import error, request
+from urllib.parse import urlencode
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1032"
@@ -67,6 +68,7 @@ class CompatibilityRunnerClient:
                     "runner_kind": "compatibility_runner_client",
                     "executor": self.executor,
                     "python": platform.python_version(),
+                    "assignment_fencing_version": 1,
                 },
             },
         )
@@ -110,6 +112,7 @@ class CompatibilityRunnerClient:
         label: str,
         mime_type: str,
         metadata: dict[str, Any] | None = None,
+        assignment_id: str | None = None,
     ) -> dict[str, Any]:
         return _json_request(
             self.base_url,
@@ -122,6 +125,7 @@ class CompatibilityRunnerClient:
                 "label": label,
                 "mime_type": mime_type,
                 "metadata": metadata or {},
+                "assignment_id": assignment_id,
             },
         )
 
@@ -129,9 +133,12 @@ class CompatibilityRunnerClient:
         task_id = str(task.get("task_id") or "")
         if not task_id:
             raise ValueError("Compatibility task is missing task_id.")
+        metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+        assignment_id = metadata.get("assignment_id")
+        suffix = "?" + urlencode({"assignment_id": assignment_id}) if assignment_id else ""
         return _json_request(
             self.base_url,
-            f"/api/v1/compatibility/runners/{self.runner_id}/tasks/{task_id}/mode-calls/execute",
+            f"/api/v1/compatibility/runners/{self.runner_id}/tasks/{task_id}/mode-calls/execute{suffix}",
             method="POST",
         )
 
@@ -250,6 +257,9 @@ class CompatibilityRunnerClient:
                 }
             finally:
                 self.active_task_ids = [item for item in self.active_task_ids if item != task_id]
+            metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+            if metadata.get("assignment_id"):
+                payload["assignment_id"] = metadata["assignment_id"]
             self.report(task_id, payload)
             print(f"reported task={task_id} status={payload.get('status')}")
         self.heartbeat()
@@ -375,6 +385,7 @@ class CompatibilityRunnerClient:
         if not task_id:
             return []
         summary = str((payload.get("result") or {}).get("summary") or "")
+        metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
         artifact = self.upload_artifact(
             task_id,
             filename=f"{task_id}_runner_log.json",
@@ -394,6 +405,7 @@ class CompatibilityRunnerClient:
             label="Runner execution log",
             mime_type="application/json",
             metadata={"preview": summary[:240]},
+            assignment_id=metadata.get("assignment_id"),
         )
         return [artifact]
 

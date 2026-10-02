@@ -94,6 +94,7 @@ class CompatibilityRunnerPollResponse(BaseModel):
 
 class CompatibilityRunnerTaskReportRequest(BaseModel):
     status: str
+    assignment_id: str | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
@@ -118,6 +119,7 @@ class CompatibilityTaskRequeueResponse(BaseModel):
 class CompatibilityArtifactUploadRequest(BaseModel):
     filename: str
     content_base64: str
+    assignment_id: str | None = None
     type: str = "evidence"
     label: str = ""
     mime_type: str | None = None

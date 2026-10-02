@@ -219,6 +219,8 @@ class CompatibilityRunnerService:
                         "recovery_reason": None,
                         "recovery_required_at": None,
                         "recovery_source": None,
+                        "assignment_id": None,
+                        "assignment_fencing_required": False,
                     },
                 )
                 self._tasks[queued_task.task_id] = queued_task
@@ -264,6 +266,11 @@ class CompatibilityRunnerService:
                         "status": "assigned",
                         "assigned_runner_id": runner_id,
                         "updated_at": now,
+                        "metadata": {
+                            **task.metadata,
+                            "assignment_id": new_id("assignment"),
+                            "assignment_fencing_required": runner.metadata.get("assignment_fencing_version") == 1,
+                        },
                     }
                 )
                 self._tasks[task.task_id] = updated
@@ -294,6 +301,7 @@ class CompatibilityRunnerService:
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
+            self._ensure_assignment_matches(task, payload.assignment_id)
             self._ensure_task_can_be_reported(task)
             raw_artifacts = payload.artifacts
             if not raw_artifacts and isinstance(payload.result.get("artifacts"), list):
@@ -355,6 +363,7 @@ class CompatibilityRunnerService:
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
+            self._ensure_assignment_matches(task, payload.assignment_id)
             task_snapshot = task
 
         content = self._decode_base64(payload.content_base64)
@@ -372,6 +381,7 @@ class CompatibilityRunnerService:
                 if task is None:
                     raise KeyError(task_id)
                 self._ensure_runner_can_write_task(runner_id, task)
+                self._ensure_assignment_matches(task, task_snapshot.metadata.get("assignment_id"), strict=True)
                 artifact = CompatibilityArtifactRecord(
                     artifact_id=artifact_id,
                     task_id=task.task_id,
@@ -425,7 +435,9 @@ class CompatibilityRunnerService:
             self._ensure_runner_can_write_task(runner_id, task)
             return task
 
-    async def begin_mode_call_execution(self, runner_id: str, task_id: str) -> CompatibilityQueuedTask:
+    async def begin_mode_call_execution(
+        self, runner_id: str, task_id: str, *, assignment_id: str | None = None,
+    ) -> CompatibilityQueuedTask:
         now = _utc_now()
         async with self._lock:
             self._requeue_stale_assigned_tasks_locked(now)
@@ -433,6 +445,7 @@ class CompatibilityRunnerService:
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
+            self._ensure_assignment_matches(task, assignment_id)
             if task.status == "recovery_required":
                 raise PermissionError(f"Task {task_id} requires recovery review before mode calls can execute.")
             execution_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
@@ -460,6 +473,7 @@ class CompatibilityRunnerService:
         *,
         status: str,
         result_count: int,
+        assignment_id: str | None = None,
     ) -> CompatibilityQueuedTask:
         now = _utc_now()
         async with self._lock:
@@ -467,6 +481,7 @@ class CompatibilityRunnerService:
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
+            self._ensure_assignment_matches(task, assignment_id)
             updated = task.model_copy(
                 update={
                     "updated_at": now,
@@ -884,6 +899,7 @@ class CompatibilityRunnerService:
             "source": source,
             "previous_status": task.status,
             "previous_runner_id": task.assigned_runner_id,
+            "previous_assignment_id": task.metadata.get("assignment_id"),
             "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
             "previous_error": task.error,
             "previous_artifact_ids": [artifact.artifact_id for artifact in task.artifacts],
@@ -910,6 +926,8 @@ class CompatibilityRunnerService:
                 "recovery_reason": None,
                 "recovery_required_at": None,
                 "recovery_source": None,
+                "assignment_id": None,
+                "assignment_fencing_required": False,
                 "retry_history": retry_history[-10:],
             },
         })
@@ -1019,6 +1037,8 @@ class CompatibilityRunnerService:
             "recovery_reason",
             "recovery_required_at",
             "recovery_source",
+            "assignment_id",
+            "assignment_fencing_required",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 
@@ -1339,6 +1359,19 @@ class CompatibilityRunnerService:
     def _ensure_task_can_be_reported(self, task: CompatibilityQueuedTask) -> None:
         if task.status != "assigned":
             raise PermissionError(f"Task {task.task_id} is already {task.status} and cannot be reported again.")
+
+    def _ensure_assignment_matches(
+        self, task: CompatibilityQueuedTask, assignment_id: str | None, *, strict: bool = False,
+    ) -> None:
+        if assignment_id is None and not strict and not task.metadata.get("assignment_fencing_required"):
+            return  # Legacy clients have not negotiated the assignment protocol.
+        current = task.metadata.get("assignment_id")
+        if not current or assignment_id != current:
+            logger.warning("compatibility_task_assignment_rejected", extra={
+                "task_id": task.task_id, "runner_id": task.assigned_runner_id,
+                "assignment_id_supplied": assignment_id is not None,
+            })
+            raise PermissionError(f"Task {task.task_id} assignment no longer matches this request.")
 
     def _normalize_report_status(self, value: str) -> str:
         status = str(value or "").strip().lower()
