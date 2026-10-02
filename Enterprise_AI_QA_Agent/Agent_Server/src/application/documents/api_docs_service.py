@@ -429,12 +429,21 @@ class ApiDocsService:
         auth: tuple[str, str] | None = None,
         filename: str | None = None,
     ) -> ApiDocRecord:
-        fetched = await self._fetch_remote_document(url=url, headers=headers, auth=auth)
-        fetched = await self._resolve_remote_api_document(
-            original_url=url,
-            fetched=fetched,
-            headers=headers,
-            auth=auth,
+        url = self._normalize_optional_text(url)
+        if not url:
+            raise ValueError("导入地址不能为空。")
+        async with self._remote_document_client() as client:
+            fetched = await self._fetch_remote_document(url=url, headers=headers, auth=auth, client=client)
+            fetched = await self._resolve_remote_api_document(
+                original_url=url,
+                fetched=fetched,
+                headers=headers,
+                auth=auth,
+                client=client,
+            )
+        logger.info(
+            "api_doc_remote_discovery_completed",
+            extra={"source_host": urlparse(url).hostname, "final_host": urlparse(fetched["final_url"]).hostname},
         )
         resolved_filename = filename or self._derive_remote_filename(
             original_url=url,
@@ -1410,42 +1419,54 @@ class ApiDocsService:
                     count += 1
         return count or None
 
+    def _remote_document_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=min(self._settings.model.llm_request_timeout_seconds, 45.0),
+            follow_redirects=False,
+        )
+
     async def _fetch_remote_document(
         self,
         *,
         url: str,
         headers: dict[str, str] | None = None,
         auth: tuple[str, str] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> dict[str, Any]:
         normalized_url = self._normalize_optional_text(url)
         if not normalized_url:
             raise ValueError("导入地址不能为空。")
 
+        if client is None:
+            async with self._remote_document_client() as owned_client:
+                return await self._fetch_remote_document(
+                    url=normalized_url, headers=headers, auth=auth, client=owned_client,
+                )
+
         client_auth = httpx.BasicAuth(*auth) if auth is not None else None
+        # Reuse TCP connections without carrying response cookies between candidates.
+        # The previous per-document clients kept cookies only within a redirect chain.
+        client.cookies.clear()
         try:
-            async with httpx.AsyncClient(
-                timeout=min(self._settings.model.llm_request_timeout_seconds, 45.0),
-                follow_redirects=False,
-            ) as client:
-                current_url = normalized_url
-                for redirect_count in range(MAX_REMOTE_REDIRECTS + 1):
-                    response = await client.get(current_url, headers=headers or {}, auth=client_auth)
-                    if not response.is_redirect:
-                        response.raise_for_status()
-                        break
-                    if redirect_count == MAX_REMOTE_REDIRECTS:
-                        raise ValueError("远程文档跳转次数过多。")
-                    location = response.headers.get("location")
-                    if not location:
-                        raise ValueError("远程文档跳转缺少 Location。")
-                    next_url = urljoin(str(response.url), location)
-                    if not self._same_http_origin(normalized_url, next_url):
-                        logger.warning(
-                            "api_doc_cross_origin_redirect_rejected",
-                            extra={"source_host": response.url.host, "target_host": urlparse(next_url).hostname},
-                        )
-                        raise ValueError("远程文档跳转到不同来源；请直接填写最终文档地址。")
-                    current_url = next_url
+            current_url = normalized_url
+            for redirect_count in range(MAX_REMOTE_REDIRECTS + 1):
+                response = await client.get(current_url, headers=headers or {}, auth=client_auth)
+                if not response.is_redirect:
+                    response.raise_for_status()
+                    break
+                if redirect_count == MAX_REMOTE_REDIRECTS:
+                    raise ValueError("远程文档跳转次数过多。")
+                location = response.headers.get("location")
+                if not location:
+                    raise ValueError("远程文档跳转缺少 Location。")
+                next_url = urljoin(str(response.url), location)
+                if not self._same_http_origin(normalized_url, next_url):
+                    logger.warning(
+                        "api_doc_cross_origin_redirect_rejected",
+                        extra={"source_host": response.url.host, "target_host": urlparse(next_url).hostname},
+                    )
+                    raise ValueError("远程文档跳转到不同来源；请直接填写最终文档地址。")
+                current_url = next_url
         except httpx.HTTPError as exc:
             raise ValueError(f"远程文档拉取失败：{exc}") from exc
 
@@ -1473,6 +1494,7 @@ class ApiDocsService:
         fetched: dict[str, Any],
         headers: dict[str, str] | None = None,
         auth: tuple[str, str] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> dict[str, Any]:
         if self._looks_like_api_document(fetched):
             return fetched
@@ -1506,7 +1528,12 @@ class ApiDocsService:
                 )
                 continue
             try:
-                candidate = await self._fetch_remote_document(url=candidate_url, headers=headers, auth=auth)
+                if client is None:
+                    candidate = await self._fetch_remote_document(url=candidate_url, headers=headers, auth=auth)
+                else:
+                    candidate = await self._fetch_remote_document(
+                        url=candidate_url, headers=headers, auth=auth, client=client,
+                    )
             except ValueError as exc:
                 last_error = exc
                 continue
