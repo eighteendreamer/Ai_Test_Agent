@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import re
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -1921,15 +1922,19 @@ class SecurityTestingModeRuntime:
             session_state.created_at = shell.created_at
             session_state.status = "active"
             state_value = self._attack_session_state_value(campaign.campaign_id)
+            # Python repr is not shell quoting: an ordinary OData URL containing
+            # string quotes can become double-quoted, expanding $filter/$select.
+            # Use the same shell-argument quoting as ExploitWorkspace.
+            target_arg = shlex.quote(target)
             commands = [
                 (
                     "establish_state",
-                    f"printf '%s\\n' {state_value!r} > /work/p1_session_state.txt && cat /work/p1_session_state.txt",
+                    f"printf '%s\\n' {shlex.quote(state_value)} > /work/p1_session_state.txt && cat /work/p1_session_state.txt",
                 ),
                 (
                     "use_state_and_probe",
                     "test -s /work/p1_session_state.txt && "
-                    f"curl -sS -o /work/p1_http_body.txt -D /work/p1_http_headers.txt --max-time 20 {target!r} && "
+                    f"curl -sS -o /work/p1_http_body.txt -D /work/p1_http_headers.txt --max-time 20 {target_arg} && "
                     "printf 'state=' && cat /work/p1_session_state.txt && "
                     "printf 'status=' && awk 'NR==1 {print $2}' /work/p1_http_headers.txt",
                 ),

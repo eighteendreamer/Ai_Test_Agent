@@ -194,6 +194,10 @@ class SecurityShellSession:
             raise ValueError(f"SecurityShellSession target is outside the authorized allowlist: {target}")
 
     def _validate_command(self, command: str) -> None:
+        # This substring guard is a heuristic for the runtime's fixed commands,
+        # not a shell parser or a container security boundary. Production callers
+        # currently supply the three templates in _run_persistent_attack_session;
+        # do not expose arbitrary model/user commands under this guard alone.
         denied = (
             "rm -rf",
             "mkfs",
