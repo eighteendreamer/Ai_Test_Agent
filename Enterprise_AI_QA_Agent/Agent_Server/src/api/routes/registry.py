@@ -11,6 +11,7 @@ from src.application.mcp.errors import (
     MCPManagementValidationError,
     MCPServerNotFoundError,
 )
+from src.application.skills.errors import SkillPathValidationError
 from src.schemas.mcp_management import (
     MCPServerCreateRequest,
     MCPServerImportRequest,
@@ -193,8 +194,15 @@ async def install_skill_marketplace(payload: SkillMarketplaceInstallRequest, req
 async def get_skill(skill_key: str, request: Request):
     try:
         return request.app.state.skill_management_service.get_skill(skill_key)
+    except KeyError as exc:
+        logger.info("skill_not_found", extra={"operation": "get"})
+        raise HTTPException(status_code=404, detail="Skill not found.") from exc
+    except SkillPathValidationError as exc:
+        logger.info("skill_read_input_invalid", extra={"operation": "get", "error_type": type(exc).__name__})
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.error("skill_read_failed", extra={"operation": "get", "error_type": type(exc).__name__})
+        raise HTTPException(status_code=500, detail="Skill read failed.") from exc
 
 
 @router.put("/skills/{skill_key}")

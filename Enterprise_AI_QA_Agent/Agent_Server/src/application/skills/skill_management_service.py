@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import urllib.request
@@ -12,7 +13,10 @@ from typing import Any
 from uuid import uuid4
 
 from src.application.security.upload_security_service import UploadSecurityService
+from src.application.skills.errors import SkillPathValidationError
 from src.registry.skills import SkillRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class SkillManagementService:
@@ -50,7 +54,9 @@ class SkillManagementService:
     def get_skill(self, key: str) -> dict[str, Any]:
         safe_key = self._safe_key(key)
         skill_dir = self._skills_root / safe_key
+        self._ensure_within_root(skill_dir, operation="read")
         skill_file = skill_dir / "SKILL.md"
+        self._ensure_within_root(skill_file, operation="read")
         if not skill_file.exists():
             descriptor = self._skill_registry.get(safe_key)
             return {
@@ -78,8 +84,10 @@ class SkillManagementService:
         if not self._has_skill_frontmatter(content):
             raise ValueError("Skill content must start with SKILL.md frontmatter containing name and description.")
         skill_dir = self._skills_root / safe_key
+        self._ensure_within_root(skill_dir, operation="update")
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_file = skill_dir / "SKILL.md"
+        self._ensure_within_root(skill_file, operation="update")
         skill_file.write_text(content.rstrip() + "\n", encoding="utf-8")
         self._skill_registry.reload()
         return self.get_skill(safe_key)
@@ -87,7 +95,7 @@ class SkillManagementService:
     def delete_skill(self, key: str) -> dict[str, Any]:
         safe_key = self._safe_key(key)
         skill_dir = self._skills_root / safe_key
-        self._ensure_within_root(skill_dir)
+        self._ensure_within_root(skill_dir, operation="delete")
         if not skill_dir.exists():
             return {"ok": True, "message": f"Skill '{safe_key}' is already absent."}
         shutil.rmtree(skill_dir)
@@ -157,7 +165,7 @@ class SkillManagementService:
 
     def _copy_skill_dir(self, source: Path, key: str, overwrite: bool) -> dict[str, Any]:
         target = self._skills_root / key
-        self._ensure_within_root(target)
+        self._ensure_within_root(target, operation="install")
         if target.exists():
             if not overwrite:
                 raise ValueError(f"Skill '{key}' already exists. Pass overwrite=true to replace it.")
@@ -222,14 +230,18 @@ class SkillManagementService:
     def _safe_key(self, value: str) -> str:
         key = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(value).strip()).strip("-").lower()
         if not key:
-            raise ValueError("Skill key cannot be empty.")
+            raise SkillPathValidationError("Skill key cannot be empty.")
         return key[:96]
 
-    def _ensure_within_root(self, path: Path) -> None:
+    def _ensure_within_root(self, path: Path, *, operation: str) -> None:
         root = self._skills_root.resolve()
         target = path.resolve()
-        if root != target and root not in target.parents:
-            raise ValueError("Refusing to write outside Agent_Server/src/SKILLS.")
+        if root not in target.parents:
+            logger.warning(
+                "skill_target_rejected",
+                extra={"operation": operation, "reason": "managed_root" if root == target else "outside_root"},
+            )
+            raise SkillPathValidationError("Skill target must be a child of the managed skills root.")
 
     def _normalize_github_skill_url(self, url: str) -> str:
         parsed = urllib.parse.urlparse(url)
