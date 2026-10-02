@@ -172,6 +172,54 @@ def test_cli_transmits_assignment_identity_through_formal_api(tmp_path, monkeypa
         assert calls[-1][0].endswith("?assignment_id=" + assignment_id)
 
 
+def test_same_assignment_identical_report_is_idempotent_but_cannot_change_terminal_result(tmp_path):
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as client:
+        prefix = "/api/v1/compatibility"
+        assert client.post(f"{prefix}/runners/register", json={
+            "runner_id": "runner", "capabilities": ["local_browser"],
+            "metadata": {"assignment_fencing_version": 1},
+        }).status_code == 200
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="report-receipt-plan", tasks=[CompatibilityRunnerTask(
+                task_id="task", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            )],
+        )))
+        task = client.post(f"{prefix}/runners/runner/tasks/poll").json()["tasks"][0]
+        payload = {
+            "assignment_id": task["metadata"]["assignment_id"], "status": "completed",
+            "result": {"summary": "Normal dry-run result."},
+            "artifacts": [{"type": "runner_log", "uri": "artifact://fixture/evidence", "label": "safe evidence"}],
+        }
+        path = f"{prefix}/runners/runner/tasks/task/report"
+        first = client.post(path, json=payload)
+        assert first.status_code == 200
+        state_path = tmp_path / "data" / "compatibility" / "runner_state.json"
+        committed = state_path.read_bytes()
+        # Two normal submissions; no dropped response or network failure is
+        # fabricated. This is the result retransmission protocol contract.
+        repeated = client.post(path, json=payload)
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json() == first.json()
+        assert state_path.read_bytes() == committed
+        assert len(service._artifacts) == 1
+        different = client.post(path, json={**payload, "result": {"summary": "Changed result."}})
+        assert different.status_code == 409
+        assert state_path.read_bytes() == committed
+        # The receipt survives reload but never authorizes an old assignment.
+        app.state.compatibility_runner_service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+        assert client.post(path, json=payload).json() == first.json()
+        assert client.post(f"{prefix}/tasks/requeue", json={
+            "task_ids": ["task"], "statuses": ["completed"],
+        }).status_code == 200
+        client.post(f"{prefix}/runners/runner/tasks/poll")
+        assert client.post(path, json=payload).status_code == 409
+
+
 def test_mode_finish_from_previous_assignment_does_not_modify_new_attempt(tmp_path):
     async def exercise():
         service = CompatibilityRunnerService(settings=settings_for(tmp_path))

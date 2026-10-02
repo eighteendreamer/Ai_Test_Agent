@@ -4,6 +4,7 @@ import asyncio
 import base64
 from copy import deepcopy
 from datetime import UTC, datetime
+from hashlib import sha256
 import json
 import logging
 import mimetypes
@@ -221,6 +222,7 @@ class CompatibilityRunnerService:
                         "recovery_source": None,
                         "assignment_id": None,
                         "assignment_fencing_required": False,
+                        "report_receipt_sha256": None,
                     },
                 )
                 self._tasks[queued_task.task_id] = queued_task
@@ -270,6 +272,7 @@ class CompatibilityRunnerService:
                             **task.metadata,
                             "assignment_id": new_id("assignment"),
                             "assignment_fencing_required": runner.metadata.get("assignment_fencing_version") == 1,
+                            "report_receipt_sha256": None,
                         },
                     }
                 )
@@ -296,12 +299,23 @@ class CompatibilityRunnerService:
     ) -> CompatibilityQueuedTask:
         now = _utc_now()
         status = self._normalize_report_status(payload.status)
+        receipt = None
+        if payload.assignment_id:
+            receipt = sha256(json.dumps(
+                {**payload.model_dump(mode="json"), "status": status},
+                sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
         async with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
             self._ensure_assignment_matches(task, payload.assignment_id)
+            if task.status != "assigned" and receipt and task.metadata.get("report_receipt_sha256") == receipt:
+                logger.info("compatibility_task_report_receipt_reused", extra={
+                    "task_id": task_id, "runner_id": runner_id, "task_status": task.status,
+                })
+                return task
             self._ensure_task_can_be_reported(task)
             raw_artifacts = payload.artifacts
             if not raw_artifacts and isinstance(payload.result.get("artifacts"), list):
@@ -333,7 +347,10 @@ class CompatibilityRunnerService:
                     "artifacts": merged_artifacts,
                     "error": payload.error,
                     "updated_at": now,
-                    "metadata": {**task.metadata, **self._reported_task_metadata(payload.metadata)},
+                    "metadata": {
+                        **task.metadata, **self._reported_task_metadata(payload.metadata),
+                        "report_receipt_sha256": receipt,
+                    },
                 }
             )
             self._tasks[task_id] = updated
@@ -928,6 +945,7 @@ class CompatibilityRunnerService:
                 "recovery_source": None,
                 "assignment_id": None,
                 "assignment_fencing_required": False,
+                "report_receipt_sha256": None,
                 "retry_history": retry_history[-10:],
             },
         })
@@ -1039,6 +1057,7 @@ class CompatibilityRunnerService:
             "recovery_source",
             "assignment_id",
             "assignment_fencing_required",
+            "report_receipt_sha256",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 
