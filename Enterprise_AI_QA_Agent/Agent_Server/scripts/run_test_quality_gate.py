@@ -30,6 +30,8 @@ LIVE_FLAGS = (
     "RUN_LIVE_RECORDING_PG", "RUN_LIVE_REDIS_VECTOR_TESTS", "RUN_LIVE_REPLAY",
     "RUN_LIVE_TEST_CASE_EMBEDDING_TESTS", "RUN_LIVE_VECTOR_REBUILD_PIPELINE_TESTS",
     "RUN_LIVE_MODEL_TOOL_TESTS",
+    "RUN_LIVE_MODEL_DISPATCH_TESTS",
+    "RUN_LIVE_MODEL_BROWSER_TESTS",
 )
 # Core groups are intentionally explicit, rather than claiming every external
 # service has been exercised merely because one PostgreSQL test passed.
@@ -88,6 +90,14 @@ PROFILES = {
     "model-tools": {
         "targets": ("tests/test_live_model_tool_stream.py",),
         "flags": ("RUN_LIVE_MODEL_TOOL_TESTS",),
+    },
+    "model-dispatch": {
+        "targets": ("tests/test_live_model_durable_dispatch.py::test_formal_message_admission_executes_live_model_via_outbox_and_redis[http]",),
+        "flags": ("RUN_LIVE_MODEL_DISPATCH_TESTS", "RUN_LIVE_POSTGRES_TESTS"),
+    },
+    "model-browser": {
+        "targets": ("tests/test_live_model_durable_dispatch.py::test_formal_message_admission_executes_live_model_via_outbox_and_redis[chromium]",),
+        "flags": ("RUN_LIVE_MODEL_DISPATCH_TESTS", "RUN_LIVE_MODEL_BROWSER_TESTS", "RUN_LIVE_POSTGRES_TESTS"),
     },
 }
 

@@ -53,16 +53,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def live_application():
-    settings = get_settings().model_copy(deep=True)
+def live_application(*, settings=None, session_store=None, job_store=None):
+    settings = settings or get_settings().model_copy(deep=True)
     settings.orchestration.session_sse_poll_seconds = 0.03
     registry = ModelRegistry(MySQLModelConfigStore(settings))
     model = registry.get_default_runtime_config()
     assert model.supports_tools, "Current default model must support the tool acceptance contract."
     agents, tools, skills = AgentRegistry(), ToolRegistry(), SkillRegistry()
     control, permissions = RuntimeControlRegistry(), PermissionService()
-    store = InMemorySessionStore()
-    jobs = ToolJobService(InMemoryToolJobStore())
+    store = session_store if session_store is not None else InMemorySessionStore()
+    jobs = ToolJobService(job_store if job_store is not None else InMemoryToolJobStore())
     model_runtime = ModelRuntimeService(registry, settings)
     tool_runtime = ToolRuntimeService(settings=settings, session_store=store, tool_job_service=jobs)
     graph = build_agent_graph(

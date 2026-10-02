@@ -940,6 +940,8 @@ API 执行专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py
 
 真实模型与工具/SSE 专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py --profile model-tools`。该组只读 MySQL 当前模型配置，实际请求供应商并可能产生费用；要求默认模型已配置凭据且支持工具调用。会话与 ToolJob 使用隔离内存存储，正式 SessionService 兼容入口、LangGraph 和注册的只读 `session-history` 工具实际执行，再通过本地真实 HTTP 的正式 SSE 路由接收分片，与最终会话正文逐字对账。`acceptance.json` 仅归档模型标识、工具/事件/分片数量和验证边界，不保存凭据或正文。默认诊断组跳过此项；它不覆盖持久派发的消息 HTTP 入口、重启恢复、外部业务工具或正式浏览器，单组通过不代表可发布。
 
+进一步使用 `--profile model-dispatch` 验收正式消息 HTTP 202→PostgreSQL Outbox→Redis worker→真实模型/只读工具→PG 结果/SSE；使用 `--profile model-browser` 将同一次执行接入真实 Chromium、正式 Pinia Store 与 ChatTimeline 的 Vite 探针页面。两组会创建并清理自身 UUID 测试表与 Redis 前缀，包含独立项目 FK 表，不读取或处理业务队列；当前模型配置仍只读。浏览器组要求已安装 Node/Vite/Playwright Chromium，并另存前端源码哈希、Vite stdout/stderr 和安全观察记录。它验证正常单轮、幂等接收、worker ACK 和终态不重复执行，不覆盖完整工作台 GUI、生产代理鉴权、重启/审批恢复、多进程/容量或其他业务工具。默认诊断仍跳过这些外部调用，不能把这些验收扩大为整个发布矩阵已通过。
+
 ## 当前进度与下一步
 
 已完成并带测试的骨架：`session + event + snapshot + approval` 协议、LangGraph 编排与 interrupt/resume、Coordinator/Worker 调度、8 种实装测试模式（另有 6 种占位待补 Runner）、54 个 Skill、前端工作台可观测性、知识图谱与 pgvector 记忆、用例驱动八表、UI 录制 P0~P2（契约/存储/注入脚本/三种驱动/固化/审批编排/API/桌面端窗口/回放执行器/录制转草稿/断言建议）。
