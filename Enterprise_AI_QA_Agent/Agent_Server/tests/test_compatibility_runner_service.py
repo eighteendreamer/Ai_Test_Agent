@@ -533,7 +533,7 @@ def test_runner_client_default_base_url_matches_local_backend():
     assert runner_client_module.DEFAULT_BASE_URL == "http://127.0.0.1:1032"
 
 
-def test_runner_client_cli_recovers_from_transient_registration_and_heartbeat_failures(monkeypatch):
+def test_runner_client_cli_recovers_from_transient_registration_and_heartbeat_failures(monkeypatch, tmp_path):
     class _StopLoop(Exception):
         pass
 
@@ -560,7 +560,8 @@ def test_runner_client_cli_recovers_from_transient_registration_and_heartbeat_fa
         if calls["sleep"] == 3:
             raise _StopLoop
 
-    monkeypatch.setattr("sys.argv", ["compatibility-runner", "--runner-id", "runner-recovery"])
+    monkeypatch.setattr("sys.argv", ["compatibility-runner", "--runner-id", "runner-recovery",
+                                     "--state-file", str(tmp_path / "runner.sqlite3")])
     monkeypatch.setattr(runner_client_module, "_json_request", fake_json_request)
     monkeypatch.setattr(runner_client_module.time, "sleep", stop_after_recovery)
 

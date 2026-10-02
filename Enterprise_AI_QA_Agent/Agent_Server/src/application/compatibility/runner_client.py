@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import platform
 import time
 import traceback
+from pathlib import Path
 from typing import Any
 from urllib import error, request
 from urllib.parse import urlencode
 
+from src.application.compatibility.runner_journal import RunnerJournal
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1032"
 
@@ -39,6 +42,7 @@ class CompatibilityRunnerClient:
         poll_interval: float,
         executor: str,
         metadata: dict[str, Any] | None = None,
+        state_file: str | Path | None = None,
     ) -> None:
         self.base_url = base_url
         self.runner_id = runner_id
@@ -50,6 +54,10 @@ class CompatibilityRunnerClient:
         self.executor = executor
         self.metadata = metadata or {}
         self.active_task_ids: list[str] = []
+        self.journal = RunnerJournal(state_file, base_url=base_url, runner_id=runner_id)
+
+    def close(self) -> None:
+        self.journal.close()
 
     def register(self) -> None:
         record = _json_request(
@@ -229,41 +237,79 @@ class CompatibilityRunnerClient:
 
     def run_once(self) -> int:
         self.heartbeat()
-        tasks = self.poll()
-        if not tasks:
+        for entry in self.journal.entries():
+            if entry["phase"] in {"executing", "uploading"}:
+                self.journal.update(entry["assignment"], "review", reason="unknown_" + entry["phase"])
+                print(f"runner_recovery_review task={entry['task']['task_id']} phase={entry['phase']}")
+        pending = [entry for entry in self.journal.entries() if entry["phase"] not in {"review", "conflict"}]
+        if not pending:
+            self.journal.enqueue(self.poll())
+            pending = [entry for entry in self.journal.entries() if entry["phase"] not in {"review", "conflict"}]
+        if not pending:
             print("no tasks")
             return 0
-        for task in tasks:
-            task_id = str(task.get("task_id") or "")
-            if not task_id:
-                continue
+        processed = 0
+        for entry in pending:
+            task = entry["task"]
+            task_id = task["task_id"]
+            assignment = entry["assignment"]
             self.active_task_ids.append(task_id)
-            self.heartbeat(status="busy")
             try:
-                payload = self.execute_task(task)
-                uploaded = self._upload_execution_artifacts(task, payload)
-                if uploaded:
-                    payload["artifacts"] = []
-                    payload.setdefault("metadata", {})["uploaded_artifact_ids"] = [
-                        item.get("artifact_id") for item in uploaded if isinstance(item, dict)
-                    ]
-            except Exception as exc:
-                payload = {
-                    "status": "failed",
-                    "result": {"summary": str(exc)},
-                    "artifacts": [],
-                    "error": traceback.format_exc(),
-                    "metadata": {"executor": "compatibility_runner_client"},
-                }
+                self.heartbeat(status="busy")
+                if entry["phase"] == "queued":
+                    if (task.get("metadata") or {}).get("assignment_id") and not self._assignment_is_current(task):
+                        self.journal.update(assignment, "conflict", reason="assignment_superseded")
+                        print(f"runner_assignment_conflict task={task_id}")
+                        continue
+                    self.journal.update(assignment, "executing")
+                    try:
+                        payload = self.execute_task(task)
+                    except (error.HTTPError, error.URLError, TimeoutError):
+                        # A remote tool may have committed before transport failed.
+                        raise
+                    except Exception as exc:
+                        payload = {
+                            "status": "failed", "result": {"summary": str(exc)}, "artifacts": [],
+                            "error": traceback.format_exc(), "metadata": {"executor": "compatibility_runner_client"},
+                        }
+                    metadata = task.get("metadata") or {}
+                    if metadata.get("assignment_id"):
+                        payload["assignment_id"] = metadata["assignment_id"]
+                    self.journal.update(assignment, "executed", payload=payload)
+                    entry["phase"], entry["payload"] = "executed", payload
+                payload = entry["payload"]
+                if entry["phase"] == "executed":
+                    self.journal.update(assignment, "uploading")
+                    uploaded = self._upload_execution_artifacts(task, payload)
+                    if uploaded:
+                        payload["artifacts"] = []
+                        payload.setdefault("metadata", {})["uploaded_artifact_ids"] = [
+                            item.get("artifact_id") for item in uploaded if isinstance(item, dict)
+                        ]
+                    self.journal.update(assignment, "report_ready", payload=payload)
+                self.report(task_id, payload)
+                self.journal.acknowledge(assignment)
+                processed += 1
+                print(f"reported task={task_id} status={payload.get('status')}")
+            except error.HTTPError as exc:
+                if exc.code not in {404, 409}:
+                    raise
+                self.journal.update(assignment, "conflict", reason=f"http_{exc.code}")
+                print(f"runner_delivery_conflict task={task_id} http_status={exc.code}")
             finally:
                 self.active_task_ids = [item for item in self.active_task_ids if item != task_id]
-            metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
-            if metadata.get("assignment_id"):
-                payload["assignment_id"] = metadata["assignment_id"]
-            self.report(task_id, payload)
-            print(f"reported task={task_id} status={payload.get('status')}")
         self.heartbeat()
-        return len(tasks)
+        return processed
+
+    def _assignment_is_current(self, task: dict[str, Any]) -> bool:
+        records = _json_request(self.base_url, "/api/v1/compatibility/tasks?" + urlencode({"runner_id": self.runner_id}))
+        assignment = task["metadata"]["assignment_id"]
+        return any(
+            item.get("task_id") == task["task_id"] and item.get("status") == "assigned"
+            and item.get("assigned_runner_id") == self.runner_id
+            and (item.get("metadata") or {}).get("assignment_id") == assignment
+            for item in records
+        )
 
     def serve_forever(self) -> None:
         registered = False
@@ -461,6 +507,7 @@ def main() -> None:
     parser.add_argument("--max-parallel", type=int, default=1)
     parser.add_argument("--poll-interval", type=float, default=5.0)
     parser.add_argument("--once", action="store_true", help="Register and process one polling cycle.")
+    parser.add_argument("--state-file", help="Local SQLite recovery journal; use a stable private local path.")
     parser.add_argument(
         "--executor",
         choices=["dry-run", "http-smoke", "server-mode-calls", "auto", "none"],
@@ -472,6 +519,8 @@ def main() -> None:
     )
     parser.add_argument("--no-dry-run", action="store_true", help="Deprecated alias for --executor none.")
     args = parser.parse_args()
+    identity = json.dumps([args.base_url.rstrip("/"), args.runner_id], ensure_ascii=False).encode("utf-8")
+    state_file = args.state_file or Path(".compatibility-runner") / (hashlib.sha256(identity).hexdigest()[:20] + ".sqlite3")
 
     client = CompatibilityRunnerClient(
         base_url=args.base_url,
@@ -483,12 +532,16 @@ def main() -> None:
         poll_interval=args.poll_interval,
         executor="none" if args.no_dry_run else args.executor,
         metadata=_parse_metadata_json(args.metadata_json),
+        state_file=state_file,
     )
-    if args.once:
-        client.register()
-        client.run_once()
-    else:
-        client.serve_forever()
+    try:
+        if args.once:
+            client.register()
+            client.run_once()
+        else:
+            client.serve_forever()
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

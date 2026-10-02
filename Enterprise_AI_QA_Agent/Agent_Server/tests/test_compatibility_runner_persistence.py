@@ -3,7 +3,11 @@
 import asyncio
 import base64
 import json
+import sqlite3
+import subprocess
+import sys
 from types import SimpleNamespace
+from urllib import error
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +17,7 @@ from pydantic import ValidationError
 from src.api.routes.compatibility import router
 from src.application.compatibility import runner_client as runner_client_module
 from src.application.compatibility.runner_client import CompatibilityRunnerClient
+from src.application.compatibility.runner_journal import RunnerJournal
 from src.application.compatibility.runner_service import CompatibilityRunnerService
 from src.core.config import OrchestrConfig
 from src.modes.compatibility_testing_mode.contracts import (
@@ -34,6 +39,190 @@ def settings_for(root):
         storage=SimpleNamespace(artifact_root_dir=str(root / "artifacts")),
         compatibility_runner_heartbeat_timeout_seconds=120,
     )
+
+
+@pytest.mark.parametrize("lost_response", ["report", "upload"])
+def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_path, monkeypatch, lost_response):
+    """Controlled lost ACK after a real commit; not a reported provider outage."""
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    executions, requests = [], []
+    dropped = False
+    with TestClient(app) as http:
+        def transport(base_url, path, *, method="GET", payload=None):
+            nonlocal dropped
+            response = http.request(method, path, json=payload)
+            if response.status_code >= 400:
+                raise error.HTTPError(path, response.status_code, "API rejected request", {}, None)
+            requests.append((path, payload))
+            suffix = "/report" if lost_response == "report" else "/artifacts/upload"
+            if path.endswith(suffix) and not dropped:
+                dropped = True
+                raise error.URLError("Controlled loss of a committed response")
+            return response.json()
+
+        monkeypatch.setattr(runner_client_module, "_json_request", transport)
+        client = CompatibilityRunnerClient(
+            base_url="http://test", runner_id="runner", name="Recovery contract", capabilities=["local_browser"],
+            devices=[], max_parallel=2, poll_interval=1, executor="dry-run", state_file=tmp_path / "client.sqlite3",
+        )
+        execute = client.execute_task
+
+        def tracked_execute(task):
+            executions.append(task["task_id"])
+            return execute(task)
+
+        monkeypatch.setattr(client, "execute_task", tracked_execute)
+        client.register()
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="batch-plan", tasks=[CompatibilityRunnerTask(
+                task_id=f"task-{index}", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            ) for index in (1, 2)],
+        )))
+        with pytest.raises(error.URLError):
+            client.run_once()
+        client.close()
+        client = CompatibilityRunnerClient(
+            base_url="http://test", runner_id="runner", name="Recovery contract", capabilities=["local_browser"],
+            devices=[], max_parallel=2, poll_interval=1, executor="dry-run", state_file=tmp_path / "client.sqlite3",
+        )
+        monkeypatch.setattr(client, "execute_task", tracked_execute)
+        client.run_once()
+        assert executions == ["task-1", "task-2"]
+        assert service._tasks["task-2"].status == "completed"
+        reports = [body for path, body in requests if path.endswith("/report")]
+        assert all(body["status"] == "completed" for body in reports)
+        if lost_response == "report":
+            assert reports[0] == reports[1]
+            assert len(service._artifacts) == 2
+        else:
+            retained = client.journal.entries()
+            assert len(retained) == 1
+            assert retained[0]["phase"] == "review"
+            assert retained[0]["payload"]["status"] == "completed"
+            assert service._tasks["task-1"].status == "assigned"
+            assert len(service._artifacts) == 2
+        client.close()
+
+
+def test_journal_lock_is_exclusive_across_processes_and_released_on_close(tmp_path):
+    path = tmp_path / "runner.sqlite3"
+    journal = RunnerJournal(path, base_url="http://test", runner_id="runner")
+    code = """import sys
+from src.application.compatibility.runner_journal import RunnerJournal
+journal = RunnerJournal(sys.argv[1], base_url='http://test', runner_id='runner')
+print('opened')
+journal.close()
+"""
+    blocked = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True, text=True, check=False, timeout=10)
+    assert blocked.returncode != 0
+    assert "database is locked" in blocked.stderr
+    journal.close()
+    opened = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True, text=True, check=False, timeout=10)
+    assert opened.returncode == 0, opened.stderr
+    assert opened.stdout.strip() == "opened"
+
+
+def test_journal_preserves_bad_file_and_rejects_cross_runner_reuse(tmp_path):
+    path = tmp_path / "runner.sqlite3"
+    journal = RunnerJournal(path, base_url="http://test", runner_id="runner")
+    journal.close()
+    before = path.read_bytes()
+    with pytest.raises(RuntimeError, match="identity/version"):
+        RunnerJournal(path, base_url="http://test", runner_id="other")
+    assert path.read_bytes() == before
+    path.write_bytes(b"controlled invalid SQLite fixture")
+    with pytest.raises(sqlite3.DatabaseError):
+        RunnerJournal(path, base_url="http://test", runner_id="runner")
+    assert path.read_bytes() == b"controlled invalid SQLite fixture"
+
+
+def test_journal_batch_is_atomic_and_unknown_attempt_blocks_new_assignment(tmp_path):
+    journal = RunnerJournal(tmp_path / "runner.sqlite3", base_url="http://test", runner_id="runner")
+    task = {"task_id": "task", "metadata": {"assignment_id": "first"}}
+    with pytest.raises(ValueError, match="requires"):
+        journal.enqueue([task, {"task_id": "missing-assignment"}])
+    assert journal.entries() == []
+    journal.enqueue([task])
+    journal.update("first", "review", reason="unknown_execution")
+    journal.enqueue([{**task, "metadata": {"assignment_id": "second"}}])
+    assert [entry["phase"] for entry in journal.entries()] == ["review", "review"]
+    assert journal.entries()[1]["reason"] == "unresolved_prior_attempt"
+    journal.close()
+
+
+def test_process_exit_retains_unknown_execution_without_replaying_it(tmp_path):
+    """Phase recovery contract: the child writes phases, no external tool runs."""
+    path = tmp_path / "runner.sqlite3"
+    code = """import sys
+from src.application.compatibility.runner_journal import RunnerJournal
+journal = RunnerJournal(sys.argv[1], base_url='http://test', runner_id='runner')
+journal.enqueue([{'task_id': 'task', 'metadata': {'assignment_id': 'first'}}])
+journal.update('first', 'executing')
+"""
+    child = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True,
+                           text=True, check=False, timeout=10)
+    assert child.returncode == 0, child.stderr
+
+    class RecoveryClient(CompatibilityRunnerClient):
+        def heartbeat(self, status="online"):
+            pass
+
+        def poll(self):
+            return []
+
+        def execute_task(self, task):
+            pytest.fail("Unknown execution was replayed")
+
+    client = RecoveryClient(base_url="http://test", runner_id="runner", name="Recovery contract",
+                            capabilities=[], devices=[], max_parallel=1, poll_interval=1,
+                            executor="dry-run", state_file=path)
+    try:
+        assert client.run_once() == 0
+        assert client.journal.entries()[0]["phase"] == "review"
+        assert client.journal.entries()[0]["reason"] == "unknown_executing"
+    finally:
+        client.close()
+
+
+def test_saved_queued_assignment_is_checked_before_execution_after_manual_retry(tmp_path, monkeypatch):
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as http:
+        def transport(base_url, path, *, method="GET", payload=None):
+            response = http.request(method, path, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+        monkeypatch.setattr(runner_client_module, "_json_request", transport)
+        client = CompatibilityRunnerClient(
+            base_url="http://test", runner_id="runner", name="Normal retry contract", capabilities=["local_browser"],
+            devices=[], max_parallel=1, poll_interval=1, executor="dry-run", state_file=tmp_path / "client.sqlite3",
+        )
+        try:
+            client.register()
+            asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+                plan_id="queued-plan", tasks=[CompatibilityRunnerTask(
+                    task_id="task", environment_id="local",
+                    runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+                )],
+            )))
+            client.journal.enqueue(client.poll())
+            asyncio.run(service.requeue_tasks(CompatibilityTaskRequeueRequest(
+                task_ids=["task"], statuses=["assigned"], reason="normal_manual_retry",
+            )))
+            current = asyncio.run(service.poll_tasks("runner")).tasks[0].model_dump(mode="json")
+            assert client.run_once() == 0
+            assert client.journal.entries()[0]["phase"] == "conflict"
+            assert service._tasks["task"].model_dump(mode="json") == current
+            assert service._artifacts == {}
+        finally:
+            client.close()
 
 
 def test_runner_uses_nested_orchestration_settings_and_accepts_zero_retry_limit(tmp_path):
