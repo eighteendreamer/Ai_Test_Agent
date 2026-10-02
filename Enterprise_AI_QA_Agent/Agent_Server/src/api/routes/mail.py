@@ -11,7 +11,11 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from src.application.mail.contracts import MailCapability
+from src.application.mail.contracts import (
+    MailboxNotActive,
+    MailCapability,
+    MailConfigStoreUnavailable,
+)
 from src.infrastructure.mail.providers.rest_base import MailProviderHTTPError
 from src.schemas.email_config import EmailConfigUpdateRequest
 
@@ -24,6 +28,45 @@ async def _run_provider_call(func, *args, **kwargs):
     """Keep slow vendor CLI/HTTP calls off the event loop and cap thread usage."""
     async with _PROVIDER_CALL_LIMIT:
         return await asyncio.to_thread(func, *args, **kwargs)
+
+
+async def _run_mail_write(action: str, func, *args, config_id: int | None):
+    """Classify mail write failures without losing their source exception type."""
+    context = {"action": action, "config_id": config_id}
+    try:
+        return await _run_provider_call(func, *args, config_id=config_id)
+    except MailConfigStoreUnavailable as exc:
+        logger.error("mail_write_config_store_unavailable", extra=context)
+        raise HTTPException(status_code=503, detail="Email configuration service unavailable.") from exc
+    except MailboxNotActive as exc:
+        logger.warning("mail_write_mailbox_inactive", extra=context)
+        raise HTTPException(
+            status_code=409,
+            detail="Mailbox configuration is not active or has changed; activate a mailbox and prepare again.",
+        ) from exc
+    except MailProviderHTTPError as exc:
+        logger.warning(
+            "mail_write_provider_http_failed",
+            extra={**context, "provider": exc.provider_key, "upstream_status": exc.status_code},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Mail provider operation failed (upstream HTTP {exc.status_code}).",
+        ) from exc
+    except httpx.RequestError as exc:
+        logger.warning(
+            "mail_write_provider_transport_failed",
+            extra={**context, "error_type": type(exc).__name__},
+        )
+        raise HTTPException(status_code=502, detail="Mail provider transport failed.") from exc
+    except RuntimeError as exc:
+        # Providers still use RuntimeError for input/confirmation validation.
+        # Keep their existing contract until each remaining source is classified.
+        logger.warning("mail_write_rejected", extra={**context, "error_type": type(exc).__name__})
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        logger.info("mail_write_config_not_found", extra=context)
+        raise HTTPException(status_code=404, detail=f"Email config '{config_id}' not found.") from exc
 
 
 def _reject_unsupported_setup_action(provider: str, action: str) -> NoReturn:
@@ -238,37 +281,27 @@ async def provider_setup_action(
 @router.post("/test-send/prepare")
 async def test_send_prepare(body: SendPrepareRequest, request: Request):
     mail_service = request.app.state.mail_service
-    try:
-        result = await _run_provider_call(
-            mail_service.send,
-            body.recipients,
-            body.subject,
-            body.content,
-            body.content_html,
-            config_id=body.config_id,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Email config '{body.config_id}' not found.") from exc
-    return result
+    return await _run_mail_write(
+        "prepare_send",
+        mail_service.send,
+        body.recipients,
+        body.subject,
+        body.content,
+        body.content_html,
+        config_id=body.config_id,
+    )
 
 
 @router.post("/test-send/confirm")
 async def test_send_confirm(body: SendConfirmRequest, request: Request):
     mail_service = request.app.state.mail_service
-    try:
-        result = await _run_provider_call(
-            mail_service.confirm,
-            "send",
-            body.confirmation_token,
-            config_id=body.config_id,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Email config '{body.config_id}' not found.") from exc
-    return result
+    return await _run_mail_write(
+        "confirm_send",
+        mail_service.confirm,
+        "send",
+        body.confirmation_token,
+        config_id=body.config_id,
+    )
 
 
 @router.post("/webhooks/{provider}")

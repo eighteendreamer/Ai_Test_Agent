@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING, Any
 
 from src.application.mail.contracts import (
     CapabilityNotSupported,
+    MailboxNotActive,
     MailCapability,
+    MailConfigStoreUnavailable,
     MailSendRequest,
     MailSendResult,
 )
@@ -49,7 +51,7 @@ class MailService:
 
     def _resolve_active_record(self) -> "EmailConfigRecord":
         if self._email_config_store is None:
-            raise RuntimeError("Email config store is not available.")
+            raise MailConfigStoreUnavailable("Email config store is not available.")
         try:
             records = self._email_config_store.list_all()
             enabled = [item for item in records if item.enabled]
@@ -57,7 +59,7 @@ class MailService:
                 return next((item for item in enabled if item.is_default), enabled[0])
             raise KeyError("active")
         except KeyError as exc:
-            raise RuntimeError(
+            raise MailboxNotActive(
                 "No globally active Agent mailbox is available. "
                 "Configure, authorize, and activate one in Email Settings first."
             ) from exc
@@ -69,16 +71,16 @@ class MailService:
         if config_id is None:
             return self._resolve_active_record()
         if self._email_config_store is None:
-            raise RuntimeError("Email config store is not available.")
+            raise MailConfigStoreUnavailable("Email config store is not available.")
         record = self._email_config_store.get_by_id(config_id)
         if not record.enabled:
-            raise RuntimeError(
+            raise MailboxNotActive(
                 f"Mailbox config '{record.config_name}' is not active. "
                 "Only the globally active mailbox may perform mail operations."
             )
         active = self._resolve_active_record()
         if record.id != active.id:
-            raise RuntimeError(
+            raise MailboxNotActive(
                 f"Mailbox config '{record.config_name}' is not active. "
                 "Only the globally active mailbox may perform mail operations."
             )
@@ -122,7 +124,7 @@ class MailService:
         if pending is not None:
             record = self._resolve_active_record()
             if record.id != pending["record_id"]:
-                raise RuntimeError("The globally active mailbox changed; prepare the operation again.")
+                raise MailboxNotActive("The globally active mailbox changed; prepare the operation again.")
             adapter = self._registry.resolve(record.provider)
             payload = pending["payload"]
             operation_key = pending["operation"]

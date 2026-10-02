@@ -30,6 +30,14 @@ class MailCapability(str, Enum):
     WEBHOOK = "webhook"
 
 
+class MailConfigStoreUnavailable(RuntimeError):
+    """The mailbox configuration dependency is unavailable."""
+
+
+class MailboxNotActive(RuntimeError):
+    """The requested operation conflicts with the active mailbox state."""
+
+
 class CapabilityNotSupported(RuntimeError):
     """Raised when a provider is asked to perform a capability it lacks.
 
