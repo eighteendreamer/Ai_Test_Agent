@@ -934,7 +934,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile metrics-core
 
 MCP 管理专项可执行 `uv run --no-sync python scripts/run_test_quality_gate.py --profile mcp-core`。它验证 JSON/真实 PostgreSQL 配置存储，并通过测试专属本地 MCP SDK 服务验证 stdio 确认、连接、工具发现和调用；需可用 PostgreSQL 与白名单允许当前 Python。确认操作仅保存首次使用许可，真正建立连接须执行重连；第三方服务器与 HTTP/SSE 传输另须验收。
 
-数据库版本迁移目前只覆盖 PostgreSQL 任务 Outbox，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、旧数据保留、事务回滚和双进程执行，并将迁移源码纳入质量报告。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把这个首版视为全库迁移完成。
+数据库版本迁移目前覆盖 PostgreSQL 任务 Outbox、工具任务与工具工件三张表，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、原有数据保留、事务回滚、双进程执行，以及无运行时初始化的正式存储领取/结算/证据读写，并将迁移源码纳入质量报告。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把这两个版本视为全库迁移完成。
 
 ## 当前进度与下一步
 
