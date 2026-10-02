@@ -5,6 +5,11 @@ It bootstraps a fresh table or adds claim columns to the supported legacy table.
 20261002_0002 adds tool jobs, tool artifacts and their four existing lookup indexes.
 It supports fresh tables and existing tables with the current supported shape;
 it does not infer missing fields/types for arbitrary historical schemas.
+20261002_0003 adds compaction claims/receipts, the event watermark and two indexes.
+It preserves the current shape or adds a zero watermark to the initializer-
+supported legacy shape missing only that column. It does not infer a historical
+watermark, reset a claim, change its owner/lease or replay completed compaction.
+The session event table is a runtime dependency, not covered by this revision.
 Existing rows, IDs, payloads, attempts, evidence and publication state are preserved.
 This is not a baseline for the remaining application schemas. Store initializers
 remain active until their own frozen revisions and deployment policy are added.
@@ -36,7 +41,7 @@ to supply its own transaction; Config.attributes['settings'] supplies the usual
 table configuration. The caller owns such a connection and its commit/rollback.
 Loading the migration logging configuration leaves application loggers enabled.
 
-Both revisions intentionally refuse destructive downgrade because queued work
+All three revisions intentionally refuse destructive downgrade because queued work
 and evidence can predate the migration. Use a reviewed backup restore/forward repair for
 rollback; an offline downgrade is not a data-preserving recovery plan.
 

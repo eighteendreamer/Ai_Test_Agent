@@ -934,7 +934,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile metrics-core
 
 MCP 管理专项可执行 `uv run --no-sync python scripts/run_test_quality_gate.py --profile mcp-core`。它验证 JSON/真实 PostgreSQL 配置存储，并通过测试专属本地 MCP SDK 服务验证 stdio 确认、连接、工具发现和调用；需可用 PostgreSQL 与白名单允许当前 Python。确认操作仅保存首次使用许可，真正建立连接须执行重连；第三方服务器与 HTTP/SSE 传输另须验收。
 
-数据库版本迁移目前覆盖 PostgreSQL 任务 Outbox、工具任务与工具工件三张表，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、原有数据保留、事务回滚、双进程执行，以及无运行时初始化的正式存储领取/结算/证据读写，并将迁移源码纳入质量报告。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把这两个版本视为全库迁移完成。
+数据库版本迁移目前覆盖 PostgreSQL 任务 Outbox、工具任务、工具工件与压缩记录四张表的三个版本，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、原有数据保留、事务回滚、双进程执行，以及无运行时初始化的正式存储领取/结算/证据读写，并将迁移源码纳入质量报告。压缩旧结构只支持缺事件水位列的形态，新增水位为 0，不推断历史值、重置租约或重放任务；会话事件表仍由独立运行时依赖提供。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把三个版本视为全库迁移完成。
 
 API 执行专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py --profile api-execution`，包含本地真实 TCP 请求和隔离 PostgreSQL 的相邻回归，不调用外部模型或供应商。API 任务的 `request_body` 缺失/`null` 表示不发送 JSON 正文，显式 `{}` 会发送空 JSON 对象；固定用例步骤的 `body` 保持相同语义。此处 `null` 是任务的“无正文”标记，不表示发送 JSON 字面量 `null`，数组/标量正文尚不在该 DTO 的支持范围。旧持久任务中 `{}` 的原始缺省意图无法反推，保留所存值，不自动改写或重放已完成请求。
 
