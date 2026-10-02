@@ -383,7 +383,7 @@ async def _initialize_lifespan_resources(
     await security_bug_service.initialize()
 
     knowledge_graph_service = container.knowledge_graph_service()
-    cleanup.push_async_callback(_close_lifespan_resource, "knowledge_graph_service", knowledge_graph_service.close)
+    final_cleanup.push_async_callback(_close_lifespan_resource, "knowledge_graph_service", knowledge_graph_service.close)
     knowledge_graph_service.set_project_service(project_service)
 
     tool_job_service = container.tool_job_service()
@@ -705,7 +705,7 @@ async def _initialize_lifespan_resources(
         ),
         turn_reaper_interval_seconds=settings.orchestration.turn_reaper_interval_seconds,
     )
-    cleanup.push_async_callback(_close_lifespan_resource, "session_turn_reaper", session_service.stop_turn_reaper)
+    cleanup.push_async_callback(_close_lifespan_resource, "session_service", session_service.close)
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
         store=store,
@@ -770,7 +770,7 @@ async def _initialize_lifespan_resources(
     recording_store = PostgresRecordingStore(settings)
     await recording_store.initialize()
     recording_graph_store = RecordingGraphStore(settings)
-    cleanup.push_async_callback(_close_lifespan_resource, "recording_graph_store", recording_graph_store.close)
+    final_cleanup.push_async_callback(_close_lifespan_resource, "recording_graph_store", recording_graph_store.close)
     embedded_bridge = EmbeddedBridge()
     recorder_service = RecorderSessionService(
         settings=settings,
@@ -804,7 +804,7 @@ async def _initialize_lifespan_resources(
     async def close_ui_assessor_memgraph() -> None:
         await asyncio.to_thread(ui_assessor_memgraph_provider.close)
 
-    cleanup.push_async_callback(_close_lifespan_resource, "ui_assessor_memgraph", close_ui_assessor_memgraph)
+    final_cleanup.push_async_callback(_close_lifespan_resource, "ui_assessor_memgraph", close_ui_assessor_memgraph)
     ui_resource_assessor = UIResourceAssessor(
         settings=settings,
         test_case_service=test_case_service,

@@ -133,6 +133,7 @@ class SessionService:
         self._queue_drain_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_forward_tasks: dict[str, asyncio.Task[None]] = {}
         self._approval_resume_tasks: dict[str, asyncio.Task[None]] = {}
+        self._closing = False
         self._agent_task_store = None
         self._agent_task_dispatcher = None
 
@@ -353,6 +354,8 @@ class SessionService:
         return recovered_session_ids
 
     async def start_turn_reaper(self) -> None:
+        if self._closing:
+            raise RuntimeError("Cannot start a closed SessionService.")
         if self._turn_reaper_task is not None and not self._turn_reaper_task.done():
             return
         try:
@@ -378,6 +381,40 @@ class SessionService:
         self._turn_reaper_task = None
         self._turn_reaper_stop = None
         logger.info("session_turn_reaper_stopped")
+
+    async def close(self) -> None:
+        self._closing = True
+        try:
+            await self.stop_turn_reaper()
+        finally:
+            tasks = {
+                task: (kind, key)
+                for kind, registry in (
+                    ("pending_input", self._queue_drain_tasks),
+                    ("approval_forward", self._approval_forward_tasks),
+                    ("approval_resume", self._approval_resume_tasks),
+                )
+                for key, task in list(registry.items())
+            }
+            logger.info("session_background_tasks_stopping", extra={"task_count": len(tasks)})
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            results = await self._settle_execution_tasks(*tasks)
+            error = None
+            for (kind, key), result in zip(tasks.values(), results, strict=True):
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    logger.error("session_background_task_shutdown_failed", extra={
+                        "task_kind": kind, "task_id": key, "error_type": type(result).__name__,
+                    })
+                    if error is None:
+                        error = result
+            self._queue_drain_tasks.clear()
+            self._approval_forward_tasks.clear()
+            self._approval_resume_tasks.clear()
+            if error is not None:
+                raise error
+        logger.info("session_background_tasks_stopped")
 
     async def _turn_reaper_loop(self) -> None:
         stop = self._turn_reaper_stop
@@ -1996,6 +2033,8 @@ class SessionService:
         self._ensure_control_metadata(session)["queued_input_count"] = len(queue_entries)
 
     def _maybe_schedule_pending_input_drain(self, session_id: str) -> None:
+        if self._closing:
+            return
         existing_task = self._queue_drain_tasks.get(session_id)
         if existing_task is not None and not existing_task.done():
             return

@@ -22,6 +22,102 @@ pytest_plugins = ["tests.test_session_event_delivery"]
 
 
 @pytest.mark.asyncio
+async def test_service_shutdown_settles_pending_handoff_without_losing_input(stores):
+    store, reader, session_id, _ = stores
+    session = await store.get_session(session_id)
+    session.metadata["pending_input_queue"] = [PendingInputQueueEntry(
+        id="shutdown-queue-entry", created_at=datetime.now(UTC), busy_status="running",
+        queue_behavior="enqueue_if_busy", interrupt_policy="wait_for_active_turn",
+        payload=SendMessageRequest(content="continue queued work"),
+        metadata={"turn_id": "shutdown-turn"},
+    ).model_dump(mode="python")]
+    await store.save_session(session)
+    handoff_started = asyncio.Event()
+    handoff_settled = asyncio.Event()
+    handoff_release = asyncio.Event()
+
+    class PendingDispatcher:
+        async def submit(self, submitted_session_id, payload, *, execution_request=None):
+            assert submitted_session_id == session_id
+            assert payload.content == "continue queued work"
+            handoff_started.set()
+            try:
+                await handoff_release.wait()
+                return SimpleNamespace(task=SimpleNamespace(id="shutdown-handoff-task"))
+            finally:
+                handoff_settled.set()
+
+    modes = ModeRegistry()
+    service = SessionService(
+        store, InputOrchestratorService(modes), object(), modes, turn_reaper_interval_seconds=60,
+    )
+    service.set_agent_task_dispatcher(PendingDispatcher())
+    await service.start_turn_reaper()
+    try:
+        await asyncio.wait_for(handoff_started.wait(), timeout=2)
+        drain = service._queue_drain_tasks[session_id]
+        await service.close()
+        assert drain.done(), "Session shutdown returned with its pending handoff still running"
+        assert handoff_settled.is_set()
+        persisted = await reader.get_session(session_id)
+        assert [item.id for item in service._get_pending_input_queue(persisted)] == ["shutdown-queue-entry"]
+        assert not service._queue_drain_tasks
+        service._maybe_schedule_pending_input_drain(session_id)
+        assert not service._queue_drain_tasks
+        await service.close()
+    finally:
+        await service.stop_turn_reaper()
+        remaining = list(service._queue_drain_tasks.values())
+        for task in remaining:
+            task.cancel()
+        await asyncio.gather(*remaining, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_waits_for_all_owned_background_task_cleanup():
+    service = SessionService(object(), object(), object(), object())
+    cleanup_release = asyncio.Event()
+    cleanup_started = [asyncio.Event() for _ in range(3)]
+    started = [asyncio.Event() for _ in range(3)]
+    cleaned = []
+
+    async def background(index):
+        started[index].set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleanup_started[index].set()
+            await cleanup_release.wait()
+            cleaned.append(index)
+
+    registries = [service._queue_drain_tasks, service._approval_forward_tasks, service._approval_resume_tasks]
+    tasks = []
+    for index, registry in enumerate(registries):
+        task = asyncio.create_task(background(index))
+        registry[str(index)] = task
+        tasks.append(task)
+    shutdown = None
+    try:
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started)), timeout=2)
+        shutdown = asyncio.create_task(service.close())
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in cleanup_started)), timeout=2)
+        assert not shutdown.done()
+        cleanup_release.set()
+        await asyncio.wait_for(shutdown, timeout=2)
+        assert sorted(cleaned) == [0, 1, 2]
+        assert all(task.done() for task in tasks)
+        assert all(not registry for registry in registries)
+    finally:
+        cleanup_release.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if shutdown is not None:
+            await shutdown
+
+
+@pytest.mark.asyncio
 async def test_busy_internal_submissions_keep_both_queued_inputs(stores, monkeypatch) -> None:
     store, reader, session_id, _ = stores
     session = await store.get_session(session_id)
