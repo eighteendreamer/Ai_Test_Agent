@@ -7,7 +7,8 @@ import type { GlobalThemeOverrides } from "naive-ui";
 import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopBar from "./components/layout/AppTopBar.vue";
 import { publishFlowSession } from "./features/flow/openFlowWindow";
-import { getLocale, t } from "./services/i18n";
+import { t } from "./services/i18n";
+import { formatServerTime } from "./utils/datetime";
 import { useAppStore } from "./stores/app";
 import { useSessionStore } from "./stores/session";
 
@@ -179,9 +180,7 @@ const runtimeLines = computed(() => {
           .map(([key, value]) => `${key}=${String(value)}`)
           .join(" ");
 
-        return `[${new Date(event.timestamp).toLocaleTimeString(getLocale(), {
-          hour12: false,
-        })}] ${event.type}${details ? ` ${details}` : ""}`;
+        return `[${formatServerTime(event.timestamp)}] ${event.type}${details ? ` ${details}` : ""}`;
       }),
     ];
   }

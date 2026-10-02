@@ -47,3 +47,12 @@ CI 可上传整个单次结果目录，并检查对应分组的 `gate_exit_code`
 存储时间验证沿用 `storage_utils.ensure_utc_datetime` 的既有约定：无时区时间表示 UTC，带时区时间转换为对应的 UTC 时刻。应用 PostgreSQL 池通过 libpq `options=-c timezone=UTC` 固定连接时区，避免服务器/角色默认时区改变无时区 UTC 的含义；不修改数据库全局配置。内存排序和时间筛选采用同一比较规则，保留已有返回字段格式。此前在非 UTC 连接中写入的历史记录不会被自动纠正，需要结合原始事件来源核查，不能一律平移 8 小时。依据：[PostgreSQL 时区解释](https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-TIMEZONES) 与 [libpq options](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-OPTIONS)。
 
 依据：项目内 `项目借鉴/llm-testing-course/评测工程化与CICD.html` 的数据/标准/基线版本化与结果归档要求；pytest 官方 [公开 hooks/API](https://docs.pytest.org/en/stable/reference/reference.html) 和 [JUnit XML 输出](https://docs.pytest.org/en/stable/how-to/output.html#creating-junitxml-format-files)。不新增报告插件依赖。
+
+
+前端会话事件的时间消费可以独立重放。先在 agent_web 运行 npm test 和 npm run build，再在 Agent_Server 运行：
+
+```powershell
+uv run --no-sync python -m scripts.frontend_time_browser_probe --output artifacts/test-gates/<本次唯一目录>/browser.json
+```
+
+探针使用已安装 Chromium，随机 loopback 端口、独立内存 SessionStore、正式 SessionService 创建/历史/SSE 路由和正式构建产物；启动目录/健康/工具任务列表为成功夹具，没有调用真实模型或供应商。UTC、上海、纽约各创建一个正常会话，比较实际 SSE 日志显示与同一事件 HTTP 历史的 UTC 时刻，并记录页面、HTTP、异步循环错误和产物 index SHA-256。异步循环错误保留原输出并使报告 partial/退出 1；成功仍 release_ready:false。用新目录保留每次结果，不覆盖失败记录。冻结的普通 API 样本位于 agent_web/tests/fixtures/session-created-utc.json，组件回归不伪造时间生成逻辑。

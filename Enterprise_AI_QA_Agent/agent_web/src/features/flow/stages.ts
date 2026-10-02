@@ -1,5 +1,6 @@
 import type { ExecutionEvent } from "../../types";
 import { eventTurnId } from "../../utils/executionEvent";
+import { serverDateTimestamp } from "../../utils/datetime";
 
 export const FLOW_STAGES = [
   "context_builder",
@@ -120,11 +121,6 @@ export function payloadText(event: ExecutionEvent, key: string): string {
   return value == null ? "" : String(value).trim();
 }
 
-function eventTimestamp(event: ExecutionEvent): number {
-  const parsed = Date.parse(event.timestamp);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function eventStep(event: ExecutionEvent): number {
   const raw = event.payload?.step;
   const numeric = typeof raw === "number" ? raw : Number(raw);
@@ -132,7 +128,7 @@ function eventStep(event: ExecutionEvent): number {
 }
 
 export function compareEvents(left: ExecutionEvent, right: ExecutionEvent): number {
-  const byTime = eventTimestamp(left) - eventTimestamp(right);
+  const byTime = serverDateTimestamp(left.timestamp) - serverDateTimestamp(right.timestamp);
   if (byTime !== 0) {
     return byTime;
   }
