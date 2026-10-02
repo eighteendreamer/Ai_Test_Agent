@@ -175,3 +175,64 @@ async def test_interrupt_between_tool_calls_skips_later_call_and_closes_model_pr
         and event.payload["call_id"] == "call-2"
         for event in result.events
     )
+    # The durable snapshot retains the reason; process control only owns the
+    # invocation that has now returned, not the session's historical state.
+    assert result.state["interrupt_reason"] == reason
+    assert control.is_interrupt_requested(session_id) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry", ["execute_turn", "resume_turn", "resume_after_approval"])
+@pytest.mark.parametrize("outcome", ["success", "error", "cancelled"])
+async def test_runtime_control_scope_releases_all_entry_points(monkeypatch, entry, outcome):
+    """Controlled entry-point contract; not a model/provider failure reproduction."""
+    control = RuntimeControlRegistry()
+    runtime = RuntimeService(graph=None, model_runtime_service=_ModelRuntimeStub(),
+                             tool_runtime_service=object(), tool_registry=ToolRegistry(),
+                             runtime_control=control)
+    session = _session("scope-entry")
+    sentinel = object()
+    handler, events = object(), object()
+
+    async def execute(*args, **kwargs):
+        assert kwargs == {"on_model_chunk": handler, "event_queue": events}
+        runtime.request_interrupt(session.id, "scope interrupt")
+        await asyncio.sleep(0)
+        assert control.get_interrupt_reason(session.id) == "scope interrupt"
+        if outcome == "error":
+            raise RuntimeError("controlled lifecycle fixture")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError
+        return sentinel
+
+    monkeypatch.setattr(runtime, "_" + entry, execute)
+    arguments = [session, _request(session.id)]
+    if entry == "resume_turn":
+        arguments = [session, object(), "contract resume"]
+    elif entry == "resume_after_approval":
+        arguments = [session, {}]
+    invocation = getattr(runtime, entry)(*arguments, on_model_chunk=handler, event_queue=events)
+    if outcome == "success":
+        assert await invocation is sentinel
+    else:
+        error = RuntimeError if outcome == "error" else asyncio.CancelledError
+        with pytest.raises(error):
+            await invocation
+    assert control._execution_owners == {}
+    assert control._interrupt_reasons == {}
+    # A delayed stop after the invocation returned cannot retain historical
+    # state or become a stop request for the next execution.
+    runtime.request_interrupt(session.id, "delayed request")
+    assert not control.is_interrupt_requested(session.id)
+
+
+def test_overlapping_control_owner_cannot_clear_running_execution():
+    control = RuntimeControlRegistry()
+    with control.execution_scope("session"):
+        control.request_interrupt("session", "first owner's request")
+        with pytest.raises(RuntimeError, match="active runtime execution"), control.execution_scope("session"):
+            pass
+        assert control.get_interrupt_reason("session") == "first owner's request"
+    with control.execution_scope("session"):
+        assert not control.is_interrupt_requested("session")
+    assert control._execution_owners == {}

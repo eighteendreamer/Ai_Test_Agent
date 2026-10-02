@@ -166,7 +166,18 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
-        self.clear_interrupt(session.id)
+        with self._runtime_control.execution_scope(session.id):
+            return await self._execute_turn(
+                session, request, on_model_chunk=on_model_chunk, event_queue=event_queue,
+            )
+
+    async def _execute_turn(
+        self,
+        session: SessionRecord,
+        request: ExecutionRequest,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
+        event_queue: asyncio.Queue | None = None,
+    ) -> RuntimeTurnResult:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
             state = self._build_initial_state(session, request)
@@ -509,6 +520,18 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult | None:
+        with self._runtime_control.execution_scope(session.id):
+            return await self._resume_after_approval(
+                session, approval, on_model_chunk=on_model_chunk, event_queue=event_queue,
+            )
+
+    async def _resume_after_approval(
+        self,
+        session: SessionRecord,
+        approval: dict,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
+        event_queue: asyncio.Queue | None = None,
+    ) -> RuntimeTurnResult | None:
         pending_turn = dict(session.metadata.get("pending_turn") or {})
         if not pending_turn:
             return None
@@ -813,7 +836,6 @@ class RuntimeService:
             resume_reason="approval_resolved",
             approval_id=approval["id"],
         )
-        self.clear_interrupt(session.id)
         request = ExecutionRequest(
             session_id=session.id,
             turn_id=str(state["turn_id"]),
@@ -892,7 +914,19 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
-        self.clear_interrupt(session.id)
+        with self._runtime_control.execution_scope(session.id):
+            return await self._resume_turn(
+                session, snapshot, resume_reason, on_model_chunk=on_model_chunk, event_queue=event_queue,
+            )
+
+    async def _resume_turn(
+        self,
+        session: SessionRecord,
+        snapshot: SessionSnapshot,
+        resume_reason: str,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
+        event_queue: asyncio.Queue | None = None,
+    ) -> RuntimeTurnResult:
         state = self._state_from_snapshot(session, snapshot)
         state["_event_queue"] = event_queue
         await self._attach_session_resources(state)
@@ -1260,7 +1294,6 @@ class RuntimeService:
             model_key=state["selected_model_key"], skill_keys=state["requested_skill_keys"],
             context=dict(state["context_bundle"]),
         )
-        self.clear_interrupt(session.id)
         result = await self._execute_observed(
             session, request, state,
             lambda: self._execute_deep_agent_turn(

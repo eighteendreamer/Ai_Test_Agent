@@ -1594,6 +1594,7 @@ async def test_deep_agent_interrupt_cancels_active_invocation_and_returns_termin
     assert result.snapshot.stage == "interrupted"
     assert any(event.type == "runtime.interrupt_applied" for event in result.events)
     assert control.has_interruptible_task("session-interrupt") is False
+    assert control.is_interrupt_requested("session-interrupt") is False
 
 
 @pytest.mark.asyncio
