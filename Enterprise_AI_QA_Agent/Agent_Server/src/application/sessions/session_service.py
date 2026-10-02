@@ -307,7 +307,13 @@ class SessionService:
                 },
             ),
         )
-        return await self._to_detail(session)
+        # append_event updates counters/timestamps in the store, not the detached
+        # draft. Project the committed value, as ordinary GET /sessions does.
+        detail = await self.get_session(session.id)
+        logger.info("session_creation_projection_loaded", extra={
+            "session_id": session.id, "event_count": detail.event_count,
+        })
+        return detail
 
     async def _new_session_record(self, payload: CreateSessionRequest) -> SessionRecord:
         if payload.project_id:

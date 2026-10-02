@@ -19,6 +19,7 @@ from src.api.routes.sessions import router, stream_events
 from src.application.sessions.session_service import SessionService
 from src.application.runtime.runtime_service import RuntimeService
 from src.core.config import get_settings
+from src.registry.modes import ModeRegistry
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import append_graph_event
 from src.runtime.postgres_session_store import PostgresSessionStore
@@ -684,3 +685,26 @@ async def test_real_http_clients_receive_events_from_separate_worker_process(sto
         server.should_exit = True
         await asyncio.wait_for(serving, 5)
         listener.close()
+
+
+@pytest.mark.asyncio
+async def test_normal_session_creation_response_matches_committed_event_counts(stores):
+    writer, _, _, _ = stores
+    service = SessionService(writer, object(), object(), ModeRegistry())
+    app = FastAPI()
+    app.state.session_service = service
+    app.include_router(router, prefix="/api/v1")
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/sessions", json={"title": "Creation projection probe"})
+            assert response.status_code == 200, response.text
+            created = response.json()
+            session_path = f"/api/v1/sessions/{created['id']}"
+            history = await client.get(f"{session_path}/events/history")
+            detail = await client.get(session_path)
+        assert history.status_code == detail.status_code == 200
+        assert [event["type"] for event in history.json()] == ["session.created"]
+        assert created["event_count"] == len(history.json()) == detail.json()["event_count"]
+        assert created["updated_at"] == detail.json()["updated_at"]
+    finally:
+        await service.close()
