@@ -7,8 +7,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
+from fastapi.routing import APIRoute
 
-from src.application.compatibility.runner_service import CompatibilityArtifactContentUnavailable, CompatibilityRunnerNotFound
+from src.application.compatibility.runner_service import (
+    CompatibilityArtifactContentUnavailable,
+    CompatibilityRunnerNotFound,
+    CompatibilityRunnerStateError,
+)
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
 from src.modes.compatibility_testing_mode.runtime import CompatibilityTestingModeRuntime
 from src.schemas.tool_runtime import ModelToolCall
@@ -31,8 +36,27 @@ from src.schemas.compatibility_runner import (
 )
 
 
-router = APIRouter(prefix="/compatibility", tags=["compatibility"])
 logger = logging.getLogger(__name__)
+
+
+class _RunnerStateErrorRoute(APIRoute):
+    def get_route_handler(self):
+        original_handler = super().get_route_handler()
+
+        async def state_error_handler(request: Request):
+            try:
+                return await original_handler(request)
+            except CompatibilityRunnerStateError as exc:
+                logger.error("compatibility_runner_state_request_failed", extra={
+                    "request_method": request.method,
+                    "route_path": request.scope["route"].path,
+                })
+                raise HTTPException(status_code=503, detail="Compatibility runner state is unavailable.") from exc
+
+        return state_error_handler
+
+
+router = APIRouter(prefix="/compatibility", tags=["compatibility"], route_class=_RunnerStateErrorRoute)
 
 
 def _content_disposition_inline(filename: str) -> str:
@@ -169,6 +193,8 @@ async def upload_runner_task_artifact(
         raise HTTPException(status_code=404, detail="Task not found") from exc
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CompatibilityRunnerStateError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

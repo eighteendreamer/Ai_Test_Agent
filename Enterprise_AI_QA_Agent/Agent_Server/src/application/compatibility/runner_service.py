@@ -47,6 +47,10 @@ class CompatibilityArtifactContentUnavailable(ValueError):
     """An artifact record exists, but its local content cannot be served."""
 
 
+class CompatibilityRunnerStateError(RuntimeError):
+    """The durable runner catalog cannot be read or committed safely."""
+
+
 class CompatibilityRunnerService:
     def __init__(self, *, settings=None, artifact_storage_service=None) -> None:
         self._settings = settings
@@ -54,6 +58,9 @@ class CompatibilityRunnerService:
         self._runners: dict[str, CompatibilityRunnerRecord] = {}
         self._tasks: dict[str, CompatibilityQueuedTask] = {}
         self._artifacts: dict[str, CompatibilityArtifactRecord] = {}
+        # Retain the last committed JSON value, not aliases to mutable records
+        # returned to callers. Failed saves must also undo in-memory changes.
+        self._committed_state_json = '{"schema_version": 1, "runners": [], "tasks": [], "artifacts": []}'
         self._lock = asyncio.Lock()
         self._local_artifact_root = (
             Path(__file__).resolve().parents[2] / str(getattr(settings.storage, "artifact_root_dir", "data/artifacts"))
@@ -1116,34 +1123,24 @@ class CompatibilityRunnerService:
         return lines
 
     def _load_state(self) -> None:
-        if not self._state_path.exists():
-            return
         try:
-            raw = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            serialized = self._state_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return
-        runners = raw.get("runners") if isinstance(raw, dict) else None
-        tasks = raw.get("tasks") if isinstance(raw, dict) else None
-        artifacts = raw.get("artifacts") if isinstance(raw, dict) else None
+        except (OSError, UnicodeError) as exc:
+            logger.error("compatibility_runner_state_load_failed", extra={
+                "error_type": type(exc).__name__, "error_errno": getattr(exc, "errno", None),
+            })
+            raise CompatibilityRunnerStateError("Compatibility runner state could not be read.") from None
+        try:
+            self._restore_state(serialized)
+        except (ValueError, TypeError) as exc:
+            # Validation errors may include result or metadata values. Log
+            # only the error type; preserve the original file for recovery.
+            logger.error("compatibility_runner_state_load_failed", extra={"error_type": type(exc).__name__})
+            raise CompatibilityRunnerStateError("Compatibility runner state is invalid.") from None
+        self._committed_state_json = serialized
         state_changed = False
-        if isinstance(runners, list):
-            for item in runners:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    record = CompatibilityRunnerRecord.model_validate(item)
-                    self._runners[record.runner_id] = record
-                except Exception:
-                    continue
-        if isinstance(tasks, list):
-            for item in tasks:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    task = CompatibilityQueuedTask.model_validate(item)
-                    self._tasks[task.task_id] = task
-                except Exception:
-                    continue
         # Restore the full queue before appending recovered assignments, or a
         # task early in the file could jump ahead of work already waiting.
         for task in list(self._tasks.values()):
@@ -1152,15 +1149,6 @@ class CompatibilityRunnerService:
                 self._stage_requeued_task(
                     task, now=_utc_now(), reason="runner_service_restart", source="restart",
                 )
-        if isinstance(artifacts, list):
-            for item in artifacts:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    artifact = CompatibilityArtifactRecord.model_validate(item)
-                    self._artifacts[artifact.artifact_id] = artifact
-                except Exception:
-                    continue
         for runner_id, runner in list(self._runners.items()):
             active_task_ids = self._active_task_ids_for_runner(runner_id)
             if active_task_ids != runner.active_task_ids:
@@ -1168,24 +1156,62 @@ class CompatibilityRunnerService:
             self._runners[runner_id] = runner.model_copy(update={"active_task_ids": active_task_ids})
         if state_changed:
             self._save_state()
+        logger.info("compatibility_runner_state_loaded", extra={
+            "runner_count": len(self._runners), "task_count": len(self._tasks),
+            "artifact_count": len(self._artifacts), "recovery_committed": state_changed,
+        })
+
+    def _restore_state(self, serialized: str) -> None:
+        raw = json.loads(serialized)
+        if not isinstance(raw, dict) or raw.get("schema_version", 1) != 1:
+            raise ValueError("Unsupported runner state schema.")
+        collections = []
+        for name, model, id_field in (
+            ("runners", CompatibilityRunnerRecord, "runner_id"),
+            ("tasks", CompatibilityQueuedTask, "task_id"),
+            ("artifacts", CompatibilityArtifactRecord, "artifact_id"),
+        ):
+            items = raw.get(name, [])
+            if not isinstance(items, list):
+                raise TypeError("Runner state collection must be a list.")
+            records = {}
+            for item in items:
+                record = model.model_validate(item)
+                record_id = getattr(record, id_field)
+                if record_id in records:
+                    raise ValueError("Duplicate runner state record identity.")
+                records[record_id] = record
+            collections.append(records)
+        # Install only after every collection has been validated.
+        self._runners, self._tasks, self._artifacts = collections
 
     def _save_state(self) -> None:
-        payload = {
-            "schema_version": 1,
-            "updated_at": _utc_now(),
-            "runners": [item.model_dump(mode="json") for item in self._runners.values()],
-            "tasks": [item.model_dump(mode="json") for item in self._tasks.values()],
-            "artifacts": [item.model_dump(mode="json") for item in self._artifacts.values()],
-        }
         temp_path = self._state_path.with_suffix(".tmp")
         try:
-            temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            payload = {
+                "schema_version": 1,
+                "updated_at": _utc_now(),
+                "runners": [item.model_dump(mode="json") for item in self._runners.values()],
+                "tasks": [item.model_dump(mode="json") for item in self._tasks.values()],
+                "artifacts": [item.model_dump(mode="json") for item in self._artifacts.values()],
+            }
+            serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+            temp_path.write_text(serialized, encoding="utf-8")
             temp_path.replace(self._state_path)
-        except OSError:
+        except (OSError, ValueError, TypeError) as exc:
+            self._restore_state(self._committed_state_json)
+            logger.error("compatibility_runner_state_save_failed", extra={
+                "error_type": type(exc).__name__, "error_errno": getattr(exc, "errno", None),
+                "memory_rolled_back": True,
+            })
             try:
                 temp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as cleanup_exc:
+                logger.warning("compatibility_runner_state_temp_cleanup_failed", extra={
+                    "error_type": type(cleanup_exc).__name__, "error_errno": cleanup_exc.errno,
+                })
+            raise CompatibilityRunnerStateError("Compatibility runner state could not be saved.") from None
+        self._committed_state_json = serialized
 
     def _decode_base64(self, value: str) -> bytes:
         raw = str(value or "")
@@ -1249,8 +1275,8 @@ class CompatibilityRunnerService:
                 root = self._local_artifact_root.resolve()
                 if path != root and root in path.parents:
                     path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("compatibility_artifact_cleanup_failed", extra={"error_type": type(exc).__name__})
 
     def _active_task_ids_for_runner(self, runner_id: str) -> list[str]:
         return sorted(
