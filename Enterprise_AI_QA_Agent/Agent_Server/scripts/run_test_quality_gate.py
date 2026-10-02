@@ -55,6 +55,15 @@ PROFILES = {
         "targets": ("tests/test_schema_migrations.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS",),
     },
+    "api-execution": {
+        "targets": (
+            "tests/test_api_request_body_contract.py", "tests/test_api_task_executor_recovery.py",
+            "tests/test_case_execution_adapter.py", "tests/test_api_mode_session_isolation.py",
+            "tests/test_case_execution_service.py", "tests/test_case_execution_verification.py",
+            "tests/test_api_mode_skills.py",
+        ),
+        "flags": ("RUN_LIVE_POSTGRES_TESTS",),
+    },
     "sql-lifecycle": {
         "targets": ("tests/test_lifespan_resource_cleanup.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_MYSQL_TESTS"),

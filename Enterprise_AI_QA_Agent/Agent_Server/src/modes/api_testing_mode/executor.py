@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ import httpx
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED
 from src.modes.api_testing_mode.credential_manager import CredentialManager
+
+logger = logging.getLogger("uvicorn.error.api_testing_mode.executor")
 
 
 class ApiTaskExecutor:
@@ -43,8 +46,12 @@ class ApiTaskExecutor:
             return task
 
         headers = self._build_headers(task)
-        body = task.request_body or None
+        body = task.request_body
         params = task.request_query or None
+        logger.info(
+            "api_task_request_started",
+            extra={"task_id": task.task_id, "method": task.method.upper(), "has_json_body": body is not None},
+        )
 
         start_time = time.perf_counter()
         try:
@@ -57,7 +64,7 @@ class ApiTaskExecutor:
                     url=url,
                     headers=headers,
                     params=params,
-                    json=body if body else None,
+                    json=body,
                 )
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
             task.duration_ms = round(elapsed_ms, 2)
@@ -147,7 +154,7 @@ class ApiTaskExecutor:
 
     def _build_headers(self, task: ApiTestTask) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}
-        if task.request_body:
+        if task.request_body is not None:
             headers["Content-Type"] = "application/json"
         # Merge credential headers.
         if task.auth_ref:

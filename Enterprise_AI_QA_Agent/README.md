@@ -936,6 +936,8 @@ MCP 管理专项可执行 `uv run --no-sync python scripts/run_test_quality_gate
 
 数据库版本迁移目前覆盖 PostgreSQL 任务 Outbox、工具任务与工具工件三张表，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、原有数据保留、事务回滚、双进程执行，以及无运行时初始化的正式存储领取/结算/证据读写，并将迁移源码纳入质量报告。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把这两个版本视为全库迁移完成。
 
+API 执行专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py --profile api-execution`，包含本地真实 TCP 请求和隔离 PostgreSQL 的相邻回归，不调用外部模型或供应商。API 任务的 `request_body` 缺失/`null` 表示不发送 JSON 正文，显式 `{}` 会发送空 JSON 对象；固定用例步骤的 `body` 保持相同语义。此处 `null` 是任务的“无正文”标记，不表示发送 JSON 字面量 `null`，数组/标量正文尚不在该 DTO 的支持范围。旧持久任务中 `{}` 的原始缺省意图无法反推，保留所存值，不自动改写或重放已完成请求。
+
 ## 当前进度与下一步
 
 已完成并带测试的骨架：`session + event + snapshot + approval` 协议、LangGraph 编排与 interrupt/resume、Coordinator/Worker 调度、8 种实装测试模式（另有 6 种占位待补 Runner）、54 个 Skill、前端工作台可观测性、知识图谱与 pgvector 记忆、用例驱动八表、UI 录制 P0~P2（契约/存储/注入脚本/三种驱动/固化/审批编排/API/桌面端窗口/回放执行器/录制转草稿/断言建议）。

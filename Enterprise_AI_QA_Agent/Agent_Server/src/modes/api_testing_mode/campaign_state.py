@@ -159,7 +159,8 @@ class ApiTestTask(BaseModel):
     auth_ref: str = ""  # credential_session_id
     request_headers: dict[str, str] = Field(default_factory=dict)
     request_query: dict[str, Any] = Field(default_factory=dict)
-    request_body: dict[str, Any] = Field(default_factory=dict)
+    # None means no JSON body; an explicit {} is still a JSON request payload.
+    request_body: dict[str, Any] | None = None
     input_bindings: list[InputBinding] = Field(default_factory=list)
     assertions: list[AssertionSpec] = Field(default_factory=list)
     resource_locks: list[str] = Field(default_factory=list)

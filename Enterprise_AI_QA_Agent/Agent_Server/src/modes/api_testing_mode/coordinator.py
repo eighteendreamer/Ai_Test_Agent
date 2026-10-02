@@ -319,7 +319,7 @@ class ApiTestCoordinator:
             parts = target_path.split(".", 1)
             field_path = parts[1] if len(parts) > 1 else ""
             if field_path:
-                if not task.request_body:
+                if task.request_body is None:
                     task.request_body = {}
                 self._set_nested(task.request_body, field_path, value)
         elif target_path.startswith("query."):

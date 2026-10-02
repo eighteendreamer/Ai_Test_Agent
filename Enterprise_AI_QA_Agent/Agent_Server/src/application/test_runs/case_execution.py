@@ -263,7 +263,7 @@ class CaseExecutionAdapter:
                 "execution_mode": str(data.get("execution_mode") or "read"),
                 "request_headers": deepcopy(data.get("headers") or {}),
                 "request_query": deepcopy(data.get("query") or {}),
-                "request_body": deepcopy(data.get("body") or {}),
+                "request_body": deepcopy(data.get("body")),
                 "assertions": [
                     {
                         "kind": assertion.kind,

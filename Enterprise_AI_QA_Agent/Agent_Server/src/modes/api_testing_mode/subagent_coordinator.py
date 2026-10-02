@@ -510,6 +510,8 @@ class ApiSubagentCoordinator:
         if target_path.startswith("body.") or target_path.startswith("request_body."):
             field_path = target_path.split(".", 1)[1] if "." in target_path else ""
             if field_path:
+                if task.request_body is None:
+                    task.request_body = {}
                 self._inject_nested(task.request_body, field_path, value)
             return
         if target_path.startswith("query."):
