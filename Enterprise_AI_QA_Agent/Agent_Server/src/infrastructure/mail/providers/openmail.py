@@ -9,6 +9,7 @@ from urllib.parse import quote
 from src.application.mail.contracts import (
     MailCapability,
     MailMessage,
+    MailOperationValidationError,
     MailSendRequest,
     MailSendResult,
 )
@@ -44,7 +45,7 @@ class OpenMailAdapter(RestMailAdapterBase):
     def _send_body(request: MailSendRequest, recipient: str) -> dict[str, Any]:
         body = request.content or request.content_html
         if not body:
-            raise RuntimeError("OpenMail requires a non-empty email body.")
+            raise MailOperationValidationError("OpenMail requires a non-empty email body.")
         payload: dict[str, Any] = {
             "to": recipient,
             "subject": request.subject,
@@ -59,11 +60,11 @@ class OpenMailAdapter(RestMailAdapterBase):
 
     def send(self, record: "EmailConfigRecord", request: MailSendRequest) -> MailSendResult:
         if len(request.recipients) != 1:
-            raise RuntimeError("OpenMail's documented v1 send API requires exactly one recipient.")
+            raise MailOperationValidationError("OpenMail's documented v1 send API requires exactly one recipient.")
         if request.bcc:
-            raise RuntimeError("OpenMail's documented v1 send API does not support BCC.")
+            raise MailOperationValidationError("OpenMail's documented v1 send API does not support BCC.")
         if request.attachments:
-            raise RuntimeError("OpenMail outbound attachments require multipart upload, which is not configured by this adapter.")
+            raise MailOperationValidationError("OpenMail outbound attachments require multipart upload, which is not configured by this adapter.")
         data = self._request(
             "POST",
             record,

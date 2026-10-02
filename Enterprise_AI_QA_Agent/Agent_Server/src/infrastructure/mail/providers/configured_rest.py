@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from src.application.mail.contracts import MailCapability, MailMessage, MailSendRequest, MailSendResult
+from src.application.mail.contracts import (
+    MailCapability,
+    MailMessage,
+    MailOperationValidationError,
+    MailSendRequest,
+    MailSendResult,
+)
 from src.infrastructure.mail.providers.rest_base import RestMailAdapterBase
 
 if TYPE_CHECKING:
@@ -41,7 +47,7 @@ class ConfiguredRestMailAdapter(RestMailAdapterBase):
         routes = (record.extra_config or {}).get("routes")
         template = routes.get(operation) if isinstance(routes, dict) else None
         if not isinstance(template, str) or not template.strip():
-            raise RuntimeError(f"Provider '{self.provider_key}' requires extra_config.routes.{operation}.")
+            raise MailOperationValidationError(f"Provider '{self.provider_key}' requires extra_config.routes.{operation}.")
         values.setdefault("mailbox_id", self._mailbox_id(record))
         return template.format(**values)
 

@@ -38,6 +38,27 @@ class MailboxNotActive(RuntimeError):
     """The requested operation conflicts with the active mailbox state."""
 
 
+class MailConfigNotFoundError(KeyError):
+    """The configuration store explicitly reports a missing mailbox record."""
+
+
+class MailOperationValidationError(RuntimeError):
+    """An explicitly checked mail input, configuration or confirmation is invalid."""
+
+
+class MailProviderUnavailableError(RuntimeError):
+    """A required provider execution dependency is unavailable."""
+
+
+class MailProviderExecutionError(RuntimeError):
+    """Provider execution or its response failed, rather than input validation."""
+
+    def __init__(self, message: str, *, exit_code: int | None = None, timeout_seconds: int | None = None) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.timeout_seconds = timeout_seconds
+
+
 class CapabilityNotSupported(RuntimeError):
     """Raised when a provider is asked to perform a capability it lacks.
 

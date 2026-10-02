@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING, Any
 from src.application.mail.contracts import (
     MailCapability,
     MailMessage,
+    MailOperationValidationError,
     MailProviderAdapter,
+    MailProviderExecutionError,
+    MailProviderUnavailableError,
     MailSendRequest,
     MailSendResult,
 )
@@ -120,10 +123,10 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
                 timeout=timeout,
                 env=self._cli_env(record),
             )
-        except FileNotFoundError:
-            raise RuntimeError(self._cli_not_found_message(cli))
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"agently-cli timed out after {timeout}s.")
+        except FileNotFoundError as exc:
+            raise MailProviderUnavailableError(self._cli_not_found_message(cli)) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise MailProviderExecutionError(f"agently-cli timed out after {timeout}s.", timeout_seconds=timeout) from exc
 
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""
@@ -132,7 +135,7 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
         if proc.returncode != 0:
             message = self._extract_cli_error_message(payload or {})
             detail = message or stderr.strip() or stdout.strip() or "No error output."
-            raise RuntimeError(f"agently-cli error (exit {proc.returncode}): {detail}")
+            raise MailProviderExecutionError(f"agently-cli error (exit {proc.returncode}): {detail}", exit_code=proc.returncode)
 
         if payload is None:
             raw_output = "\n".join(part.strip() for part in (stdout, stderr) if part and part.strip())
@@ -147,7 +150,7 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
             if raw_output:
                 return {"ok": True, "summary": raw_output}
             preview = raw_output[:500]
-            raise RuntimeError(
+            raise MailProviderExecutionError(
                 "agently-cli returned empty or non-JSON output"
                 + (f": {preview}" if preview else ".")
             )
@@ -273,10 +276,10 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
                 creationflags=creationflags,
                 env=self._cli_env(record),
             )
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             if auth_lock is not None:
                 auth_lock.__exit__(None, None, None)
-            raise RuntimeError(self._cli_not_found_message(cli))
+            raise MailProviderUnavailableError(self._cli_not_found_message(cli)) from exc
         except Exception:
             if auth_lock is not None:
                 auth_lock.__exit__(None, None, None)
@@ -586,19 +589,19 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
         with _PENDING_CONFIRMATIONS_LOCK:
             pending = _PENDING_CONFIRMATIONS.get(token)
         if not pending or time.time() - float(pending.get("created_at") or 0) > 300:
-            raise RuntimeError(
+            raise MailOperationValidationError(
                 "Mail confirmation context is missing or expired. Prepare the message again."
             )
         if pending.get("operation") != operation:
-            raise RuntimeError("Mail confirmation operation does not match the prepared request.")
+            raise MailOperationValidationError("Mail confirmation operation does not match the prepared request.")
         if pending.get("record_id") != record.id:
-            raise RuntimeError("Mail confirmation does not belong to this mailbox configuration.")
+            raise MailOperationValidationError("Mail confirmation does not belong to this mailbox configuration.")
         return [*list(pending.get("args") or []), "--confirmation-token", token]
 
     @staticmethod
     def _finish_confirmation(token: str, result: MailSendResult) -> MailSendResult:
         if result.confirmation_required or not result.sent:
-            raise RuntimeError(
+            raise MailProviderExecutionError(
                 "Agent Mail did not commit the confirmed operation; prepare it again before retrying."
             )
         with _PENDING_CONFIRMATIONS_LOCK:
@@ -915,10 +918,7 @@ class TencentAgentlyMailAdapter(MailProviderAdapter):
         }
 
     def auth_login(self, record: "EmailConfigRecord") -> dict[str, Any]:
-        try:
-            return self._start_auth_login_process(record)
-        except RuntimeError as exc:
-            return self._auth_error_result(record, exc, action="auth_login")
+        return self._start_auth_login_process(record)
 
     def status(self, record: "EmailConfigRecord") -> dict[str, Any]:
         auth = self.auth_status(record)

@@ -14,7 +14,11 @@ from pydantic import BaseModel, Field
 from src.application.mail.contracts import (
     MailboxNotActive,
     MailCapability,
+    MailConfigNotFoundError,
     MailConfigStoreUnavailable,
+    MailOperationValidationError,
+    MailProviderExecutionError,
+    MailProviderUnavailableError,
 )
 from src.infrastructure.mail.providers.rest_base import MailProviderHTTPError
 from src.schemas.email_config import EmailConfigUpdateRequest
@@ -31,10 +35,14 @@ async def _run_provider_call(func, *args, **kwargs):
 
 
 async def _run_mail_write(action: str, func, *args, config_id: int | None):
-    """Classify mail write failures without losing their source exception type."""
-    context = {"action": action, "config_id": config_id}
+    return await _run_mail_operation(action, func, *args, operation_config_id=config_id, config_id=config_id)
+
+
+async def _run_mail_operation(action: str, func, *args, operation_config_id: int | None, **kwargs):
+    """Classify execution failures without confusing them with readable status DTOs."""
+    context = {"action": action, "config_id": operation_config_id}
     try:
-        return await _run_provider_call(func, *args, config_id=config_id)
+        return await _run_provider_call(func, *args, **kwargs)
     except MailConfigStoreUnavailable as exc:
         logger.error("mail_write_config_store_unavailable", extra=context)
         raise HTTPException(status_code=503, detail="Email configuration service unavailable.") from exc
@@ -59,14 +67,24 @@ async def _run_mail_write(action: str, func, *args, config_id: int | None):
             extra={**context, "error_type": type(exc).__name__},
         )
         raise HTTPException(status_code=502, detail="Mail provider transport failed.") from exc
-    except RuntimeError as exc:
-        # Providers still use RuntimeError for input/confirmation validation.
-        # Keep their existing contract until each remaining source is classified.
+    except MailProviderUnavailableError as exc:
+        logger.error("mail_write_provider_unavailable", extra={**context, "error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Mail provider execution dependency unavailable.") from exc
+    except MailProviderExecutionError as exc:
+        logger.warning(
+            "mail_write_provider_execution_failed",
+            extra={**context, "error_type": type(exc).__name__, "exit_code": exc.exit_code, "timeout_seconds": exc.timeout_seconds},
+        )
+        raise HTTPException(status_code=502, detail="Mail provider execution failed.") from exc
+    except MailOperationValidationError as exc:
         logger.warning("mail_write_rejected", extra={**context, "error_type": type(exc).__name__})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except KeyError as exc:
+    except MailConfigNotFoundError as exc:
         logger.info("mail_write_config_not_found", extra=context)
-        raise HTTPException(status_code=404, detail=f"Email config '{config_id}' not found.") from exc
+        raise HTTPException(status_code=404, detail=f"Email config '{operation_config_id}' not found.") from exc
+    except Exception as exc:
+        logger.error("mail_write_operation_failed", extra={**context, "error_type": type(exc).__name__})
+        raise HTTPException(status_code=500, detail="Mail operation failed.") from exc
 
 
 def _reject_unsupported_setup_action(provider: str, action: str) -> NoReturn:
@@ -255,7 +273,7 @@ async def provider_setup_action(
 
         if body.action == "auth_login":
             if hasattr(adapter, "auth_login"):
-                return await _run_provider_call(adapter.auth_login, record)
+                return await _run_mail_operation("auth_login", adapter.auth_login, record, operation_config_id=record.id)
             _reject_unsupported_setup_action(provider, body.action)
 
         if body.action == "auth_login_status":

@@ -9,6 +9,7 @@ from urllib.parse import quote
 from src.application.mail.contracts import (
     MailCapability,
     MailMessage,
+    MailOperationValidationError,
     MailSendRequest,
     MailSendResult,
 )
@@ -62,7 +63,7 @@ class RobotomailAdapter(RestMailAdapterBase):
 
     def send(self, record: "EmailConfigRecord", request: MailSendRequest) -> MailSendResult:
         if request.bcc:
-            raise RuntimeError("Robotomail's documented send API does not support BCC.")
+            raise MailOperationValidationError("Robotomail's documented send API does not support BCC.")
         data = self._request(
             "POST", record, self._messages_path(record), json_body=self._send_body(request)
         )

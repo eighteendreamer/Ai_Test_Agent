@@ -17,7 +17,9 @@ from src.application.mail.contracts import (
     CapabilityNotSupported,
     MailboxNotActive,
     MailCapability,
+    MailConfigNotFoundError,
     MailConfigStoreUnavailable,
+    MailOperationValidationError,
     MailSendRequest,
     MailSendResult,
 )
@@ -52,17 +54,14 @@ class MailService:
     def _resolve_active_record(self) -> "EmailConfigRecord":
         if self._email_config_store is None:
             raise MailConfigStoreUnavailable("Email config store is not available.")
-        try:
-            records = self._email_config_store.list_all()
-            enabled = [item for item in records if item.enabled]
-            if enabled:
-                return next((item for item in enabled if item.is_default), enabled[0])
-            raise KeyError("active")
-        except KeyError as exc:
-            raise MailboxNotActive(
-                "No globally active Agent mailbox is available. "
-                "Configure, authorize, and activate one in Email Settings first."
-            ) from exc
+        records = self._email_config_store.list_all()
+        enabled = [item for item in records if item.enabled]
+        if enabled:
+            return next((item for item in enabled if item.is_default), enabled[0])
+        raise MailboxNotActive(
+            "No globally active Agent mailbox is available. "
+            "Configure, authorize, and activate one in Email Settings first."
+        )
 
     def _resolve_record_by_id(
         self,
@@ -72,7 +71,10 @@ class MailService:
             return self._resolve_active_record()
         if self._email_config_store is None:
             raise MailConfigStoreUnavailable("Email config store is not available.")
-        record = self._email_config_store.get_by_id(config_id)
+        try:
+            record = self._email_config_store.get_by_id(config_id)
+        except KeyError as exc:
+            raise MailConfigNotFoundError(config_id) from exc
         if not record.enabled:
             raise MailboxNotActive(
                 f"Mailbox config '{record.config_name}' is not active. "
@@ -150,7 +152,7 @@ class MailService:
             "trash": "trash_confirm",
         }.get(operation_key)
         if not method_name or not hasattr(adapter, method_name):
-            raise RuntimeError(
+            raise MailOperationValidationError(
                 f"Provider '{record.provider}' does not support confirmation for operation '{operation}'."
             )
         result = getattr(adapter, method_name)(record, confirmation_token)
@@ -321,9 +323,9 @@ class MailService:
         if pending is None:
             return None
         if time.time() - float(pending.get("created_at") or 0) > 300:
-            raise RuntimeError("Mail confirmation expired; prepare the operation again.")
+            raise MailOperationValidationError("Mail confirmation expired; prepare the operation again.")
         if pending.get("operation") != str(operation or "").strip().lower():
-            raise RuntimeError("Mail confirmation operation does not match the preview.")
+            raise MailOperationValidationError("Mail confirmation operation does not match the preview.")
         return pending
 
     def _capability_call(

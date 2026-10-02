@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from src.application.mail.contracts import MailMessage, MailProviderAdapter, MailSendResult
+from src.application.mail.contracts import (
+    MailMessage,
+    MailOperationValidationError,
+    MailProviderAdapter,
+    MailProviderExecutionError,
+    MailSendResult,
+)
 
 if TYPE_CHECKING:
     from src.schemas.email_config import EmailConfigRecord
@@ -34,19 +40,19 @@ class RestMailAdapterBase(MailProviderAdapter):
     def _base_url(self, record: "EmailConfigRecord") -> str:
         value = str((record.extra_config or {}).get("base_url") or self.default_base_url).strip()
         if not value:
-            raise RuntimeError(f"Provider '{self.provider_key}' requires extra_config.base_url.")
+            raise MailOperationValidationError(f"Provider '{self.provider_key}' requires extra_config.base_url.")
         return value.rstrip("/")
 
     @staticmethod
     def _mailbox_id(record: "EmailConfigRecord") -> str:
         value = str((record.extra_config or {}).get("mailbox_id") or "").strip()
         if not value:
-            raise RuntimeError("The active mailbox config requires extra_config.mailbox_id.")
+            raise MailOperationValidationError("The active mailbox config requires extra_config.mailbox_id.")
         return value
 
     def _headers(self, record: "EmailConfigRecord") -> dict[str, str]:
         if not record.api_key:
-            raise RuntimeError(f"Provider '{self.provider_key}' requires an API key.")
+            raise MailOperationValidationError(f"Provider '{self.provider_key}' requires an API key.")
         header_name = str((record.extra_config or {}).get("auth_header") or "Authorization")
         scheme = str((record.extra_config or {}).get("auth_scheme") or "Bearer").strip()
         token = f"{scheme} {record.api_key}".strip()
@@ -76,7 +82,10 @@ class RestMailAdapterBase(MailProviderAdapter):
         self._raise_provider_error(response)
         if not response.content:
             return {}
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MailProviderExecutionError("Mail provider returned invalid JSON.") from exc
 
     def _request_binary(self, record: "EmailConfigRecord", path: str) -> dict[str, Any]:
         response = httpx.get(
