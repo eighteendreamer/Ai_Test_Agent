@@ -62,9 +62,16 @@ export function heartbeatCompatibilityRunner(
 export function pollCompatibilityRunnerTasks(
   runnerId: string,
   limit = 1,
+  receipt?: { request_id: string; sequence: number; epoch: string },
 ): Promise<{ runner_id: string; tasks: CompatibilityQueuedTask[] }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (receipt) {
+    query.set("request_id", receipt.request_id);
+    query.set("sequence", String(receipt.sequence));
+    query.set("epoch", receipt.epoch);
+  }
   return request(
-    `/api/v1/compatibility/runners/${runnerId}/tasks/poll?limit=${encodeURIComponent(String(limit))}`,
+    `/api/v1/compatibility/runners/${runnerId}/tasks/poll?${query}`,
     { method: "POST" },
   );
 }

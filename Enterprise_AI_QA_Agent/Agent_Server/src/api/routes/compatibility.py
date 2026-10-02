@@ -148,11 +148,20 @@ async def poll_runner_tasks(
     runner_id: str,
     request: Request,
     limit: int = Query(1, ge=1, le=20),
+    request_id: str | None = Query(None, min_length=1, max_length=128),
+    sequence: int | None = Query(None, ge=1),
+    epoch: str | None = Query(None, min_length=1, max_length=128),
 ):
     try:
-        return await request.app.state.compatibility_runner_service.poll_tasks(runner_id, limit=limit)
+        return await request.app.state.compatibility_runner_service.poll_tasks(
+            runner_id, limit=limit, request_id=request_id, sequence=sequence, epoch=epoch,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Runner not found") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/runners/{runner_id}/tasks/{task_id}/report", response_model=CompatibilityQueuedTask)

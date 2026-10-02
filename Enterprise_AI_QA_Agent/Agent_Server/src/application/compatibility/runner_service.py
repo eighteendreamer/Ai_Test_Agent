@@ -80,6 +80,7 @@ class CompatibilityRunnerService:
         async with self._lock:
             self._requeue_stale_assigned_tasks_locked(now, persist=False)
             existing = self._runners.get(payload.runner_id)
+            receipt = self._checked_poll_receipt(existing) if existing else None
             existing_active_task_ids = (
                 []
                 if existing and self._is_runner_stale(existing)
@@ -96,7 +97,14 @@ class CompatibilityRunnerService:
                 active_task_ids=existing_active_task_ids,
                 registered_at=existing.registered_at if existing else now,
                 heartbeat_at=now,
-                metadata={**payload.metadata, "artifact_upload_idempotency_version": 1},
+                metadata={
+                    **self._reported_runner_metadata(payload.metadata),
+                    "artifact_upload_idempotency_version": 1,
+                    "poll_request_idempotency_version": 1,
+                    "poll_receipt": receipt,
+                    "poll_next_sequence": receipt["sequence"] + 1 if receipt else 1,
+                    "poll_epoch": existing.metadata.get("poll_epoch") or new_id("poll_epoch") if existing else new_id("poll_epoch"),
+                },
             )
             self._runners[record.runner_id] = record
             self._save_state()
@@ -121,7 +129,7 @@ class CompatibilityRunnerService:
                     "status": payload.status or "online",
                     "active_task_ids": self._active_task_ids_for_runner(runner_id),
                     "heartbeat_at": now,
-                    "metadata": {**record.metadata, **payload.metadata},
+                    "metadata": {**record.metadata, **self._reported_runner_metadata(payload.metadata)},
                 }
             )
             self._runners[runner_id] = record
@@ -231,13 +239,30 @@ class CompatibilityRunnerService:
                 self._save_state()
         return queued
 
-    async def poll_tasks(self, runner_id: str, limit: int = 1) -> CompatibilityRunnerPollResponse:
+    async def poll_tasks(self, runner_id: str, limit: int = 1, *, request_id: str | None = None,
+                         sequence: int | None = None, epoch: str | None = None) -> CompatibilityRunnerPollResponse:
+        if (request_id is None) != (sequence is None) or (request_id is None) != (epoch is None):
+            raise ValueError("Identified poll requires request_id, sequence and epoch.")
+        if request_id is not None and (not request_id or not epoch or sequence < 1 or not 1 <= limit <= 20):
+            raise ValueError("Invalid identified poll parameters.")
         now = _utc_now()
         async with self._lock:
             self._requeue_stale_assigned_tasks_locked(now)
             runner = self._runners.get(runner_id)
             if runner is None:
                 raise KeyError(runner_id)
+            receipt = self._checked_poll_receipt(runner)
+            if request_id is not None:
+                if epoch != runner.metadata.get("poll_epoch"):
+                    raise PermissionError("Poll epoch no longer identifies this Runner registration.")
+                previous_sequence = receipt["sequence"] if receipt else 0
+                if sequence == previous_sequence and receipt:
+                    if receipt["request_id"] != request_id or receipt["limit"] != limit:
+                        raise PermissionError("Poll sequence already belongs to a different request.")
+                    logger.info("compatibility_poll_receipt_reused", extra={"runner_id": runner_id, "sequence": sequence})
+                    return CompatibilityRunnerPollResponse.model_validate(receipt["response"])
+                if sequence != previous_sequence + 1:
+                    raise PermissionError("Poll sequence is expired or out of order.")
             active_task_ids_changed = False
             active_task_ids = self._active_task_ids_for_runner(runner_id)
             if active_task_ids != runner.active_task_ids:
@@ -245,16 +270,14 @@ class CompatibilityRunnerService:
                 self._runners[runner_id] = runner
                 active_task_ids_changed = True
             if self._is_runner_stale(runner) or runner.status not in {"online", "busy"}:
-                if active_task_ids_changed:
-                    self._save_state()
-                return CompatibilityRunnerPollResponse(runner_id=runner_id, tasks=[])
+                return self._commit_poll_response(runner, [], request_id=request_id, sequence=sequence,
+                                                  limit=limit, state_changed=active_task_ids_changed)
             assigned: list[CompatibilityQueuedTask] = []
             capacity = max(1, runner.max_parallel) - len(runner.active_task_ids)
             effective_limit = max(0, min(max(1, limit), capacity))
             if effective_limit <= 0:
-                if active_task_ids_changed:
-                    self._save_state()
-                return CompatibilityRunnerPollResponse(runner_id=runner_id, tasks=[])
+                return self._commit_poll_response(runner, [], request_id=request_id, sequence=sequence,
+                                                  limit=limit, state_changed=active_task_ids_changed)
 
             for task in self._tasks.values():
                 if len(assigned) >= effective_limit:
@@ -287,9 +310,50 @@ class CompatibilityRunnerService:
                     }
                 )
                 self._runners[runner_id] = runner
-            if active_task_ids_changed or assigned:
-                self._save_state()
-            return CompatibilityRunnerPollResponse(runner_id=runner_id, tasks=assigned)
+            return self._commit_poll_response(runner, assigned, request_id=request_id, sequence=sequence,
+                                              limit=limit, state_changed=bool(active_task_ids_changed or assigned))
+
+    def _commit_poll_response(self, runner: CompatibilityRunnerRecord, tasks: list[CompatibilityQueuedTask], *,
+                              request_id: str | None, sequence: int | None, limit: int,
+                              state_changed: bool) -> CompatibilityRunnerPollResponse:
+        response = CompatibilityRunnerPollResponse(runner_id=runner.runner_id, tasks=tasks)
+        if request_id is not None:
+            runner = runner.model_copy(update={"metadata": {
+                **runner.metadata,
+                "poll_receipt": {"request_id": request_id, "sequence": sequence, "limit": limit,
+                                 "response": response.model_dump(mode="json")},
+                "poll_next_sequence": sequence + 1,
+            }})
+            self._runners[runner.runner_id] = runner
+        if state_changed or request_id is not None:
+            self._save_state()
+        logger.info("compatibility_poll_committed", extra={
+            "runner_id": runner.runner_id, "sequence": sequence, "task_count": len(tasks),
+        })
+        return response
+
+    def _checked_poll_receipt(self, runner: CompatibilityRunnerRecord) -> dict[str, Any] | None:
+        receipt = runner.metadata.get("poll_receipt")
+        if receipt is None:
+            return None
+        try:
+            if (not isinstance(receipt, dict) or not isinstance(receipt.get("request_id"), str)
+                    or not receipt["request_id"] or type(receipt.get("sequence")) is not int
+                    or receipt["sequence"] < 1 or type(receipt.get("limit")) is not int
+                    or not 1 <= receipt["limit"] <= 20):
+                raise ValueError("Invalid poll receipt fields")
+            response = CompatibilityRunnerPollResponse.model_validate(receipt["response"])
+            if response.runner_id != runner.runner_id or len(response.tasks) > receipt["limit"]:
+                raise ValueError("Invalid poll receipt batch")
+        except (ValueError, KeyError):
+            logger.error("compatibility_poll_receipt_invalid", extra={"runner_id": runner.runner_id})
+            raise CompatibilityRunnerStateError("Compatibility Runner poll receipt is invalid; preserve state for review.") from None
+        return receipt
+
+    def _reported_runner_metadata(self, value: dict[str, Any]) -> dict[str, Any]:
+        owned_keys = {"poll_receipt", "poll_next_sequence", "poll_request_idempotency_version",
+                      "artifact_upload_idempotency_version", "poll_epoch"}
+        return {key: item for key, item in value.items() if key not in owned_keys}
 
     async def report_task(
         self,

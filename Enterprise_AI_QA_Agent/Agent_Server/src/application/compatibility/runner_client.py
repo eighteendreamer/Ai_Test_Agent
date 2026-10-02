@@ -55,6 +55,9 @@ class CompatibilityRunnerClient:
         self.metadata = metadata or {}
         self.active_task_ids: list[str] = []
         self._idempotent_uploads = False
+        self._idempotent_polls = False
+        self._poll_next_sequence = 1
+        self._poll_epoch = ""
         self.journal = RunnerJournal(state_file, base_url=base_url, runner_id=runner_id)
 
     def close(self) -> None:
@@ -73,7 +76,7 @@ class CompatibilityRunnerClient:
                 "devices": self.devices,
                 "max_parallel": self.max_parallel,
                 "metadata": {
-                    **{key: value for key, value in self.metadata.items() if key != "artifact_upload_idempotency_version"},
+                    **{key: value for key, value in self.metadata.items() if key not in {"artifact_upload_idempotency_version", "poll_request_idempotency_version", "poll_next_sequence", "poll_receipt", "poll_epoch"}},
                     "runner_kind": "compatibility_runner_client",
                     "executor": self.executor,
                     "python": platform.python_version(),
@@ -82,6 +85,9 @@ class CompatibilityRunnerClient:
             },
         )
         self._idempotent_uploads = (record.get("metadata") or {}).get("artifact_upload_idempotency_version") == 1
+        self._idempotent_polls = (record.get("metadata") or {}).get("poll_request_idempotency_version") == 1
+        self._poll_next_sequence = (record.get("metadata") or {}).get("poll_next_sequence", 1)
+        self._poll_epoch = (record.get("metadata") or {}).get("poll_epoch", "")
         print(f"registered runner={record.get('runner_id')} status={record.get('status')}")
 
     def heartbeat(self, status: str = "online") -> None:
@@ -97,12 +103,25 @@ class CompatibilityRunnerClient:
         )
 
     def poll(self) -> list[dict[str, Any]]:
+        pending = self.journal.pending_poll()
+        if pending is not None and not self._idempotent_polls:
+            raise RuntimeError("Pending Runner poll requires the original server's idempotent poll protocol.")
+        if self._idempotent_polls:
+            pending = self.journal.begin_poll(limit=self.max_parallel, sequence=self._poll_next_sequence, epoch=self._poll_epoch)
+            query = urlencode({"limit": pending["poll_limit"], "request_id": pending["request_id"],
+                               "sequence": pending["sequence"], "epoch": pending["epoch"]})
+        else:
+            query = urlencode({"limit": self.max_parallel})
         response = _json_request(
             self.base_url,
-            f"/api/v1/compatibility/runners/{self.runner_id}/tasks/poll?limit={self.max_parallel}",
+            f"/api/v1/compatibility/runners/{self.runner_id}/tasks/poll?{query}",
             method="POST",
         )
-        return list(response.get("tasks") or [])
+        tasks = list(response.get("tasks") or [])
+        if pending is not None:
+            self.journal.complete_poll(pending["request_id"], tasks)
+            self._poll_next_sequence = pending["sequence"] + 1
+        return tasks
 
     def report(self, task_id: str, payload: dict[str, Any]) -> None:
         _json_request(

@@ -330,11 +330,165 @@ def test_old_server_cannot_echo_client_metadata_as_upload_capability(monkeypatch
         base_url="http://test", runner_id="runner", name="Old server", capabilities=[], devices=[],
         max_parallel=1, poll_interval=1, executor="dry-run", metadata={"artifact_upload_idempotency_version": 1},
     )
+
     try:
         client.register()
         assert client._idempotent_uploads is False
     finally:
         client.close()
+
+
+def test_identified_poll_returns_same_batch_after_reregistration(tmp_path):
+    """Ordinary repeated requests establish the new poll receipt contract."""
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as http:
+        prefix = "/api/v1/compatibility"
+        registration = {"runner_id": "runner", "capabilities": ["local_browser"], "max_parallel": 2}
+        registered = http.post(f"{prefix}/runners/register", json=registration)
+        assert registered.status_code == 200
+        epoch = registered.json()["metadata"]["poll_epoch"]
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="poll-receipt-plan", tasks=[CompatibilityRunnerTask(
+                task_id=f"task-{index}", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            ) for index in (1, 2)],
+        )))
+        path = f"{prefix}/runners/runner/tasks/poll?limit=2&request_id=first-request&sequence=1&epoch={epoch}"
+        first = http.post(path)
+        assert first.status_code == 200
+        assert len(first.json()["tasks"]) == 2
+        assert http.post(f"{prefix}/runners/register", json=registration).status_code == 200
+        repeated = http.post(path)
+        assert repeated.status_code == 200
+        assert repeated.json() == first.json()
+        assert len(service._tasks) == 2
+        committed = service._state_path.read_bytes()
+        assert http.post(path).json() == first.json()
+        assert service._state_path.read_bytes() == committed
+        assert http.post(path.replace("limit=2", "limit=1")).status_code == 409
+        assert http.post(path.replace("first-request", "different-request")).status_code == 409
+        assert http.post(path.replace("&sequence=1", "")).status_code == 400
+        assert http.post(f"{prefix}/runners/runner/heartbeat", json={"metadata": {
+            "poll_receipt": None, "poll_next_sequence": 999, "poll_epoch": "forged",
+            "poll_request_idempotency_version": 0,
+        }}).status_code == 200
+        assert http.post(path).json() == first.json()
+        for task in first.json()["tasks"]:
+            assert http.post(f"{prefix}/runners/runner/tasks/{task['task_id']}/report", json={
+                "assignment_id": task["metadata"]["assignment_id"], "status": "completed",
+            }).status_code == 200
+        next_path = path.replace("first-request", "second-request").replace("sequence=1", "sequence=2")
+        assert http.post(next_path).json()["tasks"] == []
+        assert http.post(next_path).json()["tasks"] == []
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(plan_id="next-plan", tasks=[CompatibilityRunnerTask(
+            task_id="task-3", environment_id="local",
+            runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+        )])))
+        assert http.post(path).status_code == 409
+        assert service._tasks["task-3"].status == "queued"
+        # Normal service re-open preserves receipts; no clock or file is corrupted.
+        app.state.compatibility_runner_service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+        registered = http.post(f"{prefix}/runners/register", json=registration).json()
+        assert registered["metadata"]["poll_epoch"] == epoch
+        assert registered["metadata"]["poll_next_sequence"] == 3
+        assert http.post(next_path).json()["tasks"] == []
+        third_path = path.replace("first-request", "third-request").replace("sequence=1", "sequence=3")
+        assert [task["task_id"] for task in http.post(third_path).json()["tasks"]] == ["task-3"]
+
+
+def test_cli_recovers_committed_poll_after_lost_response_without_reexecution(tmp_path, monkeypatch):
+    """Controlled loss after formal poll commit; no product executor fails."""
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    dropped = False
+    polls = []
+    with TestClient(app) as http:
+        def transport(base_url, path, *, method="GET", payload=None):
+            nonlocal dropped
+            response = http.request(method, path, json=payload)
+            if response.status_code >= 400:
+                raise error.HTTPError(path, response.status_code, "API rejected request", {}, None)
+            if "/tasks/poll?" in path:
+                polls.append(path)
+            if "/tasks/poll?" in path and not dropped:
+                dropped = True
+                raise error.URLError("Controlled loss of committed poll response")
+            return response.json()
+
+        monkeypatch.setattr(runner_client_module, "_json_request", transport)
+        options = {"base_url": "http://test", "runner_id": "runner", "name": "Poll recovery",
+                   "capabilities": ["local_browser"], "devices": [], "max_parallel": 2,
+                   "poll_interval": 1, "executor": "dry-run", "state_file": tmp_path / "client.sqlite3"}
+        client = CompatibilityRunnerClient(**options)
+        client.register()
+        asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+            plan_id="lost-poll-plan", tasks=[CompatibilityRunnerTask(
+                task_id=f"task-{index}", environment_id="local",
+                runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+            ) for index in (1, 2)],
+        )))
+        with pytest.raises(error.URLError):
+            client.run_once()
+        assert all(task.status == "assigned" for task in service._tasks.values())
+        client.close()
+        client = CompatibilityRunnerClient(**options)
+        try:
+            client.register()
+            assert client.run_once() == 2
+            assert all(task.status == "completed" for task in service._tasks.values())
+            assert len(service._artifacts) == 2
+            assert client.journal.entries() == []
+            assert client.journal.pending_poll() is None
+            assert polls[0] == polls[1]
+        finally:
+            client.close()
+
+
+def test_pending_poll_is_not_acknowledged_before_batch_transaction_commits(tmp_path):
+    """Controlled invalid protocol batch verifies the transaction boundary."""
+    path = tmp_path / "client.sqlite3"
+    journal = RunnerJournal(path, base_url="http://test", runner_id="runner")
+    pending = journal.begin_poll(limit=2, sequence=1, epoch="epoch")
+    task = {"task_id": "task", "metadata": {"assignment_id": "assignment"}}
+    try:
+        with pytest.raises(ValueError, match="requires"):
+            journal.complete_poll(pending["request_id"], [task, {"task_id": "missing-identity"}])
+        assert journal.entries() == []
+        assert journal.pending_poll() == pending
+    finally:
+        journal.close()
+    journal = RunnerJournal(path, base_url="http://test", runner_id="runner")
+    try:
+        assert journal.pending_poll() == pending
+        journal.complete_poll(pending["request_id"], [task])
+        assert len(journal.entries()) == 1
+        assert journal.pending_poll() is None
+    finally:
+        journal.close()
+
+
+def test_recreated_runner_rejects_poll_from_previous_registration_epoch(tmp_path):
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as http:
+        prefix = "/api/v1/compatibility"
+        first = http.post(f"{prefix}/runners/register", json={"runner_id": "runner"}).json()
+        epoch = first["metadata"]["poll_epoch"]
+        path = f"{prefix}/runners/runner/tasks/poll?limit=1&request_id=old&sequence=1&epoch={epoch}"
+        assert http.post(path).status_code == 200
+        assert http.post(f"{prefix}/runners/runner/heartbeat", json={"status": "offline"}).status_code == 200
+        deleted = http.post(f"{prefix}/runners/cleanup", json={"runner_ids": ["runner"], "older_than_seconds": 0})
+        assert deleted.json()["runner_ids"] == ["runner"]
+        recreated = http.post(f"{prefix}/runners/register", json={"runner_id": "runner"}).json()
+        assert recreated["metadata"]["poll_epoch"] != epoch
+        assert http.post(path).status_code == 409
 
 
 def test_runner_uses_nested_orchestration_settings_and_accepts_zero_retry_limit(tmp_path):
