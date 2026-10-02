@@ -932,6 +932,8 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile metrics-core
 
 每次执行保留独立的 `artifacts/test-gates/` 报告、源码哈希和 JUnit 结果。真实进程回归使用正式指标路由与 HTTP 中间件的 ASGI 请求，尚不等同于生产 Uvicorn/反向代理和 Prometheus 抓取验收。
 
+MCP 管理专项可执行 `uv run --no-sync python scripts/run_test_quality_gate.py --profile mcp-core`。它验证 JSON/真实 PostgreSQL 配置存储，并通过测试专属本地 MCP SDK 服务验证 stdio 确认、连接、工具发现和调用；需可用 PostgreSQL 与白名单允许当前 Python。确认操作仅保存首次使用许可，真正建立连接须执行重连；第三方服务器与 HTTP/SSE 传输另须验收。
+
 ## 当前进度与下一步
 
 已完成并带测试的骨架：`session + event + snapshot + approval` 协议、LangGraph 编排与 interrupt/resume、Coordinator/Worker 调度、8 种实装测试模式（另有 6 种占位待补 Runner）、54 个 Skill、前端工作台可观测性、知识图谱与 pgvector 记忆、用例驱动八表、UI 录制 P0~P2（契约/存储/注入脚本/三种驱动/固化/审批编排/API/桌面端窗口/回放执行器/录制转草稿/断言建议）。

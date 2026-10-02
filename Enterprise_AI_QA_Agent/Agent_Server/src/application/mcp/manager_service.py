@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from src.application.mcp.errors import (
@@ -25,6 +26,8 @@ from src.schemas.mcp_management import (
     MCPServerRecord,
     MCPServerUpdateRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MCPManagerService:
@@ -89,10 +92,9 @@ class MCPManagerService:
             raise MCPManagementValidationError("Cannot reconnect a disabled MCP server.")
         if self._connection_manager is None:
             raise MCPManagementUnavailableError("MCP Host connection manager is not configured.")
-        try:
-            await self._connection_manager.reconnect(server_key)
-        except Exception:
-            pass
+        logger.info("mcp_reconnect_started", extra={"server_key": server_key})
+        await self._connection_manager.reconnect(server_key)
+        logger.info("mcp_reconnect_completed", extra={"server_key": server_key})
         return self._from_external(record)
 
     async def list_server_tools(self, server_key: str) -> ManagedMCPToolsResponse:

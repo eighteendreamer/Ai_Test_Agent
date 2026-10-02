@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import sys
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -10,6 +12,7 @@ from fastapi import FastAPI
 
 from src.api.routes.registry import router
 from src.application.context.mcp_runtime_service import MCPRuntimeService
+from src.application.mcp.host.connection_manager import McpConnectionManager
 from src.application.mcp.manager_service import MCPManagerService
 from src.application.mcp.runtime_manager import MCPRuntimeManager
 from src.application.mcp.server_store import MCPServerStore, PostgresMCPServerStore
@@ -125,10 +128,9 @@ async def test_missing_host_component_is_unavailable(app_and_store):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("app_and_store", ["json"], indirect=True)
 async def test_invalid_compatibility_catalog_is_not_overwritten(app_and_store):
     app, store = app_and_store
-    if isinstance(store, PostgresMCPServerStore):
-        pytest.skip("JSON compatibility input only; the formal store has no catalog file")
     original = '{"wrong_shape": true}'
     store._catalog_path.write_text(original, encoding="utf-8")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -139,3 +141,76 @@ async def test_invalid_compatibility_catalog_is_not_overwritten(app_and_store):
     assert listed.status_code == created.status_code == 500
     assert listed.json()["detail"] == "MCP management operation failed."
     assert store._catalog_path.read_text(encoding="utf-8") == original
+
+
+def wire_native_host(app, store):
+    manager = app.state.mcp_manager_service
+    settings = manager._runtime_manager._mcp_runtime_service._settings
+    host = McpConnectionManager(settings=settings, mcp_server_store=store)
+    manager._connection_manager = host
+    manager._runtime_manager._connection_manager = host
+    return host, settings
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_native_stdio_reconnect_returns_validation_error(app_and_store, caplog):
+    """Ordinary first-use request: the real guard rejects it before any spawn."""
+    app, store = app_and_store
+    host, settings = wire_native_host(app, store)
+    caplog.set_level(logging.INFO, logger="src.api.routes.registry")
+    command = settings.orchestration.mcp_stdio_command_allowlist[0]
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            created = await client.post("/api/v1/registry/mcp/managed", json={
+                "name": "first-use validation", "transport": "stdio", "command": command,
+            })
+            assert created.status_code == 200, created.text
+            key = created.json()["key"]
+            response = await client.post(f"/api/v1/registry/mcp/managed/{key}/reconnect")
+            assert host.get_state(key).status == "failed"
+            assert not host._transports and not host._sessions
+            assert response.status_code == 400, response.text
+            assert "first-use confirmation" in response.json()["detail"]
+            assert any(record.getMessage() == "mcp_management_input_invalid" and record.operation == "reconnect"
+                       for record in caplog.records)
+    finally:
+        await host.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_native_stdio_reconnect_discovers_and_calls_real_tool(app_and_store, tmp_path):
+    """A temporary local MCP SDK server; no mocked connection or external service."""
+    app, store = app_and_store
+    host, _ = wire_native_host(app, store)
+    script = tmp_path / "normal_mcp_server.py"
+    script.write_text(
+        "from mcp.server.fastmcp import FastMCP\n"
+        "server = FastMCP('normal-local-fixture')\n"
+        "@server.tool()\n"
+        "def echo(text: str) -> str:\n"
+        "    return text\n"
+        "server.run(transport='stdio')\n", encoding="utf-8",
+    )
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            created = await client.post("/api/v1/registry/mcp/managed", json={
+                "name": "normal local server", "transport": "stdio",
+                "command": f'"{sys.executable}"', "args": [f'"{script}"'],
+            })
+            assert created.status_code == 200, created.text
+            path = f"/api/v1/registry/mcp/managed/{created.json()['key']}"
+            confirmed = await client.post(f"{path}/confirm-stdio")
+            assert confirmed.status_code == 200
+            assert confirmed.json()["status"] != "connected"
+            reconnected = await client.post(f"{path}/reconnect")
+            assert reconnected.status_code == 200, reconnected.text
+            assert reconnected.json()["status"] == "connected"
+            tools = await client.get(f"{path}/tools")
+            assert tools.status_code == 200
+            assert [item["name"] for item in tools.json()["tools"]] == ["echo"]
+            result = await client.post(f"{path}/tools/echo/call", json={"arguments": {"text": "normal request"}})
+            assert result.status_code == 200, result.text
+            assert result.json()["ok"] is True
+            assert "normal request" in str(result.json()["result"])
+    finally:
+        await host.shutdown()

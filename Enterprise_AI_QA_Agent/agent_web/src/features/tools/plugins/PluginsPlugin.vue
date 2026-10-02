@@ -419,7 +419,7 @@ async function testMcpServer(server: ManagedMCPServerDescriptor) {
 async function confirmMcpStdio(server: ManagedMCPServerDescriptor) {
   try {
     await api.confirmManagedMcpStdio(server.key);
-    toast.success("stdio MCP 已确认并重新连接", { duration: 2400 });
+    toast.success("stdio MCP 已确认", { duration: 2400 });
     await loadData();
   } catch (err) {
     toast.error(err instanceof Error ? err.message : t("plugins.save_failed"));

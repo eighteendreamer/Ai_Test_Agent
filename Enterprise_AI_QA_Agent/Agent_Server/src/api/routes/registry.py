@@ -12,6 +12,7 @@ from src.application.mcp.errors import (
     MCPManagementValidationError,
     MCPServerNotFoundError,
 )
+from src.application.mcp.security import StdioCommandGuardError
 from src.application.security.upload_security_service import UploadSecurityError
 from src.application.skills.errors import (
     SkillDownloadError,
@@ -53,7 +54,7 @@ def _raise_mcp_management_error(exc: Exception, *, operation: str) -> None:
     if isinstance(exc, MCPServerNotFoundError):
         logger.info("mcp_server_not_found", extra=details)
         raise HTTPException(status_code=404, detail="MCP server not found.") from exc
-    if isinstance(exc, MCPManagementValidationError):
+    if isinstance(exc, (MCPManagementValidationError, StdioCommandGuardError)):
         logger.info("mcp_management_input_invalid", extra=details)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if isinstance(exc, MCPManagementUnavailableError):
