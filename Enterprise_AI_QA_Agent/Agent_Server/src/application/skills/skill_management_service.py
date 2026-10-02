@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import re
 import shutil
-import urllib.request
+import urllib.error
 import urllib.parse
+import urllib.request
 import zipfile
-import base64
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import uuid4
 
 from src.application.security.upload_security_service import UploadSecurityService
-from src.application.skills.errors import SkillPathValidationError
+from src.application.skills.errors import (
+    SkillDownloadError,
+    SkillManagementValidationError,
+    SkillPathValidationError,
+)
 from src.registry.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
@@ -80,9 +86,9 @@ class SkillManagementService:
     def upsert_skill(self, key: str, content: str) -> dict[str, Any]:
         safe_key = self._safe_key(key)
         if not content.strip():
-            raise ValueError("Skill content cannot be empty.")
+            raise SkillManagementValidationError("Skill content cannot be empty.")
         if not self._has_skill_frontmatter(content):
-            raise ValueError("Skill content must start with SKILL.md frontmatter containing name and description.")
+            raise SkillManagementValidationError("Skill content must start with SKILL.md frontmatter containing name and description.")
         skill_dir = self._skills_root / safe_key
         self._ensure_within_root(skill_dir, operation="update")
         skill_dir.mkdir(parents=True, exist_ok=True)
@@ -105,38 +111,39 @@ class SkillManagementService:
     def install_from_path(self, source_path: str, key: str | None = None, overwrite: bool = False) -> dict[str, Any]:
         source = Path(source_path).expanduser().resolve()
         if not source.exists():
-            raise ValueError(f"Source path does not exist: {source}")
+            raise SkillManagementValidationError(f"Source path does not exist: {source}")
         if source.is_file() and source.name.lower() == "skill.md":
             install_key = self._safe_key(key or source.parent.name)
-            return self.upsert_skill(install_key, source.read_text(encoding="utf-8"))
+            return self.upsert_skill(install_key, self._decode_skill_content(source.read_bytes()))
         if source.is_dir():
             skill_file = source / "SKILL.md"
             if not skill_file.exists():
-                raise ValueError(f"Source directory must contain SKILL.md: {source}")
+                raise SkillManagementValidationError(f"Source directory must contain SKILL.md: {source}")
             install_key = self._safe_key(key or source.name)
             return self._copy_skill_dir(source, install_key, overwrite)
         if source.is_file() and source.suffix.lower() == ".zip":
             with TemporaryDirectory() as temp_dir:
-                with zipfile.ZipFile(source) as archive:
-                    self._safe_extract(archive, Path(temp_dir))
+                self._extract_skill_archive(source, Path(temp_dir))
                 return self._install_extracted_skills(Path(temp_dir), key=key, overwrite=overwrite)
-        raise ValueError("Source path must be a skill directory, SKILL.md file, or .zip archive.")
+        raise SkillManagementValidationError("Source path must be a skill directory, SKILL.md file, or .zip archive.")
 
     def install_from_url(self, url: str, key: str | None = None, overwrite: bool = False) -> dict[str, Any]:
         if not url.startswith(("http://", "https://")):
-            raise ValueError("Only http:// and https:// URLs are supported.")
+            raise SkillManagementValidationError("Only http:// and https:// URLs are supported.")
         url = self._normalize_github_skill_url(url)
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "skill-download"
-            with urllib.request.urlopen(url, timeout=30) as response:
-                data = response.read()
+            try:
+                with urllib.request.urlopen(url, timeout=30) as response:
+                    data = response.read()
+            except (urllib.error.URLError, TimeoutError) as exc:
+                raise SkillDownloadError("Skill download failed.") from exc
             if url.lower().endswith(".zip"):
                 zip_path = target.with_suffix(".zip")
                 zip_path.write_bytes(data)
-                with zipfile.ZipFile(zip_path) as archive:
-                    self._safe_extract(archive, target)
+                self._extract_skill_archive(zip_path, target)
                 return self._install_extracted_skills(target, key=key, overwrite=overwrite)
-            content = data.decode("utf-8")
+            content = self._decode_skill_content(data)
             install_key = self._safe_key(key or self._name_from_content(content) or "downloaded-skill")
             return self.upsert_skill(install_key, content)
 
@@ -148,17 +155,19 @@ class SkillManagementService:
         overwrite: bool = False,
     ) -> dict[str, Any]:
         safe_name = Path(filename or "uploaded-skill").name
-        data = base64.b64decode(content_base64)
+        try:
+            data = base64.b64decode(content_base64)
+        except (binascii.Error, ValueError) as exc:
+            raise SkillManagementValidationError("Skill upload must contain valid Base64 data.") from exc
         upload_result = await self._secure_stage_upload(filename=safe_name, content=data)
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / safe_name
             target.write_bytes(data)
             if safe_name.lower().endswith(".zip"):
-                with zipfile.ZipFile(target) as archive:
-                    self._safe_extract(archive, Path(temp_dir) / "extracted")
+                self._extract_skill_archive(target, Path(temp_dir) / "extracted")
                 result = self._install_extracted_skills(Path(temp_dir) / "extracted", key=key, overwrite=overwrite)
                 return self._attach_upload_metadata(result, upload_result)
-            content = data.decode("utf-8")
+            content = self._decode_skill_content(data)
             install_key = self._safe_key(key or self._name_from_content(content) or Path(safe_name).stem)
             result = self.upsert_skill(install_key, content)
             return self._attach_upload_metadata(result, upload_result)
@@ -168,18 +177,18 @@ class SkillManagementService:
         self._ensure_within_root(target, operation="install")
         if target.exists():
             if not overwrite:
-                raise ValueError(f"Skill '{key}' already exists. Pass overwrite=true to replace it.")
+                raise SkillManagementValidationError(f"Skill '{key}' already exists. Pass overwrite=true to replace it.")
             shutil.rmtree(target)
         shutil.copytree(source, target)
         if not (target / "SKILL.md").exists():
-            raise ValueError("Installed skill is invalid because SKILL.md is missing.")
+            raise SkillManagementValidationError("Installed skill is invalid because SKILL.md is missing.")
         self._skill_registry.reload()
         return self.get_skill(key)
 
     def _find_skill_source(self, root: Path) -> Path:
         candidates = self._find_skill_sources(root)
         if not candidates:
-            raise ValueError("Downloaded archive does not contain SKILL.md.")
+            raise SkillManagementValidationError("Downloaded archive does not contain SKILL.md.")
         return candidates[0]
 
     def _find_skill_sources(self, root: Path) -> list[Path]:
@@ -190,9 +199,9 @@ class SkillManagementService:
     def _install_extracted_skills(self, root: Path, key: str | None, overwrite: bool) -> dict[str, Any]:
         sources = self._find_skill_sources(root)
         if not sources:
-            raise ValueError("Downloaded archive does not contain SKILL.md.")
+            raise SkillManagementValidationError("Downloaded archive does not contain SKILL.md.")
         if key and len(sources) > 1:
-            raise ValueError("Cannot use a single custom key when installing multiple skills from one archive.")
+            raise SkillManagementValidationError("Cannot use a single custom key when installing multiple skills from one archive.")
         installed: list[dict[str, Any]] = []
         failed: list[dict[str, str]] = []
         for source in sources:
@@ -265,8 +274,21 @@ class SkillManagementService:
         for member in archive.infolist():
             destination = (target / member.filename).resolve()
             if root != destination and root not in destination.parents:
-                raise ValueError("Refusing to extract archive entry outside target directory.")
+                raise SkillManagementValidationError("Refusing to extract archive entry outside target directory.")
         archive.extractall(target)
+
+    def _extract_skill_archive(self, source: Path, target: Path) -> None:
+        try:
+            with zipfile.ZipFile(source) as archive:
+                self._safe_extract(archive, target)
+        except zipfile.BadZipFile as exc:
+            raise SkillManagementValidationError("Skill package must be a valid ZIP archive.") from exc
+
+    def _decode_skill_content(self, data: bytes) -> str:
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise SkillManagementValidationError("Skill content must use UTF-8 encoding.") from exc
 
     async def _secure_stage_upload(self, *, filename: str, content: bytes) -> dict[str, Any]:
         if self._upload_security_service is None:

@@ -1,17 +1,27 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from src.application.skills.errors import (
+    SkillDownloadError,
+    SkillManagementValidationError,
+)
 from src.application.skills.skill_management_service import SkillManagementService
+
+logger = logging.getLogger(__name__)
 
 
 class SkillMarketplaceService:
@@ -51,7 +61,7 @@ class SkillMarketplaceService:
         elif source_key == "skillsmp":
             items = self._search_skillsmp(query=query, limit=limit)
         else:
-            raise ValueError(f"Unsupported skill marketplace source: {source}")
+            raise SkillManagementValidationError(f"Unsupported skill marketplace source: {source}")
         return {"source": source_key, "query": query, "items": items, "count": len(items)}
 
     def preview(self, source: str, skill_id: str, url: str | None = None) -> dict[str, Any]:
@@ -61,14 +71,11 @@ class SkillMarketplaceService:
             return {**item, "content": item.get("content", "")}
         if source_key == "skillsmp":
             if url and self._is_http_url(url):
-                try:
-                    content = self._download_text(url)
-                except Exception:
-                    content = ""
+                content = self._download_text(url)
             else:
                 content = ""
             return {"source": source_key, "id": skill_id, "url": url or "", "content": content}
-        raise ValueError(f"Unsupported skill marketplace source: {source}")
+        raise SkillManagementValidationError(f"Unsupported skill marketplace source: {source}")
 
     def install(
         self,
@@ -84,7 +91,7 @@ class SkillMarketplaceService:
         if source_key == "skillsmp":
             install_url = url or self._derive_skillsmp_install_url(skill_id)
             if not install_url or not self._is_http_url(install_url):
-                raise ValueError(
+                raise SkillManagementValidationError(
                     "SkillsMP result does not include a downloadable SKILL.md or GitHub source URL. "
                     "Try installing the same skill from its GitHub repository URL."
                 )
@@ -93,7 +100,7 @@ class SkillMarketplaceService:
                 key=key or self._key_from_skillsmp_id(skill_id),
                 overwrite=overwrite,
             )
-        raise ValueError(f"Unsupported skill marketplace source: {source}")
+        raise SkillManagementValidationError(f"Unsupported skill marketplace source: {source}")
 
     def _search_anthropic(self, query: str, limit: int) -> list[dict[str, Any]]:
         items = self._load_anthropic_index()
@@ -126,7 +133,7 @@ class SkillMarketplaceService:
         with TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "anthropic-skills.zip"
             zip_path.write_bytes(data)
-            with zipfile.ZipFile(zip_path) as archive:
+            with self._open_marketplace_archive(zip_path) as archive:
                 for info in archive.infolist():
                     normalized = info.filename.replace("\\", "/")
                     if not normalized.endswith("/SKILL.md") or "/skills/" not in normalized:
@@ -161,7 +168,7 @@ class SkillMarketplaceService:
         for item in self._load_anthropic_index():
             if item.get("id") == safe_id or self._safe_key(str(item.get("id", ""))) == safe_id:
                 return item
-        raise ValueError(f"Anthropic skill not found: {skill_id}")
+        raise SkillManagementValidationError(f"Anthropic skill not found: {skill_id}")
 
     def _install_anthropic(self, skill_id: str, key: str | None, overwrite: bool) -> dict[str, Any]:
         safe_id = self._safe_key(skill_id)
@@ -170,7 +177,7 @@ class SkillMarketplaceService:
             zip_path = Path(temp_dir) / "anthropic-skills.zip"
             extract_root = Path(temp_dir) / "repo"
             zip_path.write_bytes(data)
-            with zipfile.ZipFile(zip_path) as archive:
+            with self._open_marketplace_archive(zip_path) as archive:
                 self._safe_extract(archive, extract_root)
             matches = [
                 path
@@ -178,7 +185,7 @@ class SkillMarketplaceService:
                 if path.parent.name == safe_id and path.parent.parent.name == "skills"
             ]
             if not matches:
-                raise ValueError(f"Anthropic skill not found in downloaded archive: {skill_id}")
+                raise SkillManagementValidationError(f"Anthropic skill not found in downloaded archive: {skill_id}")
             install_key = key or safe_id
             return self._skill_management_service.install_from_path(
                 source_path=str(matches[0].parent),
@@ -251,14 +258,29 @@ class SkillMarketplaceService:
             url,
             headers=headers or {"User-Agent": "Enterprise-AI-QA-Agent/0.1"},
         )
-        with urllib.request.urlopen(request, timeout=45) as response:
-            return response.read()
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                return response.read()
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise SkillDownloadError("Skill marketplace download failed.") from exc
 
     def _download_text(self, url: str) -> str:
         return self._download_bytes(url).decode("utf-8", errors="replace")
 
     def _download_json(self, url: str, headers: dict[str, str]) -> Any:
-        return json.loads(self._download_bytes(url, headers=headers).decode("utf-8"))
+        data = self._download_bytes(url, headers=headers)
+        try:
+            return json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SkillDownloadError("Skill marketplace returned invalid JSON.") from exc
+
+    @contextmanager
+    def _open_marketplace_archive(self, path: Path) -> Iterator[zipfile.ZipFile]:
+        try:
+            with zipfile.ZipFile(path) as archive:
+                yield archive
+        except zipfile.BadZipFile as exc:
+            raise SkillDownloadError("Skill marketplace returned an invalid ZIP archive.") from exc
 
     def _extract_items(self, data: Any) -> list[Any]:
         if isinstance(data, list):
@@ -317,7 +339,11 @@ class SkillMarketplaceService:
                 raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{skill_path}"
                 try:
                     content = self._download_text(raw_url)
-                except Exception:
+                except SkillDownloadError as exc:
+                    logger.info(
+                        "skill_marketplace_candidate_unavailable",
+                        extra={"operation": "derive_install_url", "error_type": type(exc.__cause__).__name__},
+                    )
                     continue
                 if content.lstrip().startswith("---") and "description:" in content:
                     return raw_url
@@ -357,7 +383,7 @@ class SkillMarketplaceService:
     def _safe_key(self, value: str) -> str:
         key = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(value).strip()).strip("-").lower()
         if not key:
-            raise ValueError("Skill key cannot be empty.")
+            raise SkillManagementValidationError("Skill key cannot be empty.")
         return key[:96]
 
     def _safe_source(self, value: str) -> str:
@@ -366,7 +392,7 @@ class SkillMarketplaceService:
             return "anthropic"
         if source in {"skillsmp", "skills-mp"}:
             return "skillsmp"
-        raise ValueError(f"Unsupported marketplace source: {value}")
+        raise SkillManagementValidationError(f"Unsupported marketplace source: {value}")
 
     def _is_http_url(self, value: str) -> bool:
         return value.startswith(("http://", "https://"))
@@ -376,5 +402,5 @@ class SkillMarketplaceService:
         for member in archive.infolist():
             destination = (target / member.filename).resolve()
             if root != destination and root not in destination.parents:
-                raise ValueError("Refusing to extract archive entry outside target directory.")
+                raise SkillDownloadError("Refusing to extract marketplace archive entry outside target directory.")
         archive.extractall(target)

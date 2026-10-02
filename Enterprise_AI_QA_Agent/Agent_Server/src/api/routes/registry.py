@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.error
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -11,7 +12,11 @@ from src.application.mcp.errors import (
     MCPManagementValidationError,
     MCPServerNotFoundError,
 )
-from src.application.skills.errors import SkillPathValidationError
+from src.application.security.upload_security_service import UploadSecurityError
+from src.application.skills.errors import (
+    SkillDownloadError,
+    SkillManagementValidationError,
+)
 from src.schemas.mcp_management import (
     MCPServerCreateRequest,
     MCPServerImportRequest,
@@ -20,6 +25,27 @@ from src.schemas.mcp_management import (
 
 router = APIRouter(prefix="/registry", tags=["registry"])
 logger = logging.getLogger(__name__)
+
+
+def _raise_skill_management_error(exc: Exception, *, operation: str) -> None:
+    details = {"operation": operation, "error_type": type(exc).__name__}
+    if operation == "get" and isinstance(exc, KeyError):
+        logger.info("skill_not_found", extra=details)
+        raise HTTPException(status_code=404, detail="Skill not found.") from exc
+    if isinstance(exc, (SkillManagementValidationError, UploadSecurityError)):
+        logger.info("skill_management_input_invalid", extra=details)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if isinstance(exc, SkillDownloadError):
+        details["cause_type"] = type(exc.__cause__).__name__
+        if isinstance(exc.__cause__, urllib.error.HTTPError):
+            details["upstream_status"] = exc.__cause__.code
+        logger.warning("skill_download_failed", extra=details)
+        raise HTTPException(status_code=502, detail="Skill download failed. Please try again later.") from exc
+    if operation == "get":
+        logger.error("skill_read_failed", extra=details)
+        raise HTTPException(status_code=500, detail="Skill read failed.") from exc
+    logger.error("skill_management_operation_failed", extra=details)
+    raise HTTPException(status_code=500, detail="Skill management operation failed.") from exc
 
 
 def _raise_mcp_management_error(exc: Exception, *, operation: str) -> None:
@@ -153,8 +179,8 @@ async def search_skill_marketplace(
             query=q,
             limit=limit,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="marketplace_search")
 
 
 @router.get("/skills/marketplaces/preview")
@@ -171,8 +197,8 @@ async def preview_skill_marketplace(
             skill_id=skill_id,
             url=url,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="marketplace_preview")
 
 
 @router.post("/skills/marketplaces/install")
@@ -186,39 +212,32 @@ async def install_skill_marketplace(payload: SkillMarketplaceInstallRequest, req
             key=payload.key,
             overwrite=payload.overwrite,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="marketplace_install")
 
 
 @router.get("/skills/{skill_key}")
 async def get_skill(skill_key: str, request: Request):
     try:
         return request.app.state.skill_management_service.get_skill(skill_key)
-    except KeyError as exc:
-        logger.info("skill_not_found", extra={"operation": "get"})
-        raise HTTPException(status_code=404, detail="Skill not found.") from exc
-    except SkillPathValidationError as exc:
-        logger.info("skill_read_input_invalid", extra={"operation": "get", "error_type": type(exc).__name__})
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.error("skill_read_failed", extra={"operation": "get", "error_type": type(exc).__name__})
-        raise HTTPException(status_code=500, detail="Skill read failed.") from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="get")
 
 
 @router.put("/skills/{skill_key}")
 async def upsert_skill(skill_key: str, payload: SkillUpsertRequest, request: Request):
     try:
         return request.app.state.skill_management_service.upsert_skill(skill_key, payload.content)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="update")
 
 
 @router.delete("/skills/{skill_key}")
 async def delete_skill(skill_key: str, request: Request):
     try:
         return request.app.state.skill_management_service.delete_skill(skill_key)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="delete")
 
 
 @router.post("/skills/install")
@@ -238,9 +257,9 @@ async def install_skill(payload: SkillInstallRequest, request: Request):
                 key=payload.key,
                 overwrite=payload.overwrite,
             )
-        raise ValueError("Either source_path or url is required.")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise SkillManagementValidationError("Either source_path or url is required.")
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="install")
 
 
 @router.post("/skills/upload")
@@ -252,8 +271,8 @@ async def upload_skill(payload: SkillUploadRequest, request: Request):
             key=payload.key,
             overwrite=payload.overwrite,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - API boundary logs and classifies failures.
+        _raise_skill_management_error(exc, operation="upload")
 
 
 @router.get("/mcp")
