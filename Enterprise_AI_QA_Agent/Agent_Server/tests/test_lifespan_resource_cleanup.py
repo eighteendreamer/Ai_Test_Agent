@@ -1,13 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from contextlib import AsyncExitStack
+from threading import Event
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 
 from src import main as main_module
+from src.infrastructure import sqlalchemy_runtime
+from src.infrastructure.sqlalchemy_runtime import (
+    dispose_sqlalchemy_engines,
+    iter_engines,
+    mysql_engine,
+    mysql_sessionmaker,
+    postgres_engine,
+    postgres_sessionmaker,
+)
 
 
 @pytest.mark.asyncio
@@ -45,7 +58,7 @@ async def test_startup_failure_closes_all_created_redis_resources(
         return Resource
 
     settings = SimpleNamespace(
-        database=SimpleNamespace(redis_url="redis://unused"),
+        database=main_module.get_settings().database.model_copy(update={"redis_url": "redis://unused"}),
         orchestration=SimpleNamespace(
             redis_task_dispatch_enabled=True,
             redis_task_stream="tasks",
@@ -124,3 +137,103 @@ async def test_shutdown_flushes_after_other_cleanup_failure(
             events.append("running")
 
     assert events == ["running", "close:second", "close:first", "flush"]
+
+
+@pytest.mark.parametrize("database", [
+    pytest.param("postgres", marks=pytest.mark.skipif(
+        os.getenv("RUN_LIVE_POSTGRES_TESTS") != "1", reason="set RUN_LIVE_POSTGRES_TESTS=1",
+    )),
+    pytest.param("mysql", marks=pytest.mark.skipif(
+        os.getenv("RUN_LIVE_MYSQL_TESTS") != "1", reason="set RUN_LIVE_MYSQL_TESTS=1",
+    )),
+])
+@pytest.mark.asyncio
+async def test_lifespan_disposes_only_last_owners_sql_pool(monkeypatch, database):
+    """Formal lifespan and real SQL pool; unrelated business initialization is omitted."""
+    settings = main_module.get_settings().model_copy(deep=True)
+    settings.database.postgres_pool_size = 1
+    other_settings = settings.model_copy(deep=True)
+    other_settings.database.postgres_pool_size = 2
+    other_settings.database.mysql_charset = "utf8" if settings.database.mysql_charset != "utf8" else "utf8mb4"
+    engine_for = postgres_engine if database == "postgres" else mysql_engine
+    factory_for = postgres_sessionmaker if database == "postgres" else mysql_sessionmaker
+    engine = engine_for(settings)
+    other_engine = engine_for(other_settings)
+    factory = factory_for(settings)
+    old_pool = engine.pool
+    other_pool = other_engine.pool
+
+    def read_only_query(selected_engine):
+        with selected_engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT 1").scalar_one() == 1
+
+    async def initialize(_app, _cleanup, _final_cleanup):
+        pass
+
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(main_module, "_initialize_lifespan_resources", initialize)
+    try:
+        await asyncio.to_thread(read_only_query, other_engine)
+        async with main_module.lifespan(FastAPI()):
+            await asyncio.to_thread(read_only_query, engine)
+            assert old_pool.checkedin() == 1
+            async with main_module.lifespan(FastAPI()):
+                assert engine_for(settings) is engine
+                assert factory_for(settings) is factory
+            assert old_pool.checkedin() == 1
+            assert engine_for(settings) is engine
+        assert old_pool.checkedin() == 0, "Application shutdown retained its checked-in SQL connection"
+        assert engine not in iter_engines(database)
+        assert factory_for(settings) is not factory
+        assert engine_for(other_settings) is other_engine
+        assert other_pool.checkedin() == 1
+    finally:
+        # This isolated pytest process owns these read-only pools.
+        dispose_sqlalchemy_engines()
+
+
+@pytest.mark.asyncio
+async def test_sql_pool_cleanup_settles_before_shutdown_cancellation(monkeypatch):
+    """Controlled cancellation of the waiter, not a production database failure."""
+    started, release, finished = Event(), Event(), Event()
+    original_release = sqlalchemy_runtime._release_engine_owners
+
+    def delayed_release(keys):
+        started.set()
+        assert release.wait(timeout=5)
+        original_release(keys)
+        finished.set()
+
+    async def initialize(_app, _cleanup, _final_cleanup):
+        pass
+
+    monkeypatch.setattr(sqlalchemy_runtime, "_release_engine_owners", delayed_release)
+    monkeypatch.setattr(main_module, "_initialize_lifespan_resources", initialize)
+    lifecycle = main_module.lifespan(FastAPI())
+    await lifecycle.__aenter__()
+    shutdown = asyncio.create_task(lifecycle.__aexit__(None, None, None))
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        shutdown.cancel()
+        await asyncio.sleep(0)
+        assert not shutdown.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await shutdown
+        assert finished.is_set()
+    finally:
+        release.set()
+        await asyncio.gather(shutdown, return_exceptions=True)
+
+
+def test_sql_disposal_attempts_other_pool_after_one_failure(monkeypatch, caplog):
+    failed = SimpleNamespace(dispose=Mock(side_effect=RuntimeError("controlled close failure")))
+    healthy = SimpleNamespace(dispose=Mock())
+    monkeypatch.setattr(sqlalchemy_runtime, "_ENGINES", {("mysql",): failed, ("postgres",): healthy})
+    monkeypatch.setattr(sqlalchemy_runtime, "_SESSION_FACTORIES", {})
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError, match="controlled close failure"):
+        dispose_sqlalchemy_engines()
+    failed.dispose.assert_called_once()
+    healthy.dispose.assert_called_once()
+    assert any(record.message == "sqlalchemy_engine_disposal_failed" and record.database == "mysql"
+               for record in caplog.records)

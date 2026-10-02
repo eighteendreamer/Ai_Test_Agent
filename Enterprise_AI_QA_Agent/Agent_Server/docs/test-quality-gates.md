@@ -5,6 +5,7 @@
 ```powershell
 uv run --no-sync python scripts/run_test_quality_gate.py --profile diagnostic
 uv run --no-sync python scripts/run_test_quality_gate.py --profile postgres-core
+uv run --no-sync python scripts/run_test_quality_gate.py --profile sql-lifecycle
 uv run --no-sync python scripts/run_test_quality_gate.py --profile redis-core
 uv run --no-sync python scripts/run_test_quality_gate.py --profile browser-core
 uv run --no-sync python scripts/run_test_quality_gate.py --profile docker-core
@@ -15,6 +16,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile model-hitl
 | --- | --- | --- |
 | diagnostic | 当前 `tests/` 的全部可收集用例，包含本机未入 Git 的用例 | 所有声明的 live 开关关闭；仍有未加开关的本机 Redis 用例，不能当作离线套件。跳过/排除/xfail/未执行记 `partial`，不是全部通过。 |
 | postgres-core | `test_live_compaction_ownership.py` | 真实 PG/Redis 的压缩领取、续租、所有权与向量写入契约；不代表全部数据库或模型链路。 |
+| sql-lifecycle | `test_lifespan_resource_cleanup.py` | 启用 PG/MySQL 开关，只读查询验证正式 lifespan 的池释放、共享所有权及无关配置保留；业务初始化用成功替身，另有受控异常/取消用例，不代表完整业务启动或生产关闭故障复现。 |
 | redis-core | `test_live_redis_task_delivery.py`、`test_live_hot_memory_store.py` | 真实 Redis 队列、毒消息、保留和热记忆契约；按既有测试启用 PG 开关，PG 连接也须可用。 |
 | browser-core | `test_live_browser_lifecycle.py` | 已安装 Chromium 的生命周期、作用域与边界契约；不代表前端 GUI、Electron 或真实模型端到端。 |
 | docker-core | `test_live_resource_leases.py` | 本机 Docker、PG/Redis、测试镜像和资源租约；执行已有集成测试和其测试资源清理。 |

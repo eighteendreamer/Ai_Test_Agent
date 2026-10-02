@@ -163,6 +163,7 @@ from src.application.resources.resource_quota_service import ResourceQuotaServic
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_hot_memory_store import RedisHotMemoryStore
 from src.infrastructure.redis_vector_store import RedisVectorStore
+from src.infrastructure.sqlalchemy_runtime import sqlalchemy_engine_lifespan
 
 
 logger = logging.getLogger(__name__)
@@ -832,6 +833,7 @@ async def _initialize_lifespan_resources(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with AsyncExitStack() as final_cleanup:
+        await final_cleanup.enter_async_context(sqlalchemy_engine_lifespan(get_settings()))
         async with AsyncExitStack() as cleanup:
             try:
                 await _initialize_lifespan_resources(app, cleanup, final_cleanup)

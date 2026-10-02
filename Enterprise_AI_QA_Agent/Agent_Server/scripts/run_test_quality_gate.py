@@ -25,7 +25,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LIVE_FLAGS = (
     "RUN_LIVE_BROWSER_TESTS", "RUN_LIVE_CDP_RECORDING", "RUN_LIVE_DEEP_AGENTS_HITL",
-    "RUN_LIVE_DOCKER_TESTS", "RUN_LIVE_P5_ACCEPTANCE", "RUN_LIVE_POSTGRES_CAPACITY",
+    "RUN_LIVE_DOCKER_TESTS", "RUN_LIVE_MYSQL_TESTS", "RUN_LIVE_P5_ACCEPTANCE", "RUN_LIVE_POSTGRES_CAPACITY",
     "RUN_LIVE_POSTGRES_SOAK", "RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_RECORDING_MEMGRAPH",
     "RUN_LIVE_RECORDING_PG", "RUN_LIVE_REDIS_VECTOR_TESTS", "RUN_LIVE_REPLAY",
     "RUN_LIVE_TEST_CASE_EMBEDDING_TESTS", "RUN_LIVE_VECTOR_REBUILD_PIPELINE_TESTS",
@@ -38,6 +38,10 @@ PROFILES = {
     "postgres-core": {
         "targets": ("tests/test_live_compaction_ownership.py",),
         "flags": ("RUN_LIVE_POSTGRES_TESTS",),
+    },
+    "sql-lifecycle": {
+        "targets": ("tests/test_lifespan_resource_cleanup.py",),
+        "flags": ("RUN_LIVE_POSTGRES_TESTS", "RUN_LIVE_MYSQL_TESTS"),
     },
     "redis-core": {
         "targets": ("tests/test_live_redis_task_delivery.py", "tests/test_live_hot_memory_store.py"),

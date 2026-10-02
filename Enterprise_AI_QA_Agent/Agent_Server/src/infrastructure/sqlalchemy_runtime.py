@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from threading import Lock
 from time import monotonic
 from typing import Any, Literal, Self
@@ -28,6 +29,7 @@ _ENGINE_LOCK = Lock()
 _ENGINES: dict[tuple[Any, ...], Engine] = {}
 _SESSION_FACTORY_LOCK = Lock()
 _SESSION_FACTORIES: dict[tuple[Any, ...], sessionmaker[Session]] = {}
+_ENGINE_OWNERS: dict[tuple[Any, ...], int] = {}
 
 
 def mysql_url(settings: Settings) -> URL:
@@ -203,6 +205,65 @@ class SQLAlchemyCursor:
                 pass
 
 
+@asynccontextmanager
+async def sqlalchemy_engine_lifespan(settings: Settings) -> AsyncIterator[None]:
+    """Retain this application's configured pools until its last lifespan exits."""
+    keys = (_mysql_engine_key(settings), _postgres_engine_key(settings))
+    # No upstream counterpart (checked: postgres_runtime.py, SQLAlchemy Engine Disposal):
+    # shared process caches need application ownership in addition to Engine.dispose().
+    with _ENGINE_LOCK:
+        for key in keys:
+            _ENGINE_OWNERS[key] = _ENGINE_OWNERS.get(key, 0) + 1
+    try:
+        yield
+    finally:
+        # Follow SessionService._settle_execution_tasks: let synchronous pool
+        # shutdown finish before propagating cancellation of its async waiter.
+        closing = asyncio.create_task(asyncio.to_thread(_release_engine_owners, keys))
+        cancelled = False
+        while not closing.done():
+            try:
+                await asyncio.shield(closing)
+            except asyncio.CancelledError:
+                cancelled = True
+        closing.result()
+        if cancelled:
+            raise asyncio.CancelledError
+
+
+def _release_engine_owners(keys: tuple[tuple[Any, ...], ...]) -> None:
+    items = []
+    with _ENGINE_LOCK, _SESSION_FACTORY_LOCK:
+        for key in keys:
+            remaining = _ENGINE_OWNERS[key] - 1
+            if remaining:
+                _ENGINE_OWNERS[key] = remaining
+                continue
+            _ENGINE_OWNERS.pop(key)
+            engine = _ENGINES.pop(key, None)
+            _SESSION_FACTORIES.pop(key, None)
+            if engine is not None:
+                items.append((key, engine))
+    _dispose_engine_items(items)
+    logger.info("sqlalchemy_application_pools_released", extra={"disposed_pool_count": len(items)})
+
+
+def _dispose_engine_items(items: list[tuple[tuple[Any, ...], Engine]]) -> None:
+    error = None
+    for key, engine in items:
+        try:
+            engine.dispose()
+            logger.info("sqlalchemy_engine_disposed", extra={"database": key[0]})
+        except Exception as exc:
+            logger.error("sqlalchemy_engine_disposal_failed", extra={
+                "database": key[0], "error_type": type(exc).__name__,
+            })
+            if error is None:
+                error = exc
+    if error is not None:
+        raise error
+
+
 def dispose_sqlalchemy_engines(database: DatabaseKind | None = None) -> None:
     with _ENGINE_LOCK:
         items = list(_ENGINES.items())
@@ -220,9 +281,7 @@ def dispose_sqlalchemy_engines(database: DatabaseKind | None = None) -> None:
             _SESSION_FACTORIES.clear()
             _SESSION_FACTORIES.update(keep)
 
-    for key, engine in items:
-        if database is None or key[0] == database:
-            engine.dispose()
+    _dispose_engine_items([(key, engine) for key, engine in items if database is None or key[0] == database])
 
 
 def iter_engines(database: DatabaseKind | None = None) -> list[Engine]:
