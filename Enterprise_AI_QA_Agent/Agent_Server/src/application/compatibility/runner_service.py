@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from copy import deepcopy
 from datetime import UTC, datetime
 import json
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,9 @@ from src.schemas.compatibility_runner import (
     CompatibilityTaskRequeueRequest,
     CompatibilityTaskRequeueResponse,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -484,34 +489,9 @@ class CompatibilityRunnerService:
                     if wanted_task_ids:
                         skipped_reasons[task_id] = f"status_{task.status}_not_requeueable"
                     continue
-                retry_history = list(task.metadata.get("retry_history") or [])
-                retry_history.append(
-                    {
-                        "at": now,
-                        "reason": payload.reason,
-                        "previous_status": task.status,
-                        "previous_runner_id": task.assigned_runner_id,
-                        "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
-                        "previous_error": task.error,
-                        "previous_artifact_ids": [artifact.artifact_id for artifact in task.artifacts],
-                    }
+                self._tasks[task_id] = self._build_requeued_task(
+                    task, now=now, reason=payload.reason, source="manual",
                 )
-                updated = task.model_copy(
-                    update={
-                        "status": "queued",
-                        "assigned_runner_id": None,
-                        "result": {},
-                        "artifacts": [],
-                        "error": None,
-                        "updated_at": now,
-                        "metadata": {
-                            **self._clear_mode_call_execution_metadata(task.metadata),
-                            "retry_count": int(task.metadata.get("retry_count") or 0) + 1,
-                            "retry_history": retry_history[-10:],
-                        },
-                    }
-                )
-                self._tasks[task_id] = updated
                 requeued.append(task_id)
             if requeued:
                 for runner_id, runner in list(self._runners.items()):
@@ -842,32 +822,8 @@ class CompatibilityRunnerService:
                 continue
             if task.assigned_runner_id not in stale_runner_ids and task.assigned_runner_id in self._runners:
                 continue
-            retry_history = list(task.metadata.get("retry_history") or [])
-            retry_history.append(
-                {
-                    "at": now,
-                    "reason": "runner_heartbeat_timeout",
-                    "previous_status": task.status,
-                    "previous_runner_id": task.assigned_runner_id,
-                    "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
-                    "previous_error": task.error,
-                    "previous_artifact_ids": [artifact.artifact_id for artifact in task.artifacts],
-                }
-            )
-            self._tasks[task_id] = task.model_copy(
-                update={
-                    "status": "queued",
-                    "assigned_runner_id": None,
-                    "result": {},
-                    "artifacts": [],
-                    "error": None,
-                    "updated_at": now,
-                    "metadata": {
-                        **self._clear_mode_call_execution_metadata(task.metadata),
-                        "retry_count": int(task.metadata.get("retry_count") or 0) + 1,
-                        "retry_history": retry_history[-10:],
-                    },
-                }
+            self._tasks[task_id] = self._build_requeued_task(
+                task, now=now, reason="runner_heartbeat_timeout", source="heartbeat",
             )
             requeued.append(task_id)
         if requeued:
@@ -878,6 +834,47 @@ class CompatibilityRunnerService:
             if persist:
                 self._save_state()
         return requeued
+
+    def _build_requeued_task(
+        self, task: CompatibilityQueuedTask, *, now: str, reason: str, source: str,
+    ) -> CompatibilityQueuedTask:
+        # All three retry paths retire the same evidence value before clearing
+        # current-attempt fields. Keep the existing recent-ten retention policy.
+        retry_history = deepcopy(list(task.metadata.get("retry_history") or []))
+        retry_history.append({
+            "at": now,
+            "reason": reason,
+            "previous_status": task.status,
+            "previous_runner_id": task.assigned_runner_id,
+            "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
+            "previous_error": task.error,
+            "previous_artifact_ids": [artifact.artifact_id for artifact in task.artifacts],
+            "previous_result": deepcopy(task.result),
+            "previous_artifacts": [artifact.model_dump(mode="json") for artifact in task.artifacts],
+            "previous_mode_calls": deepcopy(task.mode_calls),
+            "previous_mode_call_execution": deepcopy({
+                key: value for key, value in task.metadata.items() if key.startswith("mode_calls_execution_")
+            }),
+        })
+        retry_count = int(task.metadata.get("retry_count") or 0) + 1
+        updated = task.model_copy(update={
+            "status": "queued",
+            "assigned_runner_id": None,
+            "result": {},
+            "artifacts": [],
+            "error": None,
+            "updated_at": now,
+            "metadata": {
+                **self._clear_mode_call_execution_metadata(task.metadata),
+                "retry_count": retry_count,
+                "retry_history": retry_history[-10:],
+            },
+        })
+        logger.info("compatibility_task_requeue_staged", extra={
+            "task_id": task.task_id, "requeue_source": source, "retry_count": retry_count,
+            "previous_status": task.status, "previous_artifact_count": len(task.artifacts),
+        })
+        return updated
 
     def _parse_utc_timestamp(self, value: str) -> datetime | None:
         raw = str(value or "").strip()
@@ -1142,31 +1139,8 @@ class CompatibilityRunnerService:
                     task = CompatibilityQueuedTask.model_validate(item)
                     if task.status == "assigned":
                         state_changed = True
-                        retry_history = list(task.metadata.get("retry_history") or [])
-                        retry_history.append(
-                            {
-                                "at": _utc_now(),
-                                "reason": "runner_service_restart",
-                                "previous_status": task.status,
-                                "previous_runner_id": task.assigned_runner_id,
-                                "previous_summary": task.result.get("summary") if isinstance(task.result, dict) else "",
-                                "previous_error": task.error,
-                                "previous_artifact_ids": [artifact.artifact_id for artifact in task.artifacts],
-                            }
-                        )
-                        task = task.model_copy(
-                            update={
-                                "status": "queued",
-                                "assigned_runner_id": None,
-                                "result": {},
-                                "artifacts": [],
-                                "error": None,
-                                "metadata": {
-                                    **self._clear_mode_call_execution_metadata(task.metadata),
-                                    "retry_count": int(task.metadata.get("retry_count") or 0) + 1,
-                                    "retry_history": retry_history[-10:],
-                                },
-                            }
+                        task = self._build_requeued_task(
+                            task, now=_utc_now(), reason="runner_service_restart", source="restart",
                         )
                     self._tasks[task.task_id] = task
                 except Exception:

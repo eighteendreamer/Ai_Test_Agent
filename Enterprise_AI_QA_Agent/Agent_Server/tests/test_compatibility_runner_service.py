@@ -1353,6 +1353,13 @@ async def _exercise_runner_service(root: Path):
     assert tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [
         item.artifact_id for item in completed.artifacts
     ]
+    previous = tasks[0].metadata["retry_history"][-1]
+    assert previous["previous_result"] == completed.result
+    assert previous["previous_artifacts"] == [item.model_dump(mode="json") for item in completed.artifacts]
+    assert previous["previous_mode_call_execution"]["mode_calls_execution_status"] == "completed"
+    restored = CompatibilityRunnerService(settings=_Settings(root))
+    restored_task = (await restored.list_tasks(dispatch_id=dispatch_plan.dispatch_id))[0]
+    assert restored_task.metadata["retry_history"][-1] == previous
     retry_summary = await service.summarize_tasks(dispatch_id=dispatch_plan.dispatch_id)
     assert retry_summary.artifact_count == 0
     retry_report = await service.build_report(dispatch_id=dispatch_plan.dispatch_id)
@@ -1848,6 +1855,10 @@ async def _exercise_runner_restart_recovery(root: Path):
     assert restored_tasks[0].metadata["mode_calls_execution_status"] is None
     assert restored_tasks[0].metadata["mode_calls_execution_runner_id"] is None
     assert restored_tasks[0].metadata["retry_history"][-1]["reason"] == "runner_service_restart"
+    previous = restored_tasks[0].metadata["retry_history"][-1]
+    assert previous["previous_result"] == {"summary": "Partial result before restart."}
+    assert previous["previous_artifacts"] == [restart_artifact.model_dump(mode="json")]
+    assert previous["previous_mode_call_execution"]["mode_calls_execution_status"] == "running"
     assert restored_tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [
         restart_artifact.artifact_id
     ]
@@ -2235,6 +2246,10 @@ async def _exercise_stale_runner_heartbeat_recovery(root: Path):
     ]
     assert recovered_tasks[0].metadata["retry_history"][-1]["previous_summary"] == "Partial result before stale heartbeat."
     assert recovered_tasks[0].metadata["retry_history"][-1]["previous_error"] == "partial_heartbeat_stale_error"
+    previous = recovered_tasks[0].metadata["retry_history"][-1]
+    assert previous["previous_result"] == {"summary": "Partial result before stale heartbeat."}
+    assert previous["previous_artifacts"] == [stale_artifact.model_dump(mode="json")]
+    assert previous["previous_mode_call_execution"]["mode_calls_execution_status"] == "running"
     persisted_state = json.loads((Path(root / "data") / "compatibility" / "runner_state.json").read_text(encoding="utf-8"))
     persisted_task = next(item for item in persisted_state["tasks"] if item["task_id"] == task_id)
     persisted_runner = next(item for item in persisted_state["runners"] if item["runner_id"] == "runner-heartbeat-stale")
