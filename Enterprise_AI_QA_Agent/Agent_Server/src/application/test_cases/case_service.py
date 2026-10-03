@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from src.application.projects.project_service import ProjectService
 from src.application.test_cases.case_store import TestCaseStore
+from src.application.test_cases.template_service import TestCaseTemplateService
 from src.core.request_context import get_request_context, new_id
 from src.schemas.case_management import (
     GeneratedTestCaseBatch,
@@ -51,11 +52,13 @@ class TestCaseService:
         project_service: ProjectService,
         context_provider: TestCaseContextProvider | None = None,
         generator: TestCaseGenerator | None = None,
+        template_service: TestCaseTemplateService | None = None,
     ) -> None:
         self._store = store
         self._project_service = project_service
         self._context_provider = context_provider
         self._generator = generator
+        self._templates = template_service
         self._embedding_task_outbox: dict[str, str] | None = None
 
     def set_embedding_task_outbox(
@@ -83,6 +86,9 @@ class TestCaseService:
         if self._context_provider is None or self._generator is None:
             raise RuntimeError("Test case generation dependencies are not configured")
         context = await self._context_provider.collect(project=project, request=request)
+        template = await self._templates.get(project_id) if self._templates is not None else None
+        if template is not None:
+            context = {**context, "generation_template": template.model_dump(mode="json")}
         batch = GeneratedTestCaseBatch.model_validate(
             await self._generator.generate(request=request, context=context)
         )
@@ -105,6 +111,9 @@ class TestCaseService:
                         assertions=generated.assertions,
                         test_data=generated.test_data,
                         cleanup=generated.cleanup,
+                        content_json=generated.content_json,
+                        execution_notes=generated.execution_notes or (template.payload.execution_notes if template else ""),
+                        generation_metadata={**generated.generation_metadata, **({"template": template.model_dump(mode="json")} if template else {})},
                         source_refs=source_refs,
                         model_key=batch.model_key,
                         prompt_version=batch.prompt_version,
@@ -411,13 +420,22 @@ class TestCaseService:
             "prompt_version": payload.prompt_version,
             "skill_versions": payload.skill_versions,
         }
-        canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        # Keep the exact legacy canonical shape for old-style draft requests.
+        # New JSON and its own instructions are frozen with the version.
+        if payload.content_json is not None:
+            content["content_json"] = payload.content_json
+        if payload.execution_notes:
+            content["execution_notes"] = payload.execution_notes
+        if payload.generation_metadata:
+            content["generation_metadata"] = payload.generation_metadata
+        canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
         return TestCaseVersionRecord(
             id=str(uuid4()),
             case_id=case_id,
             version=version_number,
             content_hash=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
             created_at=created_at,
+            content_format="json-v1" if payload.content_json is not None else "legacy-v1",
             **content,
         )
 

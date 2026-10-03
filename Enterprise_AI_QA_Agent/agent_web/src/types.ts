@@ -1340,6 +1340,10 @@ export interface TestCaseRecord {
 }
 
 export interface TestCaseVersionRecord {
+  content_json?: Record<string, unknown> | null;
+  content_format?: "legacy-v1" | "json-v1";
+  execution_notes?: string;
+  generation_metadata?: Record<string, unknown>;
   id: string;
   case_id: string;
   version: number;
@@ -1355,6 +1359,26 @@ export interface TestCaseVersionRecord {
   skill_versions: Record<string, string>;
   created_at: string;
 }
+
+export interface GenerationTemplatePayload {
+  name: string;
+  writing_guidance: string;
+  execution_notes: string;
+  example_json: Record<string, unknown>;
+}
+
+export interface GenerationTemplateRecord {
+  project_id: string;
+  scope_key: string;
+  revision: number;
+  is_default: boolean;
+  content_hash: string;
+  payload: GenerationTemplatePayload;
+}
+
+export type TestCaseVersionCreateRequest = Pick<TestCaseVersionRecord,
+  "content_json" | "execution_notes" | "generation_metadata" | "preconditions" | "steps" | "assertions" |
+  "test_data" | "cleanup" | "source_refs" | "model_key" | "prompt_version" | "skill_versions">;
 
 export interface TestCaseBundle {
   case: TestCaseRecord;

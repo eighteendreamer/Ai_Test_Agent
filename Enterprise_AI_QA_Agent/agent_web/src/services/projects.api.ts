@@ -11,6 +11,9 @@ import type {
   TestCaseGenerationResponse,
   TestCaseRecord,
   TestCaseVersionRecord,
+  TestCaseVersionCreateRequest,
+  GenerationTemplatePayload,
+  GenerationTemplateRecord,
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
@@ -165,6 +168,18 @@ export function activateTestCase(caseId: string, versionId?: string | null): Pro
 
 export function listTestCaseVersions(caseId: string): Promise<TestCaseVersionRecord[]> {
   return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/versions`);
+}
+
+export function createTestCaseVersion(caseId: string, payload: TestCaseVersionCreateRequest): Promise<TestCaseVersionRecord> {
+  return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/versions`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getTestCaseGenerationTemplate(projectId: string, useDefault = false): Promise<GenerationTemplateRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/test-case-generation-template?use_default=${useDefault}`);
+}
+
+export function saveTestCaseGenerationTemplate(projectId: string, payload: GenerationTemplatePayload): Promise<GenerationTemplateRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/test-case-generation-template`, { method: "PUT", body: JSON.stringify(payload) });
 }
 
 export function listTestSuites(

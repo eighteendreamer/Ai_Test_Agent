@@ -406,6 +406,8 @@ async def _initialize_lifespan_resources(
     model_runtime_service = container.model_runtime_service()
 
     test_case_store = container.test_case_store()
+    test_case_template_service = container.test_case_template_service()
+    await test_case_template_service.initialize()
     test_case_context_provider = container.test_case_context_provider()
     test_case_generator = container.test_case_generator()
     test_case_service = container.test_case_service()
@@ -654,6 +656,7 @@ async def _initialize_lifespan_resources(
     app.state.test_case_context_provider = test_case_context_provider
     app.state.test_case_generator = test_case_generator
     app.state.test_case_service = test_case_service
+    app.state.test_case_template_service = test_case_template_service
     app.state.test_suite_store = test_suite_store
     app.state.test_suite_service = test_suite_service
     app.state.test_run_store = test_run_store

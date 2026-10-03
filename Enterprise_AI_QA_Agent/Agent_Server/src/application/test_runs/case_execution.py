@@ -96,6 +96,10 @@ class CaseExecutionAdapter:
         tool_job_id: str = "",
         server_approval_granted: bool = False,
     ) -> CaseToolInvocation:
+        if version.content_json is not None:
+            raise CaseExecutionBlockedError(
+                "This JSON case requires the Agent execution strategy; the legacy mode-parameter adapter cannot execute it."
+            )
         tool = self._tool_resolver(run.mode_key)
         if tool.owner_mode_key and tool.owner_mode_key != run.mode_key:
             raise ValueError(

@@ -13,10 +13,46 @@ from src.schemas.case_management import (
     TestCaseRecord,
     TestCaseVersionCreateRequest,
     TestCaseVersionRecord,
+    TestCaseDraftCreateRequest,
+    TestCaseBundle,
+    GenerationTemplatePayload,
+    GenerationTemplateRecord,
 )
 
 
 router = APIRouter(tags=["test-cases"])
+
+
+@router.get("/projects/{project_id}/test-case-generation-template", response_model=GenerationTemplateRecord)
+async def get_generation_template(project_id: str, request: Request, use_default: bool = False):
+    try:
+        return await request.app.state.test_case_template_service.get(project_id, use_default=use_default)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.put("/projects/{project_id}/test-case-generation-template", response_model=GenerationTemplateRecord)
+async def save_generation_template(project_id: str, payload: GenerationTemplatePayload, request: Request):
+    try:
+        return await request.app.state.test_case_template_service.save(project_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/test-cases", response_model=TestCaseBundle, status_code=201)
+async def create_test_case_draft(project_id: str, payload: TestCaseDraftCreateRequest, request: Request):
+    try:
+        return await request.app.state.test_case_service.create_draft(project_id=project_id, payload=payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/projects/{project_id}/test-cases", response_model=TestCasePage)

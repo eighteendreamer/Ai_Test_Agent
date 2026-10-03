@@ -301,6 +301,10 @@ class TestCaseEmbeddingService:
             # retrieval without sending their values to an Embedding provider.
             "test_data_keys": sorted(str(key) for key in version.test_data),
         }
+        if version.content_json is not None:
+            # Custom JSON may carry credentials anywhere. Recall by governance
+            # and structure; retrieve full versions only inside the project.
+            payload["content_keys"] = sorted(version.content_json)
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))[
             :8000
         ]

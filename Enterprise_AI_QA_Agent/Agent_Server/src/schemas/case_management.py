@@ -1,13 +1,32 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
 TestCaseLifecycleStatus = Literal["draft", "pending_review", "active", "disabled", "archived"]
 TestCasePriority = Literal["P0", "P1", "P2", "P3"]
+
+
+class GenerationTemplatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    writing_guidance: str = Field(min_length=1, max_length=20000)
+    execution_notes: str = Field(default="", max_length=20000)
+    example_json: dict[str, JsonValue] = Field(min_length=1)
+
+
+class GenerationTemplateRecord(BaseModel):
+    project_id: str
+    scope_key: str
+    revision: int
+    is_default: bool
+    content_hash: str
+    payload: GenerationTemplatePayload
 
 
 class TestCaseSourceRef(BaseModel):
@@ -58,15 +77,38 @@ class TestCaseRecord(BaseModel):
     archived_at: datetime | None = None
 
 
-class TestCaseVersionRecord(BaseModel):
+class _CaseBusinessContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_json: dict[str, JsonValue] | None = Field(default=None, min_length=1)
+    execution_notes: str = Field(default="", max_length=20000)
+    generation_metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    preconditions: list[str] = Field(default_factory=list)
+    steps: list[TestCaseStep] = Field(default_factory=list)
+    assertions: list[TestCaseAssertion] = Field(default_factory=list)
+    test_data: dict[str, Any] = Field(default_factory=dict)
+    cleanup: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_business_content(self):
+        if self.content_json is None and (not self.steps or not self.assertions):
+            raise ValueError("Legacy test cases require steps and assertions; JSON cases require content_json")
+        return self
+
+    def business_content(self) -> dict[str, Any]:
+        """Compatibility projection; never rewrites historical records or hashes."""
+        if self.content_json is not None:
+            return deepcopy(self.content_json)
+        return self.model_dump(mode="json", include={"preconditions", "steps", "assertions", "test_data", "cleanup"})
+
+
+class TestCaseVersionRecord(_CaseBusinessContent):
+    model_config = ConfigDict(extra="ignore")
+
+    content_format: Literal["legacy-v1", "json-v1"] = "legacy-v1"
     id: str
     case_id: str
     version: int = Field(ge=1)
-    preconditions: list[str] = Field(default_factory=list)
-    steps: list[TestCaseStep] = Field(min_length=1)
-    assertions: list[TestCaseAssertion] = Field(min_length=1)
-    test_data: dict[str, Any] = Field(default_factory=dict)
-    cleanup: list[str] = Field(default_factory=list)
     content_hash: str = Field(min_length=64, max_length=64)
     source_refs: list[TestCaseSourceRef] = Field(min_length=1)
     model_key: str = Field(min_length=1, max_length=160)
@@ -75,14 +117,9 @@ class TestCaseVersionRecord(BaseModel):
     created_at: datetime
 
 
-class _VersionContentRequest(BaseModel):
+class _VersionContentRequest(_CaseBusinessContent):
     model_config = ConfigDict(extra="forbid")
 
-    preconditions: list[str] = Field(default_factory=list)
-    steps: list[TestCaseStep] = Field(min_length=1)
-    assertions: list[TestCaseAssertion] = Field(min_length=1)
-    test_data: dict[str, Any] = Field(default_factory=dict)
-    cleanup: list[str] = Field(default_factory=list)
     source_refs: list[TestCaseSourceRef] = Field(min_length=1)
     model_key: str = Field(min_length=1, max_length=160)
     prompt_version: str = Field(min_length=1, max_length=160)
@@ -126,18 +163,13 @@ class TestCaseGenerateRequest(BaseModel):
     max_cases: int = Field(default=30, ge=1, le=200)
 
 
-class GeneratedTestCaseDraft(BaseModel):
+class GeneratedTestCaseDraft(_CaseBusinessContent):
     model_config = ConfigDict(extra="forbid")
 
     case_key: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     title: str = Field(min_length=1, max_length=300)
     case_type: str = Field(min_length=1, max_length=80)
     priority: TestCasePriority = "P1"
-    preconditions: list[str] = Field(default_factory=list)
-    steps: list[TestCaseStep] = Field(min_length=1)
-    assertions: list[TestCaseAssertion] = Field(min_length=1)
-    test_data: dict[str, Any] = Field(default_factory=dict)
-    cleanup: list[str] = Field(default_factory=list)
 
 
 class GeneratedTestCaseBatch(BaseModel):

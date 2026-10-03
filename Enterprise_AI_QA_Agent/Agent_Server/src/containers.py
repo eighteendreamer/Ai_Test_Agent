@@ -51,6 +51,7 @@ from src.application.skills.skill_marketplace_service import SkillMarketplaceSer
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.task_pool_service import TaskPoolService
 from src.application.test_cases.case_service import TestCaseService
+from src.application.test_cases.template_service import TestCaseTemplateService
 from src.application.test_cases.case_store import PostgresTestCaseStore
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_cases.generation_pipeline import (
@@ -282,6 +283,9 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # ── Test engineering ─────────────────────────────────────────────
+    test_case_template_service = providers.Singleton(
+        TestCaseTemplateService, store=application_config_store, project_service=project_service,
+    )
     test_case_context_provider = providers.Singleton(
         ProjectTestCaseContextProvider,
         api_docs_service=api_docs_service,
@@ -299,6 +303,7 @@ class AppContainer(containers.DeclarativeContainer):
         project_service=project_service,
         context_provider=test_case_context_provider,
         generator=test_case_generator,
+        template_service=test_case_template_service,
     )
     test_case_embedding_service = providers.Singleton(
         TestCaseEmbeddingService,

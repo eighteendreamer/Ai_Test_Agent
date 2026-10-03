@@ -5,6 +5,8 @@ import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../services/api";
 import ProjectExecutionDashboard from "../features/projects/ProjectExecutionDashboard.vue";
+import TestCaseTemplateEditor from "../features/projects/TestCaseTemplateEditor.vue";
+import TestCaseContentDialog from "../features/projects/TestCaseContentDialog.vue";
 import { waitingReasonLabel } from "../features/projects/executionLabels";
 import { formatServerDateTime } from "../utils/datetime";
 import type {
@@ -99,6 +101,8 @@ const regressionBatchNextCursor = ref<string | null>(null);
 const regressionBatchesLoading = ref(false);
 
 const generationOpen = ref(false);
+const templateEditorOpen = ref(false);
+const contentCase = ref<TestCaseRecord | null>(null);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
 
@@ -221,6 +225,8 @@ function resetProjectResources() {
   regressionContext.value = null;
   regressionBatches.value = [];
   selectedCasesById.value = {};
+  templateEditorOpen.value = false;
+  contentCase.value = null;
   runDetail.value = null;
   runDetailOpen.value = false;
 }
@@ -965,6 +971,7 @@ watch(routeProjectId, async (projectId) => {
 
           <template v-if="resourceTab === 'cases'">
             <div class="case-toolbar">
+              <button :disabled="selected?.status !== 'active'" @click="templateEditorOpen = true">用例生成模板</button>
               <input v-model="caseQuery" placeholder="搜索用例标识或标题" @keyup.enter="searchCases">
               <select v-model="caseStatus" @change="searchCases">
                 <option value="">全部状态</option>
@@ -998,6 +1005,7 @@ watch(routeProjectId, async (projectId) => {
                       <small>最新 v{{ testCase.latest_version }}</small>
                     </td>
                     <td class="row-actions">
+                      <button @click="contentCase = testCase">查看内容</button>
                       <button v-if="testCase.lifecycle_status === 'draft'" :disabled="actionCaseId === testCase.id" @click="submitReview(testCase)">提交评审</button>
                       <button v-if="testCase.lifecycle_status === 'pending_review'" @click="openActivation(testCase)">启用版本</button>
                       <span v-if="testCase.lifecycle_status !== 'draft' && testCase.lifecycle_status !== 'pending_review'">—</span>
@@ -1180,9 +1188,13 @@ watch(routeProjectId, async (projectId) => {
         <label>生成目标<textarea v-model="generationForm.objective" rows="5" placeholder="描述本次需要覆盖的业务目标、范围与通过标准"></textarea></label>
         <label>测试模式<select v-model="generationForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
         <label>模型标识（可选）<input v-model="generationForm.model_key" placeholder="留空使用服务端默认模型"></label>
+        <p>使用当前项目的生成模板；模板内容与版本将作为本次生成依据保存。</p>
         <footer><button @click="generationOpen = false">取消</button><button class="primary" :disabled="generating || !hasGenerationSources" @click="generateCases">{{ generating ? "生成中…" : "生成草稿" }}</button></footer>
       </section>
     </div>
+
+    <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
+    <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
 
     <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">
       <section class="editor version-editor">

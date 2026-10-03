@@ -212,6 +212,15 @@ class ModelTestCaseGenerator:
             "Assertions must be observable and mode-appropriate.\n"
             f"JSON Schema: {output_schema}"
         )
+        template = context.get("generation_template")
+        if isinstance(template, dict):
+            system_prompt += (
+                "\nProject generation template (authoring only): "
+                + json.dumps(template["payload"], ensure_ascii=False)
+                + "\nPut every complete case's business content in content_json. Preserve custom nested fields. "
+                  "Keep case_key/title/case_type/priority in the outer governance envelope. "
+                  "Include execution_notes that make the case understandable independently of the template."
+            )
         model_request = ModelInvocationRequest(
             system_prompt=system_prompt,
             messages=[
@@ -233,9 +242,11 @@ class ModelTestCaseGenerator:
         )
         result = await self._models.invoke(model_key, model_request)
         payload = self._parse_payload(str(result.text or ""))
+        if isinstance(template, dict) and any(case.content_json is None for case in payload.cases):
+            raise ValueError("Model did not return content_json required by the project generation template")
         return GeneratedTestCaseBatch(
             model_key=model_key,
-            prompt_version=PROMPT_VERSION,
+            prompt_version="test-case-generation-json-v2" if isinstance(template, dict) else PROMPT_VERSION,
             skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"},
             cases=payload.cases[: request.max_cases],
             warnings=payload.warnings,
