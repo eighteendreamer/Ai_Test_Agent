@@ -28,7 +28,7 @@
 | P2 选取 | 自由/按用例依据分离；项目内召回、完整读取、AI 选择、无匹配明确返回 | 已实现独立项目规划服务与页面，完整版本、跨历史模式、项目隔离、固定计划保存及重读已验证；执行上下文与图状态已接入，公开保存计划启动 API/UI 已验证实际存储和浏览器断线重试。持久规划任务、专属 Worker CLI 和任务池已接通，具体范围见下方记录；完整生产启动和默认模型仍待验收 |
 | P2 补全 | AI 语义检查、项目查证、正式依赖或运行准备、负向条件保留、缺口可见 | 只读查询、正式依赖/准备结构、引用与拓扑校验、有界校验反馈已实现；专项 21 通过。当前真实模型三场景测试 1 通过，实际组件/HTTP/三种存储浏览器 1 通过，不等同实际 Agent 执行 |
 | P2 回归持久规划 | 固定父运行/失败/版本，复用持久任务与共享内核，按原身份找回及保存计划启动 | 本轮后端 92 通过、1 外部模型项跳过，前端 23 通过及构建通过；真实 Chromium 弹窗/ProjectsView 2 通过、概览 provider 补验 1 通过；生产规划 CLI 中断恢复 1 通过。完整 API/测试执行进程及默认模型仍未验收，详见文末 |
-| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。Agent 新回归及公开保存计划启动已接通，真实 Redis/Outbox/Worker 类与 Agent 审批/HTTP 结果专项通过，详见下方最新记录；默认模型目标回执验收仍失败，独立 Redis 执行进程/完整启动、其他模式真实工具、步骤级恢复/未知效果核对及计划修订仍待完成 |
+| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。Agent 新回归及公开保存计划启动已接通，真实 Redis/Outbox/Worker 类与 Agent 审批/HTTP 结果专项通过，详见下方最新记录；默认模型目标回执验收仍失败；本轮完整 API lifespan/独立执行 CLI 的 API 场景与创建后重启已通过，其他模式真实工具、步骤级恢复/未知效果核对及计划修订仍待完成 |
 | P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 待实施 |
 | P3 Git | 独立可选只读入口；明确关联才导入为已有文档版本；上传不依赖 Git | 待实施 |
 | P3 解析 | MD/python-docx/pypdf 工厂、统一结构/位置/版本/警告、独立受限进程；Docling 仅扩展入口 | 待实施 |
@@ -1005,3 +1005,41 @@ npm run build
 业务记录留在 PostgreSQL JSON，配置仍使用既有 MySQL 域，没有新增依赖、配置或数据库表。派发沿用现有规划流和 Worker。CLI 原始专项在本阶段前半段实际运行；末轮没有重复执行同一 CLI 专项。规划模型决定受控，本阶段未执行整个生产 API lifespan、外部默认模型或目标 Agent 业务测试；资源监控未配置不计为通过。完整 P0—P5 保持未完成，包括真实默认模型回执、测试执行 Worker、步骤级准备恢复/未知副作用、模块生成、P0 录制/Docker、P3—P5 和遗留业务数据迁移。
 
 直接更新用户粘贴方案、项目 PLAN 和实施记录，Codex 计划镜像同步。重新核对上传代码没有 Git 调用；独立原件/版本、解析工厂、确定性差异和可选 Git 的设计保持一致。15 个相关 Python 源码/测试实际 py_compile 通过，仅作为补充检查。共享规划回归测试产生的历史命名证据另存为 `p2-regression-planning-shared-kernel-cli.json` 和 `p2-regression-planning-shared-kernel-probe.json`，原 `p2-planning-worker-cli.json` 从 HEAD 按字节恢复；原始失败 XML 保留，不为消除 pytest 输出空白而改写。
+
+## 完整 API 与执行 Worker CLI 验收（2026-10-04）
+
+本轮先核对 `run_redis_worker.py`、`main.py` 完整生命周期、规划/运行/审批服务、Session 图及工具消费者。执行 Worker 确实需要现有 Agent 图与工具服务；实际启动没有取得要求拆分其生命周期的失败证据，因此保留现有入口。规划 Worker 继续使用既有只读专属生命周期。
+
+新增 `tests/test_execution_worker_cli.py`，实际启动生产 `uvicorn src.main:app` 与 `python -m src.cli.run_redis_worker --once`，不替换生产 AppContainer provider。创建独立 PostgreSQL 数据库（完整启动含固定名称 smoke 表）、隔离 MySQL 配置表及独立 Redis Docker 容器；真实 RustFS 保存上传的 Markdown 文件并比对原件字节。用生产路由创建/评审/启用包含 false、0、null 的完整 JSON 用例、规划并启动固定运行，Outbox 实际发送到 Redis。
+
+验收结果：执行 CLI 首次运行进入真实待审批，尚未产生业务操作；停止 API 后重启，原运行及审批保留。同一创建请求返回原运行。逐项批准后真实 HTTP 创建→查询→删除；创建成功且下一项待审批时再次重启，订单、原审批和工具证据保留，没有再次创建。最终 PostgreSQL 结果为 passed，订单已清理。终态消息再次投递后运行独立 CLI，无新增模型/业务请求，结果保持不变。
+
+| 证据 | 实际结果 | 范围 |
+|---|---|---|
+| `p2-execution-worker-cli-final.xml/json` | 1 通过，42.74 秒 | 完整 API lifespan、独立执行 CLI、真实 MySQL/PG/RustFS/Redis、Agent 图、三次审批及实际工具 HTTP；5 次模型请求、3 次业务请求，重投新增 0 |
+| `p2-execution-worker-cli-regression.xml` | 86 通过、4 跳过，161.38 秒 | 执行、Session、结果核验、派发、入口及生命周期已有测试；启用正式运行/规划真实存储开关 |
+| `p2-execution-worker-cli-regression-supplement.xml` | 3 通过、33 未选择，7.22 秒 | 补验上行跳过的真实 Redis Worker 类及 PG/MySQL 池生命周期；剩余 1 项外部默认模型未执行 |
+| `p2-execution-worker-cli-probe/` | 保留全部五个子进程 stdout/stderr、输入文件、HTTP 调用及 Docker 输出 | 原始过程证据；只清理本次创建的数据库、配置表、容器和已登记原件对象 |
+
+受控 HTTP 模型提供工具决策与结构化回执，SDK/流式传输和实际工具执行仍使用产品代码。夹具关闭向量召回与语义意图识别，仅用于固定测试输入；没有改生产默认配置。未验收默认外部模型、未知副作用查询、所有步骤级恢复、执行中计划修订、其他模式/完整产品页及全部署。不把此 API 场景扩大为 P0—P5 完成，也不声称已实现新文档 V1/V2、解析或差异。
+
+原始失败 XML 保留：`first` 是夹具误写 LangSmith 字段；`startup` 是夹具 transport 枚举错误；`runtime` 是夹具不支持真实 Agent SSE，500 导致业务运行 error。按实际契约修正夹具后 `approval` 为 1 通过（33.92 秒），再补创建成功后的重启和持久证据输出，最终通过。未据这些夹具错误修改产品代码；临时目录中的早期子进程日志已被 pytest 轮转清理，早期失败以 XML 为留存证据，最终完整日志已保存。
+
+数据库隔离方式依据 [PostgreSQL CREATE DATABASE](https://www.postgresql.org/docs/current/sql-createdatabase.html) 的独立数据库及非事务要求，连接 autocommit 依据 [SQLAlchemy 连接文档](https://docs.sqlalchemy.org/en/20/core/connections.html#setting-isolation-level-or-dbapi-autocommit-for-a-connection)。Docker 使用已缓存镜像中的实际 redis-server，不拉取新镜像。没有新增产品依赖、配置域或业务表，也没有执行生产迁移。
+
+复现命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_TEST_GATE_OUTPUT_DIR=(Resolve-Path '..\docs\upgrade_2026-10-03').Path
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_execution_worker_cli.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-execution-worker-cli-final.xml
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_agent_case_assessment.py tests/test_redis_worker_entrypoint.py tests/test_redis_execution_dispatcher.py tests/test_lifespan_resource_cleanup.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p2-execution-worker-cli-regression.xml
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_execution.py tests/test_lifespan_resource_cleanup.py -q --tb=short -rs -k 'public_plan_launch_outbox or last_owners_sql_pool' --junitxml=../docs/upgrade_2026-10-03/p2-execution-worker-cli-regression-supplement.xml
+```
+
+本轮只新增功能验收测试、过程证据并更新方案与实施记录。测试文件编译、文档本地链接、镜像一致性、XML 计数和 Git diff 另核对；前端及产品源码没有变更，未重复构建前端。用户 `.gitignore` 保持未暂存，不提交无关文件。完整目标保持 active。

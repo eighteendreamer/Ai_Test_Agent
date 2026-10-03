@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="5.331" timestamp="2026-10-04T07:42:31.606511+08:00" hostname="EIghteen"><testcase classname="tests.test_execution_worker_cli" name="test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay" time="0.523"><failure message="ValueError: &quot;LangSmithConfig&quot; object has no field &quot;tracing_enabled&quot;">tests\test_execution_worker_cli.py:319: in test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay
+    async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_execution_worker_cli.py:108: in isolated_runtime
+    settings.langsmith.tracing_enabled = False
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1048: in __setattr__
+    elif (setattr_handler := self._setattr_handler(name, value)) is not None:
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1095: in _setattr_handler
+    raise ValueError(f'"{cls.__name__}" object has no field "{name}"')
+E   ValueError: "LangSmithConfig" object has no field "tracing_enabled"</failure></testcase></testsuite></testsuites>
