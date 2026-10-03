@@ -20,6 +20,7 @@ from src.modes.smoke_testing_mode.prompt_contract import SMOKE_TESTING_PROMPT_CO
 from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CONTRACT
 from src.schemas.prompting import PromptAssemblyResult, PromptSection
 from src.schemas.case_execution import AgentCaseExecutionContext
+from src.application.test_runs.agent_case_contract import case_result_contract
 from src.schemas.settings import GeneralSettingsPayload
 
 # Language display names for the output language instruction.
@@ -475,6 +476,12 @@ class PromptAssemblyService:
                 metadata={"project_id": frozen.project_id, "run_id": frozen.run_id,
                     "run_item_id": frozen.run_item_id, "plan_id": frozen.plan_id, "trusted": False},
             ))
+            if context_bundle.get("case_assessment_requested") is True:
+                sections.append(PromptSection(
+                    key="case_result_contract", title="Evidence-backed Case Result Receipt",
+                    source="test_runs.agent_execution", cache_scope="dynamic", priority=85,
+                    content="After execution, " + case_result_contract(),
+                ))
         test_case_blocks = (list(state.get("test_case_prompt_blocks") or [])
             if execution_basis not in {"free", "cases"} else [])
         if test_case_blocks:

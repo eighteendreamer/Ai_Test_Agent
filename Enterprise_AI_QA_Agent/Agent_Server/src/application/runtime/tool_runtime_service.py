@@ -159,6 +159,17 @@ class ToolExecutionContext:
     approval_scope_hash: str = ""
     trusted_case_run_item_id: str = ""
 
+    def job_metadata(self) -> dict[str, Any]:
+        """Persist server-owned run identity; never derive it from tool arguments."""
+        metadata = {"selected_agent_key": self.selected_agent_key, "selected_model_key": self.selected_model_key}
+        for key in ("project_id", "run_id", "run_item_id", "attempt_id"):
+            value = self.context_bundle.get(key)
+            if key == "run_id" and not value:
+                value = self.context_bundle.get("test_run_id")
+            if isinstance(value, str) and value:
+                metadata[key] = value
+        return metadata
+
 
 class ToolRuntimeService:
     def __init__(
@@ -535,10 +546,7 @@ class ToolRuntimeService:
                         turn_id=context.turn_id,
                         trace_id=context.trace_id,
                         input_payload=call.arguments,
-                        metadata={
-                            "selected_agent_key": context.selected_agent_key,
-                            "selected_model_key": context.selected_model_key,
-                        },
+                        metadata=context.job_metadata(),
                     )
                 await self._tool_job_service.mark_running(job)
                 job_heartbeat_stop = asyncio.Event()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
@@ -49,3 +49,45 @@ class AgentCaseExecutionContext(PlanningModel):
             "execution_basis": "cases",
             "case_execution": self.model_dump(mode="json"),
         }
+
+
+class CaseToolEvidenceReference(PlanningModel):
+    call_id: str = Field(min_length=1, max_length=256)
+    output_path_tokens: list[str] = Field(default_factory=list, max_length=32)
+
+
+class CaseExecutionCheck(PlanningModel):
+    name: str = Field(min_length=1, max_length=240)
+    expected_path_tokens: list[str] = Field(max_length=32)
+    observations: list[CaseToolEvidenceReference] = Field(min_length=1, max_length=20)
+    operator: Literal["equals", "not_equals", "contains", "not_contains", "lt", "lte", "gt", "gte", "semantic"]
+    verdict: Literal["passed", "failed", "not_run"] | None = None
+    reason: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="after")
+    def check_method(self):
+        if self.operator == "semantic" and (self.verdict is None or not self.reason.strip()):
+            raise ValueError("语义检查必须声明判定和依据说明")
+        if self.operator != "semantic" and len(self.observations) != 1:
+            raise ValueError("确定性比较需要且只能引用一个实际值")
+        return self
+
+
+class CaseStepReceipt(PlanningModel):
+    item_key: str = Field(min_length=1, max_length=80)
+    status: Literal["passed", "failed", "error", "blocked", "skipped"]
+    summary: str = Field(min_length=1, max_length=4000)
+    checks: list[CaseExecutionCheck] = Field(default_factory=list, max_length=200)
+    outputs: dict[str, CaseToolEvidenceReference] = Field(default_factory=dict)
+    output_source: CaseToolEvidenceReference | None = None
+
+    @model_validator(mode="after")
+    def one_output_shape(self):
+        if self.output_source is not None and self.outputs:
+            raise ValueError("输出不能同时声明完整对象来源和字段映射")
+        return self
+
+
+class AgentCaseExecutionReceipt(PlanningModel):
+    schema_version: Literal[1] = 1
+    steps: list[CaseStepReceipt] = Field(min_length=1, max_length=200)

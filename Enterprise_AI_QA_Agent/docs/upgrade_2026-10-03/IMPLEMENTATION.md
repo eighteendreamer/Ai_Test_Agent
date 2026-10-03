@@ -467,3 +467,53 @@ PLAN.md 开头改为用户要求与正文设计的对应表，清除多轮修订
 ```
 
 此验证仍限于现有上传相关行为，不证明新文档版本及真实 RustFS/PostgreSQL 的 V1/V2 功能。方案本地链接、关键约定、文档 diff 及所选 Codex 计划字节一致性另行检查。只提交本轮 PLAN.md 与本记录，保留用户的 .gitignore 修改；原粘贴附件保持原样。本次没有数据库迁移，未重新执行前端构建、生产启动、浏览器、真实模型或业务工具验收，P0—P5 的剩余实施范围保持原记录。
+
+### P2b 工具证据归属、结果回执与真实 HTTP 验证（2026-10-04）
+
+本步骤仍承接完整 P0—P5 目标。先读取用户方案附件、现有运行执行服务、单工具适配器、Runtime/Session、ToolRuntime/ToolJob、审批和治理路径、验证服务、实际 API runner，并查阅本地《Agent测试专项》《Agent轨迹与协议鲁棒性》。确认任意业务 JSON 的多工具结果无法由旧模式参数编译器或工具 completed 状态代替；缺的是实际输出到固定预期的证据关联。先补内部结果契约，没有把旧适配器开放为 Agent 策略。
+
+依据 → 实现：
+
+- `AgentCaseExecutionReceipt` 为每项正式用例和所属准备/清理保存状态、检查及输出引用。预期路径指向固定用例 JSON 或准备说明，实际路径指向本次已保存 ToolJob 完整输出。模型不能直接提供 actual 值；允许字段引用或完整对象引用，两者不能混用。
+- 新 `AgentCaseAssessmentService` 逐一核对项目、运行、条目、attempt、会话、turn、call、工具身份及 ToolJob 终态，读取持久化结果；不使用前端摘要、计划示例或模型伪造值。缺失路径、外部运行、未结束工作、遗漏/重复项明确拒绝。null 可作为确定性检查值；必要依赖是否接受 null 仍由运行的既有必要输出契约决定。
+- 复用现有 VerificationService 的比较算子。语义检查保留 verdict、理由和实际观察引用，标为 AI 判断，不声称由确定性程序验证业务含义。无检查不能证明通过；固定用例验证点覆盖是否完整仍依赖模型读取全部内容，服务不从任意 JSON 自动推断所有业务断言。准备状态与正式目标独立保存，清理失败使汇总失败并保留目标状态；完整工具记录从数据库重建。
+- ToolExecutionContext 统一提供服务端运行身份元数据，普通执行、图审批、治理执行/审批路径同步使用。工具参数中的项目 ID 不能改变归属。没有将历史 ToolJob 自动重写为新身份，也没有将整份业务上下文塞入元数据。
+- 提示词仅在 `case_assessment_requested=True` 时加入回执契约。独立只读判定入口不给模型工具；请求可以只包含指定执行项，保持其完整预期和可信工具输出，最终合并后仍须核对所有执行项。解析器核对调用成功、工具调用及输出结束原因，只解析完整 JSON；拒绝截断，不修补模型输出。
+
+确认并修复的产品缺陷：实际 HTTP 响应中的数字 0 被旧 Python 比较判为满足 JSON false。先保存失败回归 `p2-agent-assessment-boolean-before.xml`，再让 equals/not_equals 及列表 contains/not_contains 使用递归 JSON 相等判断；布尔值与数字不同，正常 0/0.0 保持数值相等。新增嵌套对象/数组回归，未顺手改变数值大小比较等无关行为。
+
+实际验证：
+
+- 测试生成含中文预期、false、0、null 和语义状态的 JSON 文件，实际上传原件并逐字节读取；内存与真实 RustFS/PostgreSQL 场景分别验证。经现有草稿/评审/启用、固定规划/运行服务领取并启动条目，再由真实 ToolRuntime 调用已登记 API runner，发送 POST → GET → DELETE 到受控 HTTP 服务。GET/DELETE 的 ID 从已经保存的 POST ToolJob 重新读取；不是计划中的样例 ID。创建、查询、删除的顺序由测试安排，不能称为 Agent 自主规划和执行业务。
+- PostgreSQL 场景使用 UUID 隔离业务表和项目，核对完整工具输出、回执到结果记录、准备与正式输出分开保存、终态不能再次领取；仅清理本次测试资源。模型/规划测试 fixture 的受控回复是隔离测试手段，不作为真实模型成功证据。治理与图审批专项验证待批任务归属，没有完成真实审批后继续业务的联调。
+- 相关回归 **187 通过、20 跳过、2 个独立实际模型项未选择，35.07 秒**，`p2-agent-assessment-regression.xml`。20 项跳过均因可选 `deepagents` 未安装；保留原 Starlette/AnyIO 弃用警告。随后新增真实 length 样本回归，最终本步骤专项 **40 通过、1 个实际模型项未选择，18.64 秒**，`p2-agent-assessment-storage.xml`，无跳过。未对仅新增测试再次扩大回归范围。
+- 新分项/响应解析专项实现前为 **6 失败**，`p2-agent-assessment-split-before.xml`；实现后 6 通过。中间测试将用例标题与完整正文混为重复内容，修正为核对完整预期对象仅一次，不据此描述产品缺陷。旧 storage XML 中的失败来自审批 fixture 误走完整图入口，改为直接调用已有审批解析路径；原文件保存在 `p2-agent-assessment-storage-fixture-before.xml`，最终通过记录另存。
+- Python py_compile 实际通过；本步骤没有前端契约改动，未重复前端构建或浏览器验收。
+
+真实模型验证**尚未通过**，失败证据保留：
+
+1. 整份回执出现错误实际输出路径、错误预期来源路径，以及 HTTP 错误/读超时，分别记录在 `p2-agent-assessment-model-before.xml`、`-model-source-error.xml`、`-model-http-error.xml`、`-model-read-timeout.xml`。错误引用安全样本用于回归；不能将模型自己提供的工具状态当作固定预期。传输等待约 180 秒的原因尚未实证定位，不能直接认定是 SDK 重试。
+2. 改用现有流式 ModelRuntime 后，整份回执仍返回不完整 JSON：**1 失败，116.29 秒**，原记录另存 `p2-agent-assessment-model-truncated-before.xml`。当时未保存输出结束原因，不能追认截断必然来自预算。
+3. 不再重复整份生成路线，改为逐项只读判定并采集实际结束原因/用量。默认 MySQL 配置的 step-5-preview 输出预算为 8192；准备项返回完整回执、finish_reason=stop、6690 completion tokens。目标项返回 finish_reason=length、8192 completion tokens、正文 0 字符，测试 **1 失败、39 未选择，233.17 秒**，`p2-agent-assessment-model.xml`。安全诊断见 `p2-agent-assessment-model-diagnostics.json`，不可变回归样本另存 `p2-agent-assessment-model-length-sample.json`。供应方报告 reasoning_tokens=0，不能据此推测没有正文时的内部思考内容。本轮未自动修改模型配置、提高预算或继续重试。
+
+这一实际模型测试仅让模型核验已执行的 HTTP 工具证据；即使将来通过，也不能代替自主工具执行验收。当前没有成功模型报告 `p2-agent-assessment-model.json`。核验失败不重执行业务，不保存通过结果。配置仍归 MySQL，业务记录归 PostgreSQL，原件归 RustFS；没有新增依赖、可编辑配置、SQL 列或数据库迁移。
+
+交付检查仅去掉三个历史 JUnit 文件中空错误行的尾随空格，失败消息、计数和时间保持；没有修改失败结论。方案本地链接存在、Codex 镜像字节一致、Git diff 检查实际通过。
+
+```powershell
+# Agent_Server；相关回归
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_PLAN_BINDING_PATHS='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_assessment.py tests/test_agent_case_context.py tests/test_prompt_assembly_service.py tests/test_tool_executor_safety_gate.py tests/test_tool_runtime_heartbeat.py tests/test_deep_agent_tool_replay.py tests/test_deep_agent_runtime_adapter.py tests/test_case_execution_adapter.py tests/test_case_execution_verification.py tests/test_case_execution_service.py tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_api_tester_free_text_assertions.py -q --tb=short -rs -k 'not actual_model' --junitxml=../docs/upgrade_2026-10-03/p2-agent-assessment-regression.xml
+# 187 passed, 20 skipped, 2 deselected in 35.07s
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_assessment.py -q --tb=short -k 'not actual_model' --junitxml=../docs/upgrade_2026-10-03/p2-agent-assessment-storage.xml
+# 40 passed, 1 deselected in 18.64s
+$env:RUN_LIVE_AGENT_CASE_ASSESSMENT_MODEL='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_assessment.py -q -s --tb=short -k actual_model --junitxml=../docs/upgrade_2026-10-03/p2-agent-assessment-model.xml
+# 1 failed, 39 deselected in 233.17s；之后仅新增捕获样本回归
+```
+
+方案同步该结果及限制，上传版本仍独立于 Git，生成模板仍不进入执行。只提交相关源文件、测试和安全证据；用户原五条 .gitignore 规则保留未暂存，不推送、不建 PR。完整目标未完成：接下来继续研究并接通 Agent 执行适配器与现有 Session/Runtime/受控工具、租约、检查点、审批和未知副作用恢复、新运行回归及公开启动入口；模型回执预算兼容性另需真实验收。生产 lifespan、人工 DeepSeek 录制、Docker、模块化生成、P3—P5 与其余业务记录迁移继续保留待完成。

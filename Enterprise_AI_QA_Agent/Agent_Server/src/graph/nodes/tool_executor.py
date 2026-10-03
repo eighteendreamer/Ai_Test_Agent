@@ -553,6 +553,7 @@ async def _resolve_tool_call(
                 trace_id=state["trace_id"],
                 input_payload=tool_call.arguments,
                 metadata={
+                    **tool_context.job_metadata(),
                     "phase": "approval_pending",
                     "selected_agent_key": state["selected_agent_key"],
                     "selected_model_key": state["selected_model_key"],

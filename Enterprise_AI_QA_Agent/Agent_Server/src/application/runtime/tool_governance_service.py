@@ -128,6 +128,7 @@ class ToolGovernanceService:
                     tool=tool, call_id=call.id, session_id=context.execution.session_id,
                     turn_id=context.execution.turn_id, trace_id=context.execution.trace_id,
                     input_payload=original_arguments, once_per_call=True,
+                    metadata=context.execution.job_metadata(),
                 )
             if (
                 job.session_id != context.execution.session_id
@@ -321,6 +322,7 @@ class ToolGovernanceService:
                 input_payload=call.arguments,
                 once_per_call=True,
                 metadata={
+                    **context.execution.job_metadata(),
                     "phase": "approval_pending",
                     "selected_agent_key": context.execution.selected_agent_key,
                     "selected_model_key": context.execution.selected_model_key,

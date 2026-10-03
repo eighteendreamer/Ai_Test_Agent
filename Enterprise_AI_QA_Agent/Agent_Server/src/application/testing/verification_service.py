@@ -230,17 +230,35 @@ class VerificationService:
         return current
 
     @staticmethod
+    def _json_equal(actual: Any, expected: Any) -> bool:
+        # Python bool is an int subclass; JSON boolean and number are distinct.
+        # Apply the distinction recursively so nested responses cannot pass via 0=False.
+        if isinstance(actual, bool) or isinstance(expected, bool):
+            return type(actual) is type(expected) and actual == expected
+        if isinstance(actual, dict) and isinstance(expected, dict):
+            return actual.keys() == expected.keys() and all(
+                VerificationService._json_equal(actual[key], expected[key]) for key in actual)
+        if isinstance(actual, list) and isinstance(expected, list):
+            return len(actual) == len(expected) and all(
+                VerificationService._json_equal(left, right) for left, right in zip(actual, expected))
+        return actual == expected
+
+    @staticmethod
     def _matches_assertion(actual: Any, expected: Any, operator: str) -> bool:
         if operator == "equals":
-            return actual == expected
+            return VerificationService._json_equal(actual, expected)
         if operator == "not_equals":
-            return actual != expected
+            return not VerificationService._json_equal(actual, expected)
         if operator == "contains":
+            if isinstance(actual, list):
+                return any(VerificationService._json_equal(value, expected) for value in actual)
             try:
                 return expected in actual
             except TypeError:
                 return False
         if operator == "not_contains":
+            if isinstance(actual, list):
+                return not any(VerificationService._json_equal(value, expected) for value in actual)
             try:
                 return expected not in actual
             except TypeError:
