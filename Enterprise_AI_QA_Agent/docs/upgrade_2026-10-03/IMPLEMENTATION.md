@@ -873,3 +873,17 @@ $env:RUN_LIVE_MYSQL_TESTS='1'
 ```
 
 CLI 连接并初始化真实向量 store，读取真实录制目录；本专项指定目标用例，未调用真实 embedding 模型，也未读取已有固化录制子图。不能将启动接线验收宣称这些语义读取场景全部通过。外部默认模型、完整项目页面、API lifespan、测试执行 Worker 仍未验收；通用任务池、回归异步迁移、未知业务副作用/步骤恢复及 P0—P5 其他原范围继续保留。前端与公开契约没有修改，不重复上一阶段已通过的前端构建或浏览器测试。PLAN 正文及所选 Codex 镜像同步；用户 .gitignore 仍未暂存，新必要测试显式 force-add，中文 commit 不推送/不建 PR。
+
+### 用户所贴完整方案再次更新（2026-10-04）
+
+用户要求更新所贴方案。本次按 `e9209f4` 读取原粘贴附件、PLAN、上传服务与格式策略、ApiDocRecord、对象存储、依赖声明、规划接口、冻结上下文和 Worker 专属运行生命周期。确认上传没有 Git 依赖；当前接口每次创建独立记录，部分格式先转换后保存，尚没有文档版本关联。方案首页引用的旧基线及异步规划“待新增”表述与现状不符，已修正。
+
+本次修改 PLAN 的基线、流程摘要、上传与可选 Git 边界、接口和状态表，记录本次验证范围，并同步所选 Codex PLAN。执行主流程仍为理解需求、项目内选取、初排、AI 衔接判断与补全、最终冻结、Agent 执行；模板只用于生成。上传版本和差异属于待实施设计，Git 仅是可选只读来源；未实施 P3，也未把通用任务池研究当成已接入。原附件保持为输入记录，最新完整方案由仓库 PLAN 和 Codex 镜像提供。
+
+实际命令（Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_artifact_storage_service.py tests/test_agent_case_context.py tests/test_planning_worker_runtime.py -q --tb=short -rs
+```
+
+实际结果 **35 passed, 4 skipped in 9.22s**。4 个执行上下文项因真实隔离存储或当前实际模型开关未启用跳过；通过项只作为现有接口与启动边界的回归证据。本次未修改产品代码、安装依赖、迁移数据库或重新运行浏览器、真实 Worker 进程及外部模型验收。文档本地链接、关键约定、diff 和镜像一致性另做检查。本次提交仅包含 PLAN 与本记录；用户 .gitignore 保持未暂存，不推送、不建 PR。
