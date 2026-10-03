@@ -45,6 +45,7 @@ from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.application.security.upload_security_service import UploadSecurityService
 from src.modes.security_testing_mode.security_bug_service import SecurityBugService
 from src.application.sessions.session_service import SessionService
+from src.application.settings.workspace_settings_service import WorkspaceSettingsService
 from src.application.skills.skill_management_service import SkillManagementService
 from src.application.skills.skill_marketplace_service import SkillMarketplaceService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
@@ -64,6 +65,7 @@ from src.application.test_suites.suite_service import TestSuiteService
 from src.application.test_suites.suite_store import PostgresTestSuiteStore
 from src.core.config import Settings, get_settings
 from src.application.exploration.recording_graph_store import RecordingGraphStore
+from src.infrastructure.application_config_store import MySQLApplicationConfigStore
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
@@ -103,6 +105,8 @@ class AppContainer(containers.DeclarativeContainer):
     email_config_store = providers.Singleton(MySQLEmailConfigStore, settings=settings)
     channel_config_store = providers.Singleton(MySQLChannelConfigStore, settings=settings)
     sponsor_config_store = providers.Singleton(MySQLSponsorConfigStore, settings=settings)
+    application_config_store = providers.Singleton(MySQLApplicationConfigStore, settings=settings)
+    workspace_settings_service = providers.Singleton(WorkspaceSettingsService, store=application_config_store)
 
     # ── Registries (stateless, no deps) ──────────────────────────────
     agent_registry = providers.Singleton(AgentRegistry)
@@ -143,7 +147,10 @@ class AppContainer(containers.DeclarativeContainer):
     task_pool_service = providers.Singleton(TaskPoolService, store=session_store)
     permission_service = providers.Singleton(PermissionService)
     transcript_hygiene_service = providers.Singleton(TranscriptHygieneService)
-    prompt_assembly_service = providers.Singleton(PromptAssemblyService)
+    prompt_assembly_service = providers.Singleton(
+        PromptAssemblyService,
+        general_settings_loader=workspace_settings_service.provided.get_general_settings,
+    )
     observation_runtime_service = providers.Singleton(ObservationRuntimeService)
     skill_runtime_service = providers.Singleton(SkillRuntimeService, skill_registry=skill_registry)
 

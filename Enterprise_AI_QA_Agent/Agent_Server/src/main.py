@@ -307,6 +307,8 @@ async def _initialize_lifespan_resources(
     channel_config_store.initialize()
     sponsor_config_store = container.sponsor_config_store()
     sponsor_config_store.initialize()
+    workspace_settings_service = container.workspace_settings_service()
+    await asyncio.to_thread(workspace_settings_service.initialize)
 
     model_registry = container.model_registry()
 
@@ -752,6 +754,7 @@ async def _initialize_lifespan_resources(
         model_config_store=model_config_store,
         email_config_store=email_config_store,
         channel_config_store=channel_config_store,
+        workspace_settings_service=workspace_settings_service,
         oauth_token_service=oauth_token_service,
         embedding_runtime_service=embedding_runtime_service,
     )

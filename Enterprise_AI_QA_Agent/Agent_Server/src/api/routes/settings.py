@@ -6,7 +6,6 @@ import json
 import logging
 from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 from threading import Lock
 from typing import Any, Literal
 from uuid import uuid4
@@ -37,7 +36,7 @@ from src.schemas.session import (
     SessionStatus,
     ToolApprovalRequest,
 )
-from src.schemas.settings import ModelConfigUpdateRequest
+from src.schemas.settings import GeneralSettingsPayload, ModelConfigUpdateRequest
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -373,18 +372,6 @@ async def confirm_channel_pairing(session_id: str, request: Request, device_name
 # General Settings (user workspace preferences)
 # ---------------------------------------------------------------------------
 
-class GeneralSettingsPayload(BaseModel):
-    language: str = "zh-CN"
-    modelOutputLanguage: str = "follow-system"
-    notifySessionCompleteWhenAway: bool = True
-    notifyApprovalRequiredWhenAway: bool = True
-    notificationsAwayOnly: bool = True
-    fontFamily: str = "system"
-    fontSize: str = "standard"
-    reduceMotion: bool = False
-    lastSavedAt: str = ""
-
-
 class DataManagementRequest(BaseModel):
     action: Literal["cleanup"]
     dry_run: bool = True
@@ -402,44 +389,16 @@ class DataManagementResponse(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-_GENERAL_SETTINGS_FILE = Path(__file__).resolve().parents[3] / "src" / "data" / "general_settings.json"
-
-
-def _read_general_settings() -> dict[str, Any]:
-    if _GENERAL_SETTINGS_FILE.exists():
-        try:
-            return json.loads(_GENERAL_SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
-
-
-def _write_general_settings(data: dict[str, Any]) -> None:
-    _GENERAL_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _GENERAL_SETTINGS_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
 @router.get("/general")
 async def get_general_settings(request: Request):
-    """Read the current general settings (workspace preferences)."""
-    stored = await asyncio.to_thread(_read_general_settings)
-    if not stored:
-        return GeneralSettingsPayload().model_dump()
-    return stored
+    stored = await asyncio.to_thread(request.app.state.settings_service.get_general_settings)
+    return stored.model_dump(mode="json")
 
 
 @router.put("/general")
 async def save_general_settings(payload: GeneralSettingsPayload, request: Request):
-    """Save general settings (workspace preferences)."""
-    from datetime import datetime, timezone
-
-    data = payload.model_dump()
-    data["lastSavedAt"] = datetime.now(timezone.utc).isoformat()
-    await asyncio.to_thread(_write_general_settings, data)
-    return data
+    stored = await asyncio.to_thread(request.app.state.settings_service.update_general_settings, payload)
+    return stored.model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------

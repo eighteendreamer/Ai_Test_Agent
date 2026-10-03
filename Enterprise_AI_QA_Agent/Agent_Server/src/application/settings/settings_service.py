@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +11,7 @@ from src.application.context.embedding_runtime_service import EmbeddingRuntimeSe
 from src.application.model_clients import resolve_client
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.settings.channel_gateway_policy import ChannelGatewayPolicyService
+from src.application.settings.workspace_settings_service import WorkspaceSettingsService
 from src.core.config import Settings
 from src.domain.channel_strategies import channel_strategy_factory
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
@@ -44,6 +44,7 @@ from src.schemas.email_config import (
 )
 from src.schemas.model_config import ModelInvocationRequest
 from src.schemas.settings import (
+    GeneralSettingsPayload,
     ModelConfigActionResponse,
     ModelConfigConnectionTestResponse,
     ModelConfigUpdateRequest,
@@ -57,6 +58,7 @@ class SettingsService:
         model_config_store: MySQLModelConfigStore,
         email_config_store: MySQLEmailConfigStore,
         channel_config_store: MySQLChannelConfigStore,
+        workspace_settings_service: WorkspaceSettingsService,
         oauth_token_service: OAuthTokenService | None = None,
         embedding_runtime_service: EmbeddingRuntimeService | None = None,
     ) -> None:
@@ -64,6 +66,7 @@ class SettingsService:
         self._model_config_store = model_config_store
         self._email_config_store = email_config_store
         self._channel_config_store = channel_config_store
+        self._workspace_settings_service = workspace_settings_service
         self._oauth_token_service = oauth_token_service or OAuthTokenService(
             settings=settings,
             request_timeout=settings.model.llm_request_timeout_seconds,
@@ -322,25 +325,17 @@ class SettingsService:
             item=None,
         )
 
+    def get_general_settings(self) -> GeneralSettingsPayload:
+        return self._workspace_settings_service.get_general_settings()
+
+    def update_general_settings(self, payload: GeneralSettingsPayload) -> GeneralSettingsPayload:
+        return self._workspace_settings_service.update_general_settings(payload)
+
     def get_channel_advanced_settings(self) -> ChannelAdvancedSettings:
-        if not _CHANNEL_ADVANCED_SETTINGS_FILE.exists():
-            return ChannelAdvancedSettings()
-        try:
-            data = json.loads(_CHANNEL_ADVANCED_SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        return ChannelAdvancedSettings.model_validate(data)
+        return self._workspace_settings_service.get_channel_advanced_settings()
 
     def update_channel_advanced_settings(self, payload: ChannelAdvancedSettings) -> ChannelAdvancedSettings:
-        data = payload.model_dump(mode="json")
-        _CHANNEL_ADVANCED_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _CHANNEL_ADVANCED_SETTINGS_FILE.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return ChannelAdvancedSettings.model_validate(data)
+        return self._workspace_settings_service.update_channel_advanced_settings(payload)
 
     def evaluate_channel_inbound(self, payload: ChannelInboundMessage) -> ChannelGatewayDecision:
         return self._channel_gateway_policy.evaluate_inbound(payload)
@@ -580,5 +575,4 @@ class SettingsService:
         self._channel_pairing_sessions.prune()
 
 
-_CHANNEL_ADVANCED_SETTINGS_FILE = Path(__file__).resolve().parents[3] / "src" / "data" / "channel_advanced_settings.json"
 _CHANNEL_PAIRING_REQUESTS_FILE = Path(__file__).resolve().parents[3] / "src" / "data" / "channel_pairing_requests.json"

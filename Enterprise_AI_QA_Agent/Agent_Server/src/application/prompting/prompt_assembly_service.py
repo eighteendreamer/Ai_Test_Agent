@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping, Sequence
-from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from src.application.prompting.untrusted_content import wrap_untrusted_content
@@ -20,9 +18,7 @@ from src.modes.performance_testing_mode.prompt_contract import (
 from src.modes.smoke_testing_mode.prompt_contract import SMOKE_TESTING_PROMPT_CONTRACT
 from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CONTRACT
 from src.schemas.prompting import PromptAssemblyResult, PromptSection
-
-# Path to the general settings file (shared with settings route).
-_GENERAL_SETTINGS_FILE = Path(__file__).resolve().parents[2] / "data" / "general_settings.json"
+from src.schemas.settings import GeneralSettingsPayload
 
 # Language display names for the output language instruction.
 _LANGUAGE_NAMES: dict[str, str] = {
@@ -64,17 +60,12 @@ _LANGUAGE_NAMES.update(
 )
 
 
-def _read_general_settings() -> dict[str, Any]:
-    """Read the persisted general settings (non-blocking, best-effort)."""
-    try:
-        if _GENERAL_SETTINGS_FILE.exists():
-            return json.loads(_GENERAL_SETTINGS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return {}
-
-
 class PromptAssemblyService:
+    def __init__(self, general_settings_loader: Callable[[], GeneralSettingsPayload] | None = None) -> None:
+        # Standalone tests may use defaults; production injects the same MySQL
+        # service used by the settings API. Never fall back to mutable files.
+        self._general_settings_loader = general_settings_loader or GeneralSettingsPayload
+
     def build_for_turn(
         self,
         state: Mapping[str, Any],
@@ -688,7 +679,7 @@ class PromptAssemblyService:
         Always injects a language instruction regardless of the resolved language,
         so the model explicitly knows which language to use (including zh-CN).
         """
-        settings = _read_general_settings()
+        settings = self._general_settings_loader().model_dump(mode="json")
         model_output_language = str(settings.get("modelOutputLanguage") or "follow-system").strip()
 
         if model_output_language == "follow-system":

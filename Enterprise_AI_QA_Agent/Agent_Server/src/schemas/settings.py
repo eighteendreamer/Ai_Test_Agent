@@ -12,6 +12,18 @@ from src.schemas.model_config import (
 )
 
 
+class GeneralSettingsPayload(BaseModel):
+    language: str = "zh-CN"
+    modelOutputLanguage: str = "follow-system"
+    notifySessionCompleteWhenAway: bool = True
+    notifyApprovalRequiredWhenAway: bool = True
+    notificationsAwayOnly: bool = True
+    fontFamily: str = "system"
+    fontSize: str = "standard"
+    reduceMotion: bool = False
+    lastSavedAt: str = ""
+
+
 class ModelConfigUpdateRequest(BaseModel):
     model_name: str
     provider: str = ""

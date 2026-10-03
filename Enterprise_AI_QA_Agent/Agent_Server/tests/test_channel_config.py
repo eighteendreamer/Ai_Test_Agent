@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
@@ -200,47 +198,38 @@ def test_channel_credentials_fail_closed_on_wrong_or_missing_key() -> None:
         store.to_public(record)
 
 
-def test_channel_advanced_settings_round_trip(monkeypatch) -> None:
-    from src.application.settings import settings_service as settings_service_module
+def test_channel_advanced_settings_round_trip() -> None:
+    from types import SimpleNamespace
     from src.application.settings.settings_service import SettingsService
+    from src.application.settings.workspace_settings_service import WorkspaceSettingsService
 
-    store_path = Path(__file__).resolve().parents[1] / "src" / "data" / f"channel_advanced_settings_test_{uuid.uuid4().hex}.json"
-    monkeypatch.setattr(settings_service_module, "_CHANNEL_ADVANCED_SETTINGS_FILE", store_path)
+    class ConfigStore:
+        payload = None
+
+        def save(self, key, payload):
+            self.payload = payload
+            return SimpleNamespace(payload=payload)
+
+        def get(self, key):
+            return SimpleNamespace(payload=self.payload)
+
     service = SettingsService.__new__(SettingsService)
-
-    try:
-        saved = service.update_channel_advanced_settings(
-            ChannelAdvancedSettings(
-                max_steps=7,
-                debounce_ms=888,
-                queue_mode="interrupt",
-                queue_cap=4,
-                queue_drop="old",
-                allowlist={
-                    "allow_all": True,
-                    "qq_users": ["u1", "u1", " u2 "],
-                },
-                self_user_ids={"qq": "bot-1, bot-2"},
-                routes=[
-                    {
-                        "platform": "qq",
-                        "chat_type": "group",
-                        "chat_id": "group-1",
-                        "workspace_root": "G:/demo",
-                    }
-                ],
-            )
+    service._workspace_settings_service = WorkspaceSettingsService(ConfigStore())
+    saved = service.update_channel_advanced_settings(
+        ChannelAdvancedSettings(
+            max_steps=7, debounce_ms=888, queue_mode="interrupt", queue_cap=4, queue_drop="old",
+            allowlist={"allow_all": True, "qq_users": ["u1", "u1", " u2 "]},
+            self_user_ids={"qq": "bot-1, bot-2"},
+            routes=[{"platform": "qq", "chat_type": "group", "chat_id": "group-1", "workspace_root": "G:/demo"}],
         )
-        loaded = service.get_channel_advanced_settings()
-
-        assert saved.max_steps == 7
-        assert loaded.max_steps == 7
-        assert loaded.debounce_ms == 888
-        assert loaded.queue_mode == "interrupt"
-        assert loaded.queue_drop == "old"
-        assert loaded.allowlist.allow_all is True
-        assert loaded.allowlist.qq_users == ["u1", "u2"]
-        assert loaded.self_user_ids.qq == ["bot-1", "bot-2"]
-        assert loaded.routes[0].chat_id == "group-1"
-    finally:
-        store_path.unlink(missing_ok=True)
+    )
+    loaded = service.get_channel_advanced_settings()
+    assert saved.max_steps == 7
+    assert loaded.max_steps == 7
+    assert loaded.debounce_ms == 888
+    assert loaded.queue_mode == "interrupt"
+    assert loaded.queue_drop == "old"
+    assert loaded.allowlist.allow_all is True
+    assert loaded.allowlist.qq_users == ["u1", "u2"]
+    assert loaded.self_user_ids.qq == ["bot-1", "bot-2"]
+    assert loaded.routes[0].chat_id == "group-1"

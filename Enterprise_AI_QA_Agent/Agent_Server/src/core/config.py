@@ -74,6 +74,7 @@ class DatabaseConfig(BaseModel):
     email_config_table: str = "system_email_config"
     channel_config_table: str = "system_channel_config"
     sponsor_config_table: str = "system_sponsor_config"
+    application_config_table: str = "system_application_config"
     channel_credential_encryption_key: str = ""
 
     @field_validator("postgres_pool_size")

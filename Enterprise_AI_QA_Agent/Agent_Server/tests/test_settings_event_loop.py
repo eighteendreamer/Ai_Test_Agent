@@ -12,10 +12,11 @@ from src.application.settings.settings_service import SettingsService
 from src.core.config import Settings
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.schemas.model_config import ModelConfigPublic
+from src.schemas.settings import GeneralSettingsPayload
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("route", ["channels", "models/sample/test-connection"])
+@pytest.mark.parametrize("route", ["channels", "general", "models/sample/test-connection"])
 async def test_settings_database_reads_do_not_block_event_loop(monkeypatch, route: str) -> None:
     entered = Event()
     release = Event()
@@ -27,7 +28,13 @@ async def test_settings_database_reads_do_not_block_event_loop(monkeypatch, rout
         timed_out = not release.wait(timeout=1.0)
 
     service = object.__new__(SettingsService)
-    if route == "channels":
+    if route == "general":
+        def slow_preferences():
+            wait_for_peer()
+            return GeneralSettingsPayload()
+
+        service._workspace_settings_service = SimpleNamespace(get_general_settings=slow_preferences)
+    elif route == "channels":
         channel_store = MySQLChannelConfigStore(Settings())
 
         class EmptyConnection:
