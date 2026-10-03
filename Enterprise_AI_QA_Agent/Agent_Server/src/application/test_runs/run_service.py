@@ -107,6 +107,10 @@ class TestRunService:
         self._task_outbox: PostgresTaskOutbox | None = None
         self._task_outbox_table: str | None = None
         self._task_stream: str | None = None
+        self._agent_regression_service = None
+
+    def set_agent_regression_service(self, service) -> None:
+        self._agent_regression_service = service
 
     def set_task_outbox(
         self,
@@ -471,40 +475,47 @@ class TestRunService:
                 candidate.result_id,
             )
         )
-        run = TestRunRecord(
-            id=str(uuid4()),
-            project_id=parent.project_id,
-            suite_id=parent.suite_id,
-            run_kind="regression",
-            mode_key=parent.mode_key,
-            session_id=session_id,
-            parent_run_id=parent.id,
-            stats=TestRunStats(
-                total=len(selected_candidates),
-                queued=len(selected_candidates),
-            ),
-            created_by=created_by,
-            created_at=now,
-            updated_at=now,
-        )
-        items = []
-        for position, candidate in enumerate(selected_candidates, start=1):
-            items.append(
-                TestRunItemRecord(
-                    id=str(uuid4()),
-                    run_id=run.id,
-                    case_id=candidate.case_id,
-                    case_version_id=payload.version_overrides.get(
-                        candidate.case_id,
-                        candidate.case_version_id,
-                    ),
-                    position=position,
-                    regression_source_result_id=candidate.result_id,
-                    created_at=now,
-                    updated_at=now,
-                )
+        if parent.execution_strategy == "agent":
+            if self._agent_regression_service is None:
+                raise RuntimeError("Agent 回归计划服务尚未配置，未创建测试运行")
+            stored = await self._agent_regression_service.create(parent, selected_candidates, payload,
+                session_id=session_id, created_by=created_by)
+            run, items = stored.run, stored.items
+        else:
+            run = TestRunRecord(
+                id=str(uuid4()),
+                project_id=parent.project_id,
+                suite_id=parent.suite_id,
+                run_kind="regression",
+                mode_key=parent.mode_key,
+                session_id=session_id,
+                parent_run_id=parent.id,
+                stats=TestRunStats(
+                    total=len(selected_candidates),
+                    queued=len(selected_candidates),
+                ),
+                created_by=created_by,
+                created_at=now,
+                updated_at=now,
             )
-        stored = await self._persist_run_with_task(run, items)
+            items = []
+            for position, candidate in enumerate(selected_candidates, start=1):
+                items.append(
+                    TestRunItemRecord(
+                        id=str(uuid4()),
+                        run_id=run.id,
+                        case_id=candidate.case_id,
+                        case_version_id=payload.version_overrides.get(
+                            candidate.case_id,
+                            candidate.case_version_id,
+                        ),
+                        position=position,
+                        regression_source_result_id=candidate.result_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            stored = await self._persist_run_with_task(run, items)
         source_result_ids = [
             candidate.result_id
             for candidate in selected_candidates[:REGRESSION_EVENT_SOURCE_ID_LIMIT]

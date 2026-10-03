@@ -1595,7 +1595,8 @@ export interface TestRunRecord {
   run_kind: "normal" | "regression";
   mode_key: string;
   execution_strategy?: "legacy" | "agent";
-  plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after"> } | null;
+  plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after">;
+    regression?: { parent_run_id: string; source_plan_id: string; source_results: Record<string, string>; version_overrides: Record<string, string> } | null } | null;
   creation_key?: string | null;
   creation_hash?: string | null;
   session_id?: string | null;

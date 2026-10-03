@@ -23,7 +23,7 @@ from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
 
 logger = logging.getLogger(__name__)
 PLANNING_CONFIG_KEY = "test_case.planning_policy"
-PROMPT_VERSION = "case-planning-v3"
+PROMPT_VERSION = "case-planning-v4"
 
 
 class CasePlanningService:
@@ -69,7 +69,9 @@ class CasePlanningService:
             raise KeyError("当前项目没有该用例计划")
         return record
 
-    async def create(self, project_id: str, request: CasePlanningRequest) -> CasePlanRecord:
+    async def create(self, project_id: str, request: CasePlanningRequest, *,
+                     fixed_case_versions: dict[str, str] | None = None,
+                     planning_context: dict | None = None) -> CasePlanRecord:
         project = await self._projects.require_active(project_id)
         if not request.objective.strip():
             raise ValueError("测试目标不能为空")
@@ -78,9 +80,13 @@ class CasePlanningService:
             status="planning_failed", summary="规划尚未完成", config_snapshot=config,
             prompt_version=PROMPT_VERSION, created_at=datetime.now(timezone.utc))
         stage = "retrieval"
+        fixed_case_versions = dict(fixed_case_versions or {})
+        if fixed_case_versions:
+            record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
+                                  "context": planning_context or {}})
         try:
             async with asyncio.timeout(config.policy.timeout_seconds):
-                await self._recall(record)
+                await self._recall(record, fixed_case_versions)
                 catalog = await self._sources.catalog(project_id, config.policy.max_candidates)
                 stage = "planning"
                 model_config = await asyncio.to_thread(self._model_config, request.model_key)
@@ -97,6 +103,9 @@ class CasePlanningService:
                         "validation_feedback": validation_feedback,
                         "round": round_index + 1, "remaining_rounds": config.policy.max_rounds - round_index - 1,
                     }
+                    if fixed_case_versions:
+                        context["constraints"] = {"required_case_versions": fixed_case_versions,
+                                                  "regression": planning_context or {}}
                     system_prompt = self._system_prompt()
                     body = json_text(context)
                     if len(body) + len(system_prompt) > config.policy.max_context_chars:
@@ -137,7 +146,11 @@ class CasePlanningService:
                     try:
                         decision = self._parse(result.text)
                         if decision.action == "finish":
-                            await self._validate(record, decision)
+                            await self._validate(record, decision, fixed_case_versions=fixed_case_versions)
+                            if fixed_case_versions:
+                                targets = {entry.case_id: entry.case_version_id for entry in decision.items if entry.kind == "target"}
+                                if targets != fixed_case_versions:
+                                    raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
                     except ValueError as exc:
                         # As with tool argument errors in tool_executor, return
                         # concrete validation feedback to the Agent's next turn.
@@ -169,6 +182,11 @@ class CasePlanningService:
                         query_result = {"query": query.model_dump(mode="json")}
                         try:
                             evidence, metadata = await self._sources.query(project_id, query, config.policy.max_candidates)
+                            if fixed_case_versions:
+                                evidence = [await self._sources.case(project_id, entry.source_id,
+                                    version_id=fixed_case_versions[entry.source_id])
+                                    if entry.kind == "case" and entry.source_id in fixed_case_versions else entry
+                                    for entry in evidence]
                             self._merge_evidence(record, evidence)
                             query_result.update({"evidence_ids": [item.id for item in evidence], **metadata})
                         except (KeyError, ValueError) as exc:
@@ -198,12 +216,13 @@ class CasePlanningService:
             "status": saved.status, "round_count": len(saved.rounds), "evidence_count": len(saved.evidence)})
         return saved
 
-    async def _recall(self, record: CasePlanRecord) -> None:
+    async def _recall(self, record: CasePlanRecord, fixed_case_versions: dict[str, str] | None = None) -> None:
         request, policy = record.request, record.config_snapshot.policy
         if request.candidate_case_ids:
             if len(set(request.candidate_case_ids)) > policy.max_candidates:
                 raise ValueError("指定候选数量超过规划配置限制")
-            evidence = [await self._sources.case(record.project_id, case_id)
+            evidence = [await self._sources.case(record.project_id, case_id,
+                        version_id=(fixed_case_versions or {}).get(case_id))
                         for case_id in dict.fromkeys(request.candidate_case_ids)]
         elif self._embeddings is not None:
             retrieval = await self._embeddings.retrieve(project_id=record.project_id, query=request.objective,
@@ -245,7 +264,8 @@ class CasePlanningService:
             raise ValueError("没有可用的规划模型配置")
         return config
 
-    async def _validate(self, record: CasePlanRecord, decision: PlanningDecision) -> None:
+    async def _validate(self, record: CasePlanRecord, decision: PlanningDecision, *,
+                        fixed_case_versions: dict[str, str] | None = None) -> None:
         if len(decision.items) > record.config_snapshot.policy.max_items:
             raise ValueError("计划执行项超过配置限制")
         items = {item.key: item for item in decision.items}
@@ -266,7 +286,8 @@ class CasePlanningService:
                 frozen = evidence.get(f"case:{item.case_version_id}")
                 if frozen is None or frozen.kind != "case" or frozen.source_id != item.case_id or frozen.id not in item.evidence_ids:
                     raise ValueError("计划用例版本与已读取依据不一致")
-                current = await self._sources.case(record.project_id, item.case_id)
+                version_id = (fixed_case_versions or {}).get(item.case_id)
+                current = await self._sources.case(record.project_id, item.case_id, version_id=version_id)
                 if current != frozen:
                     raise ValueError("规划期间用例启用版本或内容发生变化，请重新规划")
         try:
@@ -351,6 +372,9 @@ class CasePlanningService:
             "必须原样使用 available_evidence_ids，不增删哈希字符，不猜测来源身份。"
             "可以结束时 action=finish，items 按依赖安排，reason 说明选择或补入原因；"
             "只加入服务于目标的必要项。依据不足用 unresolved 明确缺口及受影响 item_key，保留独立部分。"
+            "constraints 存在时，它是服务端指定的回归范围：required_case_versions 中每个用例及版本必须作为 target，"
+            "其他正式用例只能作为必要 dependency。读取旧计划的衔接及失败说明，重新判断新版本条件、输出和清理；"
+            "旧运行产生的临时ID或会话不能当成本次实际输出。没有依据时保留缺口，不复制旧数据或替换指定版本。"
             "没有匹配目标则 items=[] 并说明原因，不能改为自由测试。"
             "接近回合限制时保留未解决项，不虚构补全。\nJSON Schema: "
             + json_text(PlanningDecision.model_json_schema())

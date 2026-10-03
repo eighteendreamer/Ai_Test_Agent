@@ -22,11 +22,11 @@ class ProjectPlanningSources:
         self._recordings = recording_store
         self._graphs = recording_graph_store
 
-    async def case(self, project_id, case_id) -> PlanningEvidence:
+    async def case(self, project_id, case_id, *, version_id=None) -> PlanningEvidence:
         case = await self._cases.get_case(case_id)
         if case.project_id != project_id or case.lifecycle_status != "active" or not case.active_version_id:
             raise ValueError("用例不属于当前项目或没有启用版本")
-        version = await self._cases.get_version(case.active_version_id)
+        version = await self._cases.get_version(version_id or case.active_version_id)
         if version.case_id != case.id:
             raise ValueError("用例版本引用不一致")
         return PlanningEvidence(id=f"case:{version.id}", kind="case", source_id=case.id, version=version.id,

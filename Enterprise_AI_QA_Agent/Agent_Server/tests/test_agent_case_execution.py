@@ -5,6 +5,9 @@ import asyncio
 import json
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread, Lock
+from uuid import uuid4
 
 import pytest
 import httpx
@@ -33,6 +36,136 @@ from src.infrastructure.redis_task_queue import QueuedTask
 from src.schemas.run_dispatch import RunDispatchTask
 from tests.test_live_resource_leases import manager as resource_manager
 from src.core.request_context import bind_request_context, get_request_context
+from src.application.test_runs.agent_regression_service import AgentRegressionService
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.schemas.run_management import RegressionRunCreateRequest
+
+
+@pytest.fixture
+def regression_business_http():
+    requests, orders, created = [], {}, []
+    lock = Lock()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            with lock:
+                order_id = "regression-" + uuid4().hex
+                # The first target genuinely fails its frozen expected count=0.
+                body = {"order.id": order_id, "flag": False, "count": 1 if not created else 0,
+                        "nullable": None, "message": "订单处于待支付状态，尚未进入出库流程"}
+                created.append(order_id)
+                orders[order_id] = body
+                requests.append(("POST", self.path))
+            self.reply(201, body)
+
+        def do_GET(self):
+            with lock:
+                body = orders.get(self.path.removeprefix("/orders/"))
+                requests.append(("GET", self.path))
+            self.reply(200 if body else 404, body or {})
+
+        def do_DELETE(self):
+            with lock:
+                body = orders.pop(self.path.removeprefix("/orders/"), None)
+                requests.append(("DELETE", self.path))
+            self.reply(200 if body else 404, body or {})
+
+        def reply(self, status, body):
+            raw = json.dumps(body, ensure_ascii=False).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield (f"http://127.0.0.1:{server.server_port}", requests, None), orders, created
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_agent_regression_http_run_recreates_data_and_preserves_actual_parent_failure(tmp_path, regression_business_http, live, monkeypatch):
+    business, orders, created = regression_business_http
+    async with adapter_environment(tmp_path, business, live, start_item=False) as values:
+        env, _, reader, _, runs, agent, adapter, _, _, services = values
+        base = services["environment"]
+        runs.set_agent_regression_service(AgentRegressionService(plan_store=base.store,
+            plan_run_service=services["creator"], planning_service=base.service, run_store=env[7]))
+        service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+            adapter=None, session_store=reader, tool_job_service=env[1])
+        service.set_agent_execution_adapter(adapter())
+        app = FastAPI()
+        app.state.test_run_execution_service, app.state.test_run_service = service, runs
+        app.include_router(router, prefix="/api/v1")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent") as client:
+            async def execute_item(item_id, lease_token):
+                prefix = "/api/v1/run-items/" + item_id
+                response = await client.post(prefix + "/execute", json={"lease_token": lease_token})
+                assert response.status_code == 200, response.text
+                data = response.json()
+                for _ in range(3):
+                    assert data["approval_id"]
+                    response = await client.post(prefix + "/approval", json={"approval_id": data["approval_id"], "decision": "approved"})
+                    assert response.status_code == 200, response.text
+                    data = response.json()
+                return data
+
+            failed = await execute_item(env[0].run_item_id, env[6].items[0].lease_token)
+            assert failed["status"] == "failed"
+            assert failed["actual"]["case_output"]["body"]["count"] == 1
+            original = await runs.get(env[0].run_id)
+            assert not orders and len(created) == 1
+            if live:
+                insert = env[7]._insert_run_and_items
+                tables = [base.settings.database.postgres_test_suite_table, base.settings.database.postgres_test_run_table,
+                    base.settings.database.postgres_test_run_item_table, services["creator"]._outbox_table]
+
+                def counts():
+                    with postgres_connect(base.settings) as conn, conn.cursor() as cur:
+                        values = []
+                        for table in tables:
+                            cur.execute(f"SELECT count(*) AS n FROM {table}")
+                            values.append(cur.fetchone()["n"])
+                    return values
+
+                before = counts()
+                def interrupted(cur, run, items):
+                    insert(cur, run, items)
+                    raise RuntimeError("controlled regression crash after real inserts")
+                monkeypatch.setattr(env[7], "_insert_run_and_items", interrupted)
+                with pytest.raises(RuntimeError, match="controlled regression crash"):
+                    await runs.create_regression(env[0].run_id, RegressionRunCreateRequest(result_ids=[failed["id"]]))
+                assert counts() == before
+                assert await runs.get(env[0].run_id) == original
+                monkeypatch.setattr(env[7], "_insert_run_and_items", insert)
+            response = await client.post("/api/v1/runs/" + env[0].run_id + "/regression", json={"result_ids": [failed["id"]]})
+            assert response.status_code == 201, response.text
+            new = response.json()
+            assert new["run"]["execution_strategy"] == "agent"
+            assert new["run"]["parent_run_id"] == env[0].run_id
+            claim = (await runs.claim(new["run"]["id"], RunClaimRequest(worker_id="real-regression", limit=1))).claims[0]
+            passed = await execute_item(claim.item.id, claim.lease_token)
+            assert passed["status"] == "passed"
+            assert passed["regression_source_result_id"] == failed["id"]
+            assert passed["actual"]["case_output"]["body"]["count"] == 0
+            assert len(created) == 2 and created[0] != created[1] and not orders
+            assert business[1] == [("POST", "/orders"), ("GET", "/orders/" + created[0]), ("DELETE", "/orders/" + created[0]),
+                                   ("POST", "/orders"), ("GET", "/orders/" + created[1]), ("DELETE", "/orders/" + created[1])]
+            assert await runs.get(env[0].run_id) == original
+            assert (await runs.get(new["run"]["id"])).run.status == "completed"
+            assert not (await runs.claim(new["run"]["id"], RunClaimRequest(worker_id="terminal", limit=1))).claims
+            assert len(agent.requests) == 8
 
 
 @asynccontextmanager

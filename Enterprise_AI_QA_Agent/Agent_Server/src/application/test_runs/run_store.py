@@ -242,7 +242,7 @@ class InMemoryTestRunStore:
         items: list[TestRunItemRecord], *, suite_store, outbox_table: str | None,
         event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
         from src.application.test_suites.suite_store import InMemoryTestSuiteStore
-        from src.application.test_runs.plan_mapping import validate_plan_bundle
+        from src.application.test_runs.plan_mapping import validate_plan_bundle, validate_regression_parent
         if not isinstance(suite_store, InMemoryTestSuiteStore):
             raise ValueError("内存计划运行必须使用同类套件存储")
         validate_plan_bundle(suite, run, items)
@@ -254,6 +254,10 @@ class InMemoryTestRunStore:
                 return self._detail(run.id)
             if suite.suite.id in suite_store._suites:
                 raise ValueError("固定套件身份已被其他记录使用")
+            if run.plan_snapshot.regression:
+                source = run.plan_snapshot.regression
+                validate_regression_parent(run, self._runs.get(source.parent_run_id),
+                    {key: self._results[key] for key in source.source_results.values() if key in self._results})
             suite_store._suites[suite.suite.id] = suite.suite.model_copy(deep=True)
             suite_store._items_by_suite[suite.suite.id] = [i.model_copy(deep=True) for i in suite.items]
             self._runs[run.id] = run.model_copy(deep=True)
@@ -1820,7 +1824,7 @@ class PostgresTestRunStore:
         items: list[TestRunItemRecord], suite_store, outbox_table: str | None,
         event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
         from src.application.test_suites.suite_store import PostgresTestSuiteStore
-        from src.application.test_runs.plan_mapping import json_digest, validate_frozen_cases, validate_plan_bundle
+        from src.application.test_runs.plan_mapping import json_digest, validate_frozen_cases, validate_plan_bundle, validate_regression_parent
         from src.schemas.case_planning import CasePlanRecord
         from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
         if not isinstance(suite_store, PostgresTestSuiteStore):
@@ -1851,6 +1855,14 @@ class PostgresTestRunStore:
             plan_row = cur.fetchone()
             if plan_row is None or json_digest(CasePlanRecord.model_validate(plan_row["record"]).model_dump(mode="json")) != json_digest(run.plan_snapshot.plan.model_dump(mode="json")):
                 raise ValueError("固定计划不存在或与保存依据不一致")
+            source = run.plan_snapshot.regression
+            if source:
+                cur.execute(f"SELECT record FROM {self._run_table} WHERE id=%s FOR SHARE", (source.parent_run_id,))
+                parent_row = cur.fetchone()
+                cur.execute(f"SELECT record FROM {self._result_table} WHERE id=ANY(%s::uuid[])",
+                    (list(source.source_results.values()),))
+                source_results = {r.id: r for r in [self._result_from_value(row["record"]) for row in cur.fetchall()]}
+                validate_regression_parent(run, self._run_from_value(parent_row["record"]) if parent_row else None, source_results)
             case_ids = sorted({i.case_id for i in items})
             cur.execute(f"SELECT record FROM {self._settings.database.postgres_test_case_table} WHERE id=ANY(%s::uuid[]) ORDER BY id FOR SHARE", (case_ids,))
             cases = {c.id: c for c in [TestCaseRecord.model_validate(r["record"]) for r in cur.fetchall()]}
@@ -1858,6 +1870,9 @@ class PostgresTestRunStore:
                 ([i.case_version_id for i in items],))
             versions = {v.id: v for v in [TestCaseVersionRecord.model_validate(r["record"]) for r in cur.fetchall()]}
             validate_frozen_cases(run.plan_snapshot.plan, cases, versions)
+            if source and any(cases[case_id].active_version_id != version_id
+                              for case_id, version_id in source.version_overrides.items()):
+                raise ValueError("回归指定启用版本在提交前发生变化，请重新规划")
             suite_store.insert_in_cursor(cur, suite.suite, suite.items)
             self._insert_run_and_items(cur, run, items)
             if outbox_table:

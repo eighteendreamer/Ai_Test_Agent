@@ -90,6 +90,8 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.sessions.session_service import SessionService
 from src.application.test_runs.agent_case_execution import AgentCaseExecutionAdapter
+from src.application.test_runs.agent_regression_service import AgentRegressionService
+from src.application.test_runs.plan_run_service import CasePlanRunService
 from src.application.security.upload_security_service import UploadSecurityService
 from src.application.skills.skill_management_service import SkillManagementService
 from src.application.skills.skill_marketplace_service import SkillMarketplaceService
@@ -472,6 +474,12 @@ async def _initialize_lifespan_resources(
             stream=task_queue.stream,
         )
     await test_run_service.initialize()
+    case_plan_run_service = CasePlanRunService(run_store=test_run_store, suite_store=test_suite_store,
+        plan_store=container.case_plan_store(), case_service=test_case_service, project_service=project_service,
+        session_store=store, outbox_table=settings.database.postgres_task_outbox_table if task_queue is not None else None,
+        dispatch_stream=task_queue.stream if task_queue is not None else None)
+    test_run_service.set_agent_regression_service(AgentRegressionService(plan_store=container.case_plan_store(),
+        plan_run_service=case_plan_run_service, planning_service=case_planning_service, run_store=test_run_store))
 
     legacy_smoke_catalog = container.legacy_smoke_catalog()
     legacy_smoke_history_service = container.legacy_smoke_history_service()
@@ -665,6 +673,7 @@ async def _initialize_lifespan_resources(
     app.state.test_case_service = test_case_service
     app.state.case_import_service = case_import_service
     app.state.case_planning_service = case_planning_service
+    app.state.case_plan_run_service = case_plan_run_service
     app.state.test_case_template_service = test_case_template_service
     app.state.test_suite_store = test_suite_store
     app.state.test_suite_service = test_suite_service

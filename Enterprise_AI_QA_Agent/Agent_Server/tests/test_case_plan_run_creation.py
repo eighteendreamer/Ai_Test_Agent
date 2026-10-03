@@ -17,10 +17,116 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.case_planning import CasePlanningRequest, CasePlanRunRequest
 from src.schemas.case_management import TestCaseVersionCreateRequest as VersionRequest
+from src.application.test_runs.run_service import TestRunService as RunService
+from src.schemas.run_management import RegressionRunCreateRequest
+from src.application.test_runs.agent_regression_service import AgentRegressionService
+from src.application.test_runs.agent_case_context import build_agent_case_context
 
 
 LIVE = pytest.param(True, marks=pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
     reason="requires isolated real PostgreSQL/MySQL/RustFS"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_agent_regression_keeps_strategy_and_rebuilds_only_needed_execution_chain(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, suites, creator, plan, now, table):
+        parent = await creator.create(plan.project_id, plan.id, CasePlanRunRequest(creation_key="parent", mode_key="api_testing"))
+        initial = await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now)
+        for claim in initial:
+            await complete(store, claim, now, {"case_output": {"body": {"order.id": "old-parent-id"}}})
+        left = (await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now))[0]
+        await complete(store, left, now, {"preparations": {"seed": {"status": "passed", "output": {"id": "old-shared-id"}}}})
+        right = (await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now))[0]
+        failed = await complete(store, right, now, {"case_output": {"verified": False}}, status="failed")
+        original = await store.get_run(parent.run.id)
+        runs = RunService(store=store, project_service=env.projects, suite_service=None, test_case_service=env.cases)
+        runs.set_agent_regression_service(AgentRegressionService(plan_store=env.store,
+            plan_run_service=creator, planning_service=env.service, run_store=store))
+        regression = await runs.create_regression(parent.run.id, RegressionRunCreateRequest(result_ids=[failed.id]))
+        assert regression.run.execution_strategy == "agent"
+        assert regression.run.parent_run_id == parent.run.id
+        by_key = {entry.plan_item_key: entry for entry in regression.items}
+        assert set(by_key) == {"create", "right"}
+        snapshot = regression.run.plan_snapshot
+        assert snapshot.owners["seed"] == snapshot.owners["cleanup"] == "right"
+        assert {entry.key for entry in snapshot.plan.decision.items} == {"create", "seed", "right", "cleanup"}
+        assert by_key["right"].regression_source_result_id == failed.id
+        assert by_key["right"].dependencies[0].item_id == by_key["create"].id
+        assert "old-parent-id" not in snapshot.model_dump_json()
+        assert "old-shared-id" not in snapshot.model_dump_json()
+        assert await store.get_run(parent.run.id) == original
+        claims = await store.claim_items(run_id=regression.run.id, worker_id="regression", limit=20, lease_seconds=60, now=now)
+        assert [entry.plan_item_key for entry, _ in claims] == ["create"]
+        await complete(store, claims[0], now, {"case_output": {"body": {"order.id": "new-run-id"}}})
+        claims = await store.claim_items(run_id=regression.run.id, worker_id="regression", limit=20, lease_seconds=60, now=now)
+        assert [entry.plan_item_key for entry, _ in claims] == ["right"]
+        context = build_agent_case_context(await store.get_run(regression.run.id), claims[0][0],
+            await env.cases.get_version(claims[0][0].case_version_id))
+        assert context.steps[0].item.key == "seed"
+        assert context.steps[0].inputs["id"].value == "new-run-id"
+        result = await complete(store, claims[0], now, {"case_output": {"verified": True},
+            "preparations": {"seed": {"status": "passed", "output": {"id": "new-seed-id"}},
+                             "cleanup": {"status": "passed", "output": {}}}})
+        assert result.regression_source_result_id == failed.id
+        assert (await store.get_run(regression.run.id)).run.status == "completed"
+        assert not await store.claim_items(run_id=regression.run.id, worker_id="terminal", limit=20, lease_seconds=60, now=now)
+        if table:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT payload FROM {table}")
+                assert {row["payload"]["run_id"] for row in cur.fetchall()} == {parent.run.id, regression.run.id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_agent_regression_new_version_replans_and_keeps_other_selected_old_version(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, suites, creator, plan, now, table):
+        parent = await creator.create(plan.project_id, plan.id, CasePlanRunRequest(creation_key="version-parent", mode_key="api_testing"))
+        initial = await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now)
+        for claim in initial:
+            await complete(store, claim, now, {"case_output": {"body": {"order.id": "old-parent-id"}}})
+        failures = []
+        for _ in range(2):
+            claim = (await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now))[0]
+            failures.append(await complete(store, claim, now,
+                {"preparations": {"seed": {"status": "passed", "output": {"id": "old-seed-id"}}}}, status="failed"))
+        selected = {entry.key: entry for entry in plan.decision.items if entry.key in {"left", "right"}}
+        new_versions = {}
+        for key, node in selected.items():
+            new_versions[key] = await env.cases.create_version(node.case_id,
+                VersionRequest(content_json={"objective": "新输出绑定", "steps": [{"action": "使用新的标识字段"}]},
+                    source_refs=[{"source_type": "manual", "source_id": "version-change"}],
+                    model_key="manual", prompt_version="manual", skill_versions={"manual": "v1"}))
+            await env.cases.submit_review(node.case_id)
+            await env.cases.activate(node.case_id)
+
+        def changed(context):
+            assert "回归目标" in context["validation_feedback"]["error"]
+            assert context["constraints"]["required_case_versions"] == {
+                selected["left"].case_id: selected["left"].case_version_id,
+                selected["right"].case_id: new_versions["right"].id}
+            refs = [e["id"] for e in context["evidence"] if e["kind"] == "case"]
+            return finish({"key": "fresh", "kind": "prepare", "instructions": {"operation": "依据新版本创建本次数据"},
+                "reason": "新版本需要新标识", "evidence_ids": refs},
+                item(context, "item-1", key="left", depends_on=["fresh"],
+                    input_bindings={"id": {"source_item": "fresh", "output_path_tokens": ["new.id"]}}),
+                item(context, "item-2", key="revised", depends_on=["fresh"],
+                    input_bindings={"id": {"source_item": "fresh", "output_path_tokens": ["new.id"]}}))
+        model = SequenceModel(finish(), changed)
+        env.service._models = model
+        runs = RunService(store=store, project_service=env.projects, suite_service=None, test_case_service=env.cases)
+        runs.set_agent_regression_service(AgentRegressionService(plan_store=env.store,
+            plan_run_service=creator, planning_service=env.service, run_store=store))
+        original = await store.get_run(parent.run.id)
+        detail = await runs.create_regression(parent.run.id, RegressionRunCreateRequest(
+            result_ids=[entry.id for entry in failures], version_overrides={selected["right"].case_id: new_versions["right"].id}))
+        assert len(model.requests) == 2
+        by_key = {entry.plan_item_key: entry for entry in detail.items}
+        assert by_key["left"].case_version_id == selected["left"].case_version_id != new_versions["left"].id
+        assert by_key["revised"].case_version_id == new_versions["right"].id
+        binding = next(node for node in detail.run.plan_snapshot.plan.decision.items if node.key == "revised").input_bindings["id"]
+        assert binding.path_tokens == ["new.id"]
+        assert await store.get_run(parent.run.id) == original
 
 
 def fixture_plan(context):

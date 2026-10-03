@@ -9,8 +9,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from src.application.test_runs.dependencies import validate_run_dependencies
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
-from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest
-from src.schemas.run_management import RunItemDependency, TestRunItemRecord, TestRunRecord
+from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest, RegressionPlanSource
+from src.schemas.run_management import RunItemDependency, TestRunItemRecord, TestRunRecord, TestCaseResultRecord
 from src.schemas.suite_management import TestSuiteBundle, TestSuiteItemRecord, TestSuiteRecord
 
 
@@ -47,7 +47,8 @@ def source_output_path(snapshot: CasePlanExecutionSnapshot, key: str, path: list
 
 
 def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: datetime,
-                   created_by: str | None = None) -> tuple[TestSuiteBundle, TestRunRecord, list[TestRunItemRecord]]:
+                   created_by: str | None = None, regression: RegressionPlanSource | None = None
+                   ) -> tuple[TestSuiteBundle, TestRunRecord, list[TestRunItemRecord]]:
     if plan.status not in {"planned", "blocked"} or plan.decision is None or plan.decision.action != "finish":
         raise ValueError("只有已冻结且包含正式目标的计划可以创建运行")
     nodes = {node.key: node for node in plan.decision.items}
@@ -61,6 +62,10 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
     except CycleError:
         raise ValueError("计划依赖存在循环") from None
     formal = [key for key in order if nodes[key].kind != "prepare"]
+    if regression and (not set(regression.source_results).issubset(formal)
+        or len(set(regression.source_results.values())) != len(regression.source_results)
+        or {key for key in formal if nodes[key].kind == "target"} != set(regression.source_results)):
+        raise ValueError("回归来源结果与正式执行项不一致")
     ancestors: dict[str, set[str]] = {}
     for key in order:
         ancestors[key] = set(nodes[key].depends_on)
@@ -95,7 +100,7 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
     suite_id, run_id = identity("suite"), identity("run")
     item_ids = {key: identity("item", key) for key in formal}
     snapshot = CasePlanExecutionSnapshot(plan=plan.model_copy(deep=True), run_item_ids=item_ids,
-        owners=owners, preparation_phases=phases)
+        owners=owners, preparation_phases=phases, regression=regression.model_copy(deep=True) if regression else None)
     dependencies: dict[str, dict[str, RunItemDependency]] = {key: {} for key in formal}
 
     def edge(owner: str, parent: str, condition: str, preparation: str | None = None) -> RunItemDependency:
@@ -128,16 +133,23 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
         created_at=now, updated_at=now), items=[TestSuiteItemRecord(id=identity("suite-item", key),
         suite_id=suite_id, case_id=nodes[key].case_id, case_version_id=nodes[key].case_version_id,
         position=index) for index, key in enumerate(formal, 1)])
-    request_hash = json_digest({"plan": plan.model_dump(mode="json"), "request": request.model_dump(mode="json")})
+    hash_input = {"plan": plan.model_dump(mode="json"), "request": request.model_dump(mode="json")}
+    if regression:
+        hash_input["regression"] = regression.model_dump(mode="json")
+    request_hash = json_digest(hash_input)
     run = TestRunRecord(id=run_id, project_id=plan.project_id, suite_id=suite_id,
         mode_key=request.mode_key, session_id=request.session_id, execution_strategy="agent",
         plan_snapshot=snapshot, creation_key=request.creation_key, creation_hash=request_hash,
+        run_kind="regression" if regression else "normal", parent_run_id=regression.parent_run_id if regression else None,
         stats={"total": len(formal), "queued": len(formal)}, created_by=created_by,
         created_at=now, updated_at=now)
     items = [TestRunItemRecord(id=item_ids[key], run_id=run_id, case_id=nodes[key].case_id,
         case_version_id=nodes[key].case_version_id, plan_item_key=key, position=index,
         dependencies=list(dependencies[key].values()), created_at=now, updated_at=now)
         for index, key in enumerate(formal, 1)]
+    if regression:
+        for entry in items:
+            entry.regression_source_result_id = regression.source_results.get(entry.plan_item_key)
     validate_run_dependencies(run, items)
     return suite, run, items
 
@@ -146,6 +158,32 @@ def validate_plan_bundle(suite: TestSuiteBundle, run: TestRunRecord, items: list
     if run.plan_snapshot is None or not run.creation_key:
         raise ValueError("计划运行没有固定快照或创建请求身份")
     expected = build_plan_run(run.plan_snapshot.plan, CasePlanRunRequest(creation_key=run.creation_key,
-        mode_key=run.mode_key, session_id=run.session_id), now=run.created_at, created_by=run.created_by)
+        mode_key=run.mode_key, session_id=run.session_id), now=run.created_at, created_by=run.created_by,
+        regression=run.plan_snapshot.regression)
     if (suite != expected[0] or run != expected[1] or items != expected[2]):
         raise ValueError("计划映射、套件、运行或条目与固定依据不一致")
+
+
+def validate_regression_parent(run: TestRunRecord, parent: TestRunRecord | None,
+                               results: dict[str, TestCaseResultRecord]) -> None:
+    source = run.plan_snapshot.regression if run.plan_snapshot else None
+    if source is None:
+        return
+    if (parent is None or parent.project_id != run.project_id or parent.origin != "native"
+        or parent.status not in {"completed", "cancelled"} or parent.execution_strategy != "agent"
+        or parent.plan_snapshot is None or parent.plan_snapshot.plan.id != source.source_plan_id):
+        raise ValueError("Agent 回归父运行或固定计划不一致")
+    nodes = {node.key: node for node in run.plan_snapshot.plan.decision.items}
+    selected_case_ids = {nodes[key].case_id for key in source.source_results}
+    if not set(source.version_overrides).issubset(selected_case_ids):
+        raise ValueError("回归版本替换不属于选定结果")
+    parent_nodes = {node.case_id: node for node in parent.plan_snapshot.plan.decision.items if node.kind != "prepare"}
+    for key, result_id in source.source_results.items():
+        result, node = results.get(result_id), nodes[key]
+        original = parent_nodes.get(node.case_id)
+        if (result is None or result.run_id != parent.id or result.case_id != node.case_id
+            or result.status not in {"failed", "error", "blocked"} or original is None
+            or result.run_item_id != parent.plan_snapshot.run_item_ids.get(original.key)
+            or result.case_version_id != original.case_version_id
+            or node.case_version_id != source.version_overrides.get(node.case_id, result.case_version_id)):
+            raise ValueError("Agent 回归来源结果、用例或版本不一致")

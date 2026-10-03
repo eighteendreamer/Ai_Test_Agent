@@ -644,3 +644,55 @@ npm run build
 ```
 
 另检查方案本地链接、核心约定、镜像字节一致性和文档 diff。本轮未重跑前端构建、Agent 执行集成、实际模型、真实 RustFS/PostgreSQL V1/V2、Worker 或完整生产启动；没有相关产品代码改动，既有验证结果沿用上节证据，不能记为本轮重新验收。提交范围仅 PLAN.md 与 IMPLEMENTATION.md，用户 .gitignore 改动保留未暂存；不推送、不创建 PR。完整 P0—P5 目标仍未完成。
+
+### P2b Agent 失败回归保留固定计划及重新执行前置（2026-10-04）
+
+上一轮方案提交 `4625d6c` 属于进展，本轮继续完整 P0—P5 目标。重新读取指定附件、当前方案、回归创建与运行模型、固定计划映射、计划运行事务、规划来源/服务、生产初始化、前端类型、既有回归与 Agent 图测试，以及本地《Agent轨迹与协议鲁棒性》的轨迹、重复执行和幂等说明。问题属于回归创建与新执行策略的契约缺失，不能只给原回归加一个策略字段而丢失前置及实际输出。
+
+先复现：通过项目所属保存计划创建 Agent 父运行，使用既有领取和结果保存服务产生失败项，调用原 create_regression；内存与实际 PostgreSQL 均得到 legacy 新运行。`p2-agent-regression-before.xml` 为 **2 失败、17 未选择，4.19 秒**。该复现的业务结果由测试构造，用于证明真实存储与回归服务的策略丢失；后续状态型 HTTP 专项另证明真实工具操作及目标失败。
+
+依据 → 实现：
+
+- 新 AgentRegressionService 读取父运行固定计划及来源失败结果，无版本替换时保留选中项的声明依赖祖先和相关后置准备，重新分配准备归属；不复制旧运行产生的临时数据，不重跑无关目标。清理的等待边可随本轮范围裁剪，操作说明和数据来源不改写；省略分支仍被清理数据引用时交给现有规划服务判断。
+- 明确指定新启用版本时，复用 CasePlanningService，提供完整固定版本、原计划及失败验证信息；服务端指定必须保留的目标和版本，模型遗漏目标时收到校验反馈后修正。未指定替换的选中目标仍读取原版本，即使该用例已启用更新版本。新 Prompt 为 case-planning-v4，旧计划不重写。
+- RegressionPlanSource 存父运行、来源计划、目标结果映射及明确版本替换，加入既有 CasePlanExecutionSnapshot JSONB。计划映射按同一来源重建 suite/run/items，并把来源加入创建哈希；原始与回归运行都经过完整映射一致性校验，不绕过原事务验证。
+- 内存存储在现有锁内核对来源，PostgreSQL 事务重新核对项目、父运行终态、结果所属和版本；替换版本提交前须仍为启用版本。套件、运行、条目和 Outbox 同事务；固定计划先独立保存，因此运行事务失败可能保留没有运行的计划，但不会留下半套运行或任务。回归创建仍沿用每次请求创建一轮的既有语义，没有新增跨请求幂等参数。
+- TestRunService 按父运行策略分流，保留旧回归行为；缺少 Agent 回归服务时明确报错，不降级 legacy。main 注入计划运行及 Agent 回归服务，前端类型同步可选来源字段；保存计划公开启动路由及按钮仍待接入。
+
+实际功能证据：
+
+- 计划专项最初 **4 通过、17 未选择，4.54 秒**，`p2-agent-regression-plan.xml`。覆盖真实 MySQL 配置、PG 用例/计划/运行和实际文件/存储 fixture；只有创建、领取及输出记录的测试数据受控，没有执行业务工具。
+- HTTP 专项最初 **2 通过、25 未选择，10.37 秒**，`p2-agent-regression-http.xml`。新本地服务实际保存和删除订单，每次创建分配不同 ID，第一轮查询 count=1 与完整冻结 JSON 的预期 0 不符，回执核验据真实输出保存 failed；第二轮新回归重新创建数据，返回 count=0，保存 passed。实际执行项目原件上传/读回、Session/图、三个权限审批、POST→GET→DELETE、运行及回归 HTTP 路由、结果/证据重读和终态不重领。原失败 RunDetail 逐项保持原状，模型决策与语义回执受控，不能证明外部默认模型自主执行。
+- 加入实际 PostgreSQL 中断后，功能专项 **6 通过、42 未选择，11.41 秒**，`p2-agent-regression-functional.xml`；后续补充模型遗漏回归目标的反馈修正及来源记录精简，最终专项 **6 通过、42 未选择，11.67 秒**，`p2-agent-regression-functional-final.xml`。中断发生在真实 suite/run/items 插入之后，核对套件、运行、条目和 Outbox 数量全部回滚，再成功创建并执行新回归。原计划及失败记录保留。
+- 扩大后端回归 **258 通过、4 跳过、5 未选择，187.69 秒**，`p2-agent-regression-integration.xml`。4 项为规划/路径专项的真实存储开关未打开；随后启用正确开关，连同最新回归及版本提交前校验补验 **29 通过、51 未选择，93.67 秒**，`p2-agent-regression-storage-final.xml`，无失败或跳过。第一次扩大命令误引用不存在的 test_regression_api_frontend_contract.py，未执行任何测试；核对实际文件清单后修正命令，没有将该次误调用计为产品失败或通过。
+- 扩大测试的 5 个未选择项包含 4 个外部模型专项及一个历史真实模型输出的本地解析样本。该本地样本随后单独执行 **1 通过，2.30 秒**，未发起模型请求。历史默认模型 length/空正文失败保持，未修改其 MySQL 配置或重试相同外部请求。
+- 前端 CasePlanDialog 和四个 Session store 套件 **21 通过，1.91 秒**；npm run build 的 vue-tsc 类型检查及 Vite 构建通过（6.87 秒），`p2-agent-regression-frontend-build.txt`。11 个 Python 源/测试文件 py_compile 实际通过。没有产品页面浏览器验收或完整生产 lifespan/Worker 进程验收。
+
+后端扩大命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_plan_run_creation.py tests/test_case_planning.py tests/test_plan_binding_paths.py tests/test_run_item_dependencies.py tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_agent_case_assessment.py tests/test_agent_case_context.py tests/test_test_run_regression.py tests/test_test_run_lifecycle.py tests/test_case_execution_service.py tests/test_session_execution_ownership.py tests/test_runtime_interrupt_tool_calls.py tests/test_project_regression_frontend_contract.py tests/test_lifespan_resource_cleanup.py -q --tb=short -rs -k 'not actual_model' --junitxml=../docs/upgrade_2026-10-03/p2-agent-regression-integration.xml
+```
+
+最新存储补验：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_BINDING_PATHS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_plan_run_creation.py tests/test_agent_case_execution.py tests/test_case_planning.py tests/test_plan_binding_paths.py -q --tb=short -rs -k 'agent_regression or True' --junitxml=../docs/upgrade_2026-10-03/p2-agent-regression-storage-final.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning.py::test_actual_model_json_with_trailing_text_keeps_preparation_and_fixed_references -q --tb=short
+```
+
+前端（agent_web）：
+
+```powershell
+npm run test -- src/features/projects/CasePlanDialog.test.ts src/stores/sessionApprovalLifecycle.test.ts src/stores/sessionReceiptDedup.test.ts src/stores/sessionEventRefresh.test.ts src/stores/sessionStreaming.test.ts
+npm run build
+```
+
+本步骤不新增依赖、配置域或数据库列；配置仍在 MySQL，计划/运行/业务证据在 PostgreSQL，原件沿用 RustFS。源码、测试、实际证据和方案同步提交，用户五条 .gitignore 改动不暂存。下一步接通公开保存计划启动并验收，再继续持久规划任务、真实 Redis Worker/完整生产启动、默认模型及其他模式工具、步骤级恢复和完整 P0—P5 的剩余功能。该步骤通过不代表整个升级完成。

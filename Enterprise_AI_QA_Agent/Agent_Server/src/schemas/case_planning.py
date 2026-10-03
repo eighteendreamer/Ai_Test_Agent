@@ -140,8 +140,16 @@ class CasePlanRunRequest(PlanningModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
 
 
+class RegressionPlanSource(PlanningModel):
+    parent_run_id: str = Field(min_length=1, max_length=160)
+    source_plan_id: str = Field(min_length=1, max_length=160)
+    source_results: dict[str, str] = Field(min_length=1, max_length=200)
+    version_overrides: dict[str, str] = Field(default_factory=dict, max_length=200)
+
+
 class CasePlanExecutionSnapshot(PlanningModel):
     plan: CasePlanRecord
     run_item_ids: dict[str, str]
     owners: dict[str, str]
     preparation_phases: dict[str, Literal["before", "after"]]
+    regression: RegressionPlanSource | None = None

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from src.application.test_runs.plan_mapping import build_plan_run, validate_frozen_cases
 from src.core.request_context import get_request_context, new_id
-from src.schemas.case_planning import CasePlanRunRequest
+from src.schemas.case_planning import CasePlanRunRequest, RegressionPlanSource
 from src.schemas.run_dispatch import RunDispatchTask
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,12 @@ class CasePlanRunService:
             raise ValueError("计划运行的 Outbox 表与目标流必须同时配置")
 
     async def create(self, project_id: str, plan_id: str, request: CasePlanRunRequest,
-                     *, created_by: str | None = None):
+                     *, created_by: str | None = None, regression: RegressionPlanSource | None = None):
         plan = await self._plans.get(project_id, plan_id)
         if plan is None:
             raise KeyError("当前项目的固定计划不存在")
-        bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by)
+        bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by,
+            regression=regression)
         existing = await self._runs.get_run(run.id)
         if existing:
             if existing.run.creation_hash != run.creation_hash:
@@ -38,6 +39,9 @@ class CasePlanRunService:
         cases = await self._cases.get_cases([n.case_id for n in formal])
         versions = await self._cases.get_versions([n.case_version_id for n in formal])
         validate_frozen_cases(plan, cases, versions)
+        if regression and any(cases[case_id].active_version_id != version_id
+                              for case_id, version_id in regression.version_overrides.items()):
+            raise ValueError("回归指定启用版本在提交前发生变化，请重新规划")
         if request.session_id:
             if self._sessions is None:
                 raise RuntimeError("计划运行尚未配置会话存储")
