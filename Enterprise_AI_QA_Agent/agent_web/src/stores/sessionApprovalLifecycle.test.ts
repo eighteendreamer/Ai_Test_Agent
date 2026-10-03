@@ -106,6 +106,31 @@ describe("approval and watcher refresh lifecycle", () => {
     expect(store.session?.status).toBe("running");
   });
 
+  it.each(["test_run_case_execution", "test_run_agent_execution"])(
+    "routes %s through the run item and displays the next approval after refresh",
+    async (source) => {
+      const store = useSessionStore();
+      const first = approval();
+      first.metadata = { source, run_item_id: "item-1" };
+      const next = { ...first, id: "approval-2" };
+      store.session = sessionDetail({ pending_approvals: [first] });
+      const runApproval = vi.spyOn(api, "resolveTestRunItemApproval").mockResolvedValue({
+        session_id: "session-1", run_id: "run-1", run_item_id: "item-1", attempt_no: 1,
+        approval_id: "approval-2", tool_job_id: "job-2", summary: "Next operation needs approval",
+      } as unknown as Awaited<ReturnType<typeof api.resolveTestRunItemApproval>>);
+      const genericApproval = vi.spyOn(api, "resolveApproval");
+      vi.spyOn(api, "getSession").mockResolvedValue(sessionDetail({ pending_approvals: [next] }));
+      vi.spyOn(store, "refreshToolingData").mockResolvedValue();
+
+      await store.resolveApproval(first.id, "approved");
+      expect(runApproval).toHaveBeenCalledWith("item-1", first.id, "approved", undefined);
+      expect(genericApproval).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(120);
+      expect(store.error).toBe("");
+      expect(store.pendingApprovals.map((item) => item.id)).toEqual([next.id]);
+    },
+  );
+
   it("does not apply tooling results returned after the watcher stops", async () => {
     const store = useSessionStore();
     store.session = sessionDetail();

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="9" time="15.479" timestamp="2026-10-04T01:29:30.653474+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[False]" time="0.485"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:97: in test_durable_admission_owned_approvals_actual_outputs_and_terminal_result
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[True]" time="2.500"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:97: in test_durable_admission_owned_approvals_actual_outputs_and_terminal_result
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[False]" time="0.476"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:126: in test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[True]" time="1.883"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:126: in test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[False]" time="0.509" /><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[True]" time="1.536" /><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False]" time="0.484"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:188: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    await approval_continuation(runs, reader, adapter, args, pending)
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[True]" time="2.000"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:188: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    await approval_continuation(runs, reader, adapter, args, pending)
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1428: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_stale_lease_foreign_checkpoint_or_context_cannot_admit_tools" time="0.512" /></testsuite></testsuites>

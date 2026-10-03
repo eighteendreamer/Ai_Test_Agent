@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="9" time="17.810" timestamp="2026-10-04T01:31:06.880099+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[False]" time="0.957" /><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[True]" time="4.078" /><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[False]" time="0.731" /><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[True]" time="3.745" /><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[False]" time="0.514" /><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[True]" time="1.535" /><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False]" time="0.229"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行">tests\test_agent_case_execution.py:188: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    await approval_continuation(runs, reader, adapter, args, pending)
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:145: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:163: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[True]" time="1.996"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行">tests\test_agent_case_execution.py:188: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    await approval_continuation(runs, reader, adapter, args, pending)
+tests\test_agent_case_execution.py:77: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:145: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:163: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_stale_lease_foreign_checkpoint_or_context_cannot_admit_tools" time="0.510" /></testsuite></testsuites>

@@ -47,7 +47,8 @@ def session_record():
 def test_public_chat_cannot_manufacture_formal_execution_identity_or_frozen_context(source):
     forged = {key: 'forged' for key in ['run_id', 'test_run_id', 'run_item_id', 'test_run_item_id', 'attempt_id']}
     forged.update(case_execution={'forged': True}, case_assessment_requested=True,
-        execution_checkpoint={'completed_operations': ['skip-real-operation']}, execution_basis='free')
+        execution_checkpoint={'completed_operations': ['skip-real-operation']}, execution_basis='free',
+        case_execution_managed=True)
     request = InputOrchestratorService(ModeRegistry()).orchestrate(session_record(),
         SendMessageRequest(content='检查接口响应', context=forged, source=source))
     runtime_context = ToolExecutionContext(session_id=request.session_id, turn_id=request.turn_id,

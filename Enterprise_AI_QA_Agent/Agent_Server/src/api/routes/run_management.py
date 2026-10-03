@@ -241,7 +241,7 @@ async def execute_test_run_item(
         raise _http_error(exc) from exc
 
 
-@router.post("/run-items/{item_id}/approval", response_model=TestCaseResultRecord)
+@router.post("/run-items/{item_id}/approval", response_model=RunItemApprovalPending | TestCaseResultRecord)
 async def resolve_test_run_item_approval(
     item_id: str,
     payload: RunItemApprovalDecisionRequest,

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="6.725" timestamp="2026-10-04T01:32:07.889959+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False]" time="0.823"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:213: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    resumed = await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1429: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[True]" time="2.243"><failure message="ValueError: Session turn is owned by another worker.">tests\test_agent_case_execution.py:213: in test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting
+    resumed = await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:142: in resume_approval
+    snapshot = await self._sessions.resume_case_approval(checkpoint.session_id, context=context,
+src\application\sessions\session_service.py:1429: in resume_case_approval
+    raise ValueError("Session turn is owned by another worker.")
+E   ValueError: Session turn is owned by another worker.</failure></testcase></testsuite></testsuites>

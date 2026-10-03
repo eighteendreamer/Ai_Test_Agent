@@ -29,6 +29,7 @@ import type {
   TestRunPage,
   TestRunStatus,
   TestCaseResultRecord,
+  RunItemApprovalPending,
   RegressionBatchPage,
   RegressionContext,
   RegressionFailurePage,
@@ -279,7 +280,7 @@ export function resolveTestRunItemApproval(
   approvalId: string,
   decision: "approved" | "denied",
   reason?: string,
-): Promise<TestCaseResultRecord> {
+): Promise<TestCaseResultRecord | RunItemApprovalPending> {
   return request(`/api/v1/run-items/${encodeURIComponent(itemId)}/approval`, {
     method: "POST",
     body: JSON.stringify({ approval_id: approvalId, decision, reason: reason || null }),

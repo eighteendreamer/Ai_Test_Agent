@@ -89,6 +89,7 @@ from src.application.report_service import ReportService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.sessions.session_service import SessionService
+from src.application.test_runs.agent_case_execution import AgentCaseExecutionAdapter
 from src.application.security.upload_security_service import UploadSecurityService
 from src.application.skills.skill_management_service import SkillManagementService
 from src.application.skills.skill_marketplace_service import SkillMarketplaceService
@@ -720,6 +721,9 @@ async def _initialize_lifespan_resources(
         turn_reaper_interval_seconds=settings.orchestration.turn_reaper_interval_seconds,
     )
     cleanup.push_async_callback(_close_lifespan_resource, "session_service", session_service.close)
+    test_run_execution_service.set_agent_execution_adapter(AgentCaseExecutionAdapter(
+        run_service=test_run_service, session_service=session_service,
+        session_store=store, tool_job_service=tool_job_service))
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
         store=store,

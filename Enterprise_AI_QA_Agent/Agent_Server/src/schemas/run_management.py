@@ -390,6 +390,7 @@ class RunItemApprovalWaitRequest(RunItemLeaseRequest):
 
 
 class RunItemApprovalPending(BaseModel):
+    session_id: str | None = None
     status: Literal["waiting_approval"] = "waiting_approval"
     run_id: str
     run_item_id: str

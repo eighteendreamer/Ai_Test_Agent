@@ -1180,7 +1180,8 @@ export const useSessionStore = defineStore("session", {
       _approvalManager.markResolving(approvalId);
       this.error = "";
       try {
-        if (approval?.metadata?.source === "test_run_case_execution") {
+        if (approval?.metadata?.source === "test_run_case_execution"
+          || approval?.metadata?.source === "test_run_agent_execution") {
           const runItemId = String(approval.metadata.run_item_id || "").trim();
           if (!runItemId) {
             throw new Error("Test run approval is missing run_item_id.");

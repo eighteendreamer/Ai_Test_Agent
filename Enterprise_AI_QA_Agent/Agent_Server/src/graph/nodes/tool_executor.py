@@ -572,6 +572,8 @@ async def _resolve_tool_call(
             tool=tool,
             reason=reason,
             metadata={
+                **({**tool_context.job_metadata(), "source": "test_run_agent_execution"}
+                   if (state.get("context_bundle") or {}).get("case_execution_managed") else {}),
                 "turn_id": state["turn_id"],
                 "call_id": tool_call.id,
                 "arguments": tool_call.arguments,

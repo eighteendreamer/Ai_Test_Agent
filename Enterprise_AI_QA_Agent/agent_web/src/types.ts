@@ -1685,6 +1685,16 @@ export interface TestCaseResultRecord {
   created_at: string;
 }
 
+export interface RunItemApprovalPending {
+  session_id?: string | null;
+  run_id: string;
+  run_item_id: string;
+  attempt_no: number;
+  approval_id: string;
+  tool_job_id: string;
+  summary: string;
+}
+
 export interface TestRunDetail {
   run: TestRunRecord;
   items: TestRunItemRecord[];

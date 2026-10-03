@@ -599,9 +599,26 @@ class RuntimeService:
                 tool_key=approval["tool_key"],
                 approval_id=approval["id"],
             )
-            execution_record = await self._tool_runtime_service.execute(
-                tool=tool, call=tool_call, context=context,
-            )
+            execution_record = None
+            if context.context_bundle.get("case_execution_managed"):
+                job = (await self._tool_job_service.get_job(context.tool_job_id)
+                    if self._tool_job_service is not None and context.tool_job_id else None)
+                if (job is None or job.session_id != session.id or job.turn_id != turn_id
+                    or job.call_id != tool_call.id or job.tool_key != tool.key
+                    or job.input_payload != tool_call.arguments
+                    or any(job.metadata.get(key) != context.context_bundle.get(key)
+                        for key in ("project_id", "run_id", "run_item_id", "attempt_id"))):
+                    raise ValueError("固定用例审批工具任务与实际执行身份或参数不一致")
+                if job.status.value in {"completed", "partial", "failed", "denied", "cancelled"}:
+                    execution_record = await self._tool_runtime_service.record_from_job(job)
+                    logger.info("case_approval_tool_result_replayed", extra={"session_id": session.id,
+                        "turn_id": turn_id, "approval_id": approval["id"], "tool_job_id": job.id})
+                elif job.status.value != "waiting_approval":
+                    raise RuntimeError("固定用例审批工具结果未知，需要核对原任务，不能重复操作")
+            if execution_record is None:
+                execution_record = await self._tool_runtime_service.execute(
+                    tool=tool, call=tool_call, context=context,
+                )
             append_graph_event(
                 state,
                 "tool.execution_completed" if execution_record.status == "completed" else "tool.execution_failed",

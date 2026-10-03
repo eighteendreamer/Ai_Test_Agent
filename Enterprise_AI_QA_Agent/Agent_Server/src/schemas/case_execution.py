@@ -51,6 +51,21 @@ class AgentCaseExecutionContext(PlanningModel):
         }
 
 
+class AgentCaseExecutionCheckpoint(PlanningModel):
+    schema_version: Literal[1] = 1
+    project_id: str
+    run_id: str
+    run_item_id: str
+    plan_id: str
+    context_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_attempt_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+    phase: Literal["admitted", "running", "snapshot"]
+    snapshot_id: str | None = None
+    snapshot_version: int | None = Field(default=None, ge=1)
+
+
 class CaseToolEvidenceReference(PlanningModel):
     call_id: str = Field(min_length=1, max_length=256)
     output_path_tokens: list[str] = Field(default_factory=list, max_length=32)

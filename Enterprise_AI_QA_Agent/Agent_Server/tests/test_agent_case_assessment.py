@@ -73,7 +73,8 @@ def business_http():
 
 
 @asynccontextmanager
-async def execution(tmp_path, business_http, live=False, perform_tools=True, with_business_instructions=False):
+async def execution(tmp_path, business_http, live=False, perform_tools=True, with_business_instructions=False,
+    services=None, start_item=True):
     async with planned(tmp_path, live) as (env, store, suites, creator, old, now, table):
         project = await env.projects.get(old.project_id)
         content = {'objective': '完整用例检查', '期望': {'code': 200, 'flag': False, 'count': 0,
@@ -109,7 +110,8 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
         detail = await creator.create(project.id, frozen.id, CasePlanRunRequest(creation_key='assessment', mode_key='api_testing'))
         claims = await store.claim_items(run_id=detail.run.id, worker_id='actual-tools', limit=1, lease_seconds=60, now=now)
         record, run_attempt = claims[0]
-        await store.start_item(record.id, run_attempt.lease_token, now)
+        if start_item:
+            await store.start_item(record.id, run_attempt.lease_token, now)
         detail = await store.get_run(detail.run.id)
         context = build_agent_case_context(detail, record, await env.cases.get_version(record.case_version_id))
         tables = []
@@ -131,6 +133,9 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
         records = []
         url, requests, actual_id = business_http
         try:
+            if services is not None:
+                services['environment'] = env
+                services['creator'] = creator
             persisted_id = None
             for key, method in ([('seed', 'POST'), ('target', 'GET'), ('cleanup', 'DELETE')] if perform_tools else []):
                 path = '/orders' if key == 'seed' else '/orders/' + persisted_id

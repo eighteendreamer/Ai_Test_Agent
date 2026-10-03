@@ -859,7 +859,7 @@ class SessionService:
                     }),
                 )
                 return proxy_approval
-            if proxy_metadata.get("source") == "test_run_case_execution":
+            if proxy_metadata.get("source") in {"test_run_case_execution", "test_run_agent_execution"}:
                 raise ValueError(
                     "Use the test run item approval endpoint for test-run approvals."
                 )
@@ -1011,7 +1011,8 @@ class SessionService:
         approval: ToolApprovalRequest,
         turn_lease_token: str,
         ownership_monitors: tuple[asyncio.Task, ...] = (),
-    ) -> ConversationResponse:
+        capture_snapshot: bool = False,
+    ) -> ConversationResponse | SessionSnapshot:
         session_id = session.id
         turn_id = str(session.metadata.get("pending_turn", {}).get("turn_id", ""))
         assistant_message_id = str(uuid4())
@@ -1078,7 +1079,7 @@ class SessionService:
                 ownership_monitors=ownership_monitors,
             )
             settled = True
-            return response
+            return continuation.snapshot.model_copy(deep=True) if capture_snapshot else response
         except asyncio.CancelledError:
             raise
         except ContinuationLeaseLostError:
@@ -1341,7 +1342,7 @@ class SessionService:
             )
 
     async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
-        attempt_id: str, mode_key: str) -> SessionSnapshot:
+        attempt_id: str, mode_key: str, managed_by_run: bool = False) -> SessionSnapshot:
         """Server-only frozen execution; share normal turn leases, events and snapshots.
 
         The caller must build context from persisted versions and validate its
@@ -1362,6 +1363,7 @@ class SessionService:
                     continue
                 saved = state.get("context_bundle") or {}
                 if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or bool(saved.get("case_execution_managed")) != managed_by_run
                     or state.get("mode_key") != mode.key):
                     raise ValueError("相同执行身份的冻结上下文或模式发生变化")
                 logger.info("case_session_snapshot_replayed", extra={"session_id": session_id,
@@ -1379,7 +1381,8 @@ class SessionService:
             if request.routing_decision is not None:
                 request.routing_decision.queue_behavior = "reject_when_busy"
             request.context.update(context.runtime_context(), attempt_id=attempt_id,
-                case_assessment_requested=True, trusted_security_runtime_direct_execution=False)
+                case_assessment_requested=True, case_execution_managed=managed_by_run,
+                trusted_security_runtime_direct_execution=False)
             await self._handle_busy_submission(session=session, payload=payload, execution_request=request)
             logger.info("case_session_turn_started", extra={"session_id": session_id,
                 "run_id": context.run_id, "run_item_id": context.run_item_id,
@@ -1389,6 +1392,60 @@ class SessionService:
             if not isinstance(snapshot, SessionSnapshot):
                 raise RuntimeError("固定用例执行未返回已持久化快照")
             return snapshot
+
+    async def resume_case_approval(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str, approval_id: str,
+        payload: ApprovalDecisionRequest) -> SessionSnapshot:
+        """Server-owned synchronous continuation; caller maintains the RunItem lease."""
+        if payload.decision not in {ToolApprovalStatus.approved, ToolApprovalStatus.denied}:
+            raise ValueError("Approval decision must be approved or denied.")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            snapshot = await self._store.get_latest_snapshot(session_id)
+            state = snapshot.graph_state if snapshot is not None else {}
+            saved = state.get("context_bundle") or {}
+            if (session.project_id != context.project_id or state.get("turn_id") != turn_id
+                or saved.get("case_execution") != context.model_dump(mode="json")
+                or saved.get("attempt_id") != attempt_id or not saved.get("case_execution_managed")
+                or state.get("mode_key") != self._mode_registry.resolve(mode_key).key):
+                raise ValueError("审批续执行与固定运行身份或内容不一致")
+            approvals = await self._store.list_approvals(session_id)
+            approval = next((entry for entry in approvals if entry.id == approval_id), None)
+            if (approval is None or approval.metadata.get("source") != "test_run_agent_execution"
+                or approval.metadata.get("turn_id") != turn_id):
+                raise ValueError("审批不属于本次固定用例执行")
+            if approval.status not in {ToolApprovalStatus.pending, payload.decision}:
+                raise ValueError("审批已经以不同决定结束")
+            if approval_id not in session.metadata.get("pending_turn", {}).get("pending_approval_ids", []):
+                if approval.status != payload.decision:
+                    raise ValueError("审批已不在当前待执行集合")
+                return snapshot.model_copy(deep=True)
+            token = str(uuid4())
+            claimed = await self._store.claim_turn_execution(session_id=session_id, turn_id=turn_id,
+                owner_id=self._worker_owner_id, lease_token=token, lease_seconds=self._turn_execution_lease_seconds,
+                approval_id=approval_id)
+            if claimed is None:
+                raise ValueError("Session turn is owned by another worker.")
+            settled = False
+            try:
+                resolved = await self._store.resolve_approval(session_id=session_id, approval_id=approval_id,
+                    status=payload.decision, reason=payload.reason)
+                if resolved.status != payload.decision:
+                    raise ValueError("审批被并发决议为不同状态")
+                await self._append_approval_resolved_event(session_id, resolved)
+                result = await self._run_owned_approval_locked(session=claimed, approval=resolved,
+                    turn_lease_token=token, capture_snapshot=True)
+                if not isinstance(result, SessionSnapshot):
+                    raise RuntimeError("固定用例审批续执行未返回持久快照")
+                settled = True
+                return result
+            finally:
+                if settled:
+                    await self._store.complete_turn_execution(session_id, token)
+                else:
+                    logger.warning("case_approval_lease_preserved_for_recovery", extra={
+                        "session_id": session_id, "approval_id": approval_id, "run_item_id": context.run_item_id})
 
     def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
         return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)

@@ -176,6 +176,7 @@ class SessionStore(Protocol):
         owner_id: str,
         lease_token: str,
         lease_seconds: int,
+        approval_id: str | None = None,
     ) -> SessionRecord | None: ...
     async def renew_turn_execution(
         self,
@@ -720,6 +721,7 @@ class InMemorySessionStore:
         owner_id: str,
         lease_token: str,
         lease_seconds: int,
+        approval_id: str | None = None,
     ) -> SessionRecord | None:
         async with self._lock:
             session = self._sessions.get(session_id)
@@ -729,9 +731,13 @@ class InMemorySessionStore:
             expires_at = _parse_datetime(metadata.get("turn_lease_expires_at"))
             if expires_at is not None and expires_at > datetime.utcnow():
                 return None
+            pending = metadata.get("pending_turn") or {}
+            owned_approval = (session.status.value == "waiting_approval" and approval_id is not None
+                and pending.get("turn_id") == turn_id and approval_id in pending.get("pending_approval_ids", []))
             if (
                 session.status.value in {"running", "waiting_approval"}
                 and metadata.get("turn_lease_turn_id") != turn_id
+                and not owned_approval
             ):
                 return None
             metadata.update({

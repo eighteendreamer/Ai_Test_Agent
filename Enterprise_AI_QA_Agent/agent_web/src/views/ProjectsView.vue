@@ -726,10 +726,11 @@ async function openRunDetail(run: TestRunRecord) {
 async function decideRunItemApproval(item: TestRunDetail["items"][number], decision: "approved" | "denied") {
   if (!item.approval_id) return;
   try {
-    await api.resolveTestRunItemApproval(item.id, item.approval_id, decision, `Project operator ${decision}`);
+    const outcome = await api.resolveTestRunItemApproval(item.id, item.approval_id, decision, `Project operator ${decision}`);
     if (runDetail.value) runDetail.value = await api.getTestRun(runDetail.value.run.id);
     await loadTestRuns();
-    toast.success(decision === "approved" ? "审批已通过，条目将恢复执行" : "审批已拒绝，条目已记为阻塞");
+    toast.success("approval_id" in outcome ? "审批已处理，条目还有待审批操作"
+      : decision === "approved" ? "审批已通过，执行结果已保存" : "审批已拒绝，执行结果已保存");
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "审批处理失败");
   }

@@ -299,6 +299,7 @@ class PostgresSessionStore:
         owner_id: str,
         lease_token: str,
         lease_seconds: int,
+        approval_id: str | None = None,
     ) -> SessionRecord | None:
         return await asyncio.to_thread(
             self._claim_turn_execution_sync,
@@ -307,6 +308,7 @@ class PostgresSessionStore:
             owner_id,
             lease_token,
             lease_seconds,
+            approval_id,
         )
 
     async def renew_turn_execution(
@@ -1641,6 +1643,7 @@ class PostgresSessionStore:
         owner_id: str,
         lease_token: str,
         lease_seconds: int,
+        approval_id: str | None = None,
     ) -> SessionRecord | None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1660,6 +1663,9 @@ class PostgresSessionStore:
                       AND (
                           status NOT IN ('running', 'waiting_approval')
                           OR metadata->>'turn_lease_turn_id' = %s
+                          OR (status = 'waiting_approval'
+                              AND metadata->'pending_turn'->>'turn_id' = %s
+                              AND metadata->'pending_turn'->'pending_approval_ids' ? %s)
                       )
                       AND (
                           NOT (metadata ? 'turn_lease_expires_at')
@@ -1667,7 +1673,7 @@ class PostgresSessionStore:
                       )
                     RETURNING *
                     """,
-                    (turn_id, owner_id, lease_token, lease_seconds, session_id, turn_id),
+                    (turn_id, owner_id, lease_token, lease_seconds, session_id, turn_id, turn_id, approval_id),
                 )
                 row = cur.fetchone()
                 if row is None:

@@ -21,6 +21,10 @@ from src.application.test_runs.case_execution import (
 )
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.test_runs.run_service import TestRunService
+from src.application.test_runs.agent_case_execution import (
+    AgentCaseExecutionAdapter, AgentCaseApprovalWait, AgentCaseRecoveryRequired, CHECKPOINT_KEY,
+)
+from src.schemas.case_execution import AgentCaseExecutionCheckpoint
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.observability.business_metrics import run_item_execution_seconds
 from src.core.request_context import bind_request_context
@@ -39,6 +43,7 @@ from src.schemas.run_management import (
     TestCaseResultRecord,
 )
 from src.schemas.session import (
+    ApprovalDecisionRequest,
     ExecutionEvent,
     ToolApprovalRequest,
     ToolApprovalStatus,
@@ -111,6 +116,10 @@ class TestRunExecutionService:
         self._approval_scope = ApprovalScopeService()
         self._lease_heartbeat_interval_seconds = lease_heartbeat_interval_seconds
         self._observability = observability_service
+        self._agent_adapter: AgentCaseExecutionAdapter | None = None
+
+    def set_agent_execution_adapter(self, adapter: AgentCaseExecutionAdapter) -> None:
+        self._agent_adapter = adapter
 
     def set_resource_lease_manager(self, manager) -> None:
         self._resource_lease_manager = manager
@@ -119,11 +128,29 @@ class TestRunExecutionService:
         self,
         item_id: str,
         payload: RunItemExecuteRequest,
+        *,
+        _approval_decision: ApprovalDecisionRequest | None = None,
     ) -> TestCaseResultRecord | RunItemApprovalPending:
         execution_clock = monotonic()
-        if getattr(self._runs, "supports_atomic_approval_wait", False) and not payload.approval_id:
+        if (getattr(self._runs, "supports_atomic_approval_wait", False) or self._agent_adapter is not None) and not payload.approval_id:
             current = await self._runs.get_item(item_id)
+            if self._agent_adapter is not None and current.result_id:
+                record = await self._runs.get_record(current.run_id)
+                attempt = await self._runs.get_latest_attempt(item_id)
+                if record.execution_strategy == "agent" and attempt and attempt.lease_token == payload.lease_token:
+                    return await self._runs.get_result(current.result_id)
             if current.status == "waiting_approval" and current.lease_token == payload.lease_token:
+                session_id = None
+                summary = "Security test run item is waiting for its existing approval."
+                if self._agent_adapter is not None:
+                    attempt = await self._runs.get_latest_attempt(item_id)
+                    if attempt and attempt.checkpoint_key == CHECKPOINT_KEY:
+                        checkpoint = AgentCaseExecutionCheckpoint.model_validate(attempt.checkpoint_payload)
+                        session_id = checkpoint.session_id
+                        approvals = await self._sessions.list_approvals(session_id)
+                        approval = next((entry for entry in approvals if entry.id == current.approval_id), None)
+                        if approval is not None:
+                            summary = approval.reason
                 logger.info("test_run_approval_wait_receipt_replayed", extra={
                     "run_id": current.run_id, "run_item_id": item_id,
                     "approval_id": current.approval_id, "tool_job_id": current.tool_job_id,
@@ -131,7 +158,7 @@ class TestRunExecutionService:
                 return RunItemApprovalPending(
                     run_id=current.run_id, run_item_id=item_id, attempt_no=current.attempt_no,
                     approval_id=current.approval_id, tool_job_id=current.tool_job_id,
-                    summary="Security test run item is waiting for its existing approval.",
+                    session_id=session_id, summary=summary,
                 )
         item = await self._runs.start_item(
             item_id,
@@ -168,7 +195,7 @@ class TestRunExecutionService:
         )
         try:
             try:
-                trusted_context_bundle = await self._trusted_case_context(
+                trusted_context_bundle = {} if run.execution_strategy == "agent" else await self._trusted_case_context(
                     run=run,
                     version=version,
                 )
@@ -196,7 +223,7 @@ class TestRunExecutionService:
                             "checkpoint_key": latest_attempt.checkpoint_key,
                         },
                     )
-                pending = await self._suspend_for_approval_if_required(
+                pending = None if run.execution_strategy == "agent" else await self._suspend_for_approval_if_required(
                     run=run,
                     case=case,
                     version=version,
@@ -207,7 +234,7 @@ class TestRunExecutionService:
                 )
                 if pending is not None:
                     return pending
-                if payload.approval_id:
+                if payload.approval_id and run.execution_strategy != "agent":
                     await self._require_approved_item_scope(
                         run=run,
                         case=case,
@@ -287,10 +314,23 @@ class TestRunExecutionService:
                             attempt_id=str(getattr(latest_attempt, "id", "") or ""),
                             tool_job_id=str(item.tool_job_id or "") if payload.approval_id else "",
                             server_approval_granted=bool(payload.approval_id),
+                            **({"approval_id": payload.approval_id, "approval_payload": _approval_decision}
+                               if run.execution_strategy == "agent" else {}),
                         )
-                        if outcome is not None and outcome.tool_record is not None and outcome.tool_record.status == "waiting_resource":
+                        if isinstance(outcome, AgentCaseApprovalWait):
+                            approvals = await self._sessions.list_approvals(outcome.session_id)
+                            approval = next(entry for entry in approvals if entry.id == outcome.approval_id)
+                            await self._runs.mark_waiting_approval(item.id, RunItemApprovalWaitRequest(
+                                lease_token=payload.lease_token, approval_id=outcome.approval_id,
+                                tool_job_id=outcome.tool_job_id, reason=outcome.summary,
+                                approval_scope_hash=approval.metadata["approval_scope_hash"]))
+                            return RunItemApprovalPending(run_id=run.id, run_item_id=item.id,
+                                attempt_no=item.attempt_no, approval_id=outcome.approval_id,
+                                tool_job_id=outcome.tool_job_id, session_id=outcome.session_id, summary=outcome.summary)
+                        tool_record = getattr(outcome, "tool_record", None)
+                        if tool_record is not None and tool_record.status == "waiting_resource":
                             waiting_reason = str(
-                                (outcome.tool_record.output or {}).get("waiting_reason")
+                                (tool_record.output or {}).get("waiting_reason")
                                 or "resource_unavailable"
                             )
                             await self._runs.mark_waiting_resource(
@@ -311,6 +351,14 @@ class TestRunExecutionService:
                 )
             except TaskDeferred:
                 raise
+            except AgentCaseRecoveryRequired as exc:
+                attempt = await self._runs.get_latest_attempt(item.id)
+                logger.warning("test_run_agent_execution_requires_reconciliation", extra={
+                    "run_id": run.id, "run_item_id": item.id, "attempt_id": attempt.id})
+                completion = RunItemCompleteRequest(lease_token=payload.lease_token, status="error",
+                    summary=str(exc), error_message=str(exc), actual={"execution_recovery_required": True,
+                        "execution_checkpoint": deepcopy(attempt.checkpoint_payload)})
+                outcome = None
             except CaseExecutionBlockedError as exc:
                 logger.warning(
                     "test_run_case_execution_blocked",
@@ -339,12 +387,17 @@ class TestRunExecutionService:
                         "case_version_id": version.id,
                     },
                 )
+                recovery = {}
+                if run.execution_strategy == "agent":
+                    attempt = await self._runs.get_latest_attempt(item.id)
+                    if attempt and attempt.checkpoint_key == CHECKPOINT_KEY:
+                        recovery = {"execution_checkpoint": deepcopy(attempt.checkpoint_payload)}
                 completion = RunItemCompleteRequest(
                     lease_token=payload.lease_token,
                     status="error",
                     summary=f"Test case runner failed: {exc}",
                     error_message=str(exc),
-                    actual={"runner_error": str(exc)},
+                    actual={"runner_error": str(exc), **recovery},
                 )
                 outcome = None
 
@@ -422,7 +475,10 @@ class TestRunExecutionService:
         # Do not start a runner if ownership was lost during admission/approval.
         if any(task.done() for task in monitors):
             raise RuntimeError("Execution lease heartbeat stopped before runner admission")
-        execution = asyncio.create_task(self._adapter.execute(**kwargs))
+        adapter = self._agent_adapter if kwargs["run"].execution_strategy == "agent" else self._adapter
+        if adapter is None:
+            raise CaseExecutionBlockedError("Agent execution adapter is not configured")
+        execution = asyncio.create_task(adapter.execute(**kwargs))
         try:
             done, _ = await asyncio.wait({execution, *monitors}, return_when=asyncio.FIRST_COMPLETED)
             if any(task in done for task in monitors):
@@ -451,7 +507,9 @@ class TestRunExecutionService:
         manager = self._resource_lease_manager
         if manager is None:
             return []
-        arguments = version.test_data.get("runner_arguments", {})
+        # Agent cases are instructions, not legacy mode parameters. The actual
+        # browser/Docker tools own their allocations and cleanup receipts.
+        arguments = {} if run.execution_strategy == "agent" else version.test_data.get("runner_arguments", {})
         arguments = arguments if isinstance(arguments, dict) else {}
         settings = self._runtime_settings
         owner = str(getattr(item, "lease_owner", None) or "worker")
@@ -469,7 +527,7 @@ class TestRunExecutionService:
             requirements.append(("environment", [str(environment_id)]))
         mode = str(run.mode_key)
         docker_backend = str(arguments.get("runner_backend") or "").lower() in {"docker", "container"}
-        if mode == "security_testing":
+        if mode == "security_testing" and run.execution_strategy != "agent":
             docker_backend = docker_backend or str(getattr(getattr(settings, "security", None), "security_runner_backend", "local")).lower() in {"docker", "container"}
             if SecurityExecutionEnvironmentService(settings=settings).owns_foreground_docker_lifecycle():
                 # Reviewed security cases execute a single command profile through
@@ -628,6 +686,8 @@ class TestRunExecutionService:
         is explicitly bound to this run item and its version is newer, so a stale
         session cannot overwrite a newer Attempt checkpoint.
         """
+        if run.execution_strategy == "agent":
+            return latest_attempt
         if self._sessions is None or not getattr(run, "session_id", None):
             return latest_attempt
         get_snapshot = getattr(self._sessions, "get_latest_snapshot", None)
@@ -747,7 +807,7 @@ class TestRunExecutionService:
         self,
         item_id: str,
         payload: RunItemApprovalDecisionRequest,
-    ) -> TestCaseResultRecord:
+    ) -> TestCaseResultRecord | RunItemApprovalPending:
         if payload.decision not in {
             ToolApprovalStatus.approved,
             ToolApprovalStatus.denied,
@@ -756,6 +816,9 @@ class TestRunExecutionService:
         if self._sessions is None or self._jobs is None:
             raise RuntimeError("Test run approval services are not configured")
         item = await self._runs.get_item(item_id)
+        run = await self._runs.get_record(item.run_id)
+        if run.execution_strategy == "agent":
+            return await self._resolve_agent_approval(item, run, payload)
         if not item.approval_id or not item.tool_job_id:
             raise ValueError(f"Run item has no approval binding: {item_id}")
         if payload.approval_id != item.approval_id:
@@ -850,6 +913,29 @@ class TestRunExecutionService:
             if latest.result_id:
                 return await self._runs.get_result(latest.result_id)
             raise exc
+
+    async def _resolve_agent_approval(self, item, run, payload):
+        if self._agent_adapter is None:
+            raise RuntimeError("Agent execution adapter is not configured")
+        attempt = await self._runs.get_latest_attempt(item.id)
+        if attempt is None or attempt.checkpoint_key != CHECKPOINT_KEY:
+            raise ValueError("Agent 运行缺少持久执行检查点")
+        checkpoint = AgentCaseExecutionCheckpoint.model_validate(attempt.checkpoint_payload)
+        approvals = await self._sessions.list_approvals(checkpoint.session_id)
+        approval = next((entry for entry in approvals if entry.id == payload.approval_id), None)
+        if (approval is None or approval.metadata.get("source") != "test_run_agent_execution"
+            or approval.metadata.get("turn_id") != checkpoint.turn_id
+            or approval.metadata.get("tool_job_id") != item.tool_job_id
+            or payload.approval_id != item.approval_id):
+            raise ValueError("审批不属于当前 Agent 运行条目")
+        if approval.status not in {ToolApprovalStatus.pending, payload.decision}:
+            raise ValueError("审批已经以不同决定结束")
+        if item.result_id:
+            return await self._runs.get_result(item.result_id)
+        resumed = await self._runs.resume_waiting_approval(item.id, approval.id)
+        return await self.execute_item(item.id, RunItemExecuteRequest(
+            lease_token=resumed.lease_token, approval_id=approval.id),
+            _approval_decision=ApprovalDecisionRequest(decision=payload.decision, reason=payload.reason))
 
     async def _find_item_approval(
         self,

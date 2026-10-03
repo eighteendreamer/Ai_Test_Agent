@@ -27,7 +27,7 @@
 | P1 导入 | Excel 默认两种布局、映射/预览/错误、JSON、幂等、草稿评审 | 上传、MySQL 配置、RustFS 原件、PG 批次与草稿同事务、前端入口已接入。受影响后端回归 141 通过、最终导入/进程专项 21 通过；真实浏览器组件/HTTP/三种存储 3 通过，前端组件 15 通过、构建通过。完整生产启动与项目页全流程待验收 |
 | P2 选取 | 自由/按用例依据分离；项目内召回、完整读取、AI 选择、无匹配明确返回 | 已实现独立项目规划服务与页面，完整版本、跨历史模式、项目隔离、固定计划保存及重读已验证；执行上下文与图状态已接入内部链路。公开计划启动与持久规划任务仍待完成 |
 | P2 补全 | AI 语义检查、项目查证、正式依赖或运行准备、负向条件保留、缺口可见 | 只读查询、正式依赖/准备结构、引用与拓扑校验、有界校验反馈已实现；专项 21 通过。当前真实模型三场景测试 1 通过，实际组件/HTTP/三种存储浏览器 1 通过，不等同实际 Agent 执行 |
-| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已提交运行依赖、计划创建内部事务、上下文/回执核验和内部图入口。当前工作区另已接入运行服务 Agent 策略、生产初始化注入、RunItem 审批和持久意图/跨 attempt 重放，尚未提交；最新记录后端 340 通过、2 跳过、1 个实际模型项未选择，前端 18 通过及构建通过。默认模型目标回执验收仍失败；真实 Redis 进程/完整启动、其他模式资源归属、步骤级恢复/未知效果核对、计划修订、新策略回归及公开启动仍待完成 |
+| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。默认模型目标回执验收仍失败；真实 Redis 执行进程/完整启动、其他模式真实工具、步骤级恢复/未知效果核对、计划修订、新策略回归及公开启动仍待完成 |
 | P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 待实施 |
 | P3 Git | 独立可选只读入口；明确关联才导入为已有文档版本；上传不依赖 Git | 待实施 |
 | P3 解析 | MD/python-docx/pypdf 工厂、统一结构/位置/版本/警告、独立受限进程；Docling 仅扩展入口 | 待实施 |
@@ -580,3 +580,50 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 ```
 
 该结果验证既有上传/目录/存储接口行为，不验证新上传版本、解析快照或真实 V1/V2 联调。另检查方案本地链接、用户关键约定、镜像字节一致和文档 diff；本次未重新执行前端构建、接入回归、生产启动、浏览器、Docker 或真实模型验收。仅暂存及提交 PLAN.md 与 IMPLEMENTATION.md，业务文件、现有测试证据和用户 .gitignore 改动保持原暂存状态，不自动推送或创建 PR。完整 P0—P5 目标继续保持未完成。
+
+### P2b 运行服务接入交付、资源身份及已保存审批决定恢复（2026-10-04）
+
+上一轮仅更新方案，属于进展；本轮继续完整 P0—P5 目标。重新读取指定方案附件及实际工作区，审查 Agent 适配器、运行执行协调、Session 持久 turn 租约、Runtime 审批、ToolJob/回执核验、Redis 资源与浏览器/Docker 创建者、前端审批消费者和本地《Agent测试专项》《Agent轨迹与协议鲁棒性》。本步骤交付此前未提交的 Agent 策略接入，并先复现、再修复审查发现的问题。
+
+研究依据 → 实现：
+
+- 既有 BrowserResourceManager/DockerResourceManager 从 RequestContext 获取归属，负责实际资源创建、绑定、续租和清理；外层资源列表没有图内消费者。新 Agent 策略仅领取条目的 agent 配额，不读取旧 `test_data.runner_arguments` 预占账号、环境或 Docker。旧策略的资源处理保留。
+- HTTP 执行/审批入口未提供图内实际运行身份，而 Redis Worker 传入的可能是父会话或当前恢复 attempt；ToolJob 则已有固定服务端身份。Agent 适配器首次执行和审批续执行使用现有 bind_request_context，绑定项目、run/item、原执行 attempt、内部 session/turn 与当前 worker。资源归属与工具证据对应，不把租约列表或令牌加入冻结业务内容。
+- SessionStore 已以持久状态区分 pending/approved/denied，并保持已决定事项的原备注；恢复的图快照可以仍在 waiting_approval。适配器按原 pending 顺序读取决定，未决定时返回等待，已批准/拒绝时在运行条目及 turn 租约下续执行原图，保留原决定与备注，直到新的 pending 或终态。未推进同一决定的异常明确要求核对，不形成无限重试。
+- 原执行 intent、context hash、turn 和快照身份继续用于恢复；新结果区分原 `execution_attempt_id` 与当前 `result_attempt_id`。终态 ToolJob 重建已有记录、未知任务拒绝重发的规则继续使用。没有将恢复后的 attempt 当作新业务操作，也没有通过模式参数编译任意用例 JSON。
+- 后端既有运行条目 execute/approval 路由、RunItem 等待状态、Session 同步续执行、前端响应 union 和两种运行审批来源成对交付；新规划公开启动入口仍待接入。新增类型化检查点复用既有 attempt JSONB，无数据库迁移或新配置域。
+
+先复现的证据：
+
+1. 新 Agent 用例携带旧模式 runner_arguments，真实隔离 Redis 中错误领取了 agent、docker、environment、test_account 四种资源。
+2. 用现有 API 图/审批/真实本地 HTTP 执行，工具回调实际领取 Redis environment 逻辑租约；外层刻意带父/错误运行关联时，持久资源中的项目、run/item、attempt 与实际 ToolJob 不一致。首轮断言还误包含 selected_agent/model 字段，表现为测试 KeyError；修正只核对正式身份后重新运行，`p2-agent-resource-identity-before.xml` **1 失败、24 未选择，8.39 秒**，清楚复现产品身份继承缺陷。
+3. 从真实运行条目审批入口保存决定和事件后，实际取消父任务，观察持久 turn 租约到期/回收器，再恢复运行、创建恢复 attempt 并走普通 execute；批准和拒绝的内存/实际 PG 四种场景都仍返回原已决定审批，没有继续原图。此前复现合集 `p2-agent-recovery-resource-before.xml` **6 失败、19 未选择，74.29 秒**，其中资源身份项当时是上述测试断言错误，不能将六项全部宣称产品缺陷。
+
+实现后专项 `p2-agent-recovery-resource.xml`：**6 通过、19 未选择，72.68 秒**。资源两项使用真实 Redis；图资源项同时使用实际 PostgreSQL/RustFS、完整固定 JSON、受控模型、三次权限审批及真实 POST/GET/DELETE。回调补充的是测试的逻辑 environment 资源，不是实际容器或测试环境创建，不能据此宣称全部模式的物理资源验收通过。原有“POST 成功、快照滞后”取消样本改为普通 adapter.execute 自动消费已保存决定，后续扩大回归验证它不重发 POST；未知效果及缺快照保持需核对状态。
+
+实际验证及交付范围：
+
+- 扩大后端回归 **359 通过、10 跳过、1 个 actual_model 未选择，189.38 秒**，`p2-agent-integration-regression.xml`。覆盖 Agent 适配器/Session/回执、旧执行与验证、会话所有权/事件/队列、权限安全、Dispatcher/lifespan、资源领取与管理、浏览器 Harness。2 个内存变体因 PG 事务/跨进程语义跳过，对应 PG 变体已执行；8 项既有真实资源测试因开关未开启跳过，随后单独启用并补验。
+- 既有真实资源准入专项 `p2-agent-existing-resource-live.xml`：**8 通过，13.20 秒**。实际 Redis/PG、无头 Chromium eval/close、配额/并发/续租失败/重复取消与清理通过。此专项沿用既有测试适配器，不是新 Agent UI 模式验收；没有访问 DeepSeek，也不算人工 UI 录制完成。
+- 前端四个会话 store 套件 **18 通过（1.74 秒）**；npm run build 内含 vue-tsc 类型检查，Vite 构建通过（6.61 秒），完整构建输出为 `p2-agent-integration-frontend-build.txt`。新审批来源分流、刷新下一项待批以及旧来源兼容覆盖在 sessionApprovalLifecycle 中。没有浏览器产品页面端到端验收。
+- Python py_compile 对本步骤 15 个 Python 源/测试文件实际通过。只去除历史失败 XML 空行尾随空格，失败数量和结论保留；新增测试精确加入 .gitignore 白名单，用户的五条忽略项保持未暂存。敏感值模式扫描未命中，文档链接、镜像一致和 diff 另行检查。
+
+命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_agent_case_assessment.py tests/test_case_execution_service.py tests/test_case_execution_adapter.py tests/test_case_execution_verification.py tests/test_session_execution_ownership.py tests/test_session_event_delivery.py tests/test_runtime_interrupt_tool_calls.py tests/test_security_approval_boundary.py tests/test_busy_session_queue_concurrency.py tests/test_intent_safety_routing.py tests/test_redis_execution_dispatcher.py tests/test_lifespan_resource_cleanup.py tests/test_execution_resource_waiting.py tests/test_resource_lease_manager.py tests/test_browser_resource_harness.py tests/test_live_task_admission.py -q --tb=short -rs -k 'not actual_model' --junitxml=../docs/upgrade_2026-10-03/p2-agent-integration-regression.xml
+$env:RUN_LIVE_BROWSER_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_live_task_admission.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p2-agent-existing-resource-live.xml
+```
+
+前端命令（agent_web）：
+
+```powershell
+npm run test -- src/stores/sessionApprovalLifecycle.test.ts src/stores/sessionReceiptDedup.test.ts src/stores/sessionEventRefresh.test.ts src/stores/sessionStreaming.test.ts
+npm run build
+```
+
+配置继续归 MySQL，业务/检查点/工具/会话归 PostgreSQL，原件归 RustFS，Redis 只管理交付和租约。未新增依赖、持久配置写入或外部模型请求；历史默认模型目标回执 length/空正文失败继续保留。代码、测试和安全证据随本步骤提交，完整 P0—P5 仍未完成：接下来研究新策略回归与公开计划启动，继续实际 Redis 执行 Worker/完整 lifespan、各模式自主工具/资源、步骤级恢复/未知业务效果及持久规划任务；模块化生成、人工录制、Docker 结果、P3—P5 和其余业务记录迁移仍待完成。
