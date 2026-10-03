@@ -517,6 +517,8 @@ class PromptAssemblyService:
         input_envelope = dict(context_bundle.get("input_envelope") or {})
         input_routing = dict(context_bundle.get("input_routing") or {})
         mode_intent = dict(context_bundle.get("mode_intent") or {})
+        user_request = str(state.get("user_message") or "").strip()
+        normalized_input = str(state.get("normalized_input") or "").strip()
         sections = [
             PromptSection(
                 key="user_request",
@@ -525,16 +527,7 @@ class PromptAssemblyService:
                 channel="runtime_message",
                 cache_scope="ephemeral",
                 priority=10,
-                content=str(state.get("user_message") or "").strip() or "(empty request)",
-            ),
-            PromptSection(
-                key="normalized_input",
-                title="Normalized Input",
-                source="prompt_assembly.runtime",
-                channel="runtime_message",
-                cache_scope="ephemeral",
-                priority=20,
-                content=str(state.get("normalized_input") or "").strip() or "(same as user request)",
+                content=user_request or "(empty request)",
             ),
             PromptSection(
                 key="detected_intent",
@@ -622,6 +615,16 @@ class PromptAssemblyService:
                 metadata={"context_keys": sorted(context_bundle.keys())},
             ),
         ]
+        if normalized_input and normalized_input != user_request:
+            sections.insert(1, PromptSection(
+                key="normalized_input",
+                title="Normalized Input",
+                source="prompt_assembly.runtime",
+                channel="runtime_message",
+                cache_scope="ephemeral",
+                priority=20,
+                content=normalized_input,
+            ))
         if attachments:
             attachment_lines = []
             for index, item in enumerate(attachments[:6], start=1):

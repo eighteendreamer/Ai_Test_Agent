@@ -26,13 +26,10 @@ def build_prompt_assembler_node(
         ]
         state["system_prompt"] = assembly.system_prompt
         existing_runtime_messages = list(state.get("runtime_messages") or [])
-        if assembly.runtime_messages:
-            state["runtime_messages"] = [
-                *existing_runtime_messages,
-                *assembly.runtime_messages,
-            ]
-        elif not existing_runtime_messages:
-            state["runtime_messages"] = []
+        # The assembly service returns the complete transcript, including any
+        # existing history. Appending it would duplicate every message on each
+        # Agent iteration, including assistant/tool protocol pairs.
+        state["runtime_messages"] = list(assembly.runtime_messages)
         append_graph_event(
             state,
             "graph.prompt_assembled",
@@ -42,6 +39,7 @@ def build_prompt_assembler_node(
             runtime_message_section_count=len(state["runtime_message_sections"]),
             system_prompt_preview=truncate_text(state["system_prompt"], 180),
             runtime_message_count=len(state["runtime_messages"]),
+            input_runtime_message_count=len(existing_runtime_messages),
             loop_iteration=loop_iteration,
         )
         return state
