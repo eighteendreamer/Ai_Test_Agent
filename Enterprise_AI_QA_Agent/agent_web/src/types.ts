@@ -1497,6 +1497,12 @@ export type CasePlanItem = CasePlanItemBase & (
   { kind: "prepare"; case_id: null; case_version_id: null; instructions: Record<string, unknown> }
 );
 
+export interface CasePlanRunRequest {
+  creation_key: string;
+  mode_key: string;
+  session_id?: string;
+}
+
 export interface CasePlanRecord {
   id: string;
   project_id: string;

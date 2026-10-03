@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,6 +40,10 @@ from src.core.request_context import bind_request_context, get_request_context
 from src.application.test_runs.agent_regression_service import AgentRegressionService
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.run_management import RegressionRunCreateRequest
+from src.api.routes.case_plans import router as plan_router
+from src.infrastructure.redis_task_queue import RedisTaskQueue
+from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.redis_task_worker import RedisTaskWorker
 
 
 @pytest.fixture
@@ -91,6 +96,83 @@ def regression_business_http():
         server.server_close()
         thread.join(5)
         assert not thread.is_alive()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PUBLIC_PLAN_WORKER") != "1", reason="requires actual isolated Redis/MySQL/PG/RustFS")
+async def test_public_plan_launch_outbox_redis_worker_agent_approvals_and_terminal_replay(tmp_path, regression_business_http):
+    business, orders, created = regression_business_http
+    async with adapter_environment(tmp_path, business, live=True, start_item=False) as values:
+        env, _, reader, _, runs, _, adapter, _, _, services = values
+        base, creator = services["environment"], services["creator"]
+        table = "up_launch_worker_" + uuid4().hex[:12]
+        with postgres_connect(base.settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+            assert cur.fetchone()["existing"] is None
+        base.settings.database.postgres_task_outbox_table = table
+        queue = RedisTaskQueue(base.settings.database.redis_url,
+            stream="qa:test:public-launch:" + uuid4().hex, group="launch-workers")
+        service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+            adapter=None, session_store=reader, tool_job_service=env[1])
+        service.set_agent_execution_adapter(adapter())
+        creator._modes, creator._outbox_table, creator._stream = ModeRegistry(), table, queue.stream
+        app = FastAPI()
+        app.state.case_plan_run_service = creator
+        app.state.test_run_service, app.state.test_run_execution_service = runs, service
+        app.include_router(plan_router, prefix="/api/v1")
+        app.include_router(router, prefix="/api/v1")
+        try:
+            await queue.connect()
+            outbox = PostgresTaskOutbox(base.settings)
+            await outbox.initialize()
+            dispatcher = RedisExecutionDispatcher(queue=queue, test_run_service=runs, execution_service=service, outbox=outbox)
+            async def handle(task):
+                await dispatcher.handle(task, worker_id="actual-launch-worker")
+            worker = RedisTaskWorker(queue, consumer="actual-launch-worker", handler=handle, block_ms=0)
+            plan = env[6].run.plan_snapshot.plan
+            path = f"/api/v1/projects/{plan.project_id}/case-plans/{plan.id}/runs"
+            payload = {"creation_key": "actual-worker-launch", "mode_key": "api_testing"}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://launch") as client:
+                response = await client.post(path, json=payload)
+                assert response.status_code == 201, response.text
+                detail = response.json()
+                run_id, item_id = detail["run"]["id"], detail["items"][0]["id"]
+                assert detail["run"]["status"] == "queued" and not business[1]
+                assert await outbox.relay_once(queue) == 1
+                assert await queue._client.xlen(queue.stream) == 1
+                assert await worker.run_once() == 1
+                assert not await queue.pending()
+                waiting = await runs.get(run_id)
+                assert waiting.items[0].status == "waiting_approval" and not business[1]
+                for _ in range(3):
+                    approval_id = (await runs.get(run_id)).items[0].approval_id
+                    response = await client.post(f"/api/v1/run-items/{item_id}/approval",
+                        json={"approval_id": approval_id, "decision": "approved"})
+                    assert response.status_code == 200, response.text
+                completed = await runs.get(run_id)
+                assert completed.run.status == "completed" and completed.results[0].status == "failed"
+                assert completed.results[0].actual["case_output"]["body"]["count"] == 1
+                assert not orders and len(created) == 1
+                assert business[1] == [("POST", "/orders"), ("GET", "/orders/" + created[0]), ("DELETE", "/orders/" + created[0])]
+                with postgres_connect(base.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT payload, published_at FROM {table}")
+                    saved = cur.fetchall()
+                assert len(saved) == 1 and saved[0]["published_at"] is not None
+                # At-least-once transport redelivery must not reclaim a terminal item.
+                await queue.enqueue(saved[0]["payload"])
+                assert await worker.run_once() == 1
+                assert not await queue.pending() and await runs.get(run_id) == completed
+                assert len(business[1]) == 3
+                replay = await client.post(path, json=payload)
+                assert replay.status_code == 201 and replay.json()["run"]["id"] == run_id
+                assert replay.json()["run"]["status"] == "completed"
+                assert len(business[1]) == 3
+        finally:
+            if queue._client is not None:
+                await queue._client.delete(queue.stream, queue.stream + ":dead_letter")
+                await queue.close()
+            with postgres_connect(base.settings) as conn, conn.cursor() as cur:
+                cur.execute(f'DROP TABLE IF EXISTS "{table}"')
 
 
 @pytest.mark.asyncio

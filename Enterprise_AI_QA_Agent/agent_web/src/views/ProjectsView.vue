@@ -710,6 +710,16 @@ async function cancelRun(run: TestRunRecord) {
   }
 }
 
+async function openPlannedRun(detail: TestRunDetail) {
+  casePlanOpen.value = false;
+  resourceTab.value = "runs";
+  runOffset.value = 0;
+  runDetail.value = detail;
+  runDetailLoading.value = false;
+  runDetailOpen.value = true;
+  await Promise.all([loadTestRuns(), loadOverview()]);
+}
+
 async function openRunDetail(run: TestRunRecord) {
   runDetailOpen.value = true;
   runDetailLoading.value = true;
@@ -1204,7 +1214,7 @@ watch(routeProjectId, async (projectId) => {
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
     <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
-    <CasePlanDialog v-if="casePlanOpen" :key="selectedId" :project-id="selectedId" :candidate-case-ids="selectedActiveCases.map(item => item.id)" @close="casePlanOpen = false" />
+    <CasePlanDialog v-if="casePlanOpen" :key="selectedId" :project-id="selectedId" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
 
     <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">

@@ -476,7 +476,8 @@ async def _initialize_lifespan_resources(
     await test_run_service.initialize()
     case_plan_run_service = CasePlanRunService(run_store=test_run_store, suite_store=test_suite_store,
         plan_store=container.case_plan_store(), case_service=test_case_service, project_service=project_service,
-        session_store=store, outbox_table=settings.database.postgres_task_outbox_table if task_queue is not None else None,
+        session_store=store, mode_registry=mode_registry,
+        outbox_table=settings.database.postgres_task_outbox_table if task_queue is not None else None,
         dispatch_stream=task_queue.stream if task_queue is not None else None)
     test_run_service.set_agent_regression_service(AgentRegressionService(plan_store=container.case_plan_store(),
         plan_run_service=case_plan_run_service, planning_service=case_planning_service, run_store=test_run_store))

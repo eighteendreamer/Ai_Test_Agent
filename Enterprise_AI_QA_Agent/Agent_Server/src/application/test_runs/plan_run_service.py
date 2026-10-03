@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 
 class CasePlanRunService:
     def __init__(self, *, run_store, suite_store, plan_store, case_service, project_service,
-                 session_store=None, outbox_table: str | None = None, dispatch_stream: str | None = None):
+                 session_store=None, mode_registry=None, outbox_table: str | None = None, dispatch_stream: str | None = None):
         self._runs, self._suites, self._plans = run_store, suite_store, plan_store
         self._cases, self._projects, self._sessions = case_service, project_service, session_store
         self._outbox_table, self._stream = outbox_table, dispatch_stream
+        self._modes = mode_registry
         if bool(outbox_table) != bool(dispatch_stream):
             raise ValueError("计划运行的 Outbox 表与目标流必须同时配置")
 
     async def create(self, project_id: str, plan_id: str, request: CasePlanRunRequest,
-                     *, created_by: str | None = None, regression: RegressionPlanSource | None = None):
+                     *, created_by: str | None = None, regression: RegressionPlanSource | None = None,
+                     require_dispatch: bool = False):
         plan = await self._plans.get(project_id, plan_id)
         if plan is None:
             raise KeyError("当前项目的固定计划不存在")
@@ -34,6 +36,15 @@ class CasePlanRunService:
                 raise ValueError("相同创建请求已经关联其他计划或执行参数")
             logger.info("case_plan_run_replayed", extra={"project_id": project_id, "plan_id": plan_id, "run_id": run.id})
             return existing
+        if require_dispatch and (not self._outbox_table or not self._stream or self._modes is None):
+            raise RuntimeError("计划运行尚未配置持久派发和模式注册服务")
+        if self._modes is not None:
+            try:
+                mode = self._modes.get(request.mode_key)
+            except KeyError:
+                raise ValueError("测试模式未注册") from None
+            if mode.key != request.mode_key or not mode.is_test_mode:
+                raise ValueError("请选择已注册的测试模式")
         await self._projects.require_active(project_id)
         formal = [node for node in plan.decision.items if node.kind != "prepare"]
         cases = await self._cases.get_cases([n.case_id for n in formal])

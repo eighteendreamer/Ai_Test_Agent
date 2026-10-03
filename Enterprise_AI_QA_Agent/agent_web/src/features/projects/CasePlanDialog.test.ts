@@ -2,8 +2,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CasePlanDialog from "./CasePlanDialog.vue";
+import { HttpError } from "../../services/http";
+import type { ModeDescriptor } from "../../types";
 
-const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), getCasePlan: vi.fn() }));
+const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const config = () => ({ scope_key: "global", revision: 1, policy: { max_rounds: 5, max_candidates: 20, max_items: 50, max_context_chars: 180000, timeout_seconds: 180 } });
 function plan(status = "planned") {
@@ -12,16 +14,25 @@ function plan(status = "planned") {
       unresolved: status === "blocked" ? [{ item_key: "target", condition: "缺少依据", reason: "没有可用原文" }] : [] },
     evidence: [{ id: "case:version", kind: "case", version: "version", payload: { title: "未登录返回401", content: { steps: [{ order: 7, action: "末尾关键验证😀" }], custom: [0, false, null] }, execution_notes: "保持未登录" } }] };
 }
-function setup() { return mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: ["case"] } }); }
+const modes: ModeDescriptor[] = ["api_testing", "code_review", "default"].map(key => ({ key, name: key,
+  summary: "", description: "", category: "test", is_test_mode: key !== "default", case_driven_policy: key === "code_review" ? "exempt" : "required",
+  default_agent_key: "", allowed_agent_keys: [], default_skill_keys: [], registered_tool_keys: [], harness_key: "", placeholder: false, tags: [] }));
+function setup(projectId = "project") { return mount(CasePlanDialog, { props: { projectId, candidateCaseIds: ["case"], modes } }); }
 function button(wrapper: ReturnType<typeof setup>, text: string) { return wrapper.findAll("button").find(b => b.text() === text)!; }
+async function generate(wrapper: ReturnType<typeof setup>) {
+  await flushPromises(); await wrapper.findAll("textarea")[0].setValue("验证");
+  await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
+}
 
 describe("case planning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     api.getCasePlanningPolicy.mockResolvedValue(config());
     api.saveCasePlanningPolicy.mockResolvedValue({ ...config(), scope_key: "project", revision: 2 });
     api.createCasePlan.mockResolvedValue(plan());
     api.getCasePlan.mockResolvedValue(plan("blocked"));
+    api.launchCasePlan.mockResolvedValue({ run: { id: "run-1", status: "queued" }, items: [], attempts: [], results: [] });
   });
 
   it("submits the objective and existing information, then displays full fixed content", async () => {
@@ -34,7 +45,7 @@ describe("case planning", () => {
     expect(wrapper.text()).toContain("目标用例 · 未登录返回401");
     expect(wrapper.text()).toContain("末尾关键验证😀");
     expect(wrapper.text()).toContain("false");
-    expect(wrapper.text()).toContain("测试尚未开始");
+    expect(wrapper.text()).toContain("生成计划只保存执行依据");
     wrapper.unmount();
   });
 
@@ -62,6 +73,78 @@ describe("case planning", () => {
     expect(api.getCasePlan).toHaveBeenCalledWith("project", "plan");
     expect(wrapper.text()).toContain("仍有执行缺口");
     expect(wrapper.text()).toContain("缺少依据");
+    wrapper.unmount();
+  });
+
+  it("launches the saved identity with any test mode and opens the returned run", async () => {
+    const wrapper = setup(); await generate(wrapper);
+    expect(wrapper.findAll('select option').map(option => option.text())).toEqual(["api_testing", "code_review"]);
+    await wrapper.get('select').setValue("code_review");
+    await wrapper.get('input[placeholder="会话必须属于当前项目"]').setValue(" same-project-session ");
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    const payload = api.launchCasePlan.mock.calls[0][2];
+    expect(api.launchCasePlan).toHaveBeenCalledWith("project", "plan", { creation_key: expect.any(String), mode_key: "code_review", session_id: "same-project-session" });
+    expect(Object.keys(payload).sort()).toEqual(["creation_key", "mode_key", "session_id"]);
+    expect(wrapper.text()).toContain("已保存运行：run-1");
+    expect(wrapper.text()).toContain("保存成功不代表测试通过");
+    expect(wrapper.emitted("started")?.[0][0]).toEqual(expect.objectContaining({ run: { id: "run-1", status: "queued" } }));
+    await button(wrapper, "另建一次运行").trigger("click");
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    expect(api.launchCasePlan.mock.calls[1][2].creation_key).not.toBe(payload.creation_key);
+    wrapper.unmount();
+  });
+
+  it("keeps the exact uncertain request through closing and reopening, isolated by project", async () => {
+    api.launchCasePlan.mockRejectedValueOnce(new Error("连接在提交后断开"));
+    const wrapper = setup(); await generate(wrapper);
+    await wrapper.get('select').setValue("code_review");
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    const payload = { ...api.launchCasePlan.mock.calls[0][2] };
+    expect(wrapper.get('select').attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("启动结果尚未确认");
+    wrapper.unmount();
+    api.getCasePlan.mockResolvedValue(plan());
+    const reopened = setup(); await flushPromises();
+    await reopened.get('input[placeholder="输入当前项目的计划编号"]').setValue("plan");
+    await button(reopened, "查看已保存计划").trigger("click"); await flushPromises();
+    await button(reopened, "重试启动请求").trigger("click"); await flushPromises();
+    expect(api.launchCasePlan.mock.calls[1][2]).toEqual(payload);
+    reopened.unmount();
+    const other = setup("other"); await generate(other);
+    expect(other.text()).not.toContain(payload.creation_key);
+    expect(button(other, "启动测试运行").exists()).toBe(true);
+    other.unmount();
+  });
+
+  it("unlocks options after a definite rejection and preserves request in memory if storage fails", async () => {
+    api.launchCasePlan.mockRejectedValueOnce(new HttpError("会话不属于当前项目", 409));
+    const wrapper = setup(); await generate(wrapper);
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    const rejected = api.launchCasePlan.mock.calls[0][2].creation_key;
+    expect(wrapper.get('select').attributes("disabled")).toBeUndefined();
+    const failure = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
+    api.launchCasePlan.mockRejectedValueOnce(new Error("连接断开"));
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    const uncertain = api.launchCasePlan.mock.calls[1][2].creation_key;
+    expect(uncertain).not.toBe(rejected);
+    expect(wrapper.text()).toContain("浏览器未能保存启动请求");
+    await button(wrapper, "重试启动请求").trigger("click"); await flushPromises();
+    expect(api.launchCasePlan.mock.calls[2][2].creation_key).toBe(uncertain);
+    failure.mockRestore(); wrapper.unmount();
+  });
+
+  it("reopens the saved run through the existing API and rejects a mismatched cached identity", async () => {
+    const wrapper = setup(); await generate(wrapper);
+    await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
+    api.getTestRun.mockResolvedValue({ run: { id: "run-1", project_id: "foreign", plan_snapshot: { plan: { id: "plan" } } } });
+    await button(wrapper, "查看运行").trigger("click"); await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("不属于当前项目和计划");
+    expect(wrapper.emitted("started")).toHaveLength(1);
+    const detail = { run: { id: "run-1", project_id: "project", plan_snapshot: { plan: { id: "plan" } }, status: "completed" } };
+    api.getTestRun.mockResolvedValue(detail);
+    await button(wrapper, "查看运行").trigger("click"); await flushPromises();
+    expect(api.getTestRun).toHaveBeenCalledWith("run-1");
+    expect(wrapper.emitted("started")?.[1][0]).toEqual(detail);
     wrapper.unmount();
   });
 });

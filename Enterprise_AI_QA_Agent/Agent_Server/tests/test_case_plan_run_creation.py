@@ -5,8 +5,11 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
+from types import SimpleNamespace
 
 import pytest
+import httpx
+from fastapi import FastAPI
 
 from test_case_planning import SequenceModel, finish, item
 from test_run_item_dependencies import setup, finish as complete
@@ -21,10 +24,72 @@ from src.application.test_runs.run_service import TestRunService as RunService
 from src.schemas.run_management import RegressionRunCreateRequest
 from src.application.test_runs.agent_regression_service import AgentRegressionService
 from src.application.test_runs.agent_case_context import build_agent_case_context
+from src.api.routes.case_plans import router as plan_router
+from src.registry.modes import ModeRegistry
 
 
 LIVE = pytest.param(True, marks=pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
     reason="requires isolated real PostgreSQL/MySQL/RustFS"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_public_plan_launch_validates_sources_and_replays_committed_run(tmp_path, live, monkeypatch):
+    async with planned(tmp_path, live) as (env, store, suites, creator, plan, now, table):
+        creator._modes = ModeRegistry()
+        async def missing_session(session_id):
+            return None
+        creator._sessions = SimpleNamespace(get_session=missing_session)
+        creator._outbox_table, creator._stream = table or "fixture_outbox", "isolated:plan-runs"
+        app = FastAPI()
+        app.state.case_planning_service, app.state.case_plan_run_service = env.service, creator
+        app.include_router(plan_router, prefix="/api/v1")
+        path = f"/api/v1/projects/{plan.project_id}/case-plans/{plan.id}/runs"
+        payload = {"creation_key": "public-launch", "mode_key": "code_review"}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://plans") as client:
+            denied = await client.post(path.replace(plan.project_id, str(uuid4())), json=payload)
+            assert denied.status_code == 404, denied.text
+            injected = await client.post(path, json={**payload, "plan_snapshot": plan.model_dump(mode="json")})
+            assert injected.status_code == 422, injected.text
+            for invalid in [{"mode_key": "unknown"}, {"mode_key": "default"}, {"session_id": "foreign"}]:
+                denied = await client.post(path, json={**payload, **invalid})
+                assert denied.status_code == 409, denied.text
+            creator._outbox_table = creator._stream = None
+            unavailable = await client.post(path, json=payload)
+            assert unavailable.status_code == 503, unavailable.text
+            creator._outbox_table, creator._stream = table or "fixture_outbox", "isolated:plan-runs"
+            # Commit succeeded, but its acknowledgement was lost in the actual store caller.
+            persist = store.create_planned_run
+            async def lost_ack(*args, **kwargs):
+                await persist(*args, **kwargs)
+                raise RuntimeError("controlled lost acknowledgement after committed plan run")
+            monkeypatch.setattr(store, "create_planned_run", lost_ack)
+            lost = await client.post(path, json=payload)
+            assert lost.status_code == 503 and "相同" in lost.json()["detail"], lost.text
+            monkeypatch.setattr(store, "create_planned_run", persist)
+            # An existing run must remain queryable through the same request even if dispatch is disabled.
+            creator._outbox_table = creator._stream = None
+            replay = await client.post(path, json=payload)
+            assert replay.status_code == 201, replay.text
+            detail = replay.json()
+            assert detail["run"]["mode_key"] == "code_review"
+            assert detail["run"]["execution_strategy"] == "agent"
+            assert len(detail["items"]) == 4
+            snapshot = detail["run"]["plan_snapshot"]
+            assert snapshot["plan"]["id"] == plan.id
+            conflict = await client.post(path, json={**payload, "mode_key": "api_testing"})
+            assert conflict.status_code == 409, conflict.text
+            if table:
+                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT count(*) AS n FROM {table}")
+                    assert cur.fetchone()["n"] == 1
+            creator._outbox_table, creator._stream = table or "fixture_outbox", "isolated:plan-runs"
+            fresh = await client.post(path, json={**payload, "creation_key": "explicit-new-launch"})
+            assert fresh.status_code == 201 and fresh.json()["run"]["id"] != detail["run"]["id"], fresh.text
+            if table:
+                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT count(*) AS n FROM {table}")
+                    assert cur.fetchone()["n"] == 2
 
 
 @pytest.mark.asyncio

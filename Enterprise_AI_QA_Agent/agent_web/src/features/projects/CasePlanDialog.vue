@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api } from "../../services/api";
-import type { CasePlanItem, CasePlanRecord, CasePlanningConfig } from "../../types";
+import { HttpError } from "../../services/http";
+import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConfig, ModeDescriptor, TestRunDetail } from "../../types";
 import JsonContentTree from "./JsonContentTree.vue";
 
-const props = defineProps<{ projectId: string; candidateCaseIds: string[] }>();
-const emit = defineEmits<{ close: [] }>();
+const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[] }>(), { modes: () => [] });
+const emit = defineEmits<{ close: []; started: [detail: TestRunDetail] }>();
 const objective = ref("");
 const runtimeJson = ref("{}");
 const config = ref<CasePlanningConfig | null>(null);
@@ -14,6 +15,17 @@ const savedId = ref("");
 const busy = ref(false);
 const error = ref("");
 const notice = ref("");
+const modeKey = ref("");
+const sessionId = ref("");
+const pendingRequest = ref<CasePlanRunRequest | null>(null);
+const knownRunId = ref("");
+const storageWarning = ref("");
+const testModes = computed(() => props.modes.filter(mode => mode.is_test_mode));
+const canLaunch = computed(() => plan.value && ["planned", "blocked"].includes(plan.value.status)
+  && plan.value.decision?.items.some(item => item.kind === "target"));
+watch(testModes, modes => {
+  if (!pendingRequest.value && !modes.some(mode => mode.key === modeKey.value)) modeKey.value = modes[0]?.key || "";
+}, { immediate: true });
 const statusLabels: Record<CasePlanRecord["status"], string> = { planned: "计划已生成", no_match: "未找到目标用例", blocked: "仍有执行缺口", retrieval_failed: "用例检索失败", planning_failed: "规划失败" };
 const kindLabels = { target: "目标用例", dependency: "必要前置用例", prepare: "运行内准备" };
 
@@ -21,6 +33,80 @@ function showError(err: unknown) { error.value = err instanceof Error ? err.mess
 function evidence(item: CasePlanItem) { return plan.value?.evidence.find(e => e.kind === "case" && e.version === item.case_version_id); }
 function title(item: CasePlanItem) { const value = evidence(item)?.payload.title; return typeof value === "string" ? value : item.key; }
 function content(item: CasePlanItem) { return item.kind === "prepare" ? item.instructions : evidence(item)?.payload.content; }
+function launchStorageKey() { return `case-plan-launch:${props.projectId}:${plan.value?.id}`; }
+function persistLaunch() {
+  try {
+    if (pendingRequest.value) window.sessionStorage.setItem(launchStorageKey(), JSON.stringify({ request: pendingRequest.value, runId: knownRunId.value }));
+    else window.sessionStorage.removeItem(launchStorageKey());
+    storageWarning.value = "";
+  } catch {
+    storageWarning.value = "浏览器未能保存启动请求，请保留下方请求编号；关闭页面后先核对运行记录再重新启动。";
+  }
+}
+function selectPlan(value: CasePlanRecord) {
+  plan.value = value; savedId.value = value.id;
+  pendingRequest.value = null; knownRunId.value = ""; storageWarning.value = "";
+  sessionId.value = ""; modeKey.value = testModes.value[0]?.key || "";
+  try {
+    const raw = window.sessionStorage.getItem(launchStorageKey());
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    const request = stored?.request;
+    if (!request || typeof request.creation_key !== "string" || !request.creation_key || request.creation_key.length > 160
+      || typeof request.mode_key !== "string" || !request.mode_key || request.mode_key.length > 80
+      || (request.session_id !== undefined && (typeof request.session_id !== "string" || !request.session_id || request.session_id.length > 160))) {
+      throw new Error("已保存的启动请求格式无效");
+    }
+    pendingRequest.value = { creation_key: request.creation_key, mode_key: request.mode_key,
+      ...(request.session_id ? { session_id: request.session_id } : {}) };
+    modeKey.value = request.mode_key; sessionId.value = request.session_id || "";
+    knownRunId.value = typeof stored.runId === "string" ? stored.runId : "";
+  } catch {
+    storageWarning.value = "无法读取已保存的启动请求。若此前已经提交，请先从项目运行列表核对结果，避免重复创建。";
+  }
+}
+async function launch() {
+  if (!plan.value || !canLaunch.value || busy.value || knownRunId.value || (!pendingRequest.value && !modeKey.value)) return;
+  error.value = ""; notice.value = ""; busy.value = true;
+  if (!pendingRequest.value) {
+    const creationKey = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID() : `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    pendingRequest.value = { creation_key: creationKey, mode_key: modeKey.value,
+      ...(sessionId.value.trim() ? { session_id: sessionId.value.trim() } : {}) };
+    persistLaunch();
+  }
+  try {
+    const detail = await api.launchCasePlan(props.projectId, plan.value.id, { ...pendingRequest.value });
+    knownRunId.value = detail.run.id; persistLaunch();
+    notice.value = "运行记录已保存，执行进度和结果请查看运行详情。";
+    emit("started", detail);
+  } catch (err) {
+    showError(err);
+    if (err instanceof HttpError && [400, 401, 403, 404, 409, 422].includes(err.status)) {
+      pendingRequest.value = null; persistLaunch();
+    } else {
+      notice.value = "启动结果尚未确认。重试将保留相同请求和执行选项，不另建运行。";
+    }
+  } finally { busy.value = false; }
+}
+async function viewRun() {
+  if (!knownRunId.value || busy.value) return;
+  busy.value = true; error.value = "";
+  try {
+    const detail = await api.getTestRun(knownRunId.value);
+    if (detail.run.project_id !== props.projectId || detail.run.plan_snapshot?.plan.id !== plan.value?.id) {
+      throw new Error("运行记录不属于当前项目和计划");
+    }
+    emit("started", detail);
+  }
+  catch (err) { showError(err); }
+  finally { busy.value = false; }
+}
+function newRun() {
+  if (!knownRunId.value || busy.value) return;
+  knownRunId.value = ""; pendingRequest.value = null; error.value = ""; notice.value = "";
+  persistLaunch();
+}
 async function loadPolicy() {
   busy.value = true;
   try { config.value = await api.getCasePlanningPolicy(props.projectId); }
@@ -37,9 +123,8 @@ async function generate() {
   } catch (err) { showError(err); return; }
   busy.value = true;
   try {
-    plan.value = await api.createCasePlan(props.projectId, { objective: objective.value.trim(),
-      candidate_case_ids: [...props.candidateCaseIds], runtime_context: context as Record<string, unknown> });
-    savedId.value = plan.value.id;
+    selectPlan(await api.createCasePlan(props.projectId, { objective: objective.value.trim(),
+      candidate_case_ids: [...props.candidateCaseIds], runtime_context: context as Record<string, unknown> }));
   } catch (err) { showError(err); }
   finally { busy.value = false; }
 }
@@ -52,8 +137,8 @@ async function remember() {
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
-  busy.value = true; error.value = ""; plan.value = null;
-  try { plan.value = await api.getCasePlan(props.projectId, savedId.value.trim()); }
+  busy.value = true; error.value = ""; notice.value = ""; plan.value = null;
+  try { selectPlan(await api.getCasePlan(props.projectId, savedId.value.trim())); }
   catch (err) { showError(err); }
   finally { busy.value = false; }
 }
@@ -64,7 +149,7 @@ onMounted(loadPolicy);
   <div class="case-dialog-backdrop" @click.self="!busy && emit('close')">
     <section class="case-dialog" role="dialog" aria-modal="true" aria-label="用例执行规划">
       <header><h2>用例执行规划</h2><button :disabled="busy" @click="emit('close')">关闭</button></header>
-      <p>AI 根据测试目标选择项目内用例，并补足必要前置。本次生成并保存计划，测试尚未开始。</p>
+      <p>AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。</p>
       <p>{{ candidateCaseIds.length ? `以已选的 ${candidateCaseIds.length} 条用例为初始候选，必要前置仍在当前项目内查询。` : '根据目标召回当前项目内的已启用用例。' }}</p>
       <label>测试目标<textarea v-model="objective" :disabled="busy" maxlength="20000" placeholder="说明本次要验证的功能与约束" /></label>
       <label>已有运行信息（JSON）<textarea v-model="runtimeJson" :disabled="busy" placeholder='例如：{"order_id":"本次已有订单编号"}' /></label>
@@ -81,6 +166,18 @@ onMounted(loadPolicy);
       <button :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</button>
       <template v-if="plan">
         <h3>{{ statusLabels[plan.status] }}</h3><p>{{ plan.summary }}</p>
+        <section v-if="canLaunch" class="launch-controls" aria-label="启动已保存计划">
+          <p>启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。</p>
+          <label>执行测试模式<select v-model="modeKey" :disabled="busy || !!pendingRequest">
+            <option v-if="pendingRequest && !testModes.some(mode => mode.key === modeKey)" :value="modeKey">{{ modeKey }}（已保存的选项）</option>
+            <option v-for="mode in testModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option>
+          </select></label>
+          <label>关联会话编号（可选）<input v-model="sessionId" :disabled="busy || !!pendingRequest" maxlength="160" placeholder="会话必须属于当前项目"></label>
+          <p v-if="pendingRequest">启动请求编号：{{ pendingRequest.creation_key }}</p>
+          <p v-if="storageWarning" role="status">{{ storageWarning }}</p>
+          <template v-if="knownRunId"><p>已保存运行：{{ knownRunId }}</p><button :disabled="busy" @click="viewRun">查看运行</button><button :disabled="busy" @click="newRun">另建一次运行</button></template>
+          <button v-else :disabled="busy || (!pendingRequest && !modeKey)" @click="launch">{{ pendingRequest ? '重试启动请求' : '启动测试运行' }}</button>
+        </section>
         <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
         <ul v-if="plan.decision?.unresolved.length" class="gaps"><li v-for="(gap, index) in plan.decision.unresolved" :key="index">{{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}</li></ul>
         <ol class="plan-items"><li v-for="item in plan.decision?.items" :key="item.key">

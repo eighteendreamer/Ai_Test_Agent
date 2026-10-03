@@ -25,9 +25,9 @@
 | P1 用例 | 完整任意 JSON、自身说明、版本、来源、前端渲染、旧结构兼容 | 本轮提交实现。JSON 草稿接口、嵌套未知字段、追加版本与旧版本保留、真实 PG 重新读取及组件测试通过；本轮兼容复核通过；完整执行仍待完成 |
 | P1 生成 | 按模块生成、来源/模型/Prompt/Skill/模板版本、失败范围及独立重试 | 实际文档上传→当前真实模型/Skill→JSON 草稿→模板快照/来源入 PG 已测试；模块进度、失败范围及独立重试待实施 |
 | P1 导入 | Excel 默认两种布局、映射/预览/错误、JSON、幂等、草稿评审 | 上传、MySQL 配置、RustFS 原件、PG 批次与草稿同事务、前端入口已接入。受影响后端回归 141 通过、最终导入/进程专项 21 通过；真实浏览器组件/HTTP/三种存储 3 通过，前端组件 15 通过、构建通过。完整生产启动与项目页全流程待验收 |
-| P2 选取 | 自由/按用例依据分离；项目内召回、完整读取、AI 选择、无匹配明确返回 | 已实现独立项目规划服务与页面，完整版本、跨历史模式、项目隔离、固定计划保存及重读已验证；执行上下文与图状态已接入内部链路。公开计划启动与持久规划任务仍待完成 |
+| P2 选取 | 自由/按用例依据分离；项目内召回、完整读取、AI 选择、无匹配明确返回 | 已实现独立项目规划服务与页面，完整版本、跨历史模式、项目隔离、固定计划保存及重读已验证；执行上下文与图状态已接入，公开保存计划启动 API/UI 已验证实际存储和浏览器断线重试。持久规划任务仍待完成 |
 | P2 补全 | AI 语义检查、项目查证、正式依赖或运行准备、负向条件保留、缺口可见 | 只读查询、正式依赖/准备结构、引用与拓扑校验、有界校验反馈已实现；专项 21 通过。当前真实模型三场景测试 1 通过，实际组件/HTTP/三种存储浏览器 1 通过，不等同实际 Agent 执行 |
-| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。默认模型目标回执验收仍失败；真实 Redis 执行进程/完整启动、其他模式真实工具、步骤级恢复/未知效果核对、计划修订、新策略回归及公开启动仍待完成 |
+| P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。Agent 新回归及公开保存计划启动已接通，真实 Redis/Outbox/Worker 类与 Agent 审批/HTTP 结果专项通过，详见下方最新记录；默认模型目标回执验收仍失败，独立 Redis 执行进程/完整启动、其他模式真实工具、步骤级恢复/未知效果核对及计划修订仍待完成 |
 | P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 待实施 |
 | P3 Git | 独立可选只读入口；明确关联才导入为已有文档版本；上传不依赖 Git | 待实施 |
 | P3 解析 | MD/python-docx/pypdf 工厂、统一结构/位置/版本/警告、独立受限进程；Docling 仅扩展入口 | 待实施 |
@@ -696,3 +696,69 @@ npm run build
 ```
 
 本步骤不新增依赖、配置域或数据库列；配置仍在 MySQL，计划/运行/业务证据在 PostgreSQL，原件沿用 RustFS。源码、测试、实际证据和方案同步提交，用户五条 .gitignore 改动不暂存。下一步接通公开保存计划启动并验收，再继续持久规划任务、真实 Redis Worker/完整生产启动、默认模型及其他模式工具、步骤级恢复和完整 P0—P5 的剩余功能。该步骤通过不代表整个升级完成。
+
+### P2b 公开保存计划启动、响应丢失重试及真实 Redis 执行（2026-10-04）
+
+上一轮方案提交 `3e4f161` 属于进展。本轮重新读取指定方案附件、当前源码与测试、本地《Agent轨迹与协议鲁棒性》《评测工程化与CICD》，沿项目规划路由、固定计划映射、创建事务、模式注册、项目页弹窗、运行详情/审批、Outbox relay 和 Redis Worker 调研。确认保存计划已在 PostgreSQL，启动服务不需要再次调用规划模型。因此修正方案中的前置安排：公开保存计划启动可独立接通，耗时规划请求的持久化继续作为剩余交付项，不能把它当作已实现。
+
+先复现：新增启动请求测试，旧代码返回 404，不能接收正式启动参数。`p2-public-launch-before.xml` 为 **1 失败、1 跳过、21 未选择，3.99 秒**；跳过为真实存储开关未启用。修复不是另建执行引擎，而是将已有的冻结事务服务接到公开入口。
+
+依据 → 实现：
+
+- `POST /projects/{project_id}/case-plans/{plan_id}/runs` 复用 `CasePlanRunService.create`，返回正式 `TestRunDetail`。请求只包含创建请求身份、注册测试模式及可选同项目会话；额外冻结内容被 schema 拒绝。新创建要求配置持久派发和模式注册服务，生产初始化注入已有注册表；代码审查仍可选，不按生成的 `exempt` 策略或用例历史模式过滤执行。
+- 已提交请求按既有固定 UUID/创建哈希返回原运行，先重放再检查新建所需派发配置；派发暂时停用后仍可确认已保存或终态运行。参数冲突明确返回 409，额外字段返回 422。提交异常返回“结果尚不能确认，保留相同请求重试”，不把响应丢失说成事务未提交。结构化日志带项目、计划、请求身份和模式。
+- 前端增加模式、可选会话、启动、重试、查看原运行及明确另建操作。按项目/计划在 `sessionStorage` 保存创建请求和运行身份，不保存用例正文、运行数据或凭据；未知结果保留原参数和身份，关闭/重开组件或刷新后重新查看计划仍使用相同请求。明确的输入拒绝允许修正；浏览器存储失败显示可见提示，当前组件保留原请求。查看缓存运行通过真实 API 重读，并核对项目和计划归属。`HttpError` 保留 HTTP 状态，仍兼容既有 `Error` 消费方。
+- `ProjectsView` 传入全部注册模式，保存成功后打开现有运行详情和审批操作，并刷新运行及概览。界面明确计划生成、运行保存及实际结果各自含义，未知启动结果不显示“测试尚未开始”。没有新增模式参数编译、配置域、数据库列或依赖；业务记录继续在 PostgreSQL，已有可编辑策略继续在 MySQL。
+
+实际功能与回归证据：
+
+| 验证 | 实际结果 | 范围 |
+|---|---|---|
+| 公开 API 初验 | 1 通过、1 跳过、21 未选择，2.65 秒；`p2-public-launch-api.xml` | 内存运行/计划服务，经实际 ASGI 路由；未计为真实存储验收 |
+| 固定计划及公开启动实际存储 | 23 通过，12.46 秒；`p2-public-launch-storage.xml` | 隔离 MySQL/PG/RustFS；项目/会话/模式拒绝、额外注入、提交后响应丢失、派发停用时重放、另建、并发、冻结版本及事务回滚；会话拒绝样本使用受控会话读取，真实 Session 执行见 Worker 专项 |
+| 实际 Chromium 组件与 HTTP | 最终 1 通过，6.49 秒；`p2-public-launch-browser-final.xml`、`p2-public-launch-browser.json/png` | 创建真实需求文件并上传 RustFS，PG 用例/计划及 MySQL 策略；真实启动路由提交后通过浏览器截断响应，刷新后重试同一请求，Outbox 仍 1 条；明确另建后为 2 条，再刷新并查看真实运行。模型规划受控，宿主页加载实际组件，不代表完整 ProjectsView 或生产 lifespan |
+| 实际 Redis → Worker → Agent → HTTP | 1 通过、27 未选择，6.89 秒；`p2-public-launch-worker.xml` | 公开启动保存 PostgreSQL Outbox，实际 relay 投递 Redis，生产 `RedisTaskWorker.run_once` 调用 Dispatcher/Agent；三次运行条目审批后实际 POST 创建、GET 查询、DELETE 删除。响应 count=1 与冻结预期 0 不符，结果保存 failed；真实订单已清理。终态重投 ACK 且不增加 3 次业务请求，公开同请求重试返回原终态。使用受控模型/回执和进程内真实 Worker 类，未启动独立 CLI 或完整生产应用 |
+| 扩大后端回归 | 141 通过、46 跳过，80.02 秒；`p2-public-launch-integration.xml` | 规划、路径、冻结、依赖、Agent 上下文/核验/Session/恢复、回归、Outbox、Dispatcher 和前端契约；开关关闭导致真实存储及外部模型项目跳过，随后按测试身份逐一对账补验 |
+| 补验真实存储 | 32 通过、101 未选择，97.44 秒；`p2-public-launch-live-regression.xml`；另 2 通过、12 未选择，3.59 秒，`p2-public-launch-dependency-atomicity.xml` | 启用规划、路径、依赖及 Agent 存储 fixture 开关；补验 PostgreSQL blocked 结果与统计回滚、字面量路径。结合 23 项创建专项及 Worker 专项，扩大回归的 46 个跳过中有 42 个同身份测试随后通过；剩余 4 个外部模型专项本轮未执行 |
+| 前端及构建 | 7 个测试文件、23 通过，1.61 秒；类型检查与构建通过，Vite 6.17 秒；`p2-public-launch-frontend-build.txt` | 模式选项、请求白名单、未知请求关闭/重开重试、项目隔离、明确拒绝、浏览器存储失败、另建及查看归属；通用设置/Session API 和四个 Session store 回归。实际项目页全流程仍待验收 |
+
+6 个变更 Python 源码/测试文件的 `py_compile` 实际通过。对 46 个跳过按 JUnit 的 `classname/name` 与后续通过记录逐项核对，未将未选择测试算为通过。剩余 4 个外部模型专项为语义规划、字面量路径、完整上下文读取及完整回执；已有默认模型 length/空正文失败保持，本轮没有重复相同请求或修改 MySQL 模型配置。
+
+主要实际命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_plan_run_creation.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-storage.xml
+$env:RUN_LIVE_CASE_PLANNING_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-browser-final.xml
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_execution.py -k public_plan_launch_outbox -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-worker.xml
+```
+
+扩大后端命令在未启用上述专项开关的独立 Shell 中执行：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning.py tests/test_plan_binding_paths.py tests/test_case_plan_run_creation.py tests/test_run_item_dependencies.py tests/test_agent_case_context.py tests/test_agent_case_assessment.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_test_run_regression.py tests/test_test_run_outbox_transaction.py tests/test_redis_execution_dispatcher.py tests/test_postgres_task_outbox_relay.py tests/test_project_regression_frontend_contract.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-integration.xml
+```
+
+真实存储补验：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_BINDING_PATHS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning.py tests/test_plan_binding_paths.py tests/test_run_item_dependencies.py tests/test_agent_case_context.py tests/test_agent_case_assessment.py tests/test_agent_case_session.py tests/test_agent_case_execution.py -k True -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-live-regression.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_run_item_dependencies.py -k 'blocked_receipt_and_stats_rollback or literal_output_paths_match' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-public-launch-dependency-atomicity.xml
+```
+
+前端（agent_web）：
+
+```powershell
+npm run test -- src/features/projects/CasePlanDialog.test.ts src/services/settings.api.test.ts src/services/sessions.api.test.ts src/stores/sessionApprovalLifecycle.test.ts src/stores/sessionQueue.test.ts src/stores/sessionReceiptDedup.test.ts src/stores/sessionMessageOrdering.test.ts
+npm run build
+```
+
+已读取并视觉检查真实浏览器截图，方案本地链接及镜像一致性另检查。测试表、项目、对象和 Redis 流均为隔离 fixture 所有，清理只针对本次确切身份；用户 `.gitignore` 保持未暂存。源码、测试、证据及文档按本步骤提交，不推送或建 PR。
+
+完整 P0—P5 目标继续保持未完成。下一步研究持久规划任务与生产进程接线，继续默认模型回执、其他模式工具、步骤级恢复及未知副作用核对；P0 人工 DeepSeek 录制/Docker、P1 模块生成、P3 文档版本/解析/差异、P4 影响/追踪、P5 知识/报告及业务数据迁移均按原范围保留。

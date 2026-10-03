@@ -1,3 +1,10 @@
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 export async function readErrorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
@@ -36,7 +43,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const detail = await readErrorMessage(response);
-    throw new Error(detail || `Request failed: ${response.status}`);
+    throw new HttpError(detail || `Request failed: ${response.status}`, response.status);
   }
 
   if (response.status === 204) {

@@ -20,6 +20,7 @@ import type {
   CaseImportSourceRecord,
   CaseImportBatchView,
   CasePlanRecord,
+  CasePlanRunRequest,
   CasePlanningRequest,
   CasePlanningConfig,
   CasePlanningPolicy,
@@ -214,6 +215,12 @@ export function createCasePlan(projectId: string, payload: CasePlanningRequest):
 
 export function getCasePlan(projectId: string, planId: string): Promise<CasePlanRecord> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/${encodeURIComponent(planId)}`);
+}
+
+export function launchCasePlan(projectId: string, planId: string, payload: CasePlanRunRequest): Promise<TestRunDetail> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/${encodeURIComponent(planId)}/runs`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
 }
 
 export function saveCaseImportSettings(projectId: string, payload: CaseImportSettingsRecord["payload"]): Promise<CaseImportSettingsRecord> {
