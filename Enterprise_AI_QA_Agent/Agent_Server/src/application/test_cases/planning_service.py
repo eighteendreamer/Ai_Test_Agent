@@ -23,7 +23,7 @@ from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
 
 logger = logging.getLogger(__name__)
 PLANNING_CONFIG_KEY = "test_case.planning_policy"
-PROMPT_VERSION = "case-planning-v2"
+PROMPT_VERSION = "case-planning-v3"
 
 
 class CasePlanningService:
@@ -339,7 +339,9 @@ class CasePlanningService:
             "没有正式用例而已读取项目资料提供操作依据时加入 prepare，instructions 保存有依据的操作、预期和输出说明。"
             "prepare 不创建正式用例身份。禁止凭行业常识编造接口、选择器或业务规则。"
             "所有项都引用已经读取的 evidence_ids；正式用例必须引用自己的 case:版本ID。"
-            "depends_on 使用执行项 key；input_bindings 使用 source_item 和 output_path 引用前置输出，"
+            "depends_on 使用执行项 key；input_bindings 使用 source_item 和 output_path_tokens 引用前置实际输出。"
+            "output_path_tokens 是相对实际输出的JSON键或数组索引字符串数组，例如 ['body','order.id'] 中 order.id 是完整键，"
+            "不是嵌套路径；空数组表示完整来源值，空字符串表示空键。不要同时填写旧 output_path。"
             "或 input_key 引用 runtime_context 的顶层键，不能同时指定两种来源。规划不证明输入实际有效。"
             "需要更多依据时 action=query；cases 按编号/标题查询（空 query 列出目录），source_id 可读指定用例；"
             "documents/recordings 列出来源目录，支持 offset；document 按 source_id/start_line/max_lines 读原文；"

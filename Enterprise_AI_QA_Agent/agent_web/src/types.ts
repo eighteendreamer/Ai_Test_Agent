@@ -1480,6 +1480,7 @@ export interface CasePlanInputBinding {
   source_item: string | null;
   input_key: string | null;
   output_path: string;
+  output_path_tokens?: string[] | null;
   required: boolean;
 }
 

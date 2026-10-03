@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="1" tests="7" time="2.874" timestamp="2026-10-03T21:40:51.334705+08:00" hostname="EIghteen"><testcase classname="tests.test_plan_binding_paths" name="test_literal_binding_paths_preserve_json_keys_and_values[tokens0-literal-id]" time="0.002"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding&#10;output_path_tokens&#10;  Extra inputs are not permitted [type=extra_forbidden, input_value=['body', 'order.id'], input_type=list]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden">tests\test_plan_binding_paths.py:24: in test_literal_binding_paths_preserve_json_keys_and_values
+    binding = PlanInputBinding(source_item="create", output_path_tokens=tokens)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding
+E   output_path_tokens
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=['body', 'order.id'], input_type=list]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_literal_binding_paths_preserve_json_keys_and_values[tokens1-0]" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding&#10;output_path_tokens&#10;  Extra inputs are not permitted [type=extra_forbidden, input_value=['body', ''], input_type=list]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden">tests\test_plan_binding_paths.py:24: in test_literal_binding_paths_preserve_json_keys_and_values
+    binding = PlanInputBinding(source_item="create", output_path_tokens=tokens)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding
+E   output_path_tokens
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=['body', ''], input_type=list]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_literal_binding_paths_preserve_json_keys_and_values[tokens2-False]" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding&#10;output_path_tokens&#10;  Extra inputs are not permitted [type=extra_forbidden, input_value=['body', 'values', '-1'], input_type=list]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden">tests\test_plan_binding_paths.py:24: in test_literal_binding_paths_preserve_json_keys_and_values
+    binding = PlanInputBinding(source_item="create", output_path_tokens=tokens)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding
+E   output_path_tokens
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=['body', 'values', '-1'], input_type=list]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_literal_binding_paths_preserve_json_keys_and_values[tokens3-value3]" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding&#10;output_path_tokens&#10;  Extra inputs are not permitted [type=extra_forbidden, input_value=[], input_type=list]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden">tests\test_plan_binding_paths.py:24: in test_literal_binding_paths_preserve_json_keys_and_values
+    binding = PlanInputBinding(source_item="create", output_path_tokens=tokens)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for PlanInputBinding
+E   output_path_tokens
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=[], input_type=list]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_existing_dotted_paths_remain_readable_but_conflicting_paths_are_rejected" time="0.001"><failure message="AttributeError: 'PlanInputBinding' object has no attribute 'path_tokens'">tests\test_plan_binding_paths.py:34: in test_existing_dotted_paths_remain_readable_but_conflicting_paths_are_rejected
+    assert binding.path_tokens == ["body", "id"]
+           ^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1042: in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E   AttributeError: 'PlanInputBinding' object has no attribute 'path_tokens'</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_actual_json_file_http_plan_keeps_literal_paths_and_old_plan[False]" time="0.051"><failure message="AssertionError: planning失败（IndexError）；未创建测试运行&#10;assert 'planning_failed' == 'planned'&#10;  &#10;  - planned&#10;  + planning_failed">tests\test_plan_binding_paths.py:58: in test_actual_json_file_http_plan_keeps_literal_paths_and_old_plan
+    assert response.json()["status"] == "planned", response.json()["summary"]
+E   AssertionError: planning失败（IndexError）；未创建测试运行
+E   assert 'planning_failed' == 'planned'
+E
+E     - planned
+E     + planning_failed</failure></testcase><testcase classname="tests.test_plan_binding_paths" name="test_actual_json_file_http_plan_keeps_literal_paths_and_old_plan[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated MySQL/PostgreSQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_plan_binding_paths.py:40: requires isolated MySQL/PostgreSQL/RustFS</skipped></testcase></testsuite></testsuites>

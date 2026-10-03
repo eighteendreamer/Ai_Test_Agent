@@ -38,13 +38,24 @@ class PlanInputBinding(PlanningModel):
     source_item: str | None = None
     input_key: str | None = None
     output_path: str = Field(default="", max_length=1000)
+    # Literal JSON keys / array indexes; [] means the complete source value.
+    # The legacy dotted field is retained for existing frozen plans.
+    output_path_tokens: list[Annotated[str, Field(max_length=256)]] | None = Field(default=None, max_length=32)
     required: bool = True
 
     @model_validator(mode="after")
     def one_source(self):
         if bool(self.source_item) == bool(self.input_key):
             raise ValueError("数据绑定需要且只能指定一个来源")
+        if self.output_path_tokens is not None and self.output_path:
+            raise ValueError("数据路径不能同时指定字面量数组与旧点分路径")
         return self
+
+    @property
+    def path_tokens(self) -> list[str]:
+        if self.output_path_tokens is not None:
+            return list(self.output_path_tokens)
+        return self.output_path.split(".") if self.output_path else []
 
 
 class CasePlanItemBase(PlanningModel):
