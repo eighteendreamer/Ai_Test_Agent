@@ -1455,6 +1455,69 @@ export interface CaseImportBatchView {
   conflicting_case_keys: string[];
 }
 
+export interface CasePlanningPolicy {
+  max_rounds: number;
+  max_candidates: number;
+  max_items: number;
+  max_context_chars: number;
+  timeout_seconds: number;
+}
+
+export interface CasePlanningConfig {
+  scope_key: string;
+  revision: number;
+  policy: CasePlanningPolicy;
+}
+
+export interface CasePlanningRequest {
+  objective: string;
+  model_key?: string | null;
+  candidate_case_ids?: string[];
+  runtime_context?: Record<string, unknown>;
+}
+
+export interface CasePlanInputBinding {
+  source_item: string | null;
+  input_key: string | null;
+  output_path: string;
+  required: boolean;
+}
+
+export interface CasePlanItemBase {
+  key: string;
+  reason: string;
+  evidence_ids: string[];
+  depends_on: string[];
+  input_bindings: Record<string, CasePlanInputBinding>;
+}
+
+export type CasePlanItem = CasePlanItemBase & (
+  { kind: "target" | "dependency"; case_id: string; case_version_id: string } |
+  { kind: "prepare"; case_id: null; case_version_id: null; instructions: Record<string, unknown> }
+);
+
+export interface CasePlanRecord {
+  id: string;
+  project_id: string;
+  request: CasePlanningRequest;
+  status: "planned" | "no_match" | "blocked" | "retrieval_failed" | "planning_failed";
+  summary: string;
+  decision: {
+    action: "query" | "finish";
+    summary: string;
+    queries: Array<{ kind: "cases" | "documents" | "document" | "recordings" | "recording"; query: string; source_id: string | null; start_line: number; max_lines: number; offset: number }>;
+    items: CasePlanItem[];
+    unresolved: Array<{ item_key: string | null; condition: string; reason: string }>;
+  } | null;
+  evidence: Array<{ id: string; kind: "case" | "document" | "recording"; source_id: string; version: string; content_hash: string; payload: Record<string, unknown> }>;
+  config_snapshot: CasePlanningConfig;
+  model_key: string | null;
+  prompt_version: string;
+  rounds: Array<Record<string, unknown>>;
+  warnings: string[];
+  created_at: string;
+}
+
 export interface TestCaseBundle {
   case: TestCaseRecord;
   version: TestCaseVersionRecord;

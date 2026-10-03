@@ -54,6 +54,9 @@ from src.application.test_cases.case_service import TestCaseService
 from src.application.test_cases.template_service import TestCaseTemplateService
 from src.application.test_cases.import_service import CaseImportService
 from src.application.test_cases.import_store import PostgresCaseImportStore
+from src.application.test_cases.planning_service import CasePlanningService
+from src.application.test_cases.planning_sources import ProjectPlanningSources
+from src.application.test_cases.planning_store import PostgresCasePlanStore
 from src.application.test_cases.case_store import PostgresTestCaseStore
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_cases.generation_pipeline import (
@@ -332,6 +335,15 @@ class AppContainer(containers.DeclarativeContainer):
         store=test_suite_store,
         project_service=project_service,
         test_case_service=test_case_service,
+    )
+    case_plan_store = providers.Singleton(PostgresCasePlanStore, settings=settings)
+    project_planning_sources = providers.Singleton(
+        ProjectPlanningSources, case_service=test_case_service, api_docs_service=api_docs_service,
+    )
+    case_planning_service = providers.Singleton(
+        CasePlanningService, store=case_plan_store, config_store=application_config_store,
+        project_service=project_service, sources=project_planning_sources,
+        model_runtime_service=model_runtime_service, embedding_service=test_case_embedding_service,
     )
     test_run_service = providers.Singleton(
         TestRunService,

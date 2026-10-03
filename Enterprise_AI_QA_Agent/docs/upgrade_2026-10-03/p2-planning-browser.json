@@ -1,0 +1,13 @@
+{
+  "scope": "actual dialog/HTTP/MySQL/PG/RustFS with controlled model; not production lifespan or Agent execution",
+  "snapshot_before": "- dialog \"用例执行规划\":\n  - banner:\n    - heading \"用例执行规划\" [level=2]\n    - button \"关闭\"\n  - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。本次生成并保存计划，测试尚未开始。\n  - paragraph: 以已选的 2 条用例为初始候选，必要前置仍在当前项目内查询。\n  - text: 测试目标\n  - textbox \"测试目标\":\n    - /placeholder: 说明本次要验证的功能与约束\n  - text: 已有运行信息（JSON）\n  - textbox \"已有运行信息（JSON）\":\n    - /placeholder: \"例如：{\\\"order_id\\\":\\\"本次已有订单编号\\\"}\"\n    - text: \"{}\"\n  - group: 规划设置\n  - contentinfo:\n    - button \"生成执行计划\" [disabled]\n  - text: 已保存的计划编号\n  - textbox \"已保存的计划编号\":\n    - /placeholder: 输入当前项目的计划编号\n  - button \"查看已保存计划\" [disabled]",
+  "snapshot_after": "- dialog \"用例执行规划\":\n  - banner:\n    - heading \"用例执行规划\" [level=2]\n    - button \"关闭\"\n  - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。本次生成并保存计划，测试尚未开始。\n  - paragraph: 以已选的 2 条用例为初始候选，必要前置仍在当前项目内查询。\n  - text: 测试目标\n  - textbox \"测试目标\":\n    - /placeholder: 说明本次要验证的功能与约束\n    - text: 验证已有数据与未登录拒绝\n  - text: 已有运行信息（JSON）\n  - textbox \"已有运行信息（JSON）\":\n    - /placeholder: \"例如：{\\\"order_id\\\":\\\"本次已有订单编号\\\"}\"\n    - text: \"{}\"\n  - group:\n    - text: 规划设置 最多查询回合\n    - spinbutton \"最多查询回合\": \"5\"\n    - text: 每次候选数量\n    - spinbutton \"每次候选数量\": \"20\"\n    - text: 最多执行项\n    - spinbutton \"最多执行项\": \"12\"\n    - text: 上下文字符上限\n    - spinbutton \"上下文字符上限\": \"180000\"\n    - text: 超时秒数\n    - spinbutton \"超时秒数\": \"180\"\n    - button \"保存项目规划设置\"\n  - contentinfo:\n    - button \"生成执行计划\"\n  - text: 已保存的计划编号\n  - textbox \"已保存的计划编号\":\n    - /placeholder: 输入当前项目的计划编号\n    - text: 066034a7-8ee8-4384-b647-220a0f18f429\n  - button \"查看已保存计划\"\n  - heading \"计划已生成\" [level=3]\n  - paragraph: 已按项目依据规划\n  - list:\n    - listitem:\n      - heading \"目标用例 · 验证已有数据\" [level=4]\n      - paragraph: 依据完整用例规划\n      - paragraph: 读取全部步骤；保持负向条件。\n      - group: 完整固定用例\n      - group: 数据来源\n      - paragraph: 依据：case:5f44f716-86f1-4e4b-b1d1-f40beda381a5\n    - listitem:\n      - heading \"目标用例 · 未登录拒绝\" [level=4]\n      - paragraph: 依据完整用例规划\n      - paragraph: 读取全部步骤；保持负向条件。\n      - group: 完整固定用例\n      - paragraph: 依据：case:d81be898-e6f3-41f3-99c0-d6b27fa87bdf",
+  "existing_data_no_extra_preparation": true,
+  "run_local_preparation": true,
+  "negative_condition_preserved": true,
+  "full_seventh_step_visible": true,
+  "project_policy_in_mysql": true,
+  "frozen_plan_reopened": true,
+  "foreign_project_denied": true,
+  "page_errors": []
+}

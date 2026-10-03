@@ -32,6 +32,7 @@ from src.api.routes.registry import router as registry_router
 from src.api.routes.sessions import router as sessions_router
 from src.api.routes.case_management import router as test_cases_router
 from src.api.routes.case_imports import router as case_imports_router
+from src.api.routes.case_plans import router as case_plans_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
 from src.api.routes.security_bugs import router as security_bugs_router
@@ -419,6 +420,8 @@ async def _initialize_lifespan_resources(
     test_case_embedding_service = container.test_case_embedding_service()
     test_case_embedding_service.set_vector_store(vector_store)
     await test_case_embedding_service.initialize()
+    case_planning_service = container.case_planning_service()
+    await case_planning_service.initialize()
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -660,6 +663,7 @@ async def _initialize_lifespan_resources(
     app.state.test_case_generator = test_case_generator
     app.state.test_case_service = test_case_service
     app.state.case_import_service = case_import_service
+    app.state.case_planning_service = case_planning_service
     app.state.test_case_template_service = test_case_template_service
     app.state.test_suite_store = test_suite_store
     app.state.test_suite_service = test_suite_service
@@ -794,6 +798,9 @@ async def _initialize_lifespan_resources(
     cleanup.push_async_callback(_close_lifespan_resource, "recorder_service", recorder_service.close)
     app.state.recording_store = recording_store
     app.state.recording_graph_store = recording_graph_store
+    container.project_planning_sources().set_recording_sources(
+        recording_store=recording_store, recording_graph_store=recording_graph_store,
+    )
     app.state.embedded_bridge = embedded_bridge
     app.state.recorder_service = recorder_service
     # P2-2：录制 → 用例草稿（进既有评审 → 固定版本 → 套件冻结链路）
@@ -905,6 +912,7 @@ app.include_router(resource_occupancy_router, prefix=settings.api_v1_prefix)
 app.include_router(sessions_router, prefix=settings.api_v1_prefix)
 app.include_router(test_cases_router, prefix=settings.api_v1_prefix)
 app.include_router(case_imports_router, prefix=settings.api_v1_prefix)
+app.include_router(case_plans_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)

@@ -1,0 +1,433 @@
+{
+  "id": "42600ccd-021d-40cd-87f0-5c97f1ee8698",
+  "project_id": "65b4db1a-fe76-4869-8d35-fecd28049a69",
+  "request": {
+    "objective": "验证订单详情正常查询、不存在订单返回404，以及未登录管理页返回401；没有已有业务数据。只执行这些验证目标及它们必要的前置。",
+    "model_key": null,
+    "candidate_case_ids": [
+      "ff62dd24-76a0-4691-b353-cc1f47e56e5f",
+      "220cd962-97a5-486c-9647-31621b4a099a",
+      "076c0df8-3ac8-4822-b88a-d8ebf345e77a"
+    ],
+    "runtime_context": {}
+  },
+  "status": "planning_failed",
+  "summary": "计划引用了未读取的来源依据",
+  "decision": null,
+  "evidence": [
+    {
+      "id": "case:875b9b35-8235-4ed5-a27f-2b436b8041cc",
+      "kind": "case",
+      "source_id": "ff62dd24-76a0-4691-b353-cc1f47e56e5f",
+      "version": "875b9b35-8235-4ed5-a27f-2b436b8041cc",
+      "content_hash": "e887106b067058216a8b03b5a43db4f0a4affd5b6a931bfd605cf50961db08b7",
+      "payload": {
+        "title": "查询已有订单并验证金额",
+        "case_id": "ff62dd24-76a0-4691-b353-cc1f47e56e5f",
+        "content": {
+          "steps": [
+            {
+              "order": 1,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 2,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 3,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 4,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 5,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 6,
+              "action": "记录本次环境与可用信息"
+            },
+            {
+              "order": 7,
+              "action": "使用实际已存在的 order_id 请求 GET /orders/{order_id}",
+              "expected": {
+                "status": 200,
+                "body.amount": 36
+              },
+              "requires": [
+                "order_id"
+              ]
+            }
+          ],
+          "objective": "查询已有订单并验证金额"
+        },
+        "case_key": "order-detail",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "order-detail",
+            "source_type": "manual"
+          }
+        ],
+        "case_version_id": "875b9b35-8235-4ed5-a27f-2b436b8041cc",
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "historical_mode_key": "api_testing"
+      }
+    },
+    {
+      "id": "case:e61c591a-019a-4289-ac97-c18fc3b6e9e5",
+      "kind": "case",
+      "source_id": "220cd962-97a5-486c-9647-31621b4a099a",
+      "version": "e61c591a-019a-4289-ac97-c18fc3b6e9e5",
+      "content_hash": "de397b8661a35a1d0616516d4d27b26eaadf0979001c9b2651d0c34b86815b5c",
+      "payload": {
+        "title": "不存在订单返回404",
+        "case_id": "220cd962-97a5-486c-9647-31621b4a099a",
+        "content": {
+          "expected": 404,
+          "objective": "不存在订单返回404",
+          "operation": "GET /orders/not-present",
+          "precondition": "not-present 不存在，保持此条件"
+        },
+        "case_key": "order-missing",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "order-missing",
+            "source_type": "manual"
+          }
+        ],
+        "case_version_id": "e61c591a-019a-4289-ac97-c18fc3b6e9e5",
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "historical_mode_key": "api_testing"
+      }
+    },
+    {
+      "id": "case:320e9a6f-f2af-4f32-9383-1e926a86fa2c",
+      "kind": "case",
+      "source_id": "076c0df8-3ac8-4822-b88a-d8ebf345e77a",
+      "version": "320e9a6f-f2af-4f32-9383-1e926a86fa2c",
+      "content_hash": "f82b515ea7c0a52ce776220054a21de57140e10f00cabd23ad83172cbc42d9ad",
+      "payload": {
+        "title": "未登录管理页访问被拒绝",
+        "case_id": "076c0df8-3ac8-4822-b88a-d8ebf345e77a",
+        "content": {
+          "expected": 401,
+          "objective": "未登录管理页访问被拒绝",
+          "operation": "GET /admin",
+          "precondition": "未登录"
+        },
+        "case_key": "admin-unauth",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "admin-unauth",
+            "source_type": "manual"
+          }
+        ],
+        "case_version_id": "320e9a6f-f2af-4f32-9383-1e926a86fa2c",
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "historical_mode_key": "api_testing"
+      }
+    },
+    {
+      "id": "case:797bdc77-5b97-4e66-b41f-ad2aba5f5905",
+      "kind": "case",
+      "source_id": "15147587-e551-4252-8ceb-e57ac26383b5",
+      "version": "797bdc77-5b97-4e66-b41f-ad2aba5f5905",
+      "content_hash": "eb401bf61164343f17eda8a6582188b871ed0e97d5665f0686013912c8d36491",
+      "payload": {
+        "title": "创建测试订单",
+        "case_id": "15147587-e551-4252-8ceb-e57ac26383b5",
+        "content": {
+          "input": {
+            "amount": 36,
+            "actor_id": "实际操作者ID"
+          },
+          "output": "body.order_id",
+          "expected": 201,
+          "requires": [
+            "actor_id"
+          ],
+          "objective": "创建测试订单",
+          "operation": "POST /orders"
+        },
+        "case_key": "order-create",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "order-create",
+            "source_type": "manual"
+          }
+        ],
+        "case_version_id": "797bdc77-5b97-4e66-b41f-ad2aba5f5905",
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "historical_mode_key": "ui_automation"
+      }
+    },
+    {
+      "id": "case:c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd",
+      "kind": "case",
+      "source_id": "7ce60b9c-32da-4838-b1eb-f6e73e270d9f",
+      "version": "c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd",
+      "content_hash": "d3669c958e5970c8c00aee6def7ef0e3a8eaa39bb09bb352331a75305a5a3105",
+      "payload": {
+        "title": "注册测试操作者",
+        "case_id": "7ce60b9c-32da-4838-b1eb-f6e73e270d9f",
+        "content": {
+          "output": "body.actor_id",
+          "expected": 201,
+          "requires": [],
+          "objective": "注册测试操作者",
+          "operation": "POST /actors"
+        },
+        "case_key": "actor-register",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "actor-register",
+            "source_type": "manual"
+          }
+        ],
+        "case_version_id": "c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd",
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "historical_mode_key": "api_testing"
+      }
+    },
+    {
+      "id": "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da",
+      "kind": "document",
+      "source_id": "38cd3688-c8fd-48dc-a10b-358e8bd54241",
+      "version": "2026-10-03T12:06:56.402964+00:00",
+      "content_hash": "4626de6606d578da5f70977b30eacd9599586dffcd343f3facaf02e0db886f4f",
+      "payload": {
+        "title": "order-requirements",
+        "content": "# 受控测试系统需求\nPOST /actors 注册测试操作者，不需要已有账号，响应 JSON body.actor_id。\nPOST /orders 创建订单，需要 actor_id，金额固定36，响应 JSON body.order_id。\nGET /orders/{order_id} 查询详情，已有订单返回200与金额36，不存在返回404。订单查询不需要登录。\nGET /admin 是管理页，未登录应返回401。验证未登录拒绝时必须保持未登录，不创建登录前置。\n已有订单信息可以直接使用；不能把不存在订单的负向用例改成先创建同编号订单。",
+        "end_line": 6,
+        "has_more": false,
+        "source_uri": "rustfs://qa-agent/api-docs/38cd3688-c8fd-48dc-a10b-358e8bd54241/order-requirements.md",
+        "start_line": 1
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "65b4db1a-fe76-4869-8d35-fecd28049a69",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 480.0
+    }
+  },
+  "model_key": "step-5-preview",
+  "prompt_version": "case-planning-v1",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [],
+        "action": "query",
+        "queries": [
+          {
+            "kind": "cases",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "15147587-e551-4252-8ceb-e57ac26383b5",
+            "start_line": 1
+          },
+          {
+            "kind": "cases",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "7ce60b9c-32da-4838-b1eb-f6e73e270d9f",
+            "start_line": 1
+          },
+          {
+            "kind": "document",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "38cd3688-c8fd-48dc-a10b-358e8bd54241",
+            "start_line": 1
+          }
+        ],
+        "summary": "目标包含三项正式用例：订单详情查询、不存在订单404、未登录管理页401。订单详情依赖真实 order_id，而当前说明没有已有业务数据，因此需要读取创建订单及可能的前置注册用例，确认能否提供该条件。同时读取订单需求文档以确认执行依据。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "query_results": [
+        {
+          "query": {
+            "kind": "cases",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "15147587-e551-4252-8ceb-e57ac26383b5",
+            "start_line": 1
+          },
+          "has_more": false,
+          "evidence_ids": [
+            "case:797bdc77-5b97-4e66-b41f-ad2aba5f5905"
+          ]
+        },
+        {
+          "query": {
+            "kind": "cases",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "7ce60b9c-32da-4838-b1eb-f6e73e270d9f",
+            "start_line": 1
+          },
+          "has_more": false,
+          "evidence_ids": [
+            "case:c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd"
+          ]
+        },
+        {
+          "query": {
+            "kind": "document",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "38cd3688-c8fd-48dc-a10b-358e8bd54241",
+            "start_line": 1
+          },
+          "has_more": false,
+          "evidence_ids": [
+            "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da"
+          ]
+        }
+      ],
+      "response_mode": "ok",
+      "first_text_seconds": 36.014,
+      "received_text_chars": 410,
+      "model_elapsed_seconds": 38.272
+    },
+    {
+      "round": 2,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "actor-register",
+            "kind": "dependency",
+            "reason": "为创建订单详情所需已有订单提供 actor_id；注册操作者不需要既有账号。",
+            "case_id": "7ce60b9c-32da-4838-b1eb-f6e73e270d9f",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd",
+              "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da5"
+            ],
+            "input_bindings": {},
+            "case_version_id": "c9aa019a-5eae-47d6-ab2f-d1c0f0a3e7dd"
+          },
+          {
+            "key": "order-create",
+            "kind": "dependency",
+            "reason": "创建已有订单，为订单详情查询提供 order_id；输入 actor_id 由 actor-register 输出提供，金额按固定用例为36。",
+            "case_id": "15147587-e551-4252-8ceb-e57ac26383b5",
+            "depends_on": [
+              "actor-register"
+            ],
+            "evidence_ids": [
+              "case:797bdc77-5b97-4e66-b41f-ad2aba5f5905",
+              "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da5"
+            ],
+            "input_bindings": {
+              "actor_id": {
+                "required": true,
+                "input_key": null,
+                "output_path": "body.actor_id",
+                "source_item": "actor-register"
+              }
+            },
+            "case_version_id": "797bdc77-5b97-4e66-b41f-ad2aba5f5905"
+          },
+          {
+            "key": "order-detail",
+            "kind": "target",
+            "reason": "目标用例：查询已有订单并验证金额。因没有已有业务数据，通过 actor-register 与 order-create 生成真实 order_id。",
+            "case_id": "ff62dd24-76a0-4691-b353-cc1f47e56e5f",
+            "depends_on": [
+              "order-create"
+            ],
+            "evidence_ids": [
+              "case:875b9b35-8235-4ed5-a27f-2b436b8041cc",
+              "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da5"
+            ],
+            "input_bindings": {
+              "order_id": {
+                "required": true,
+                "input_key": null,
+                "output_path": "body.order_id",
+                "source_item": "order-create"
+              }
+            },
+            "case_version_id": "875b9b35-8235-4ed5-a27f-2b436b8041cc"
+          },
+          {
+            "key": "order-missing",
+            "kind": "target",
+            "reason": "目标用例：验证不存在订单返回404。保持 not-present 不存在的负向条件，不创建同编号订单。",
+            "case_id": "220cd962-97a5-486c-9647-31621b4a099a",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:e61c591a-019a-4289-ac97-c18fc3b6e9e5",
+              "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da5"
+            ],
+            "input_bindings": {},
+            "case_version_id": "e61c591a-019a-4289-ac97-c18fc3b6e9e5"
+          },
+          {
+            "key": "admin-unauth",
+            "kind": "target",
+            "reason": "目标用例：验证未登录管理页访问返回401。保持未登录前置，不添加登录准备。",
+            "case_id": "076c0df8-3ac8-4822-b88a-d8ebf345e77a",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:320e9a6f-f2af-4f32-9383-1e926a86fa2c",
+              "document:38cd3688-c8fd-48dc-a10b-358e8bd54241:4626de6606d578da5"
+            ],
+            "input_bindings": {},
+            "case_version_id": "320e9a6f-f2af-4f32-9383-1e926a86fa2c"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "选择3个目标用例：订单详情查询、不存在订单404、未登录管理页401。由于当前没有已有业务数据，为订单详情查询补入必要前置：注册操作者并创建订单，再查询该订单详情。不存在订单与未登录用例保持原有负向/未登录条件。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "response_mode": "ok",
+      "first_text_seconds": 73.343,
+      "received_text_chars": 2144,
+      "model_elapsed_seconds": 83.218
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-03T12:06:56.843806Z"
+}

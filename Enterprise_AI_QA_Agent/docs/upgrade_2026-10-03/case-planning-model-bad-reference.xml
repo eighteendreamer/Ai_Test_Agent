@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="125.503" timestamp="2026-10-03T20:06:53.444129+08:00" hostname="EIghteen"><testcase classname="tests.test_case_planning" name="test_actual_model_selects_dependencies_preserves_negative_and_uses_existing_data" time="122.588"><failure message="AssertionError: {'summary': '计划引用了未读取的来源依据', 'rounds': [{'round': 1, 'status': 'parsed', 'decision': {'items': [], 'action': 'query', ...404、未登录管理页401。由于当前没有已有业务数据，为订单详情查询补入必要前置：注册操作者并创建订单，再查询该订单详情。不存在订单与未登录用例保持原有负向/未登录条件。', ...}, 'streaming': True, ...}]}&#10;assert 'planning_failed' == 'planned'&#10;  &#10;  - planned&#10;  + planning_failed">tests\test_case_planning.py:456: in test_actual_model_selects_dependencies_preserves_negative_and_uses_existing_data
+    assert plan.status == "planned", {"summary": plan.summary, "rounds": plan.rounds}
+E   AssertionError: {'summary': '计划引用了未读取的来源依据', 'rounds': [{'round': 1, 'status': 'parsed', 'decision': {'items': [], 'action': 'query', ...404、未登录管理页401。由于当前没有已有业务数据，为订单详情查询补入必要前置：注册操作者并创建订单，再查询该订单详情。不存在订单与未登录用例保持原有负向/未登录条件。', ...}, 'streaming': True, ...}]}
+E   assert 'planning_failed' == 'planned'
+E
+E     - planned
+E     + planning_failed</failure></testcase></testsuite></testsuites>

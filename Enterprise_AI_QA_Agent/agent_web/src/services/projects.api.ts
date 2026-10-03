@@ -19,6 +19,10 @@ import type {
   CaseImportSheet,
   CaseImportSourceRecord,
   CaseImportBatchView,
+  CasePlanRecord,
+  CasePlanningRequest,
+  CasePlanningConfig,
+  CasePlanningPolicy,
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
@@ -193,6 +197,22 @@ function caseImportPath(projectId: string): string {
 
 export function getCaseImportSettings(projectId: string): Promise<CaseImportSettingsRecord> {
   return request(`${caseImportPath(projectId)}/settings`);
+}
+
+export function getCasePlanningPolicy(projectId: string): Promise<CasePlanningConfig> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/policy`);
+}
+
+export function saveCasePlanningPolicy(projectId: string, policy: CasePlanningPolicy): Promise<CasePlanningConfig> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/policy`, { method: "PUT", body: JSON.stringify(policy) });
+}
+
+export function createCasePlan(projectId: string, payload: CasePlanningRequest): Promise<CasePlanRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getCasePlan(projectId: string, planId: string): Promise<CasePlanRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/${encodeURIComponent(planId)}`);
 }
 
 export function saveCaseImportSettings(projectId: string, payload: CaseImportSettingsRecord["payload"]): Promise<CaseImportSettingsRecord> {
