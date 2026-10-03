@@ -24,6 +24,9 @@ import type {
   CasePlanningRequest,
   CasePlanningConfig,
   CasePlanningPolicy,
+  CasePlanningTaskRequest,
+  CasePlanningTaskRecord,
+  CasePlanningTaskPage,
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
@@ -215,6 +218,28 @@ export function createCasePlan(projectId: string, payload: CasePlanningRequest):
 
 export function getCasePlan(projectId: string, planId: string): Promise<CasePlanRecord> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/case-plans/${encodeURIComponent(planId)}`);
+}
+
+function planningTaskPath(projectId: string): string {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/case-planning-tasks`;
+}
+
+export function submitCasePlanningTask(projectId: string, payload: CasePlanningTaskRequest): Promise<CasePlanningTaskRecord> {
+  return request(planningTaskPath(projectId), { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getCasePlanningTask(projectId: string, taskId: string): Promise<CasePlanningTaskRecord> {
+  return request(`${planningTaskPath(projectId)}/${encodeURIComponent(taskId)}`);
+}
+
+export function getCasePlanningTaskByRequest(projectId: string, creationKey: string): Promise<CasePlanningTaskRecord> {
+  const query = new URLSearchParams({ creation_key: creationKey });
+  return request(`${planningTaskPath(projectId)}/by-request?${query.toString()}`);
+}
+
+export function listCasePlanningTasks(projectId: string, limit = 24, offset = 0): Promise<CasePlanningTaskPage> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return request(`${planningTaskPath(projectId)}?${query.toString()}`);
 }
 
 export function launchCasePlan(projectId: string, planId: string, payload: CasePlanRunRequest): Promise<TestRunDetail> {

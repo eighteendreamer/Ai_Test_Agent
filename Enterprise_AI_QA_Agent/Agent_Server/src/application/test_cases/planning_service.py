@@ -4,22 +4,23 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from graphlib import CycleError, TopologicalSorter
-from time import perf_counter
 from uuid import uuid4
 
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.projects.project_service import ProjectService
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_cases.planning_store import CasePlanStore
+from src.application.test_cases.planning_workflow import CasePlanningWorkflow
 from src.application.test_cases.planning_sources import ProjectPlanningSources, json_text
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
     PlanningDecision, PlanningEvidence,
 )
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
+from src.schemas.model_config import ModelConfigRecord
+from src.schemas.case_planning_task import PlanningTaskCheckpoint, PlanningTaskSeed, planning_model_parameters
 
 logger = logging.getLogger(__name__)
 PLANNING_CONFIG_KEY = "test_case.planning_policy"
@@ -69,6 +70,20 @@ class CasePlanningService:
             raise KeyError("当前项目没有该用例计划")
         return record
 
+    async def prepare_task(self, project_id: str, request: CasePlanningRequest) -> PlanningTaskSeed:
+        """Freeze submission inputs without invoking the model or reading templates."""
+        project = await self._projects.require_active(project_id)
+        if not request.objective.strip():
+            raise ValueError("测试目标不能为空")
+        config = await self.get_policy(project_id)
+        model = await asyncio.to_thread(self._model_config, request.model_key)
+        record = CasePlanRecord(id=str(uuid4()), project_id=project_id, request=request.model_copy(deep=True),
+            status="planning_failed", summary="规划尚未完成", config_snapshot=config, model_key=model.key,
+            prompt_version=PROMPT_VERSION, created_at=datetime.now(timezone.utc))
+        return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
+            "base_url": project.base_url, "description": project.description},
+            system_prompt=self._system_prompt(), model_parameters=planning_model_parameters(model))
+
     async def create(self, project_id: str, request: CasePlanningRequest, *,
                      fixed_case_versions: dict[str, str] | None = None,
                      planning_context: dict | None = None) -> CasePlanRecord:
@@ -79,138 +94,16 @@ class CasePlanningService:
         record = CasePlanRecord(id=str(uuid4()), project_id=project_id, request=request.model_copy(deep=True),
             status="planning_failed", summary="规划尚未完成", config_snapshot=config,
             prompt_version=PROMPT_VERSION, created_at=datetime.now(timezone.utc))
-        stage = "retrieval"
         fixed_case_versions = dict(fixed_case_versions or {})
         if fixed_case_versions:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
                                   "context": planning_context or {}})
-        try:
-            async with asyncio.timeout(config.policy.timeout_seconds):
-                await self._recall(record, fixed_case_versions)
-                catalog = await self._sources.catalog(project_id, config.policy.max_candidates)
-                stage = "planning"
-                model_config = await asyncio.to_thread(self._model_config, request.model_key)
-                record.model_key = model_config.key
-                query_results = []
-                validation_feedback = None
-                for round_index in range(config.policy.max_rounds):
-                    context = {
-                        "project": {"id": project.id, "name": project.name, "base_url": project.base_url,
-                                    "description": project.description},
-                        "objective": request.objective, "runtime_context": request.runtime_context,
-                        "evidence": [item.model_dump(mode="json") for item in record.evidence],
-                        "catalog": catalog, "query_results": query_results, "warnings": record.warnings,
-                        "validation_feedback": validation_feedback,
-                        "round": round_index + 1, "remaining_rounds": config.policy.max_rounds - round_index - 1,
-                    }
-                    if fixed_case_versions:
-                        context["constraints"] = {"required_case_versions": fixed_case_versions,
-                                                  "regression": planning_context or {}}
-                    system_prompt = self._system_prompt()
-                    body = json_text(context)
-                    if len(body) + len(system_prompt) > config.policy.max_context_chars:
-                        raise ValueError("完整规划上下文超过配置限制，未截断用例；请缩小候选范围或调整配置")
-                    round_record = {"round": round_index + 1, "status": "invoking"}
-                    record.rounds.append(round_record)
-                    model_request = ModelInvocationRequest(
-                        system_prompt=system_prompt, messages=[{"role": "user", "content": body}], tools=[],
-                        trace_context={"project_id": project_id, "trace_id": record.id,
-                                       "turn_id": f"{record.id}:{round_index + 1}", "session_id": record.id,
-                                       "agent_key": "case-planning"},
-                    )
-                    model_started = perf_counter()
-                    round_record["streaming"] = model_config.capabilities.streaming
-                    async def observe_delta(delta):
-                        if "first_text_seconds" not in round_record:
-                            round_record["first_text_seconds"] = round(perf_counter() - model_started, 3)
-                        round_record["received_text_chars"] = round_record.get("received_text_chars", 0) + len(delta)
-                    try:
-                        if model_config.capabilities.streaming:
-                            async with self._models.stream_handler(observe_delta):
-                                result = await self._models.invoke(record.model_key, model_request)
-                        else:
-                            result = await self._models.invoke(record.model_key, model_request)
-                    except BaseException:
-                        round_record["status"] = "interrupted"
-                        raise
-                    finally:
-                        round_record["model_elapsed_seconds"] = round(perf_counter() - model_started, 3)
-                    round_record["status"] = "response_received"
-                    round_record["response_mode"] = str(result.response_summary.get("mode") or "")[:80]
-                    if round_record["response_mode"] in {"http_error", "auth_error", "missing_api_key", "missing_active_model"}:
-                        round_record["error_type"] = result.response_summary.get("error_type")
-                        round_record["status_code"] = result.response_summary.get("status_code")
-                        raise ValueError(f"模型调用失败（{round_record['response_mode']}）；未创建测试运行")
-                    if result.tool_calls:
-                        raise ValueError("规划模型返回了不可执行的工具调用；此阶段只能查询项目依据")
-                    try:
-                        decision = self._parse(result.text)
-                        if decision.action == "finish":
-                            await self._validate(record, decision, fixed_case_versions=fixed_case_versions)
-                            if fixed_case_versions:
-                                targets = {entry.case_id: entry.case_version_id for entry in decision.items if entry.kind == "target"}
-                                if targets != fixed_case_versions:
-                                    raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
-                    except ValueError as exc:
-                        # As with tool argument errors in tool_executor, return
-                        # concrete validation feedback to the Agent's next turn.
-                        # This uses the existing round/deadline limits, never an
-                        # extra retry loop or silently corrected references.
-                        round_record.update({"status": "validation_rejected", "validation_error": str(exc)})
-                        validation_feedback = {
-                            "error": str(exc), "candidate_response": result.text,
-                            "available_evidence_ids": [item.id for item in record.evidence],
-                        }
-                        logger.warning("case_planning_validation_rejected", extra={"project_id": project_id,
-                            "plan_id": record.id, "round": round_index + 1})
-                        if round_index + 1 == config.policy.max_rounds:
-                            raise
-                        continue
-                    validation_feedback = None
-                    round_record.update({"status": "parsed", "decision": decision.model_dump(mode="json")})
-                    logger.info("case_planning_round", extra={"project_id": project_id, "plan_id": record.id,
-                        "round": round_index + 1, "action": decision.action, "query_count": len(decision.queries)})
-                    if decision.action == "finish":
-                        await self._projects.require_active(project_id)
-                        record.decision = decision
-                        record.summary = decision.summary
-                        record.status = ("no_match" if not any(item.kind == "target" for item in decision.items)
-                                         else "blocked" if decision.unresolved else "planned")
-                        break
-                    query_results = []
-                    for query in decision.queries:
-                        query_result = {"query": query.model_dump(mode="json")}
-                        try:
-                            evidence, metadata = await self._sources.query(project_id, query, config.policy.max_candidates)
-                            if fixed_case_versions:
-                                evidence = [await self._sources.case(project_id, entry.source_id,
-                                    version_id=fixed_case_versions[entry.source_id])
-                                    if entry.kind == "case" and entry.source_id in fixed_case_versions else entry
-                                    for entry in evidence]
-                            self._merge_evidence(record, evidence)
-                            query_result.update({"evidence_ids": [item.id for item in evidence], **metadata})
-                        except (KeyError, ValueError) as exc:
-                            # A model may ask for an unavailable/foreign source. Keep the error
-                            # visible to the next round; never substitute another project's data.
-                            query_result["error"] = str(exc)
-                            logger.warning("case_planning_query_rejected", extra={"project_id": project_id,
-                                "plan_id": record.id, "kind": query.kind, "error_type": type(exc).__name__})
-                        query_results.append(query_result)
-                    round_record["query_results"] = query_results
-                else:
-                    record.status = "planning_failed"
-                    record.summary = "达到规划回合限制，尚未得到完整计划；未创建测试运行"
-        except TimeoutError:
-            record.status = "retrieval_failed" if stage == "retrieval" else "planning_failed"
-            record.summary = "用例规划超时；未创建测试运行"
-            logger.warning("case_planning_timeout", extra={"project_id": project_id, "plan_id": record.id, "stage": stage})
-        except Exception as exc:
-            record.status = "retrieval_failed" if stage == "retrieval" else "planning_failed"
-            # Pydantic and provider errors can contain source text or transport details.
-            # Keep ordinary logs and unrecognized exception messages free of that data.
-            record.summary = str(exc) if type(exc) is ValueError else f"{stage}失败（{type(exc).__name__}）；未创建测试运行"
-            logger.error("case_planning_failed", extra={"project_id": project_id, "plan_id": record.id,
-                                                      "stage": stage, "error_type": type(exc).__name__})
+        seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
+            "base_url": project.base_url, "description": project.description}, system_prompt=self._system_prompt())
+        checkpoint = PlanningTaskCheckpoint(plan=record)
+        await CasePlanningWorkflow(self).run(seed, checkpoint,
+            deadline_at=datetime.now(timezone.utc) + timedelta(seconds=config.policy.timeout_seconds),
+            fixed_case_versions=fixed_case_versions, planning_context=planning_context)
         saved = await self._store.save(record)
         logger.info("case_plan_saved", extra={"project_id": project_id, "plan_id": record.id,
             "status": saved.status, "round_count": len(saved.rounds), "evidence_count": len(saved.evidence)})
@@ -265,7 +158,7 @@ class CasePlanningService:
         return config
 
     async def _validate(self, record: CasePlanRecord, decision: PlanningDecision, *,
-                        fixed_case_versions: dict[str, str] | None = None) -> None:
+                        fixed_case_versions: dict[str, str] | None = None, preserve_read_metadata: bool = False) -> None:
         if len(decision.items) > record.config_snapshot.policy.max_items:
             raise ValueError("计划执行项超过配置限制")
         items = {item.key: item for item in decision.items}
@@ -288,6 +181,11 @@ class CasePlanningService:
                     raise ValueError("计划用例版本与已读取依据不一致")
                 version_id = (fixed_case_versions or {}).get(item.case_id)
                 current = await self._sources.case(record.project_id, item.case_id, version_id=version_id)
+                if preserve_read_metadata:
+                    # Catalog metadata may be edited while the immutable version
+                    # remains valid. Retain the already-read title/key in the plan.
+                    current.payload["title"] = frozen.payload["title"]
+                    current.payload["case_key"] = frozen.payload["case_key"]
                 if current != frozen:
                     raise ValueError("规划期间用例启用版本或内容发生变化，请重新规划")
         try:

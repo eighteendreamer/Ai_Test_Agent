@@ -1,0 +1,51 @@
+{
+  "scope": "isolated independent process; production RedisTaskWorker/PlanningTaskHandler/workflow; actual MySQL model/policy, PG, RustFS and local OpenAI HTTP transport; full production lifespan/CLI not used",
+  "task_id": "4b2c2263-38cf-427d-a0c1-199aa31e4e0b",
+  "plan_id": "0db16dca-ec4e-4c65-87a2-a0d06d0209ac",
+  "attempt_count": 2,
+  "calls": [
+    {
+      "round": 1,
+      "evidence_ids": [
+        "case:a0ee5d03-69a2-429a-b585-11d163a3184a"
+      ],
+      "warnings": [],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": null,
+      "query_errors": []
+    },
+    {
+      "round": 2,
+      "evidence_ids": [
+        "case:a0ee5d03-69a2-429a-b585-11d163a3184a",
+        "document:efdf0fcb-302c-4845-b1c2-274ffb928bda:f81f8cc580f4a6c4"
+      ],
+      "warnings": [],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": null,
+      "query_errors": []
+    },
+    {
+      "round": 3,
+      "evidence_ids": [
+        "case:a0ee5d03-69a2-429a-b585-11d163a3184a",
+        "document:efdf0fcb-302c-4845-b1c2-274ffb928bda:f81f8cc580f4a6c4"
+      ],
+      "warnings": [
+        "第 2 回合已记录调用意图但没有持久响应；不能确认是否发送或计费。该回合额度已消耗，后续仅使用剩余额度。"
+      ],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": "上一规划调用响应无法确认，请仅按已保存依据继续",
+      "query_errors": []
+    }
+  ],
+  "retained_fixed_case_version": true,
+  "retained_document_bytes": true,
+  "terminal_redelivery_no_model_calls": true
+}

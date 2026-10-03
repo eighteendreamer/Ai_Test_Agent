@@ -1476,6 +1476,34 @@ export interface CasePlanningRequest {
   runtime_context?: Record<string, unknown>;
 }
 
+export interface CasePlanningTaskRequest extends CasePlanningRequest {
+  creation_key: string;
+}
+
+export interface CasePlanningTaskRecord {
+  id: string;
+  project_id: string;
+  creation_key: string;
+  status: "queued" | "running" | "completed" | "failed";
+  phase: string;
+  message: string;
+  attempt_no: number;
+  round_count: number;
+  plan_id: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  deadline_at: string | null;
+  completed_at: string | null;
+}
+
+export interface CasePlanningTaskPage {
+  items: CasePlanningTaskRecord[];
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
 export interface CasePlanInputBinding {
   source_item: string | null;
   input_key: string | null;

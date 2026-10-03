@@ -779,3 +779,64 @@ npm run build
 ```
 
 结果为 **25 通过，1.12 秒**；**28 通过、15 跳过、2 未选择，3.92 秒**。真实存储开关未启用导致 15 个专项跳过，2 个模型相关项未选择；不计为本次真实存储或模型验收。浏览器、独立 Redis Worker、生产 lifespan、外部模型及新文档版本链本次未重验，因为本轮范围是方案更新，没有修改产品代码。文档链接、diff 和镜像一致性实际检查；只提交两份项目文档，用户 `.gitignore` 保持未暂存。完整升级目标仍未完成，下一步按 §2.6 实施持久规划，其他 P0—P5 范围继续保留。
+
+### 持久规划任务实施与实际恢复验证（2026-10-04）
+
+承接 `5d2f258` 的 §2.6 设计，重新核对旧同步规划、不可变计划存储、Embedding 任务/Outbox、Agent 会话命令及 Redis Worker。根因是请求内执行没有持久进度；不能把最终计划 `save` 当作检查点，也不能伪造 Session 接入会话任务。新增项目规划任务，复用既有数据库、Outbox 和 Worker；同步入口与内部回归保留，共享 `CasePlanningWorkflow`。
+
+实际变更：
+
+- 项目所属 `case-planning-tasks` 提交/按任务查询/按请求找回/分页列表。202 返回前只保存任务与 Outbox，不调用模型。项目行锁下复核归档状态；相同请求重放在读当前配置和派发开关前完成，不同内容使用同身份返回 409，额外字段 422。提交确认不明返回 503 并提示按原身份查证。
+- `agent_case_planning_tasks` 属于 PostgreSQL 业务任务。独立 seed 固定输入、项目、Prompt、策略与非敏感模型参数；检查点保存完整候选版本、目录、逐轮响应/查询/校验。模型凭据不复制，来源 URL/请求头仅保存哈希；实际凭据按现有 MySQL 配置读取。Worker 及 ModelRuntime 实际发送前检查参数未变。
+- 每次领取生成 attempt 和租约令牌，保留历史，心跳/检查点/最终写入均核对有效身份。已读依据不能改写；旧回合不能重置；终态任务不能重领。最终计划与任务终态同事务，不确定写入不改成另一份业务失败，交由原任务重查。
+- 调用意图先保存，响应再保存，随后解析。只有意图没有响应记 outcome_unknown 并消耗原回合，剩余回合继续；已有响应恢复不重发。首次领取确定总期限，PG 返回剩余秒数，避免主机与数据库时钟偏差误判；重启不重置预算。
+- 生产初始化已注册任务服务/表和独立 Worker CLI；示例流列表增加 `qa:tasks:case_planning`，新提交要求现有派发开关开启且流已登记。任务完成只提供计划，正式运行继续由公开保存计划启动入口创建。
+- 实际规划弹窗切换到持久面板，sessionStorage 仅保存身份。当前页面内存保留原请求用于不确定提交重试；刷新按原请求找回，未提交成功的原输入需重新填写。存储故障可从项目列表找回；终态停止轮询，“另建”明确生成新身份。
+
+验证均使用隔离项目、表、对象及 Redis 流，不执行生产迁移，不改默认外部模型配置：
+
+| 验证 | 实际结果 | 证据与边界 |
+|---|---|---|
+| 新任务入口早期复现 | 1 失败：旧路由 404 | `p2-planning-task-before.xml`，保留原始失败 |
+| 实际存储与故障恢复最终专项 | 12 通过，21.16 秒 | `p2-planning-task-storage-final.xml`；真实 MySQL/PG/RustFS，含并发提交、响应丢失、Outbox/最终提交回滚、旧租约拒绝、已保存响应恢复、启用新用例版本不替换已读版本、预算耗尽、模型参数变化和检查点确认丢失 |
+| 独立进程恢复 | 最终 12 项专项包含此场景；此前单项 1 通过，15.68 秒 | `p2-planning-task-process.xml/json`；实际 Redis/PG/MySQL 配置、RustFS 原文与本地 OpenAI 兼容 HTTP，强制结束第二回合进程，新进程沿用原文/用例版本/期限，第三回合完成，终态重投不增加模型调用。使用生产 Worker/Handler 的隔离宿主；未运行完整生产 CLI/lifespan |
+| 实际 Chromium | 1 通过，10.55 秒 | `p2-planning-task-browser.xml/json/png`；真实文件上传、三种存储、提交响应截断、刷新找回同一任务、准备和负向条件、保存计划公开启动和原运行重试。模型受控，Worker 是进程内 Handler 轮询宿主，页面是实际组件的隔离 Vite 宿主页 |
+| 受影响后端扩大回归 | 161 通过、44 跳过、5 未选择，78.48 秒 | `p2-planning-task-regression-final.xml`；未启用真实存储开关，跳过不计通过；后续启用开关补验见下行 |
+| 真实存储与执行相关回归 | 150 通过、6 未选择，181.31 秒 | `p2-planning-task-live-regression.xml`；规划、字面量绑定路径、计划运行事务、依赖领取、Agent 完整上下文/核验/Session/恢复。筛除外部模型及已有公开 Worker 专项，不代表默认模型或完整生产验收 |
+| 前端 | 3 个文件，12 通过，1.37 秒；typecheck 与 Vite build 通过，6.52 秒 | 实际执行项目脚本；测试覆盖未知提交原请求、刷新、项目隔离、终态停轮询及存储故障。先前 disabled 表达式产生 boolean/null 导致 TS2322，显式布尔化后构建通过 |
+| 源码与 CLI 入口 | 14 个 Python 文件 py_compile 通过；Worker --help 正常列出 once/worker-id | 只验证源码和参数导入，不宣称完整 CLI 实际启动通过 |
+
+原始 `p2-planning-task-storage.xml` 保留 **11 通过、1 失败**：独立进程单次 `run_once` 返回 processed=0。单项重跑及完整专项随后通过；未取得足够证据把它归因到某个数据库或心跳缺陷。隔离宿主改为有 20 秒上限的正常轮询，因为 Worker 单次轮询允许返回 0；该修改不重置业务任务或调用额度，不修改产品重试行为。最终专项保留单独文件，不覆盖原失败。
+
+主要命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-planning-task-storage-final.xml
+$env:RUN_LIVE_CASE_PLANNING_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-planning-task-browser.xml
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_BINDING_PATHS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning.py tests/test_plan_binding_paths.py tests/test_case_plan_run_creation.py tests/test_run_item_dependencies.py tests/test_agent_case_context.py tests/test_agent_case_assessment.py tests/test_agent_case_session.py tests/test_agent_case_execution.py -q --tb=short -rs -k 'not actual_model and not public_plan_launch_outbox' --junitxml=../docs/upgrade_2026-10-03/p2-planning-task-live-regression.xml
+..\.venv\Scripts\python.exe -X utf8 -m src.cli.run_case_planning_worker --help
+```
+
+前端（agent_web）：
+
+```powershell
+npm run test -- src/features/projects/CasePlanningTaskPanel.test.ts src/features/projects/CasePlanDialog.test.ts src/services/projects.planning-tasks.api.test.ts
+npm run build
+```
+
+部署需在既有基础配置中启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED`，并向 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS` 保留原列表的同时登记一个 `:case_planning` 流。新增表名引导项为 `DATABASE__POSTGRES_CASE_PLANNING_TASK_TABLE`，默认 `agent_case_planning_tasks`。业务规划策略沿用 MySQL，没有引入第二份可编辑策略。生产 API 与 Worker 需使用相同配置，另运行既有 relay：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m src.cli.run_task_outbox_relay
+..\.venv\Scripts\python.exe -X utf8 -m src.cli.run_case_planning_worker
+```
+
+以上部署命令已核对源码参数，完整生产启动本轮未执行。独立任务表按现有 initialize 增量创建；关闭新派发入口保留任务/计划，旧同步 API 保持兼容。通用任务池现为 Session 投影，本轮提供项目规划列表，尚未合并投影/事件；显式新任务与旧失败任务的重试关联、内部回归异步迁移及规划专属 LangSmith span 也待完成。持久 Worker 使用现有请求上下文及逻辑调用记录，旧同步调用保留原 tracing 契约。
+
+本轮更新 PLAN 正文、§2.6、阶段表及剩余工作，并同步所选 Codex 镜像。上传版本仍由 RustFS 原件和 PG 记录管理，不调用 Git；文档 V1/V2 功能仍待实现。模板仅用于生成，执行仍读取固定完整用例。完整 P0—P5 目标未完成，默认模型空正文失败、生产/完整项目页面、步骤级准备与未知副作用、P0 录制/Docker、P1 模块生成、P3—P5 闭环及业务数据迁移继续保留。用户 .gitignore 保持未暂存；本轮新测试因该规则忽略 tests 目录而显式 force-add，不修改忽略规则。

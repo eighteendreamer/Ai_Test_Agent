@@ -33,6 +33,11 @@ from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.registry.modes import ModeRegistry
 from src.api.routes.run_management import router as run_router
 from src.application.test_runs.run_service import TestRunService as RunService
+from test_case_planning_tasks import SubmissionModel, delivery
+from src.application.test_cases.planning_task_service import CasePlanningTaskService
+from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
+from src.runtime.planning_task_handler import PlanningTaskHandler
+from src.api.routes.case_planning_tasks import router as task_router
 
 
 @asynccontextmanager
@@ -52,6 +57,32 @@ async def launch_service(env, run_store):
             cur.execute(f'DROP TABLE IF EXISTS "{table}"')
 
 
+@asynccontextmanager
+async def planning_tasks(env):
+    table = "up_browser_planning_" + uuid4().hex[:12]
+    env.settings.database.postgres_case_planning_task_table = table
+    with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+        cur.execute("SELECT to_regclass(%s) AS existing", (table,)); assert cur.fetchone()["existing"] is None
+    store = PostgresPlanningTaskStore(env.settings)
+    service = CasePlanningTaskService(store=store, planning_service=env.service,
+        project_service=env.projects, dispatch_stream="isolated:browser:case_planning")
+    await service.initialize()
+    async def consume():
+        while True:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT id,project_id FROM {table} WHERE status='queued' ORDER BY created_at")
+                rows = cur.fetchall()
+            for row in rows:
+                task = await store.get(str(row["project_id"]), str(row["id"]))
+                await PlanningTaskHandler(env.service, store, worker_id="browser-fixture")(delivery(task))
+            await asyncio.sleep(.1)
+    consuming = asyncio.create_task(consume())
+    try: yield service
+    finally:
+        consuming.cancel(); await asyncio.gather(consuming, return_exceptions=True)
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur: cur.execute(f'DROP TABLE "{table}"')
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("RUN_LIVE_CASE_PLANNING_BROWSER") != "1", reason="requires installed Chromium and real isolated MySQL/PostgreSQL/RustFS")
 async def test_browser_existing_data_preparation_policy_and_fixed_plan_reopen(tmp_path):
@@ -64,8 +95,8 @@ async def test_browser_existing_data_preparation_policy_and_fixed_plan_reopen(tm
         return finish(item(context, "positive", depends_on=["prepare"], input_bindings={"id": {"source_item": "prepare", "output_path": "body.id"}}),
             item(context, "negative"), {"key": "prepare", "kind": "prepare", "reason": "按项目原文补全，非正式用例",
                 "evidence_ids": [doc["id"]], "instructions": {"action": "POST /fixtures", "output": "body.id", "expected": 201}})
-    model = SequenceModel(decide, decide, decide)
-    async with setup(tmp_path, live=True) as (env, run_store, _, _, _), launch_service(env, run_store) as creator:
+    model = SubmissionModel(decide, decide, decide)
+    async with setup(tmp_path, live=True) as (env, run_store, _, _, _), launch_service(env, run_store) as creator, planning_tasks(env) as task_service:
         env.service._models = model
         project = await env.projects.create(ProjectCreateRequest(project_key="browser-plan", name="浏览器规划验收"))
         other = await env.projects.create(ProjectCreateRequest(project_key="other-plan", name="隔离项目"))
@@ -75,6 +106,7 @@ async def test_browser_existing_data_preparation_policy_and_fixed_plan_reopen(tm
         document.write_text("# 实际准备方法\nPOST /fixtures 创建测试数据，响应 body.id。\n", encoding="utf-8")
         await env.docs.upload_document(filename=document.name, content_base64=base64.b64encode(document.read_bytes()).decode(), project_id=project.id)
         app = FastAPI(); app.state.case_planning_service = env.service
+        app.state.case_planning_task_service = task_service; app.include_router(task_router, prefix="/api/v1")
         app.state.case_plan_run_service = creator; app.include_router(router, prefix="/api/v1")
         app.state.test_run_service = RunService(store=run_store, project_service=env.projects,
             suite_service=None, test_case_service=env.cases)
@@ -117,10 +149,21 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         await expect(page.get_by_label("测试目标")).to_be_enabled()
                         await page.get_by_label("测试目标").fill("验证已有数据与未登录拒绝")
                         await page.get_by_label("已有运行信息（JSON）").fill('{"id":"owned-existing"}')
-                        async with page.expect_response(lambda r: r.url.endswith("/case-plans") and r.request.method == "POST") as creating:
-                            await page.get_by_role("button", name="生成执行计划", exact=True).click()
-                        first = await (await creating.value).json()
+                        planning_committed = []
+                        async def lose_planning_reply(route):
+                            response = await route.fetch(); assert response.status == 202
+                            planning_committed.append(await response.json()); await route.abort("failed")
+                        await page.route("**/case-planning-tasks", lose_planning_reply)
+                        await page.get_by_role("button", name="生成执行计划", exact=True).click()
+                        await expect(page.get_by_role("button", name="重试规划提交", exact=True)).to_be_visible()
+                        await page.unroute("**/case-planning-tasks", lose_planning_reply)
+                        assert len(planning_committed) == 1
+                        await page.reload()
                         await expect(page.get_by_role("heading", name="计划已生成", exact=True)).to_be_visible()
+                        first_task = await task_service.get(project.id, planning_committed[0]["id"])
+                        first = (await env.service.get(project.id, first_task.plan_id)).model_dump(mode="json")
+                        assert (await task_service.list(project.id)).items[0].id == first_task.id
+                        await page.get_by_label("测试目标").fill("验证已有数据与未登录拒绝")
                         assert [i["kind"] for i in first["decision"]["items"]] == ["target", "target"]
                         await page.get_by_text("完整固定用例", exact=True).first.click()
                         await expect(page.locator(".json-leaf").filter(has_text="末尾关键步骤😀")).to_be_visible()
@@ -130,10 +173,12 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         await expect(page.get_by_text("项目规划设置已保存", exact=True)).to_be_visible()
                         assert env.configs.get("test_case.planning_policy", scope_key=project.id).payload["max_items"] == 12
                         await page.get_by_label("已有运行信息（JSON）").fill("{}")
-                        async with page.expect_response(lambda r: r.url.endswith("/case-plans") and r.request.method == "POST") as preparing:
-                            await page.get_by_role("button", name="生成执行计划", exact=True).click()
-                        prepared = await (await preparing.value).json()
+                        async with page.expect_response(lambda r: r.url.endswith("/case-planning-tasks") and r.request.method == "POST") as preparing:
+                            await page.get_by_role("button", name="另建规划任务", exact=True).click()
+                        prepared_task = await (await preparing.value).json()
                         await expect(page.get_by_role("heading", name="运行内准备 · prepare")).to_be_visible()
+                        prepared_task = await task_service.get(project.id, prepared_task["id"])
+                        prepared = (await env.service.get(project.id, prepared_task.plan_id)).model_dump(mode="json")
                         ordered = [item["key"] for item in prepared["decision"]["items"]]
                         assert ordered.index("prepare") < ordered.index("positive")
                         assert next(i for i in prepared["decision"]["items"] if i["key"] == "negative")["depends_on"] == []
@@ -161,6 +206,7 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         assert (await run_store.get_run(stored_run_id)).run.status == "queued"
                         # Reload the real browser page, then reopen the saved plan.
                         await page.reload()
+                        await expect(page.get_by_role("heading", name="运行内准备 · prepare")).to_be_visible()
                         await page.get_by_label("已保存的计划编号").fill(first["id"])
                         await page.get_by_role("button", name="查看已保存计划", exact=True).click()
                         await expect(page.get_by_label("执行测试模式")).to_be_disabled()
@@ -173,7 +219,7 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         assert replay["run"]["mode_key"] == "code_review"
                         assert replay["run"]["plan_snapshot"]["plan"]["id"] == first["id"]
                         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                            cur.execute(f"SELECT count(*) AS n FROM {creator._outbox_table}")
+                            cur.execute(f"SELECT count(*) AS n FROM {creator._outbox_table} WHERE payload->>'task_type'='test_run'")
                             assert cur.fetchone()["n"] == 1
                         await page.get_by_role("button", name="另建一次运行", exact=True).click()
                         async with page.expect_response(lambda r: r.url.endswith("/runs") and r.request.method == "POST") as again:
@@ -181,9 +227,10 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         fresh = await (await again.value).json()
                         assert fresh["run"]["id"] != stored_run_id
                         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                            cur.execute(f"SELECT count(*) AS n FROM {creator._outbox_table}")
+                            cur.execute(f"SELECT count(*) AS n FROM {creator._outbox_table} WHERE payload->>'task_type'='test_run'")
                             assert cur.fetchone()["n"] == 2
                         await page.reload()
+                        await expect(page.get_by_role("heading", name="运行内准备 · prepare")).to_be_visible()
                         await page.get_by_label("已保存的计划编号").fill(first["id"])
                         await page.get_by_role("button", name="查看已保存计划", exact=True).click()
                         async with page.expect_response(lambda r: r.url.endswith("/runs/" + fresh["run"]["id"]) and r.request.method == "GET") as viewing:
@@ -193,8 +240,9 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                         await expect(page.locator("body")).to_have_attribute("data-opened-run", fresh["run"]["id"])
                         assert not errors, errors
                         evidence = web_root.parent / "docs/upgrade_2026-10-03"
-                        (evidence / "p2-public-launch-browser.json").write_text(json.dumps({
-                            "scope": "actual dialog/HTTP/MySQL/PG/RustFS, lost committed response and browser reload; controlled planning model; no Worker or production lifespan",
+                        (evidence / "p2-planning-task-browser.json").write_text(json.dumps({
+                            "scope": "actual dialog/task panel/HTTP/MySQL/PG/RustFS, lost planning and run committed responses and reload; controlled planning model, in-process Handler polling harness; no independent Worker or production lifespan",
+                            "planning_lost_response_recovered_same_task": first_task.id, "planning_task_count": 2,
                             "snapshot_before": before, "snapshot_after": await page.locator("body").aria_snapshot(),
                             "existing_data_no_extra_preparation": True, "run_local_preparation": True, "negative_condition_preserved": True,
                             "full_seventh_step_visible": True, "project_policy_in_mysql": True, "frozen_plan_reopened": True,
@@ -203,7 +251,7 @@ createApp(CasePlanDialog, { projectId: ''' + json.dumps(project.id) + ''', candi
                             "outbox_count_after_retry": 1, "explicit_new_run_id": fresh["run"]["id"], "outbox_count_after_new_run": 2,
                             "persisted_run_reopened_via_real_http": True,
                         }, ensure_ascii=False, indent=2), encoding="utf-8")
-                        await page.screenshot(path=str(evidence / "p2-public-launch-browser.png"), full_page=True)
+                        await page.screenshot(path=str(evidence / "p2-planning-task-browser.png"), full_page=True)
                     finally:
                         await browser.close()
         finally:

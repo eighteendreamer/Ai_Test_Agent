@@ -5,7 +5,7 @@ import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
 import type { ModeDescriptor } from "../../types";
 
-const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
+const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const config = () => ({ scope_key: "global", revision: 1, policy: { max_rounds: 5, max_candidates: 20, max_items: 50, max_context_chars: 180000, timeout_seconds: 180 } });
 function plan(status = "planned") {
@@ -30,8 +30,10 @@ describe("case planning", () => {
     window.sessionStorage.clear();
     api.getCasePlanningPolicy.mockResolvedValue(config());
     api.saveCasePlanningPolicy.mockResolvedValue({ ...config(), scope_key: "project", revision: 2 });
-    api.createCasePlan.mockResolvedValue(plan());
-    api.getCasePlan.mockResolvedValue(plan("blocked"));
+    api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "task", project_id: projectId, creation_key: payload.creation_key, status: "completed", plan_id: "plan", round_count: 1, message: "完成" }));
+    api.getCasePlanningTaskByRequest.mockRejectedValue(new HttpError("not found", 404));
+    api.listCasePlanningTasks.mockResolvedValue({ items: [] });
+    api.getCasePlan.mockResolvedValue(plan());
     api.launchCasePlan.mockResolvedValue({ run: { id: "run-1", status: "queued" }, items: [], attempts: [], results: [] });
   });
 
@@ -40,7 +42,7 @@ describe("case planning", () => {
     await wrapper.findAll("textarea")[0].setValue("验证未登录访问");
     await wrapper.findAll("textarea")[1].setValue('{"order_id":"existing"}');
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
-    expect(api.createCasePlan).toHaveBeenCalledWith("project", { objective: "验证未登录访问", candidate_case_ids: ["case"], runtime_context: { order_id: "existing" } });
+    expect(api.submitCasePlanningTask).toHaveBeenCalledWith("project", { creation_key: expect.any(String), objective: "验证未登录访问", candidate_case_ids: ["case"], runtime_context: { order_id: "existing" } });
     expect(wrapper.text()).toContain("计划已生成");
     expect(wrapper.text()).toContain("目标用例 · 未登录返回401");
     expect(wrapper.text()).toContain("末尾关键验证😀");
@@ -54,10 +56,10 @@ describe("case planning", () => {
     await wrapper.findAll("textarea")[0].setValue("验证");
     await wrapper.findAll("textarea")[1].setValue("[]");
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
-    expect(api.createCasePlan).not.toHaveBeenCalled();
+    expect(api.submitCasePlanningTask).not.toHaveBeenCalled();
     expect(wrapper.get('[role="alert"]').text()).toContain("JSON 对象");
     await wrapper.findAll("textarea")[1].setValue("{}");
-    api.createCasePlan.mockRejectedValue(new Error("规划服务暂时不可用"));
+    api.submitCasePlanningTask.mockRejectedValue(new Error("规划服务暂时不可用"));
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
     expect(wrapper.get('[role="alert"]').text()).toContain("暂时不可用");
     expect(wrapper.text()).not.toContain("计划已生成");
@@ -65,6 +67,7 @@ describe("case planning", () => {
   });
 
   it("saves project policy and reopens a plan with unresolved gaps", async () => {
+    api.getCasePlan.mockResolvedValue(plan("blocked"));
     const wrapper = setup(); await flushPromises();
     await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
     expect(api.saveCasePlanningPolicy).toHaveBeenCalledWith("project", config().policy);
@@ -110,6 +113,7 @@ describe("case planning", () => {
     await button(reopened, "重试启动请求").trigger("click"); await flushPromises();
     expect(api.launchCasePlan.mock.calls[1][2]).toEqual(payload);
     reopened.unmount();
+    api.getCasePlan.mockResolvedValue({ ...plan(), project_id: "other" });
     const other = setup("other"); await generate(other);
     expect(other.text()).not.toContain(payload.creation_key);
     expect(button(other, "启动测试运行").exists()).toBe(true);

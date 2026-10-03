@@ -4,6 +4,7 @@ import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConfig, ModeDescriptor, TestRunDetail } from "../../types";
 import JsonContentTree from "./JsonContentTree.vue";
+import CasePlanningTaskPanel from "./CasePlanningTaskPanel.vue";
 
 const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[] }>(), { modes: () => [] });
 const emit = defineEmits<{ close: []; started: [detail: TestRunDetail] }>();
@@ -113,21 +114,6 @@ async function loadPolicy() {
   catch (err) { showError(err); }
   finally { busy.value = false; }
 }
-async function generate() {
-  if (!objective.value.trim() || busy.value) return;
-  error.value = ""; notice.value = ""; plan.value = null;
-  let context: unknown;
-  try {
-    context = JSON.parse(runtimeJson.value);
-    if (!context || typeof context !== "object" || Array.isArray(context)) throw new Error("已有运行信息需要是 JSON 对象");
-  } catch (err) { showError(err); return; }
-  busy.value = true;
-  try {
-    selectPlan(await api.createCasePlan(props.projectId, { objective: objective.value.trim(),
-      candidate_case_ids: [...props.candidateCaseIds], runtime_context: context as Record<string, unknown> }));
-  } catch (err) { showError(err); }
-  finally { busy.value = false; }
-}
 async function remember() {
   if (!config.value || busy.value) return;
   busy.value = true; error.value = "";
@@ -161,7 +147,8 @@ onMounted(loadPolicy);
         <label>超时秒数<input v-model.number="config.policy.timeout_seconds" :disabled="busy" type="number" min="1" max="600"></label>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
-      <footer><button :disabled="busy || !config || !objective.trim()" @click="generate">{{ busy ? '处理中…' : '生成执行计划' }}</button></footer>
+      <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"
+        :candidate-case-ids="candidateCaseIds" :disabled="busy || !config" @completed="selectPlan" />
       <label>已保存的计划编号<input v-model="savedId" :disabled="busy" placeholder="输入当前项目的计划编号"></label>
       <button :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</button>
       <template v-if="plan">

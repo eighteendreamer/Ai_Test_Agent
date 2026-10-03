@@ -33,6 +33,7 @@ from src.api.routes.sessions import router as sessions_router
 from src.api.routes.case_management import router as test_cases_router
 from src.api.routes.case_imports import router as case_imports_router
 from src.api.routes.case_plans import router as case_plans_router
+from src.api.routes.case_planning_tasks import router as case_planning_tasks_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
 from src.api.routes.security_bugs import router as security_bugs_router
@@ -92,6 +93,8 @@ from src.application.sessions.session_service import SessionService
 from src.application.test_runs.agent_case_execution import AgentCaseExecutionAdapter
 from src.application.test_runs.agent_regression_service import AgentRegressionService
 from src.application.test_runs.plan_run_service import CasePlanRunService
+from src.application.test_cases.planning_task_service import CasePlanningTaskService
+from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
 from src.application.security.upload_security_service import UploadSecurityService
 from src.application.skills.skill_management_service import SkillManagementService
 from src.application.skills.skill_marketplace_service import SkillMarketplaceService
@@ -425,6 +428,16 @@ async def _initialize_lifespan_resources(
     await test_case_embedding_service.initialize()
     case_planning_service = container.case_planning_service()
     await case_planning_service.initialize()
+    planning_task_store = PostgresPlanningTaskStore(settings,
+        lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+    planning_stream = settings.orchestration.case_planning_task_stream
+    case_planning_task_service = CasePlanningTaskService(store=planning_task_store,
+        planning_service=case_planning_service, project_service=project_service,
+        dispatch_stream=(planning_stream if settings.orchestration.redis_task_dispatch_enabled
+                         and planning_stream in settings.orchestration.task_stream_names else None))
+    await case_planning_task_service.initialize()
+    app.state.planning_task_store = planning_task_store
+    app.state.case_planning_task_service = case_planning_task_service
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -927,6 +940,7 @@ app.include_router(sessions_router, prefix=settings.api_v1_prefix)
 app.include_router(test_cases_router, prefix=settings.api_v1_prefix)
 app.include_router(case_imports_router, prefix=settings.api_v1_prefix)
 app.include_router(case_plans_router, prefix=settings.api_v1_prefix)
+app.include_router(case_planning_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)

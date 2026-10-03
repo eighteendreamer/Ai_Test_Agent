@@ -44,6 +44,7 @@ class DatabaseConfig(BaseModel):
     postgres_case_import_source_table: str = "agent_case_import_sources"
     postgres_case_import_batch_table: str = "agent_case_import_batches"
     postgres_case_plan_table: str = "agent_case_plans"
+    postgres_case_planning_task_table: str = "agent_case_planning_tasks"
     postgres_test_suite_table: str = "agent_test_suites"
     postgres_test_suite_item_table: str = "agent_test_suite_items"
     postgres_test_run_table: str = "agent_test_runs"
@@ -326,6 +327,14 @@ class OrchestrConfig(BaseModel):
             if stream.endswith(":embedding"):
                 return stream
         return "qa:tasks:embedding"
+
+    @property
+    def case_planning_task_stream(self) -> str:
+        """Planning uses an explicitly registered stream, like Embedding jobs."""
+        for stream in self.task_stream_names:
+            if stream.endswith(":case_planning"):
+                return stream
+        return "qa:tasks:case_planning"
 
     @property
     def vector_rebuild_task_stream(self) -> str:
