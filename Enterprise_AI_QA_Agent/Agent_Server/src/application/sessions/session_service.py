@@ -49,6 +49,7 @@ from src.schemas.session import (
     ToolApprovalStatus,
     UpdateSessionRequest,
 )
+from src.schemas.case_execution import AgentCaseExecutionContext
 
 
 DEFAULT_EVENT_HISTORY_LIMIT = 500
@@ -1339,6 +1340,56 @@ class SessionService:
                 allow_interrupted=session.status == SessionStatus.interrupted,
             )
 
+    async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str) -> SessionSnapshot:
+        """Server-only frozen execution; share normal turn leases, events and snapshots.
+
+        The caller must build context from persisted versions and validate its
+        own item lease before calling. No HTTP route accepts this frozen payload.
+        """
+        if not attempt_id:
+            raise ValueError("固定用例执行缺少 attempt 身份")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        frozen = context.model_dump(mode="json")
+        mode = self._mode_registry.resolve(mode_key)
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.project_id != context.project_id:
+                raise ValueError("固定用例执行会话与正式项目不一致")
+            for snapshot in reversed(await self._store.list_snapshots(session_id, include_graph_state=True)):
+                state = snapshot.graph_state
+                if state.get("turn_id") != turn_id:
+                    continue
+                saved = state.get("context_bundle") or {}
+                if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or state.get("mode_key") != mode.key):
+                    raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+                logger.info("case_session_snapshot_replayed", extra={"session_id": session_id,
+                    "run_id": context.run_id, "run_item_id": context.run_item_id,
+                    "attempt_id": attempt_id, "snapshot_id": snapshot.id, "stage": snapshot.stage})
+                # Pending or unknown outcomes also replay: recovery must inspect
+                # the existing snapshot rather than start a new turn and repeat effects.
+                return snapshot.model_copy(deep=True)
+            payload = SendMessageRequest(content=context.objective, mode_key=mode.key,
+                source="test_run.agent_execution")
+            # Selection and planning are already frozen. Keep the normal mode and
+            # permission context without another semantic-intent model request.
+            request = self._input_orchestrator_service.orchestrate(session, payload)
+            request.turn_id = turn_id
+            if request.routing_decision is not None:
+                request.routing_decision.queue_behavior = "reject_when_busy"
+            request.context.update(context.runtime_context(), attempt_id=attempt_id,
+                case_assessment_requested=True, trusted_security_runtime_direct_execution=False)
+            await self._handle_busy_submission(session=session, payload=payload, execution_request=request)
+            logger.info("case_session_turn_started", extra={"session_id": session_id,
+                "run_id": context.run_id, "run_item_id": context.run_item_id,
+                "attempt_id": attempt_id, "plan_id": context.plan_id, "mode_key": mode.key})
+            snapshot = await self._run_submission_locked(session=session, payload=payload,
+                execution_request=request, capture_snapshot=True)
+            if not isinstance(snapshot, SessionSnapshot):
+                raise RuntimeError("固定用例执行未返回已持久化快照")
+            return snapshot
+
     def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
         return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)
 
@@ -1416,7 +1467,8 @@ class SessionService:
         execution_request,
         *,
         allow_interrupted: bool = False,
-    ) -> ConversationResponse:
+        capture_snapshot: bool = False,
+    ) -> ConversationResponse | SessionSnapshot:
         turn_lease_token = str(uuid4())
         claimed_session = await self._store.claim_turn_execution(
             session_id=session.id,
@@ -1452,6 +1504,7 @@ class SessionService:
                 execution_request=execution_request,
                 allow_interrupted=allow_interrupted,
                 turn_lease_token=turn_lease_token,
+                capture_snapshot=capture_snapshot,
             )
             settled = True
             return response
@@ -1483,7 +1536,8 @@ class SessionService:
         allow_interrupted: bool,
         turn_lease_token: str,
         user_message_id: str | None = None,
-    ) -> ConversationResponse:
+        capture_snapshot: bool = False,
+    ) -> ConversationResponse | SessionSnapshot:
         session_id = session.id
         turn_fenced_write = {"turn_lease_token": turn_lease_token}
         superseded_turn_id = ""
@@ -1701,13 +1755,14 @@ class SessionService:
                 execution_request,
                 on_model_chunk=stream_chunk_handler,
             )
-            return await self._finalize_runtime_result(
+            response = await self._finalize_runtime_result(
                 session=session,
                 runtime_result=runtime_result,
                 assistant_message_id=assistant_message_id,
                 user_message_override=payload.content,
                 turn_lease_token=turn_lease_token,
             )
+            return runtime_result.snapshot.model_copy(deep=True) if capture_snapshot else response
         except ContinuationLeaseLostError:
             logger.warning(
                 "turn_execution_fenced_after_lease_loss",

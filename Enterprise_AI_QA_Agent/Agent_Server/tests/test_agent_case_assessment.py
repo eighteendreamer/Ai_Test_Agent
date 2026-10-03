@@ -73,12 +73,14 @@ def business_http():
 
 
 @asynccontextmanager
-async def execution(tmp_path, business_http, live=False):
+async def execution(tmp_path, business_http, live=False, perform_tools=True, with_business_instructions=False):
     async with planned(tmp_path, live) as (env, store, suites, creator, old, now, table):
         project = await env.projects.get(old.project_id)
         content = {'objective': '完整用例检查', '期望': {'code': 200, 'flag': False, 'count': 0,
                    'nullable': None, 'semantic': '订单仍待支付且未出库'},
                    'steps': [{'action': '核对完整实际响应'}]}
+        if with_business_instructions:
+            content['steps'][0].update(method='GET', url=business_http[0]+'/orders/{id}')
         source = tmp_path / 'assessment-case.json'
         source.write_text(json.dumps(content, ensure_ascii=False), encoding='utf-8')
         doc = await env.docs.upload_document(project_id=project.id, filename=source.name,
@@ -87,13 +89,19 @@ async def execution(tmp_path, business_http, live=False):
         await active_case(env, project, 'receipt-case', content)
 
         def plan(c):
-            target = item(c, 'receipt-case', key='target', depends_on=['seed'])
+            bindings = {'id': {'source_item': 'seed', 'output_path_tokens': ['body', 'order.id']}} if with_business_instructions else {}
+            target = item(c, 'receipt-case', key='target', depends_on=['seed'], input_bindings=bindings)
             refs = target['evidence_ids']
+            seed_instructions = {'expected': 201, 'action': '创建本次数据'}
+            cleanup_instructions = {'expected': 200, 'action': '删除本次数据'}
+            if with_business_instructions:
+                seed_instructions.update(method='POST', url=business_http[0]+'/orders')
+                cleanup_instructions.update(method='DELETE', url=business_http[0]+'/orders/{id}')
             return finish({'key': 'seed', 'kind': 'prepare', 'reason': '准备目标所需数据',
-                'evidence_ids': refs, 'instructions': {'expected': 201, 'action': '创建本次数据'}},
+                'evidence_ids': refs, 'instructions': seed_instructions},
                 target, {'key': 'cleanup', 'kind': 'prepare', 'reason': '清理本次数据',
                 'evidence_ids': refs, 'depends_on': ['target'],
-                'instructions': {'expected': 200, 'action': '删除本次数据'}})
+                'input_bindings': bindings, 'instructions': cleanup_instructions})
 
         env.service._models = SequenceModel(plan)
         frozen = await env.service.create(project.id, CasePlanningRequest(objective='验证正式目标'))
@@ -124,7 +132,7 @@ async def execution(tmp_path, business_http, live=False):
         url, requests, actual_id = business_http
         try:
             persisted_id = None
-            for key, method in [('seed', 'POST'), ('target', 'GET'), ('cleanup', 'DELETE')]:
+            for key, method in ([('seed', 'POST'), ('target', 'GET'), ('cleanup', 'DELETE')] if perform_tools else []):
                 path = '/orders' if key == 'seed' else '/orders/' + persisted_id
                 records.append(await runtime.execute(tool, ModelToolCall(id=key, name=tool.key,
                     arguments={'worker_action': 'execute_task', 'project_id': 'argument-cannot-change-project',
@@ -134,7 +142,7 @@ async def execution(tmp_path, business_http, live=False):
                     saved = await jobs.get_job_detail(records[-1].job_id)
                     persisted_id = saved.output_payload['task_result']['response_body']['order.id']
                     assert persisted_id == actual_id
-            assert len(requests) == 3
+            assert len(requests) == (3 if perform_tools else 0)
             assert all(r.job_id and r.status in {'completed', 'partial'} for r in records)
             yield context, jobs, records, session, turn, attempt, detail, store, now, content
         finally:

@@ -517,3 +517,37 @@ $env:RUN_LIVE_AGENT_CASE_ASSESSMENT_MODEL='1'
 ```
 
 方案同步该结果及限制，上传版本仍独立于 Git，生成模板仍不进入执行。只提交相关源文件、测试和安全证据；用户原五条 .gitignore 规则保留未暂存，不推送、不建 PR。完整目标未完成：接下来继续研究并接通 Agent 执行适配器与现有 Session/Runtime/受控工具、租约、检查点、审批和未知副作用恢复、新运行回归及公开启动入口；模型回执预算兼容性另需真实验收。生产 lifespan、人工 DeepSeek 录制、Docker、模块化生成、P3—P5 与其余业务记录迁移继续保留待完成。
+
+### P2b 冻结用例内部 Session 入口、图审批续执行与快照重放（2026-10-04）
+
+先研究现有 TestRunExecutionService、旧 CaseExecutionAdapter、main.py 初始化顺序、SessionService 的持久租约/审批/终结、RuntimeService/图/提示词、工具权限及本地 Agent 轨迹课程。确认生产运行服务早于 Session/Runtime 初始化；旧执行器的单工具结果与多工具 Agent 回执也不同，不能将新 JSON 转为旧模式参数来完成接入。本步骤先建立服务器内部 Session 能力，未加入生产 Worker 路由。
+
+依据 → 实现：
+
+- 公开 SendMessageRequest 的 context 原本可以携带运行、条目、attempt 和冻结执行上下文，而 ToolJob 会读取这些字段归属证据。实际输入测试复现后，在既有上下文清洗处剥离这些字段及检查点，记录字段名和会话身份；伪造 source 也不能绕过。显式自由测试执行依据仍保留。
+- SessionService.execute_case_turn 仅供服务器调用。调用方必须核对 RunItem 租约，并从已保存固定版本构造上下文。入口核对正式项目、非空 attempt，用 run/item/attempt 生成稳定 turn，复用既有会话锁、持久租约/心跳、事件、Runtime/图、权限和终结，正常终结之后返回深拷贝快照。内部入口确定性选择现有模式，不再为已经冻结的目标重复进行语义意图模型请求。
+- 同身份返回最新持久快照；等待审批、完成或未知阶段均不自动另起 turn。改变上下文或模式明确拒绝。真实审批续执行测试复现了首次实现返回最旧快照的问题，改为最新优先；保留失败证据 `p2-agent-session-approval-before.xml`。
+- 按用例 API agent/worker 提示词改为阅读完整固定内容，按实际前序工具输出执行必要操作并报告证据，避免旧自由测试提示词要求重新建立整套 campaign。自由测试/旧请求保留原契约。其他模式的完整执行验收尚未进行。
+- 测试通过原图权限流程完成三次审批并续执行，不设权限直通。会话租约丢失或数据库无法续租时，沿现有路径取消运行、等待清理，不发布完成事件或成功快照；保留租约供既有恢复机制处理。
+
+功能验证：
+
+- 生成带真实本地 URL/方法、中文预期、false/0/null 的完整 JSON 文件，实际 RustFS 上传并逐字节读回。使用既有隔离项目及 PG 草稿、评审、启用、规划、套件/运行/原子领取服务；测试显式调用内部 Session 入口。
+- 图内受控模型读取冻结上下文中的方法/URL，从实际前序工具消息取得 ID，经真实权限审批调用已登记 API runner，向本地 HTTP 服务发送 POST→GET→DELETE。模型判断和最终回执受控，不属于外部默认模型推理验收；本地服务提供固定响应，用于验证调用、传值和证据链，不证明实际业务订单状态变更。
+- 两次并发调用只首次进入模型；等待每次审批和终态时重复调用均返回最新快照，不新增 HTTP/模型调用。实际 PG 工具任务、消息、审批、快照重读核对 run/item/attempt/session/turn 身份及输出。使用 UUID 隔离测试表和项目，只清理本次创建的数据。
+- 回执核验重新读取已保存工具证据，覆盖 HTTP 状态、false、0、null 与受控语义判断；准备和目标分开。最终专项将核验结果交给实际 RunStore 完成并重读结果和证据，验证终态不可再次领取。该完成调用仍由测试负责，生产执行协调尚未接入。
+- 最初公开身份伪造和缺少入口测试 **2 失败、3 跳过**，`p2-agent-session-before.xml`。审批重放首次 **1 失败、1 通过、3 跳过**。扩大实际存储测试时 **146 通过、2 失败、2 跳过、1 未选择**，`p2-agent-session-fixture-before.xml`；失败来自 Session fixture 外键误指生产项目表，改为引用同一 fixture 的实际隔离项目表，未更改产品数据库结构。
+- 最终扩大相关回归 **251 通过、2 跳过、1 个独立实际模型项未选择，57.65 秒**，`p2-agent-session-regression.xml`。两项跳过为要求 PG 事务/跨进程语义的内存变体，其实际 PG 变体已运行。旧执行服务/适配器/验证/API 会话/上下文相关回归 **72 通过、1 个独立实际模型项未选择，9.33 秒**，`p2-agent-session-legacy-regression.xml`。
+- 补充 Session 测试内的结果保存与重读后，重新运行 Session 和回执专项 **48 通过、1 个实际模型项未选择，23.75 秒**，`p2-agent-session-storage-final.xml`；没有新失败或跳过。此前 **43 通过、1 未选择，22.36 秒** 的存储专项保留为 `p2-agent-session-storage.xml`。
+
+最终专项命令（在 Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_session.py tests/test_agent_case_assessment.py -q --tb=short -rs -k 'not actual_model' --junitxml=../docs/upgrade_2026-10-03/p2-agent-session-storage-final.xml
+```
+
+本步骤没有新增依赖、可编辑配置、数据库迁移、公开路由或前端契约；不重复前端构建。可编辑配置仍归 MySQL，业务/运行/工具/会话记录归 PostgreSQL，原件归 RustFS。只读检查现有模型元数据：仅 step-5-preview 启用，输出预算 8192；没有新增外部模型调用或配置写入。历史默认模型回执失败结论保持，受控模型测试不能代替这一验收。
+
+方案更新内部已验证能力和生产缺口，并同步选定 Codex 计划；附件保留原样。快照重放尚不能处理快照丢失/被清理、Worker 重启或跨 attempt 的未知副作用，也不提供运行条目审批等待策略。下一步先设计并验证持久执行意图和检查点、租约及资源心跳、审批等待和恢复证据归属，再接入 AgentCaseExecutionAdapter/TestRunExecutionService；最后验证默认模型、回归新运行及公开入口。完整 P0—P5 目标仍未完成。

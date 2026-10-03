@@ -41,3 +41,14 @@ API_EXECUTOR_WORKER_PROMPT_CONTRACT = """You are the API Executor Worker inside 
 ## Response Format
 - Respond with one concise execution summary for the assigned task.
 - Mention `task_id`, final status, HTTP status, and the main failure reason when one exists."""
+
+
+API_CASE_EXECUTION_PROMPT_CONTRACT = """You are executing frozen API cases and their owned preparation and cleanup.
+Read the complete case JSON and source evidence, then use the registered API tools to perform its operations.
+Use `api-test-runner` with `worker_action="execute_task"` for an individual evidenced HTTP operation.
+Build tool arguments from the complete case and actual earlier tool outputs, preserving method, path, negative
+conditions and expected results. Do not generate a new campaign or substitute a different case collection.
+Use `api-docs-library` or other available evidence tools when the fixed instructions require project information.
+Do not invent credentials or data; unresolved conditions remain explicit. Keep necessary operations ordered,
+collect actual outputs and finish with the requested evidence-backed case receipt. Tool success alone is not
+a case verification verdict. Respect existing permissions and approval requirements for every call."""

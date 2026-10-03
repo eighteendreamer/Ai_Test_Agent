@@ -6,6 +6,7 @@ from typing import Any
 
 from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.modes.api_testing_mode.prompt_contract import (
+    API_CASE_EXECUTION_PROMPT_CONTRACT,
     API_EXECUTOR_WORKER_PROMPT_CONTRACT,
     API_TESTING_PROMPT_CONTRACT,
 )
@@ -288,7 +289,8 @@ class PromptAssemblyService:
                     source="prompt_assembly.api_testing",
                     cache_scope="dynamic",
                     priority=50,
-                    content=API_TESTING_PROMPT_CONTRACT,
+                    content=(API_CASE_EXECUTION_PROMPT_CONTRACT
+                        if context_bundle.get("execution_basis") == "cases" else API_TESTING_PROMPT_CONTRACT),
                 )
             )
         elif selected_agent_key == "api-executor-worker":
@@ -299,7 +301,8 @@ class PromptAssemblyService:
                     source="prompt_assembly.api_executor_worker",
                     cache_scope="dynamic",
                     priority=50,
-                    content=API_EXECUTOR_WORKER_PROMPT_CONTRACT,
+                    content=(API_CASE_EXECUTION_PROMPT_CONTRACT
+                        if context_bundle.get("execution_basis") == "cases" else API_EXECUTOR_WORKER_PROMPT_CONTRACT),
                 )
             )
         elif mode_key == "smoke_testing" or selected_agent_key.startswith("smoke-"):

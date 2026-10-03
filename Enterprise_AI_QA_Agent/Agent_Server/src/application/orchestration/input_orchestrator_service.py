@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from collections.abc import Iterable
+import logging
 from uuid import uuid4
 
 from src.domain.models import SessionRecord
@@ -23,6 +24,9 @@ from src.schemas.session import (
     MessageKind,
     SendMessageRequest,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class InputOrchestratorService:
@@ -271,8 +275,12 @@ class InputOrchestratorService:
         for key in (
             "trusted_security_authorization",
             "security_authorization",
+            "run_id", "test_run_id", "run_item_id", "test_run_item_id", "attempt_id",
+            "case_execution", "case_assessment_requested", "execution_checkpoint",
         ):
-            context.pop(key, None)
+            if key in context:
+                context.pop(key)
+                logger.info("client_execution_context_removed", extra={"session_id": session.id, "context_key": key})
         trusted_resource_scope = session.metadata.get("resource_scope")
         if isinstance(trusted_resource_scope, dict):
             context["resource_scope"] = dict(trusted_resource_scope)
