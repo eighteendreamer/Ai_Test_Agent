@@ -96,6 +96,10 @@ class CaseExecutionAdapter:
         tool_job_id: str = "",
         server_approval_granted: bool = False,
     ) -> CaseToolInvocation:
+        if run.execution_strategy == "agent":
+            raise CaseExecutionBlockedError(
+                "The frozen plan requires Agent execution; the legacy mode-parameter adapter cannot execute this strategy."
+            )
         if version.content_json is not None:
             raise CaseExecutionBlockedError(
                 "This JSON case requires the Agent execution strategy; the legacy mode-parameter adapter cannot execute it."

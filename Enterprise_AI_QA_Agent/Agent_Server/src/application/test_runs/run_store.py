@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -15,6 +16,7 @@ from src.application.test_runs.dependencies import (dependencies_ready, validate
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
+from src.schemas.suite_management import TestSuiteBundle
 from src.schemas.tool_job import ToolJobRecord
 from src.schemas.run_management import (
     LatestRegressionRecord,
@@ -53,6 +55,9 @@ class TestRunStore(Protocol):
         run: TestRunRecord,
         items: list[TestRunItemRecord],
     ) -> TestRunDetail: ...
+    async def create_planned_run(self, suite: TestSuiteBundle, run: TestRunRecord,
+        items: list[TestRunItemRecord], *, suite_store, outbox_table: str | None,
+        event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail: ...
     async def create_run_with_outbox(
         self,
         run: TestRunRecord,
@@ -231,6 +236,30 @@ class InMemoryTestRunStore:
             for item in stored_items:
                 self._items[item.id] = item
             self._refresh_run(run.id, run.created_at)
+            return self._detail(run.id)
+
+    async def create_planned_run(self, suite: TestSuiteBundle, run: TestRunRecord,
+        items: list[TestRunItemRecord], *, suite_store, outbox_table: str | None,
+        event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
+        from src.application.test_suites.suite_store import InMemoryTestSuiteStore
+        from src.application.test_runs.plan_mapping import validate_plan_bundle
+        if not isinstance(suite_store, InMemoryTestSuiteStore):
+            raise ValueError("内存计划运行必须使用同类套件存储")
+        validate_plan_bundle(suite, run, items)
+        async with suite_store._lock, self._lock:
+            existing = self._runs.get(run.id)
+            if existing:
+                if existing.creation_hash != run.creation_hash:
+                    raise ValueError("相同创建请求已经关联其他计划或执行参数")
+                return self._detail(run.id)
+            if suite.suite.id in suite_store._suites:
+                raise ValueError("固定套件身份已被其他记录使用")
+            suite_store._suites[suite.suite.id] = suite.suite.model_copy(deep=True)
+            suite_store._items_by_suite[suite.suite.id] = [i.model_copy(deep=True) for i in suite.items]
+            self._runs[run.id] = run.model_copy(deep=True)
+            self._item_ids_by_run[run.id] = [i.id for i in items]
+            self._attempt_ids_by_run[run.id], self._result_ids_by_run[run.id] = [], []
+            self._items.update({i.id: i.model_copy(deep=True) for i in items})
             return self._detail(run.id)
 
     async def create_run_with_outbox(
@@ -1347,6 +1376,12 @@ class PostgresTestRunStore:
     ) -> TestRunDetail:
         return await asyncio.to_thread(self._create_run_sync, run, items)
 
+    async def create_planned_run(self, suite: TestSuiteBundle, run: TestRunRecord,
+        items: list[TestRunItemRecord], *, suite_store, outbox_table: str | None,
+        event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
+        return await asyncio.to_thread(self._create_planned_run_sync, suite, run, items,
+            suite_store, outbox_table, event_key, stream, payload)
+
     async def create_run_with_outbox(
         self,
         run: TestRunRecord,
@@ -1780,6 +1815,55 @@ class PostgresTestRunStore:
                     "INCLUDE (run_id, status, result_id, case_version_id) "
                     "WHERE regression_source_result_id IS NOT NULL"
                 )
+
+    def _create_planned_run_sync(self, suite: TestSuiteBundle, run: TestRunRecord,
+        items: list[TestRunItemRecord], suite_store, outbox_table: str | None,
+        event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
+        from src.application.test_suites.suite_store import PostgresTestSuiteStore
+        from src.application.test_runs.plan_mapping import json_digest, validate_frozen_cases, validate_plan_bundle
+        from src.schemas.case_planning import CasePlanRecord
+        from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
+        if not isinstance(suite_store, PostgresTestSuiteStore):
+            raise ValueError("PostgreSQL 计划运行必须使用同类套件存储")
+        if suite_store._suite_table != self._settings.database.postgres_test_suite_table:
+            raise ValueError("计划运行与套件存储不属于同一目录")
+        if run.plan_snapshot is None or suite.suite.project_id != run.project_id or suite.suite.id != run.suite_id:
+            raise ValueError("固定计划、套件和运行引用不一致")
+        if outbox_table and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", outbox_table):
+            raise ValueError("Invalid task outbox table identifier")
+        validate_plan_bundle(suite, run, items)
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            # Serialize creation requests for the project, and keep archive from
+            # racing this transaction. No network or model work holds this lock.
+            cur.execute(f"SELECT status FROM {self._settings.database.postgres_project_table} WHERE id=%s FOR UPDATE", (run.project_id,))
+            project = cur.fetchone()
+            cur.execute(f"SELECT record FROM {self._run_table} WHERE id=%s", (run.id,))
+            existing = cur.fetchone()
+            if existing:
+                saved = self._run_from_value(existing["record"])
+                if saved.creation_hash != run.creation_hash:
+                    raise ValueError("相同创建请求已经关联其他计划或执行参数")
+                return self._detail_from_cursor(cur, saved.id)
+            if project is None or project["status"] != "active":
+                raise ValueError("当前项目已停用，不能创建计划运行")
+            cur.execute(f"SELECT record FROM {self._settings.database.postgres_case_plan_table} WHERE id=%s AND project_id=%s",
+                (run.plan_snapshot.plan.id, run.project_id))
+            plan_row = cur.fetchone()
+            if plan_row is None or json_digest(CasePlanRecord.model_validate(plan_row["record"]).model_dump(mode="json")) != json_digest(run.plan_snapshot.plan.model_dump(mode="json")):
+                raise ValueError("固定计划不存在或与保存依据不一致")
+            case_ids = sorted({i.case_id for i in items})
+            cur.execute(f"SELECT record FROM {self._settings.database.postgres_test_case_table} WHERE id=ANY(%s::uuid[]) ORDER BY id FOR SHARE", (case_ids,))
+            cases = {c.id: c for c in [TestCaseRecord.model_validate(r["record"]) for r in cur.fetchall()]}
+            cur.execute(f"SELECT record FROM {self._settings.database.postgres_test_case_version_table} WHERE id=ANY(%s::uuid[])",
+                ([i.case_version_id for i in items],))
+            versions = {v.id: v for v in [TestCaseVersionRecord.model_validate(r["record"]) for r in cur.fetchall()]}
+            validate_frozen_cases(run.plan_snapshot.plan, cases, versions)
+            suite_store.insert_in_cursor(cur, suite.suite, suite.items)
+            self._insert_run_and_items(cur, run, items)
+            if outbox_table:
+                cur.execute(f"INSERT INTO {outbox_table} (event_key, stream, payload) VALUES (%s,%s,%s::jsonb)",
+                    (event_key, stream, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))))
+        return TestRunDetail(run=run, items=items)
 
     def _create_run_sync(
         self,
@@ -3395,7 +3479,7 @@ class PostgresTestRunStore:
             f"LEFT JOIN {self._item_table} AS parent ON parent.id=(dependency.value->>'item_id')::uuid "
             "AND parent.run_id=candidate.run_id "
             f"LEFT JOIN {self._result_table} AS result ON result.id=parent.result_id "
-            "AND result.run_item_id=parent.id AND result.status='passed' "
+            "AND result.run_item_id=parent.id AND result.status=parent.status "
         )
         missing_output = (
             "EXISTS ("
@@ -3404,11 +3488,22 @@ class PostgresTestRunStore:
             "WHERE COALESCE((result.record->'actual') #> ARRAY("
             "SELECT jsonb_array_elements_text(output_path.value)), 'null'::jsonb)='null'::jsonb)"
         )
+        missing_preparation = (
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE("
+            "dependency.value->'required_preparation_keys', '[]'::jsonb)) AS preparation(key) "
+            "WHERE COALESCE((result.record->'actual') #> ARRAY['preparations',preparation.key,'status'], "
+            "'null'::jsonb) <> '\"passed\"'::jsonb)"
+        )
+        terminal = "parent.status IN ('passed','failed','error','blocked','skipped','cancelled')"
+        passed_required = "COALESCE(dependency.value->>'completion_condition','passed')='passed'"
+        unavailable = f"({missing_output} OR {missing_preparation})"
         if failed:
             return (f"EXISTS ({source} WHERE parent.id IS NULL OR "
-                "parent.status IN ('failed','error','blocked','skipped','cancelled') OR "
-                f"(parent.status='passed' AND {missing_output}))")
-        return f"NOT EXISTS ({source} WHERE parent.status IS DISTINCT FROM 'passed' OR {missing_output})"
+                f"({passed_required} AND {terminal} AND parent.status<>'passed') OR "
+                f"({terminal} AND {unavailable}))")
+        return (f"NOT EXISTS ({source} WHERE parent.id IS NULL OR "
+            f"({passed_required} AND parent.status IS DISTINCT FROM 'passed') OR "
+            f"(NOT {passed_required} AND NOT ({terminal})) OR {unavailable})")
 
     def _block_failed_dependencies_in_cursor(self, cur, run_id: str, now: datetime) -> int:
         blocked_count = 0

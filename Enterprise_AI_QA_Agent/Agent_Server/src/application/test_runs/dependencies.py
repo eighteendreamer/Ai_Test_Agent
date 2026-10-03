@@ -11,6 +11,8 @@ from uuid import uuid4
 from src.schemas.run_management import (TestRunRecord, TestRunItemRecord, TestCaseResultRecord,
     TestRunAttemptRecord, RunItemCompletion)
 
+TERMINAL_DEPENDENCY_STATUSES = {"passed", "failed", "error", "blocked", "skipped", "cancelled"}
+
 
 def validate_run_dependencies(run: TestRunRecord, items: list[TestRunItemRecord]) -> None:
     by_id = {item.id: item for item in items}
@@ -50,14 +52,18 @@ def dependencies_ready(item: TestRunItemRecord, items: dict[str, TestRunItemReco
                        results: dict[str, TestCaseResultRecord]) -> bool:
     for dependency in item.dependencies:
         parent = items.get(dependency.item_id)
-        if parent is None or parent.run_id != item.run_id or parent.status != "passed":
+        acceptable = TERMINAL_DEPENDENCY_STATUSES if dependency.completion_condition == "terminal" else {"passed"}
+        if parent is None or parent.run_id != item.run_id or parent.status not in acceptable:
             return False
-        if not dependency.required_output_paths:
+        if not dependency.required_output_paths and not dependency.required_preparation_keys:
             continue
         result = results.get(parent.result_id or "")
-        if result is None or result.run_item_id != parent.id or result.status != "passed":
+        if result is None or result.run_item_id != parent.id or result.status != parent.status:
             return False
         if any(output_at_path(result.actual, path) is None for path in dependency.required_output_paths):
+            return False
+        if any(output_at_path(result.actual, ["preparations", key, "status"]) != "passed"
+            for key in dependency.required_preparation_keys):
             return False
     return True
 
@@ -70,16 +76,22 @@ def dependency_failures(item: TestRunItemRecord, items: dict[str, TestRunItemRec
         result = results.get(parent.result_id or "") if parent else None
         if parent is None or parent.run_id != item.run_id:
             failures.append({"item_id": dependency.item_id, "reason": "missing_predecessor"})
-        elif parent.status in {"failed", "error", "blocked", "skipped", "cancelled"}:
+        elif parent.status in TERMINAL_DEPENDENCY_STATUSES - {"passed"} and dependency.completion_condition == "passed":
             failures.append({"item_id": parent.id, "result_id": parent.result_id,
                 "reason": "predecessor_unsuccessful", "status": parent.status})
-        elif parent.status == "passed":
+        elif parent.status in TERMINAL_DEPENDENCY_STATUSES:
             missing = [path for path in dependency.required_output_paths
-                if result is None or result.run_item_id != parent.id or result.status != "passed"
+                if result is None or result.run_item_id != parent.id or result.status != parent.status
                 or output_at_path(result.actual, path) is None]
             if missing:
                 failures.append({"item_id": parent.id, "result_id": parent.result_id,
                     "reason": "required_output_missing", "paths": missing})
+            unsuccessful = [key for key in dependency.required_preparation_keys
+                if result is None or result.run_item_id != parent.id or result.status != parent.status
+                or output_at_path(result.actual, ["preparations", key, "status"]) != "passed"]
+            if unsuccessful:
+                failures.append({"item_id": parent.id, "result_id": parent.result_id,
+                    "reason": "preparation_unsuccessful", "preparation_keys": unsuccessful})
     return failures
 
 

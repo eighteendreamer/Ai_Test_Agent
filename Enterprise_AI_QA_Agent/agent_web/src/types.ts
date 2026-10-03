@@ -1594,6 +1594,10 @@ export interface TestRunRecord {
   suite_id: string;
   run_kind: "normal" | "regression";
   mode_key: string;
+  execution_strategy?: "legacy" | "agent";
+  plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after"> } | null;
+  creation_key?: string | null;
+  creation_hash?: string | null;
   session_id?: string | null;
   parent_run_id?: string | null;
   status: TestRunStatus;
@@ -1612,7 +1616,8 @@ export interface TestRunItemRecord {
   case_id: string;
   case_version_id: string;
   position: number;
-  dependencies?: Array<{ item_id: string; required_output_paths: string[][] }>;
+  plan_item_key?: string | null;
+  dependencies?: Array<{ item_id: string; required_output_paths: string[][]; completion_condition?: "passed" | "terminal"; required_preparation_keys?: string[] }>;
   status: RunItemStatus;
   waiting_reason?: string | null;
   attempt_no: number;

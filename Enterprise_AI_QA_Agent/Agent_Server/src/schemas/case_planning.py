@@ -132,3 +132,16 @@ class CasePlanRecord(PlanningModel):
     rounds: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     created_at: datetime
+
+
+class CasePlanRunRequest(PlanningModel):
+    creation_key: str = Field(min_length=1, max_length=160)
+    mode_key: str = Field(min_length=1, max_length=80)
+    session_id: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class CasePlanExecutionSnapshot(PlanningModel):
+    plan: CasePlanRecord
+    run_item_ids: dict[str, str]
+    owners: dict[str, str]
+    preparation_phases: dict[str, Literal["before", "after"]]

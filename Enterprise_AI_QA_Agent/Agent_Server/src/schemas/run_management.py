@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
+from src.schemas.case_planning import CasePlanExecutionSnapshot
 from src.schemas.session import ApprovalDecisionRequest
 
 
@@ -63,6 +64,10 @@ class TestRunRecord(BaseModel):
     run_kind: TestRunKind = "normal"
     origin: TestRunOrigin = "native"
     mode_key: str
+    execution_strategy: Literal["legacy", "agent"] = "legacy"
+    plan_snapshot: CasePlanExecutionSnapshot | None = None
+    creation_key: str | None = None
+    creation_hash: str | None = None
     session_id: str | None = None
     parent_run_id: str | None = None
     status: TestRunStatus = "queued"
@@ -90,10 +95,12 @@ class RunItemDependency(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     item_id: str = Field(min_length=1, max_length=160)
+    completion_condition: Literal["passed", "terminal"] = "passed"
+    required_preparation_keys: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(default_factory=list, max_length=200)
     # Literal JSON keys / array indexes relative to the saved result.actual.
     # Token arrays preserve keys containing dots; no expression is executed.
     required_output_paths: list[Annotated[list[Annotated[str, Field(max_length=256)]],
-        Field(max_length=32)]] = Field(default_factory=list, max_length=100)
+        Field(max_length=64)]] = Field(default_factory=list, max_length=100)
 
 
 class TestRunItemRecord(BaseModel):
@@ -102,6 +109,7 @@ class TestRunItemRecord(BaseModel):
     case_id: str
     case_version_id: str
     position: int = Field(ge=1)
+    plan_item_key: str | None = None
     dependencies: list[RunItemDependency] = Field(default_factory=list, max_length=200)
     status: RunItemStatus = "queued"
     waiting_reason: str | None = None

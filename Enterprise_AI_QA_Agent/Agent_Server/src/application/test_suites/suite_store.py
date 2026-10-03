@@ -173,37 +173,41 @@ class PostgresTestSuiteStore:
     ) -> TestSuiteBundle:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"INSERT INTO {self._suite_table} (id, project_id, status, updated_at, record) "
-                    "VALUES (%s, %s, %s, %s, %s::jsonb)",
-                    (
-                        suite.id,
-                        suite.project_id,
-                        suite.status,
-                        suite.updated_at,
-                        self._json(suite),
-                    ),
-                )
-                if items:
-                    cur.executemany(
-                        f"""
-                        INSERT INTO {self._item_table} (
-                            id, suite_id, case_id, case_version_id, position, record
-                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-                        """,
-                        [
-                            (
-                            item.id,
-                            item.suite_id,
-                            item.case_id,
-                            item.case_version_id,
-                            item.position,
-                            self._json(item),
-                            )
-                            for item in items
-                        ],
-                    )
+                self.insert_in_cursor(cur, suite, items)
         return TestSuiteBundle(suite=suite, items=items)
+
+    def insert_in_cursor(self, cur, suite: TestSuiteRecord, items: list[TestSuiteItemRecord]) -> None:
+        """Use the caller transaction when freezing a suite with its first run."""
+        cur.execute(
+            f"INSERT INTO {self._suite_table} (id, project_id, status, updated_at, record) "
+            "VALUES (%s, %s, %s, %s, %s::jsonb)",
+            (
+                suite.id,
+                suite.project_id,
+                suite.status,
+                suite.updated_at,
+                self._json(suite),
+            ),
+        )
+        if items:
+            cur.executemany(
+                f"""
+                INSERT INTO {self._item_table} (
+                    id, suite_id, case_id, case_version_id, position, record
+                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                [
+                    (
+                    item.id,
+                    item.suite_id,
+                    item.case_id,
+                    item.case_version_id,
+                    item.position,
+                    self._json(item),
+                    )
+                    for item in items
+                ],
+            )
 
     def _get_sync(self, suite_id: str) -> TestSuiteBundle | None:
         with postgres_connect(self._settings) as conn:
