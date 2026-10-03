@@ -627,3 +627,20 @@ npm run build
 ```
 
 配置继续归 MySQL，业务/检查点/工具/会话归 PostgreSQL，原件归 RustFS，Redis 只管理交付和租约。未新增依赖、持久配置写入或外部模型请求；历史默认模型目标回执 length/空正文失败继续保留。代码、测试和安全证据随本步骤提交，完整 P0—P5 仍未完成：接下来研究新策略回归与公开计划启动，继续实际 Redis 执行 Worker/完整 lifespan、各模式自主工具/资源、步骤级恢复/未知业务效果及持久规划任务；模块化生成、人工录制、Docker 结果、P3—P5 和其余业务记录迁移仍待完成。
+
+### 根据现有代码再次更新完整方案（2026-10-04）
+
+响应用户“那不更新这个方案？”，本次更新 PLAN.md 并同步所选 Codex 计划，附件保留为原始输入。重新读取两份附件、现行方案及最新实施记录，以 `c7e0500` 为代码基线核对上传、对象存储、目录模型、计划运行服务、公开规划路由、失败回归创建和运行模型。只修改方案与本记录，不实施业务代码或数据库迁移。
+
+方案顶部明确此前 Agent 接入已提交，并在 §2.5 增加当前代码缺口、采用做法和验收条件：内部计划运行事务服务尚未通过公开路由启动；现有 create_regression 没有填写 Agent 策略和计划快照，条目也未携带计划身份及依赖，运行模型默认策略为 legacy。后一项为静态调用链核对结果，本轮未使用实际 Agent 父运行复现或修复。后续实施须先复现，再保存新回归固定计划、必要前置、实际数据绑定及来源结果；新启用版本不能仅替换版本 ID 后保留旧绑定。
+
+上传设计继续按 §3.1 独立实施：原件和工件存 RustFS，版本及解析快照业务记录存 PostgreSQL，解析器等可编辑配置存 MySQL；上传、保存历史和比较均无需 Git。当前 ApiDocsService 仍先转换部分文件再保存，目录没有正式版本关联，新版原件链和差异能力仍待实现。现有上传可行性测试不能代替真实 V1/V2 验收。
+
+本轮在 Agent_Server 实际执行上传相关既有测试：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_artifact_storage_service.py -q --tb=short
+# 25 passed in 1.07s
+```
+
+另检查方案本地链接、核心约定、镜像字节一致性和文档 diff。本轮未重跑前端构建、Agent 执行集成、实际模型、真实 RustFS/PostgreSQL V1/V2、Worker 或完整生产启动；没有相关产品代码改动，既有验证结果沿用上节证据，不能记为本轮重新验收。提交范围仅 PLAN.md 与 IMPLEMENTATION.md，用户 .gitignore 改动保留未暂存；不推送、不创建 PR。完整 P0—P5 目标仍未完成。
