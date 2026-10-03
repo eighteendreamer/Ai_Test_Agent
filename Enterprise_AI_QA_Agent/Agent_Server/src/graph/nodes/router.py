@@ -143,7 +143,10 @@ def build_router_node(
         state["test_case_hits"] = []
         state["test_case_prompt_blocks"] = []
         project_id = str(context_bundle.get("project_id") or "").strip()
-        if test_case_embedding_service is not None and project_id:
+        # Explicit free tests do not inject cases; frozen case tests already
+        # carry their complete versions. Missing basis preserves old requests.
+        if (test_case_embedding_service is not None and project_id
+            and context_bundle.get("execution_basis") not in {"free", "cases"}):
             try:
                 test_case_result = await test_case_embedding_service.retrieve(
                     project_id=project_id,
@@ -243,6 +246,7 @@ def build_router_node(
             resolved_skills=",".join(resolved_skills) or "none",
             memory_hit_count=len(state["memory_hits"]),
             test_case_hit_count=len(state["test_case_hits"]),
+            execution_basis=str(context_bundle.get("execution_basis") or "legacy"),
             active_mcp_count=len(state["active_mcp_servers"]),
             available_tools=",".join(state["available_tool_keys"]) or "none",
             mode_registered_tools=",".join(mode_tool_keys) or "none",

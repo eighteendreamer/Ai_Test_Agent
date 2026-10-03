@@ -8,6 +8,7 @@ and flattens them into AgentGraphState before calling graph.ainvoke().
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import logging
 from typing import Any, AsyncGenerator, Awaitable, Callable
 
@@ -254,6 +255,7 @@ class AgentLoop:
             "selected_agent_key": state.get("selected_agent_key", ""),
             "selected_model_key": state.get("selected_model_key", ""),
             "runtime_messages": list(state.get("runtime_messages") or []),
+            "context_bundle": deepcopy(state.get("context_bundle") or {}),
             **persisted_turn_budget(state),
             "tool_results": list(state.get("tool_results") or []),
             "tool_messages": list(state.get("tool_messages") or []),

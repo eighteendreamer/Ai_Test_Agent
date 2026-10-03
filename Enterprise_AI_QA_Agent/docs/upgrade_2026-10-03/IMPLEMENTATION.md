@@ -409,7 +409,7 @@ creation_key 派生稳定套件/运行身份，creation_hash 覆盖计划及请�
 - 新增专项实现前为 3 失败、4 跳过，p2-plan-run-before.xml 保留；内存阶段 3 通过、4 跳过，p2-plan-run-memory.xml 保留。
 - 早期真实回归 69 通过、1 失败，p2-plan-run-outbox-before.xml 保留。失败是测试预期直接收到 psycopg CheckViolation，而项目现有 SQLAlchemy 门面包装为 IntegrityError；修正测试核对 .orig 是 CheckViolation，没有将这项描述为产品修复。此前 fixture 的项目查询也先依据现有 get(project_id) 契约修正，才保存实现前证据。
 - 真实事务阶段 70 通过，p2-plan-run-storage.xml；最终相关回归 **193 通过、2 个实际模型测试未选择，21.71 秒，无跳过**，p2-plan-run-regression.xml。其中新增创建专项共 17 项，含 10 项真实 PostgreSQL 场景。
-- 使用真实 JSON 文件、正式隔离项目、MySQL 策略与模板、RustFS 文件以及 PG 草稿/评审/启用/计划记录。只使用 UUID 隔离测试表、对象和项目；仅清理本次创建的数据。验证 8 次并发创建、插入套件/运行后异常全部回滚、Outbox 实际约束失败全部回滚、提交响应丢失后幂等重读、事务前停用、版本变化保留固定引用、跨项目拒绝、篡改归属拒绝、共享准备成败及独立项不受影响、终态不可再次领取。快照不含生成模板标记。
+- 使用真实 JSON 文件、正式隔离项目、MySQL 策略及 PG 草稿/评审/启用/计划记录；fixture 配有 RustFS 客户端，本创建专项未实际上传对象，不能计为 RustFS 文件验收。只使用 UUID 隔离测试表及项目；仅清理本次创建的数据。验证 8 次并发创建、插入套件/运行后异常全部回滚、Outbox 实际约束失败全部回滚、提交响应丢失后幂等重读、事务前停用、版本变化保留固定引用、跨项目拒绝、篡改归属拒绝、共享准备成败及独立项不受影响、终态不可再次领取。快照不含生成模板标记。
 - 旧适配器新增明确拒绝 agent 策略，专项证明工具解析器未被调用。前端契约同步 execution_strategy、plan_snapshot、plan_item_key 及依赖条件；npm run build 的 vue-tsc 与 Vite 实际通过（本轮复核 Vite 5.71 秒），Python 编译通过。
 
 ```powershell
@@ -424,3 +424,31 @@ $env:RUN_LIVE_CASE_PLANNING_TESTS='1'
 ```
 
 本步骤没有新增可编辑配置、SQL 列或数据库迁移；兼容字段仍存 PostgreSQL JSONB，旧记录使用默认值。本次没有实际模型、业务 HTTP、人工录制、Docker 或生产 lifespan 验收，也没有新增公开启动 API/UI或生产依赖注入。完整目标仍未完成：下一步接通现有 RuntimeService/图/TurnState、受控工具、准备执行与真实输出提取、检查点/审批恢复、新策略回归，再开放启动入口。P0、模块生成、P3—P5 和完整生产验收继续保留。
+
+### P2b 完整执行上下文、提示词及中断记录
+
+研究 RuntimeService、AgentLoop、TurnState、图、PromptAssemblyService、router 和 SessionService 的实际调用链后调整方案：完整执行输入放入既有 ExecutionRequest.context/context_bundle，不在多个状态层另存整份计划。现有 TurnState 重组、RuntimeService 快照及恢复已承载 context_bundle；AgentLoop 自身的中断记录没有保存该字段，新增专项实际复现 KeyError 后补存深拷贝。深拷贝防止后续状态修改改变已保存的恢复依据。
+
+另一确认的缺口是提示词仅列上下文键，不展示任意上下文值。新增类型化 AgentCaseExecutionContext 及构造器，加入专门的冻结执行数据/执行规则段。读取固定 JSON、自身说明、来源和依赖，并核对运行/条目/版本/原计划引用。按已冻结归属提供前置准备、正式执行及后置清理；外部输入直接读取已保存 result.actual 的精确路径，记录 result_id、run_item_id 及路径；本条目内尚未执行的准备保持待解析引用。0/false 有效，必要输入缺失不能用计划示例填充，跨运行结果拒绝。正式用例完整内容只呈现一次，来源段保留身份、版本和哈希；数据继续按既有非可信内容规则包裹，不授予权限。
+
+router 和提示词均区分显式 free/cases：free 不注入正式用例，cases 不再召回当前启用版本替换冻结内容。没有声明依据的旧请求维持原参考召回行为。路由事件记录 execution_basis；上下文日志只含身份与数量，不打印业务 JSON、凭据或正文。新构造器仍是内部能力，本轮未改对外请求 DTO、前端或生产执行适配器。
+
+实际验证：
+
+- 实现前专项 **5 失败、2 跳过**，p2-agent-context-before.xml。复现自由测试仍注入用例、中断丢上下文、冻结执行继续召回，以及新构造器缺失。最初存储专项 **7 通过**，p2-agent-context-storage.xml；随后扩展两种模型传输路径与真实模型专项。
+- 完整 JSON 文件包含 8 个步骤、末尾随机标记、负向条件、点号/空键及 0/false/null。实际上传原件到 RustFS 并逐字节读回，经 PG 草稿/评审/启用、规划及运行记录构造执行输入。受控规划回复只用于隔离上下文测试；既有固定计划及运行结果都从真实 PG 读取，未用自由文本项目名。另核对实际前置 false、共享准备的 0、目标失败而准备成功、坏准备/跨运行结果拒绝、准备及清理归属。
+- 两种生产模型发送路径（原生 SDK 与 LangChain）使用真实本地 TCP HTTP 服务；每条路径三次组装/发送，正文末尾标记只出现一次，模板和召回替换标记未发送。HTTP 模型响应由受控服务返回，不据此声称外部模型推理或业务工具已执行。相关回归首次 **186 通过、2 个规划模型测试未选择，22.01 秒**；最终加入实际模型专项、运行身份检查后 **186 通过、3 个独立模型项未选择，22.44 秒**，p2-agent-context-regression.xml，无跳过。其中本步骤 9 项全部通过，4 项实际存储（2 项完整文件/HTTP 和 2 项前置结果读取），完整文件/HTTP 的内存与真实存储组合共发送 12 次本地 TCP 请求。
+- 真实 step-5-preview 使用当前 MySQL 模型配置，实际读取由原件及 PG 固定版本产生的提示词，精确返回第 8 步的随机标记、保持未登录和 false 原值：**1 通过、9 未选择，10.60 秒**；模型调用本身 6.428 秒。安全汇总为 p2-agent-context-model.json，JUnit 为 p2-agent-context-model.xml。没有伪造模型回复，也没有调用业务工具或将这次读取记为用例通过。
+- TurnState 反组装、AgentLoop 中断记录、RuntimeService 的快照构建/恢复及 pending fallback 核对上下文和未知副作用状态保留。这些是状态构造测试，未声称本步骤已经完成真实审批中断后执行业务的联调。
+
+```powershell
+# Agent_Server，实际模型读取专项
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_AGENT_CASE_CONTEXT_MODEL='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_context.py -q -s --tb=short -k actual_model_reads --junitxml=../docs/upgrade_2026-10-03/p2-agent-context-model.xml
+# 1 passed, 9 deselected in 10.60s
+```
+
+本轮复核前一步 fixture 后修正了其 RustFS 验收措辞：前一步实际创建事务测试只配置客户端，未上传对象；本步骤才实际上传/读回原件。此前失败 XML 保留。没有新配置域、SQL 列或数据库迁移；前端没有本步骤契约改动，未重复构建。Python 编译及相关回归实际执行，完整方案和所选 Codex PLAN.md 同步。
+
+下一步研究并接通 Agent 执行适配器与既有 SessionService/ToolRuntime 的受控执行和持久化；准备结果及正式输出须引用实际工具结果，不能把模型口头判定当作工具证据。继续完成真实业务目标调用、运行租约与审批恢复、未知副作用核对、新策略回归及公开入口。其余 P0—P5 范围保持待完成，完整目标仍为 active。
