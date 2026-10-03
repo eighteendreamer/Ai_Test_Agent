@@ -21,6 +21,7 @@ from src.modes.api_testing_mode.contracts import (
     TASK_RUNNING,
 )
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
+from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
 
 
 # Type alias for the executor callback.
@@ -224,26 +225,6 @@ class ApiTestCoordinator:
         if not task.input_bindings and not task.depends_on:
             return
 
-        # Auto-bind: if task URL has path params like {id} and a dependency produced a response,
-        # try to extract matching fields.
-        import re
-        path_params = re.findall(r"\{([a-zA-Z0-9_]+)\}", task.full_url or task.path or "")
-        if path_params:
-            for dep_id in task.depends_on:
-                dep_output = self._task_outputs.get(dep_id)
-                if not isinstance(dep_output, dict):
-                    continue
-                for param in path_params:
-                    value = self._extract_binding_value(dep_output, param)
-                    if value is not None:
-                        # Replace in full_url and path.
-                        placeholder = "{" + param + "}"
-                        str_value = str(value)
-                        if task.full_url:
-                            task.full_url = task.full_url.replace(placeholder, str_value)
-                        if task.path:
-                            task.path = task.path.replace(placeholder, str_value)
-
         # Explicit input bindings.
         for binding in task.input_bindings:
             if not binding.source_task_id:
@@ -258,27 +239,9 @@ class ApiTestCoordinator:
                 continue
             self._inject_binding_value(task, binding.target_path, value)
 
-    def _extract_binding_value(self, output: dict, param_name: str):
-        """Try to find a value in the response that matches the path parameter name."""
-        # Direct match.
-        if param_name in output:
-            return output[param_name]
-        # Common patterns: id, orderId, order_id -> look for "id" field.
-        if param_name.lower() == "id" and "id" in output:
-            return output["id"]
-        # Try nested data.data.id pattern.
-        data = output.get("data")
-        if isinstance(data, dict):
-            if param_name in data:
-                return data[param_name]
-            if "id" in data and param_name.lower().endswith("id"):
-                return data["id"]
-        # Try result.id pattern.
-        result = output.get("result")
-        if isinstance(result, dict):
-            if param_name in result:
-                return result[param_name]
-        return None
+        # Explicit field mappings take precedence. Infer only placeholders
+        # that remain after those mappings have been applied.
+        bind_path_parameters(task, self._task_outputs)
 
     def _extract_path_value(self, obj, path: str):
         """Extract a value from a nested dict using dot-path notation."""
@@ -309,12 +272,7 @@ class ApiTestCoordinator:
             return
         if target_path.startswith("url.path.") or target_path.startswith("path."):
             param_name = target_path.split(".")[-1]
-            placeholder = "{" + param_name + "}"
-            str_value = str(value)
-            if task.full_url:
-                task.full_url = task.full_url.replace(placeholder, str_value)
-            if task.path:
-                task.path = task.path.replace(placeholder, str_value)
+            substitute_path_parameter(task, param_name, value)
         elif target_path.startswith("body.") or target_path.startswith("request_body."):
             parts = target_path.split(".", 1)
             field_path = parts[1] if len(parts) > 1 else ""

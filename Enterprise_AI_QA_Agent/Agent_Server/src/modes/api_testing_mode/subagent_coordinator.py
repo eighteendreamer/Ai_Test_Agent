@@ -20,6 +20,7 @@ from src.modes.api_testing_mode.contracts import (
 )
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
+from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
 from src.runtime.store import SessionStore
 from src.schemas.session import MessageRole, SessionStatus
 
@@ -427,24 +428,6 @@ class ApiSubagentCoordinator:
         if not task.input_bindings and not task.depends_on:
             return
 
-        import re
-        path_params = re.findall(r"\{([a-zA-Z0-9_]+)\}", task.full_url or task.path or "")
-        if path_params:
-            for dep_id in task.depends_on:
-                dep_output = self._task_outputs.get(dep_id)
-                if not isinstance(dep_output, dict):
-                    continue
-                for param in path_params:
-                    value = self._extract_binding_value(dep_output, param)
-                    if value is None:
-                        continue
-                    placeholder = "{" + param + "}"
-                    value_text = str(value)
-                    if task.full_url:
-                        task.full_url = task.full_url.replace(placeholder, value_text)
-                    if task.path:
-                        task.path = task.path.replace(placeholder, value_text)
-
         for binding in task.input_bindings:
             if not binding.source_task_id:
                 continue
@@ -458,21 +441,7 @@ class ApiSubagentCoordinator:
                 continue
             self._inject_binding_value(task, binding.target_path, value)
 
-    def _extract_binding_value(self, output: dict[str, Any], param_name: str):
-        if param_name in output:
-            return output[param_name]
-        if param_name.lower() == "id" and "id" in output:
-            return output["id"]
-        data = output.get("data")
-        if isinstance(data, dict):
-            if param_name in data:
-                return data[param_name]
-            if "id" in data and param_name.lower().endswith("id"):
-                return data["id"]
-        result = output.get("result")
-        if isinstance(result, dict) and param_name in result:
-            return result[param_name]
-        return None
+        bind_path_parameters(task, self._task_outputs)
 
     def _extract_path_value(self, obj: Any, path: str):
         if not path:
@@ -500,12 +469,7 @@ class ApiSubagentCoordinator:
             return
         if target_path.startswith("url.path.") or target_path.startswith("path."):
             param_name = target_path.split(".")[-1]
-            placeholder = "{" + param_name + "}"
-            value_text = str(value)
-            if task.full_url:
-                task.full_url = task.full_url.replace(placeholder, value_text)
-            if task.path:
-                task.path = task.path.replace(placeholder, value_text)
+            substitute_path_parameter(task, param_name, value)
             return
         if target_path.startswith("body.") or target_path.startswith("request_body."):
             field_path = target_path.split(".", 1)[1] if "." in target_path else ""

@@ -5,7 +5,7 @@ Rules:
 - Write tasks that produce resource IDs are dependencies for tasks that
   consume those IDs via path parameters.
 - Read-only tasks with no path-parameter dependencies are independent.
-- Tasks sharing the same resource lock are serialized.
+- Runtime coordinators serialize writes and conflicting resource locks.
 """
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ class DependencyPlanner:
         auth_task_ids: list[str] = []
         write_task_ids: list[str] = []
         read_task_ids: list[str] = []
+        tasks_by_endpoint: dict[str, ApiTestTask] = {}
 
         for index, mapped in enumerate(mapped_endpoints):
             endpoint = mapped.endpoint
@@ -85,6 +86,7 @@ class DependencyPlanner:
                 read_task_ids.append(task_id)
 
             graph.tasks.append(task)
+            tasks_by_endpoint[endpoint.endpoint_id] = task
 
         # Resolve dependencies:
         # 1. All non-auth tasks depend on auth tasks.
@@ -98,26 +100,22 @@ class DependencyPlanner:
             else:
                 task.status = TASK_READY
 
-        # 2. Write tasks are serialized among themselves (order preserved).
-        for i, task_id in enumerate(write_task_ids):
-            if i > 0:
-                task = self._find_task(graph.tasks, task_id)
-                if task is not None:
-                    prev_write = write_task_ids[i - 1]
-                    if prev_write not in task.depends_on:
-                        task.depends_on.append(prev_write)
-                    task.status = TASK_BLOCKED
-
-        # 3. Read tasks with path parameters that match a write task's resource
-        #    depend on that write task.
-        path_param_deps = preconditions.path_parameter_dependencies
-        for task in graph.tasks:
-            if task.task_id not in path_param_deps:
+        # Both runtime coordinators already serialize writes. Document order
+        # is not a business dependency: chaining writes in that order can
+        # create a cycle when a child-creation endpoint precedes its parent.
+        # Analysis identifies source endpoints; execution references task IDs.
+        # Translate once and keep each parameter's producer for data binding.
+        for endpoint_id, sources in preconditions.path_parameter_sources.items():
+            task = tasks_by_endpoint.get(endpoint_id)
+            if task is None:
                 continue
-            params = path_param_deps[task.task_id]
-            producer = self._find_producer(graph.tasks, params, task.task_id)
-            if producer and producer not in task.depends_on:
-                task.depends_on.append(producer)
+            for param, producer_endpoint_id in sources.items():
+                producer = tasks_by_endpoint.get(producer_endpoint_id)
+                if producer is None:
+                    continue
+                task.path_parameter_sources[param] = producer.task_id
+                if producer.task_id not in task.depends_on:
+                    task.depends_on.append(producer.task_id)
                 task.status = TASK_BLOCKED
 
         graph.auth_task_ids = auth_task_ids
@@ -164,32 +162,5 @@ class DependencyPlanner:
         if segments:
             return [segments[-1]]
         return []
-
-    def _find_task(self, tasks: list[ApiTestTask], task_id: str) -> ApiTestTask | None:
-        for task in tasks:
-            if task.task_id == task_id:
-                return task
-        return None
-
-    def _find_producer(
-        self,
-        tasks: list[ApiTestTask],
-        params: list[str],
-        exclude_task_id: str,
-    ) -> str | None:
-        """Find a POST task that likely produces the resource IDs needed."""
-        for task in tasks:
-            if task.task_id == exclude_task_id:
-                continue
-            if task.method.upper() != "POST":
-                continue
-            task_segments = [seg for seg in task.path.split("/") if seg and "{" not in seg]
-            for param in params:
-                param_lower = param.lower()
-                for seg in task_segments:
-                    if param_lower in seg.lower() or seg.lower() in param_lower:
-                        return task.task_id
-        return None
-
 
 __all__ = ["DependencyPlanner", "DependencyGraph"]

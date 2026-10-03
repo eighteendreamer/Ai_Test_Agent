@@ -162,6 +162,8 @@ class ApiTestTask(BaseModel):
     # None means no JSON body; an explicit {} is still a JSON request payload.
     request_body: dict[str, Any] | None = None
     input_bindings: list[InputBinding] = Field(default_factory=list)
+    # Runtime task IDs, keyed by the path parameter they actually provide.
+    path_parameter_sources: dict[str, str] = Field(default_factory=dict)
     assertions: list[AssertionSpec] = Field(default_factory=list)
     resource_locks: list[str] = Field(default_factory=list)
     timeout_seconds: float = 30.0
