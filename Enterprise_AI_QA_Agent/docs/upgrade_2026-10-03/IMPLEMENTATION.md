@@ -762,3 +762,20 @@ npm run build
 已读取并视觉检查真实浏览器截图，方案本地链接及镜像一致性另检查。测试表、项目、对象和 Redis 流均为隔离 fixture 所有，清理只针对本次确切身份；用户 `.gitignore` 保持未暂存。源码、测试、证据及文档按本步骤提交，不推送或建 PR。
 
 完整 P0—P5 目标继续保持未完成。下一步研究持久规划任务与生产进程接线，继续默认模型回执、其他模式工具、步骤级恢复及未知副作用核对；P0 人工 DeepSeek 录制/Docker、P1 模块生成、P3 文档版本/解析/差异、P4 影响/追踪、P5 知识/报告及业务数据迁移均按原范围保留。
+
+### 方案同步与持久规划设计核对（2026-10-04）
+
+用户要求更新所贴方案，本次核对代码基线 `2371d0b`，只更新 PLAN.md、本文及所选 Codex 计划镜像。原附件保留。方案开头、代码依据和下一步安排改为当前状态：公开保存计划启动已经接通，有此前实际存储/浏览器/Worker 类专项证据；独立进程和完整生产验收仍未完成，不再重复列为“待接通接口”。
+
+重新读取规划路由、`CasePlanningService.create`、`PostgresCasePlanStore`、Embedding 任务存储与 Handler、Agent 任务身份/租约校验、Outbox relay、任务池路由和流配置，并查阅本地课程的版本化、轨迹与重试要求。确认规划当前在请求中执行，完成后才保存最终计划；现有计划 `save` 是插入式不可变存储，不能用它保存每轮进度。Agent 任务与真实 session/turn 绑定，不能伪造会话作为通用规划任务。
+
+据此增加 PLAN.md §2.6：项目异步规划提交/查询，任务与 Outbox 同事务、原请求重放、固定输入和逐轮检查点、attempt/租约隔离、剩余预算恢复、最终计划与终态同事务，以及前端刷新找回任务。该节明确是待实施设计；新增任务存储、路由、迁移、Worker 接线和实际恢复尚未完成。模板只参与生成，执行仍按项目选取→初排→补全→最终冻结；上传、版本保存和比较独立于 Git，Git 只是可选只读来源。
+
+实际重新执行（Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_artifact_storage_service.py -q --tb=short
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning.py tests/test_case_plan_run_creation.py -q --tb=short -rs -k 'not actual_model'
+```
+
+结果为 **25 通过，1.12 秒**；**28 通过、15 跳过、2 未选择，3.92 秒**。真实存储开关未启用导致 15 个专项跳过，2 个模型相关项未选择；不计为本次真实存储或模型验收。浏览器、独立 Redis Worker、生产 lifespan、外部模型及新文档版本链本次未重验，因为本轮范围是方案更新，没有修改产品代码。文档链接、diff 和镜像一致性实际检查；只提交两份项目文档，用户 `.gitignore` 保持未暂存。完整升级目标仍未完成，下一步按 §2.6 实施持久规划，其他 P0—P5 范围继续保留。
