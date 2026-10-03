@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="12.114" timestamp="2026-10-04T06:03:17.524990+08:00" hostname="EIghteen"><testcase classname="tests.test_task_pool_browser" name="test_browser_pool_pages_progress_failure_and_exact_historical_plan" time="8.542"><failure message="AssertionError: Locator expected to contain text '已排队'&#10;Actual value: None&#10;Error: element(s) not found &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;[data-task-id=\&quot;8df57afa-8576-4957-b54b-e3e20736c0d3\&quot;]&quot;)&#10;&#10;Aria snapshot:&#10;- heading &quot;任务池&quot; [level=2]&#10;- paragraph: 查看后台会话、代码审批与项目用例规划任务。规划完成表示执行依据已保存，测试结果以运行记录为准。&#10;- searchbox &quot;按编号、项目、标题、模式搜索...&quot;&#10;- button &quot;刷新&quot;&#10;- button &quot;全部&quot;&#10;- button &quot;运行中&quot;&#10;- button &quot;已完成&quot;&#10;- button &quot;失败&quot;&#10;- combobox &quot;任务类型&quot;:&#10;  - option &quot;全部类型&quot; [selected]&#10;  - option &quot;后台 / 代码审批会话&quot;&#10;  - option &quot;用例规划&quot;&#10;- text: 第 2 页&#10;- table:&#10;  - rowgroup:&#10;    - row &quot;编号 标题 任务类型 Agent / 模式 状态 执行统计 操作&quot;:&#10;      - columnheader &quot;编号&quot;&#10;      - columnheader &quot;标题&quot;&#10;      - columnheader &quot;任务类型&quot;&#10;      - columnheader &quot;Agent / 模式&quot;&#10;      - columnheader &quot;状态&quot;&#10;      - columnheader &quot;执行统计&quot;&#10;      - columnheader &quot;操作&quot;&#10;  - rowgroup:&#10;    - row &quot;browser- 代码检查 browser-review-02 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页&quot;:&#10;      - cell &quot;browser-&quot;&#10;      - cell &quot;代码检查 browser-review-02 任务池浏览器项目 · 2026/10/4 06:03:21&quot;&#10;      - cell &quot;父会话&quot;&#10;      - cell &quot;review-agent 代码审批&quot;&#10;      - cell &quot;已完成&quot;&#10;      - cell &quot;已完成 1 / 运行中 0 / 失败 0 1 条派发记录&quot;&#10;      - cell &quot;打开报告页&quot;:&#10;        - button &quot;打开报告页&quot;&#10;    - row &quot;browser- 代码检查 browser-review-01 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页&quot;:&#10;      - cell &quot;browser-&quot;&#10;      - cell &quot;代码检查 browser-review-01 任务池浏览器项目 · 2026/10/4 06:03:21&quot;&#10;      - cell &quot;父会话&quot;&#10;      - cell &quot;review-agent 代码审批&quot;&#10;      - cell &quot;已完成&quot;&#10;      - cell &quot;已完成 1 / 运行中 0 / 失败 0 1 条派发记录&quot;&#10;      - cell &quot;打开报告页&quot;:&#10;        - button &quot;打开报告页&quot;&#10;    - row &quot;browser- 代码检查 browser-review-00 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页&quot;:&#10;      - cell &quot;browser-&quot;&#10;      - cell &quot;代码检查 browser-review-00 任务池浏览器项目 · 2026/10/4 06:03:21&quot;&#10;      - cell &quot;父会话&quot;&#10;      - cell &quot;review-agent 代码审批&quot;&#10;      - cell &quot;已完成&quot;&#10;      - cell &quot;已完成 1 / 运行中 0 / 失败 0 1 条派发记录&quot;&#10;      - cell &quot;打开报告页&quot;:&#10;        - button &quot;打开报告页&quot;&#10;- navigation &quot;任务分页&quot;:&#10;  - button &quot;上一页&quot;&#10;  - button &quot;下一页&quot; [disabled]">tests\test_task_pool_browser.py:125: in test_browser_pool_pages_progress_failure_and_exact_historical_plan
+    await expect(page.locator(f'[data-task-id="{chosen.id}"]')).to_contain_text('已排队')
+E   AssertionError: Locator expected to contain text '已排队'
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("[data-task-id=\"8df57afa-8576-4957-b54b-e3e20736c0d3\"]")
+E   
+E   Aria snapshot:
+E   - heading "任务池" [level=2]
+E   - paragraph: 查看后台会话、代码审批与项目用例规划任务。规划完成表示执行依据已保存，测试结果以运行记录为准。
+E   - searchbox "按编号、项目、标题、模式搜索..."
+E   - button "刷新"
+E   - button "全部"
+E   - button "运行中"
+E   - button "已完成"
+E   - button "失败"
+E   - combobox "任务类型":
+E     - option "全部类型" [selected]
+E     - option "后台 / 代码审批会话"
+E     - option "用例规划"
+E   - text: 第 2 页
+E   - table:
+E     - rowgroup:
+E       - row "编号 标题 任务类型 Agent / 模式 状态 执行统计 操作":
+E         - columnheader "编号"
+E         - columnheader "标题"
+E         - columnheader "任务类型"
+E         - columnheader "Agent / 模式"
+E         - columnheader "状态"
+E         - columnheader "执行统计"
+E         - columnheader "操作"
+E     - rowgroup:
+E       - row "browser- 代码检查 browser-review-02 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页":
+E         - cell "browser-"
+E         - cell "代码检查 browser-review-02 任务池浏览器项目 · 2026/10/4 06:03:21"
+E         - cell "父会话"
+E         - cell "review-agent 代码审批"
+E         - cell "已完成"
+E         - cell "已完成 1 / 运行中 0 / 失败 0 1 条派发记录"
+E         - cell "打开报告页":
+E           - button "打开报告页"
+E       - row "browser- 代码检查 browser-review-01 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页":
+E         - cell "browser-"
+E         - cell "代码检查 browser-review-01 任务池浏览器项目 · 2026/10/4 06:03:21"
+E         - cell "父会话"
+E         - cell "review-agent 代码审批"
+E         - cell "已完成"
+E         - cell "已完成 1 / 运行中 0 / 失败 0 1 条派发记录"
+E         - cell "打开报告页":
+E           - button "打开报告页"
+E       - row "browser- 代码检查 browser-review-00 任务池浏览器项目 · 2026/10/4 06:03:21 父会话 review-agent 代码审批 已完成 已完成 1 / 运行中 0 / 失败 0 1 条派发记录 打开报告页":
+E         - cell "browser-"
+E         - cell "代码检查 browser-review-00 任务池浏览器项目 · 2026/10/4 06:03:21"
+E         - cell "父会话"
+E         - cell "review-agent 代码审批"
+E         - cell "已完成"
+E         - cell "已完成 1 / 运行中 0 / 失败 0 1 条派发记录"
+E         - cell "打开报告页":
+E           - button "打开报告页"
+E   - navigation "任务分页":
+E     - button "上一页"
+E     - button "下一页" [disabled]</failure></testcase></testsuite></testsuites>

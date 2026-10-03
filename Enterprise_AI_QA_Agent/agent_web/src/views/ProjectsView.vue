@@ -106,6 +106,7 @@ const generationOpen = ref(false);
 const templateEditorOpen = ref(false);
 const caseImportOpen = ref(false);
 const casePlanOpen = ref(false);
+const casePlanTaskId = ref("");
 const contentCase = ref<TestCaseRecord | null>(null);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
@@ -864,6 +865,13 @@ watch(routeProjectId, async (projectId) => {
   resetProjectResources();
   await loadProjectDetail();
 });
+
+watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) => {
+  if (isDetailRoute.value && projectId === routeProjectId.value && projectId && typeof taskId === "string" && taskId) {
+    casePlanTaskId.value = taskId;
+    casePlanOpen.value = true;
+  }
+}, { immediate: true, flush: "post" });
 </script>
 
 <template>
@@ -990,7 +998,7 @@ watch(routeProjectId, async (projectId) => {
             <div class="case-toolbar">
               <button :disabled="selected?.status !== 'active'" @click="templateEditorOpen = true">用例生成模板</button>
               <button :disabled="selected?.status !== 'active'" @click="caseImportOpen = true">导入 Excel / JSON</button>
-              <button :disabled="selected?.status !== 'active'" @click="casePlanOpen = true">用例执行规划</button>
+              <button :disabled="selected?.status !== 'active'" @click="casePlanTaskId = ''; casePlanOpen = true">用例执行规划</button>
               <input v-model="caseQuery" placeholder="搜索用例标识或标题" @keyup.enter="searchCases">
               <select v-model="caseStatus" @change="searchCases">
                 <option value="">全部状态</option>
@@ -1214,7 +1222,7 @@ watch(routeProjectId, async (projectId) => {
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
     <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
-    <CasePlanDialog v-if="casePlanOpen" :key="selectedId" :project-id="selectedId" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
+    <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
 
     <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">

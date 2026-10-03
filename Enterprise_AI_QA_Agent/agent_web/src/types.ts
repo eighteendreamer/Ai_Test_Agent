@@ -832,6 +832,24 @@ export interface TaskPoolPage {
   has_more: boolean;
 }
 
+export type TaskPoolKind = "all" | "session" | "case_planning";
+export type TaskPoolState = "all" | "active" | "completed" | "failed";
+export type TaskPoolEntry =
+  | { kind: "session"; project_name: string | null; session: TaskPoolSessionSummary }
+  | { kind: "case_planning"; project_name: string | null; task: CasePlanningTaskRecord };
+export interface TaskPoolEntriesPage {
+  items: TaskPoolEntry[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+export interface TaskPoolFilters {
+  kind?: TaskPoolKind;
+  state?: TaskPoolState;
+  query?: string;
+  project_id?: string;
+}
+
 export interface SessionDetail {
   id: string;
   title: string;

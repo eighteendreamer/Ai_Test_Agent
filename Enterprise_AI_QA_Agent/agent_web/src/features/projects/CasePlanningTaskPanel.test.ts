@@ -20,6 +20,32 @@ describe("durable project planning UI", () => {
   });
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+  it("opens the explicitly selected historical task instead of the project's latest request", async () => {
+    window.sessionStorage.setItem("case-planning-task:project", JSON.stringify({ creationKey: "latest-request", taskId: "latest-task" }));
+    api.getCasePlanningTask.mockResolvedValue(task("completed", { id: "historical-task", creation_key: "historical-request" }));
+    const w = mount(CasePlanningTaskPanel, { props: { projectId: "project", initialTaskId: "historical-task",
+      objective: "", runtimeJson: "{}", candidateCaseIds: [], disabled: false } });
+    await flushPromises();
+    expect(api.getCasePlanningTask).toHaveBeenCalledWith("project", "historical-task");
+    expect(api.getCasePlanningTaskByRequest).not.toHaveBeenCalled();
+    expect(w.emitted("completed")?.[0][0]).toEqual({ id: "plan", project_id: "project" });
+    expect(api.submitCasePlanningTask).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("shows a failed explicit lookup and retries the same identity without falling back", async () => {
+    api.getCasePlanningTask.mockRejectedValueOnce(new HttpError("task query unavailable", 503));
+    const w = mount(CasePlanningTaskPanel, { props: { projectId: "project", initialTaskId: "historical-task",
+      objective: "", runtimeJson: "{}", candidateCaseIds: [], disabled: false } });
+    await flushPromises(); expect(w.text()).toContain("task query unavailable");
+    api.getCasePlanningTask.mockResolvedValue(task("completed", { id: "different-task" }));
+    await button(w, "查询规划任务").trigger("click"); await flushPromises();
+    expect(api.getCasePlanningTask.mock.calls.map(call => call[1])).toEqual(["historical-task", "historical-task"]);
+    expect(w.text()).toContain("规划任务身份不一致"); expect(w.emitted("completed")).toBeUndefined();
+    expect(api.getCasePlan).not.toHaveBeenCalled(); expect(api.getCasePlanningTaskByRequest).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
   it("keeps unknown submissions in memory, persists only identity and recovers after reopen", async () => {
     api.submitCasePlanningTask.mockRejectedValueOnce(new Error("response lost"));
     const w = setup(); await button(w, "生成执行计划").trigger("click"); await flushPromises();

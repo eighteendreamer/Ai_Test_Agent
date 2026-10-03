@@ -50,6 +50,7 @@ from src.application.skills.skill_management_service import SkillManagementServi
 from src.application.skills.skill_marketplace_service import SkillMarketplaceService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.task_pool_service import TaskPoolService
+from src.runtime.postgres_task_pool_store import PostgresTaskPoolStore
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_cases.template_service import TestCaseTemplateService
 from src.application.test_cases.import_service import CaseImportService
@@ -150,7 +151,8 @@ class AppContainer(containers.DeclarativeContainer):
         ),
     )
     project_service = providers.Singleton(ProjectService, store=project_store)
-    task_pool_service = providers.Singleton(TaskPoolService, store=session_store)
+    task_pool_entries_store = providers.Singleton(PostgresTaskPoolStore, settings=settings)
+    task_pool_service = providers.Singleton(TaskPoolService, store=session_store, entries_store=task_pool_entries_store)
     permission_service = providers.Singleton(PermissionService)
     transcript_hygiene_service = providers.Singleton(TranscriptHygieneService)
     prompt_assembly_service = providers.Singleton(

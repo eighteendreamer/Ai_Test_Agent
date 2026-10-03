@@ -4,7 +4,7 @@ import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanRecord, CasePlanningTaskRecord, CasePlanningTaskRequest } from "../../types";
 
-const props = defineProps<{ projectId: string; objective: string; runtimeJson: string; candidateCaseIds: string[]; disabled: boolean }>();
+const props = defineProps<{ projectId: string; objective: string; runtimeJson: string; candidateCaseIds: string[]; disabled: boolean; initialTaskId?: string }>();
 const emit = defineEmits<{ completed: [plan: CasePlanRecord] }>();
 const task = ref<CasePlanningTaskRecord | null>(null);
 const recent = ref<CasePlanningTaskRecord[]>([]);
@@ -41,12 +41,16 @@ async function accept(value: CasePlanningTaskRecord) {
   if (!disposed) timer = setTimeout(() => { void refresh(); }, 1000);
 }
 async function refresh() {
-  if (!creationKey.value || busy.value || disposed) return;
+  if ((!creationKey.value && !props.initialTaskId) || busy.value || disposed) return;
   if (timer) clearTimeout(timer);
   busy.value = true; error.value = "";
   try {
     const value = task.value ? await api.getCasePlanningTask(props.projectId, task.value.id)
-      : await api.getCasePlanningTaskByRequest(props.projectId, creationKey.value);
+      : creationKey.value ? await api.getCasePlanningTaskByRequest(props.projectId, creationKey.value)
+        : await api.getCasePlanningTask(props.projectId, props.initialTaskId!);
+    if (task.value && value.id !== task.value.id) throw new Error("规划任务身份不一致");
+    if (!task.value && !creationKey.value && value.id !== props.initialTaskId) throw new Error("规划任务身份不一致");
+    if (!task.value && creationKey.value && value.creation_key !== creationKey.value) throw new Error("规划请求身份不一致");
     if (!disposed) await accept(value);
   } catch (err) { if (!disposed) showError(err); }
   finally { busy.value = false; }
@@ -95,6 +99,16 @@ async function selectRecent(value: CasePlanningTaskRecord) {
   finally { busy.value = false; }
 }
 onMounted(async () => {
+  if (props.initialTaskId) {
+    busy.value = true;
+    try {
+      const value = await api.getCasePlanningTask(props.projectId, props.initialTaskId);
+      if (value.id !== props.initialTaskId) throw new Error("规划任务身份不一致");
+      if (!disposed) await accept(value);
+    } catch (err) { if (!disposed) showError(err); }
+    finally { busy.value = false; }
+    return;
+  }
   try {
     const raw = window.sessionStorage.getItem(storageKey());
     if (raw) {
@@ -118,7 +132,7 @@ onUnmounted(() => { disposed = true; if (timer) clearTimeout(timer); });
     <button :disabled="busy || disabled || !objective.trim() || (!!task && ['queued', 'running'].includes(task.status))" @click="submit">
       {{ busy ? '处理中…' : creationKey && !task ? '重试规划提交' : task ? '另建规划任务' : '生成执行计划' }}
     </button>
-    <button v-if="creationKey" :disabled="busy" @click="refresh">查询规划任务</button>
+    <button v-if="creationKey || initialTaskId" :disabled="busy" @click="refresh">查询规划任务</button>
     <button :disabled="busy" @click="loadRecent">项目规划任务</button>
     <ul v-if="recent.length"><li v-for="entry in recent" :key="entry.id"><button :disabled="busy" @click="selectRecent(entry)">{{ labels[entry.status] }} · {{ entry.id }}</button></li></ul>
   </section>

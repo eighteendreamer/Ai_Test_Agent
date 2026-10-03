@@ -887,3 +887,50 @@ CLI 连接并初始化真实向量 store，读取真实录制目录；本专项�
 ```
 
 实际结果 **35 passed, 4 skipped in 9.22s**。4 个执行上下文项因真实隔离存储或当前实际模型开关未启用跳过；通过项只作为现有接口与启动边界的回归证据。本次未修改产品代码、安装依赖、迁移数据库或重新运行浏览器、真实 Worker 进程及外部模型验收。文档本地链接、关键约定、diff 和镜像一致性另做检查。本次提交仅包含 PLAN 与本记录；用户 .gitignore 保持未暂存，不推送、不建 PR。
+
+### 通用任务池混合查询、状态与指定计划打开（2026-10-04）
+
+上一轮 `333b7ce` 更新了完整方案，属于进展。按用户完整实施目标继续：重新读取指定输入，核对 Session/规划任务的存储与公开契约、任务池服务/页面、AppContainer/生产初始化、规划弹窗/项目路由及相关测试，读取本地课程《Agent轨迹与协议鲁棒性》《评测工程化与CICD》。确认问题是任务池查询只覆盖 Session，页面仅取前 24 项本地筛选，弹窗默认恢复最近请求；不能用伪造会话、前端合并两份首屏或导航时修改最近任务记录解决。
+
+先将调研结果和设计加入 PLAN §2.6，再用真实 MySQL/PG/RustFS 创建项目规划任务。任务池混合入口返回 404，复现文件为 `p2-task-pool-before.xml`。随后实现：
+
+- `schemas/task_pool.py` 增加带判别类型的 session/case_planning 条目及分页契约；原 `TaskPoolPage` 不变。
+- `runtime/postgres_task_pool_store.py` 提供独立只读投影：一次 PG 查询合并既有表，在分页前筛选项目、类型、状态和文字，以更新时间/类型/身份排序。分页后只读取必要公开字段，沿用既有会话摘要映射；不会加载/返回整个规划检查点、输入、响应或租约。
+- `TaskPoolService`、路由和 AppContainer 同步注入新增读取服务；`GET /task-pool/entries` 验证参数、返回独立类型并在查询失败时返回 503。旧 `GET /task-pool` 保留；无新业务表、可编辑配置、依赖或迁移。
+- `TaskPoolView`、类型、HTTP 客户端及中英文消息同步。支持服务端筛选、前后页、可见页每 5 秒刷新、阶段/回合/失败原因和错误展示；筛选切换不让旧响应覆盖新页，离开页面停止刷新。规划完成仅代表规划终态。
+- `ProjectsView` 将任务池导航的 `planning_task_id` 传给实际规划弹窗；弹窗/任务面板增加 `initialTaskId`。指定任务优先查询，核对项目/任务/结果计划；失败可重查原身份，不回退成最近任务。原有提交、刷新恢复和运行启动保持原契约。
+
+验证使用实际 Markdown 原件、启用的完整 JSON 用例、两个项目和真实任务/会话。源文件下载后核对字节；超过 24 项混合分页和过滤不能遗漏任务；负向条件保留，任务状态由实际 Handler 运行改变；同时间排序稳定，归档历史可查，私有输入未返回，旧会话字段和派发信息保持。
+
+| 验证 | 实际结果 | 证据及范围 |
+|---|---|---|
+| 原始缺口 | 1 失败 | `p2-task-pool-before.xml`，真实已提交任务没有混合查询入口 |
+| 初次存储联调 | 2 通过、1 失败 | `p2-task-pool-storage.xml`，夹具用本机时间推断 PG 顺序；后续浏览器又确认 `save_session` 会重写时间。改用现有事务插入保留数据库参考时间，不修改产品时间行为 |
+| 存储阶段验证 | 3 通过，4.01 秒 | `p2-task-pool-storage-final.xml`；后续增加同时间排序并纠正夹具的结果纳入最终回归 |
+| 受影响回归初跑 | 48 通过、33 跳过，10.22 秒 | `p2-task-pool-regression.xml`；33 项真实 PG 相关跳过随后启用开关补验 |
+| 最终真实存储及受影响回归 | 94 通过，44.33 秒 | `p2-task-pool-live-regression.xml`；含会话读写/UTC 契约、混合投影、Worker 启动、规划任务及独立 CLI 恢复，实际使用隔离表。CLI/进程宿主重新产生的 JSON 单独保存为 `p2-task-pool-worker-cli-regression.json`、`p2-task-pool-worker-host-regression.json`，旧阶段 CLI 证据已恢复，未覆盖历史结果 |
+| Chromium 初跑 | 1 失败 | `p2-task-pool-browser.xml`，夹具保存方法重写时间，导致目标不在预期第二页；原失败保留 |
+| Chromium 最终 | 1 通过，11.57 秒 | `p2-task-pool-browser-final.xml/json/png`；实际 TaskPoolView → ProjectsView → 指定历史任务及固定计划，页码/筛选/完成轮询/失败展示/尾部用例与文档依据可核对，无新增 POST、无页面 JS 错误 |
+| 前端 | 5 文件、18 通过；typecheck 与 build 通过，Vite 6.74 秒 | 筛选分页、竞态、刷新停止、错误展示、精确身份和 HTTP 编码/旧接口。首次测试夹具未注册 locale，2 项失败；注册实际中文消息后通过，未改产品 i18n 机制 |
+
+主要实际命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_TASK_POOL='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_task_pool_entries.py tests/test_task_pool_service.py tests/test_session_store_limits.py tests/test_session_store_value_contract.py tests/test_planning_worker_runtime.py tests/test_project_regression_frontend_contract.py tests/test_case_planning_tasks.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p2-task-pool-live-regression.xml
+$env:RUN_LIVE_TASK_POOL_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_task_pool_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-task-pool-browser-final.xml
+```
+
+前端（agent_web）：
+
+```powershell
+npm run test -- src/views/TaskPoolView.test.ts src/services/sessions.task-pool.api.test.ts src/features/projects/CasePlanningTaskPanel.test.ts src/features/projects/CasePlanDialog.test.ts src/services/projects.planning-tasks.api.test.ts
+npm run build
+```
+
+浏览器加载实际生产组件和路由函数，API 为隔离 providers 的宿主，模型决定受控；资源监控明确返回不可用，未伪造统计。因此本轮证明任务池/指定规划读取可用，不宣称完整生产 lifespan、完整项目资源页面、外部模型或完整 Agent 执行全部通过。截图中资源不可用正是此边界。用户 .gitignore 未暂存；必要新测试按现有规则 force-add，原始失败证据保留。方案及 Codex 镜像同步；本轮按项目规范只提交相关实现/测试/证据/文档，不推送、不建 PR。剩余失败回归异步迁移、默认模型空回执、完整生产执行 Worker、步骤级恢复/未知副作用、模块生成、P0 录制/Docker、P3—P5 和业务数据迁移继续保持在完整目标中。
+
+7 个相关 Python 源文件/测试 py_compile 通过，实际 JUnit 成功计数与失败/跳过标记核对通过。源码和文档执行 `git diff --cached --check`；原始失败 XML 内有 pytest 输出的行尾空格，保留原字节，不把机器证据空白当作产品代码问题或为通过检查改写失败输出。XML 另以标准库完整解析检查。密钥模式、暂存范围及 Codex 镜像一致性已核对。

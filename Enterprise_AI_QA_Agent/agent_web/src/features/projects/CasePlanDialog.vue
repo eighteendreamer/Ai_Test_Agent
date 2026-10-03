@@ -6,7 +6,7 @@ import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConf
 import JsonContentTree from "./JsonContentTree.vue";
 import CasePlanningTaskPanel from "./CasePlanningTaskPanel.vue";
 
-const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[] }>(), { modes: () => [] });
+const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[]; initialTaskId?: string }>(), { modes: () => [] });
 const emit = defineEmits<{ close: []; started: [detail: TestRunDetail] }>();
 const objective = ref("");
 const runtimeJson = ref("{}");
@@ -148,7 +148,7 @@ onMounted(loadPolicy);
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
       <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"
-        :candidate-case-ids="candidateCaseIds" :disabled="busy || !config" @completed="selectPlan" />
+        :candidate-case-ids="candidateCaseIds" :initial-task-id="initialTaskId" :disabled="busy || !config" @completed="selectPlan" />
       <label>已保存的计划编号<input v-model="savedId" :disabled="busy" placeholder="输入当前项目的计划编号"></label>
       <button :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</button>
       <template v-if="plan">

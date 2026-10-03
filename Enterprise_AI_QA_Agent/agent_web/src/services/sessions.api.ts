@@ -14,6 +14,8 @@ import type {
   ToolArtifactRecord,
   ReportListPage,
   TaskPoolPage,
+  TaskPoolEntriesPage,
+  TaskPoolFilters,
   SessionVerificationResponse,
 } from "../types";
 import { request } from "./http";
@@ -50,6 +52,14 @@ export function listReportsPage(limit = 10, offset = 0): Promise<ReportListPage>
 export function listTaskPoolPage(limit = 24, offset = 0): Promise<TaskPoolPage> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return request(`/api/v1/task-pool?${params.toString()}`);
+}
+
+export function listTaskPoolEntries(limit = 24, offset = 0, filters: TaskPoolFilters = {}): Promise<TaskPoolEntriesPage> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  return request(`/api/v1/task-pool/entries?${params.toString()}`);
 }
 
 export function getSession(sessionId: string): Promise<SessionDetail> {

@@ -1,255 +1,135 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-
 import { api } from "../services/api";
 import { t } from "../services/i18n";
-import type { TaskPoolSessionSummary, WorkerDispatchRecord } from "../types";
+import type { TaskPoolEntry, TaskPoolKind, TaskPoolState } from "../types";
 import { formatServerDateTime } from "../utils/datetime";
 
-type TaskTab = "all" | "running" | "completed" | "failed";
-
-interface TaskRow {
-  session: TaskPoolSessionSummary;
-  workerDispatches: WorkerDispatchRecord[];
-  isBackgroundChild: boolean;
-  parentSessionId: string;
-}
-
 const router = useRouter();
-
 const loading = ref(false);
 const error = ref("");
-const activeTab = ref<TaskTab>("all");
+const activeTab = ref<TaskPoolState>("all");
+const kind = ref<TaskPoolKind>("all");
 const search = ref("");
-const rows = ref<TaskRow[]>([]);
-
-const filteredRows = computed(() => {
-  const query = search.value.trim().toLowerCase();
-  return rows.value.filter((row) => {
-    if (activeTab.value === "running" && !["running", "waiting_approval"].includes(row.session.status)) {
-      return false;
-    }
-    if (activeTab.value === "completed" && row.session.status !== "completed") {
-      return false;
-    }
-    if (activeTab.value === "failed" && row.session.status !== "failed") {
-      return false;
-    }
-    if (!query) {
-      return true;
-    }
-    return [
-      row.session.id,
-      row.session.title,
-      row.session.mode_key,
-      row.session.selected_agent || "",
-      row.parentSessionId,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(query);
-  });
-});
-
-const tabs = computed(() => {
-  const all = rows.value.length;
-  const running = rows.value.filter((row) =>
-    ["running", "waiting_approval"].includes(row.session.status),
-  ).length;
-  const completed = rows.value.filter((row) => row.session.status === "completed").length;
-  const failed = rows.value.filter((row) => row.session.status === "failed").length;
-  return [
-    { id: "all" as TaskTab, label: `${t("taskpool.tab_all")}（${all}）` },
-    { id: "running" as TaskTab, label: `${t("taskpool.tab_running")}（${running}）` },
-    { id: "completed" as TaskTab, label: `${t("taskpool.tab_completed")}（${completed}）` },
-    { id: "failed" as TaskTab, label: `${t("taskpool.tab_failed")}（${failed}）` },
-  ];
-});
-
-function statusLabel(status: string): string {
-  if (status === "waiting_approval") return t("taskpool.status_waiting_approval");
-  if (status === "completed") return t("taskpool.status_completed");
-  if (status === "failed") return t("taskpool.status_failed");
-  if (status === "running") return t("taskpool.status_running");
-  if (status === "interrupted") return t("taskpool.status_interrupted");
-  return t("taskpool.status_idle");
+const query = ref("");
+const rows = ref<TaskPoolEntry[]>([]);
+const offset = ref(0);
+const hasMore = ref(false);
+const pageSize = 24;
+let generation = 0;
+let disposed = false;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let polling: ReturnType<typeof setInterval> | undefined;
+const tabs = computed(() => [
+  { id: "all" as TaskPoolState, label: t("taskpool.tab_all") },
+  { id: "active" as TaskPoolState, label: t("taskpool.tab_running") },
+  { id: "completed" as TaskPoolState, label: t("taskpool.tab_completed") },
+  { id: "failed" as TaskPoolState, label: t("taskpool.tab_failed") },
+]);
+function data(row: TaskPoolEntry) { return row.kind === "session" ? row.session : row.task; }
+function title(row: TaskPoolEntry) { return row.kind === "session" ? row.session.title : t("taskpool.kind_planning"); }
+function parent(row: TaskPoolEntry) { return row.kind === "session" ? row.session.parent_session_id : ""; }
+function active(row: TaskPoolEntry) { return ["queued", "running", "waiting_approval"].includes(data(row).status); }
+function statusLabel(row: TaskPoolEntry): string {
+  const status = data(row).status;
+  if (row.kind === "case_planning" && status === "completed") return t("taskpool.status_planned");
+  const keys: Record<string, string> = { queued: "queued", waiting_approval: "waiting_approval", completed: "completed",
+    failed: "failed", running: "running", interrupted: "interrupted", idle: "idle" };
+  return t(`taskpool.status_${keys[status] || "idle"}`);
 }
-
-function modeLabel(row: TaskRow): string {
-  if (row.session.mode_key === "code_review") {
-    return t("taskpool.mode_code_review");
+function taskKind(row: TaskPoolEntry): string {
+  if (row.kind === "case_planning") return t("taskpool.kind_planning");
+  return t(row.session.session_mode === "background_task" ? "taskpool.kind_child" : "taskpool.kind_parent");
+}
+function modeLabel(row: TaskPoolEntry): string {
+  if (row.kind === "case_planning") {
+    const phases = ["retrieval", "ready", "invoking", "response", "query", "finished"];
+    return phases.includes(row.task.phase) ? t(`taskpool.phase_${row.task.phase}`) : row.task.phase;
   }
-  if (row.isBackgroundChild) {
-    return t("taskpool.mode_background_child");
-  }
-  return String(row.session.mode_key || t("mode.default"));
+  if (row.session.mode_key === "code_review") return t("taskpool.mode_code_review");
+  if (row.session.session_mode === "background_task") return t("taskpool.mode_background_child");
+  return row.session.mode_key;
 }
-
-function taskKind(row: TaskRow): string {
-  return row.isBackgroundChild ? t("taskpool.kind_child") : t("taskpool.kind_parent");
-}
-
-function formatDateTime(value: string): string {
-  return formatServerDateTime(value, value);
-}
-
-function workerStats(row: TaskRow): string {
-  if (!row.workerDispatches.length) {
-    return row.isBackgroundChild ? t("taskpool.no_subtask_records") : t("taskpool.no_dispatch_records");
-  }
-  const running = row.workerDispatches.filter((item) =>
-    ["running", "waiting_approval"].includes(String(item.status || "").trim()),
-  ).length;
-  const failed = row.workerDispatches.filter((item) => String(item.status || "").trim() === "failed").length;
-  const completed = row.workerDispatches.length - running - failed;
+function workerStats(row: TaskPoolEntry): string {
+  if (row.kind === "case_planning") return `${t("taskpool.round_count")} ${row.task.round_count}`;
+  const workers = row.session.worker_dispatches;
+  if (!workers.length) return t("taskpool.no_dispatch_records");
+  const running = workers.filter(item => ["running", "waiting_approval"].includes(String(item.status))).length;
+  const failed = workers.filter(item => item.status === "failed").length;
+  const completed = workers.filter(item => item.status === "completed").length;
   return `${t("taskpool.status_completed")} ${completed} / ${t("taskpool.status_running")} ${running} / ${t("taskpool.status_failed")} ${failed}`;
 }
-
-function openReport(row: TaskRow) {
-  void router.push("/reports");
+function openTask(row: TaskPoolEntry) {
+  if (row.kind === "case_planning") {
+    void router.push({ name: "project-detail", params: { projectId: row.task.project_id }, query: { planning_task_id: row.task.id } });
+  } else {
+    void router.push("/reports");
+  }
 }
-
 async function loadTasks() {
+  const request = ++generation;
   loading.value = true;
   error.value = "";
   try {
-    const page = await api.listTaskPoolPage(24, 0);
-    rows.value = page.items.map((session) => ({
-      session,
-      workerDispatches: session.worker_dispatches,
-      isBackgroundChild: session.session_mode === "background_task",
-      parentSessionId: session.parent_session_id,
-    }));
-  } catch (loadError) {
-    error.value = loadError instanceof Error ? loadError.message : t("taskpool.load_failed");
+    const page = await api.listTaskPoolEntries(pageSize, offset.value, { kind: kind.value, state: activeTab.value, query: query.value });
+    if (disposed || request !== generation) return;
+    rows.value = page.items;
+    hasMore.value = page.has_more;
+  } catch (err) {
+    if (!disposed && request === generation) error.value = err instanceof Error ? err.message : t("taskpool.load_failed");
   } finally {
-    loading.value = false;
+    if (!disposed && request === generation) loading.value = false;
   }
 }
-
+watch(search, value => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { query.value = value.trim(); }, 250);
+});
+watch([kind, activeTab, query], () => { offset.value = 0; void loadTasks(); });
+function changePage(direction: number) { offset.value = Math.max(0, offset.value + direction * pageSize); void loadTasks(); }
 onMounted(() => {
   void loadTasks();
+  polling = setInterval(() => { if (!loading.value && document.visibilityState !== "hidden") void loadTasks(); }, 5000);
 });
+onUnmounted(() => { disposed = true; generation++; if (searchTimer) clearTimeout(searchTimer); if (polling) clearInterval(polling); });
 </script>
 
 <template>
   <section class="view-page task-page">
     <header class="page-head">
-      <div class="head-content">
-        <h2>{{ t("taskpool.title") }}</h2>
-        <p class="head-desc">
-          {{ t("taskpool.page_desc") }}
-        </p>
-      </div>
+      <div class="head-content"><h2>{{ t("taskpool.title") }}</h2><p class="head-desc">{{ t("taskpool.page_desc") }}</p></div>
       <div class="head-actions">
-        <div class="search-box">
-          <i class="fa-solid fa-search"></i>
-          <input v-model="search" type="text" :placeholder="t('taskpool.search_placeholder')" />
-        </div>
-        <button class="primary-btn" :disabled="loading" @click="loadTasks">
-          <i class="fa-solid fa-rotate-right"></i>
-          {{ t("taskpool.refresh") }}
-        </button>
+        <div class="search-box"><i class="fa-solid fa-search"></i><input v-model="search" type="search" maxlength="500" :aria-label="t('taskpool.search_placeholder')" :placeholder="t('taskpool.search_placeholder')" /></div>
+        <button class="primary-btn" :disabled="loading" @click="loadTasks"><i class="fa-solid fa-rotate-right"></i>{{ t("taskpool.refresh") }}</button>
       </div>
     </header>
-
-    <div v-if="error" class="empty-state error-state">
-      <strong>{{ t("taskpool.load_error_title") }}</strong>
-      <p>{{ error }}</p>
-    </div>
-
-    <div v-else class="task-layout">
+    <div v-if="error" class="empty-state error-state" role="alert"><strong>{{ t("taskpool.load_error_title") }}</strong><p>{{ error }}</p></div>
+    <div class="task-layout" :aria-busy="loading">
       <div class="task-toolbar">
-        <div class="task-tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            class="tab-btn"
-            :class="{ active: activeTab === tab.id }"
-            @click="activeTab = tab.id"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-
+        <div class="task-tabs"><button v-for="tab in tabs" :key="tab.id" class="tab-btn" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button></div>
         <div class="task-filters">
-          <span class="filter-pill">{{ t("taskpool.recent_sessions", { count: String(rows.length) }) }}</span>
-          <span class="filter-pill">{{ t("taskpool.filter_modes") }}</span>
+          <select v-model="kind" :aria-label="t('taskpool.col_type')"><option value="all">{{ t("taskpool.kind_all") }}</option><option value="session">{{ t("taskpool.kind_session") }}</option><option value="case_planning">{{ t("taskpool.kind_planning") }}</option></select>
+          <span class="filter-pill">{{ t("taskpool.page_number", { number: String(offset / pageSize + 1) }) }}</span>
         </div>
       </div>
-
-      <div v-if="loading && !rows.length" class="empty-state table-empty">
-        <strong>{{ t("taskpool.loading_sessions") }}</strong>
-        <p>{{ t("taskpool.loading_sessions_desc") }}</p>
-      </div>
-
-      <div v-else-if="!filteredRows.length" class="empty-state table-empty">
-        <strong>{{ t("taskpool.no_match") }}</strong>
-        <p>{{ t("taskpool.no_match_desc") }}</p>
-      </div>
-
-      <div v-else class="table-container">
+      <div v-if="loading && !rows.length" class="empty-state table-empty"><strong>{{ t("taskpool.loading_sessions") }}</strong><p>{{ t("taskpool.loading_sessions_desc") }}</p></div>
+      <div v-else-if="!rows.length && !error" class="empty-state table-empty"><strong>{{ t("taskpool.no_match") }}</strong><p>{{ t("taskpool.no_match_desc") }}</p></div>
+      <div v-else-if="!error" class="table-container">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th class="col-id">{{ t("taskpool.col_session") }}</th>
-              <th class="col-name">{{ t("taskpool.col_title") }}</th>
-              <th class="col-type">{{ t("taskpool.col_type") }}</th>
-              <th class="col-model">{{ t("taskpool.col_agent_mode") }}</th>
-              <th class="col-status">{{ t("taskpool.col_status") }}</th>
-              <th class="col-stats">{{ t("taskpool.col_stats") }}</th>
-              <th class="col-actions align-right">{{ t("taskpool.col_actions") }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in filteredRows"
-              :key="row.session.id"
-              :class="{
-                'row-active': row.session.status === 'running' || row.session.status === 'waiting_approval',
-                'row-error': row.session.status === 'failed',
-              }"
-            >
-              <td class="col-id mono strong">
-                {{ row.session.id.slice(0, 8) }}
-                <div v-if="row.parentSessionId" class="sub-meta">{{ t("taskpool.parent_session") }}={{ row.parentSessionId.slice(0, 8) }}</div>
-              </td>
-              <td class="col-name">
-                <div class="strong task-title" :title="row.session.title">{{ row.session.title }}</div>
-                <div class="sub-meta">{{ formatDateTime(row.session.updated_at) }}</div>
-              </td>
-              <td class="col-type">
-                <span class="badge badge-gray">{{ taskKind(row) }}</span>
-              </td>
-              <td class="col-model">
-                <div class="mono">{{ row.session.selected_agent || "-" }}</div>
-                <div class="sub-meta">{{ modeLabel(row) }}</div>
-              </td>
-              <td class="col-status">
-                <span class="status-indicator" :class="`status-${row.session.status}`">
-                  <span v-if="row.session.status === 'running' || row.session.status === 'waiting_approval'" class="pulse-dot"></span>
-                  <i
-                    v-else
-                    class="fa-solid"
-                    :class="row.session.status === 'completed' ? 'fa-check' : row.session.status === 'failed' ? 'fa-xmark' : 'fa-clock'"
-                  ></i>
-                  {{ statusLabel(row.session.status) }}
-                </span>
-              </td>
-              <td class="col-stats">
-                <div>{{ workerStats(row) }}</div>
-                <div class="sub-meta">{{ row.workerDispatches.length }} {{ t("taskpool.dispatch_records") }}</div>
-              </td>
-              <td class="col-actions align-right">
-                <button class="action-btn" :title="t('taskpool.open_report')" @click="openReport(row)">
-                  <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                </button>
-              </td>
-            </tr>
-          </tbody>
+          <thead><tr><th class="col-id">{{ t("taskpool.col_session") }}</th><th class="col-name">{{ t("taskpool.col_title") }}</th><th class="col-type">{{ t("taskpool.col_type") }}</th><th class="col-model">{{ t("taskpool.col_agent_mode") }}</th><th class="col-status">{{ t("taskpool.col_status") }}</th><th class="col-stats">{{ t("taskpool.col_stats") }}</th><th class="col-actions align-right">{{ t("taskpool.col_actions") }}</th></tr></thead>
+          <tbody><tr v-for="row in rows" :key="`${row.kind}:${data(row).id}`" :data-task-id="data(row).id" :class="{ 'row-active': active(row), 'row-error': data(row).status === 'failed' }">
+            <td class="col-id mono strong" :title="data(row).id">{{ data(row).id.slice(0, 8) }}<div v-if="parent(row)" class="sub-meta">{{ t("taskpool.parent_session") }}={{ parent(row).slice(0, 8) }}</div></td>
+            <td class="col-name"><div class="strong task-title" :title="title(row)">{{ title(row) }}</div><div class="sub-meta">{{ row.project_name || '-' }} · {{ formatServerDateTime(data(row).updated_at, data(row).updated_at) }}</div></td>
+            <td class="col-type"><span class="badge badge-gray">{{ taskKind(row) }}</span></td>
+            <td class="col-model"><div v-if="row.kind === 'session'" class="mono">{{ row.session.selected_agent || '-' }}</div><div class="sub-meta">{{ modeLabel(row) }}</div></td>
+            <td class="col-status"><span class="status-indicator" :class="`status-${data(row).status}`"><span v-if="active(row)" class="pulse-dot"></span>{{ statusLabel(row) }}</span></td>
+            <td class="col-stats"><div>{{ workerStats(row) }}</div><div v-if="row.kind === 'case_planning'" class="sub-meta">{{ row.task.message }}</div><div v-else class="sub-meta">{{ row.session.worker_dispatches.length }} {{ t("taskpool.dispatch_records") }}</div></td>
+            <td class="col-actions align-right"><button class="action-btn" :aria-label="row.kind === 'case_planning' ? t('taskpool.open_planning') : t('taskpool.open_report')" :title="row.kind === 'case_planning' ? t('taskpool.open_planning') : t('taskpool.open_report')" @click="openTask(row)"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
+          </tr></tbody>
         </table>
       </div>
+      <nav class="task-toolbar" :aria-label="t('taskpool.pagination')"><button :disabled="loading || offset === 0" @click="changePage(-1)">{{ t("taskpool.previous") }}</button><button :disabled="loading || !hasMore" @click="changePage(1)">{{ t("taskpool.next") }}</button></nav>
     </div>
   </section>
 </template>

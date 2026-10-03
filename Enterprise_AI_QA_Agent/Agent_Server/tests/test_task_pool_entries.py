@@ -1,0 +1,156 @@
+"""A real project planning task must remain visible beyond the first session page."""
+from __future__ import annotations
+
+import base64
+import json
+import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import httpx
+import pytest
+from fastapi import FastAPI
+
+from test_case_planning_tasks import tasks_environment, active_case, item, finish, delivery
+from src.api.routes.task_pool import router
+from src.application.task_pool_service import TaskPoolService
+from src.domain.models import SessionRecord
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.postgres_session_store import PostgresSessionStore
+from src.runtime.planning_task_handler import PlanningTaskHandler
+from src.schemas.case_planning_task import CasePlanningTaskRequest
+from src.schemas.project import ProjectCreateRequest
+from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
+
+
+@asynccontextmanager
+async def pool_environment(tmp_path):
+    async with tasks_environment(tmp_path) as env:
+        fields = ['postgres_session_table', 'postgres_message_table', 'postgres_event_table',
+                  'postgres_snapshot_table', 'postgres_approval_table']
+        tables = ['up_pool_' + uuid4().hex[:12] for _ in fields]
+        for field, table in zip(fields, tables):
+            setattr(env.settings.database, field, table)
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            for table in tables:
+                cur.execute('SELECT to_regclass(%s) AS existing', (table,))
+                assert cur.fetchone()['existing'] is None
+        env.sessions = PostgresSessionStore(env.settings)
+        await env.sessions.initialize()
+        try:
+            # Keep this fixture import lazy so the pre-implementation API failure is observable.
+            from src.runtime.postgres_task_pool_store import PostgresTaskPoolStore
+            env.pool = TaskPoolService(store=env.sessions, entries_store=PostgresTaskPoolStore(env.settings))
+            yield env
+        finally:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for table in reversed(tables):
+                    cur.execute(f'DROP TABLE "{table}"')
+
+
+async def session(env, project, key, status=SessionStatus.completed, mode='code_review', updated_at=None):
+    stamp = updated_at or datetime.now(timezone.utc)
+    record = SessionRecord(id=key, title=f'代码检查 {key}', status=status,
+        session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive,
+        mode_key=mode, project_id=project.id, created_at=stamp, updated_at=stamp,
+        selected_agent='review-agent', metadata={'worker_dispatches': [{'task_id': 'child', 'status': 'completed'}],
+                                               'private_marker': 'PRIVATE-SESSION-INPUT'})
+    # save_session intentionally restamps updates. Use the existing insert contract
+    # to seed fixed historical timestamps for deterministic mixed-page assertions.
+    with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+        assert env.sessions.create_session_in_transaction(cur, record)
+    return record
+
+
+live = pytest.mark.skipif(os.getenv('RUN_LIVE_TASK_POOL') != '1',
+    reason='requires isolated real PostgreSQL/MySQL/RustFS')
+
+
+@pytest.mark.asyncio
+@live
+async def test_unconfigured_task_pool_projection_reports_unavailable_without_resubmitting(tmp_path):
+    async with tasks_environment(tmp_path) as env:
+        project = await env.projects.create(ProjectCreateRequest(project_key='pool-repro', name='规划任务池'))
+        task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key='pool-visible', objective='核对项目用例'))
+        app = FastAPI()
+        app.state.task_pool_service = TaskPoolService(store=None)
+        app.include_router(router, prefix='/api/v1')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
+            # The pre-implementation reproduction returned 404; preserve that XML separately.
+            response = await client.get('/api/v1/task-pool/entries')
+            assert response.status_code == 503, response.text
+            assert (await env.tasks.get(project.id, task.id)).status == 'queued'
+            assert env.model.requests == []
+
+
+@pytest.mark.asyncio
+@live
+async def test_mixed_pool_pages_filters_public_projection_and_legacy_api(tmp_path):
+    async with pool_environment(tmp_path) as env:
+        project = await env.projects.create(ProjectCreateRequest(project_key='pool-one', name='中文规划项目'))
+        other = await env.projects.create(ProjectCreateRequest(project_key='pool-other', name='隔离项目'))
+        doc_content = '# 需求\n查询订单时保留未登录拒绝。\n'
+        source = tmp_path / 'pool.md'; source.write_text(doc_content, encoding='utf-8')
+        document = await env.docs.upload_document(filename=source.name, project_id=project.id,
+            content_base64=base64.b64encode(source.read_bytes()).decode())
+        assert (await env.objects.read_object_uri(document.storage_uri))['content'] == source.read_bytes()
+        case = await active_case(env, project, 'pool-case', {'objective': '未登录查询订单', 'steps': [{'action': '查询', 'expected': '拒绝'}]})
+        task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key='chosen-history',
+            objective='核对未登录查询', candidate_case_ids=[case.case.id], runtime_context={'private_marker': 'PRIVATE-PLANNING-INPUT'}))
+        foreign = await env.tasks.submit(other.id, CasePlanningTaskRequest(creation_key='foreign', objective='另一个项目'))
+        # PostgreSQL is authoritative; its clock need not equal the fixture host clock.
+        now = task.updated_at + timedelta(seconds=1)
+        for index in range(25):
+            await session(env, project, f'review-{index:02}', updated_at=now + timedelta(seconds=index))
+        await session(env, other, 'other-review', status=SessionStatus.running, updated_at=now + timedelta(seconds=30))
+        await session(env, project, 'ordinary-chat', mode='default')
+        app = FastAPI(); app.state.task_pool_service = env.pool; app.include_router(router, prefix='/api/v1')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
+            root = '/api/v1/task-pool/entries'
+            first = await client.get(root, params={'limit': 24, 'project_id': project.id})
+            first.raise_for_status(); page = first.json()
+            assert len(page['items']) == 24 and page['has_more']
+            second = (await client.get(root, params={'limit': 24, 'offset': 24, 'project_id': project.id})).json()
+            combined = page['items'] + second['items']
+            ids = [e['session']['id'] if e['kind'] == 'session' else e['task']['id'] for e in combined]
+            assert len(ids) == len(set(ids)) == 26 and task.id in ids
+            assert foreign.id not in ids and 'ordinary-chat' not in ids
+            assert ids[:2] == ['review-24', 'review-23']
+            assert not second['has_more']
+            for params in [{'kind': 'case_planning'}, {'state': 'active'}, {'query': task.id}, {'query': 'chosen-history'}]:
+                result = await client.get(root, params={**params, 'project_id': project.id})
+                result.raise_for_status()
+                assert [e['task']['id'] for e in result.json()['items']] == [task.id]
+            body = json.dumps(combined)
+            for private in ['PRIVATE-PLANNING-INPUT', 'PRIVATE-SESSION-INPUT', 'seed', 'checkpoint', 'lease_token', 'response_text']:
+                assert private not in body
+            entry = combined[-1]
+            assert entry['project_name'] == project.name and entry['task'] == task.model_dump(mode='json')
+            legacy = await client.get('/api/v1/task-pool', params={'limit': 1})
+            legacy.raise_for_status()
+            assert legacy.json()['items'][0]['id'] == 'other-review'
+            assert legacy.json()['items'][0]['worker_dispatches'][0]['task_id'] == 'child'
+            assert 'kind' not in legacy.json()['items'][0]
+            for params in [{'kind': 'invalid'}, {'state': 'invalid'}, {'project_id': 'bad'}, {'offset': -1}, {'query': 'x' * 501}]:
+                assert (await client.get(root, params=params)).status_code == 422
+            assert (await client.get(root, params={'query': "%' OR 1=1 --"})).json()['items'] == []
+            env.model.replies = [lambda context: finish(item(context, 'pool-case'))]
+            await PlanningTaskHandler(env.service, env.jobs, worker_id='pool-test')(delivery(task))
+            completed = (await client.get(root, params={'kind': 'case_planning', 'state': 'completed', 'project_id': project.id})).json()['items']
+            assert completed[0]['task']['status'] == 'completed' and completed[0]['task']['plan_id']
+            assert completed[0]['task']['round_count'] == 1
+            assert (await env.service.get(project.id, completed[0]['task']['plan_id'])).status == 'planned'
+            env.model.replies = [RuntimeError('controlled model failure')]
+            await PlanningTaskHandler(env.service, env.jobs, worker_id='pool-test')(delivery(foreign))
+            failed = (await client.get(root, params={'kind': 'case_planning', 'state': 'failed'})).json()['items']
+            assert len(failed) == 1 and failed[0]['task']['id'] == foreign.id
+            assert failed[0]['task']['message']
+            await env.projects.archive(project.id)
+            assert (await client.get(root, params={'project_id': project.id, 'kind': 'case_planning'})).json()['items'][0]['task']['id'] == task.id
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f'UPDATE {env.settings.database.postgres_session_table} SET updated_at=%s WHERE project_id=%s', (task.updated_at, project.id))
+                cur.execute(f'UPDATE {env.settings.database.postgres_case_planning_task_table} SET updated_at=%s WHERE project_id=%s', (task.updated_at, project.id))
+            tied = (await client.get(root, params={'project_id': project.id, 'limit': 100})).json()['items']
+            identities = [(e['kind'], e['session']['id'] if e['kind'] == 'session' else e['task']['id']) for e in tied]
+            assert identities == sorted(identities)
