@@ -2,11 +2,11 @@
 
 修订日期：2026-10-04。本文是用户所贴方案的持续更新版；实施和验证明细见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。方案中的目标行为与当前可用能力分开记录，不以设计结论代替验收。
 
-本文承接用户粘贴的完整方案，正文、实施顺序和验收条件统一按以下约定维护；粘贴附件保留为原始输入。所选 Codex `PLAN.md` 与本文同步。
+本文承接用户粘贴的完整方案，正文、实施顺序和验收条件统一按以下约定维护。[用户粘贴方案](C:/Users/32734/.codex/attachments/ec189608-bb79-41e6-925a-3d70ba54a017/已粘贴的文本.txt) 本次直接更新，保留其原章节结构并同步关键设计和实施状态；原始内容另存为同目录的 `已粘贴的文本.original.txt`。所选 Codex `PLAN.md` 与本文同步，详细工程设计和持续实施记录以本文为准。
 
-本次方案核对已提交基线 `333b7ce` 及本轮任务池实现。§2.6 的持久规划任务、规划 Worker 专属启动和通用任务池接入已经实现；本轮以真实存储和实际任务池/项目页验证指定任务查询，完整生产启动与项目资源功能仍待验收。上传版本管理的可行性依据见 §3.1，独立上传版本和差异功能仍待实施。完整升级范围保持 P0—P5；历史验证记录不代表所有阶段已完成，当前状态以第六节为准。
+本次方案核对已提交基线 `c204e6b`。§2.6 的持久规划任务、规划 Worker 专属启动和通用任务池接入已经实现；此前以真实存储和实际任务池/项目页验证指定任务查询，完整生产启动与项目资源功能仍待验收。上传版本管理的可行性依据见 §3.1，独立上传版本和差异功能仍待实施。完整升级范围保持 P0—P5；历史验证记录不代表所有阶段已完成，当前状态以第六节为准。本次交付是方案同步修订，不包含新的产品实现。
 
-此前方案修订将上传明确为“保存原件 → 系统版本记录 → 解析快照 → 确定性比较”，补充现有 DOCX 上传策略和解析依赖的缺口，并同步 P3 修改范围及验收条件。Git 仅保留独立可选来源入口。原粘贴附件作为需求输入保留，后续以本文和同步的 Codex 计划为准。
+此前方案修订将上传明确为“保存原件 → 系统版本记录 → 解析快照 → 确定性比较”，补充现有 DOCX 上传策略和解析依赖的缺口，并同步 P3 修改范围及验收条件。Git 仅保留独立可选来源入口。本次将这些修订实际写入用户粘贴方案，连同“选取 → 初排 → 补全 → 最终冻结”、重复请求与历史内容恢复的区别，以及当前已实现/待验收边界一起同步。
 
 | 用户明确的要求 | 本方案的对应设计 |
 |---|---|
@@ -48,7 +48,7 @@ P2 分为“只读选取与规划”和“现有 Agent 执行接入”。已有�
 | [用例检索服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/embedding_service.py) 的提示摘要只展示前六步 | 摘要用于召回；判断与执行读取完整固定版本 |
 | [API 前置分析](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/modes/api_testing_mode/precondition_resolver.py) 主要识别鉴权标记和路径参数 | 保留为辅助线索，不扩展成通用业务规则检查器 |
 | 已有正式用例、套件、原子领取、检查点和回归机制 | 在现有链路中扩展 |
-| [项目规划服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_service.py) 已支持只读查询与固定计划；[规划来源](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_sources.py) 按项目读取用例，不硬过滤历史模式 | 保留已接通的保存计划执行入口，补持久规划、查询和恢复；规划成功不能计为执行成功 |
+| [项目规划服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_service.py) 已支持只读查询与固定计划；[规划来源](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_sources.py) 按项目读取用例，不硬过滤历史模式；持久任务、查询和恢复已接通 | 复用同一规划内核，继续验收生产启动与默认模型；失败回归的耗时规划仍需接入持久任务；规划成功不能计为执行成功 |
 | [冻结上下文构造器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) 已读取完整用例和已保存的前置结果 | 接入现有执行协调、工具、证据及恢复链路；生成模板不进入执行输入 |
 | [Agent 执行适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py) 已由现有运行服务调用，并在 [生产初始化](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/main.py) 中注入 | 公开启动已有专项证据；继续验收真实模型、独立 Redis Worker 进程、各模式真实工具资源和未知副作用恢复 |
 | 上传使用 RustFS 保存内容，PostgreSQL 保存目录 | 增加文档版本关联，不引入 Git 保存上传文件 |
@@ -158,7 +158,7 @@ AI 针对缺口查询当前项目：
 
 #### 规划结果与后端职责
 
-沿用现有模型适配器，增加结构化规划结果：
+沿用现有模型适配器和项目规划服务的结构化结果：
 
 | 内容 | 用途 |
 |---|---|
@@ -657,7 +657,7 @@ DeepSeek 官网仅用于人工 UI 录制验证；性能、安全测试使用受�
 
 ## 六、当前实施状态及下一步
 
-以下状态核对到 2026-10-04 的 `333b7ce` 及本轮任务池实现，本节与实施记录一起更新；完整目标仍为 P0—P5。表中的专项结果来自各阶段保存的证据，本次方案更新的重新执行结果另列于文末，不能混算为新功能验收。
+以下状态核对到 2026-10-04 的 `c204e6b`，本节与实施记录一起更新；完整目标仍为 P0—P5。表中的专项结果来自各阶段保存的证据，本次方案更新的重新执行结果另列于实施记录，不能混算为新功能验收。
 
 | 项目 | 当前依据 | 剩余工作 |
 |---|---|---|
