@@ -71,6 +71,11 @@ class PostgresPlanningTaskStore:
     def request_hash(request) -> str:
         return hashlib.sha256(json_text(request.model_dump(mode="json")).encode()).hexdigest()
 
+    @staticmethod
+    def regression_request_hash(parent_run_id, submission) -> str:
+        return hashlib.sha256(json_text({"kind": "agent_regression", "parent_run_id": parent_run_id,
+            "request": submission}).encode()).hexdigest()
+
     async def submit(self, *, project_id: str, creation_key: str, seed: PlanningTaskSeed,
                      request_hash: str, stream: str) -> CasePlanningTaskRecord:
         return await asyncio.to_thread(self._submit, project_id, creation_key, seed, request_hash, stream)
@@ -78,10 +83,14 @@ class PostgresPlanningTaskStore:
     def _submit(self, project_id, creation_key, seed, request_hash, stream):
         if seed.plan.project_id != project_id or seed.project_context.get("id") != project_id:
             raise ValueError("规划输入项目身份不一致")
-        if self.request_hash(seed.plan.request) != request_hash:
+        source = seed.plan.regression
+        expected = (self.regression_request_hash(source.parent_run_id, source.submission) if source
+            else self.request_hash(seed.plan.request))
+        if expected != request_hash:
             raise ValueError("规划输入与提交请求不一致")
         task_id = str(uuid4())
-        checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True))
+        checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True),
+            phase="finished" if source and seed.plan.status in {"planned", "blocked"} else "retrieval")
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             # As with the run creation service, bindability is checked again
             # under the project lock, not only before the transaction.
@@ -96,9 +105,9 @@ class PostgresPlanningTaskStore:
                 return self._record(previous)
             if project["status"] != "active":
                 raise ValueError("归档项目不能创建规划任务")
-            cur.execute(f"""INSERT INTO {self._table}(id,project_id,creation_key,request_hash,seed,checkpoint)
-                VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb) RETURNING *""",
-                (task_id, project_id, creation_key, request_hash, seed.model_dump_json(), checkpoint.model_dump_json()))
+            cur.execute(f"""INSERT INTO {self._table}(id,project_id,creation_key,request_hash,seed,checkpoint,phase)
+                VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s) RETURNING *""",
+                (task_id, project_id, creation_key, request_hash, seed.model_dump_json(), checkpoint.model_dump_json(), checkpoint.phase))
             row = cur.fetchone()
             payload = CasePlanningTaskCommand(task_id=task_id, project_id=project_id).model_dump_json()
             cur.execute(f"INSERT INTO {self._outbox}(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)",
@@ -197,7 +206,7 @@ class PostgresPlanningTaskStore:
     @staticmethod
     def _check_checkpoint(row, checkpoint):
         original = PlanningTaskSeed.model_validate(row["seed"]).plan
-        fixed = ("id", "project_id", "request", "config_snapshot", "model_key", "prompt_version", "created_at")
+        fixed = ("id", "project_id", "request", "config_snapshot", "model_key", "prompt_version", "created_at", "regression")
         if any(getattr(checkpoint.plan, key) != getattr(original, key) for key in fixed):
             raise ValueError("规划检查点不能替换固定输入或身份")
         prior = PlanningTaskCheckpoint.model_validate(row["checkpoint"])

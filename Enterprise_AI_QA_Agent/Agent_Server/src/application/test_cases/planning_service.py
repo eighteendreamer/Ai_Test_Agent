@@ -70,7 +70,7 @@ class CasePlanningService:
             raise KeyError("当前项目没有该用例计划")
         return record
 
-    async def prepare_task(self, project_id: str, request: CasePlanningRequest) -> PlanningTaskSeed:
+    async def prepare_task(self, project_id: str, request: CasePlanningRequest, *, regression=None) -> PlanningTaskSeed:
         """Freeze submission inputs without invoking the model or reading templates."""
         project = await self._projects.require_active(project_id)
         if not request.objective.strip():
@@ -79,7 +79,7 @@ class CasePlanningService:
         model = await asyncio.to_thread(self._model_config, request.model_key)
         record = CasePlanRecord(id=str(uuid4()), project_id=project_id, request=request.model_copy(deep=True),
             status="planning_failed", summary="规划尚未完成", config_snapshot=config, model_key=model.key,
-            prompt_version=PROMPT_VERSION, created_at=datetime.now(timezone.utc))
+            prompt_version=PROMPT_VERSION, created_at=datetime.now(timezone.utc), regression=regression)
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(), model_parameters=planning_model_parameters(model))

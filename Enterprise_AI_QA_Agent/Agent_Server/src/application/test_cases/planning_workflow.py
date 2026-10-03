@@ -33,6 +33,12 @@ class CasePlanningWorkflow:
         """
         record, request, policy = checkpoint.plan, checkpoint.plan.request, checkpoint.plan.config_snapshot.policy
         fixed_case_versions = dict(fixed_case_versions or {})
+        if seed.plan.regression is not None:
+            source = seed.plan.regression
+            if fixed_case_versions and fixed_case_versions != source.required_case_versions:
+                raise ValueError("回归目标不能替换持久任务的固定输入")
+            fixed_case_versions = dict(source.required_case_versions)
+            planning_context = source.context
 
         async def save(message):
             if persist is not None:
@@ -141,9 +147,10 @@ class CasePlanningWorkflow:
                         try:
                             decision = self._planner._parse(checkpoint.response_text or "")
                             if decision.action == "finish":
-                                versions = dict(fixed_case_versions)
+                                versions = {}
                                 if pin_read_versions:
                                     versions.update({item.source_id: item.version for item in record.evidence if item.kind == "case"})
+                                versions.update(fixed_case_versions)
                                 await self._planner._validate(record, decision, fixed_case_versions=versions,
                                     preserve_read_metadata=pin_read_versions)
                                 if fixed_case_versions and {item.case_id: item.case_version_id for item in decision.items if item.kind == "target"} != fixed_case_versions:

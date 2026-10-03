@@ -46,11 +46,30 @@ def source_output_path(snapshot: CasePlanExecutionSnapshot, key: str, path: list
     return ["case_output", *path]
 
 
+def regression_source_for_plan(plan, request, regression=None):
+    frozen = plan.regression
+    if frozen is None:
+        return regression
+    if request.mode_key != frozen.mode_key or request.session_id != frozen.session_id:
+        raise ValueError("回归计划启动模式或会话与固定输入不一致")
+    targets = {node.case_id: node for node in plan.decision.items if node.kind == "target"} if plan.decision else {}
+    if ({case_id: node.case_version_id for case_id, node in targets.items()} != frozen.required_case_versions
+        or len(targets) != sum(node.kind == "target" for node in plan.decision.items)):
+        raise ValueError("回归计划必须完整保留固定目标及版本")
+    expected = RegressionPlanSource(parent_run_id=frozen.parent_run_id, source_plan_id=frozen.source_plan_id,
+        source_results={targets[case_id].key: result_id for case_id, result_id in frozen.source_results_by_case.items()},
+        version_overrides=frozen.version_overrides)
+    if regression is not None and regression != expected:
+        raise ValueError("回归计划的失败来源不能在启动时替换")
+    return expected
+
+
 def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: datetime,
                    created_by: str | None = None, regression: RegressionPlanSource | None = None
                    ) -> tuple[TestSuiteBundle, TestRunRecord, list[TestRunItemRecord]]:
     if plan.status not in {"planned", "blocked"} or plan.decision is None or plan.decision.action != "finish":
         raise ValueError("只有已冻结且包含正式目标的计划可以创建运行")
+    regression = regression_source_for_plan(plan, request, regression)
     nodes = {node.key: node for node in plan.decision.items}
     if len(nodes) != len(plan.decision.items) or not any(n.kind == "target" for n in nodes.values()):
         raise ValueError("计划节点身份重复或没有正式目标")
@@ -133,7 +152,12 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
         created_at=now, updated_at=now), items=[TestSuiteItemRecord(id=identity("suite-item", key),
         suite_id=suite_id, case_id=nodes[key].case_id, case_version_id=nodes[key].case_version_id,
         position=index) for index, key in enumerate(formal, 1)])
-    hash_input = {"plan": plan.model_dump(mode="json"), "request": request.model_dump(mode="json")}
+    plan_data = plan.model_dump(mode="json")
+    if plan.regression is None:
+        # Normal plans created before durable regression have no such field.
+        # Keep their creation hash stable so acknowledgement retries still work.
+        plan_data.pop("regression", None)
+    hash_input = {"plan": plan_data, "request": request.model_dump(mode="json")}
     if regression:
         hash_input["regression"] = regression.model_dump(mode="json")
     request_hash = json_digest(hash_input)

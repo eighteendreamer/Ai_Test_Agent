@@ -20,6 +20,7 @@ import type {
   RegressionContext,
   RegressionFailureStatus,
   RegressionFailureSummary,
+  RegressionPlanningSelection,
   LegacySmokeRunSummary,
   TestCaseLifecycleStatus,
   TestCaseRecord,
@@ -107,6 +108,7 @@ const templateEditorOpen = ref(false);
 const caseImportOpen = ref(false);
 const casePlanOpen = ref(false);
 const casePlanTaskId = ref("");
+const casePlanRegression = ref<RegressionPlanningSelection>();
 const contentCase = ref<TestCaseRecord | null>(null);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
@@ -761,6 +763,10 @@ async function createRegressionRun(run: TestRunRecord) {
   if (!canCreateRegression(run) || regressionRunId.value) return;
   regressionRunId.value = run.id;
   try {
+    if (run.execution_strategy === "agent") {
+      await openRegressionPlan(await api.getTestRun(run.id), []);
+      return;
+    }
     const created = await api.createRegressionTestRun(run.id);
     toast.success(`已创建回归运行 ${shortId(created.run.id)}`);
     await Promise.all([loadTestRuns(), loadOverview()]);
@@ -769,6 +775,22 @@ async function createRegressionRun(run: TestRunRecord) {
   } finally {
     regressionRunId.value = "";
   }
+}
+
+async function openRegressionPlan(parent: TestRunDetail, resultIds: string[]) {
+  const projectId = selectedId.value;
+  if (parent.run.project_id !== projectId) throw new Error("回归父运行不属于当前项目");
+  const chosen = new Map(parent.results.filter(result => ["failed", "error", "blocked"].includes(result.status)
+    && (!resultIds.length || resultIds.includes(result.id))).map(result => [result.case_id, result]));
+  const versionOptions = await Promise.all([...chosen.values()].map(async result => {
+    const record = await api.getTestCase(result.case_id);
+    if (record.project_id !== projectId) throw new Error("回归用例不属于当前项目");
+    return { caseId: record.id, title: record.title, originalVersionId: result.case_version_id, activeVersionId: record.active_version_id || null };
+  }));
+  if (selectedId.value !== projectId) return;
+  casePlanTaskId.value = "";
+  casePlanRegression.value = { parentRunId: parent.run.id, resultIds: [...resultIds], versionOptions };
+  casePlanOpen.value = true;
 }
 
 function toggleRegressionSelection(failure: RegressionFailureSummary, checked: boolean) {
@@ -795,6 +817,12 @@ async function createSelectedRegressionRun() {
   if (!sourceRunId || regressionRunId.value) return;
   regressionRunId.value = sourceRunId;
   try {
+    const parent = await api.getTestRun(sourceRunId);
+    if (parent.run.id !== sourceRunId || parent.run.project_id !== selectedId.value) throw new Error("回归父运行不属于当前项目");
+    if (parent.run.execution_strategy === "agent") {
+      await openRegressionPlan(parent, selectedFailures.map(item => item.source_result_id));
+      return;
+    }
     const created = await api.createRegressionTestRun(sourceRunId, {
       result_ids: selectedFailures.map(item => item.source_result_id),
     });
@@ -869,6 +897,7 @@ watch(routeProjectId, async (projectId) => {
 watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) => {
   if (isDetailRoute.value && projectId === routeProjectId.value && projectId && typeof taskId === "string" && taskId) {
     casePlanTaskId.value = taskId;
+    casePlanRegression.value = undefined;
     casePlanOpen.value = true;
   }
 }, { immediate: true, flush: "post" });
@@ -998,7 +1027,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
             <div class="case-toolbar">
               <button :disabled="selected?.status !== 'active'" @click="templateEditorOpen = true">用例生成模板</button>
               <button :disabled="selected?.status !== 'active'" @click="caseImportOpen = true">导入 Excel / JSON</button>
-              <button :disabled="selected?.status !== 'active'" @click="casePlanTaskId = ''; casePlanOpen = true">用例执行规划</button>
+              <button :disabled="selected?.status !== 'active'" @click="casePlanTaskId = ''; casePlanRegression = undefined; casePlanOpen = true">用例执行规划</button>
               <input v-model="caseQuery" placeholder="搜索用例标识或标题" @keyup.enter="searchCases">
               <select v-model="caseStatus" @change="searchCases">
                 <option value="">全部状态</option>
@@ -1222,7 +1251,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
     <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
-    <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
+    <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}:${JSON.stringify(casePlanRegression)}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :regression="casePlanRegression" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
 
     <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">

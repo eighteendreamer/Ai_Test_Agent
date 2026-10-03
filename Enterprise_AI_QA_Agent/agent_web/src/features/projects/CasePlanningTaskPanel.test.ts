@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CasePlanningTaskPanel from "./CasePlanningTaskPanel.vue";
 import { HttpError } from "../../services/http";
 
-const api = vi.hoisted(() => ({ submitCasePlanningTask: vi.fn(), getCasePlanningTask: vi.fn(),
+const api = vi.hoisted(() => ({ submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTask: vi.fn(),
   getCasePlanningTaskByRequest: vi.fn(), getCasePlan: vi.fn(), listCasePlanningTasks: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const task = (status = "queued", extra = {}) => ({ id: "task", project_id: "project", creation_key: "original", status,
@@ -98,5 +98,40 @@ describe("durable project planning UI", () => {
     api.getCasePlanningTask.mockResolvedValue(task("completed"));
     await button(w, "规划任务已完成 · task").trigger("click"); await flushPromises();
     expect(w.emitted("completed")).toHaveLength(1); w.unmount();
+  });
+
+  it("submits frozen regression selection and restores the same request after a lost acknowledgement", async () => {
+    const selection = { parentRunId: "parent", resultIds: ["failure"], versionOverrides: { case: "new-version" } };
+    api.submitRegressionPlanningTask.mockRejectedValueOnce(new Error("regression response lost"));
+    const w = mount(CasePlanningTaskPanel, { props: { projectId: "project", objective: "", runtimeJson: "not-json",
+      candidateCaseIds: [], disabled: false, regression: selection } });
+    await button(w, "提交回归规划").trigger("click"); await flushPromises();
+    const request = api.submitRegressionPlanningTask.mock.calls[0][1];
+    expect(request.result_ids).toEqual(["failure"]); expect(request.version_overrides).toEqual({ case: "new-version" });
+    expect(api.submitCasePlanningTask).not.toHaveBeenCalled(); expect(w.emitted("submitted")).toHaveLength(1);
+    const stored = window.sessionStorage.getItem(window.sessionStorage.key(0)!)!;
+    expect(Object.keys(JSON.parse(stored)).sort()).toEqual(["creationKey", "taskId"]);
+    api.submitRegressionPlanningTask.mockResolvedValue(task("queued", { creation_key: request.creation_key }));
+    await button(w, "重试规划提交").trigger("click"); await flushPromises();
+    expect(api.submitRegressionPlanningTask.mock.calls[1]).toEqual(["parent", request]);
+    w.unmount();
+    api.getCasePlanningTaskByRequest.mockResolvedValue(task("completed", { creation_key: request.creation_key }));
+    api.getCasePlan.mockResolvedValue({ id: "plan", project_id: "project", regression: {
+      parent_run_id: "parent", submission: { result_ids: ["failure"], session_id: null }, version_overrides: { case: "new-version" } } });
+    const restored = mount(CasePlanningTaskPanel, { props: { projectId: "project", objective: "", runtimeJson: "{}",
+      candidateCaseIds: [], disabled: false, regression: selection } });
+    await flushPromises(); expect(restored.emitted("completed")).toHaveLength(1);
+    expect(api.getCasePlanningTaskByRequest).toHaveBeenCalledWith("project", request.creation_key);
+    restored.unmount();
+  });
+
+  it("rejects a completed plan from a different regression source", async () => {
+    api.submitRegressionPlanningTask.mockImplementation(async (_, payload) => task("completed", { creation_key: payload.creation_key }));
+    api.getCasePlan.mockResolvedValue({ id: "plan", project_id: "project", regression: { parent_run_id: "other" } });
+    const w = mount(CasePlanningTaskPanel, { props: { projectId: "project", objective: "", runtimeJson: "{}",
+      candidateCaseIds: [], disabled: false, regression: { parentRunId: "parent", resultIds: ["failure"] } } });
+    await button(w, "提交回归规划").trigger("click"); await flushPromises();
+    expect(w.text()).toContain("回归来源或版本选择不一致"); expect(w.emitted("completed")).toBeUndefined();
+    w.unmount();
   });
 });

@@ -27,6 +27,7 @@
 | P1 导入 | Excel 默认两种布局、映射/预览/错误、JSON、幂等、草稿评审 | 上传、MySQL 配置、RustFS 原件、PG 批次与草稿同事务、前端入口已接入。受影响后端回归 141 通过、最终导入/进程专项 21 通过；真实浏览器组件/HTTP/三种存储 3 通过，前端组件 15 通过、构建通过。完整生产启动与项目页全流程待验收 |
 | P2 选取 | 自由/按用例依据分离；项目内召回、完整读取、AI 选择、无匹配明确返回 | 已实现独立项目规划服务与页面，完整版本、跨历史模式、项目隔离、固定计划保存及重读已验证；执行上下文与图状态已接入，公开保存计划启动 API/UI 已验证实际存储和浏览器断线重试。持久规划任务、专属 Worker CLI 和任务池已接通，具体范围见下方记录；完整生产启动和默认模型仍待验收 |
 | P2 补全 | AI 语义检查、项目查证、正式依赖或运行准备、负向条件保留、缺口可见 | 只读查询、正式依赖/准备结构、引用与拓扑校验、有界校验反馈已实现；专项 21 通过。当前真实模型三场景测试 1 通过，实际组件/HTTP/三种存储浏览器 1 通过，不等同实际 Agent 执行 |
+| P2 回归持久规划 | 固定父运行/失败/版本，复用持久任务与共享内核，按原身份找回及保存计划启动 | 本轮后端 92 通过、1 外部模型项跳过，前端 23 通过及构建通过；真实 Chromium 弹窗/ProjectsView 2 通过、概览 provider 补验 1 通过；生产规划 CLI 中断恢复 1 通过。完整 API/测试执行进程及默认模型仍未验收，详见文末 |
 | P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。Agent 新回归及公开保存计划启动已接通，真实 Redis/Outbox/Worker 类与 Agent 审批/HTTP 结果专项通过，详见下方最新记录；默认模型目标回执验收仍失败，独立 Redis 执行进程/完整启动、其他模式真实工具、步骤级恢复/未知效果核对及计划修订仍待完成 |
 | P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 待实施 |
 | P3 Git | 独立可选只读入口；明确关联才导入为已有文档版本；上传不依赖 Git | 待实施 |
@@ -951,3 +952,56 @@ npm run build
 结果 **35 passed, 4 skipped in 10.79s**。3 个执行上下文项需要隔离真实 PostgreSQL/MySQL/RustFS，1 项需要当前实际模型和真实存储；本次未启用对应开关。通过结果只证明既有上传/目录/存储接口及规划启动边界，不能证明新的文档版本、解析或比较已完成。当前任务池的 94/18/1 通过为此前保存的证据，未混算为本次重新执行。
 
 本次仅更新方案及记录；没有产品代码、依赖、数据库迁移或配置变化，没有重新运行前端构建、浏览器、真实存储版本链、Worker 进程和外部模型。全量 P0—P5 仍未完成。文档关键约定、本地绝对链接、原始备份、镜像一致性及相关 diff 另行检查；只提交本轮 PLAN 与记录，用户 .gitignore 保持未暂存，不推送、不建 PR。
+
+### 失败回归复用持久规划及方案同步（2026-10-04，基线 a56d5e4）
+
+实施前重读用户约束附件和方案，核对原回归验证、Agent 回归同步调用、规划种子、共享工作流、任务存储与计划运行事务。原流程在 HTTP 内等待模型，任务种子缺少固定回归来源；接口缺失用实际失败运行复现为 404，保存在 `p2-regression-planning-before.xml`。先新增 PLAN §2.7，再接通实现。
+
+后端复用 `_prepare_regression` 的父运行、失败候选和版本验证；新增 202 持久规划入口，保存 `RegressionPlanningInput` 到既有计划/任务 JSON。请求哈希覆盖父运行及原提交内容，同一身份先找回既有任务，避免配置变化重新选取。确定性范围裁剪保持必要前置、准备和清理，Worker 不调用模型；版本替换复用同一 AI 内核。检查点冻结回归信息，恢复不能改固定目标、原预算或来源。计划启动由回归信息生成来源映射，复用既有套件/运行/Outbox 事务，原失败和终态条目不重置。普通历史计划哈希排除新增的空回归字段，保持旧启动请求可重放。旧同步接口兼容保留。
+
+前端测试历史和回归中心接通实际 `ProjectsView`→版本选择→持久任务→保存计划启动→运行详情。新旧请求保持明确类型；浏览器只保存请求/任务身份，服务端计划恢复固定版本及模式/会话。改正 `TestRunDetail.results` 为后端真实结果契约，未以类型强转掩盖差异。
+
+本阶段的失败与根因处理：
+
+- 浏览器刷新遗失替换版本任务：找回键包含可变版本选项，改为项目、父运行及请求失败范围；从已保存计划恢复版本。真实失败与修复结果分别保存在 `p2-regression-planning-browser-refresh-before.*` 和 `p2-regression-planning-browser-final.*`。
+- 刷新后未提交成功、查询 404：组件测试实际复现版本选项被永久隐藏，9 项中 1 失败；现允许重填原选择、保留原请求身份，并让服务端核对内容。没有自动新建任务；查询 503 保留未确认状态。该失败已记录于工具输出，对应回归用例保留在 `CasePlanDialog.test.ts`。
+- 51 个固定失败目标：创建正式用例、保存计划、领取并保存真实失败结果后，提交在候选列表的 50 项校验处失败，见 `p2-regression-planning-scope-before.xml`；固定裁剪复用原有有界请求，完整范围另由固定决策/来源保存，修复结果见 `p2-regression-planning-scope-final.xml`。该范围专项使用内存业务存储和捕获任务提交，验证服务边界；小范围持久提交另由真实 PG 专项覆盖，不宣称 51 项真实数据库端到端验收。AI 重新规划的现有候选/上下文限制未扩大。
+- 浏览器初次 JSON 末尾检查未展开详情、项目入口初次 checkbox 定位不唯一，均是测试定位问题，未据此修改产品行为；原失败和截图保留。项目专项补齐真实套件/运行概览 provider，避免缺省 0 被误作实际统计。
+
+实际验证及范围：
+
+| 证据 | 结果 | 实际范围 |
+|---|---|---|
+| `p2-regression-planning-final-regression.xml` | 92 通过、1 跳过，58.12 秒 | 回归任务、创建事务、既有回归、共享规划、Worker 生命周期及前端契约；真实存储开关已启用；跳过项为当前外部模型测试 |
+| 前端 5 个受影响测试文件 | 23 通过 | 原身份找回、版本选择、提交恢复、启动、任务池/API 契约 |
+| `npm run build` | 类型检查及构建通过；Vite 6.64 秒 | 当前前端源码 |
+| `p2-regression-planning-browser-entries-final.xml` | 2 通过，12.55 秒 | 实际弹窗及 ProjectsView 两种入口；真实 HTTP/MySQL/PG/RustFS，受控规划决定；提交响应丢失、同身份找回、完整末尾步骤、新版本与原失败关联 |
+| `p2-regression-planning-browser-complete-providers.xml` | 1 通过、1 未选择，8.24 秒 | 项目页补齐真实套件/运行概览，打开新回归详情；资源配额/占用监控明确 503 |
+| `p2-regression-planning-worker-cli.xml/json` | 1 通过，18.54 秒 | 实际生产规划 CLI、MySQL/PG/RustFS/Redis/Outbox/本地模型 HTTP；模型第二回合中断、重启后固定来源及原期限恢复、未知回合占用预算、终态重投不再调用 |
+| `p2-regression-planning-upload-check.xml` | 25 通过，1.02 秒 | 既有上传、目录与对象存储接口；不证明新文档 V1/V2 已实现 |
+
+重现命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_REGRESSION_PLANNING='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_regression_planning_tasks.py tests/test_case_plan_run_creation.py tests/test_test_run_regression.py tests/test_case_planning.py tests/test_planning_worker_runtime.py tests/test_project_regression_frontend_contract.py tests/test_case_planning_tasks.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p2-regression-planning-final-regression.xml
+$env:RUN_LIVE_REGRESSION_BROWSER='1'
+$env:QA_REGRESSION_BROWSER_EVIDENCE='p2-regression-planning-browser-entries-final'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_regression_planning_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-regression-planning-browser-entries-final.xml
+$env:RUN_LIVE_REGRESSION_PLANNING='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_regression_planning_worker.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-regression-planning-worker-cli.xml
+```
+
+前端命令（agent_web）：
+
+```powershell
+npm run test -- src/features/projects/CasePlanningTaskPanel.test.ts src/features/projects/CasePlanDialog.test.ts src/services/projects.planning-tasks.api.test.ts src/views/TaskPoolView.test.ts src/services/sessions.task-pool.api.test.ts
+npm run build
+```
+
+业务记录留在 PostgreSQL JSON，配置仍使用既有 MySQL 域，没有新增依赖、配置或数据库表。派发沿用现有规划流和 Worker。CLI 原始专项在本阶段前半段实际运行；末轮没有重复执行同一 CLI 专项。规划模型决定受控，本阶段未执行整个生产 API lifespan、外部默认模型或目标 Agent 业务测试；资源监控未配置不计为通过。完整 P0—P5 保持未完成，包括真实默认模型回执、测试执行 Worker、步骤级准备恢复/未知副作用、模块生成、P0 录制/Docker、P3—P5 和遗留业务数据迁移。
+
+直接更新用户粘贴方案、项目 PLAN 和实施记录，Codex 计划镜像同步。重新核对上传代码没有 Git 调用；独立原件/版本、解析工厂、确定性差异和可选 Git 的设计保持一致。15 个相关 Python 源码/测试实际 py_compile 通过，仅作为补充检查。共享规划回归测试产生的历史命名证据另存为 `p2-regression-planning-shared-kernel-cli.json` 和 `p2-regression-planning-shared-kernel-probe.json`，原 `p2-planning-worker-cli.json` 从 HEAD 按字节恢复；原始失败 XML 保留，不为消除 pytest 输出空白而改写。

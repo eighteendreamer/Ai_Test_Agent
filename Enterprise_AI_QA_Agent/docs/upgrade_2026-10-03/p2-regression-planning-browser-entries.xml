@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="11.800" timestamp="2026-10-04T07:15:43.443179+08:00" hostname="EIghteen"><testcase classname="tests.test_regression_planning_browser" name="test_browser_regression_version_selection_lost_response_refresh_and_launch[dialog]" time="5.305" /><testcase classname="tests.test_regression_planning_browser" name="test_browser_regression_version_selection_lost_response_refresh_and_launch[project]" time="3.215"><failure message="playwright._impl._errors.Error: Locator.check: Error: strict mode violation: get_by_role(&quot;checkbox&quot;) resolved to 2 elements:&#10;    1) &lt;input checked type=&quot;checkbox&quot; data-v-076d98d6=&quot;&quot; aria-label=&quot;选择失败项 真实依赖样本 2&quot;/&gt; aka get_by_role(&quot;checkbox&quot;, name=&quot;选择失败项 真实依赖样本&quot;)&#10;    2) &lt;input type=&quot;checkbox&quot; data-v-6d64742d=&quot;&quot;/&gt; aka get_by_role(&quot;checkbox&quot;, name=&quot;真实依赖样本 2 · 原版本 3b8349d0-e4b3-&quot;)&#10;&#10;Call log:&#10;  - waiting for get_by_role(&quot;checkbox&quot;)">tests\test_regression_planning_browser.py:153: in test_browser_regression_version_selection_lost_response_refresh_and_launch
+    await page.get_by_role("checkbox").check()
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:17793: in check
+    await self._impl_obj.check(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:148: in check
+    return await self._frame.check(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:908: in check
+    await self._channel.send("check", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.Error: Locator.check: Error: strict mode violation: get_by_role("checkbox") resolved to 2 elements:
+E       1) &lt;input checked type="checkbox" data-v-076d98d6="" aria-label="选择失败项 真实依赖样本 2"/&gt; aka get_by_role("checkbox", name="选择失败项 真实依赖样本")
+E       2) &lt;input type="checkbox" data-v-6d64742d=""/&gt; aka get_by_role("checkbox", name="真实依赖样本 2 · 原版本 3b8349d0-e4b3-")
+E   
+E   Call log:
+E     - waiting for get_by_role("checkbox")</failure></testcase></testsuite></testsuites>

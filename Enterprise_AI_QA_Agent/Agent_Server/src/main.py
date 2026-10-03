@@ -493,7 +493,8 @@ async def _initialize_lifespan_resources(
         outbox_table=settings.database.postgres_task_outbox_table if task_queue is not None else None,
         dispatch_stream=task_queue.stream if task_queue is not None else None)
     test_run_service.set_agent_regression_service(AgentRegressionService(plan_store=container.case_plan_store(),
-        plan_run_service=case_plan_run_service, planning_service=case_planning_service, run_store=test_run_store))
+        plan_run_service=case_plan_run_service, planning_service=case_planning_service, run_store=test_run_store,
+        planning_task_service=case_planning_task_service))
 
     legacy_smoke_catalog = container.legacy_smoke_catalog()
     legacy_smoke_history_service = container.legacy_smoke_history_service()

@@ -5,7 +5,7 @@ import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
 import type { ModeDescriptor } from "../../types";
 
-const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
+const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const config = () => ({ scope_key: "global", revision: 1, policy: { max_rounds: 5, max_candidates: 20, max_items: 50, max_context_chars: 180000, timeout_seconds: 180 } });
 function plan(status = "planned") {
@@ -150,5 +150,47 @@ describe("case planning", () => {
     expect(api.getTestRun).toHaveBeenCalledWith("run-1");
     expect(wrapper.emitted("started")?.[1][0]).toEqual(detail);
     wrapper.unmount();
+  });
+
+  it("allows original version selection after a refreshed submission lookup returns missing, keeping its identity", async () => {
+    const selection = { parentRunId: "parent", resultIds: ["failure"], versionOptions: [
+      { caseId: "case", title: "变更后查询", originalVersionId: "old-version", activeVersionId: "new-version" }] };
+    window.sessionStorage.setItem('case-planning-task:project:regression:parent:["failure"]',
+      JSON.stringify({ creationKey: "unconfirmed-request", taskId: "" }));
+    api.getCasePlanningTaskByRequest.mockRejectedValue(new HttpError("当前项目没有该规划提交", 404));
+    api.submitRegressionPlanningTask.mockImplementation(async (_, payload) => ({ id: "task", project_id: "project",
+      creation_key: payload.creation_key, status: "queued", plan_id: null, round_count: 0, message: "排队" }));
+    const w = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes, regression: selection } });
+    await flushPromises();
+    expect(w.find('input[type="checkbox"]').exists()).toBe(true);
+    expect(w.get('input[type="checkbox"]').attributes("disabled")).toBeUndefined();
+    expect(api.submitRegressionPlanningTask).not.toHaveBeenCalled();
+    await w.get('input[type="checkbox"]').setValue(true);
+    await button(w, "重试规划提交").trigger("click"); await flushPromises();
+    expect(api.submitRegressionPlanningTask).toHaveBeenCalledWith("parent", {
+      creation_key: "unconfirmed-request", result_ids: ["failure"], version_overrides: { case: "new-version" }, session_id: null });
+    w.unmount();
+  });
+
+  it("chooses an enabled replacement and keeps the frozen regression mode/session on launch", async () => {
+    const selection = { parentRunId: "parent", resultIds: ["failure"], versionOptions: [
+      { caseId: "case", title: "变更后查询", originalVersionId: "old-version", activeVersionId: "new-version" }] };
+    const fixed = { ...plan(), regression: { parent_run_id: "parent", mode_key: "code_review", session_id: "bound-session",
+      source_results_by_case: { case: "failure" }, version_overrides: { case: "new-version" },
+      submission: { result_ids: ["failure"], session_id: null } } };
+    api.getCasePlan.mockResolvedValue(fixed);
+    api.submitRegressionPlanningTask.mockImplementation(async (_, payload) => ({ id: "task", project_id: "project",
+      creation_key: payload.creation_key, status: "completed", plan_id: "plan", round_count: 1, message: "完成" }));
+    const w = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes, regression: selection } });
+    await flushPromises();
+    await w.get('input[type="checkbox"]').setValue(true);
+    await button(w, "提交回归规划").trigger("click"); await flushPromises();
+    expect(api.submitRegressionPlanningTask.mock.calls[0][1].version_overrides).toEqual({ case: "new-version" });
+    expect(w.get('input[type="checkbox"]').attributes()).toHaveProperty("disabled");
+    expect(w.get('select').element.value).toBe("code_review");
+    expect(w.get('select').attributes()).toHaveProperty("disabled");
+    await button(w, "启动测试运行").trigger("click"); await flushPromises();
+    expect(api.launchCasePlan.mock.calls[0][2]).toMatchObject({ mode_key: "code_review", session_id: "bound-session" });
+    expect(w.text()).toContain("回归来源：parent"); w.unmount();
   });
 });

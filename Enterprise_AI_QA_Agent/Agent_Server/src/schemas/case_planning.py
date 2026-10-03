@@ -118,6 +118,29 @@ class CasePlanningConfig(PlanningModel):
     policy: CasePlanningPolicy
 
 
+class RegressionPlanningInput(PlanningModel):
+    parent_run_id: str = Field(min_length=1, max_length=160)
+    source_plan_id: str = Field(min_length=1, max_length=160)
+    source_results_by_case: dict[str, str] = Field(min_length=1, max_length=200)
+    required_case_versions: dict[str, str] = Field(min_length=1, max_length=200)
+    version_overrides: dict[str, str] = Field(default_factory=dict, max_length=200)
+    mode_key: str = Field(min_length=1, max_length=80)
+    session_id: str | None = None
+    submission: dict[str, Any]
+    context: dict[str, Any]
+
+    @model_validator(mode="after")
+    def valid_scope(self):
+        if (set(self.source_results_by_case) != set(self.required_case_versions)
+            or len(set(self.source_results_by_case.values())) != len(self.source_results_by_case)
+            or not set(self.version_overrides).issubset(self.required_case_versions)
+            or any(self.required_case_versions[key] != version for key, version in self.version_overrides.items())
+            or self.context.get("parent_run_id") != self.parent_run_id
+            or self.context.get("source_plan_id") != self.source_plan_id):
+            raise ValueError("回归固定目标、失败来源或版本引用不一致")
+        return self
+
+
 class CasePlanRecord(PlanningModel):
     id: str
     project_id: str
@@ -132,6 +155,7 @@ class CasePlanRecord(PlanningModel):
     rounds: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     created_at: datetime
+    regression: RegressionPlanningInput | None = None
 
 
 class CasePlanRunRequest(PlanningModel):

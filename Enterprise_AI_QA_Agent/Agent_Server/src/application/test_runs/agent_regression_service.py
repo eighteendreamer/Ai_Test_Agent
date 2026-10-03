@@ -5,19 +5,48 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from src.schemas.case_planning import CasePlanRunRequest, CasePlanningRequest, RegressionPlanSource
+from src.schemas.case_planning import CasePlanRunRequest, CasePlanningRequest, RegressionPlanSource, RegressionPlanningInput
 
 logger = logging.getLogger(__name__)
 
 
 class AgentRegressionService:
-    def __init__(self, *, plan_store, plan_run_service, planning_service, run_store):
+    def __init__(self, *, plan_store, plan_run_service, planning_service, run_store, planning_task_service=None):
         self._plans = plan_store
         self._creator = plan_run_service
         self._planner = planning_service
         self._runs = run_store
+        self._planning_tasks = planning_task_service
 
     async def create(self, parent, candidates, payload, *, session_id=None, created_by=None):
+        snapshot, selected, versions, context = await self._inputs(parent, candidates, payload)
+        replanned = bool(payload.version_overrides)
+        if replanned:
+            plan = await self._replan(parent, versions, context)
+        else:
+            plan = self._subset(snapshot, selected, context)
+            if plan is None:
+                # Structural slicing cannot decide how to clean data produced by
+                # an omitted branch. Ask the existing planner with fixed targets.
+                plan = await self._replan(parent, versions, context)
+                replanned = True
+            else:
+                plan = await self._plans.save(plan)
+
+        targets = {node.case_id: node for node in plan.decision.items if node.kind == "target"}
+        source_results = {targets[candidate.case_id].key: candidate.result_id for candidate in candidates}
+        source = RegressionPlanSource(parent_run_id=parent.id, source_plan_id=snapshot.plan.id,
+            source_results=source_results, version_overrides=payload.version_overrides)
+        detail = await self._creator.create(parent.project_id, plan.id,
+            CasePlanRunRequest(creation_key=str(uuid4()), mode_key=parent.mode_key, session_id=session_id),
+            created_by=created_by, regression=source)
+        logger.info("agent_regression_plan_created", extra={"project_id": parent.project_id,
+            "parent_run_id": parent.id, "run_id": detail.run.id, "plan_id": plan.id,
+            "target_count": len(selected), "formal_item_count": len(detail.items),
+            "replanned": replanned})
+        return detail
+
+    async def _inputs(self, parent, candidates, payload):
         snapshot = parent.plan_snapshot
         if snapshot is None or snapshot.plan.project_id != parent.project_id:
             raise ValueError("Agent 回归父运行缺少项目所属固定计划")
@@ -45,31 +74,26 @@ class AgentRegressionService:
                 "case_version_id": result.case_version_id, "status": result.status,
                 "summary": result.summary, "error_message": result.error_message,
                 "verification_results": result.actual.get("verification_results", [])})
-        replanned = bool(payload.version_overrides)
-        if replanned:
-            plan = await self._replan(parent, versions, context)
-        else:
-            plan = self._subset(snapshot, selected, context)
-            if plan is None:
-                # Structural slicing cannot decide how to clean data produced by
-                # an omitted branch. Ask the existing planner with fixed targets.
-                plan = await self._replan(parent, versions, context)
-                replanned = True
-            else:
-                plan = await self._plans.save(plan)
+        return snapshot, selected, versions, context
 
-        targets = {node.case_id: node for node in plan.decision.items if node.kind == "target"}
-        source_results = {targets[candidate.case_id].key: candidate.result_id for candidate in candidates}
-        source = RegressionPlanSource(parent_run_id=parent.id, source_plan_id=snapshot.plan.id,
-            source_results=source_results, version_overrides=payload.version_overrides)
-        detail = await self._creator.create(parent.project_id, plan.id,
-            CasePlanRunRequest(creation_key=str(uuid4()), mode_key=parent.mode_key, session_id=session_id),
-            created_by=created_by, regression=source)
-        logger.info("agent_regression_plan_created", extra={"project_id": parent.project_id,
-            "parent_run_id": parent.id, "run_id": detail.run.id, "plan_id": plan.id,
-            "target_count": len(selected), "formal_item_count": len(detail.items),
-            "replanned": replanned})
-        return detail
+    async def find_submission(self, parent, request):
+        if self._planning_tasks is None:
+            raise RuntimeError("回归持久规划服务尚未配置")
+        return await self._planning_tasks.find_regression_submission(parent.project_id, parent.id, request)
+
+    async def submit(self, parent, candidates, request, *, session_id=None):
+        snapshot, selected, versions, context = await self._inputs(parent, candidates, request)
+        source = RegressionPlanningInput(parent_run_id=parent.id, source_plan_id=snapshot.plan.id,
+            source_results_by_case={candidate.case_id: candidate.result_id for candidate in candidates},
+            required_case_versions=versions, version_overrides=dict(request.version_overrides),
+            mode_key=parent.mode_key, session_id=session_id,
+            submission=request.model_dump(mode="json", exclude={"creation_key"}), context=context)
+        fixed_plan = None if request.version_overrides else self._subset(snapshot, selected, context)
+        planning_request = fixed_plan.request if fixed_plan is not None else CasePlanningRequest(objective=snapshot.plan.request.objective,
+            candidate_case_ids=list(versions), model_key=snapshot.plan.model_key,
+            runtime_context=snapshot.plan.request.runtime_context)
+        return await self._planning_tasks.submit_regression(parent.project_id, request, source,
+            planning_request=planning_request, prepared_plan=fixed_plan)
 
     async def _replan(self, parent, versions, context):
         original = parent.plan_snapshot.plan
@@ -122,7 +146,7 @@ class AgentRegressionService:
         # expanding the original request's bounded candidate list or objective.
         request = original.request.model_copy(deep=True, update={"candidate_case_ids": []})
         return original.model_copy(deep=True, update={"id": str(uuid4()), "request": request,
-            "created_at": datetime.now(timezone.utc), "decision": decision, "summary": decision.summary,
+            "created_at": datetime.now(timezone.utc), "decision": decision, "summary": decision.summary, "regression": None,
             "status": "blocked" if decision.unresolved else "planned",
             "evidence": [e.model_copy(deep=True) for e in original.evidence if e.id in refs],
             "rounds": [{"kind": "regression_scope", **context,

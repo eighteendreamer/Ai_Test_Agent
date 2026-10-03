@@ -329,6 +329,10 @@ class RegressionRunCreateRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=160)
 
 
+class RegressionPlanningTaskRequest(RegressionRunCreateRequest):
+    creation_key: str = Field(min_length=1, max_length=160)
+
+
 class TestRunPage(BaseModel):
     items: list[TestRunRecord] = Field(default_factory=list)
     limit: int

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCasePlanningTask, getCasePlanningTaskByRequest, listCasePlanningTasks, submitCasePlanningTask } from "./projects.api";
+import { getCasePlanningTask, getCasePlanningTaskByRequest, listCasePlanningTasks, submitCasePlanningTask, submitRegressionPlanningTask, getTestCase } from "./projects.api";
 
 describe("project planning task HTTP contract", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -21,5 +21,16 @@ describe("project planning task HTTP contract", () => {
     expect(lookup.pathname).toBe(root + "/by-request");
     expect(lookup.searchParams.get("creation_key")).toBe(payload.creation_key);
     expect(fetchMock.mock.calls[3][0]).toBe(root + "?limit=2&offset=3");
+  });
+
+  it("encodes a regression parent and sends exact selected failures and versions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({ id: "task" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = { creation_key: "same-regression", result_ids: ["result"], version_overrides: { case: "v2" } };
+    await submitRegressionPlanningTask("parent?#", payload);
+    await getTestCase("case?#");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/runs/parent%3F%23/regression-planning-tasks");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/test-cases/case%3F%23");
   });
 });

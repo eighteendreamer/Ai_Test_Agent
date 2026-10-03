@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from src.schemas.run_management import (
@@ -10,6 +11,7 @@ from src.schemas.run_management import (
     RegressionFailurePage,
     RegressionFailureStatus,
     RegressionRunCreateRequest,
+    RegressionPlanningTaskRequest,
     RunCancelRequest,
     RunClaimRequest,
     RunClaimResponse,
@@ -29,10 +31,12 @@ from src.schemas.run_management import (
     TestRunStatus,
 )
 from src.schemas.run_dispatch import RunDispatchAccepted
+from src.schemas.case_planning_task import CasePlanningTaskRecord
 from src.core.request_context import correlation_fields
 
 
 router = APIRouter(tags=["test-runs"])
+logger = logging.getLogger(__name__)
 
 @router.post("/runs/{run_id}/dispatch", response_model=RunDispatchAccepted, status_code=202)
 async def dispatch_test_run_items(run_id: str, request: Request):
@@ -278,6 +282,22 @@ async def create_regression_test_run(
         return await request.app.state.test_run_service.create_regression(run_id, payload)
     except (KeyError, ValueError, RuntimeError) as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/runs/{run_id}/regression-planning-tasks", response_model=CasePlanningTaskRecord, status_code=202)
+async def submit_regression_planning(run_id: str, payload: RegressionPlanningTaskRequest, request: Request):
+    try:
+        return await request.app.state.test_run_service.submit_regression_planning(run_id, payload)
+    except KeyError as exc:
+        raise _http_error(exc) from exc
+    except ValueError as exc:
+        logger.warning("regression_planning_rejected", extra={"parent_run_id": run_id})
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception as exc:
+        logger.error("regression_planning_unavailable", extra={"parent_run_id": run_id,
+            "error_type": type(exc).__name__})
+        raise HTTPException(status_code=503,
+            detail="回归规划提交结果尚不能确认，请按原请求身份查询或重试") from None
 
 
 @router.post("/runs/{run_id}/cancel", response_model=TestRunDetail)

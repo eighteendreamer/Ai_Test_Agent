@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from src.application.test_runs.plan_mapping import build_plan_run, validate_frozen_cases
+from src.application.test_runs.plan_mapping import build_plan_run, validate_frozen_cases, regression_source_for_plan
 from src.core.request_context import get_request_context, new_id
 from src.schemas.case_planning import CasePlanRunRequest, RegressionPlanSource
 from src.schemas.run_dispatch import RunDispatchTask
@@ -28,6 +28,7 @@ class CasePlanRunService:
         plan = await self._plans.get(project_id, plan_id)
         if plan is None:
             raise KeyError("当前项目的固定计划不存在")
+        regression = regression_source_for_plan(plan, request, regression)
         bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by,
             regression=regression)
         existing = await self._runs.get_run(run.id)

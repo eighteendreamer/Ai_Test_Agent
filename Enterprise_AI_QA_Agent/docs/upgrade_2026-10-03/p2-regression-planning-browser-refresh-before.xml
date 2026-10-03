@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="12.706" timestamp="2026-10-04T06:57:15.529793+08:00" hostname="EIghteen"><testcase classname="tests.test_regression_planning_browser" name="test_browser_regression_version_selection_lost_response_refresh_and_launch" time="9.710"><failure message="AssertionError: Locator expected to be visible&#10;Actual value: None&#10;Error: element(s) not found &#10;Call log:&#10;  - Expect &quot;to_be_visible&quot; with timeout 5000ms&#10;  - waiting for get_by_role(&quot;heading&quot;, name=&quot;计划已生成&quot;, exact=True)&#10;&#10;Aria snapshot:&#10;- dialog &quot;用例执行规划&quot;:&#10;  - banner:&#10;    - heading &quot;用例执行规划&quot; [level=2]&#10;    - button &quot;关闭&quot;&#10;  - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。&#10;  - paragraph: 原运行：5ab44d4e-3e04-5c9a-bbf0-e5321550c10f · 已选 1 条失败项。固定目标及版本后规划必要前置，原失败结果保留。&#10;  - group &quot;回归用例版本&quot;:&#10;    - text: 回归用例版本&#10;    - paragraph: 默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。&#10;    - checkbox &quot;变更后查询 · 原版本 708da851-5eee-4c6d-92a1-dcbd43915616 → 3c5eee80-3fa2-4fe9-b2e2-0f8fb39a7c4c&quot;&#10;    - text: 变更后查询 · 原版本 708da851-5eee-4c6d-92a1-dcbd43915616 → 3c5eee80-3fa2-4fe9-b2e2-0f8fb39a7c4c&#10;  - group: 规划设置&#10;  - region &quot;持久规划任务&quot;:&#10;    - button &quot;提交回归规划&quot;&#10;    - button &quot;项目规划任务&quot;&#10;  - text: 已保存的计划编号&#10;  - textbox &quot;已保存的计划编号&quot;:&#10;    - /placeholder: 输入当前项目的计划编号&#10;  - button &quot;查看已保存计划&quot; [disabled]">tests\test_regression_planning_browser.py:108: in test_browser_regression_version_selection_lost_response_refresh_and_launch
+    await expect(page.get_by_role("heading", name="计划已生成", exact=True)).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for get_by_role("heading", name="计划已生成", exact=True)
+E   
+E   Aria snapshot:
+E   - dialog "用例执行规划":
+E     - banner:
+E       - heading "用例执行规划" [level=2]
+E       - button "关闭"
+E     - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。
+E     - paragraph: 原运行：5ab44d4e-3e04-5c9a-bbf0-e5321550c10f · 已选 1 条失败项。固定目标及版本后规划必要前置，原失败结果保留。
+E     - group "回归用例版本":
+E       - text: 回归用例版本
+E       - paragraph: 默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。
+E       - checkbox "变更后查询 · 原版本 708da851-5eee-4c6d-92a1-dcbd43915616 → 3c5eee80-3fa2-4fe9-b2e2-0f8fb39a7c4c"
+E       - text: 变更后查询 · 原版本 708da851-5eee-4c6d-92a1-dcbd43915616 → 3c5eee80-3fa2-4fe9-b2e2-0f8fb39a7c4c
+E     - group: 规划设置
+E     - region "持久规划任务":
+E       - button "提交回归规划"
+E       - button "项目规划任务"
+E     - text: 已保存的计划编号
+E     - textbox "已保存的计划编号":
+E       - /placeholder: 输入当前项目的计划编号
+E     - button "查看已保存计划" [disabled]</failure></testcase></testsuite></testsuites>

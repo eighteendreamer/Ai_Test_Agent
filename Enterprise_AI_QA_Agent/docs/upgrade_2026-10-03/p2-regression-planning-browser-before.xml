@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="14.309" timestamp="2026-10-04T06:55:27.022218+08:00" hostname="EIghteen"><testcase classname="tests.test_regression_planning_browser" name="test_browser_regression_version_selection_lost_response_refresh_and_launch" time="10.106"><failure message="AssertionError: Locator expected to be visible&#10;Actual value: None&#10;Error: element(s) not found &#10;Call log:&#10;  - Expect &quot;to_be_visible&quot; with timeout 5000ms&#10;  - waiting for get_by_text(&quot;末尾验证点😀&quot;, exact=True)&#10;&#10;Aria snapshot:&#10;- dialog &quot;用例执行规划&quot;:&#10;  - banner:&#10;    - heading &quot;用例执行规划&quot; [level=2]&#10;    - button &quot;关闭&quot;&#10;  - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。&#10;  - paragraph: 原运行：530f6e30-d9d1-57a1-ae08-67fa489b8990 · 已选 1 条失败项。固定目标及版本后规划必要前置，原失败结果保留。&#10;  - group &quot;回归用例版本&quot;:&#10;    - text: 回归用例版本&#10;    - paragraph: 默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。&#10;    - checkbox &quot;变更后查询 · 原版本 554005d9-ad78-4963-b882-ede252fb1b00 → ef6a1517-f67b-4fc3-8a81-90b2cd20374b&quot; [checked] [disabled]&#10;    - text: 变更后查询 · 原版本 554005d9-ad78-4963-b882-ede252fb1b00 → ef6a1517-f67b-4fc3-8a81-90b2cd20374b&#10;  - group: 规划设置&#10;  - region &quot;持久规划任务&quot;:&#10;    - paragraph: 规划请求编号：003f6808-04c0-4d0c-bbcf-53dd0c9640cb&#10;    - status: 规划任务已完成 · 已按项目依据规划 · 已调用 2 回合&#10;    - button &quot;另建规划任务&quot;&#10;    - button &quot;查询规划任务&quot;&#10;    - button &quot;项目规划任务&quot;&#10;  - text: 已保存的计划编号&#10;  - textbox &quot;已保存的计划编号&quot;:&#10;    - /placeholder: 输入当前项目的计划编号&#10;    - text: d6c69537-f248-4e18-b7ec-3e47871ee50b&#10;  - button &quot;查看已保存计划&quot;&#10;  - heading &quot;计划已生成&quot; [level=3]&#10;  - paragraph: 已按项目依据规划&#10;  - paragraph: 回归来源：530f6e30-d9d1-57a1-ae08-67fa489b8990 · 1 条固定失败项。新运行结果关联原失败，准备成功不计为目标通过。&#10;  - region &quot;启动已保存计划&quot;:&#10;    - paragraph: 启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。&#10;    - text: 执行测试模式&#10;    - combobox &quot;执行测试模式&quot; [disabled]:&#10;      - option &quot;代码审批模式&quot;&#10;      - option &quot;UI自动化模式&quot;&#10;      - option &quot;API接口测试模式&quot; [selected]&#10;      - option &quot;兼容性测试模式&quot;&#10;      - option &quot;单元与组件测试模式&quot;&#10;      - option &quot;无障碍测试模式&quot;&#10;      - option &quot;视觉回归测试模式&quot;&#10;      - option &quot;移动端测试模式&quot;&#10;      - option &quot;测试可靠性与韧性模式&quot;&#10;      - option &quot;集成与依赖测试模式&quot;&#10;      - option &quot;安全测试模式&quot;&#10;      - option &quot;性能测试模式&quot;&#10;      - option &quot;冒烟测试模式&quot;&#10;    - text: 关联会话编号（可选）&#10;    - textbox &quot;关联会话编号（可选）&quot; [disabled]:&#10;      - /placeholder: 会话必须属于当前项目&#10;    - button &quot;启动测试运行&quot;&#10;  - list:&#10;    - listitem:&#10;      - heading &quot;运行内准备 · prepare-new&quot; [level=4]&#10;      - paragraph: 依据实际原文补全&#10;      - group: 准备操作与验证点&#10;      - paragraph: 依据：document:39ac89e5-0671-4eef-b1cd-d89079005f03:1f01fd9b09fb80b3&#10;    - listitem:&#10;      - heading &quot;目标用例 · 真实依赖样本 2&quot; [level=4]&#10;      - paragraph: 固定原失败的新版本&#10;      - paragraph: 等待前置：prepare-new&#10;      - group: 完整固定用例&#10;      - group: 数据来源&#10;      - paragraph: 依据：case:ef6a1517-f67b-4fc3-8a81-90b2cd20374b&#10;  - group: 查询到的项目原文与录制依据">tests\test_regression_planning_browser.py:105: in test_browser_regression_version_selection_lost_response_refresh_and_launch
+    await expect(page.get_by_text("末尾验证点😀", exact=True)).to_be_visible()
+E   AssertionError: Locator expected to be visible
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_be_visible" with timeout 5000ms
+E     - waiting for get_by_text("末尾验证点😀", exact=True)
+E   
+E   Aria snapshot:
+E   - dialog "用例执行规划":
+E     - banner:
+E       - heading "用例执行规划" [level=2]
+E       - button "关闭"
+E     - paragraph: AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。
+E     - paragraph: 原运行：530f6e30-d9d1-57a1-ae08-67fa489b8990 · 已选 1 条失败项。固定目标及版本后规划必要前置，原失败结果保留。
+E     - group "回归用例版本":
+E       - text: 回归用例版本
+E       - paragraph: 默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。
+E       - checkbox "变更后查询 · 原版本 554005d9-ad78-4963-b882-ede252fb1b00 → ef6a1517-f67b-4fc3-8a81-90b2cd20374b" [checked] [disabled]
+E       - text: 变更后查询 · 原版本 554005d9-ad78-4963-b882-ede252fb1b00 → ef6a1517-f67b-4fc3-8a81-90b2cd20374b
+E     - group: 规划设置
+E     - region "持久规划任务":
+E       - paragraph: 规划请求编号：003f6808-04c0-4d0c-bbcf-53dd0c9640cb
+E       - status: 规划任务已完成 · 已按项目依据规划 · 已调用 2 回合
+E       - button "另建规划任务"
+E       - button "查询规划任务"
+E       - button "项目规划任务"
+E     - text: 已保存的计划编号
+E     - textbox "已保存的计划编号":
+E       - /placeholder: 输入当前项目的计划编号
+E       - text: d6c69537-f248-4e18-b7ec-3e47871ee50b
+E     - button "查看已保存计划"
+E     - heading "计划已生成" [level=3]
+E     - paragraph: 已按项目依据规划
+E     - paragraph: 回归来源：530f6e30-d9d1-57a1-ae08-67fa489b8990 · 1 条固定失败项。新运行结果关联原失败，准备成功不计为目标通过。
+E     - region "启动已保存计划":
+E       - paragraph: 启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。
+E       - text: 执行测试模式
+E       - combobox "执行测试模式" [disabled]:
+E         - option "代码审批模式"
+E         - option "UI自动化模式"
+E         - option "API接口测试模式" [selected]
+E         - option "兼容性测试模式"
+E         - option "单元与组件测试模式"
+E         - option "无障碍测试模式"
+E         - option "视觉回归测试模式"
+E         - option "移动端测试模式"
+E         - option "测试可靠性与韧性模式"
+E         - option "集成与依赖测试模式"
+E         - option "安全测试模式"
+E         - option "性能测试模式"
+E         - option "冒烟测试模式"
+E       - text: 关联会话编号（可选）
+E       - textbox "关联会话编号（可选）" [disabled]:
+E         - /placeholder: 会话必须属于当前项目
+E       - button "启动测试运行"
+E     - list:
+E       - listitem:
+E         - heading "运行内准备 · prepare-new" [level=4]
+E         - paragraph: 依据实际原文补全
+E         - group: 准备操作与验证点
+E         - paragraph: 依据：document:39ac89e5-0671-4eef-b1cd-d89079005f03:1f01fd9b09fb80b3
+E       - listitem:
+E         - heading "目标用例 · 真实依赖样本 2" [level=4]
+E         - paragraph: 固定原失败的新版本
+E         - paragraph: 等待前置：prepare-new
+E         - group: 完整固定用例
+E         - group: 数据来源
+E         - paragraph: 依据：case:ef6a1517-f67b-4fc3-8a81-90b2cd20374b
+E     - group: 查询到的项目原文与录制依据</failure></testcase></testsuite></testsuites>

@@ -357,124 +357,8 @@ class TestRunService:
         created_by: str | None = None,
     ) -> TestRunDetail:
         """从原始失败结果创建新运行，永不修改原 Run/Result。"""
-        parent = await self._get_run_record(parent_run_id)
-        if parent.origin != "native":
-            raise ValueError(
-                "Imported legacy test runs are read-only and cannot create regression runs: "
-                f"{parent_run_id}"
-            )
-        if parent.status not in {"completed", "cancelled"}:
-            raise ValueError(
-                f"Only completed or cancelled test runs can create regression: {parent_run_id}"
-            )
-        await self._projects.require_active(parent.project_id)
-
-        eligible_statuses = {"failed", "error", "blocked"}
-        requested_ids = list(dict.fromkeys(payload.result_ids))
-        candidates = await self._store.list_regression_candidates(
-            run_id=parent_run_id,
-            result_ids=requested_ids or None,
-        )
-        candidates_by_id = {
-            candidate.result_id: candidate for candidate in candidates
-        }
-        if requested_ids:
-            missing = [
-                result_id
-                for result_id in requested_ids
-                if result_id not in candidates_by_id
-            ]
-            if missing:
-                raise KeyError(
-                    "Regression result does not belong to parent run: " + ", ".join(missing)
-                )
-            selected_candidates = [
-                candidates_by_id[result_id] for result_id in requested_ids
-            ]
-            ineligible = [
-                candidate.result_id
-                for candidate in selected_candidates
-                if candidate.status not in eligible_statuses
-            ]
-            if ineligible:
-                raise ValueError(
-                    "Regression result is not eligible (must be failed/error/blocked): "
-                    + ", ".join(ineligible)
-                )
-        else:
-            selected_candidates = [
-                candidate
-                for candidate in candidates
-                if candidate.status in eligible_statuses
-            ]
-        if not selected_candidates:
-            raise ValueError(
-                "No failed/error/blocked results available for regression: "
-                f"{parent_run_id}"
-            )
-
+        parent, selected_candidates, session_id = await self._prepare_regression(parent_run_id, payload)
         now = self._clock()
-        session_id = payload.session_id or parent.session_id
-        if payload.session_id:
-            if self._sessions is None:
-                raise RuntimeError("Session integration is not configured for regression runs")
-            session = await self._sessions.get_session(payload.session_id)
-            if session is None:
-                raise KeyError(f"Session not found: {payload.session_id}")
-            if session.project_id != parent.project_id:
-                raise ValueError(
-                    f"Session is not bound to regression project: {payload.session_id}"
-                )
-
-        cases: dict[str, object] = {}
-        versions: dict[str, object] = {}
-        if payload.version_overrides:
-            override_case_ids = {
-                candidate.case_id for candidate in selected_candidates
-            }
-            unknown_cases = [
-                case_id
-                for case_id in payload.version_overrides
-                if case_id not in override_case_ids
-            ]
-            if unknown_cases:
-                raise ValueError(
-                    "Version override is not part of selected regression results: "
-                    + ", ".join(unknown_cases)
-                )
-            cases = await self._cases.get_cases(list(payload.version_overrides))
-            versions = await self._cases.get_versions(list(payload.version_overrides.values()))
-            for case_id, version_id in payload.version_overrides.items():
-                case = cases[case_id]
-                version = versions.get(version_id)
-                if version is None or version.case_id != case_id:
-                    raise ValueError(
-                        "Regression version override does not belong to case: "
-                        f"{case_id}/{version_id}"
-                    )
-                if case.project_id != parent.project_id:
-                    raise ValueError(f"Regression case belongs to another project: {case_id}")
-                if (
-                    case.lifecycle_status != "active"
-                    or case.active_version_id != version_id
-                ):
-                    raise ValueError(
-                        "Regression version override must reference the active version: "
-                        f"{case_id}/{version_id}"
-                    )
-
-        for candidate in selected_candidates:
-            if candidate.run_item_position is None:
-                raise KeyError(
-                    "Regression source run item not found: "
-                    f"{candidate.run_item_id}"
-                )
-        selected_candidates.sort(
-            key=lambda candidate: (
-                candidate.run_item_position,
-                candidate.result_id,
-            )
-        )
         if parent.execution_strategy == "agent":
             if self._agent_regression_service is None:
                 raise RuntimeError("Agent 回归计划服务尚未配置，未创建测试运行")
@@ -548,6 +432,140 @@ class TestRunService:
             },
         )
         return stored
+
+    async def _prepare_regression(self, parent_run_id, payload):
+        parent = await self._get_run_record(parent_run_id)
+        if parent.origin != "native":
+            raise ValueError(
+                "Imported legacy test runs are read-only and cannot create regression runs: "
+                f"{parent_run_id}"
+            )
+        if parent.status not in {"completed", "cancelled"}:
+            raise ValueError(
+                f"Only completed or cancelled test runs can create regression: {parent_run_id}"
+            )
+        await self._projects.require_active(parent.project_id)
+
+        eligible_statuses = {"failed", "error", "blocked"}
+        requested_ids = list(dict.fromkeys(payload.result_ids))
+        candidates = await self._store.list_regression_candidates(
+            run_id=parent_run_id,
+            result_ids=requested_ids or None,
+        )
+        candidates_by_id = {
+            candidate.result_id: candidate for candidate in candidates
+        }
+        if requested_ids:
+            missing = [
+                result_id
+                for result_id in requested_ids
+                if result_id not in candidates_by_id
+            ]
+            if missing:
+                raise KeyError(
+                    "Regression result does not belong to parent run: " + ", ".join(missing)
+                )
+            selected_candidates = [
+                candidates_by_id[result_id] for result_id in requested_ids
+            ]
+            ineligible = [
+                candidate.result_id
+                for candidate in selected_candidates
+                if candidate.status not in eligible_statuses
+            ]
+            if ineligible:
+                raise ValueError(
+                    "Regression result is not eligible (must be failed/error/blocked): "
+                    + ", ".join(ineligible)
+                )
+        else:
+            selected_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.status in eligible_statuses
+            ]
+        if not selected_candidates:
+            raise ValueError(
+                "No failed/error/blocked results available for regression: "
+                f"{parent_run_id}"
+            )
+
+        session_id = payload.session_id or parent.session_id
+        if payload.session_id:
+            if self._sessions is None:
+                raise RuntimeError("Session integration is not configured for regression runs")
+            session = await self._sessions.get_session(payload.session_id)
+            if session is None:
+                raise KeyError(f"Session not found: {payload.session_id}")
+            if session.project_id != parent.project_id:
+                raise ValueError(
+                    f"Session is not bound to regression project: {payload.session_id}"
+                )
+
+        cases: dict[str, object] = {}
+        versions: dict[str, object] = {}
+        if payload.version_overrides:
+            override_case_ids = {
+                candidate.case_id for candidate in selected_candidates
+            }
+            unknown_cases = [
+                case_id
+                for case_id in payload.version_overrides
+                if case_id not in override_case_ids
+            ]
+            if unknown_cases:
+                raise ValueError(
+                    "Version override is not part of selected regression results: "
+                    + ", ".join(unknown_cases)
+                )
+            cases = await self._cases.get_cases(list(payload.version_overrides))
+            versions = await self._cases.get_versions(list(payload.version_overrides.values()))
+            for case_id, version_id in payload.version_overrides.items():
+                case = cases[case_id]
+                version = versions.get(version_id)
+                if version is None or version.case_id != case_id:
+                    raise ValueError(
+                        "Regression version override does not belong to case: "
+                        f"{case_id}/{version_id}"
+                    )
+                if case.project_id != parent.project_id:
+                    raise ValueError(f"Regression case belongs to another project: {case_id}")
+                if (
+                    case.lifecycle_status != "active"
+                    or case.active_version_id != version_id
+                ):
+                    raise ValueError(
+                        "Regression version override must reference the active version: "
+                        f"{case_id}/{version_id}"
+                    )
+
+        for candidate in selected_candidates:
+            if candidate.run_item_position is None:
+                raise KeyError(
+                    "Regression source run item not found: "
+                    f"{candidate.run_item_id}"
+                )
+        selected_candidates.sort(
+            key=lambda candidate: (
+                candidate.run_item_position,
+                candidate.result_id,
+            )
+        )
+        return parent, selected_candidates, session_id
+
+    async def submit_regression_planning(self, parent_run_id, payload):
+        parent = await self._get_run_record(parent_run_id)
+        if parent.execution_strategy != "agent":
+            raise ValueError("持久回归规划仅用于 Agent 固定用例运行，其他运行使用既有回归入口")
+        if self._agent_regression_service is None:
+            raise RuntimeError("Agent 回归计划服务尚未配置")
+        existing = await self._agent_regression_service.find_submission(parent, payload)
+        if existing:
+            logger.info("regression_planning_submission_replayed", extra={"project_id": parent.project_id,
+                "parent_run_id": parent.id, "task_id": existing.id})
+            return existing
+        parent, candidates, session_id = await self._prepare_regression(parent_run_id, payload)
+        return await self._agent_regression_service.submit(parent, candidates, payload, session_id=session_id)
 
     async def get_record(self, run_id: str) -> TestRunRecord:
         """读取运行头，供 Worker 热路径使用，避免加载完整运行明细。"""

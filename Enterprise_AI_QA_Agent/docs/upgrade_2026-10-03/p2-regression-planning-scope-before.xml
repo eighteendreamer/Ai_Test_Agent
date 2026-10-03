@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="3.445" timestamp="2026-10-04T07:14:01.979270+08:00" hostname="EIghteen"><testcase classname="tests.test_regression_planning_tasks" name="test_fixed_regression_scope_is_not_an_initial_recall_candidate_list" time="0.346"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for CasePlanningRequest&#10;candidate_case_ids&#10;  List should have at most 50 items after validation, not 51 [type=too_long, input_value=['4b4e48d6-aa49-489a-9610...4dd8-a736-960cee4c8ae0'], input_type=list]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/too_long">tests\test_regression_planning_tasks.py:70: in test_fixed_regression_scope_is_not_an_initial_recall_candidate_list
+    result = await regression.submit(parent_record, candidates, request, session_id=session_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_regression_service.py:92: in submit
+    planning_request = CasePlanningRequest(objective=snapshot.plan.request.objective,
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for CasePlanningRequest
+E   candidate_case_ids
+E     List should have at most 50 items after validation, not 51 [type=too_long, input_value=['4b4e48d6-aa49-489a-9610...4dd8-a736-960cee4c8ae0'], input_type=list]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_long</failure></testcase></testsuite></testsuites>

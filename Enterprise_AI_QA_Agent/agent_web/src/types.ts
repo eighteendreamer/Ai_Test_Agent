@@ -1569,6 +1569,34 @@ export interface CasePlanRecord {
   rounds: Array<Record<string, unknown>>;
   warnings: string[];
   created_at: string;
+  regression?: RegressionPlanningInput | null;
+}
+
+export interface RegressionPlanningInput {
+  parent_run_id: string;
+  source_plan_id: string;
+  source_results_by_case: Record<string, string>;
+  required_case_versions: Record<string, string>;
+  version_overrides: Record<string, string>;
+  mode_key: string;
+  session_id: string | null;
+  submission: Record<string, unknown>;
+  context: Record<string, unknown>;
+}
+
+export interface RegressionPlanningTaskRequest {
+  creation_key: string;
+  result_ids?: string[];
+  version_overrides?: Record<string, string>;
+  session_id?: string | null;
+}
+
+export interface RegressionPlanningSelection {
+  parentRunId: string;
+  resultIds: string[];
+  versionOverrides?: Record<string, string>;
+  sessionId?: string | null;
+  versionOptions?: Array<{ caseId: string; title: string; originalVersionId: string; activeVersionId: string | null }>;
 }
 
 export interface TestCaseBundle {
@@ -1752,7 +1780,7 @@ export interface TestRunDetail {
   run: TestRunRecord;
   items: TestRunItemRecord[];
   attempts: Array<Record<string, unknown>>;
-  results: Array<Record<string, unknown>>;
+  results: TestCaseResultRecord[];
 }
 
 export interface TestRunPage {

@@ -27,6 +27,7 @@ import type {
   CasePlanningTaskRequest,
   CasePlanningTaskRecord,
   CasePlanningTaskPage,
+  RegressionPlanningTaskRequest,
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
@@ -171,6 +172,10 @@ export function generateTestCases(
 
 export function submitTestCaseReview(caseId: string): Promise<TestCaseRecord> {
   return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/submit-review`, { method: "POST" });
+}
+
+export function getTestCase(caseId: string): Promise<TestCaseRecord> {
+  return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}`);
 }
 
 export function activateTestCase(caseId: string, versionId?: string | null): Promise<TestCaseRecord> {
@@ -357,6 +362,12 @@ export function createRegressionTestRun(
   return request(`/api/v1/runs/${encodeURIComponent(runId)}/regression`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function submitRegressionPlanningTask(runId: string, payload: RegressionPlanningTaskRequest): Promise<CasePlanningTaskRecord> {
+  return request(`/api/v1/runs/${encodeURIComponent(runId)}/regression-planning-tasks`, {
+    method: "POST", body: JSON.stringify(payload),
   });
 }
 
