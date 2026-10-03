@@ -1611,6 +1611,7 @@ export interface TestRunItemRecord {
   case_id: string;
   case_version_id: string;
   position: number;
+  dependencies?: Array<{ item_id: string; required_output_paths: string[][] }>;
   status: RunItemStatus;
   waiting_reason?: string | null;
   attempt_no: number;

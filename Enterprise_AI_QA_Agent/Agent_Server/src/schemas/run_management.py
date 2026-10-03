@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -86,12 +86,23 @@ class ProjectExecutionSummary(BaseModel):
     sampled_at: datetime
 
 
+class RunItemDependency(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str = Field(min_length=1, max_length=160)
+    # Literal JSON keys / array indexes relative to the saved result.actual.
+    # Token arrays preserve keys containing dots; no expression is executed.
+    required_output_paths: list[Annotated[list[Annotated[str, Field(max_length=256)]],
+        Field(max_length=32)]] = Field(default_factory=list, max_length=100)
+
+
 class TestRunItemRecord(BaseModel):
     id: str
     run_id: str
     case_id: str
     case_version_id: str
     position: int = Field(ge=1)
+    dependencies: list[RunItemDependency] = Field(default_factory=list, max_length=200)
     status: RunItemStatus = "queued"
     waiting_reason: str | None = None
     attempt_no: int = Field(default=0, ge=0)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -9,6 +10,8 @@ from uuid import UUID, uuid4
 
 from src.core.config import Settings
 from src.application.test_runs.timing import add_active_duration, add_waiting_duration, elapsed_ms
+from src.application.test_runs.dependencies import (dependencies_ready, validate_run_dependencies,
+    dependency_failures, blocked_dependency_records)
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -30,6 +33,7 @@ from src.schemas.run_management import (
 )
 
 
+logger = logging.getLogger(__name__)
 TERMINAL_ITEM_STATUSES = {
     "passed",
     "failed",
@@ -214,6 +218,7 @@ class InMemoryTestRunStore:
         run: TestRunRecord,
         items: list[TestRunItemRecord],
     ) -> TestRunDetail:
+        validate_run_dependencies(run, items)
         async with self._lock:
             if run.id in self._runs:
                 raise ValueError(f"Test run already exists: {run.id}")
@@ -500,11 +505,35 @@ class InMemoryTestRunStore:
             run = self._require_run(run_id)
             if run.status in {"completed", "cancelled"}:
                 return []
+            blocked_count = 0
+            while True:
+                changed = False
+                for item_id in self._item_ids_by_run[run_id]:
+                    item = self._items[item_id]
+                    if item.status != "queued":
+                        continue
+                    failures = dependency_failures(item, self._items, self._results)
+                    if not failures:
+                        continue
+                    updated, attempt, result = blocked_dependency_records(item, failures, now)
+                    self._items[item_id] = updated
+                    self._attempts[attempt.id] = attempt
+                    self._attempt_ids_by_run[run_id].append(attempt.id)
+                    self._results[result.id] = result
+                    self._result_ids_by_run[run_id].append(result.id)
+                    blocked_count += 1
+                    changed = True
+                if not changed:
+                    break
+            if blocked_count:
+                self._refresh_run(run_id, now)
+                logger.info("test_run_dependencies_blocked", extra={"run_id": run_id, "blocked_count": blocked_count})
             queued = sorted(
                 (
                     self._items[item_id]
                     for item_id in self._item_ids_by_run[run_id]
                     if self._items[item_id].status == "queued"
+                    and dependencies_ready(self._items[item_id], self._items, self._results)
                 ),
                 key=lambda item: (item.position, item.id),
             )[:limit]
@@ -562,6 +591,8 @@ class InMemoryTestRunStore:
     ) -> TestRunItemRecord:
         async with self._lock:
             item = self._require_active_lease(item_id, lease_token, now, {"claimed"})
+            if not dependencies_ready(item, self._items, self._results):
+                raise ValueError("运行条目的必要前置或输出尚未满足")
             updated = item.model_copy(
                 deep=True,
                 update={
@@ -1786,6 +1817,7 @@ class PostgresTestRunStore:
         return TestRunDetail(run=run, items=items)
 
     def _insert_run_and_items(self, cur, run: TestRunRecord, items: list[TestRunItemRecord]) -> None:
+        validate_run_dependencies(run, items)
         cur.execute(
             f"INSERT INTO {self._run_table} "
             "(id, project_id, suite_id, status, mode_key, session_id, parent_run_id, "
@@ -2177,10 +2209,12 @@ class PostgresTestRunStore:
                 run = self._read_run(cur, run_id)
                 if run.status in {"completed", "cancelled"}:
                     return []
+                blocked_count = self._block_failed_dependencies_in_cursor(cur, run_id, now)
                 cur.execute(
-                    f"SELECT record FROM {self._item_table} "
-                    "WHERE run_id = %s AND status = 'queued' "
-                    "ORDER BY position ASC, id ASC "
+                    f"SELECT candidate.record FROM {self._item_table} AS candidate "
+                    "WHERE candidate.run_id = %s AND candidate.status = 'queued' "
+                    f"AND {self._dependencies_ready_sql()} "
+                    "ORDER BY candidate.position ASC, candidate.id ASC "
                     "FOR UPDATE SKIP LOCKED LIMIT %s",
                     (run_id, limit),
                 )
@@ -2262,12 +2296,16 @@ class PostgresTestRunStore:
                             for _, attempt in claimed
                         ],
                     )
+                if claimed or blocked_count:
                     self._refresh_run_in_cursor(
                         cur,
                         run_id,
                         now,
-                        status_deltas=[("queued", "claimed")] * len(claimed),
+                        status_deltas=([("queued", "claimed")] * len(claimed)
+                            + [("queued", "blocked")] * blocked_count),
                     )
+        if blocked_count:
+            logger.info("test_run_dependencies_blocked", extra={"run_id": run_id, "blocked_count": blocked_count})
         return claimed
 
     def _start_item_sync(
@@ -2280,6 +2318,11 @@ class PostgresTestRunStore:
             with conn.cursor() as cur:
                 item = self._lock_item(cur, item_id)
                 self._validate_lease(item, lease_token, now, {"claimed"})
+                if item.dependencies:
+                    cur.execute(f"SELECT candidate.id FROM {self._item_table} AS candidate "
+                        f"WHERE candidate.id=%s AND {self._dependencies_ready_sql()}", (item.id,))
+                    if cur.fetchone() is None:
+                        raise ValueError("运行条目的必要前置或输出尚未满足")
                 attempt = self._lock_attempt(cur, item_id, lease_token)
                 item = item.model_copy(
                     update={
@@ -3341,6 +3384,75 @@ class PostgresTestRunStore:
         if not row:
             raise KeyError(f"Test run not found: {run_id}")
         return self._run_from_value(row["record"])
+
+    def _dependencies_ready_sql(self, *, failed: bool = False) -> str:
+        # Existing stores use jsonb_array_elements and #>>. PostgreSQL #> returns
+        # SQL NULL for absent/invalid paths; explicit JSON null is also missing.
+        # Filter before LIMIT and SKIP LOCKED so waiting items cannot consume slots.
+        source = (
+            "SELECT 1 FROM jsonb_array_elements("
+            "COALESCE(candidate.record->'dependencies', '[]'::jsonb)) AS dependency(value) "
+            f"LEFT JOIN {self._item_table} AS parent ON parent.id=(dependency.value->>'item_id')::uuid "
+            "AND parent.run_id=candidate.run_id "
+            f"LEFT JOIN {self._result_table} AS result ON result.id=parent.result_id "
+            "AND result.run_item_id=parent.id AND result.status='passed' "
+        )
+        missing_output = (
+            "EXISTS ("
+            "SELECT 1 FROM jsonb_array_elements(COALESCE("
+            "dependency.value->'required_output_paths', '[]'::jsonb)) AS output_path(value) "
+            "WHERE COALESCE((result.record->'actual') #> ARRAY("
+            "SELECT jsonb_array_elements_text(output_path.value)), 'null'::jsonb)='null'::jsonb)"
+        )
+        if failed:
+            return (f"EXISTS ({source} WHERE parent.id IS NULL OR "
+                "parent.status IN ('failed','error','blocked','skipped','cancelled') OR "
+                f"(parent.status='passed' AND {missing_output}))")
+        return f"NOT EXISTS ({source} WHERE parent.status IS DISTINCT FROM 'passed' OR {missing_output})"
+
+    def _block_failed_dependencies_in_cursor(self, cur, run_id: str, now: datetime) -> int:
+        blocked_count = 0
+        while True:
+            cur.execute(f"SELECT candidate.record FROM {self._item_table} AS candidate "
+                "WHERE candidate.run_id=%s AND candidate.status='queued' "
+                f"AND {self._dependencies_ready_sql(failed=True)} "
+                "ORDER BY candidate.position,candidate.id FOR UPDATE OF candidate SKIP LOCKED", (run_id,))
+            candidates = [self._item_from_value(row["record"]) for row in cur.fetchall()]
+            if not candidates:
+                break
+            changed = 0
+            for item in candidates:
+                parent_ids = [dependency.item_id for dependency in item.dependencies]
+                cur.execute(f"SELECT record FROM {self._item_table} WHERE run_id=%s AND id=ANY(%s::uuid[])",
+                    (run_id, parent_ids))
+                parents = {parent.id: parent for parent in [self._item_from_value(row["record"]) for row in cur.fetchall()]}
+                result_ids = [parent.result_id for parent in parents.values() if parent.result_id]
+                cur.execute(f"SELECT record FROM {self._result_table} WHERE run_id=%s AND id=ANY(%s::uuid[])",
+                    (run_id, result_ids))
+                results = {result.id: result for result in [self._result_from_value(row["record"]) for row in cur.fetchall()]}
+                failures = dependency_failures(item, parents, results)
+                if not failures:
+                    continue
+                updated, attempt, result = blocked_dependency_records(item, failures, now)
+                cur.execute(f"INSERT INTO {self._attempt_table} "
+                    "(id,run_id,run_item_id,attempt_no,lease_token,status,record) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                    (attempt.id, attempt.run_id, attempt.run_item_id, attempt.attempt_no,
+                     attempt.lease_token, attempt.status, self._json(attempt)))
+                cur.execute(f"INSERT INTO {self._result_table} "
+                    "(id,run_id,run_item_id,case_id,case_version_id,regression_source_result_id,"
+                    "attempt_id,status,payload_hash,created_at,record) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                    (result.id, result.run_id, result.run_item_id, result.case_id, result.case_version_id,
+                     result.regression_source_result_id, result.attempt_id, result.status, result.payload_hash,
+                     result.created_at, self._json(result)))
+                self._write_item(cur, updated)
+                changed += 1
+            if not changed:
+                break
+            blocked_count += changed
+        # The caller updates run totals only after it has locked every candidate.
+        # Updating the run row here and then locking more items reverses the
+        # existing item-before-run lock order and can deadlock another claimant.
+        return blocked_count
 
     def _write_run(self, cur, run: TestRunRecord) -> None:
         cur.execute(
