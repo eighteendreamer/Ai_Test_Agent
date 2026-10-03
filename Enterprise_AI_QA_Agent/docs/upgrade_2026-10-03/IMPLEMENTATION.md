@@ -840,3 +840,36 @@ npm run build
 以上部署命令已核对源码参数，完整生产启动本轮未执行。独立任务表按现有 initialize 增量创建；关闭新派发入口保留任务/计划，旧同步 API 保持兼容。通用任务池现为 Session 投影，本轮提供项目规划列表，尚未合并投影/事件；显式新任务与旧失败任务的重试关联、内部回归异步迁移及规划专属 LangSmith span 也待完成。持久 Worker 使用现有请求上下文及逻辑调用记录，旧同步调用保留原 tracing 契约。
 
 本轮更新 PLAN 正文、§2.6、阶段表及剩余工作，并同步所选 Codex 镜像。上传版本仍由 RustFS 原件和 PG 记录管理，不调用 Git；文档 V1/V2 功能仍待实现。模板仅用于生成，执行仍读取固定完整用例。完整 P0—P5 目标未完成，默认模型空正文失败、生产/完整项目页面、步骤级准备与未知副作用、P0 录制/Docker、P1 模块生成、P3—P5 闭环及业务数据迁移继续保留。用户 .gitignore 保持未暂存；本轮新测试因该规则忽略 tests 目录而显式 force-add，不修改忽略规则。
+
+### 规划 Worker 专属启动及真实 CLI 验收（2026-10-04）
+
+上一阶段 `c9581bc` 为实际进展。继续读取用户输入、PLAN §2.6、main.py、AppContainer、Embedding/Agent Worker、规划来源、SQL 池生命周期及本地课程《Agent轨迹与协议鲁棒性》《评测工程化与CICD》。确认旧规划 CLI 直接进入整个 API lifespan，会启动会话恢复、MCP、浏览器配额、录制编排和无关配置域；这是 Worker 的启动职责混在 API 中，采用专属资源生命周期修正边界，而不是给无关服务启动错误加 fallback。
+
+修改仅涉及规划 Worker：新增 `planning_worker_runtime.py`，复用现有 AppContainer 的同一批 provider，初始化 MySQL 模型/应用配置，PG 项目/用例/文档/录制/向量/计划/任务/Outbox，连接已配置 Redis 向量及任务队列；录制图读取按现有来源接线。模型 OAuth 和向量召回能力保留。各资源初始化前登记关闭，AsyncExitStack 最后释放 SQL 池，部分启动失败和关闭失败仍继续释放已获取的其他资源。启动日志按现有 request context 标识资源/阶段，CLI 配置统一日志并保留 once/worker-id 参数，once 输出本次 ACK 数；不把 ACK 当作目标通过。
+
+规划 CLI 不再导入 src.main，未修改其他 Worker 或整个 API lifespan。AppContainer 中用例读取服务的生成依赖仍按现有 provider 构造，但不启动生成、工具或会话业务。没有新增配置域、依赖、表字段或 API 契约；可编辑配置继续 MySQL，业务数据继续 PostgreSQL，原文继续 RustFS。API 的完整生产启动依然需要后续验收。
+
+证据：
+
+| 验证 | 实际结果 | 范围 |
+|---|---|---|
+| 启动边界初始复现 | 1 失败，4.35 秒 | `p2-planning-worker-bootstrap-before.xml`；独立进程实际导入旧 CLI 后发现 src.main 已加载，保留原失败 |
+| 启动、回收及既有 Worker 回归 | 17 通过，7.54 秒 | `p2-planning-worker-runtime-regression.xml`；无 API 启动导入、向量/模型启动失败、关闭失败时仍回收其他资源及池；启用既有 live PG/MySQL 池测试，Redis Worker/参数回归 |
+| 全部规划任务专项 | 13 通过，33.47 秒 | `p2-planning-worker-task-regression.xml`；保留原 11 项与隔离宿主进程，新增真实 CLI 参数化场景 |
+| 真实生产规划 CLI 最终专项 | 1 通过、12 未选择，17.39 秒 | `p2-planning-worker-cli.xml/json`；使用 python -m src.cli.run_case_planning_worker --once --worker-id，实际读取环境配置并运行专属完整 startup/shutdown；真实 MySQL/PG/Redis/RustFS、本地 OpenAI HTTP，强制结束第二回合后新进程第三回合完成，固定文档/版本/总期限保留，终态重投不增模型调用 |
+| 源码 | 4 个变更 Python 文件 py_compile 通过 | 额外检查，不替代上述功能验收 |
+
+CLI 测试通过子进程环境传入隔离 Settings；未打印环境值，也没有写用户 .env 或改默认模型配置。新 PG 录制/事件/向量表以 UUID 独立命名并先检查不存在；只清理本 fixture 拥有的表、对象和流。Windows stdout/stderr 在受控 HTTP 等待前由 communicate 持续读取，避免日志填满管道导致进程阻塞。完整任务专项在增加启动日志前通过；增加日志后又执行真实 CLI 最终专项及带 live 池的回收测试。两个阶段的证据分开保存，原来的 p2-planning-task-process.json 保留。
+
+主要实际命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-planning-worker-task-regression.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_tasks.py -k 'independent_worker and True' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-planning-worker-cli.xml
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_planning_worker_runtime.py tests/test_redis_task_worker.py tests/test_redis_worker_entrypoint.py tests/test_lifespan_resource_cleanup.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-planning-worker-runtime-regression.xml
+```
+
+CLI 连接并初始化真实向量 store，读取真实录制目录；本专项指定目标用例，未调用真实 embedding 模型，也未读取已有固化录制子图。不能将启动接线验收宣称这些语义读取场景全部通过。外部默认模型、完整项目页面、API lifespan、测试执行 Worker 仍未验收；通用任务池、回归异步迁移、未知业务副作用/步骤恢复及 P0—P5 其他原范围继续保留。前端与公开契约没有修改，不重复上一阶段已通过的前端构建或浏览器测试。PLAN 正文及所选 Codex 镜像同步；用户 .gitignore 仍未暂存，新必要测试显式 force-add，中文 commit 不推送/不建 PR。

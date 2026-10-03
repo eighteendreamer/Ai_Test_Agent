@@ -447,7 +447,8 @@ async def test_changed_model_parameters_do_not_invoke_and_unconfirmed_checkpoint
 
 @pytest.mark.asyncio
 @live
-async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_document(tmp_path):
+@pytest.mark.parametrize("production_cli", [False, True])
+async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_document(tmp_path, production_cli):
     from src.application.models.model_runtime_service import ModelRuntimeService
     from src.infrastructure.model_config_store import MySQLModelConfigStore
     from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
@@ -499,31 +500,60 @@ async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_do
             base_url=f"http://127.0.0.1:{provider.server_port}/v1", api_key="local-fixture-marker", is_active=True,
             use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=1024))
         env.service._models = ModelRuntimeService(ModelRegistry(models), env.settings)
-        stream = "isolated:planning-process:" + uuid4().hex; env.tasks._stream = stream
-        queue = RedisTaskQueue(env.settings.database.redis_url, stream=stream, group="fixture-process")
+        stream = "isolated:planning-process:" + uuid4().hex + ":case_planning"; env.tasks._stream = stream
+        env.settings.orchestration.redis_task_outbox_streams = stream
+        env.settings.orchestration.redis_task_consumer_group = "fixture-process"
+        env.settings.orchestration.redis_task_reclaim_idle_ms = 1000
+        env.settings.orchestration.redis_task_block_ms = 100
+        group = "fixture-process:case_planning" if production_cli else "fixture-process"
+        extra_tables = []
+        if production_cli:
+            for field in ("postgres_test_case_embedding_table", "postgres_recording_table", "postgres_recording_event_table"):
+                table = "up_pc_" + uuid4().hex[:12]
+                setattr(env.settings.database, field, table); extra_tables.append(table)
+                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass(%s) AS existing", (table,)); assert cur.fetchone()["existing"] is None
+        queue = RedisTaskQueue(env.settings.database.redis_url, stream=stream, group=group)
         await queue.connect()
         process = None
+        collecting = None
         try:
             task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key="process", objective="验证订单", candidate_case_ids=[target.case.id]))
             assert await PostgresTaskOutbox(env.settings).relay_once(queue) == 1
             def start(worker_id):
+                if production_cli:
+                    settings_fields = env.settings.model_dump(mode="json")
+                    child_env = {k: v for k, v in os.environ.items()
+                        if k.split("__")[0].lower() not in settings_fields}
+                    for field, value in settings_fields.items():
+                        if field == "api_auth_token":
+                            value = env.settings.api_auth_token.get_secret_value() if env.settings.api_auth_token else ""
+                        child_env[field.upper()] = json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else str(value)
+                    child_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+                    # Continuously drain pipes even before the controlled HTTP
+                    # wait; otherwise Windows pipe capacity can stall logging.
+                    return subprocess.Popen([sys.executable, "-X", "utf8", "-m", "src.cli.run_case_planning_worker",
+                        "--once", "--worker-id", worker_id], stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=Path(__file__).resolve().parents[1], env=child_env)
                 child = subprocess.Popen([sys.executable, "-X", "utf8", "tests/planning_worker_probe.py"],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=Path(__file__).resolve().parents[1],
                     env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
                 # Exact fixture settings travel through stdin, never shell interpolation or log output.
                 child.stdin.write((json.dumps({"settings": env.settings.model_dump(mode="json"), "stream": stream,
-                    "group": "fixture-process", "worker_id": worker_id}) + "\n").encode()); child.stdin.flush(); child.stdin.close(); child.stdin = None
+                    "group": group, "worker_id": worker_id}) + "\n").encode()); child.stdin.flush(); child.stdin.close(); child.stdin = None
                 return child
             process = start("before-kill")
+            collecting = asyncio.create_task(asyncio.to_thread(process.communicate))
             async with asyncio.timeout(20):
                 while not blocked.is_set():
                     if process.poll() is not None:
-                        out, err = process.communicate(); raise AssertionError((out + err).decode(errors="replace"))
+                        out, err = await collecting; raise AssertionError((out + err).decode(errors="replace"))
                     await asyncio.sleep(.05)
             state = await env.jobs.get(project.id, task.id)
             assert state.phase == "invoking" and state.round_count == 2
             process.kill()
-            out, err = await asyncio.to_thread(process.communicate, timeout=5)
+            out, err = await asyncio.wait_for(collecting, timeout=5)
+            collecting = None
             assert process.returncode != 0
             release.set()
             expire(env, task)
@@ -546,14 +576,22 @@ async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_do
             out, err = await asyncio.to_thread(process.communicate, timeout=15)
             assert process.returncode == 0 and b"processed=1" in out, (out + err).decode(errors="replace")
             assert len(calls) == 3
-            (Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p2-planning-task-process.json").write_text(json.dumps({
-                "scope": "isolated independent process; production RedisTaskWorker/PlanningTaskHandler/workflow; actual MySQL model/policy, PG, RustFS and local OpenAI HTTP transport; full production lifespan/CLI not used",
+            evidence_name = "p2-planning-worker-cli.json" if production_cli else "p2-planning-worker-probe.json"
+            (Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03" / evidence_name).write_text(json.dumps({
+                "scope": "production CLI and dedicated planning runtime" if production_cli else "isolated process host; production RedisTaskWorker/PlanningTaskHandler; full API lifespan not used",
                 "task_id": task.id, "plan_id": result.plan_id, "attempt_count": result.attempt_no, "calls": calls,
                 "retained_fixed_case_version": True, "retained_document_bytes": True, "terminal_redelivery_no_model_calls": True,
             }, ensure_ascii=False, indent=2), encoding="utf-8")
         finally:
-            if process and process.poll() is None: process.kill(); await asyncio.to_thread(process.communicate, timeout=5)
+            if process and process.poll() is None:
+                process.kill()
+                if collecting is not None:
+                    await asyncio.wait_for(collecting, timeout=5)
+                else:
+                    await asyncio.to_thread(process.communicate, timeout=5)
             release.set(); await asyncio.to_thread(provider.shutdown); provider.server_close(); serving.join(timeout=2)
             await queue._client.delete(stream, stream + ":dlq"); await queue.close()
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for table in extra_tables: cur.execute(f'DROP TABLE IF EXISTS "{table}"')
             with mysql_raw_connection(env.settings) as conn, conn.cursor() as cur:
                 cur.execute(f"DROP TABLE `{model_table}`"); conn.commit()
