@@ -41,6 +41,8 @@ class DatabaseConfig(BaseModel):
     postgres_api_doc_table: str = "agent_api_docs"
     postgres_test_case_table: str = "agent_test_cases"
     postgres_test_case_version_table: str = "agent_test_case_versions"
+    postgres_case_import_source_table: str = "agent_case_import_sources"
+    postgres_case_import_batch_table: str = "agent_case_import_batches"
     postgres_test_suite_table: str = "agent_test_suites"
     postgres_test_suite_item_table: str = "agent_test_suite_items"
     postgres_test_run_table: str = "agent_test_runs"

@@ -52,6 +52,8 @@ from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.task_pool_service import TaskPoolService
 from src.application.test_cases.case_service import TestCaseService
 from src.application.test_cases.template_service import TestCaseTemplateService
+from src.application.test_cases.import_service import CaseImportService
+from src.application.test_cases.import_store import PostgresCaseImportStore
 from src.application.test_cases.case_store import PostgresTestCaseStore
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.test_cases.generation_pipeline import (
@@ -304,6 +306,12 @@ class AppContainer(containers.DeclarativeContainer):
         context_provider=test_case_context_provider,
         generator=test_case_generator,
         template_service=test_case_template_service,
+    )
+    case_import_store = providers.Singleton(PostgresCaseImportStore, settings=settings, case_store=test_case_store)
+    case_import_service = providers.Singleton(
+        CaseImportService, settings=settings, store=case_import_store, config_store=application_config_store,
+        project_service=project_service, case_service=test_case_service, case_store=test_case_store,
+        artifact_storage_service=artifact_storage_service, upload_security_service=upload_security_service,
     )
     test_case_embedding_service = providers.Singleton(
         TestCaseEmbeddingService,

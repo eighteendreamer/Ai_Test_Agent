@@ -30,6 +30,7 @@ class TestCaseStore(Protocol):
         entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]],
     ) -> list[tuple[TestCaseRecord, TestCaseVersionRecord]]: ...
     async def get_case(self, case_id: str) -> TestCaseRecord | None: ...
+    async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]: ...
     async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]: ...
     async def list_cases(
         self,
@@ -125,6 +126,10 @@ class InMemoryTestCaseStore:
     async def get_case(self, case_id: str) -> TestCaseRecord | None:
         case = self._cases.get(case_id)
         return case.model_copy(deep=True) if case else None
+
+    async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]:
+        requested = set(case_keys)
+        return {case.case_key for case in self._cases.values() if case.project_id == project_id and case.case_key in requested}
 
     async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
         return {
@@ -278,6 +283,14 @@ class PostgresTestCaseStore:
     async def get_case(self, case_id: str) -> TestCaseRecord | None:
         return await asyncio.to_thread(self._get_case_sync, case_id)
 
+    async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]:
+        def query():
+            with postgres_connect(self._settings) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(f"SELECT case_key FROM {self._case_table} WHERE project_id = %s AND case_key = ANY(%s::text[])", (project_id, case_keys))
+                    return {row["case_key"] for row in cur.fetchall()}
+        return await asyncio.to_thread(query) if case_keys else set()
+
     async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
         return await asyncio.to_thread(self._get_cases_sync, case_ids)
 
@@ -414,45 +427,7 @@ class PostgresTestCaseStore:
         try:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
-                    if entries:
-                        cur.executemany(
-                            f"""
-                            INSERT INTO {self._case_table} (
-                                id, project_id, case_key, lifecycle_status, mode_key,
-                                priority, active_version_id, latest_version, updated_at, record
-                            ) VALUES (%s, %s, %s, %s, %s, %s, NULL, 1, %s, %s::jsonb)
-                            """,
-                            [
-                                (
-                                    case.id,
-                                    case.project_id,
-                                    case.case_key,
-                                    case.lifecycle_status,
-                                    case.mode_key,
-                                    case.priority,
-                                    case.updated_at,
-                                    self._json(case),
-                                )
-                                for case, _ in entries
-                            ],
-                        )
-                        cur.executemany(
-                            f"""
-                            INSERT INTO {self._version_table} (
-                                id, case_id, version, content_hash, created_at, record
-                            ) VALUES (%s, %s, 1, %s, %s, %s::jsonb)
-                            """,
-                            [
-                                (
-                                    version.id,
-                                    version.case_id,
-                                    version.content_hash,
-                                    version.created_at,
-                                    self._json(version),
-                                )
-                                for _, version in entries
-                            ],
-                        )
+                    self.insert_drafts_in_transaction(cur, entries)
         except Exception as exc:
             message = str(exc).lower()
             if "case_key" in message or "project_id" in message and "unique" in message:
@@ -462,6 +437,51 @@ class PostgresTestCaseStore:
                 ) from exc
             raise
         return entries
+
+    def insert_drafts_in_transaction(
+        self, cur, entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]],
+    ) -> None:
+        """Share the existing SQL with imports; caller owns commit/rollback."""
+        if not entries:
+            return
+        cur.executemany(
+            f"""
+            INSERT INTO {self._case_table} (
+                id, project_id, case_key, lifecycle_status, mode_key,
+                priority, active_version_id, latest_version, updated_at, record
+            ) VALUES (%s, %s, %s, %s, %s, %s, NULL, 1, %s, %s::jsonb)
+            """,
+            [
+                (
+                    case.id,
+                    case.project_id,
+                    case.case_key,
+                    case.lifecycle_status,
+                    case.mode_key,
+                    case.priority,
+                    case.updated_at,
+                    self._json(case),
+                )
+                for case, _ in entries
+            ],
+        )
+        cur.executemany(
+            f"""
+            INSERT INTO {self._version_table} (
+                id, case_id, version, content_hash, created_at, record
+            ) VALUES (%s, %s, 1, %s, %s, %s::jsonb)
+            """,
+            [
+                (
+                    version.id,
+                    version.case_id,
+                    version.content_hash,
+                    version.created_at,
+                    self._json(version),
+                )
+                for _, version in entries
+            ],
+        )
 
     def _get_case_sync(self, case_id: str) -> TestCaseRecord | None:
         with postgres_connect(self._settings) as conn:

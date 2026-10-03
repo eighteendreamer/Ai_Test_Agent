@@ -14,6 +14,11 @@ import type {
   TestCaseVersionCreateRequest,
   GenerationTemplatePayload,
   GenerationTemplateRecord,
+  CaseImportOptions,
+  CaseImportSettingsRecord,
+  CaseImportSheet,
+  CaseImportSourceRecord,
+  CaseImportBatchView,
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
@@ -180,6 +185,38 @@ export function getTestCaseGenerationTemplate(projectId: string, useDefault = fa
 
 export function saveTestCaseGenerationTemplate(projectId: string, payload: GenerationTemplatePayload): Promise<GenerationTemplateRecord> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/test-case-generation-template`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+function caseImportPath(projectId: string): string {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/test-case-imports`;
+}
+
+export function getCaseImportSettings(projectId: string): Promise<CaseImportSettingsRecord> {
+  return request(`${caseImportPath(projectId)}/settings`);
+}
+
+export function saveCaseImportSettings(projectId: string, payload: CaseImportSettingsRecord["payload"]): Promise<CaseImportSettingsRecord> {
+  return request(`${caseImportPath(projectId)}/settings`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function uploadCaseImport(projectId: string, filename: string, contentBase64: string): Promise<CaseImportSourceRecord> {
+  return request(`${caseImportPath(projectId)}/sources`, { method: "POST", body: JSON.stringify({ filename, content_base64: contentBase64 }) });
+}
+
+export function inspectCaseImportSheets(projectId: string, sourceId: string, headerRow: number): Promise<CaseImportSheet[]> {
+  return request(`${caseImportPath(projectId)}/sources/${encodeURIComponent(sourceId)}/sheets?header_row=${headerRow}`);
+}
+
+export function previewCaseImport(projectId: string, sourceId: string, options: CaseImportOptions): Promise<CaseImportBatchView> {
+  return request(`${caseImportPath(projectId)}/sources/${encodeURIComponent(sourceId)}/previews`, { method: "POST", body: JSON.stringify(options) });
+}
+
+export function getCaseImportBatch(projectId: string, batchId: string): Promise<CaseImportBatchView> {
+  return request(`${caseImportPath(projectId)}/batches/${encodeURIComponent(batchId)}`);
+}
+
+export function commitCaseImport(projectId: string, batchId: string): Promise<CaseImportBatchView> {
+  return request(`${caseImportPath(projectId)}/batches/${encodeURIComponent(batchId)}/commit`, { method: "POST" });
 }
 
 export function listTestSuites(

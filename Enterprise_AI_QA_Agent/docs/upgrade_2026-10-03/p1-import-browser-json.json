@@ -1,0 +1,12 @@
+{
+  "layout": "json",
+  "file": "actual.json",
+  "original_bytes_equal": true,
+  "configuration_in_mysql": true,
+  "draft_in_postgres": true,
+  "idempotent_commit": true,
+  "snapshot_before": "- dialog \"导入测试用例\":\n  - banner:\n    - heading \"导入测试用例\" [level=2]\n    - button \"关闭\"\n  - paragraph: 导入后保存为草稿，评审启用后用于测试。重复提交同一预览不会重复创建；编号冲突不会覆盖旧用例。\n  - navigation:\n    - link \"下载每行用例模板\":\n      - /url: /api/v1/projects/3b5901d9-dad4-4a9d-a654-3b4b8c30077d/test-case-imports/templates/rows\n    - link \"下载用例与步骤分表模板\":\n      - /url: /api/v1/projects/3b5901d9-dad4-4a9d-a654-3b4b8c30077d/test-case-imports/templates/split\n  - text: Excel / JSON 文件\n  - button \"Excel / JSON 文件\"",
+  "snapshot_after": "- dialog \"导入测试用例\":\n  - banner:\n    - heading \"导入测试用例\" [level=2]\n    - button \"关闭\"\n  - paragraph: 导入后保存为草稿，评审启用后用于测试。重复提交同一预览不会重复创建；编号冲突不会覆盖旧用例。\n  - navigation:\n    - link \"下载每行用例模板\":\n      - /url: /api/v1/projects/3b5901d9-dad4-4a9d-a654-3b4b8c30077d/test-case-imports/templates/rows\n    - link \"下载用例与步骤分表模板\":\n      - /url: /api/v1/projects/3b5901d9-dad4-4a9d-a654-3b4b8c30077d/test-case-imports/templates/split\n  - status: 导入完成，草稿等待评审\n  - text: Excel / JSON 文件\n  - button \"Excel / JSON 文件\"\n  - paragraph:\n    - text: actual.json · 116 字节 ·\n    - link \"下载原件\":\n      - /url: /api/v1/projects/3b5901d9-dad4-4a9d-a654-3b4b8c30077d/test-case-imports/sources/49915451-f4bc-480c-ba33-91d5cf6d3337/original\n  - text: 导入布局\n  - combobox \"导入布局\" [disabled]:\n    - option \"每行一条用例\"\n    - option \"用例与步骤分表\"\n    - option \"JSON\" [selected]\n  - text: 测试模式\n  - combobox \"测试模式\":\n    - option \"API 测试\" [selected]\n  - contentinfo:\n    - button \"生成导入预览\"\n    - button \"记住项目导入格式\"\n  - heading \"预览：1 条有效候选\" [level=3]\n  - paragraph: 批次 c38a2175-46b2-5891-b00d-25e6414bce15 · 已提交\n  - text: 查看用例\n  - combobox \"查看用例\":\n    - option \"custom-browser · 任意 JSON · 第 1 行\" [selected]\n  - group:\n    - text: 完整用例 JSON 对象 · 1\n    - group:\n      - text: 扩展 数组 · 4\n      - strong: \"0:\"\n      - text: \"0\"\n      - strong: \"1:\"\n      - text: \"false\"\n      - strong: \"2:\"\n      - text: \"null\"\n      - strong: \"3:\"\n      - text: \"\\\"中文😀\\\"\"\n  - contentinfo:\n    - button \"提交草稿\" [disabled]\n    - button \"下载预览与错误报告\"",
+  "page_errors": [],
+  "scope": "real component mounted in isolated host; production startup not covered"
+}

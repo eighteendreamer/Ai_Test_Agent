@@ -160,6 +160,13 @@ class TestCaseService:
         )
         return TestCaseBundle(case=stored_case, version=stored_version)
 
+    async def prepare_drafts(
+        self, *, project_id: str, payloads: list[TestCaseDraftCreateRequest], created_by: str | None = None,
+    ) -> list[tuple[TestCaseRecord, TestCaseVersionRecord]]:
+        """Build immutable drafts for a caller-owned bulk transaction, without writing."""
+        await self._project_service.require_active(project_id)
+        return [self._build_draft(project_id=project_id, payload=payload, created_by=created_by) for payload in payloads]
+
     def _build_draft(
         self,
         *,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,6 +24,7 @@ class CaseImportOptions(BaseModel):
     case_sheet: str | None = Field(default=None, max_length=160)
     step_sheet: str | None = Field(default=None, max_length=160)
     header_row: int = Field(default=1, ge=1, le=50)
+    # Missing key: infer from headers. Empty value: explicitly leave unmapped.
     columns: dict[ImportColumn, str] = Field(default_factory=dict)
     step_columns: dict[ImportColumn, str] = Field(default_factory=dict)
 
@@ -73,7 +75,69 @@ class CaseImportPreview(BaseModel):
     # Mapping is resolved once and can later be frozen with the import batch.
     resolved_columns: dict[str, str] = Field(default_factory=dict)
     resolved_step_columns: dict[str, str] = Field(default_factory=dict)
+    diagnostics: dict = Field(default_factory=dict)
 
     @property
     def valid_count(self) -> int:
         return len(self.candidates)
+
+
+class CaseImportPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limits: CaseImportLimits = Field(default_factory=CaseImportLimits)
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+    max_cpu_seconds: float = Field(default=20, gt=0, le=300)
+    max_memory_bytes: int = Field(default=268_435_456, gt=0)
+    max_output_bytes: int = Field(default=20_000_000, gt=0)
+
+
+class CaseImportSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy: CaseImportPolicy = Field(default_factory=CaseImportPolicy)
+    options: CaseImportOptions | None = None
+
+
+class CaseImportSettingsRecord(BaseModel):
+    scope_key: str
+    revision: int
+    payload: CaseImportSettings
+
+
+class CaseImportUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(min_length=1, max_length=256)
+    content_base64: str = Field(min_length=1)
+
+
+class CaseImportSourceRecord(BaseModel):
+    id: str
+    project_id: str
+    filename: str
+    file_hash: str
+    size_bytes: int
+    storage_uri: str
+    security_report: dict = Field(default_factory=dict)
+    sheets: list[CaseImportSheet] = Field(default_factory=list)
+    created_at: datetime
+
+
+class CaseImportBatchRecord(BaseModel):
+    id: str
+    project_id: str
+    source_id: str
+    preview_hash: str
+    config_snapshot: CaseImportSettingsRecord
+    preview: CaseImportPreview
+    status: Literal["previewed", "committed"] = "previewed"
+    case_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+    committed_at: datetime | None = None
+
+
+class CaseImportBatchView(BaseModel):
+    batch: CaseImportBatchRecord
+    # Live preflight against the project catalog; not part of frozen JSON.
+    conflicting_case_keys: list[str] = Field(default_factory=list)

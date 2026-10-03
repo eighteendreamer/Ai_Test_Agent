@@ -1380,6 +1380,81 @@ export type TestCaseVersionCreateRequest = Pick<TestCaseVersionRecord,
   "content_json" | "execution_notes" | "generation_metadata" | "preconditions" | "steps" | "assertions" |
   "test_data" | "cleanup" | "source_refs" | "model_key" | "prompt_version" | "skill_versions">;
 
+export interface CaseImportOptions {
+  layout: "rows" | "split" | "json";
+  mode_key: string;
+  case_sheet?: string | null;
+  step_sheet?: string | null;
+  header_row: number;
+  columns: Record<string, string>;
+  step_columns: Record<string, string>;
+}
+
+export interface CaseImportSettingsRecord {
+  scope_key: string;
+  revision: number;
+  payload: {
+    policy: { limits: Record<string, number>; timeout_seconds: number; max_cpu_seconds: number; max_memory_bytes: number; max_output_bytes: number };
+    options: CaseImportOptions | null;
+  };
+}
+
+export interface CaseImportSheet {
+  name: string;
+  headers: string[];
+  suggested_columns: Record<string, string>;
+}
+
+export interface CaseImportSourceRecord {
+  id: string;
+  project_id: string;
+  filename: string;
+  file_hash: string;
+  size_bytes: number;
+  storage_uri: string;
+  security_report: Record<string, unknown>;
+  sheets: CaseImportSheet[];
+  created_at: string;
+}
+
+export interface CaseImportIssue {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  sheet?: string | null;
+  row?: number | null;
+  field?: string | null;
+}
+
+export interface CaseImportBatchRecord {
+  id: string;
+  project_id: string;
+  source_id: string;
+  preview_hash: string;
+  config_snapshot: CaseImportSettingsRecord;
+  preview: {
+    parser_version: string;
+    filename: string;
+    file_hash: string;
+    options: CaseImportOptions;
+    sheets: CaseImportSheet[];
+    candidates: Array<{ row: number; sheet?: string | null; step_rows: number[]; draft: TestCaseVersionCreateRequest & { case_key: string; title: string; mode_key: string; case_type: string; priority: TestCasePriority } }>;
+    issues: CaseImportIssue[];
+    resolved_columns: Record<string, string>;
+    resolved_step_columns: Record<string, string>;
+    diagnostics: Record<string, unknown>;
+  };
+  status: "previewed" | "committed";
+  case_ids: string[];
+  created_at: string;
+  committed_at?: string | null;
+}
+
+export interface CaseImportBatchView {
+  batch: CaseImportBatchRecord;
+  conflicting_case_keys: string[];
+}
+
 export interface TestCaseBundle {
   case: TestCaseRecord;
   version: TestCaseVersionRecord;

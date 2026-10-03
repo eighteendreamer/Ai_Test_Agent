@@ -7,6 +7,7 @@ import { api } from "../services/api";
 import ProjectExecutionDashboard from "../features/projects/ProjectExecutionDashboard.vue";
 import TestCaseTemplateEditor from "../features/projects/TestCaseTemplateEditor.vue";
 import TestCaseContentDialog from "../features/projects/TestCaseContentDialog.vue";
+import CaseImportDialog from "../features/projects/CaseImportDialog.vue";
 import { waitingReasonLabel } from "../features/projects/executionLabels";
 import { formatServerDateTime } from "../utils/datetime";
 import type {
@@ -102,6 +103,7 @@ const regressionBatchesLoading = ref(false);
 
 const generationOpen = ref(false);
 const templateEditorOpen = ref(false);
+const caseImportOpen = ref(false);
 const contentCase = ref<TestCaseRecord | null>(null);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
@@ -226,6 +228,7 @@ function resetProjectResources() {
   regressionBatches.value = [];
   selectedCasesById.value = {};
   templateEditorOpen.value = false;
+  caseImportOpen.value = false;
   contentCase.value = null;
   runDetail.value = null;
   runDetailOpen.value = false;
@@ -972,6 +975,7 @@ watch(routeProjectId, async (projectId) => {
           <template v-if="resourceTab === 'cases'">
             <div class="case-toolbar">
               <button :disabled="selected?.status !== 'active'" @click="templateEditorOpen = true">用例生成模板</button>
+              <button :disabled="selected?.status !== 'active'" @click="caseImportOpen = true">导入 Excel / JSON</button>
               <input v-model="caseQuery" placeholder="搜索用例标识或标题" @keyup.enter="searchCases">
               <select v-model="caseStatus" @change="searchCases">
                 <option value="">全部状态</option>
@@ -1194,6 +1198,7 @@ watch(routeProjectId, async (projectId) => {
     </div>
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
+    <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
 
     <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">

@@ -131,6 +131,9 @@ class CaseImportParser:
             raise ValueError("工作表存在重复表头，请修正后导入")
         mapping = {key: value for key, value in self._suggest(headers).items() if key in fields}
         for field, header in explicit.items():
+            if field in fields and header == "":
+                mapping.pop(field, None)
+                continue
             if field not in fields or header not in nonempty:
                 raise ValueError(f"无效列映射：{field}")
             mapping[field] = header

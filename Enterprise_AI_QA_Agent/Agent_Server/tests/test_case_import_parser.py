@@ -80,6 +80,16 @@ def test_explicit_mapping_and_full_json_keep_unknown_fields(tmp_path):
     assert preview.candidates[0].draft.source_refs[0].metadata["source_columns"]["完整JSON"] == json.dumps(content)
 
 
+def test_explicit_unmapping_does_not_restore_an_auto_detected_column(tmp_path):
+    path = _file(tmp_path, cases=[{"用例编号": "one", "标题": "忽略该列", "前置条件": "此列不应进入业务内容", "步骤": "查询", "预期结果": "成功"}])
+    preview = _parse(path, columns={"preconditions": ""})
+    assert "preconditions" not in preview.resolved_columns
+    assert preview.candidates[0].draft.content_json["preconditions"] == []
+    assert preview.candidates[0].draft.source_refs[0].metadata["source_columns"]["前置条件"] == "此列不应进入业务内容"
+    with pytest.raises(ValueError, match="明确映射字段：title"):
+        _parse(path, columns={"title": ""})
+
+
 def test_duplicate_and_invalid_rows_are_visible_without_discarding_valid_rows(tmp_path):
     path = _file(tmp_path, cases=[{"用例编号": "same", "标题": "第一条", "完整JSON": '{"goal":"first"}'},
         {"用例编号": "SAME", "标题": "重复", "完整JSON": '{"goal":"second"}'},
