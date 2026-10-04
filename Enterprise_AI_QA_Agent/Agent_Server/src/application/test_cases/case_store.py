@@ -6,6 +6,7 @@ from typing import Protocol
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.application.test_cases.version_reviews import add_draft_review, ensure_reviews, review_transition
 from src.schemas.case_management import (
     TestCaseLifecycleStatus,
     TestCasePriority,
@@ -67,16 +68,9 @@ class TestCaseStore(Protocol):
         *,
         expected_statuses: set[TestCaseLifecycleStatus],
     ) -> TestCaseRecord: ...
-    async def activate_with_embedding_outbox(
-        self,
-        case: TestCaseRecord,
-        *,
-        expected_statuses: set[TestCaseLifecycleStatus],
-        embedding_job_table: str,
-        outbox_table: str,
-        stream: str,
-        task_payload: dict[str, object],
-    ) -> TestCaseRecord: ...
+    async def transition_version_review(self, case_id, version_id, action, at, *, request_id=None,
+        expected_active=None, check_active=False, embedding=None) -> TestCaseRecord: ...
+    async def migrate_legacy_reviews(self, project_id, at, *, dry_run=True) -> list[dict]: ...
     async def count_by_project(self, project_id: str) -> int: ...
 
 
@@ -115,8 +109,8 @@ class InMemoryTestCaseStore:
                 )
             stored_entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]] = []
             for case, version in entries:
-                stored_case = case.model_copy(deep=True, update={"latest_version": 1})
                 stored_version = version.model_copy(deep=True, update={"version": 1})
+                stored_case = add_draft_review(case.model_copy(deep=True, update={"latest_version": 1}), stored_version)
                 self._cases[case.id] = stored_case
                 self._versions[version.id] = stored_version
                 self._version_ids_by_case[case.id] = [version.id]
@@ -228,16 +222,17 @@ class InMemoryTestCaseStore:
                 raise KeyError(f"Test case not found: {case_id}")
             if current.lifecycle_status == "archived":
                 raise ValueError(f"Test case is archived: {case_id}")
+            current = ensure_reviews(current, [self._versions[id] for id in self._version_ids_by_case[case_id]], version.created_at)
             next_number = current.latest_version + 1
             stored_version = version.model_copy(deep=True, update={"version": next_number})
             stored_case = current.model_copy(
                 deep=True,
                 update={
                     "latest_version": next_number,
-                    "lifecycle_status": "draft",
                     "updated_at": version.created_at,
                 },
             )
+            stored_case = add_draft_review(stored_case, stored_version)
             self._versions[stored_version.id] = stored_version
             self._version_ids_by_case.setdefault(case_id, []).append(stored_version.id)
             self._cases[case_id] = stored_case
@@ -257,9 +252,39 @@ class InMemoryTestCaseStore:
                 raise ValueError(
                     f"Illegal test case transition from {current.lifecycle_status} to {case.lifecycle_status}"
                 )
-            stored = case.model_copy(deep=True)
+            stored = current.model_copy(deep=True, update={"lifecycle_status": case.lifecycle_status,
+                "archived_at": case.archived_at, "updated_at": case.updated_at})
             self._cases[case.id] = stored
             return stored.model_copy(deep=True)
+
+    async def transition_version_review(self, case_id, version_id, action, at, *, request_id=None,
+        expected_active=None, check_active=False, embedding=None):
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None:
+                raise KeyError(f"Test case not found: {case_id}")
+            versions = [self._versions[id] for id in self._version_ids_by_case[case_id]]
+            updated, needs_embedding = review_transition(case, versions, version_id, action, at, request_id,
+                expected_active=expected_active, check_active=check_active)
+            if needs_embedding and embedding is not None:
+                raise RuntimeError("In-memory case store cannot atomically persist Embedding Outbox")
+            self._cases[case_id] = updated
+            return updated.model_copy(deep=True)
+
+    async def migrate_legacy_reviews(self, project_id, at, *, dry_run=True):
+        changes = []
+        async with self._lock:
+            for case in list(self._cases.values()):
+                if case.project_id != project_id:
+                    continue
+                versions = [self._versions[id] for id in self._version_ids_by_case[case.id]]
+                updated = ensure_reviews(case, versions, at)
+                if updated != case:
+                    changes.append({"case_id": case.id, "before_status": case.lifecycle_status,
+                        "after_status": updated.lifecycle_status, "version_count": len(versions)})
+                    if not dry_run:
+                        self._cases[case.id] = updated
+        return changes
 
     async def count_by_project(self, project_id: str) -> int:
         return sum(1 for case in self._cases.values() if case.project_id == project_id)
@@ -377,25 +402,13 @@ class PostgresTestCaseStore:
     ) -> TestCaseRecord:
         return await asyncio.to_thread(self._replace_case_sync, case, expected_statuses)
 
-    async def activate_with_embedding_outbox(
-        self,
-        case: TestCaseRecord,
-        *,
-        expected_statuses: set[TestCaseLifecycleStatus],
-        embedding_job_table: str,
-        outbox_table: str,
-        stream: str,
-        task_payload: dict[str, object],
-    ) -> TestCaseRecord:
-        return await asyncio.to_thread(
-            self._activate_with_embedding_outbox_sync,
-            case,
-            expected_statuses,
-            embedding_job_table,
-            outbox_table,
-            stream,
-            task_payload,
-        )
+    async def transition_version_review(self, case_id, version_id, action, at, *, request_id=None,
+        expected_active=None, check_active=False, embedding=None):
+        return await asyncio.to_thread(self._transition_version_review_sync, case_id, version_id, action, at,
+            request_id, expected_active, check_active, embedding)
+
+    async def migrate_legacy_reviews(self, project_id, at, *, dry_run=True):
+        return await asyncio.to_thread(self._migrate_legacy_reviews_sync, project_id, at, dry_run)
 
     async def count_by_project(self, project_id: str) -> int:
         return await asyncio.to_thread(self._count_by_project_sync, project_id)
@@ -452,6 +465,7 @@ class PostgresTestCaseStore:
         self,
         entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]],
     ) -> list[tuple[TestCaseRecord, TestCaseVersionRecord]]:
+        entries = [(add_draft_review(case, version), version) for case, version in entries]
         try:
             with postgres_connect(self._settings) as conn:
                 with conn.cursor() as cur:
@@ -472,6 +486,7 @@ class PostgresTestCaseStore:
         """Share the existing SQL with imports; caller owns commit/rollback."""
         if not entries:
             return
+        entries = [(add_draft_review(case, version), version) for case, version in entries]
         cur.executemany(
             f"""
             INSERT INTO {self._case_table} (
@@ -640,15 +655,16 @@ class PostgresTestCaseStore:
                 current = self._case_from_value(row["record"])
                 if current.lifecycle_status == "archived":
                     raise ValueError(f"Test case is archived: {case_id}")
+                current = ensure_reviews(current, self._locked_versions(cur, case_id), version.created_at)
                 next_number = int(row["latest_version"]) + 1
                 stored_version = version.model_copy(update={"version": next_number})
                 stored_case = current.model_copy(
                     update={
                         "latest_version": next_number,
-                        "lifecycle_status": "draft",
                         "updated_at": version.created_at,
                     }
                 )
+                stored_case = add_draft_review(stored_case, stored_version)
                 cur.execute(
                     f"""
                     INSERT INTO {self._version_table} (
@@ -675,90 +691,67 @@ class PostgresTestCaseStore:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT lifecycle_status FROM {self._case_table} WHERE id = %s FOR UPDATE",
+                    f"SELECT record FROM {self._case_table} WHERE id = %s FOR UPDATE",
                     (case.id,),
                 )
                 row = cur.fetchone()
                 if not row:
                     raise KeyError(f"Test case not found: {case.id}")
-                current_status = str(row["lifecycle_status"])
+                current = self._case_from_value(row["record"])
+                current_status = current.lifecycle_status
                 if current_status not in expected_statuses:
                     raise ValueError(
                         f"Illegal test case transition from {current_status} to {case.lifecycle_status}"
                     )
-                self._write_case(cur, case)
-        return case
+                updated = current.model_copy(update={"lifecycle_status": case.lifecycle_status,
+                    "archived_at": case.archived_at, "updated_at": case.updated_at})
+                self._write_case(cur, updated)
+        return updated
 
-    def _activate_with_embedding_outbox_sync(
-        self,
-        case: TestCaseRecord,
-        expected_statuses: set[TestCaseLifecycleStatus],
-        embedding_job_table: str,
-        outbox_table: str,
-        stream: str,
-        task_payload: dict[str, object],
-    ) -> TestCaseRecord:
-        task_id = str(task_payload["task_id"])
-        with postgres_connect(self._settings) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT lifecycle_status FROM {self._case_table} "
-                    "WHERE id = %s FOR UPDATE",
-                    (case.id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise KeyError(f"Test case not found: {case.id}")
-                current_status = str(row["lifecycle_status"])
-                if current_status not in expected_statuses:
-                    raise ValueError(
-                        f"Illegal test case transition from {current_status} "
-                        f"to {case.lifecycle_status}"
-                    )
-                self._write_case(cur, case)
-                cur.execute(
-                    f"""
-                    INSERT INTO {embedding_job_table} (
-                        task_id, source_type, source_id, source_version,
-                        project_id, case_id, case_version_id, content_hash, status
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued')
-                    ON CONFLICT (task_id) DO NOTHING
-                    """,
-                    (
-                        task_id,
-                        task_payload["source_type"],
-                        task_payload["source_id"],
-                        task_payload["source_version"],
-                        task_payload["project_id"],
-                        task_payload["case_id"],
-                        task_payload["case_version_id"],
-                        task_payload["content_hash"],
-                    ),
-                )
-                job_inserted = cur.rowcount == 1
-                cur.execute(
-                    f"""
-                    INSERT INTO {outbox_table} (event_key, stream, payload)
-                    VALUES (%s, %s, %s::jsonb)
-                    ON CONFLICT (event_key) DO NOTHING
-                    """,
-                    (
-                        f"embedding:{task_id}",
-                        stream,
-                        json.dumps(
-                            task_payload,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                            default=str,
-                        ),
-                    ),
-                )
-                outbox_inserted = cur.rowcount == 1
-                if not job_inserted or not outbox_inserted:
-                    raise RuntimeError(
-                        "Test case activation Embedding job already exists"
-                    )
-        return case
+    def _locked_versions(self, cur, case_id):
+        cur.execute(f"SELECT record FROM {self._version_table} WHERE case_id = %s ORDER BY version", (case_id,))
+        return [self._version_from_value(row["record"]) for row in cur.fetchall()]
+
+    def _transition_version_review_sync(self, case_id, version_id, action, at, request_id,
+        expected_active, check_active, embedding):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT record FROM {self._case_table} WHERE id = %s FOR UPDATE", (case_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise KeyError(f"Test case not found: {case_id}")
+            current = self._case_from_value(row["record"])
+            versions = self._locked_versions(cur, case_id)
+            updated, needs_embedding = review_transition(current, versions, version_id, action, at, request_id,
+                expected_active=expected_active, check_active=check_active)
+            self._write_case(cur, updated)
+            if needs_embedding and embedding is not None:
+                task = embedding["task_payload"]
+                version = next(item for item in versions if item.id == version_id)
+                if (task["case_id"] != case_id or task["case_version_id"] != version_id or
+                    task["project_id"] != updated.project_id or task["content_hash"] != version.content_hash):
+                    raise ValueError("Embedding任务与实际启用版本不一致")
+                cur.execute(f"INSERT INTO {embedding['embedding_job_table']} (task_id, source_type, source_id, source_version, "
+                    "project_id, case_id, case_version_id, content_hash, status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'queued')",
+                    (task["task_id"], task["source_type"], task["source_id"], task["source_version"],
+                     task["project_id"], task["case_id"], task["case_version_id"], task["content_hash"]))
+                cur.execute(f"INSERT INTO {embedding['outbox_table']} (event_key, stream, payload) VALUES (%s,%s,%s::jsonb)",
+                    (f"embedding:{task['task_id']}", embedding["stream"], json.dumps(task, ensure_ascii=False, separators=(",", ":"))))
+        return updated
+
+    def _migrate_legacy_reviews_sync(self, project_id, at, dry_run):
+        changes = []
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT record FROM {self._case_table} WHERE project_id = %s ORDER BY id FOR UPDATE", (project_id,))
+            cases = [self._case_from_value(row["record"]) for row in cur.fetchall()]
+            for case in cases:
+                versions = self._locked_versions(cur, case.id)
+                updated = ensure_reviews(case, versions, at)
+                if updated != case:
+                    changes.append({"case_id": case.id, "before_status": case.lifecycle_status,
+                        "after_status": updated.lifecycle_status, "version_count": len(versions)})
+                    if not dry_run:
+                        self._write_case(cur, updated)
+        return changes
 
     def _write_case(self, cur, case: TestCaseRecord) -> None:
         cur.execute(

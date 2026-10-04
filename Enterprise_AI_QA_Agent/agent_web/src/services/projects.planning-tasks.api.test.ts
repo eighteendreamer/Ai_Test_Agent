@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCasePlanningTask, getCasePlanningTaskByRequest, listCasePlanningTasks, submitCasePlanningTask, submitRegressionPlanningTask, getTestCase } from "./projects.api";
+import { getCasePlanningTask, getCasePlanningTaskByRequest, listCasePlanningTasks, submitCasePlanningTask, submitRegressionPlanningTask, getTestCase, submitTestCaseReview, activateTestCase } from "./projects.api";
 
 describe("project planning task HTTP contract", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -32,5 +32,19 @@ describe("project planning task HTTP contract", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/runs/parent%3F%23/regression-planning-tasks");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/test-cases/case%3F%23");
+  });
+
+  it("preserves legacy review calls and sends exact version operations including explicit null CAS", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "case" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await submitTestCaseReview("case?#");
+    await submitTestCaseReview("case?#", "v2", "submit-original");
+    await activateTestCase("case?#", "v2");
+    await activateTestCase("case?#", "v2", { request_id: "activate-original", expected_active_version_id: null });
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ version_id: "v2", request_id: "submit-original" });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ version_id: "v2" });
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ version_id: "v2", request_id: "activate-original", expected_active_version_id: null });
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/v1/test-cases/case%3F%23/activate");
   });
 });

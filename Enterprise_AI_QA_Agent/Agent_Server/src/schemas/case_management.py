@@ -60,6 +60,21 @@ class TestCaseAssertion(BaseModel):
     description: str = Field(default="", max_length=2000)
 
 
+class TestCaseReviewEvent(BaseModel):
+    action: Literal["submitted", "activated", "legacy_inferred"]
+    at: datetime
+    request_id: str | None = None
+    request_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class TestCaseVersionReview(BaseModel):
+    version_id: str
+    version: int = Field(ge=1)
+    status: Literal["draft", "pending_review", "approved"] = "draft"
+    origin: Literal["native", "legacy_state"] = "native"
+    events: list[TestCaseReviewEvent] = Field(default_factory=list)
+
+
 class TestCaseRecord(BaseModel):
     id: str
     project_id: str
@@ -75,6 +90,7 @@ class TestCaseRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None
+    version_reviews: dict[str, TestCaseVersionReview] = Field(default_factory=dict)
 
 
 class _CaseBusinessContent(BaseModel):
@@ -149,6 +165,15 @@ class TestCaseActivateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version_id: str | None = None
+    request_id: str | None = Field(default=None, min_length=1, max_length=160)
+    expected_active_version_id: str | None = None
+
+
+class TestCaseReviewSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: str | None = None
+    request_id: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class TestCaseGenerateRequest(BaseModel):

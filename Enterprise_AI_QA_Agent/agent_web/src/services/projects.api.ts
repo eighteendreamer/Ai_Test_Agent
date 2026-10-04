@@ -170,18 +170,21 @@ export function generateTestCases(
   });
 }
 
-export function submitTestCaseReview(caseId: string): Promise<TestCaseRecord> {
-  return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/submit-review`, { method: "POST" });
+export function submitTestCaseReview(caseId: string, versionId?: string, requestId?: string): Promise<TestCaseRecord> {
+  return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/submit-review`, {
+    method: "POST", ...(versionId || requestId ? { body: JSON.stringify({ version_id: versionId, request_id: requestId }) } : {}),
+  });
 }
 
 export function getTestCase(caseId: string): Promise<TestCaseRecord> {
   return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}`);
 }
 
-export function activateTestCase(caseId: string, versionId?: string | null): Promise<TestCaseRecord> {
+export function activateTestCase(caseId: string, versionId?: string | null,
+  operation?: { request_id: string; expected_active_version_id: string | null }): Promise<TestCaseRecord> {
   return request(`/api/v1/test-cases/${encodeURIComponent(caseId)}/activate`, {
     method: "POST",
-    body: JSON.stringify({ version_id: versionId ?? null }),
+    body: JSON.stringify({ version_id: versionId ?? null, ...operation }),
   });
 }
 

@@ -24,7 +24,6 @@ import type {
   LegacySmokeRunSummary,
   TestCaseLifecycleStatus,
   TestCaseRecord,
-  TestCaseVersionRecord,
   TestSuiteBundle,
   TestRunRecord,
   TestRunDetail,
@@ -62,7 +61,6 @@ const caseOffset = ref(0);
 const casesHaveMore = ref(false);
 const caseQuery = ref("");
 const caseStatus = ref<"" | TestCaseLifecycleStatus>("");
-const actionCaseId = ref("");
 const selectedCasesById = ref<Record<string, TestCaseRecord>>({});
 
 const suites = ref<TestSuiteBundle[]>([]);
@@ -112,13 +110,6 @@ const casePlanRegression = ref<RegressionPlanningSelection>();
 const contentCase = ref<TestCaseRecord | null>(null);
 const generating = ref(false);
 const generationForm = ref({ objective: "", mode_key: "", model_key: "" });
-
-const activationOpen = ref(false);
-const activationCase = ref<TestCaseRecord | null>(null);
-const versionsLoading = ref(false);
-const activating = ref(false);
-const versions = ref<TestCaseVersionRecord[]>([]);
-const activationVersionId = ref("");
 
 const suiteEditorOpen = ref(false);
 const suiteSaving = ref(false);
@@ -569,57 +560,6 @@ async function generateCases() {
   }
 }
 
-async function submitReview(testCase: TestCaseRecord) {
-  actionCaseId.value = testCase.id;
-  try {
-    await api.submitTestCaseReview(testCase.id);
-    await Promise.all([loadTestCases(), loadOverview()]);
-    toast.success("测试用例已提交评审");
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "提交评审失败");
-  } finally {
-    actionCaseId.value = "";
-  }
-}
-
-async function openActivation(testCase: TestCaseRecord) {
-  activationCase.value = testCase;
-  activationOpen.value = true;
-  versionsLoading.value = true;
-  versions.value = [];
-  activationVersionId.value = "";
-  try {
-    versions.value = (await api.listTestCaseVersions(testCase.id)).sort((left, right) => right.version - left.version);
-    activationVersionId.value = testCase.active_version_id
-      || versions.value.find(item => item.version === testCase.latest_version)?.id
-      || versions.value[0]?.id
-      || "";
-  } catch (err) {
-    activationOpen.value = false;
-    toast.error(err instanceof Error ? err.message : "用例版本加载失败");
-  } finally {
-    versionsLoading.value = false;
-  }
-}
-
-async function activateVersion() {
-  if (!activationCase.value || !activationVersionId.value) {
-    toast.error("请选择要启用的用例版本");
-    return;
-  }
-  activating.value = true;
-  try {
-    await api.activateTestCase(activationCase.value.id, activationVersionId.value);
-    activationOpen.value = false;
-    await Promise.all([loadTestCases(), loadOverview()]);
-    toast.success("指定用例版本已启用");
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "启用用例版本失败");
-  } finally {
-    activating.value = false;
-  }
-}
-
 function toggleCaseSelection(testCase: TestCaseRecord, checked: boolean) {
   if (checked && testCase.lifecycle_status === "active" && testCase.active_version_id) {
     selectedCasesById.value[testCase.id] = testCase;
@@ -1062,9 +1002,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
                     </td>
                     <td class="row-actions">
                       <button @click="contentCase = testCase">查看内容</button>
-                      <button v-if="testCase.lifecycle_status === 'draft'" :disabled="actionCaseId === testCase.id" @click="submitReview(testCase)">提交评审</button>
-                      <button v-if="testCase.lifecycle_status === 'pending_review'" @click="openActivation(testCase)">启用版本</button>
-                      <span v-if="testCase.lifecycle_status !== 'draft' && testCase.lifecycle_status !== 'pending_review'">—</span>
+                      <button v-if="testCase.lifecycle_status !== 'archived'" @click="contentCase = testCase">评审与启用</button>
                     </td>
                   </tr>
                   <tr v-if="!casesLoading && !testCases.length"><td colspan="7" class="empty">暂无符合条件的测试用例</td></tr>
@@ -1252,20 +1190,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
     <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
     <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}:${JSON.stringify(casePlanRegression)}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :regression="casePlanRegression" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
-    <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases" />
-
-    <div v-if="activationOpen" class="modal-backdrop" @click.self="activationOpen = false">
-      <section class="editor version-editor">
-        <header><div><h2>启用指定版本</h2><p>{{ activationCase?.title }}</p></div><button @click="activationOpen = false">×</button></header>
-        <div v-if="versionsLoading" class="empty">正在加载用例版本…</div>
-        <label v-for="version in versions" v-else :key="version.id" class="version-option">
-          <input v-model="activationVersionId" type="radio" :value="version.id">
-          <span><strong>v{{ version.version }}</strong><small>{{ version.model_key }} · Prompt {{ version.prompt_version }} · {{ formatServerDateTime(version.created_at) }}</small></span>
-        </label>
-        <div v-if="!versionsLoading && !versions.length" class="empty">该用例暂无可启用版本</div>
-        <footer><button @click="activationOpen = false">取消</button><button class="primary" :disabled="activating || !activationVersionId" @click="activateVersion">{{ activating ? "启用中…" : "启用所选版本" }}</button></footer>
-      </section>
-    </div>
+    <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases(); loadOverview()" />
 
     <div v-if="suiteEditorOpen" class="modal-backdrop" @click.self="suiteEditorOpen = false">
       <section class="editor suite-editor">

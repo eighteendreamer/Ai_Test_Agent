@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from src.application.test_cases.case_store import DuplicateCaseKeyError
 from src.schemas.case_management import (
     TestCaseActivateRequest,
+    TestCaseReviewSubmitRequest,
     TestCaseGenerateRequest,
     TestCaseGenerationResponse,
     TestCaseLifecycleStatus,
@@ -135,9 +136,9 @@ async def create_test_case_version(
 
 
 @router.post("/test-cases/{case_id}/submit-review", response_model=TestCaseRecord)
-async def submit_test_case_review(case_id: str, request: Request):
+async def submit_test_case_review(case_id: str, request: Request, payload: TestCaseReviewSubmitRequest | None = None):
     try:
-        return await request.app.state.test_case_service.submit_review(case_id)
+        return await request.app.state.test_case_service.submit_review(case_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

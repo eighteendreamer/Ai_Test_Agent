@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="33.545" timestamp="2026-10-04T19:45:18.507841+08:00" hostname="EIghteen"><testcase classname="tests.test_case_version_reviews_product" name="test_formal_project_version_review_lost_reply_later_active_and_restart" time="30.021"><failure message="AssertionError: {&quot;detail&quot;:[{&quot;type&quot;:&quot;extra_forbidden&quot;,&quot;loc&quot;:[&quot;body&quot;,&quot;creation_key&quot;],&quot;msg&quot;:&quot;Extra inputs are not permitted&quot;,&quot;input&quot;:&quot;v1-before-update&quot;}]}&#10;assert 422 == 201&#10; +  where 422 = &lt;Response [422 Unprocessable Entity]&gt;.status_code">tests\test_case_version_reviews_product.py:88: in test_formal_project_version_review_lost_reply_later_active_and_restart
+    run = await post(f"/suites/{suite['suite']['id']}/runs", {"mode_key": "api_testing", "creation_key": "v1-before-update"}, 201)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_version_reviews_product.py:47: in post
+    assert response.status_code == status, response.text
+E   AssertionError: {"detail":[{"type":"extra_forbidden","loc":["body","creation_key"],"msg":"Extra inputs are not permitted","input":"v1-before-update"}]}
+E   assert 422 == 201
+E    +  where 422 = &lt;Response [422 Unprocessable Entity]&gt;.status_code</failure></testcase></testsuite></testsuites>

@@ -114,23 +114,25 @@ async def test_activation_writes_embedding_job_and_outbox_with_request_context()
     )
     version = _version()
 
-    async def activate_with_embedding_outbox(case, **kwargs):
-        assert kwargs["embedding_job_table"] == "embedding_jobs"
-        assert kwargs["outbox_table"] == "task_outbox"
-        assert kwargs["stream"] == "qa:tasks:embedding"
-        task = EmbeddingTask.model_validate(kwargs["task_payload"])
+    async def transition_version_review(case_id, version_id, action, at, **kwargs):
+        assert (case_id, version_id, action) == (pending.id, version.id, "activated")
+        embedding = kwargs["embedding"]
+        assert embedding["embedding_job_table"] == "embedding_jobs"
+        assert embedding["outbox_table"] == "task_outbox"
+        assert embedding["stream"] == "qa:tasks:embedding"
+        task = EmbeddingTask.model_validate(embedding["task_payload"])
         assert task.request_id == "req-activation"
         assert task.trace_id == "trace-activation"
         assert task.session_id == "session-activation"
         assert task.turn_id == "turn-activation"
-        assert task.task_id == f"embedding_test_case_{version.id}"
-        return case
+        assert task.task_id.startswith(f"embedding_test_case_{version.id}_")
+        return pending.model_copy(update={"lifecycle_status": "active", "active_version_id": version.id})
 
     store = SimpleNamespace(
         get_case=AsyncMock(return_value=pending),
         list_versions=AsyncMock(return_value=[version]),
-        activate_with_embedding_outbox=AsyncMock(
-            side_effect=activate_with_embedding_outbox
+        transition_version_review=AsyncMock(
+            side_effect=transition_version_review
         ),
     )
     service = CaseService(
@@ -153,7 +155,7 @@ async def test_activation_writes_embedding_job_and_outbox_with_request_context()
 
     assert activated.lifecycle_status == "active"
     assert activated.active_version_id == version.id
-    store.activate_with_embedding_outbox.assert_awaited_once()
+    store.transition_version_review.assert_awaited_once()
 
 
 def test_postgres_activation_updates_case_job_and_outbox_in_one_transaction(
@@ -175,7 +177,10 @@ def test_postgres_activation_updates_case_job_and_outbox_in_one_transaction(
             self.rowcount = 1 if "INSERT INTO embedding_jobs" in statement or "INSERT INTO task_outbox" in statement else 0
 
         def fetchone(self):
-            return {"lifecycle_status": "pending_review"}
+            return {"record": _case().model_copy(update={"lifecycle_status": "pending_review", "active_version_id": None}).model_dump(mode="json")}
+
+        def fetchall(self):
+            return [{"record": _version().model_dump(mode="json")}]
 
     class Connection:
         def __enter__(self):
@@ -195,20 +200,17 @@ def test_postgres_activation_updates_case_job_and_outbox_in_one_transaction(
     active = _case()
     task = EmbeddingTask.model_validate(_task_payload())
 
-    result = store._activate_with_embedding_outbox_sync(
-        active,
-        {"pending_review"},
-        "embedding_jobs",
-        "task_outbox",
-        "qa:tasks:embedding",
-        task.model_dump(mode="json"),
-    )
+    result = store._transition_version_review_sync(active.id, task.case_version_id, "activated", NOW,
+        None, None, False, {"embedding_job_table": "embedding_jobs", "outbox_table": "task_outbox",
+            "stream": "qa:tasks:embedding", "task_payload": task.model_dump(mode="json")})
 
-    assert result == active
-    assert len(statements) == 4
-    assert "UPDATE" in statements[1][0]
-    assert "INSERT INTO embedding_jobs" in statements[2][0]
-    assert "INSERT INTO task_outbox" in statements[3][0]
+    assert result.active_version_id == active.active_version_id
+    assert result.version_reviews[task.case_version_id].status == "approved"
+    assert len(statements) == 5
+    assert "FOR UPDATE" in statements[0][0]
+    assert "UPDATE" in statements[2][0]
+    assert "INSERT INTO embedding_jobs" in statements[3][0]
+    assert "INSERT INTO task_outbox" in statements[4][0]
 
 
 @pytest.mark.asyncio

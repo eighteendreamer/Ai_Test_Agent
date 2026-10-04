@@ -1764,3 +1764,44 @@ $env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2
 实际执行 Python 文档一致性校验：42 个不同本地引用路径均存在；项目 PLAN 与 Codex 镜像字节一致；原附件与项目方案的当前修订及 §2.1.1 内容一致；原附件备份哈希未变。AST 读取现有 upload_document/upload_version，未发现调用 Git；这只是源码调用核对，不能替代实际功能验收。真实旧记录再次核对到 active_version_id 保留而 lifecycle_status=draft、候选为空。验证元数据保存于 plan-review-2026-10-04-verification.json。
 
 本次没有修改产品代码，没有运行产品测试、前端构建、外部模型或生产迁移；只暂存相关方案和校验记录。接下来完成 §2.1.1 前后端、真实 PG/Outbox、召回/固定运行/并发/重放和正式页面的验收，再继续完整目标。此前原件、失败记录和测试结果不改写，不推送或创建 PR。
+
+## P4 版本评审与旧启用版本保留（2026-10-04，基线 1dab94e）
+
+先重新读取目标附件、当前未提交修改、原件/来源及生命周期记录、用例/套件/运行/向量门槛、生产初始化、前端操作与本地评测课程。根因是用例可执行状态与版本评审状态混用，以及整行旧副本覆盖新版本。采用现有 PG case record 的 version_reviews 保存逐版本状态/操作事件，immutable version 的正文/hash 不变。新增共享 version_reviews 转移内核，内存/PG 追加与评审在现有锁内处理；归档只合并当前行生命周期字段。启用、必要的新 embedding Job 与 Outbox 同事务，重启用旧版本不用旧终态 Job。按 case/action 核对 request_id 与完整参数签名；明示空预期指针与未提供字段区分，重复请求不回退。
+
+API 保留旧无正文提交/默认启用入口，增加明确版本、操作请求和可选 CAS。前端类型/API成对更新；ProjectsView 的评审入口统一进入完整用例弹窗，展示逐版本状态/启用标记及事件，使用 sessionStorage 保存原操作（不存正文/凭据）；重开只读核对事件，已完成不再提交。明确拒绝的请求可清除后重新核对；网络未知保留同请求。已有草稿保存成功而状态刷新失败时明确告知已保存，避免因新增加的 GET 错误提示诱发重复保存。
+
+实际验证与原失败证据均保留，不叠加覆盖数：
+
+| 证据 | 实际结果与范围 |
+|---|---|
+| p4-version-reviews-initial.xml | 3 失败、13 通过：旧生命周期断言及两项旧内部方法夹具未同步 |
+| p4-version-reviews-first.xml | 2 失败、25 通过：仅归档报错英文 archived 与新测试中文匹配不一致；修正测试，不改产品错误文案 |
+| p4-version-reviews-regression-final.xml/.log | **106 通过、2 跳过，34.62 秒**；真实存储开关开启，覆盖新治理、实际 MD/DOCX/PDF 三方输入、生成/模板/规划、固定计划/运行及 embedding；跳过为默认外部模型生成/规划 |
+| p4-version-reviews-frontend-final.xml/.log | **37 通过**：6 个实际相关文件，版本内容/评审、导入、计划/持久任务、项目执行展示及 HTTP 契约 |
+| p4-version-reviews-build-final.log | 实际 npm run build（含 vue-tsc）通过，Vite 6.51 秒 |
+| p4-version-reviews-product-registered.xml/.log/ | **1 通过，44.45 秒**：正式 App/实际 Chromium、完整生产 API、新进程重启读取、隔离 MySQL/PG/RustFS/Redis；真实 JSON 新版本、旧 V1 候选/套件/运行、V2 精确评审、V3 草稿拒绝、实际提交成功回执丢失、另一操作者启用 V3后原请求恢复及重放；Job 3且不增加，JS 错误空、模型调用 0 |
+
+产品失败夹具按根因纠正：first 为旧 run schema 不接受 creation_key；verified 在请求发出前观察到“待核对”便 reload，已改等待实际 handler 完成与错误显示；final 为 Windows 显式 terminate 返回 1，改为验证进程终态、新 API就绪和持久业务重读；recovery 未登记 embedding 流，生产正确不注入 Outbox，改为按 main.py 登记流再验收 3 个 Job。没有采用产品特判、force click 或放宽业务断言。最终 product-registered 使用最终产品代码和实际构建；不将旧失败 XML改成通过。主动终止码 1另记录在结果中，不声称干净退出。
+
+关键实际命令（Agent_Server，目录均新建隔离，stdout/stderr保存）：
+
+```powershell
+$env:RUN_LIVE_CASE_VERSION_REVIEWS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-version-reviews-input-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_version_reviews.py tests/test_test_case_lifecycle.py tests/test_test_case_embedding_pipeline.py tests/test_document_impact_sources.py tests/test_case_json_templates.py tests/test_test_case_generation_pipeline.py tests/test_case_planning.py tests/test_case_plan_run_creation.py tests/test_test_run_lifecycle.py tests/test_case_embedding_index_lifecycle.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-version-reviews-regression-final.xml
+$env:RUN_LIVE_CASE_VERSION_REVIEWS_PRODUCT='1'
+$env:QA_CASE_VERSION_REVIEWS_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-version-reviews-product-registered')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_version_reviews_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-version-reviews-product-registered.xml
+```
+
+新核心专项 11 项包含 5 个内存、5 个真实隔离存储和 1 个真实 PG/Outbox事务；初版创建旧草稿的 actual JSON 来自既有捕获样本，保留 12 步和嵌套字段。正式产品也实际读写该 JSON 文件。P4来源复验另保存 lifecycle-retained.json，原 existing-lifecycle-gap.json 不覆盖。编译/跨边界引用/暂存范围另核对；新增后端测试因项目 ignore 显式强制加入，用户 .gitignore保持不提交。
+
+没有新依赖/表或可编辑配置；评审业务记录在 PG，现有配置仍在 MySQL、原件/大工件在 RustFS。没有运行真实模型判断、embedding 模型或该业务用例，没有生产历史迁移；历史迁移内部预览/执行和旧正文/hash、停用/归档仅隔离专项，运维入口/投影重建、旧套件/原失败完整迁移流程继续。方案、原附件和镜像同步；完整 P4 影响任务/AI/需求评审/矩阵/增量草稿、P2 恢复/默认模型、模块化生成、人工录制、Docker 和 P5 保持未完成，不推送/建 PR。
+
+交付复核：暂存范围 140 份相关文件，120 份原始证据/验证元数据与暂存字节一致，122 份可解码文本凭据格式扫描无匹配；源码/测试/方案 diff 检查通过。42 个本地引用路径存在，项目 PLAN/Codex镜像字节一致，原附件当前验收及版本治理正文一致，原备份保持不变。用户 .gitignore 未暂存。最终结果逐项从 XML、实际 result.json、浏览器错误与 Job/固定运行记录核对，未将其他 P0—P5 未验证部分标为完成。

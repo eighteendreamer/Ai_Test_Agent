@@ -10,6 +10,7 @@ from uuid import uuid4
 from src.application.projects.project_service import ProjectService
 from src.application.test_cases.case_store import TestCaseStore
 from src.application.test_cases.template_service import TestCaseTemplateService
+from src.application.test_cases.version_reviews import add_draft_review
 from src.core.request_context import get_request_context, new_id
 from src.schemas.case_management import (
     GeneratedTestCaseBatch,
@@ -21,6 +22,7 @@ from src.schemas.case_management import (
     TestCaseLifecycleStatus,
     TestCasePage,
     TestCasePriority,
+    TestCaseReviewSubmitRequest,
     TestCaseRecord,
     TestCaseVersionCreateRequest,
     TestCaseVersionRecord,
@@ -193,7 +195,7 @@ class TestCaseService:
             payload=payload,
             created_at=now,
         )
-        return case, version
+        return add_draft_review(case, version), version
 
     async def get_case(self, case_id: str) -> TestCaseRecord:
         case = await self._store.get_case(case_id)
@@ -286,14 +288,17 @@ class TestCaseService:
         )
         return stored_version
 
-    async def submit_review(self, case_id: str) -> TestCaseRecord:
+    async def submit_review(self, case_id: str, payload: TestCaseReviewSubmitRequest | None = None) -> TestCaseRecord:
         case = await self.get_case(case_id)
         await self._project_service.require_active(case.project_id)
-        updated = case.model_copy(
-            update={"lifecycle_status": "pending_review", "updated_at": _utc_now()}
-        )
-        stored = await self._store.replace_case(updated, expected_statuses={"draft"})
-        logger.info("test_case_submitted_for_review", extra={"case_id": case_id})
+        versions = await self._store.list_versions(case_id)
+        selected = payload.version_id if payload and payload.version_id else versions[-1].id if versions else None
+        if selected is None:
+            raise ValueError("没有可提交评审的用例版本")
+        stored = await self._store.transition_version_review(case_id, selected, "submitted", _utc_now(),
+            request_id=payload.request_id if payload else None)
+        logger.info("test_case_submitted_for_review", extra={"case_id": case_id, "version_id": selected,
+            "request_id": payload.request_id if payload else None, "active_version_id": stored.active_version_id})
         return stored
 
     async def activate(
@@ -305,37 +310,20 @@ class TestCaseService:
         await self._project_service.require_active(case.project_id)
         versions = await self._store.list_versions(case_id)
         requested_id = payload.version_id if payload else None
-        selected = next(
-            (version for version in versions if version.id == requested_id),
-            versions[-1] if versions and not requested_id else None,
-        )
+        if not requested_id:
+            pending = [review.version_id for review in case.version_reviews.values() if review.status == "pending_review"]
+            if len(pending) > 1:
+                raise ValueError("多个版本等待评审，请明确指定启用版本")
+            requested_id = pending[0] if pending else (versions[-1].id if versions and
+                not case.version_reviews and case.lifecycle_status == "pending_review" else case.active_version_id)
+        selected = next((version for version in versions if version.id == requested_id), None)
         if selected is None:
             raise ValueError(f"Test case version does not belong to case: {requested_id}")
-        updated = case.model_copy(
-            update={
-                "lifecycle_status": "active",
-                "active_version_id": selected.id,
-                "updated_at": _utc_now(),
-            }
-        )
-        if self._embedding_task_outbox is None:
-            stored = await self._store.replace_case(
-                updated,
-                expected_statuses={"pending_review"},
-            )
-        else:
-            activate_with_outbox = getattr(
-                self._store,
-                "activate_with_embedding_outbox",
-                None,
-            )
-            if not callable(activate_with_outbox):
-                raise RuntimeError(
-                    "Configured test case store cannot atomically activate with Outbox"
-                )
+        embedding = None
+        if self._embedding_task_outbox is not None:
             context = get_request_context()
             task = TestCaseEmbeddingTask(
-                task_id=f"embedding_test_case_{selected.id}",
+                task_id=f"embedding_test_case_{selected.id}_{uuid4().hex}",
                 source_id=selected.id,
                 source_version=str(selected.version),
                 content_hash=selected.content_hash,
@@ -356,17 +344,26 @@ class TestCaseService:
                 case_id=case.id,
                 case_version_id=selected.id,
             )
-            stored = await activate_with_outbox(
-                updated,
-                expected_statuses={"pending_review"},
-                task_payload=task.model_dump(mode="json"),
-                **self._embedding_task_outbox,
-            )
+            embedding = {**self._embedding_task_outbox, "task_payload": task.model_dump(mode="json")}
+        stored = await self._store.transition_version_review(case_id, selected.id, "activated", _utc_now(),
+            request_id=payload.request_id if payload else None,
+            expected_active=payload.expected_active_version_id if payload else None,
+            check_active=bool(payload and "expected_active_version_id" in payload.model_fields_set), embedding=embedding)
         logger.info(
-            "test_case_activated",
-            extra={"case_id": case_id, "version_id": selected.id},
+            "test_case_activation_processed",
+            extra={"case_id": case_id, "version_id": selected.id, "active_version_id": stored.active_version_id,
+                "request_id": payload.request_id if payload else None},
         )
         return stored
+
+    async def migrate_legacy_reviews(self, project_id: str, *, dry_run=True):
+        await self._project_service.get(project_id)
+        if not dry_run:
+            await self._project_service.require_active(project_id)
+        changes = await self._store.migrate_legacy_reviews(project_id, _utc_now(), dry_run=dry_run)
+        logger.info("test_case_review_migration_checked", extra={"project_id": project_id,
+            "dry_run": dry_run, "case_count": len(changes)})
+        return changes
 
     async def archive(self, case_id: str) -> TestCaseRecord:
         case = await self.get_case(case_id)

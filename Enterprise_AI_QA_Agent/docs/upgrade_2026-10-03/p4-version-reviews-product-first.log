@@ -1,0 +1,14 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___ test_formal_project_version_review_lost_reply_later_active_and_restart ____
+tests\test_case_version_reviews_product.py:88: in test_formal_project_version_review_lost_reply_later_active_and_restart
+    run = await post(f"/suites/{suite['suite']['id']}/runs", {"mode_key": "api_testing", "creation_key": "v1-before-update"}, 201)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_version_reviews_product.py:47: in post
+    assert response.status_code == status, response.text
+E   AssertionError: {"detail":[{"type":"extra_forbidden","loc":["body","creation_key"],"msg":"Extra inputs are not permitted","input":"v1-before-update"}]}
+E   assert 422 == 201
+E    +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_case_version_reviews_product.py::test_formal_project_version_review_lost_reply_later_active_and_restart
+1 failed in 33.55s

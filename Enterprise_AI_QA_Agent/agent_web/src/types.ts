@@ -1827,6 +1827,14 @@ export interface TestCaseAssertion {
   description: string;
 }
 
+export interface TestCaseVersionReview {
+  version_id: string;
+  version: number;
+  status: "draft" | "pending_review" | "approved";
+  origin: "native" | "legacy_state";
+  events: { action: "submitted" | "activated" | "legacy_inferred"; at: string; request_id?: string | null; request_hash?: string | null }[];
+}
+
 export interface TestCaseRecord {
   id: string;
   project_id: string;
@@ -1842,6 +1850,7 @@ export interface TestCaseRecord {
   created_at: string;
   updated_at: string;
   archived_at?: string | null;
+  version_reviews?: Record<string, TestCaseVersionReview>;
 }
 
 export interface TestCaseVersionRecord {

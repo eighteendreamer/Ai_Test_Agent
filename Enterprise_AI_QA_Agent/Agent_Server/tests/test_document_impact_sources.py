@@ -73,8 +73,9 @@ async def test_fixed_three_sides_current_and_draft_cross_mode_and_reparse(tmp_pa
         lifecycle_gap = {"old_active_version_id": first.version.id, "current": current_case.model_dump(mode="json"),
             "active_candidate_case_ids": [case.id for case in active_page.items]}
         assert current_case.active_version_id == first.version.id
-        assert current_case.lifecycle_status == "draft"
-        assert first.case.id not in lifecycle_gap["active_candidate_case_ids"]
+        assert current_case.lifecycle_status == "active"
+        assert first.case.id in lifecycle_gap["active_candidate_case_ids"]
+        assert current_case.version_reviews[second.id].status == "draft"
         unrelated = await draft(env, project, "manual-ui", [{"source_type": "manual", "source_id": "human-notes"}], mode="ui_testing")
         archived = await draft(env, project, "archived", [source(doc, views[0])])
         await env.cases.archive(archived.case.id)
@@ -128,7 +129,7 @@ async def test_fixed_three_sides_current_and_draft_cross_mode_and_reparse(tmp_pa
         folder = Path(os.environ.get("QA_DOCUMENT_IMPACT_EVIDENCE_DIR", str(tmp_path))) / extension
         folder.mkdir(parents=True, exist_ok=True)
         (folder/"input.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
-        (folder/"existing-lifecycle-gap.json").write_text(json.dumps(lifecycle_gap, ensure_ascii=False, indent=2), encoding="utf-8")
+        (folder/"lifecycle-retained.json").write_text(json.dumps(lifecycle_gap, ensure_ascii=False, indent=2), encoding="utf-8")
         (folder/("v1."+extension)).write_bytes(paths[0].read_bytes())
         (folder/("v2."+extension)).write_bytes(paths[1].read_bytes())
 

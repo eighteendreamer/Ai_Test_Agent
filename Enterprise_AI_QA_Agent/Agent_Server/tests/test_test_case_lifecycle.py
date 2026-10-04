@@ -193,8 +193,10 @@ def test_new_candidate_version_does_not_mutate_active_version():
     assert [item["version"] for item in versions.json()] == [1, 2]
     assert versions.json()[0]["content_hash"] == version_one["content_hash"]
     detail = _request(app, "GET", f"/api/v1/test-cases/{case['id']}").json()
-    assert detail["lifecycle_status"] == "draft"
+    assert detail["lifecycle_status"] == "active"
     assert detail["active_version_id"] == activated["active_version_id"]
+    assert detail["version_reviews"][created.json()["id"]]["status"] == "draft"
+    assert detail["version_reviews"][version_one["id"]]["status"] == "approved"
 
 
 def test_archived_project_rejects_generation():
@@ -204,6 +206,21 @@ def test_archived_project_rejects_generation():
     response = _generate(app, project.id)
 
     assert response.status_code == 409
+
+
+def test_explicit_review_version_ownership_and_request_schema():
+    app, project, _, projects = _build_app()
+    first = _generate(app, project.id).json()["items"][0]
+    other = _run(projects.create(ProjectCreateRequest(project_key="other", name="Other")))
+    foreign = _generate(app, other.id).json()["items"][0]
+    base = f"/api/v1/test-cases/{first['case']['id']}"
+    for endpoint in ("submit-review", "activate"):
+        rejected = _request(app, "POST", f"{base}/{endpoint}", json={"version_id": foreign["version"]["id"]})
+        assert rejected.status_code == 409
+        invalid = _request(app, "POST", f"{base}/{endpoint}", json={"request_id": "", "unknown": True})
+        assert invalid.status_code == 422
+    detail = _request(app, "GET", base).json()
+    assert detail["lifecycle_status"] == "draft" and detail["active_version_id"] is None
 
 
 def test_generation_is_atomic_when_a_generated_case_key_conflicts():

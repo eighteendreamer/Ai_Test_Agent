@@ -7,7 +7,7 @@ import TestCaseContentDialog from "./TestCaseContentDialog.vue";
 import type { TestCaseRecord, TestCaseVersionRecord } from "../../types";
 
 const api = vi.hoisted(() => ({ getTestCaseGenerationTemplate: vi.fn(), saveTestCaseGenerationTemplate: vi.fn(),
-  listTestCaseVersions: vi.fn(), createTestCaseVersion: vi.fn() }));
+  listTestCaseVersions: vi.fn(), createTestCaseVersion: vi.fn(), getTestCase: vi.fn(), submitTestCaseReview: vi.fn(), activateTestCase: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 
 const version: TestCaseVersionRecord = {
@@ -25,6 +25,8 @@ const testCase: TestCaseRecord = { id: "case-one", project_id: "project-one", ca
 describe("project case authoring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
+    api.getTestCase.mockResolvedValue(structuredClone(testCase));
     api.listTestCaseVersions.mockResolvedValue([structuredClone(version)]);
     api.getTestCaseGenerationTemplate.mockResolvedValue({ project_id: "project-one", scope_key: "global", revision: 1, is_default: true,
       content_hash: "b".repeat(64), payload: { name: "默认模板", writing_guidance: "按来源编写", execution_notes: "保存自身说明", example_json: { objective: "验证业务" } } });
@@ -93,5 +95,76 @@ describe("project case authoring", () => {
     expect(wrapper.text()).not.toContain('"新增"');
     expect(api.getTestCaseGenerationTemplate).not.toHaveBeenCalled();
     wrapper.unmount();
+  });
+
+  it("reviews the selected draft and enables it even when a newer draft exists", async () => {
+    const v2 = { ...version, id: "version-two", version: 2 };
+    const v3 = { ...version, id: "version-three", version: 3 };
+    let current: TestCaseRecord = { ...testCase, latest_version: 3, version_reviews: {
+      "version-one": { version_id: "version-one", version: 1, status: "approved", origin: "native", events: [] },
+      "version-two": { version_id: "version-two", version: 2, status: "draft", origin: "native", events: [] },
+      "version-three": { version_id: "version-three", version: 3, status: "draft", origin: "native", events: [] },
+    } };
+    api.listTestCaseVersions.mockResolvedValue([version, v2, v3]);
+    api.getTestCase.mockImplementation(async () => structuredClone(current));
+    api.submitTestCaseReview.mockImplementation(async (_caseId, id, requestId) => {
+      const review = current.version_reviews![id];
+      review.status = "pending_review";
+      review.events.push({ action: "submitted", at: version.created_at, request_id: requestId });
+      return structuredClone(current);
+    });
+    api.activateTestCase.mockImplementation(async (_caseId, id, operation) => {
+      const review = current.version_reviews![id];
+      review.status = "approved";
+      review.events.push({ action: "activated", at: version.created_at, request_id: operation.request_id });
+      current = { ...current, active_version_id: id };
+      return structuredClone(current);
+    });
+    const wrapper = mount(TestCaseContentDialog, { props: { testCase } });
+    await flushPromises();
+    await wrapper.find("select").setValue(v2.id);
+    await wrapper.findAll("button").find(button => button.text() === "提交当前版本评审")!.trigger("click");
+    await flushPromises();
+    expect(current.active_version_id).toBe(version.id);
+    expect(wrapper.text()).toContain("待评审");
+    await wrapper.findAll("button").find(button => button.text() === "启用当前版本")!.trigger("click");
+    await flushPromises();
+    expect(api.activateTestCase).toHaveBeenCalledWith(testCase.id, v2.id, {
+      request_id: expect.any(String), expected_active_version_id: version.id,
+    });
+    expect(wrapper.text()).toContain("当前启用");
+    expect(wrapper.text()).toContain("版本评审记录");
+    expect(wrapper.text()).toContain("activated");
+    await wrapper.find("select").setValue(v3.id);
+    expect(wrapper.findAll("button").some(button => button.text() === "启用当前版本")).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("queries a lost reply after reopening and keeps the later active version", async () => {
+    let current = structuredClone(testCase);
+    api.getTestCase.mockImplementation(async () => structuredClone(current));
+    const v2 = { ...version, id: "version-two", version: 2 };
+    api.listTestCaseVersions.mockResolvedValue([version, v2]);
+    current.latest_version = 2;
+    api.submitTestCaseReview.mockImplementation(async (_id, versionId, requestId) => {
+      current = { ...current, version_reviews: { [versionId]: { version_id: versionId, version: 2,
+        status: "pending_review", origin: "native", events: [{ action: "submitted", at: version.created_at, request_id: requestId }] } } };
+      throw new Error("提交已生效但响应丢失");
+    });
+    const first = mount(TestCaseContentDialog, { props: { testCase } });
+    await flushPromises();
+    await first.findAll("button").find(button => button.text() === "提交当前版本评审")!.trigger("click");
+    await flushPromises();
+    const stored = window.sessionStorage.getItem(`case-version-review:${testCase.project_id}:${testCase.id}`)!;
+    expect(JSON.parse(stored).versionId).toBe(v2.id);
+    expect(stored).not.toContain("content_json");
+    first.unmount();
+    current.active_version_id = "later-version";
+    const second = mount(TestCaseContentDialog, { props: { testCase } });
+    await flushPromises();
+    expect(window.sessionStorage.length).toBe(0);
+    expect(api.submitTestCaseReview).toHaveBeenCalledTimes(1);
+    expect(api.activateTestCase).not.toHaveBeenCalled();
+    second.unmount();
   });
 });
