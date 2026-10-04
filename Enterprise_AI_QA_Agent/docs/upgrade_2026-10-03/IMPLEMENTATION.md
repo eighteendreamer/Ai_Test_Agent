@@ -1979,3 +1979,40 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_202
 凭据格式扫描首轮把历史工件名中的task-子串误判为sk-格式；脱敏上下文复核确认是文件名，增加前置字母数字边界后重新扫描。没有输出匹配原文或更改历史证据。
 
 最终交付核对：245份相关文件，230份原始证据逐份与暂存字节一致；验证元数据另核字节，不包含自引用哈希。三份方案全文一致、21个本地链接存在、10份Python源码/测试字节编译通过；旧三份输入canonical/object hash及旧规划CLI原件不变。最终暂存diff检查通过；用户.gitignore保持原SHA-256且未暂存。最终101项测试进程已退出，未进行生产迁移/默认模型/前端验收，完整目标仍在推进。
+
+## 固定响应协议、单元候选与持久核验（2026-10-04，研究基线232e6ca6）
+
+先读目标附件、现有PlanningDecision/_parse/system prompt及workflow响应checkpoint、impact完整输入/范围/请求/响应、原文与归一差异坐标和PG租约；读本地Agent协议/评测工程化课程，核对标准库JSONDecoder的pairs/constant hooks与实际行为。最初错误查了test_case_planning、Skill/共享任务文件名及在Windows给rg传glob路径，改用实际case_planning、analyze-document-impact、postgres_document_operation_store和目录配-g过滤；不新增依赖或改环境。实施前独立查证记录P4_RESPONSES_DESIGN.md。
+
+新增typed impact-response-v1决定、read/finish及局部规则/用例影响候选，Schema/指令在新任务seed冻结/hash后准备请求原样使用。最初准备时读取当前Schema，首轮通过后复核指出会让代码升级改变同任务的不同单元，改为提交阶段快照；历史seed协议None保留，已存调用及其显式未知重试恢复不变，新单元/新续读另建任务。DocumentImpactInput/旧策略及旧调用schema未改；六份上轮真实文件×适配器请求canonical hash实际回放不变。目录提供固定来源/用例/差异身份，目录不算正文。
+
+核验只读取已存响应，不发送：核对结构/原单元、固定原文切片/hash和完整用例的字面JSON路径/实际值，再核对该调用真正获得的primary/additional_fixed_reads及完整旧消息。normalized坐标不冒充原文；raw/章节/表格范围可作实际提供证据。未读引用或版本拒绝并保留原响应；补读决定验证固定身份和既有读取限制。拒绝重复键/NaN/多对象/损坏外层，不从坏对象中抽取嵌套候选。错误只留安全代码/说明；不复述原响应到日志。来源缺口/解析及差异警告后端传递，候选生效建议不改变unknown部署或pending_review语义状态，不改需求/用例/运行。
+
+RustFS存核验正文，PG独立impact_response_checks存关联原请求/响应/manifest哈希的不可改对象检查点，唯一call/validator version；核验本身不改原call的response_saved。组合Store登记初始化与清理次序，写入复用任务行锁/固定seed/项目/活租约及attempt/worker/token。并发回查返回同检查点，竞争对象仅确知无引用后清理；未知PG/object回执保留对象并传播异常，已存核验恢复不解析或重发。原共用对象写入/未知提交处理提取impact_checkpoint_io，保留旧异常导入兼容；不让响应服务访问调用服务的私有写入方法。
+
+首轮新专项31通过0跳过88.02秒，真实MD/DOCX/PDF×原生/LangChain两适配器、12步JSON/False/0/null/最后一步、read→显式接续、引用存在但未读/归一位置/未知版本/错误路径/坏JSON、并发5路、真实PG已提交后丢回执及新Store恢复、截断/空/工具回执和旧attempt/终态读写边界。首轮尚无协议seed冻结/最后补充旧hash及未知对象写入测试，不当作最终源码验证。
+
+扩大12模块首轮138通过3失败284.92秒：三失败是旧提交测试在整个seed字符串查content_json，响应Schema合法出现字段名导致误判。按实际DocumentImpactCaseReference核对字段集合/哈希，原禁止下载钩子及变更后固定输入断言保留；不放宽产品。失败p4-responses-verified.xml/.log与目录保留，最终回归另记。
+
+当前没有自动单元协调/全范围候选发布、独立影响Worker/CLI、正式API/前端或默认模型判断；新Store/Service读同数据库不能冒充独立impact进程重启。已有独立规划CLI作为相关回归保留。公开前后端契约未改，未重复前端构建/浏览器，不进行生产迁移。所有可编辑策略仍MySQL，业务seed/检查点PG，大正文RustFS；没有新策略依赖。原附件/项目PLAN/计划镜像待最终结果后全文同步；用户.gitignore原字节不改不提交，不推送/PR。
+
+最终命令（Agent_Server，stdout/stderr合并保存）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-responses-final')
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-responses-sources-final')
+$env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-responses-planning-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_batches.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_case_planning_tasks.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_skill_registry_reload.py tests/test_skill_management_boundaries.py tests/test_test_case_generation_pipeline.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-responses-final.xml *> ../docs/upgrade_2026-10-03/p4-responses-final.log
+```
+
+最终141通过0跳过291.57秒；新专项40项（16项解析/历史6请求回放、24项真实文件/HTTP/存储）。6组MD/DOCX/PDF×两适配器真实HTTP仅各1次，核验/恢复不追加发送；固定候选引用12步及False/0/null、来源缺口/部署未知保留。5路核验竞争只保留同检查点；PG实际提交丢回执新Store恢复不重解析；对象实际保存丢回执保留未引用原件并仅重做核验，不重发模型。原调用记录不改，补读由显式调用方接续而非自动协调器。当前Schema被替换为失败函数后准备请求仍用提交快照；旧输入/6份旧请求hash复验不变。
+
+所有源文件/测试与契约实际引用已检索（改用目录+glob过滤，修正Windows路径匹配），12份Python字节编译通过；p4-responses-validation.json记录历史hash、最终XML、方案/链接、凭据格式和暂存原件核对。三份方案全文同步，保留失败证据及历史CLI原字节。新增测试按既有ignore显式加入，用户.gitignore不改不提交。源码/公开契约边界与上述研究一致，无新依赖/生产迁移/默认模型/前端验收；完整目标保持推进。
+
+首轮暂存diff检查失败并停止：原pytest失败log/XML保留的空traceback标记E后含空格。只为这两份失败证据增加允许原行尾空白的属性，原件不改写；源码/方案/其他JSON的完整检查保留。
+
+最终交付核对：305份相关文件，287份原始证据与暂存字节逐份一致，验证元数据另核字节且不自引用hash；三份方案正文一致、23个本地链接存在、12份Python源码/测试字节编译通过。旧三份输入/六份请求canonical hash和旧规划CLI原件不变；凭据格式扫描无匹配，最终暂存diff检查通过。用户.gitignore原SHA-256未变且未暂存，最终pytest已退出。未推送/PR，没有生产迁移/默认影响模型/前端或独立impact进程验收，完整目标继续。

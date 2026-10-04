@@ -125,7 +125,10 @@ async def test_submission_freezes_scope_without_download_and_prepares_after_muta
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT seed FROM {store._tasks} WHERE id=%s", (task.id,))
             seed_json = cur.fetchone()["seed"]
-        assert "content_json" not in json.dumps(seed_json, ensure_ascii=False)
+        for reference in seed_json["cases"]:
+            assert set(reference) == {"case", "version_id", "content_hash", "version_record_sha256"}
+            assert "content_json" not in reference["case"] and "version" not in reference
+        assert seed_json["cases"][0]["content_hash"] == case.version.content_hash
         assert "text" not in seed_json and "cases" in seed_json
         await configs.save_settings(project.id, DocumentImpactPolicy(max_case_versions=1, max_context_chars=1))
         later = await env.cases.create_version(case.case.id, VersionRequest(**case.version.model_dump(include={

@@ -11,13 +11,15 @@ import importlib.metadata
 import json
 import logging
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from src.application.documents.impact_batches import DocumentImpactBatches
+from src.application.documents.impact_checkpoint_io import (
+    ImpactCallCheckpointUnavailable, confirmed_impact_write, store_impact_json,
+)
 from src.application.documents.impact_sources import canonical_impact_json, impact_record_hash
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.document_impact_calls import (
-    DocumentImpactCallInput, DocumentImpactCallObject, DocumentImpactCallResponse,
+    DocumentImpactCallInput, DocumentImpactCallResponse,
     DocumentImpactCallSelection, DocumentImpactTokenEstimate, DocumentImpactUnit,
 )
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
@@ -27,10 +29,6 @@ logger = logging.getLogger(__name__)
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-class ImpactCallCheckpointUnavailable(RuntimeError):
-    """The last PG/object write is not confirmed; never infer permission to resend."""
 
 
 class DocumentImpactCallService:
@@ -89,6 +87,9 @@ class DocumentImpactCallService:
         DocumentImpactBatches.validate(seed, envelope, manifest)
         if seed.analysis_context is None or seed.invocation_snapshot is None:
             raise ValueError("历史影响任务未冻结模型调用策略，请创建新任务")
+        if seed.response_protocol is None:
+            raise ValueError("历史影响任务未冻结响应协议，已保存调用仍可恢复；新调用请创建新任务")
+        protocol = type(seed.response_protocol).model_validate(seed.response_protocol.model_dump(mode="json"))
         if selection.unit not in cls.units(manifest):
             raise ValueError("影响调用单元不属于固定完整范围")
         if selection.unit.kind == "segment":
@@ -107,12 +108,12 @@ class DocumentImpactCallService:
             "environment": seed.analysis_context.environment.model_dump(mode="json"),
             "primary": primary, "additional_fixed_reads": reads,
             "fixed_source_catalog": [source.model_dump(mode="json") for source in manifest.sources],
+            "fixed_case_catalog": [case.model_dump(mode="json", include={"case_id", "version_id"}) for case in manifest.cases],
+            "fixed_difference_catalog": [{"id": f"{item.kind}:{item.index}", **item.model_dump(mode="json")}
+                for item in manifest.differences],
             "source_gaps": [gap.model_dump(mode="json") for gap in manifest.source_gaps],
             "scope_counts": {"segments": len(manifest.segments), "differences": len(manifest.differences), "cases": len(manifest.cases)},
-            "analysis_protocol": {"version": "impact-call-v1", "scope": "one declared unit only",
-                "instruction": "Read primary and fixed evidence. Request more fixed ranges when cross-section rules are needed. "
-                    "Propose candidates with exact source slices and literal case JSON paths; report uncertain/missing evidence. "
-                    "Do not claim complete project coverage from this unit. Do not execute or change official records."}}
+            "analysis_protocol": protocol.model_dump(mode="json")}
         messages = []
         if previous is not None:
             old_input, old_response = previous
@@ -123,7 +124,7 @@ class DocumentImpactCallService:
         request = ModelInvocationRequest(system_prompt=seed.analysis_context.prompt.system_prompt, messages=messages, tools=[])
         return request
 
-    async def _scope(self, claim):
+    async def read_fixed_scope(self, claim):
         task = await self._tasks.get(claim.task.project_id, claim.task.document_id, claim.task.id)
         seed = await self._store.get_seed(claim.task.project_id, claim.task.document_id, claim.task.id)
         if seed != claim.seed:
@@ -162,12 +163,6 @@ class DocumentImpactCallService:
             raise ValueError("影响响应不能替换调用或请求")
         return record, response
 
-    async def _store_object(self, claim, value, filename):
-        encoded = await asyncio.to_thread(canonical_impact_json, value)
-        saved = await self._objects.store_uploaded_bytes(content=encoded, filename=filename, content_type="application/json",
-            object_prefix=f"document-impacts/{claim.task.project_id}/{claim.task.id}/{claim.attempt_id}/calls/{uuid4()}")
-        return DocumentImpactCallObject(storage_uri=saved["uri"], sha256=hashlib.sha256(encoded).hexdigest(), size_bytes=len(encoded))
-
     async def _discard_unreferenced_request(self, claim, reference):
         try:
             if await self._store.calls.object_is_referenced(reference.storage_uri):
@@ -180,19 +175,6 @@ class DocumentImpactCallService:
             logger.error("document_impact_call_request_cleanup_unconfirmed", extra={"task_id": claim.task.id,
                 "request_sha256": reference.sha256, "error_type": type(exc).__name__})
 
-    @staticmethod
-    async def _confirmed(operation, *, task_id, stage):
-        try:
-            return await operation
-        except ContinuationLeaseLostError:
-            raise
-        except (ValueError, KeyError, TimeoutError):
-            raise
-        except Exception as exc:
-            logger.error("document_impact_call_checkpoint_unconfirmed", extra={"task_id": task_id,
-                "stage": stage, "error_type": type(exc).__name__})
-            raise ImpactCallCheckpointUnavailable("影响调用检查点提交尚不能确认，请只读回查") from exc
-
     async def prepare(self, claim, *, call_key, selection: DocumentImpactCallSelection):
         if not isinstance(call_key, str) or not call_key.strip() or len(call_key) > 160:
             raise ValueError("影响调用身份不能为空或超过160字符")
@@ -203,7 +185,7 @@ class DocumentImpactCallService:
             self._store.calls.check_identity(prior, digest)
             await self.read_request(claim.task.project_id, claim.task.document_id, claim.task.id, prior.id)
             return prior
-        task, envelope, checkpoint, manifest = await self._scope(claim)
+        task, envelope, checkpoint, manifest = await self.read_fixed_scope(claim)
         if claim.seed.invocation_snapshot is None:
             raise ValueError("历史影响任务未冻结模型调用策略，请创建新任务")
         remaining = (task.deadline_at - datetime.now(timezone.utc)).total_seconds()
@@ -230,9 +212,9 @@ class DocumentImpactCallService:
             budget = await asyncio.to_thread(self.estimate, claim.seed, request)
             payload = DocumentImpactCallInput(input_sha256=envelope.input_sha256, manifest_sha256=checkpoint.sha256,
                 selection=selection, request=request, budget=budget)
-            reference = await self._store_object(claim, payload, "request.json")
+            reference = await store_impact_json(self._objects, claim, payload, "request.json")
         try:
-            result = await self._confirmed(self._store.calls.prepare(claim, call_key=call_key, selection_hash=digest,
+            result = await confirmed_impact_write(self._store.calls.prepare(claim, call_key=call_key, selection_hash=digest,
                 selection=selection, request=reference, budget=budget, manifest_sha256=checkpoint.sha256),
                 task_id=claim.task.id, stage="prepare")
         except (ValueError, KeyError, TimeoutError, ContinuationLeaseLostError):
@@ -251,7 +233,7 @@ class DocumentImpactCallService:
         if record.phase == "invoking":
             if record.invocation_attempt_id == claim.attempt_id:
                 return record  # Another coroutine owns this call; do not send or mark it unknown.
-            return await self._confirmed(self._store.calls.mark_unknown(claim, call_id, code="recovered_without_response"),
+            return await confirmed_impact_write(self._store.calls.mark_unknown(claim, call_id, code="recovered_without_response"),
                 task_id=claim.task.id, stage="recover_unknown")
         if record.phase in {"outcome_unknown", "response_unavailable"}:
             return record
@@ -276,7 +258,7 @@ class DocumentImpactCallService:
             (task.deadline_at - datetime.now(timezone.utc)).total_seconds())
         if remaining <= 0:
             raise TimeoutError("影响调用原任务预算已耗尽")
-        record, send = await self._confirmed(self._store.calls.start(claim, call_id), task_id=task.id, stage="intent")
+        record, send = await confirmed_impact_write(self._store.calls.start(claim, call_id), task_id=task.id, stage="intent")
         if not send:
             return record
         logger.info("document_impact_model_dispatching", extra={"task_id": task.id, "call_id": call_id,
@@ -292,7 +274,7 @@ class DocumentImpactCallService:
         except Exception as exc:
             logger.warning("document_impact_call_dispatch_unconfirmed", extra={"task_id": task.id,
                 "call_id": call_id, "error_type": type(exc).__name__})
-            return await self._confirmed(self._store.calls.mark_unknown(claim, call_id, code="dispatch_" + type(exc).__name__),
+            return await confirmed_impact_write(self._store.calls.mark_unknown(claim, call_id, code="dispatch_" + type(exc).__name__),
                 task_id=task.id, stage="dispatch_unknown")
         metadata = {key: result.response_summary.get(key) for key in
             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
@@ -308,9 +290,9 @@ class DocumentImpactCallService:
         if len(encoded) > snapshot.config.payload.max_response_bytes:
             logger.warning("document_impact_call_response_limit", extra={"task_id": task.id, "call_id": call_id,
                 "response_bytes": len(encoded), "max_response_bytes": snapshot.config.payload.max_response_bytes})
-            return await self._confirmed(self._store.calls.mark_unknown(claim, call_id,
+            return await confirmed_impact_write(self._store.calls.mark_unknown(claim, call_id,
                 code="response_over_size_limit", response_unavailable=True), task_id=task.id, stage="response_limit")
         # Object or PG failures propagate with invoking preserved; no automatic repeat or parsing.
-        reference = await self._confirmed(self._store_object(claim, response, "response.json"), task_id=task.id, stage="response_object")
-        return await self._confirmed(self._store.calls.save_response(claim, call_id, reference, disposition),
+        reference = await confirmed_impact_write(store_impact_json(self._objects, claim, response, "response.json"), task_id=task.id, stage="response_object")
+        return await confirmed_impact_write(self._store.calls.save_response(claim, call_id, reference, disposition),
             task_id=task.id, stage="response_checkpoint")

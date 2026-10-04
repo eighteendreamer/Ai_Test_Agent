@@ -1,0 +1,136 @@
+{
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "2656c2ea-e82f-44b3-817a-3cb4f884c2a3",
+    "call_id": "95c843c2-8128-4da7-82b3-d806f96f474f",
+    "request_sha256": "77ae87989b39c778b1d13f4623391b4a964d1036909391fd768995dd82b06c3b",
+    "response_sha256": "abb72c14a6cc514b3744a8dee99ee542310d966eeda09cd05f6a2478768eb6c0",
+    "manifest_sha256": "eda20a76ed8251e033e2331a8660e15256759d49e5bcbc0979ea3ba43dedff25",
+    "status": "rejected",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "case",
+        "id": "744605c8-8ee2-41da-8886-a4adeb8dffd1"
+      },
+      "action": "finish",
+      "summary": "保留期限变化候选",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "retention-change",
+          "kind": "modified",
+          "summary": "订单保留7天调整为9天",
+          "reason": "固定新旧原文的期限不同",
+          "document_citations": [
+            {
+              "source_id": "parse:d6e07997-81f6-4bf5-987f-1fcd817a7ccb",
+              "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "fabricated"
+            },
+            {
+              "source_id": "parse:a8611411-5363-462b-8c4b-40dd22c3cee7",
+              "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+              "level": "major",
+              "reason": "用例仍预期7天",
+              "verification_points": [
+                "保留期限边界"
+              ],
+              "citations": [
+                {
+                  "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+                  "version_record_sha256": "4751126aa2be6ab03b6dda6eedb2dc6ca9f9e436e76970d3649a6185638a22f9",
+                  "root": "content_json",
+                  "path": [
+                    "目标"
+                  ],
+                  "value": "验证订单保留7天"
+                },
+                {
+                  "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+                  "version_record_sha256": "4751126aa2be6ab03b6dda6eedb2dc6ca9f9e436e76970d3649a6185638a22f9",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    11,
+                    "操作"
+                  ],
+                  "value": "完整步骤11"
+                },
+                {
+                  "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+                  "version_record_sha256": "4751126aa2be6ab03b6dda6eedb2dc6ca9f9e436e76970d3649a6185638a22f9",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "布尔"
+                  ],
+                  "value": false
+                },
+                {
+                  "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+                  "version_record_sha256": "4751126aa2be6ab03b6dda6eedb2dc6ca9f9e436e76970d3649a6185638a22f9",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "零"
+                  ],
+                  "value": 0
+                },
+                {
+                  "version_id": "744605c8-8ee2-41da-8886-a4adeb8dffd1",
+                  "version_record_sha256": "4751126aa2be6ab03b6dda6eedb2dc6ca9f9e436e76970d3649a6185638a22f9",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "空"
+                  ],
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "current",
+          "uncertainties": [
+            "部署生效状态未核实"
+          ]
+        }
+      ],
+      "unresolved": [
+        "仅为当前单元候选，尚未评审"
+      ]
+    },
+    "issues": [
+      {
+        "code": "invalid_text_citation",
+        "message": "原文引用与固定正文身份、切片或哈希不符"
+      }
+    ],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 1
+}

@@ -12,6 +12,7 @@ from src.schemas.document_parsing import DocumentParseSnapshotView
 from src.schemas.document_impact_analysis import DocumentImpactAnalysisContext
 from src.schemas.document_impact_batches import DocumentImpactBatchSettings
 from src.schemas.document_impact_calls import DocumentImpactInvocationSnapshot
+from src.schemas.document_impact_responses import DocumentImpactResponseProtocolSnapshot
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -99,6 +100,7 @@ class DocumentImpactSourceSeed(BaseModel):
     analysis_context: DocumentImpactAnalysisContext | None = None
     batch_settings: DocumentImpactBatchSettings | None = None
     invocation_snapshot: DocumentImpactInvocationSnapshot | None = None
+    response_protocol: DocumentImpactResponseProtocolSnapshot | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")

@@ -200,3 +200,9 @@ PG回执或对象写入不确定传播ImpactCallCheckpointUnavailable，不能�
 实测新专项19项，最终11模块101通过0跳过187.90秒，实际MD/DOCX/PDF、MySQL/PG/RustFS和受控本地HTTP。覆盖6组文件×适配器、6协程竞争、完整续读、真实HTTP取消、PG实际提交后丢回执、响应对象失败、预算/历史兼容及失败回执。HTTP500沿用SDK重试，1逻辑意图实际3次HTTP，transport_attempts仍not_observed，生产物理发送追踪归P0。新Store恢复不是独立impact进程恢复；受控固定响应不是默认AI业务影响判断。
 
 下一步按固定清单实现自动协调/跨节读取请求协议、结构化候选与引用核验、覆盖记录与汇总结果；再接生产初始化/API/独立Worker/Outbox/前端及实际默认模型。需求身份/评审/矩阵/增量和环境证据仍待实施。上传无Git依赖及执行模板只生成的约定不变；没有生产迁移或新依赖。
+
+## 结构化单元响应与独立核验〔2026-10-04，基线232e6ca6〕
+
+本步细节见[P4_RESPONSES_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_RESPONSES_DESIGN.md)。新增typed read/finish协议、局部规则/用例影响候选与实际已提供内容的引用事实核验。新提交冻结Schema/指令/hash，准备调用不读当前Schema；旧请求/hash不改，旧seed不补造协议。独立PG impact_response_checks与RustFS核验对象不可改关联原调用/响应/清单，原call保持response_saved。已存核验恢复只读；来源缺口/警告后端带入，deployment unknown、semantic pending_review不根据模型建议改变。
+
+当前仅有单元候选/核验组件；自动补读循环、全范围覆盖/候选汇总、默认模型、独立影响进程及正式产品未接。首轮31项真实功能通过后，协议冻结/旧hash/未知对象写入等进入最终相关回归；验证和失败详见实施记录与PLAN第六节。

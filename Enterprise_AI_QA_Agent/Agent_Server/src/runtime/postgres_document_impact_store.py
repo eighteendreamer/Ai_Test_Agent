@@ -21,6 +21,7 @@ from src.schemas.document_impact import (
 )
 from src.schemas.document_impact_batches import DocumentImpactManifestCheckpoint
 from src.runtime.postgres_document_impact_calls import PostgresDocumentImpactCalls
+from src.runtime.postgres_document_impact_responses import PostgresDocumentImpactResponses
 
 logger = logging.getLogger(__name__)
 
@@ -47,18 +48,20 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
         self._versions = settings.database.postgres_test_case_version_table
         self._manifests = self._docs + "_impact_manifests"
         self.calls = PostgresDocumentImpactCalls(self)
+        self.responses = PostgresDocumentImpactResponses(self)
         for table in (self._cases, self._versions, self._manifests):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid impact case table identifier")
 
     @property
     def tables(self):
-        return [self.calls.table, self._manifests, self._tasks]
+        return [self.responses.table, self.calls.table, self._manifests, self._tasks]
 
     def _initialize_results(self, cur):
         cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._manifests} (
             task_id UUID PRIMARY KEY REFERENCES {self._tasks}(id), record JSONB NOT NULL)""")
         self.calls.initialize(cur)
+        self.responses.initialize(cur)
 
     def _input_schema(self):
         return f"""difference_snapshot_id UUID NOT NULL REFERENCES {self._docs}_diff_snapshots(id),

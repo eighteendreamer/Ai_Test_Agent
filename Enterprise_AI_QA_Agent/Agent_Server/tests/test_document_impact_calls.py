@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUME
 
 
 @contextmanager
-def provider(*, mode="ok", gated=False):
+def provider(*, mode="ok", gated=False, responder=None):
     calls, arrived, release = [], threading.Event(), threading.Event()
     if not gated:
         release.set()
@@ -49,6 +49,8 @@ def provider(*, mode="ok", gated=False):
                 self.send_response(500)
             else:
                 message = {"role": "assistant", "content": "controlled complete response"}
+                if responder is not None:
+                    message["content"] = responder(body)
                 if mode == "length": message["content"] = "partial"
                 if mode == "empty": message["content"] = ""
                 if mode == "large": message["content"] = "X" * 20000

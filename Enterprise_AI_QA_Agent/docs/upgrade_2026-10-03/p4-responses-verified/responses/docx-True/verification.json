@@ -1,0 +1,153 @@
+{
+  "checkpoint": {
+    "task_id": "f27690b6-3b99-4e5d-b72f-12b6f090edef",
+    "call_id": "83ed9986-036e-40ad-b7f4-342d1f16a592",
+    "validator_version": "impact-response-validator-v1",
+    "request_sha256": "57fc7ee3c77dda0b2cdd2a69878332c00148f45f08b3bc92e251dcc7d9e397c1",
+    "response_sha256": "37c4dede492e1aa6ebf602a5b9b4d4aa352b7614c94d11fafbd05c053d41e797",
+    "manifest_sha256": "0aa0a864f73c1dd4bfa61dcf4c901181bc54a9f0c9092a141c0339c8f2539997",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/447423cc-f527-4f5a-9755-30c19b63c6b5/f27690b6-3b99-4e5d-b72f-12b6f090edef/f06da360-6340-4316-8134-2a453424fc51/calls/97d0cbe7-1518-444a-8d88-48623f803836/response-check.json",
+      "sha256": "a0257593f5138367e3a374e54083e3ee614a80c1239811dc9d0a655512c38948",
+      "size_bytes": 3302
+    },
+    "created_at": "2026-10-04T15:27:22.529047Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "f27690b6-3b99-4e5d-b72f-12b6f090edef",
+    "call_id": "83ed9986-036e-40ad-b7f4-342d1f16a592",
+    "request_sha256": "57fc7ee3c77dda0b2cdd2a69878332c00148f45f08b3bc92e251dcc7d9e397c1",
+    "response_sha256": "37c4dede492e1aa6ebf602a5b9b4d4aa352b7614c94d11fafbd05c053d41e797",
+    "manifest_sha256": "0aa0a864f73c1dd4bfa61dcf4c901181bc54a9f0c9092a141c0339c8f2539997",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "case",
+        "id": "05a18ea1-387e-437f-8631-fd8753c4104e"
+      },
+      "action": "finish",
+      "summary": "保留期限变化候选",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "retention-change",
+          "kind": "modified",
+          "summary": "订单保留7天调整为9天",
+          "reason": "固定新旧原文的期限不同",
+          "document_citations": [
+            {
+              "source_id": "parse:7be2a8cb-9925-498e-b251-63889addec59",
+              "text_sha256": "2f241c6ecc3fa46213448ed9be113bb078b270c307e6d7c77ed7bf39e2c19e6c",
+              "start_char": 0,
+              "end_char": 34,
+              "quote": "订单查询\n订单详情需要有效订单 ID。\n字段\t约束\n有效期\t7 天\n"
+            },
+            {
+              "source_id": "parse:3810a694-884e-4d7e-89d5-fb107ce6bc04",
+              "text_sha256": "ae4ea45b1ffe71a9e50b5214385a45244947d0c54be69720d72a8bb7f0c2576c",
+              "start_char": 0,
+              "end_char": 34,
+              "quote": "订单查询\n订单详情需要有效订单 ID。\n字段\t约束\n有效期\t9 天\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+              "level": "major",
+              "reason": "用例仍预期7天",
+              "verification_points": [
+                "保留期限边界"
+              ],
+              "citations": [
+                {
+                  "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+                  "version_record_sha256": "c3f7d3460b55ec07dc1717d5bade781a92abd2ca61397dfb385e17127e7a7301",
+                  "root": "content_json",
+                  "path": [
+                    "目标"
+                  ],
+                  "value": "验证订单保留7天"
+                },
+                {
+                  "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+                  "version_record_sha256": "c3f7d3460b55ec07dc1717d5bade781a92abd2ca61397dfb385e17127e7a7301",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    11,
+                    "操作"
+                  ],
+                  "value": "完整步骤11"
+                },
+                {
+                  "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+                  "version_record_sha256": "c3f7d3460b55ec07dc1717d5bade781a92abd2ca61397dfb385e17127e7a7301",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "布尔"
+                  ],
+                  "value": false
+                },
+                {
+                  "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+                  "version_record_sha256": "c3f7d3460b55ec07dc1717d5bade781a92abd2ca61397dfb385e17127e7a7301",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "零"
+                  ],
+                  "value": 0
+                },
+                {
+                  "version_id": "05a18ea1-387e-437f-8631-fd8753c4104e",
+                  "version_record_sha256": "c3f7d3460b55ec07dc1717d5bade781a92abd2ca61397dfb385e17127e7a7301",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "空"
+                  ],
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "current",
+          "uncertainties": [
+            "部署生效状态未核实"
+          ]
+        }
+      ],
+      "unresolved": [
+        "仅为当前单元候选，尚未评审"
+      ]
+    },
+    "issues": [],
+    "basis_limitations": [
+      "source_warning:parse:7be2a8cb-9925-498e-b251-63889addec59:docx_layout_scope",
+      "source_warning:parse:3810a694-884e-4d7e-89d5-fb107ce6bc04:docx_layout_scope",
+      "case_source_missing:5e4375c5-7900-4efc-bbc6-e9755047da13:0",
+      "difference_warning:extracted_text_positions",
+      "difference_warning:docx_layout_scope",
+      "difference_warning:docx_layout_scope"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 1,
+  "recovered_without_parse_or_send": true,
+  "default_model_judgement": false,
+  "independent_process_restart": false
+}
