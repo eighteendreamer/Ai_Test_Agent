@@ -11,12 +11,22 @@ from src.core.config import get_settings
 from src.runtime import document_operation_worker_runtime as runtime_module
 
 
-@pytest.mark.parametrize("cli", ["run_document_parse_worker", "run_document_difference_worker"])
+@pytest.mark.parametrize("cli", ["run_document_parse_worker", "run_document_difference_worker", "run_document_impact_worker"])
 def test_document_cli_import_does_not_boot_production_api(cli):
     result = subprocess.run([sys.executable, "-X", "utf8", "-c",
         f"import sys; import src.cli.{cli}; assert 'src.main' not in sys.modules"],
         capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_impact_cli_unregistered_stream_fails_before_resource_startup():
+    result = subprocess.run([sys.executable, "-X", "utf8", "-m", "src.cli.run_document_impact_worker",
+        "--once", "--stream", "fixture:unregistered-document-impact"],
+        capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+    assert "document_impact_worker_failed error_type=ValueError" in result.stdout
+    assert "document_impact_worker_stream_unregistered" in result.stderr
+    assert "resource_initializing" not in result.stderr
 
 
 @pytest.mark.asyncio

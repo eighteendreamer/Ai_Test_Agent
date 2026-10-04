@@ -36,6 +36,7 @@ from src.api.routes.case_plans import router as case_plans_router
 from src.api.routes.case_planning_tasks import router as case_planning_tasks_router
 from src.api.routes.document_parsing import router as document_parsing_router
 from src.api.routes.document_differences import router as document_differences_router
+from src.api.routes.document_impacts import router as document_impacts_router
 from src.api.routes.document_git import router as document_git_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
@@ -61,6 +62,7 @@ from src.application.documents.parsing_service import DocumentParsingService, DO
 from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.application.documents.difference_service import DocumentDifferenceService, DOCUMENT_DIFFERENCE_STREAM
 from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
+from src.runtime.document_impact_runtime import DOCUMENT_IMPACT_STREAM, build_document_impact_runtime
 from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
@@ -471,6 +473,17 @@ async def _initialize_lifespan_resources(
     app.state.document_difference_store = document_difference_store
     app.state.document_difference_config_service = document_difference_config_service
     app.state.document_difference_service = document_difference_service
+    document_impact_config_service = container.document_impact_config_service()
+    await document_impact_config_service.initialize()
+    document_impact_runtime = build_document_impact_runtime(settings, container,
+        parsing=document_parsing_service, differences=document_difference_service,
+        stream=(DOCUMENT_IMPACT_STREAM if settings.orchestration.redis_task_dispatch_enabled
+            and DOCUMENT_IMPACT_STREAM in settings.orchestration.task_stream_names else None))
+    await document_impact_runtime.tasks.initialize()
+    app.state.document_impact_config_service = document_impact_config_service
+    app.state.document_impact_task_service = document_impact_runtime.tasks
+    app.state.document_impact_workflow = document_impact_runtime.workflow
+    app.state.document_impact_store = document_impact_runtime.store
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -977,6 +990,7 @@ app.include_router(case_plans_router, prefix=settings.api_v1_prefix)
 app.include_router(case_planning_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(document_parsing_router, prefix=settings.api_v1_prefix)
 app.include_router(document_differences_router, prefix=settings.api_v1_prefix)
+app.include_router(document_impacts_router, prefix=settings.api_v1_prefix)
 app.include_router(document_git_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)

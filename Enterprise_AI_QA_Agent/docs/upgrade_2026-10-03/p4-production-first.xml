@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="28.960" timestamp="2026-10-05T01:25:38.550314+08:00" hostname="EIghteen"><testcase classname="tests.test_document_impact_production" name="test_production_fixed_analysis_history_and_process_recovery[md-False-False]" time="25.468"><failure message="AssertionError: (422, '{&quot;detail&quot;:[{&quot;type&quot;:&quot;too_short&quot;,&quot;loc&quot;:[&quot;body&quot;,&quot;source_refs&quot;],&quot;msg&quot;:&quot;List should have at least 1 item after validation, not 0&quot;,&quot;input&quot;:[],&quot;ctx&quot;:{&quot;field_type&quot;:&quot;List&quot;,&quot;min_length&quot;:1,&quot;actual_length&quot;:0}}]}')&#10;assert 422 == 201&#10; +  where 422 = &lt;Response [422 Unprocessable Entity]&gt;.status_code">tests\test_document_impact_production.py:165: in test_production_fixed_analysis_history_and_process_recovery
+    foreign_case = await post(f"/projects/{other['id']}/test-cases", {**case_payload, "source_refs": []}, 201)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_production.py:104: in post
+    assert response.status_code == status, (response.status_code, response.text)
+E   AssertionError: (422, '{"detail":[{"type":"too_short","loc":["body","source_refs"],"msg":"List should have at least 1 item after validation, not 0","input":[],"ctx":{"field_type":"List","min_length":1,"actual_length":0}}]}')
+E   assert 422 == 201
+E    +  where 422 = &lt;Response [422 Unprocessable Entity]&gt;.status_code</failure></testcase></testsuite></testsuites>

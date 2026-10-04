@@ -22,19 +22,25 @@ class DocumentDifferenceWorkerRuntime:
 @asynccontextmanager
 async def document_difference_worker_runtime(settings, *, stream=DOCUMENT_DIFFERENCE_STREAM):
     async def build_service(container, initialize):
-        parsing = DocumentParsingService(
-            store=PostgresDocumentParseStore(settings, lease_seconds=settings.orchestration.task_outbox_lease_seconds),
-            documents=container.api_docs_service(), projects=container.project_service(),
-            configs=container.document_parser_config_service(), objects=container.artifact_storage_service(), stream=None)
-        await initialize("document_parsing_sources", parsing.initialize())
-        container.api_docs_service().set_parsing_service(parsing)
-        store = PostgresDocumentDifferenceStore(settings, lease_seconds=settings.orchestration.task_outbox_lease_seconds)
-        service = DocumentDifferenceService(store=store, documents=container.api_docs_service(),
-            projects=container.project_service(), configs=container.document_difference_config_service(),
-            objects=container.artifact_storage_service(), parsing=parsing, stream=stream)
-        await initialize("document_difference", service.initialize())
+        _, service, store = await build_document_difference_sources(settings, container, initialize, stream=stream)
         return service, store
 
     async with document_operation_worker_runtime(settings, stream=stream, task_type="document_difference",
         log_prefix="document_difference_worker", label="document difference", build_service=build_service) as runtime:
         yield DocumentDifferenceWorkerRuntime(*runtime)
+
+
+async def build_document_difference_sources(settings, container, initialize, *, stream=None):
+    """Shared fixed document readers; stream=None prevents source task submission."""
+    parsing = DocumentParsingService(
+        store=PostgresDocumentParseStore(settings, lease_seconds=settings.orchestration.task_outbox_lease_seconds),
+        documents=container.api_docs_service(), projects=container.project_service(),
+        configs=container.document_parser_config_service(), objects=container.artifact_storage_service(), stream=None)
+    await initialize("document_parsing_sources", parsing.initialize())
+    container.api_docs_service().set_parsing_service(parsing)
+    store = PostgresDocumentDifferenceStore(settings, lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+    service = DocumentDifferenceService(store=store, documents=container.api_docs_service(),
+        projects=container.project_service(), configs=container.document_difference_config_service(),
+        objects=container.artifact_storage_service(), parsing=parsing, stream=stream)
+    await initialize("document_difference", service.initialize())
+    return parsing, service, store

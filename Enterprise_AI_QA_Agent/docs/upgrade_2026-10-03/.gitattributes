@@ -47,3 +47,14 @@ p4-workflow-first.log whitespace=cr-at-eol,-blank-at-eol
 p4-workflow-first.xml whitespace=cr-at-eol,-blank-at-eol
 p4-workflow-verified.log whitespace=cr-at-eol,-blank-at-eol
 p4-workflow-verified.xml whitespace=cr-at-eol,-blank-at-eol
+p4-production-* -text whitespace=cr-at-eol
+p4-production-*/** -text whitespace=cr-at-eol
+p4-production-*/**/*.pdf binary
+p4-production-*/**/*.md whitespace=cr-at-eol,-blank-at-eol
+# Keep original failed assertions/pytest traceback whitespace without rewriting evidence.
+p4-production-first.log whitespace=cr-at-eol,-blank-at-eol
+p4-production-first.xml whitespace=cr-at-eol,-blank-at-eol
+p4-production-verified.log whitespace=cr-at-eol,-blank-at-eol
+p4-production-verified.xml whitespace=cr-at-eol,-blank-at-eol
+# Vitest ends its raw console output with an extra empty line.
+p4-production-frontend-tests.log whitespace=cr-at-eol,-blank-at-eof

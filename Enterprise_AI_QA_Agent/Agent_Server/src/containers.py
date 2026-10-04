@@ -15,6 +15,7 @@ from src.application.documents.api_docs_service import ApiDocsService
 from src.application.documents.git_service import GitDocumentService
 from src.application.documents.parser_config_service import DocumentParserConfigService
 from src.application.documents.difference_config_service import DocumentDifferenceConfigService
+from src.application.documents.impact_config_service import DocumentImpactConfigService
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
 from src.application.intent.semantic_intent_service import SemanticIntentService
@@ -248,6 +249,11 @@ class AppContainer(containers.DeclarativeContainer):
     )
     document_difference_config_service = providers.Singleton(
         DocumentDifferenceConfigService,
+        config_store=application_config_store,
+        project_service=project_service,
+    )
+    document_impact_config_service = providers.Singleton(
+        DocumentImpactConfigService,
         config_store=application_config_store,
         project_service=project_service,
     )

@@ -219,6 +219,14 @@ class DocumentImpactWorkflow:
             raise KeyError("该影响任务尚未保存全范围结果")
         return snapshot, await self._read_result(snapshot)
 
+    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        return await self._tasks.list_snapshots(project_id, document_id,
+            version_id=version_id, limit=limit, offset=offset)
+
+    async def read_snapshot(self, project_id, document_id, snapshot_id):
+        snapshot = await self._tasks.get_snapshot(project_id, document_id, snapshot_id)
+        return snapshot, await self._read_result(snapshot)
+
     async def execute(self, claim):
         protocol = claim.seed.workflow_protocol
         if protocol is None:

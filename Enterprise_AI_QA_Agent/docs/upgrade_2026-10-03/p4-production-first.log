@@ -1,0 +1,14 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_production_fixed_analysis_history_and_process_recovery[md-False-False] _
+tests\test_document_impact_production.py:165: in test_production_fixed_analysis_history_and_process_recovery
+    foreign_case = await post(f"/projects/{other['id']}/test-cases", {**case_payload, "source_refs": []}, 201)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_production.py:104: in post
+    assert response.status_code == status, (response.status_code, response.text)
+E   AssertionError: (422, '{"detail":[{"type":"too_short","loc":["body","source_refs"],"msg":"List should have at least 1 item after validation, not 0","input":[],"ctx":{"field_type":"List","min_length":1,"actual_length":0}}]}')
+E   assert 422 == 201
+E    +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]
+1 failed, 4 deselected in 28.97s

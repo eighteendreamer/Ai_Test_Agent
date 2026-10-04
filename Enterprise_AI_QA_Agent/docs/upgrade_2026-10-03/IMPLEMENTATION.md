@@ -2044,3 +2044,33 @@ PLAN基线更新为已提交7f7fb743，纠正依据表中单元候选仍未实�
 方案三个正文同步，本轮源码/历史hash/引用/旧CLI/实际原件字节与凭据格式核对见p4-workflow-validation.json。修改属性只保留新原件和失败traceback原始空白，源码检查不放宽。最初查固定输入regression-final目录不存在，改按实际artifact/hash查找；未重跑、覆盖或生成历史记录。pytest最终进程已退出，没有默认外部模型、正式影响API/前端、独立影响进程或生产迁移验收；已有规划CLI仍属其他链路。生产初始化/API/独立Worker、真实模型及需求/评审/矩阵/增量和完整P0—P5尚需继续。用户.gitignore未改未提交，不推送/PR。
 
 最终交付核对：388份本轮相关文件，373份新原始证据与Git暂存字节逐份一致，验证元数据不自引用hash；旧287份响应证据未变，旧3份输入/6份请求canonical hash及旧规划CLI原字节一致。三份方案全文一致、26个本地链接存在、10份Python源码/测试字节编译通过；凭据格式扫描无匹配，最终cached diff检查通过。用户.gitignore原SHA-256保持且未暂存；所有pytest进程已退出，没有推送/PR或生产/默认模型验收。
+
+## 正式影响 API、共用装配与独立 Worker（2026-10-05，基线d4a3d636）
+
+核对原目标附件、上传/比较服务、AppContainer/main初始化、全局Bearer及项目/文档归属、文档路由共用错误、Outbox relay、共享Worker租约/资源和本地Agent轨迹课程。API与Worker采用同一build_document_impact_runtime，不复制影响分析业务；既有比较来源构造抽为共用函数，影响Worker上游stream=None只读。新增MySQL影响配置Provider及正式初始化、四类settings GET/PUT、任务提交/原请求/分页/查询、任务保存结果和快照历史查询。PG仅初始化原影响业务表；大对象仍RustFS；无新增依赖或可编辑环境策略。模板.env.example登记三类文档stream，用户实际.env与.gitignore未改。
+
+新增run_document_impact_worker独立CLI复用DocumentImpactTaskHandler和RedisTaskWorker，不启动API/浏览器/录制/执行器。结果公开读取复用全量对象/hash/输入/来源/规则交付事实核验，查询不重发模型。新增前端独立API/类型和边界测试；未接正式页面或任务池，完整产品流程另验。
+
+首轮1失败28.97秒，源于测试空来源不满足既有draft契约；实际API422证明拒绝有效，改样本人工来源。次轮4失败1通过208.54秒，测试错误预设正常流程必须complete；实际比较保留抽取坐标警告，DOCX/PDF有布局/结构限制，原协调规则因此partial。修正验收为确切限制、声明单元均analyzed且没有缺口，未改生产规则；中断恢复当时已通过。原始失败XML/log和所有进程输出保留。
+
+首批正式20项18通过2默认live跳过286.07秒；额外启用两SQL开关后既有池生命周期8通过3.75秒。补充实际HTTP和PG引用的原始对象证据后，当前源正式/资源专项20通过0跳过281.38秒；相关影响全链及三种格式正式比较回归135通过0跳过542.48秒。前端API新增与比较6通过；npm run build含vue-tsc通过。正式命令在Agent_Server运行：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-production-validated')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_production.py tests/test_document_worker_runtime.py tests/test_lifespan_resource_cleanup.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-production-validated.xml *> ../docs/upgrade_2026-10-03/p4-production-validated.log
+```
+
+相关回归启用RUN_LIVE_DOCUMENT_IMPACT_TASKS、RUN_LIVE_DOCUMENT_IMPACT_SOURCES、RUN_LIVE_DOCUMENT_DIFFERENCE_PRODUCTION，各自QA证据目录为p4-production-regression、p4-production-sources-regression、p4-production-differences-regression。实际命令：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_workflow.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_batches.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_document_difference_production.py tests/test_model_clients.py tests/test_langchain_model_adapter.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-production-regression.xml *> ../docs/upgrade_2026-10-03/p4-production-regression.log
+```
+
+五个生产场景实际启动三次API、独立解析/比较、独立Outbox relay、影响Worker/终态进程；MD另真实终止在途Worker，原Redis pending与PG任务由新进程恢复，第一次调用实际仅一次发送且unknown，其他单元继续，结果partial。后续MySQL指导/新草稿不替换固定输入；跨模式完整JSON和False/0/null保留。API错误Bearer401、跨项目404、参数422、原请求冲突409、关闭派发新请求503分别实测。RustFS原件不变；原HTTP消息与完整固定请求匹配；PG引用的输入/清单/请求/响应/核验对象按大小/hash保存原字节。失败、前轮与最终证据目录分开，原文件不重写。
+
+源码字节编译、三份完整方案/本地链接、此前工作流原始证据hash及Git暂存原始字节核对见p4-production-validation.json。既有工作流协议/旧Input/CallInput/CallSelection/响应Schema未改，未知调用和terminal行为未放宽。未验证默认外部模型业务判断、正式App/任务池/浏览器或生产历史迁移。完整P0—P5保持未完成；下一步继续正式入口与真实AI/需求闭环。中文相关commit不推送、不建PR。
+
+最终审阅仅将本轮新增配置import放回既有documents分组；独立Worker导入/未登记流/资源回收7项复验通过17.25秒（p4-production-imports.xml/.log），生产行为未变。离线核对5场景101个实际对象引用及完整冻结消息/物理HTTP匹配、374个此前工作流原始证据、3旧输入和6旧请求hash、三份方案全文及28个本地链接。新增原始证据734文件的限定凭据格式扫描无命中，不代表穷尽泄露检查。

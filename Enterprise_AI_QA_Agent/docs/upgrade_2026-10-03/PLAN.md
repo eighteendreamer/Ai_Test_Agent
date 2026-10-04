@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-05。本次方案核对基线：`a8c3cd93`。本次更新明确上传与可选 Git 的入口、版本归属及验收边界，仅修改方案。最近实施已增加内部自动补读、规则候选到完整用例的传递、全范围结果快照及共享租约Handler；其验证记录在第六节，研究基线仍为当时的 `9be9bfd8`。正式生产入口、需求评审/矩阵及完整P0—P5仍未完成。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
+修订日期：2026-10-05。本次方案核对基线：`d4a3d636`。本轮接入文档影响正式 API、共用依赖装配和独立 Worker，前端同步 API/类型；真实进程及存储验证见3.5.6和第六节。上传与可选 Git 的入口、版本归属及验收边界继续保留。最近实施已增加内部自动补读、规则候选到完整用例的传递、全范围结果快照及共享租约Handler；其验证记录在第六节，研究基线仍为当时的 `9be9bfd8`。正式 App/任务池、默认模型语义、需求评审/矩阵及完整P0—P5仍未完成。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
 
 方案中的目标行为与实际内部/公开能力分开。完整 P0—P5 尚未完成。
 
@@ -30,7 +30,7 @@
 | [固定计划创建运行](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_run_service.py)、[执行上下文](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) | 复用正式套件、RunItem、原子领取及完整上下文，不创建替代执行平台 |
 | [Agent 适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py)、[回执核验](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_assessment.py) | 新 Agent 策略已接既有图/审批/证据；继续补准备状态、未知副作用和真实模型验收，保留旧运行策略恢复 |
 | [文档服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py)、[对象存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/artifacts/artifact_storage_service.py) | 原件与派生内容已分存；复用稳定文档身份、版本事务、哈希和原提交查询，上传不调用 Git |
-| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；内部影响提交、调用与单元候选核验已有实现；本轮接自动补读/规则传递与全范围候选结果，生产影响入口、需求和矩阵仍待接入 |
+| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；内部影响提交、调用与单元候选核验已有实现；本轮接自动补读/规则传递与全范围候选结果，生产影响API/独立Worker见3.5.6；正式App、需求和矩阵仍待接入 |
 | [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 现已抽出共享任务/Outbox/租约职责；解析与比较子类保留最终快照语义，影响任务另存输入检查点。规划保存调用意图和响应，P4 后续批次检查点参考该做法 |
 
 测试设计继续参考项目本地课程：用例生成与数据治理、线上流量闭环、评测工程化、Agent 轨迹与协议鲁棒性。采用来源、版本、轨迹和评审原则；其中依赖版本、统计比例、阈值不是本产品的实测事实。
@@ -210,7 +210,7 @@ OpenAPI/Postman/HAR转Markdown及项目URL派生修改均不覆盖原件。旧�
 
 AI分析同时使用：**固定新旧差异 + 完整现有用例版本 + 当时编写来源**。来源缺失、错误、部分解析和原生成上下文截断逐引用留痕；不得读取当前/latest文本冒充旧来源。默认范围是项目非归档用例的启用版本及最新草稿，历史版本可显式选择；不按历史测试模式过滤。默认范围只是当前分析范围，不代表扫描了所有历史用例。
 
-内部固定提交与输入准备已接：元数据捕获不下载RustFS正文，固定配置、比较及用例版本/全记录hash；PG影响任务与Outbox同事务，后续固定内容另存RustFS并保存不可改输入检查点。重读只用已存输入，不重新选择当前用例/配置，输入准备不标分析完成。内部新提交已冻结非敏感模型参数、完整Prompt/Skill及环境声明；模型配置和分析指导在MySQL，固定依据随PG seed保存。尚未生产注入、公开API/独立影响Worker或调用真实默认影响模型；内部范围清单、固定读取/引用核验及单元调用/持久响应已接；单元候选与响应核验见3.5.4；自动协调与全范围结果见3.5.5，生产入口继续接入。现有 `max_context_chars` 是证据准备容量，不是模型Token预算。超过容量当前明确拒绝，不能截断后宣称完成。
+内部固定提交与输入准备已接：元数据捕获不下载RustFS正文，固定配置、比较及用例版本/全记录hash；PG影响任务与Outbox同事务，后续固定内容另存RustFS并保存不可改输入检查点。重读只用已存输入，不重新选择当前用例/配置，输入准备不标分析完成。内部新提交已冻结非敏感模型参数、完整Prompt/Skill及环境声明；模型配置和分析指导在MySQL，固定依据随PG seed保存。正式生产依赖/API/独立影响Worker接入见3.5.6，真实默认影响模型仍未验证；内部范围清单、固定读取/引用核验及单元调用/持久响应已接；单元候选与响应核验见3.5.4；自动协调与全范围结果见3.5.5，生产入口继续接入。现有 `max_context_chars` 是证据准备容量，不是模型Token预算。超过容量当前明确拒绝，不能截断后宣称完成。
 
 P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DESIGN.md)：
 
@@ -240,7 +240,7 @@ P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Te
 
 固定请求只在已有输入检查点后构造，包含完整旧/新/当时来源及全部用例JSON，不读取当前模板或Skill。`max_input_bytes`仅计算canonical Prompt/messages的UTF-8内容大小，**不是精确Token计量，也不包括所有提供商封装**；超限拒绝且不截断。模型窗口/输出参数已冻结，原文分段与跨节读取见3.5.2；单元模型请求、内容编码计数/字节估算及逻辑调用总预算已实现，见3.5.3。提供商精确计量仍待验；自动协调采用原估算/总预算，见3.5.5。
 
-功能专项通过真实文件与隔离存储，并实际调用受控本地HTTP提供商验证固定内容、输出参数和发送前拒绝变化参数；这不是默认模型的业务影响判断。此前模型依据阶段未生成候选；单元候选见3.5.4，本轮全范围候选结果见3.5.5，需求评审仍未接入；`input_saved`或清单准备后的`analyzing`仅表示对应准备阶段，构造请求不会自动发送模型。批次响应检查点已接内部服务；独立影响Worker进程与公开产品入口继续推进；共享Handler与自动协调见3.5.5。
+功能专项通过真实文件与隔离存储，并实际调用受控本地HTTP提供商验证固定内容、输出参数和发送前拒绝变化参数；这不是默认模型的业务影响判断。此前模型依据阶段未生成候选；单元候选见3.5.4，本轮全范围候选结果见3.5.5，需求评审仍未接入；`input_saved`或清单准备后的`analyzing`仅表示对应准备阶段，构造请求不会自动发送模型。批次响应检查点已接内部服务；独立影响Worker进程与公开API见3.5.6，正式App入口继续推进；共享Handler与自动协调见3.5.5。
 
 ### 3.5.2 固定范围清单、读取和引用位置核验〔内部已验〕
 
@@ -250,7 +250,7 @@ P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Te
 
 固定读取支持分段、任意合法原文区间（供跨节引用）、完整用例JSON/自身说明/来源缺口和指定差异；超限拒绝不截断。表格随相关范围提供结构与来源，过大完整表格/用例仍可能超读取预算，需新任务调整策略，不能标处理完成。引用核验对照完整文本hash和原文切片；用例引用对照版本记录hash、字面JSON路径token和值，区分false/0/null及键中点号。核验仅证明引用存在和一致，不证明业务语义或影响结论。
 
-清单正文存RustFS，独立PG impact_manifests表保存不可改检查点；写入核对固定input_sha256及当前attempt/租约。原任务无需改列/阶段枚举；有清单时阶段analyzing表示范围已准备，不能凭这个阶段推断已经调用模型或已完成；调用事实另查impact_calls记录。未知PG提交保留对象、传播异常；新Store恢复先读取原清单，不上传、不抓新配置，截止时间不重置。没有生产独立影响Worker/CLI验收；单元请求/总预算/持久响应已接内部调用服务（见3.5.3），单元响应解析/核验/候选持久化见3.5.4，本轮自动协调固定读取和全范围候选结果见3.5.5。
+清单正文存RustFS，独立PG impact_manifests表保存不可改检查点；写入核对固定input_sha256及当前attempt/租约。原任务无需改列/阶段枚举；有清单时阶段analyzing表示范围已准备，不能凭这个阶段推断已经调用模型或已完成；调用事实另查impact_calls记录。未知PG提交保留对象、传播异常；新Store恢复先读取原清单，不上传、不抓新配置，截止时间不重置。此范围准备阶段当时没有生产独立影响Worker/CLI验收；后续独立进程见3.5.6；单元请求/总预算/持久响应已接内部调用服务（见3.5.3），单元响应解析/核验/候选持久化见3.5.4，本轮自动协调固定读取和全范围候选结果见3.5.5。
 
 ### 3.5.3 单元模型调用、预算与响应恢复〔内部已验〕
 
@@ -264,7 +264,7 @@ P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Te
 
 供应商报错、长度截断、空正文和意外工具调用均先保存响应并分类，不认为有效候选，更不执行工具。错误诊断可能含凭据，只保留允许的错误元数据并明确省略原因；成功SDK原响应保留。超响应大小不截断成成功，记录response_unavailable，保留已消耗额度。RustFS或PG响应保存失败保留invoking、传播未知检查点错误；恢复不盲重发。明确拒绝/竞争失去的请求对象经实际PG无引用查询才补偿清理；未知提交保留对象。
 
-SDK保持原有重试：当前受控HTTP500实测1次逻辑意图产生3次HTTP请求。记录transport_attempts=not_observed，不能宣称物理单次发送、精确总计费或HTTP次数受到逻辑预算限制。本轮并未修改SDK重试设置，完整发送阶段追踪仍归P0。单元response_saved不等于validated、完整覆盖或分析完成；结构化单元候选解析和引用事实核验见3.5.4；自动协调与结果见3.5.5；引用语义评审、独立Worker/CLI及正式页面仍待实现。
+SDK保持原有重试：当前受控HTTP500实测1次逻辑意图产生3次HTTP请求。记录transport_attempts=not_observed，不能宣称物理单次发送、精确总计费或HTTP次数受到逻辑预算限制。本轮并未修改SDK重试设置，完整发送阶段追踪仍归P0。单元response_saved不等于validated、完整覆盖或分析完成；结构化单元候选解析和引用事实核验见3.5.4；自动协调与结果见3.5.5；独立Worker/CLI见3.5.6；引用语义评审及正式页面仍待实现。
 
 ### 3.5.4 固定响应协议、候选与独立核验记录〔内部已验〕
 
@@ -278,7 +278,7 @@ impact-response-v1明确read或finish：read只能请求固定分段、完整用
 
 RustFS保存核验正文；独立PG impact_response_checks按(call_id,validator_version)不可改关联原请求/响应/清单哈希，原call的response_saved和原响应对象不变。写入使用现有任务行锁、项目/seed/活租约及attempt/worker/token；并发只保留一致的原检查点。原记录恢复只读，不重解析、不抓当前配置、不调用模型；终态可读不可新写。PG/对象提交未知保留对象、传播检查点异常，确认无引用才清理。共享对象写入/未知回执逻辑从调用服务提取，保留原异常导入兼容，不另造状态通道。
 
-该响应阶段尚无自动协调器；其补读→继续专项由显式调用方接续。本轮在3.5.5另接自动循环和全范围结果，生产影响API/独立Worker/CLI及正式页面仍未验收。首轮真实功能31项通过后补充协议冻结、旧调用hash及对象未知写入边界；最终相关回归另列第六节。没有调用默认影响模型，不将受控HTTP响应当作真实AI判断。
+该响应阶段尚无自动协调器；其补读→继续专项由显式调用方接续。本轮在3.5.5另接自动循环和全范围结果，生产影响API/独立Worker/CLI见3.5.6；正式页面仍未验收。首轮真实功能31项通过后补充协议冻结、旧调用hash及对象未知写入边界；最终相关回归另列第六节。没有调用默认影响模型，不将受控HTTP响应当作真实AI判断。
 
 ### 3.5.5 自动补读、跨单元规则传递与全范围结果〔内部已验〕
 
@@ -297,9 +297,23 @@ RustFS保存核验正文；独立PG impact_response_checks按(call_id,validator_
 | 未完成范围 | 所有声明单元均列入结果；analyzed、evidence_insufficient、rejected、ineligible、unknown、unprocessed、incomplete分别保存。调用数、累计估算、单请求字节/上下文、截止时间及回执类型保留具体原因；原回执不会因核验失败被丢弃 |
 | 结果入库 | PG新增影响快照表，复用原checkpoint/result_saved/finish事务与租约；RustFS保存完整结果。completed表示结果已保存，可为partial；语义pending_review、部署unknown，不启用/停用用例、不执行测试 |
 | 恢复 | 先读取数据库当前输入检查点，不能因旧claim未包含检查点重新准备。已存调用/响应/核验在截止时间耗尽后仍可只读恢复；对象或PG提交回执未知保留对象并传播，不重发已存模型响应 |
-| Worker生命周期 | [DocumentImpactTaskHandler](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_impact_task_handler.py)薄型复用现有领取/心跳/取消/终态重投；生产初始化、独立影响CLI和正式API仍另接 |
+| Worker生命周期 | [DocumentImpactTaskHandler](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_impact_task_handler.py)薄型复用现有领取/心跳/取消/终态重投；生产初始化、独立影响CLI和正式API见3.5.6 |
 
-本步没有新可编辑策略或依赖，沿用MySQL已冻结的影响/读取/调用配置；代码协议随seed存PG用于历史重放。新协议将来变化必须版本化，不原地改已有任务。受控HTTP固定响应只能证明链路和引用事实，不能证明真实AI业务影响判断；正式生产入口、独立影响进程、默认模型、评审/矩阵/增量草稿仍待推进。
+本步没有新可编辑策略或依赖，沿用MySQL已冻结的影响/读取/调用配置；代码协议随seed存PG用于历史重放。新协议将来变化必须版本化，不原地改已有任务。受控HTTP固定响应只能证明链路和引用事实，不能证明真实AI业务影响判断；该内部阶段当时尚无正式生产入口/独立影响进程，后续接入见3.5.6；默认模型、评审/矩阵/增量草稿仍待推进。
+
+### 3.5.6 正式 API、共用装配与独立 Worker〔真实进程已验〕
+
+查证及失败修正见 [P4_PRODUCTION_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_PRODUCTION_DESIGN.md)。API和独立Worker复用 [同一影响装配](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_impact_runtime.py)，上游解析/比较只读来源与比较Worker共用构造；沿用共享资源回收、Outbox、Redis、领取/心跳及现有固定检查点，不新建任务平台。
+
+项目下四类影响策略提供GET/PUT，内容仍在MySQL；文档下提供impact-tasks提交、原请求恢复、分页/任务查询、按任务读取保存结果，以及impact-snapshots分页/固定结果查询。提交返回202，完整输入准备及模型调用在独立Worker。全局Bearer鉴权及项目/文档归属核对沿用既有机制；异常按现有404/409/503及原请求恢复提示处理。所有结果读取仍做完整对象/hash/固定输入/引用/规则交付核验，不在GET时发送模型。
+
+独立CLI为 `python -m src.cli.run_document_impact_worker`，派发沿用 `python -m src.cli.run_task_outbox_relay`；各自独立运行，可用--once处理一轮。既有连接、派发开关和stream登记来自部署配置；新增业务策略没有放入环境变量。模板.env.example登记三类文档stream，实际用户.env不改。Worker不启动API、浏览器、录制或测试执行器，也不提交新的上游来源任务。
+
+真实MD/DOCX/PDF及DOCX两适配器通过正式API上传V1/V2，独立解析/比较后提交完整12步跨模式用例与影响任务；实际独立relay和Worker处理。核对MySQL策略、PG冻结seed/Outbox、RustFS原件/结果，并保留实际HTTP消息及请求/响应/核验/清单/输入原始对象。后续配置和新草稿不能替换已提交依据；API重启、错误Bearer/跨项目访问、终态重投及关闭派发后的历史读取分别核验。
+
+真实在途Worker被终止后，新进程重新领取原任务，第一调用保持unknown且实际只发送一次；其余单元继续处理，结果保持partial和原依据限制。正常流程全部声明单元analyzed仍保留抽取坐标及DOCX/PDF能力警告；不能把单元完成或任务completed改称原件完整语义分析、部署生效或测试通过。默认模型业务判断没有在这组受控HTTP测试中验证。
+
+前端API客户端/DTO和受影响测试/构建同步；固定seed按只读完整JSON保留用于审计，正式页面/任务池还需接入和浏览器实测。生产历史迁移、需求身份/评审、矩阵、增量草稿与完整P0—P5继续推进。
 
 ### 3.6 需求评审、增量草稿与环境适用性
 
@@ -362,7 +376,7 @@ RustFS保存核验正文；独立PG impact_response_checks按(call_id,validator_
 
 扩展现有入口和消费者：生成模板/完整JSON/导入预览；规划提交与原请求查询；保存计划启动；运行依赖、准备状态/修订；文档版本/解析/比较；P4影响任务/候选评审/需求/矩阵/增量草稿。耗时分析复用任务基础设施，不用API内BackgroundTasks代替持久执行。
 
-API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试成对更新。现有同步/异步规划、文档版本/解析/比较及Git入口已接，不重复建设。P4新的路由/字段在实现前按实际服务和消费者核对，本文目标契约不是已存在的接口。
+API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试成对更新。现有同步/异步规划、文档版本/解析/比较及Git入口已接，不重复建设。P4影响任务/设置/结果路由与前端API/DTO已按实际服务接入，见3.5.6；正式页面/任务池及需求评审等目标契约仍待研究实施。
 
 按项目启用新策略，关闭入口保留已存数据；旧运行按原策略恢复。增量迁移先预演，检查旧正文/hash、原件缺失、父链、套件/运行和失败引用；只记录可证明的历史事实。投影重建不改业务记录，终态任务不重置复用。生产迁移没有在当前环境执行。
 
@@ -374,10 +388,10 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程、模块任务和恢复 |
 | P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归 | 准备拥有者/状态、未知副作用、计划修订、默认模型、其他模式及完整产品流程 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
-| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 已有内部固定提交、输入检查点、模型/Prompt/Skill/环境声明冻结及逐版本治理；已接结构化单元候选/核验和内部自动协调/规则传递/全范围候选结果；部署证据、生产接入、需求/矩阵/增量及正式页面待实施 |
+| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 已有内部固定提交、输入检查点、模型/Prompt/Skill/环境声明冻结及逐版本治理；已接结构化单元候选/核验和内部自动协调/规则传递/全范围候选结果；生产API/独立Worker见3.5.6；部署证据、真实模型、需求/矩阵/增量及正式页面待实施 |
 | P5 | 录制场景、步骤/别名、知识查询、失败定位、结果报告 | 先证明录制链可用，再按实际缺口实施 |
 
-当前依赖顺序为：**P4固定提交/证据与模型/Prompt/Skill/环境声明冻结〔内部专项已验〕→ 范围清单/固定读取与引用位置核验→ 单元调用/估算预算/持久响应〔内部专项已验〕→ 响应协议/单元候选与引用事实核验〔内部已验〕→ 自动协调/规则传递/全范围结果〔内部专项已验〕→ 生产初始化/API/独立Worker与正式模型语义验收 → 需求评审 → 增量草稿 → 矩阵/适用性/回归 → 正式产品验收**。随后继续上述P2/P1/P0/P5及迁移剩余项；阶段编号不代表前一阶段已经全部完成。
+当前依赖顺序为：**P4固定提交/证据与模型/Prompt/Skill/环境声明冻结〔内部专项已验〕→ 范围清单/固定读取与引用位置核验→ 单元调用/估算预算/持久响应〔内部专项已验〕→ 响应协议/单元候选与引用事实核验〔内部已验〕→ 自动协调/规则传递/全范围结果〔内部专项已验〕→ 生产初始化/API/独立Worker〔真实进程专项已验〕→ 正式App/任务池与真实模型语义验收 → 需求评审 → 增量草稿 → 矩阵/适用性/回归 → 正式产品验收**。随后继续上述P2/P1/P0/P5及迁移剩余项；阶段编号不代表前一阶段已经全部完成。
 
 每一步按“查实际调用链/参考 → 真实输入验证现状 → 修正方案 → 实施 → 功能/相关回归 → 同步状态/相关中文commit”推进。用户 `.gitignore` 修改保持不动、不提交；不自动推送或建PR。不把局部里程碑重新定义成整个目标完成。
 
@@ -409,7 +423,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下是 `9be9bfd8` 基线及本轮协调实现后的状态。模型依据76项、范围清单82项及响应专项141项均属此前实际运行；本轮协调功能与相关回归另列，历史测试数量不累计成覆盖数。未改前端或公开API，未进行生产迁移。
+以下是 `d4a3d636` 基线及本轮生产接入后的状态。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；本轮生产进程与相关回归另列，历史测试数量不累计成覆盖数。前端API/类型与公开影响API已同步，正式页面/任务池未接，未进行生产迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -418,7 +432,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P2规划/执行/回归 | 持久规划、任务池、固定计划创建运行、原子依赖领取、完整上下文、工具返回检查点、审批和新回归已有专项；生产API/独立执行CLI的受控API场景已验 | 真实默认模型、完整产品/其他模式、准备状态、未知副作用、执行中修订 |
 | P3上传/解析/比较 | 原件/派生分存、版本/历史、工厂/受限进程、持久API/独立CLI、DOCX正式App及比较提交/历史/恢复已有产品证据 | 生产历史迁移、其他格式完整产品及更多故障组合 |
 | P3可选Git | `4a02ae2`；真实Git专项25通过，MD/DOCX正式App与生产API/CLI/真实存储两场景通过 | 生产迁移及其他格式完整产品；上传无需Git约定不变 |
-| P4三方读取/固定提交 | 已有PG任务/Outbox、固定seed、RustFS完整输入与不可改检查点；新增模型/完整Prompt/Skill/环境声明冻结与固定请求；此前接范围清单/固定读取与引用核验；上轮接单元模型调用/估算预算/持久响应与未知恢复；此前接响应协议冻结/单元候选/独立核验，本轮接自动补读/规则传递/全范围候选及快照；两适配器真实HTTP和MySQL/PG/RustFS已有专项 | 提供商精确Token、环境部署证据、生产注入/API/独立影响Worker、正式模型语义判断、需求/评审/矩阵/增量草稿 |
+| P4三方读取/固定提交 | 已有PG任务/Outbox、固定seed、RustFS完整输入与不可改检查点；新增模型/完整Prompt/Skill/环境声明冻结与固定请求；此前接范围清单/固定读取与引用核验；上轮接单元模型调用/估算预算/持久响应与未知恢复；此前接响应协议冻结/单元候选/独立核验，本轮接自动补读/规则传递/全范围候选及快照；两适配器真实HTTP和MySQL/PG/RustFS已有专项；本轮正式生产API/独立relay/Worker与前端API/类型已接并验 | 提供商精确Token、环境部署证据、正式App/任务池、真实模型语义判断、需求/评审/矩阵/增量草稿仍待推进 |
 | P4逐版本治理 | `918cdace`；后端106通过/2默认模型跳过、前端37通过、构建通过；正式App/生产API/隔离真实存储1场景通过，模型调用0 | 生产历史迁移、运维入口/投影重建、旧套件和原失败完整迁移；不代表影响AI完成 |
 | P0/P5录制与Docker/报告 | 现有实现可以作为实测入口 | 人工录制→清洗→数据库→AI、Docker真实工具结果及场景/报告尚未闭环验收 |
 
@@ -444,6 +458,8 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 最终回归保留独立规划CLI真实进程中断/重启，impact恢复仍是新Store/Service，不当作独立影响进程。旧三份输入与六份请求canonical hash、旧CLI工件、源码字节编译、三份方案、链接及原件暂存字节核对见 `p4-responses-validation.json`。未调用默认影响模型、未改前端/公开API、未执行生产迁移；完整P0—P5目标继续，当时后续为自动协调/全范围结果；本轮见3.5.5，接下来继续生产入口和正式AI/需求闭环。
 
+### 6.1 此前内部协调验证〔基线9be9bfd8〕
+
 本轮协调专项首轮 **12失败（46.54秒）**，发生在提交前的协议哈希：误用只接受模型记录的impact_record_hash处理普通dict，尚未协调模型调用；改为项目已有canonical JSON方式。次轮 **11失败、1通过（50.14秒）**，暴露输入准备只读取旧claim：已有检查点再次准备造成不可改冲突；改为先读数据库当前检查点，保留已存输入。失败XML/log均保留。修正后真实功能 **12通过（78.07秒）**。
 
 补充实际来源核对、在途HTTP取消、截止时间耗尽后的已存单元恢复、真实租约续期/失效和回执类型后，13模块 **161通过（414.12秒）**，含1条新测试导入TestCaseBundle产生的收集警告。别名修正，预算原因分为调用数/累计估算/字节/窗口，并增加两项来源篡改发送前拒绝后，当前源码最终 **163通过、0跳过（422.81秒）**；新协调专项 **22项，均为真实文件/HTTP/隔离MySQL/PG/RustFS场景**。最终依据p4-workflow-validated.xml/.log及实际原件/结果目录，前轮结果不替代最终源码验证。
@@ -451,3 +467,13 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 6组MD/DOCX/PDF×两适配器验证自动补读、跨单元完整规则集合/原文传递、12步JSON及false/0/null、固定范围结果/终态读取；其余验证漏规则/来源不足/无规则、精确重复分组与潜在重叠、预算耗尽、截断/空/工具回执、结果PG已提交丢回执、新Store发布不重发、对象实际保存丢回执/保留、截止时间已耗尽仍读已有响应、真实在途取消后的unknown不自动重发、共享Handler真实心跳维持/过期取消和来源篡改发送前拒绝。历史输入/旧请求hash、源码字节编译、旧规划CLI和原件暂存核对见p4-workflow-validation.json。
 
 本轮回归包含已有独立规划CLI进程，影响恢复仍是新Store/同进程Handler，不冒充独立影响进程。没有默认外部模型语义判断、生产初始化/API/独立影响CLI/前端或生产迁移。新增PG快照表由隔离Store初始化验证；生产部署须接正式初始化和迁移。三份方案全文同步，用户.gitignore不改不提交。完整目标未完成，下一步接生产依赖/入口/独立Worker及真实模型，再推进需求评审、矩阵、增量与其余P0—P5范围。
+
+### 6.2 本轮正式 API 与独立影响进程〔基线d4a3d636〕
+
+首轮1失败28.97秒：测试创建其他项目用例时空source_refs不满足既有契约，API实际422；改为明确人工来源。次轮4失败1通过208.54秒：正常流程已保存结果，但测试把解析坐标/布局限制下的partial错误预设为complete。核对比较器警告与原协调状态规则后，验收改为明确原限制、各声明单元analyzed及无缺口，不修改生产状态计算。两轮失败XML/log/原件/进程输出保留；次轮真实中断恢复已通过。
+
+随后正式专项18通过2跳过286.07秒；跳过的是未设置live开关的两项既有SQL池测试，另外实际启用MySQL/PG开关运行8项全部通过3.75秒。补充原始HTTP消息与请求/响应/核验/清单/输入对象证据，并启用两个live开关后，当前源码正式专项及资源生命周期 **20通过、0跳过（281.38秒）**；原影响链与三格式正式比较回归 **135通过、0跳过（542.48秒）**。两组模块不同，记录分别见p4-production-validated.xml/.log、p4-production-regression.xml/.log。前端新增/既有文档API测试 **6通过**，npm run build（含vue-tsc）通过。
+
+5个正式进程场景为MD、DOCX、PDF、DOCX LangChain及MD在途Worker中断。均从实际生产API提交，独立解析/比较/Outbox relay/影响CLI与隔离MySQL/PG/Redis、实际RustFS及HTTP运行；没有替换AppContainer生产Provider。验证固定完整12步JSON及False/0/null、后续配置/草稿不替换旧依据、原请求/重启、错误Bearer/项目隔离、终态重投及关闭派发历史。中断原调用只发送一次，新进程保留unknown，旧结果不伪造成功；正常流程保留真实坐标/格式限制为partial。完整原件、PG检查点/seed、原始HTTP和对象字节保存并核对SHA-256；物理消息与完整冻结请求对应，不以统计数代替原件。
+
+本次没有调用默认外部模型进行语义验收，没有正式页面/任务池浏览器验收，也没有生产历史迁移。三份方案全文同步；源码、链接、历史证据及原始暂存字节核对另见p4-production-validation.json。完整目标未完成，接下来继续正式App/任务池、真实模型与需求评审/矩阵/增量闭环，再推进其余P0—P5和迁移。

@@ -100,6 +100,19 @@ class DocumentImpactTaskService:
         envelope = await self._read_input(seed, checkpoint)
         return checkpoint, envelope
 
+    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        await self._require_document(project_id, document_id)
+        if version_id:
+            await self._docs.get_version(document_id, version_id)
+        return await self._store.list_snapshots(project_id, document_id, version_id=version_id, limit=limit, offset=offset)
+
+    async def get_snapshot(self, project_id, document_id, snapshot_id):
+        await self._require_document(project_id, document_id)
+        snapshot = await self._store.get_snapshot(project_id, document_id, snapshot_id)
+        if snapshot is None:
+            raise KeyError("当前文档没有该影响结果")
+        return snapshot
+
     async def prepare_analysis_request(self, project_id, document_id, task_id):
         """Read saved evidence and build a request, without model dispatch."""
         _, envelope = await self.read_input(project_id, document_id, task_id)
