@@ -15,7 +15,7 @@ from src.schemas.document_differences import (
     DocumentDifferenceView, DocumentDifferenceWarning, DocumentSectionDifference,
     DocumentTableDifference, DocumentTextDifference,
 )
-from src.schemas.document_parsing import DocumentParseSnapshotView
+from src.schemas.document_parsing import DocumentParseSnapshot, DocumentParseSnapshotView
 
 
 def snapshot_reference(view: DocumentParseSnapshotView) -> DocumentDifferenceReference:
@@ -28,10 +28,15 @@ def snapshot_reference(view: DocumentParseSnapshotView) -> DocumentDifferenceRef
         result.status != snapshot.status or result.warnings != snapshot.warnings):
         raise ValueError("比较输入与固定解析依据不一致")
     # Storage bytes/hash verification is performed by DocumentParsingService.read_snapshot.
+    return parse_snapshot_reference(snapshot)
+
+
+def parse_snapshot_reference(snapshot: DocumentParseSnapshot) -> DocumentDifferenceReference:
+    seed = snapshot.seed
     return DocumentDifferenceReference(project_id=seed.project_id, document_id=seed.document_id,
         version_id=seed.version_id, snapshot_id=snapshot.id, result_sha256=snapshot.sha256,
-        original_sha256=result.source_sha256, parser=result.parser.model_copy(deep=True),
-        options=result.options.model_copy(deep=True), dependency_versions=dict(result.dependency_versions))
+        original_sha256=seed.original_asset.sha256, parser=snapshot.parser.model_copy(deep=True),
+        options=seed.options.model_copy(deep=True), dependency_versions=dict(snapshot.dependency_versions))
 
 
 def _lines(text):

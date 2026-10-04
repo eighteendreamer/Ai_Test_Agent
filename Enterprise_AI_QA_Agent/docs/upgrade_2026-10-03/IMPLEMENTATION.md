@@ -1479,3 +1479,49 @@ $env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2
 收尾实际核对：正式PLAN与Codex镜像逐字节一致，原附件差异章节内容一致且保持原编号；模板仅生成、初排后补全、上传无Git依赖的约定及绝对文件链接已检查。6个新增Python文件实际py_compile通过，6组最终core/storage的真实原件哈希/大小、解析快照哈希和7→9结果与XML计数一致。敏感格式扫描133个文本/源码文件无匹配；初始无边界模式把旧 `task-pool-*.xml` 文件名中的 `sk-` 子串当匹配，改用token边界重新扫描，无真实凭据匹配。
 
 本轮仅171个相关文件暂存，两个被忽略的新后端测试显式 `git add -f`，用户 `.gitignore` 未暂存。58份原件的工作区、暂存及Git过滤后检出字节完全一致。源码/测试/方案的暂存diff检查通过；全范围检查保留 `p3-document-difference-core-first.xml` 首轮真实失败输出中的一处 `E` 行尾空白，不改写原始失败记录，不报告全范围diff检查通过。只创建本地中文commit，不推送或建PR。
+
+## P3.4 持久比较服务与共用租约Worker（2026-10-04，基线 b701b9d）
+
+前一轮属于实质进展：比较内核、真实固定输入及方案已提交。继续先读目标原附件，核对工作区只剩用户 `.gitignore`；不结束完整P0—P5目标。深读解析schema、PostgresDocumentParseStore全生命周期、MySQL解析配置、解析快照读取、DocumentParseTaskHandler、RedisTaskWorker、独立解析运行时/CLI和事务失败样本，再写入 `P3_4_DESIGN.md` 的实现前结论。
+
+采用根因层的共用实现：原解析Store含通用项目锁、幂等、任务/Outbox同事务、数据库截止时间、fencing、检查点、终态与列表查询，将其抽成内部 `PostgresDocumentOperationStore`；原解析Store仅保留原有DTO/表名/phase/log及原件/解析器校验。不是再复制一套任务平台，也不将比较塞进解析DTO。领取/心跳/终态重投抽成 `DocumentOperationTaskHandler`，解析和比较各自的Command、task_type、日志身份保持清楚。研究记录先于对应源码变更。
+
+新增比较Store使用独立 `_diff_tasks/_diff_snapshots`。两侧source snapshot外键、固定完整元数据及MySQL策略修订、算法/Python版本保存到seed；正文不进任务表。`version_id`只作新侧版本筛选，旧/新snapshot字段始终可查。通过现有解析service新增metadata读取方法；提交不下载大对象，事务内重新核对两侧元数据及项目归属。MySQL `document.difference_settings` 提供全局默认和项目覆盖；历史读取/同请求重放不读取当前设置。
+
+比较Service执行读取已固定并验证哈希的两侧对象，调用上轮已验受限进程。输入读取/计算受原数据库预算控制，恢复不重置deadline；policy记录实际剩余超时、不能放宽其他限制。结果先RustFS、再PG检查点、最后发布不可变结果；已保存检查点恢复核对结果后完成，不再读原输入/比较/当前设置。成功结果核对固定侧引用、hash、summary、warnings、实际policy和算法身份；失败进程完整受限stdout/stderr/退出码另存RustFS可读轨迹。
+
+版本身份使用有界字符串，schema版本继续固定。旧引擎/Python身份仍可读取和领取，执行前明确失败，不因更改Literal枚举反复领取报错；已有结果可继续读取。日志补phase、input_snapshot_id和内部校验原因，Pydantic可能含正文的错误仅记录类型。文件改绑在读前和发布事务均核对，不能发布到错误项目。
+
+| 真实验证记录 | 结果 |
+|---|---|
+| `p3-document-operation-extraction-first.xml` | **11通过，28.62秒**；共用SQL抽取后的既有真实解析任务/恢复/目录/默认快照及独立解析CLI |
+| `p3-document-difference-tasks-first.xml` | **7通过、1失败，26.46秒**；真实外键已拒绝删除，夹具错期待底层psycopg ForeignKeyViolation。查现有SQLAlchemyCursor及test_case_plan_run_creation后改为IntegrityError并核对 `.orig` |
+| `p3-document-difference-tasks-verified.xml` | **10通过，29.31秒**；事务失败回滚、输入损坏等已补验 |
+| `p3-document-difference-durable-final.xml` | **80通过、0跳过，68.72秒**；增加运行版本改变及既有解析/内核回归 |
+| `p3-document-difference-worker-first.xml` | **2通过、1失败，10.00秒**；真实Redis续租重投、心跳取消已过；改绑夹具错用DTO作为update_document的位置参数。读取实际 `update_document(doc_id, **changes)` 及现有版本测试，改用project_id关键字 |
+| `p3-document-difference-worker-verified.xml` | **3通过、12未选中，9.41秒**；含发布前改绑验证，未选中不是skip |
+| `p3-document-difference-durable-delivery.xml` | **84通过、0跳过，68.57秒**；16项新持久比较/Worker及既有解析任务、CLI、内核、真实固定输入、工厂/进程回归 |
+| `p3-document-difference-durable-diagnostics.xml` | **3通过、13未选中，9.72秒**；最终诊断阶段/原因日志变动、真实进程失败轨迹和RedisWorker工件保存后专项 |
+
+实际V1/V2输入为Markdown BOM/CRLF、DOCX两行表格、两页文本PDF，均7→9。浏览器不参与本步骤；正式项目、MySQL策略70→80、PG任务固定70、RustFS来源及结果都实际使用。同请求并发一次、四Worker原子领取仅一个、有效租约重复投递TaskDeferred、错误Command类型不领取；错误项目/归档不能新建，归档历史可读。两侧源快照外键防丢失；只有一个新侧筛选列不能覆盖旧侧身份。
+
+以现有实际约束注入方式使本次隔离Outbox拒绝document_difference，任务和派发均0行，解除约束后同请求可提交。结果检查点保存后注入取消，新attempt恢复完成、旧attempt写入拒绝、已保存检查点不能替换；过程中未再次比较或读当前MySQL策略。固定输入传输损坏、持久结果summary损坏、输入读取耗尽预算、运行版本改变均按具体分支验证；只操作明确隔离记录，损坏元数据恢复，原来源对象保持原状。
+
+真实Outbox relay→Redis stream→RedisTaskWorker类→typed比较Handler→实际受限进程计算完成。人为等待0.8秒、PG租约0.6秒，实际多次续租；终态再次Redis投递正常ACK、attempt仍1、比较调用仅1。`p3-document-difference-durable-diagnostics/redis-worker/summary.json`保存实际次数，task/snapshot/result JSON可查。该Worker使用测试进程内真实类的 `run_once`，**不是比较专属CLI或生产API**。心跳失效专项注入租约异常，计算协程被取消、无结果发布；取消真实子进程回收由既有内核专项覆盖，不将该受控等待协程称为OS进程异常验收。
+
+最终扩大回归命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:RUN_LIVE_DOCUMENT_DIFFERENCES='1'
+$env:QA_DOCUMENT_DIFFERENCE_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-difference-durable-delivery')
+$env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-operation-parser-delivery')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_difference_tasks.py tests/test_document_parse_tasks.py tests/test_document_parse_catalog.py tests/test_document_difference_storage.py tests/test_document_differences.py tests/test_document_parsers.py tests/test_document_parser_process.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-difference-durable-delivery.xml
+```
+
+随后把比较evidence目录改为 `p3-document-difference-durable-diagnostics`，实际运行 `tests/test_document_difference_tasks.py -k 'transport_corruption or process_failure or heartbeats'`；原夹具失败及所有中间XML独立保留，不把重跑累计为覆盖数。隔离对象由显式追踪和PG检查点补查清理；新diff表先删除，再让已有解析夹具删除来源表，未操作生产业务库。原件MD/DOCX/PDF用证据本地attributes保存字节，工件地址不保证仍在线。
+
+直接同步正式PLAN、原用户粘贴附件及Codex镜像，更新本轮已有/剩余范围。当前新增比较Service/Store/Handler尚未注册到生产容器或公开路由；没有改前端、公开API、生产表或依赖，因此本轮未运行前端构建/浏览器。新diff表只在隔离测试初始化，原解析表schema无变化；比较专属CLI、生产初始化/API、任务池/前端和部署迁移仍待继续。Git、P4影响/追踪/增量草稿、其他P0/P2/P5及默认模型/生产历史迁移均保持未完成，不标记完整目标完成。
+
+交付实际核对：12个相关Python文件py_compile通过；正式PLAN/Codex镜像逐字节相同，原附件差异章节相同并保留编号；原件/固定解析JSON/比较正文哈希、结果身份与策略及所有XML计数一致。最终Redis工件实际记录5次续租、1次比较、1次原执行及1次终态重投，attempt始终1；进程失败trace哈希匹配任务工件。112个源码/方案/文本工件敏感格式扫描无匹配。仅132个相关文件暂存，新的被忽略后端测试显式加入，用户 `.gitignore` 不暂存；30份原件工作区、暂存和过滤后检出字节一致，源码/测试/方案及全范围暂存diff检查均通过。只创建本地中文commit，不推送或建PR。

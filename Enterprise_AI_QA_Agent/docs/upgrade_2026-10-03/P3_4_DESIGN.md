@@ -47,3 +47,27 @@
 原失败保留：首轮 **21通过、1失败** 为 DOCX 夹具将列号写错，按实际 `[正文元素,行,列]` 修正；另复现 Unicode 分行与既有解析器不一致（`p3-document-difference-line-before.xml` **1失败**），内核改为同样的 `splitlines(keepends=True)`，Unicode字符保持原样。最终回归已包含修复样本。其他中间结果仅为历史，不与最终57项相加。
 
 此交付证明比较计算与真实固定输入，**不代表比较持久任务/Redis投递、API/CLI、前端页面、AI影响或需求追踪已经完成**。本轮未运行前端构建/浏览器，因为没有修改前端或公开契约；现有文档页面仍没有比较入口。未部署Docling、未执行生产历史迁移，完整目标保持未完成。下一步先研究共同持久任务生命周期，再接配置/结果持久化及产品入口。
+
+## 持久任务实施前的代码结论（基线 b701b9d）
+
+`PostgresDocumentParseStore` 的项目/文档锁、请求哈希、任务+Outbox事务、数据库截止时间、attempt/lease fencing、结果检查点及终态发布可以共用；其原件验证、解析器验证及公开DTO属于解析业务，不能复用于比较身份。采用内部 `PostgresDocumentOperationStore` 抽取这些共同SQL行为，原解析Store保留自己的表名、DTO、phase和日志事件，仅保留原件/解析器验证钩子。比较Store使用独立diff表、DTO与comparing phase，在同一事务核对两侧解析快照记录；不是创建伪解析任务。当前解析表与旧记录不迁移、不改字段语义。
+
+比较任务输入仅保存两侧完整快照**元数据**、明确旧/新次序、MySQL比较策略修订、算法与Python版本；提交不下载大对象、不再次解析、不冻结临时内存结果。`version_id`明确表示新侧原件版本，用于任务筛选；旧侧版本及两侧snapshot ID始终保留在seed，不能将单列当作全部比较依据。
+
+Worker执行时通过现有固定快照读取核对RustFS对象，再核对返回元数据仍等于seed；随后调用已验收受限比较进程。截止时间覆盖输入读取与计算，恢复不重置；进程结果先存RustFS，再保存PG检查点，最后发布不可变比较结果。已保存检查点恢复只核对已存结果后完成，不能再次比较；数据库提交回执未知保留对象与请求身份。配置变化只影响新请求，终态不可重领。只读历史不需要读取当前MySQL比较设置。
+
+本步骤先实现并实际验收MySQL设置、PG共用生命周期/独立比较Store、RustFS结果与服务；Worker/CLI、公开API、任务池及前端接入继续单独同步和验收，不用服务直接执行替代那些层的真实结果。重构后必须复验既有解析租约、恢复、默认快照与独立解析CLI，不能只跑新增比较测试。
+
+实际检查 `DocumentParseTaskHandler` 和 `RedisTaskWorker` 后，领取/心跳/取消/终态重投也能复用：抽取内部 `DocumentOperationTaskHandler`，两个业务各自保留明确Command DTO和task_type、日志前缀。先用真实Outbox→Redis→现有Worker类→比较受限进程验证，并记录该范围；比较专属独立CLI/生产API/完整页面仍另验。算法实现版本沿用解析器的有界字符串做法，让旧版本任务可以被读取并明确终止，不能因Literal版本枚举改变而反复领取失败；schema_version仍固定。
+
+## 本轮持久服务及Worker实际结果
+
+先核对实际解析Store/Handler、MySQL配置和RedisWorker，再抽取 `PostgresDocumentOperationStore` 与 `DocumentOperationTaskHandler` 共用生命周期；解析业务保留旧表、DTO、phase、校验与日志身份。比较使用独立 `_diff_tasks/_diff_snapshots`，两侧解析快照外键和固定元数据、MySQL策略修订、算法/Python身份共同保存；version_id仅表示新侧版本，完整两侧始终可查。
+
+已接通比较设置服务、持久Store、比较服务及typed Handler。任务与Outbox同事务，输入提交不下载正文；执行读取已固定且哈希验证的两侧结果，真实受限进程计算，RustFS结果→PG检查点→不可变结果发布。恢复读已保存结果，不再比较或加载当前配置；原截止时间保留，失败诊断和租约fencing可查。历史查询不依赖当前MySQL比较设置。
+
+实际扩大回归 `p3-document-difference-durable-delivery.xml` **84通过、0跳过，68.57秒**，包含16项持久比较/Worker和既有解析/内核专项：真实三格式V1/V2、MySQL策略70→80且任务仍用70、PG/RustFS结果、请求重放/并发、Outbox失败整事务回滚、源快照外键、检查点恢复/旧attempt拒绝、终态不重领、错误项目/归档、输入和结果损坏、输入读取超时、运行版本改变、真实Outbox/Redis/Worker续租重投、心跳失效取消、文档改绑阻止发布。既有解析默认快照/恢复及独立CLI也实际复验。
+
+首轮存储测试 **7通过、1失败** 是夹具错期待底层psycopg异常，项目实际SQLAlchemy包装IntegrityError；核对既有事务失败测试后修正，确认底层确为外键拒绝。首轮Worker **2通过、1失败** 是夹具未按实际 `update_document(doc_id, **changes)` 调用，修正为关键字。原失败XML保留；产品未为夹具错误加兼容特判。诊断日志随后补phase/input_snapshot_id/内部原因，相关3项实际复验通过，Redis次数/失败完整trace另存工件。历史重跑数不累加为覆盖数。
+
+本轮仍未接比较专属独立CLI、生产启动注入、公开API、任务池和前端；未运行前端构建/浏览器，未迁移生产数据。新表目前仅在隔离真实测试中初始化；后续先接独立CLI及生产注入/API并同步前端类型，再做真实完整页面。Git、P4影响/追踪/增量草稿及其他P0—P5继续保留未完成。

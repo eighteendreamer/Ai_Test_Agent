@@ -63,11 +63,16 @@ class DocumentParsingService:
             raise KeyError("当前文档没有该解析提交")
         return task
 
-    async def read_snapshot(self, project_id, document_id, snapshot_id):
+    async def get_snapshot(self, project_id, document_id, snapshot_id):
+        """Project-bound metadata without downloading the immutable result object."""
         await self._require_document(project_id, document_id)
         snapshot = await self._store.get_snapshot(project_id, document_id, snapshot_id)
         if snapshot is None:
             raise KeyError("当前文档没有该解析快照")
+        return snapshot
+
+    async def read_snapshot(self, project_id, document_id, snapshot_id):
+        snapshot = await self.get_snapshot(project_id, document_id, snapshot_id)
         result = await self._read_snapshot_result(snapshot)
         return snapshot, result
 

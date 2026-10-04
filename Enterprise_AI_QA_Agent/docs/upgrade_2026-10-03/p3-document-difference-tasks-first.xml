@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="8" time="26.258" timestamp="2026-10-04T14:02:21.483654+08:00" hostname="EIghteen"><testcase classname="tests.test_document_difference_tasks" name="test_actual_durable_result_freezes_mysql_settings_and_exact_snapshots[md]" time="3.330" /><testcase classname="tests.test_document_difference_tasks" name="test_actual_durable_result_freezes_mysql_settings_and_exact_snapshots[docx]" time="2.661" /><testcase classname="tests.test_document_difference_tasks" name="test_actual_durable_result_freezes_mysql_settings_and_exact_snapshots[pdf]" time="2.856" /><testcase classname="tests.test_document_difference_tasks" name="test_actual_concurrent_request_is_atomic_and_source_fk_is_durable" time="2.190"><failure message="sqlalchemy.exc.IntegrityError: (psycopg.errors.ForeignKeyViolation) update or delete on table &quot;up_jd_34ff0508cd86_parse_snapshots&quot; violates foreign key constraint &quot;up_jd_34ff0508cd86_diff_tasks_old_snapshot_id_fkey&quot; on table &quot;up_jd_34ff0508cd86_diff_tasks&quot;&#10;DETAIL:  Key (id)=(02dd8dbc-a678-4158-a048-264b819dd80d) is still referenced from table &quot;up_jd_34ff0508cd86_diff_tasks&quot;.&#10;[SQL: DELETE FROM up_jd_34ff0508cd86_parse_snapshots WHERE id=%s]&#10;[parameters: ('02dd8dbc-a678-4158-a048-264b819dd80d',)]&#10;(Background on this error at: https://sqlalche.me/e/20/gkpj)">..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.ForeignKeyViolation: update or delete on table "up_jd_34ff0508cd86_parse_snapshots" violates foreign key constraint "up_jd_34ff0508cd86_diff_tasks_old_snapshot_id_fkey" on table "up_jd_34ff0508cd86_diff_tasks"
+E   DETAIL:  Key (id)=(02dd8dbc-a678-4158-a048-264b819dd80d) is still referenced from table "up_jd_34ff0508cd86_diff_tasks".
+
+The above exception was the direct cause of the following exception:
+tests\test_document_difference_tasks.py:172: in test_actual_concurrent_request_is_atomic_and_source_fk_is_durable
+    cur.execute(f"DELETE FROM {parse_store._snapshots} WHERE id=%s", (views[0].snapshot.id,))
+src\infrastructure\sqlalchemy_runtime.py:165: in execute
+    result = self._connection.exec_driver_sql(statement, _normalize_execute_parameters(parameters))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.IntegrityError: (psycopg.errors.ForeignKeyViolation) update or delete on table "up_jd_34ff0508cd86_parse_snapshots" violates foreign key constraint "up_jd_34ff0508cd86_diff_tasks_old_snapshot_id_fkey" on table "up_jd_34ff0508cd86_diff_tasks"
+E   DETAIL:  Key (id)=(02dd8dbc-a678-4158-a048-264b819dd80d) is still referenced from table "up_jd_34ff0508cd86_diff_tasks".
+E   [SQL: DELETE FROM up_jd_34ff0508cd86_parse_snapshots WHERE id=%s]
+E   [parameters: ('02dd8dbc-a678-4158-a048-264b819dd80d',)]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)</failure></testcase><testcase classname="tests.test_document_difference_tasks" name="test_actual_checkpoint_recovery_fences_old_attempt_without_recomparing" time="2.863" /><testcase classname="tests.test_document_difference_tasks" name="test_actual_process_failure_trace_is_saved_and_readable" time="2.532" /><testcase classname="tests.test_document_difference_tasks" name="test_deadline_covers_input_reads_and_does_not_reset_on_recovery" time="2.499" /><testcase classname="tests.test_document_difference_tasks" name="test_actual_project_isolation_seed_check_and_result_integrity" time="2.644" /></testsuite></testsuites>

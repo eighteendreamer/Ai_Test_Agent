@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="9.972" timestamp="2026-10-04T14:18:53.719798+08:00" hostname="EIghteen"><testcase classname="tests.test_document_difference_tasks" name="test_real_outbox_redis_worker_heartbeats_and_terminal_redelivery" time="3.216" /><testcase classname="tests.test_document_difference_tasks" name="test_worker_lost_heartbeat_cancels_execution_and_preserves_unfinished_task" time="1.604" /><testcase classname="tests.test_document_difference_tasks" name="test_document_rebinding_before_publish_cannot_release_original_project_result" time="1.855"><failure message="TypeError: ApiDocsService.update_document() takes 2 positional arguments but 3 were given">tests\test_document_difference_tasks.py:432: in test_document_rebinding_before_publish_cannot_release_original_project_result
+    await service.execute(claim)
+src\application\documents\difference_service.py:151: in execute
+    result = await self._comparator.compare(old=views[0], new=views[1], policy=policy)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_difference_tasks.py:428: in rebound
+    await env.docs.update_document(doc.id, ApiDocUpdateRequest(project_id=other.id))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ApiDocsService.update_document() takes 2 positional arguments but 3 were given</failure></testcase></testsuite></testsuites>
