@@ -81,6 +81,16 @@ it("shows read errors and retries the same task without creating a new one", asy
   expect(wrapper.findComponent(DocumentDifferenceSnapshot).exists()).toBe(true);
 });
 
+it("emits only a verified task for the original submission and rejects changed request references", async () => {
+  const task = record(); const request = { creation_key: task.creation_key, old_snapshot_id: task.old_snapshot_id, new_snapshot_id: task.new_snapshot_id };
+  const wrapper = mount(DocumentDifferenceTask, { props: { ...props(), request } }); wrappers.push(wrapper);
+  await flushPromises(); expect(wrapper.emitted("updated")).toEqual([[task]]);
+  await wrapper.setProps({ request: { ...request, old_snapshot_id: "another-snapshot" } }); await flushPromises();
+  expect(wrapper.emitted("updated")).toHaveLength(1);
+  expect(wrapper.get('[role="alert"]').text()).toContain("不一致");
+  expect(wrapper.findComponent(DocumentDifferenceSnapshot).exists()).toBe(false);
+});
+
 it("renders literal external text, bounded detail, partial warnings and full JSON downloads", async () => {
   const input = view(); input.snapshot.status = "partial";
   input.result.raw.changes = Array.from({ length: 21 }, () => structuredClone(input.result.raw.changes[0]!));

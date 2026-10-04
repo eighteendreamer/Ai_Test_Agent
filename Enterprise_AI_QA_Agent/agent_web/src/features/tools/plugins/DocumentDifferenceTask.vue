@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/api";
-import type { DocumentDifferenceTaskRecord, DocumentDifferenceSnapshotView, DocumentDifferenceFailureView } from "../../../types";
+import type { DocumentDifferenceTaskRecord, DocumentDifferenceSnapshotView, DocumentDifferenceFailureView, DocumentDifferenceTaskRequest } from "../../../types";
 import DocumentDifferenceSnapshot from "./DocumentDifferenceSnapshot.vue";
+import { assertDifferenceTask } from "./documentDifferenceIdentity";
 
-const props = defineProps<{ projectId: string; documentId: string; taskId: string }>();
+const props = defineProps<{ projectId: string; documentId: string; taskId: string; request?: DocumentDifferenceTaskRequest }>();
+const emit = defineEmits<{ updated: [task: DocumentDifferenceTaskRecord] }>();
 const task = ref<DocumentDifferenceTaskRecord | null>(null);
 const view = ref<DocumentDifferenceSnapshotView | null>(null);
 const failure = ref<DocumentDifferenceFailureView | null>(null);
@@ -19,6 +21,7 @@ async function load() {
   if (busy.value) return;
   stopPolling(); const generation = epoch;
   const { projectId, documentId, taskId } = props;
+  const expectedRequest = props.request;
   const current = () => !disposed && generation === epoch && projectId === props.projectId
     && documentId === props.documentId && taskId === props.taskId;
   busy.value = true; error.value = "";
@@ -26,10 +29,9 @@ async function load() {
     if (!projectId || !documentId || !taskId) throw new Error("缺少比较任务的项目、文档或任务身份");
     const value = await api.getDocumentDifferenceTask(projectId, documentId, taskId);
     if (!current()) return;
-    if (value.id !== taskId || value.project_id !== projectId || value.document_id !== documentId) {
-      throw new Error("比较任务与指定项目、文档或任务身份不一致");
-    }
+    assertDifferenceTask(value, projectId, documentId, { taskId, request: expectedRequest });
     task.value = value;
+    emit("updated", value);
     if (value.status === "completed") {
       if (!value.snapshot_id) throw new Error("已完成比较任务缺少保存的结果身份");
       const result = await api.readDocumentDifferenceSnapshot(projectId, documentId, value.snapshot_id);
@@ -66,7 +68,8 @@ async function load() {
     if (current()) { view.value = null; failure.value = null; error.value = err instanceof Error ? err.message : "比较任务读取失败"; }
   } finally { if (current()) busy.value = false; }
 }
-watch(() => [props.projectId, props.documentId, props.taskId], () => {
+watch(() => [props.projectId, props.documentId, props.taskId,
+  props.request?.creation_key, props.request?.old_snapshot_id, props.request?.new_snapshot_id], () => {
   stopPolling(); ++epoch; task.value = null; view.value = null; failure.value = null; busy.value = false; void load();
 }, { immediate: true });
 onBeforeUnmount(() => { disposed = true; ++epoch; stopPolling(); });

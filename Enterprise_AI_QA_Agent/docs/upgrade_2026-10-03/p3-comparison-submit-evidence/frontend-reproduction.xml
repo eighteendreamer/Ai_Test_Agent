@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="21" failures="2" errors="0" time="0.2302864">
+    <testsuite name="src/features/tools/plugins/ApiDocDifferences.test.ts" timestamp="2026-10-04T09:04:49.707Z" hostname="EIghteen" tests="21" failures="2" errors="0" skipped="0" time="0.2302864">
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="recommends current and preceding actual DOCX snapshots and only submits after the user&apos;s action" time="0.0557404">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="recovers a committed request after a dropped reply and remount even when selections and settings change" time="0.0250882">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="retries the exact stored identity after request lookup 404 without taking current selector values" time="0.0120783">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="requires server proof before a cached terminal label unlocks a new request" time="0.0126925">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects a submit reply with mismatched project_id" time="0.0100915">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects a submit reply with mismatched document_id" time="0.0074024">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects a submit reply with mismatched creation_key" time="0.006635">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects a submit reply with mismatched old_snapshot_id" time="0.0103146">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects a submit reply with mismatched new_snapshot_id" time="0.0072411">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="does not overwrite an unknown request when opening history, and can follow it again" time="0.0092982">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="keeps historical results available when current settings and task catalog fail" time="0.0058699">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="retains a valid results page even when a task page has a foreign identity" time="0.0094101">
+            <failure message="expected undefined to be defined" type="AssertionError">
+AssertionError: expected undefined to be defined
+ ❯ src/features/tools/plugins/ApiDocDifferences.test.ts:144:70
+            </failure>
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="discards late submission responses after changing the current project/document" time="0.0099743">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="pages both task and result catalogs without replacing the other list" time="0.0085844">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="pages snapshots, disables unsupported inputs and preserves a chosen historical snapshot on refresh" time="0.0144637">
+            <failure message="expected [ { id: &apos;partial&apos;, …(10) } ] to deeply equal [ { …(11) } ]" type="AssertionError">
+AssertionError: expected [ { id: &apos;partial&apos;, …(10) } ] to deeply equal [ { …(11) } ]
+
+- Expected
++ Received
+
+@@ -3,11 +3,11 @@
+      &quot;created_at&quot;: &quot;2026-10-04T06:57:36.830989Z&quot;,
+      &quot;dependency_versions&quot;: {
+        &quot;lxml&quot;: &quot;6.1.3&quot;,
+        &quot;python-docx&quot;: &quot;1.2.0&quot;,
+      },
+-     &quot;id&quot;: &quot;a4c75122-9d4d-4e16-b237-7b520a77a7c8&quot;,
++     &quot;id&quot;: &quot;partial&quot;,
+      &quot;parser&quot;: {
+        &quot;available&quot;: true,
+        &quot;formats&quot;: [
+          &quot;.docx&quot;,
+        ],
+@@ -105,11 +105,11 @@
+        &quot;project_id&quot;: &quot;4b3fa1bf-3547-4603-85e9-4be54580c944&quot;,
+        &quot;version_id&quot;: &quot;52291f1a-33bd-41eb-b6ea-25b3118639cf&quot;,
+      },
+      &quot;sha256&quot;: &quot;5c305b21352d3c587f4bb9520115ff050fc4a923fc8f45dd1736dc90272a9c89&quot;,
+      &quot;size_bytes&quot;: 2288,
+-     &quot;status&quot;: &quot;complete&quot;,
++     &quot;status&quot;: &quot;partial&quot;,
+      &quot;storage_uri&quot;: &quot;rustfs://qa-agent/document-parsing/4b3fa1bf-3547-4603-85e9-4be54580c944/f87f7f24-7ad6-46de-b4f2-627f27e0443c/c5fe358e-9a8b-4b66-9de8-424a245d8b95/a4c75122-9d4d-4e16-b237-7b520a77a7c8/result.json&quot;,
+      &quot;task_id&quot;: &quot;f87f7f24-7ad6-46de-b4f2-627f27e0443c&quot;,
+      &quot;warnings&quot;: [
+        {
+          &quot;code&quot;: &quot;docx_layout_scope&quot;,
+
+ ❯ src/features/tools/plugins/ApiDocDifferences.test.ts:188:56
+            </failure>
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="clears unavailable inputs and ignores old snapshot responses after a version switch" time="0.005258">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="rejects foreign snapshots and exposes the parser warning from actual DOCX evidence" time="0.003239">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="saves all eleven policy fields without changing the original reactive settings and keeps success visible" time="0.0070581">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="protects settings in the readonly case" time="0.0026173">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="protects settings in the foreign case" time="0.0029522">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/ApiDocDifferences.test.ts" name="protects settings in the switched case" time="0.002781">
+        </testcase>
+    </testsuite>
+</testsuites>

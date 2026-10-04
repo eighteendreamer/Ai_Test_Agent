@@ -1644,3 +1644,27 @@ p3-comparison-layout-long-target-before使用健康DTO的掩码长地址复现�
 实际运行（Agent_Server）：`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_differences.py -q --tb=short`，24 通过，7.36 秒，实际 MD/DOCX/PDF 与受限进程。没有重跑真实 MySQL/PG/RustFS/Redis、生产 API/CLI、浏览器或外部模型；先前产品结果只核对保存的证据，不宣称本次重新验收。
 
 方案同步另检查镜像字节、两份 §3.4 实施段一致性、当前状态与原附件备份、历史 XML 计数及文档 diff；未修改依赖、数据库、部署或产品契约。完整 P0—P5 仍未完成。
+
+
+## P3.4 文档详情比较提交与恢复实际交付（2026-10-04，研究基线 e2a112c）
+
+本轮先重读目标附件、实际上传/比较/解析服务、API与配置DTO、现有任务组件和完整产品夹具。比较请求仅保留creation_key和双方固定快照；当前设置由服务端冻结。前端复用既有版本/快照分页、已验收任务展示与生产API，不增加第二套Worker、任务框架或存储。设置全部11项保存在现有MySQL配置域；任务/输入/Outbox/结果元数据保持PG，原件/结果保持RustFS。
+
+ApiDocsPlugin文档详情增加ApiDocDifferences；两侧来源复用DocumentSnapshotSelector，设置由DocumentDifferenceSettings保存；DocumentDifferenceTask增加可选原请求校验和验证后的updated事件。正式历史路由不需要新prop，仍按原身份读取。unknown提交先回查/重试原请求，终态缓存不解锁新提交，历史查看不改变未知请求；只读项目仍可读历史，配置失败不影响固定结果。
+
+实际问题与修复证据：
+
+- frontend-before.xml：21项，6失败/15通过。4项为新夹具未命名的任务stub和实际样本本来就是70秒；修正夹具后frontend-reproduction.xml保留2项真实失败：刷新快照替换已选历史，以及任务页身份异常隐藏有效结果页。
+- 快照刷新现在保留已选不可变输入，包括不在新的第一页的历史快照；分页偏移仍取服务端页数据长度。两个历史目录分别校验/报错，保留成功部分；不吞错。frontend-fixed.xml为21通过，扩大最终frontend-final.xml为59通过/0失败。测试还覆盖丢回执/回入/404原重试、缓存终态、项目和引用错配、晚响应、双侧原件/快照与任务/结果分页、partial/unsupported、缓存故障、只读、设置11字段及项目切换，使用已保存真实DOCX结果作样本。
+- typecheck首轮发现新测试使用element.value类型和.at超出现有TS目标，按HTMLSelectElement和既有slice修正测试；产品契约不变。最终typecheck.stdout/stderr通过；实际产品三次build均包含typecheck。
+- product-first.xml：1失败（59.77秒），测试误以进程有效预算应严格等于70；实际difference_service按剩余截止时间缩小到69.999769，固定seed配置仍为70。根据现有实现校验0<有效预算<=70且等于snapshot.effective_policy，保留原失败，未改变产品预算。product-verified.xml为1通过（60.70秒）。
+- product-final.xml：3通过、0跳过（173.38秒），正式App/侧栏/文档详情、生产uvicorn、独立解析及比较CLI、真实MySQL/PG/RustFS/Redis。DOCX V1/V2 7→9；页面保存70秒配置；POST服务端提交后丢回执；修改当前设置80及选择、关闭/重新进入、原请求查询，PG核对仅一个task/Outbox；CLI结果保留原双方及70配置，完整JSON逐字段相同。派发停用/API重启历史可读、新提交503；归档隐藏提交/保存且旧结果可读。另两项完整产品复验指定历史/轮询/真实CPU失败/错误项目/下载与原DOCX上传/版本/解析/设置/导航/重启流程。三个场景模型调用均为0，浏览器JS错误为空。
+- backend-regression.xml：27通过、0跳过（49.96秒），真实解析/比较任务、PG任务池及项目隔离，未重复执行同类未受影响测试。
+
+证据目录p3-comparison-submit-evidence/保留真实原件、结果、截图、aria、网络、失败XML和生产/CLI stdout/stderr；.gitattributes以-text保留原始字节。隔离对象已按本次数据库资产/检查点引用清理，历史URI不是在线访问地址。截图实际查看，结果差异可见，归档表单按钮隐藏；浏览器网络核对原请求GET和503。原上传路径仍无Git，生成模板仍不进入执行。
+
+关键命令：agent_web中npm run test -- [ApiDocDifferences/DocumentDifferenceTask/ApiDocParsing/ApiDocVersions/ApiDocAssets/ApiDocsPlugin.importSources/documentDifferences.api/TaskPoolView/sessions.task-pool.api] --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p3-comparison-submit-evidence/frontend-final.xml；npm run typecheck。Agent_Server中开启RUN_LIVE_DOCUMENT_DIFFERENCE_SUBMISSION_PRODUCT、RUN_LIVE_DOCUMENT_DIFFERENCE_FULL_PRODUCT、RUN_LIVE_DOCUMENT_FULL_PRODUCT，再运行..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_difference_submission_product.py tests/test_document_difference_full_product.py tests/test_document_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-comparison-submit-evidence/product-final.xml，三个QA_*_EVIDENCE_DIR均指向本轮独立目录。后端回归开启RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS、RUN_LIVE_DOCUMENT_PARSERS、RUN_LIVE_TASK_POOL，运行test_document_difference_tasks/test_document_parse_tasks/test_task_pool_document_differences/test_task_pool_entries。
+
+PLAN、用户粘贴原文件和Codex镜像直接同步，原备份保留。本轮不新增依赖/数据库表/配置键，不执行生产历史迁移、不部署Docling、不推送/建PR；用户.gitignore不提交。完整P0—P5仍未完成，下一步先调研Git只读来源；P4影响/需求追踪/增量草稿与P2剩余恢复/真实默认模型、模块化生成、其他完整产品流程、人工录制和Docker证据及P5继续。
+
+交付收尾核对：项目PLAN与Codex镜像字节一致，附件实施段一致且原备份存在；三份最终XML计数、三个产品build、原请求网络GET、503、新旧固定输入/策略及下载JSON实际核对。只暂存本轮相关文件，原始工件按-text字节校验，源码/测试/Markdown的diff检查通过；敏感格式扫描无匹配。扫描首轮将历史task-pool文件名中的sk-子串误识别为凭据，核对文件名并补词边界后通过，未改写历史证据。用户.gitignore未暂存。

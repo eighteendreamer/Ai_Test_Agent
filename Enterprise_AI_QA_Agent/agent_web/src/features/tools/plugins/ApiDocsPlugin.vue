@@ -16,6 +16,7 @@ import { formatServerDateTime } from "../../../utils/datetime";
 import ApiDocAssets from "./ApiDocAssets.vue";
 import ApiDocVersions from "./ApiDocVersions.vue";
 import ApiDocParsing from "./ApiDocParsing.vue";
+import ApiDocDifferences from "./ApiDocDifferences.vue";
 import { documentFileBase64, prepareDocumentRequest, readDocumentRequest, type PendingDocumentRequest } from "./documentUploadRequest";
 
 type ImportMode = "local" | "url" | "integration";
@@ -644,6 +645,8 @@ onBeforeUnmount(() => {
               @updated="updateVersionDocument" />
 
             <ApiDocParsing :document="selectedDoc"
+              :can-write="projects.some(project => project.id === selectedDoc?.project_id && project.status === 'active')" />
+            <ApiDocDifferences :document="selectedDoc"
               :can-write="projects.some(project => project.id === selectedDoc?.project_id && project.status === 'active')" />
 
             <div v-if="selectedDoc.preview_error" class="preview-inline-error">{{ selectedDoc.preview_error }}</div>
