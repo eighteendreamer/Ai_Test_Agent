@@ -76,5 +76,6 @@ class DocumentImpactResponseService:
         if recorded.result != reference:
             await self._discard_unused(task.id, reference)
         logger.info("document_impact_response_assessed", extra={"task_id": task.id, "call_id": call_id,
-            "status": result.status, "issue_count": len(result.issues), "semantic_status": result.semantic_status})
+            "status": result.status, "issue_count": len(result.issues), "issue_codes": [issue.code for issue in result.issues],
+            "identity_binding": result.runtime_versions.get("identity_binding"), "semantic_status": result.semantic_status})
         return await self.read(task.project_id, task.document_id, task.id, call_id)

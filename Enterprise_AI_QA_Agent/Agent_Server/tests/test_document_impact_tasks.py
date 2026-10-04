@@ -14,6 +14,7 @@ from psycopg.errors import CheckViolation
 from sqlalchemy.exc import IntegrityError
 
 from src.application.documents.impact_task_service import DocumentImpactTaskService
+from src.application.documents.impact_response_protocol import capture_impact_response_protocol
 from src.application.documents.impact_analysis_context import DocumentImpactAnalysisContexts, IMPACT_SKILL_KEY
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
@@ -39,7 +40,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUME
 
 
 @asynccontextmanager
-async def task_environment(tmp_path, extension="md"):
+async def task_environment(tmp_path, extension="md", *, protocol_version="impact-call-v3"):
     async with comparison_environment(tmp_path) as (env, diff, diff_store, configs, parsing, parse_store):
         project, doc, paths, views, diff_id, sources, impact_configs = await setup(
             env, diff, diff_store, configs, parsing, parse_store, tmp_path, extension)
@@ -73,7 +74,9 @@ async def task_environment(tmp_path, extension="md"):
                 assert cur.fetchone()["existing"] is None
         service = DocumentImpactTaskService(store=store, sources=sources, documents=env.docs,
             projects=env.projects, objects=env.objects, stream="isolated:impact:" + uuid4().hex,
-            analysis_contexts=contexts)
+            analysis_contexts=contexts,
+            # These legacy protocol/lease regressions deliberately retain v3.
+            response_protocol_factory=lambda: capture_impact_response_protocol(version=protocol_version))
         owned, original_upload = [], env.objects.store_uploaded_bytes
         async def tracked(**kwargs):
             saved = await original_upload(**kwargs)

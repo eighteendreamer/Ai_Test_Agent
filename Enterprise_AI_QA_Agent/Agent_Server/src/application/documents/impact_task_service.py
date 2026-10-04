@@ -23,10 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentImpactTaskService:
-    def __init__(self, *, store, sources, documents, projects, objects, stream, analysis_contexts=None):
+    def __init__(self, *, store, sources, documents, projects, objects, stream, analysis_contexts=None,
+        response_protocol_factory=None):
         self._store, self._sources, self._docs = store, sources, documents
         self._projects, self._objects, self._stream = projects, objects, stream
         self._analysis_contexts = analysis_contexts
+        self._response_protocol_factory = response_protocol_factory or capture_impact_response_protocol
 
     async def initialize(self):
         await self._store.initialize()
@@ -63,7 +65,7 @@ class DocumentImpactTaskService:
         seed.analysis_context = context
         seed.batch_settings = batch_settings
         seed.invocation_snapshot = invocation_snapshot
-        seed.response_protocol = capture_impact_response_protocol()
+        seed.response_protocol = self._response_protocol_factory()
         seed.workflow_protocol = capture_impact_workflow_protocol()
         logger.info("document_impact_response_protocol_captured", extra={"project_id": project_id,
             "protocol_version": seed.response_protocol.version, "protocol_sha256": seed.response_protocol.sha256})

@@ -2183,3 +2183,47 @@ AssertionError: units contain rejected / unknown / unprocessed
 方案修正：去除当前表格及3.5内过时的“正式App/最终结果待接入”；新增3.5.9待实施设计和6.5实际失败。后端固定身份绑定/短引用转换、证据清单与推理任务职责、预算/调度/反馈、新协议兼容须先验证再实施。当前核验未放宽，旧v2/v3和coordinator-v1未改写。本轮只有测试与方案/研究记录变更，没有新生产协议、依赖、Schema、公开API或前端契约；未重跑前端/浏览器、独立生产Worker或生产迁移。完整P0—P5仍未完成。
 
 三份方案全文同步；原字节、引用、限定凭据扫描及暂存核对另记p4-default-model-automatic-validation.json。用户.gitignore不修改、不提交。本轮提交仅包含方案、测试和原始证据，不推送、不建PR。
+
+## 2026-10-05：实施v4固定身份绑定，保留原事实核验
+
+研究基线3d71c589。先重读原目标附件、当前方案和实际上一轮请求/响应，再读调用构造、补读/响应核验、清单/原文/完整用例读取、共享Handler、生产装配/测试和前端结果类型。参考本地Agent轨迹与协议鲁棒性课程的结果与轨迹、版本漂移及严格契约原则，不采用隐式错误ID修正。具体采用做法及边界先写P4_BOUND_PROTOCOL_DESIGN.md，再实施。
+
+新增document_impact_bound_responses.py与impact_identity_bindings.py分别负责模型wire DTO和固定身份转换；v4不要求模型返回当前单元、正式ID或哈希，S/P/C/D来自固定清单、R来自已核验规则。用例阶段只判断rule_ref与case_impacts，后端保留固定规则正文及来源。还原成原DocumentImpactDecision后继续范围/未读/切片/哈希/字面JSON值核验，原wire与规范核验分别保存。响应日志记录绑定版本和静态问题代码，不输出源正文或凭据。
+
+capture默认新任务为impact-call-v4，保留v3兼容工厂及旧v2 seed；TaskService注入工厂仅用于明确测试/装配，不新增可编辑配置。旧v3专项显式使用旧工厂；新专项和生产API默认使用v4，受控响应从实际请求目录生成wire并核对原固定身份，不伪装真实模型。既有前端seed为通用记录，公开路由和规范结果字段没有改变；核对所有协议消费者，无需修改页面或类型。无新依赖、SQL表/列或迁移，配置MySQL、任务/业务PG、大对象RustFS约定保持。
+
+命令在Agent_Server执行，各轮目录和XML/log分别保留：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_bound_responses.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-bound-protocol-replay-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-bound-protocol-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_bound_responses.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-bound-protocol-live-first.xml
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-bound-protocol-live-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_bound_responses.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-bound-protocol-live-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-bound-protocol-production-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-bound-protocol-production-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-bound-v4')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-bound-v4.xml
+```
+
+实际命令输出同时用Tee-Object保存到对应.log，没有改写原XML/log/对象。若重跑必须新目录，不重发旧未知任务。初始回放21通过/6跳过3.50秒，跳过为未启用live；随后6模块115通过0跳过399.76秒，包含新24项和旧v3、真实失败请求、租约/未知/恢复。补核验日志后当前源码定向27通过0跳过46.76秒；27属于同一功能范围，不累加为142覆盖。
+
+新6组真实MD/DOCX/PDF×原生/LangChain、HTTP/MySQL/PG/RustFS，证明自动短引用补读、完整12步JSON/自身说明、False/0/null、规则R1还原、精确来源和终态只读。实际失败回放仍拒绝原v3误写，新的v4响应绑定到精确原单元；未知引用、UUID/哈希覆盖、目录篡改、原文/路径/值错误和未读引用仍拒绝。
+
+生产API/独立解析、比较、影响CLI与隔离MySQL/PG/Redis、真实RustFS和HTTP首次1通过60.78秒；補日志后最终源码1通过0跳过54.12秒。最终6物理消息均v4，保存完整HTTP、PG检查点及对象字节，部分解析/坐标限制仍为partial，semantic pending_review、deployment unknown。这不是默认模型语义验收。两次生产证据分别保留。
+
+真实默认模型新任务1失败0跳过607.68秒，Handler运行600.953秒：7逻辑调用/11POST，两份完整impact-response-v2均read_requested/impact-bindings-v1，后续仍超时。最终5unknown/6unprocessed、规则0，三个完整8步用例未进入模型判断。600秒只写隔离项目MySQL；源模型8192输出、SDK60秒、单调用120秒、适配器及重试未改，前后参数相同。原11单元、wire、规范核验、unknown和未处理范围全部保留，终态历史读取/重投不发模型，不重领。
+
+实际失败输出：
+
+```text
+test_default_model_automatic_fixed_scope_and_terminal_history
+assert all(item.status == "analyzed" and not item.reason_codes and not item.unresolved for item in result.units)
+AssertionError: units contain unknown / unprocessed
+1 failed in 607.68s
+```
+
+身份绑定在实际默认响应中有效，不等于影响语义闭环完成；不把规则0解释为没有变化。不再原样重跑该完整任务，接下来研究证据清单与推理任务分工、阶段预算及已有stream机制，并保留已确认需求评审/增量/矩阵、P2/P1/P0/P5和迁移范围。未重跑前端构建/浏览器（页面及契约未改）、未执行生产历史迁移，不改用户.gitignore、不推送或建PR。三份方案全文同步；字节、源码、固定消息、对象及限定凭据扫描另记p4-bound-protocol-validation.json。完整P0—P5仍未完成。

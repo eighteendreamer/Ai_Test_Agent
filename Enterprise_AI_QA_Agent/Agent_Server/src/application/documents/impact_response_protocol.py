@@ -8,13 +8,15 @@ import re
 import sys
 
 from src.application.documents.impact_batches import DocumentImpactBatches
+from src.application.documents.impact_identity_bindings import ImpactFixedReferenceError, bind_impact_decision
+from src.schemas.document_impact_bound_responses import DocumentImpactBoundDecision
 from src.schemas.document_impact_responses import (
     DocumentImpactDecision, DocumentImpactResponseAssessment, DocumentImpactResponseIssue,
     DocumentImpactResponseProtocolSnapshot,
 )
 
 
-def capture_impact_response_protocol():
+def capture_impact_response_protocol(*, version="impact-call-v4"):
     value = {"version": "impact-call-v3", "scope": "one declared unit only",
         "response_schema": DocumentImpactDecision.model_json_schema(),
         "instruction": "Read primary and fixed evidence. Request more fixed ranges when cross-section rules are needed. "
@@ -29,6 +31,26 @@ def capture_impact_response_protocol():
             "the complete case. Copy text_sha256 from the supplied source and quote its exact original slice. "
             "Applicability is only a suggestion; deployment remains unknown and all candidates require review. "
             "Do not claim complete project coverage from this unit. Do not execute or change official records."}
+    if version == "impact-call-v4":
+        value.update(version=version, response_schema=DocumentImpactBoundDecision.model_json_schema(),
+            instruction="Return one impact-response-v2 JSON object using this response_schema. "
+                "The saved call owns the current unit; do not output a unit, UUID or hash. "
+                "Use only short references in fixed_references: S for sources, P for segments, C for cases, D for differences. "
+                "For action=read supply short references/ranges with no final outcome or candidates; "
+                "for finish supply unit_outcome/candidates/unresolved with no pending reads. "
+                "Discovery candidates cite exact supplied original slices; positions are original character offsets, "
+                "not normalized diff offsets. Case citations use literal JSON paths and actual values from a complete "
+                "case supplied in this message history. Catalogs are not read evidence. "
+                "During coordination stage case_impacts, candidates are BoundRuleCaseAssessment objects with "
+                "rule_ref R1 etc. and case_impacts; assess every fixed rule for the current complete case. "
+                "The server preserves the fixed rule body and binds identities/hashes before fact checks. "
+                "Canonical identities mentioned in coordination instructions are internal; this response_schema "
+                "defines the model reply. Do not rewrite those identities or copy hashes. "
+                "Request fixed reads for cross-section/missing evidence. Keep intentional negative conditions. "
+                "Applicability is a suggestion, deployment unknown, all candidates pending review. "
+                "Do not claim full project coverage or execute/change official records.")
+    elif version != "impact-call-v3":
+        raise ValueError("新影响响应协议只支持v3兼容或v4")
     digest = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
         separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
     return DocumentImpactResponseProtocolSnapshot(**value, sha256=digest)
@@ -47,7 +69,7 @@ def _constant(value):
     raise ValueError("影响响应JSON包含非有限数字")
 
 
-def parse_impact_decision(text):
+def _parse_decision(text, model):
     """Keep existing fenced/prose compatibility without rescuing broken objects."""
     decoder = json.JSONDecoder(object_pairs_hook=_pairs, parse_constant=_constant)
     stripped = text.strip()
@@ -72,10 +94,18 @@ def parse_impact_decision(text):
                 values = [value]
         if len(values) != 1 or not isinstance(values[0], dict):
             raise ValueError("影响响应需要且只能有一个JSON对象")
-        return DocumentImpactDecision.model_validate(values[0])
+        return model.model_validate(values[0])
     except (ValueError, TypeError, RecursionError) as exc:
         # Pydantic/JSON errors can quote input data. The original response is already saved.
         raise ValueError("影响响应未返回唯一且符合协议的完整JSON对象") from exc
+
+
+def parse_impact_decision(text):
+    return _parse_decision(text, DocumentImpactDecision)
+
+
+def parse_bound_impact_decision(text):
+    return _parse_decision(text, DocumentImpactBoundDecision)
 
 
 def _delivered(request):
@@ -135,7 +165,16 @@ class DocumentImpactResponseProtocol:
             return assessment
         issues = []
         try:
-            decision = parse_impact_decision(response.text)
+            if seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v4":
+                decision = bind_impact_decision(parse_bound_impact_decision(response.text), seed, manifest, payload)
+                assessment.runtime_versions["identity_binding"] = "impact-bindings-v1"
+            else:
+                decision = parse_impact_decision(response.text)
+        except ImpactFixedReferenceError:
+            assessment.status = "rejected"
+            assessment.issues = [DocumentImpactResponseIssue(code="invalid_fixed_reference",
+                message="模型短引用或目录不属于本次固定调用范围")]
+            return assessment
         except ValueError:
             assessment.status = "rejected"
             assessment.issues = [DocumentImpactResponseIssue(code="invalid_protocol", message="响应JSON不完整、歧义或不符合固定协议")]

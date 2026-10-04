@@ -17,6 +17,7 @@ from src.application.documents.impact_checkpoint_io import (
     ImpactCallBudgetExceeded, ImpactCallCheckpointUnavailable, confirmed_impact_write, store_impact_json,
 )
 from src.application.documents.impact_sources import canonical_impact_json, impact_record_hash
+from src.application.documents.impact_identity_bindings import fixed_impact_references, impact_primary_reference
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.document_impact_calls import (
     DocumentImpactCallInput, DocumentImpactCallResponse,
@@ -125,6 +126,10 @@ class DocumentImpactCallService:
             if context.protocol != seed.workflow_protocol or ((selection.unit.kind == "case") != (context.stage == "case_impacts")):
                 raise ValueError("影响协调上下文不能替换固定协议或单元阶段")
             payload["coordination_context"] = context.model_dump(mode="json")
+        if protocol.version == "impact-call-v4":
+            references = fixed_impact_references(manifest, coordination_context)
+            payload["fixed_references"] = references
+            payload["primary_ref"] = impact_primary_reference(selection.unit, references)
         messages = []
         if previous is not None:
             old_input, old_response = previous

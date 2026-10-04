@@ -40,7 +40,7 @@ def test_actual_v2_requests_replay_unchanged_and_v3_provides_required_citation_h
     assert all(set(item) == {"case_id", "version_id"} for item in original_payload["fixed_case_catalog"])
     assert all(case.version_record_sha256 not in original.request.messages[0]["content"] for case in manifest.cases)
 
-    new_seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol()})
+    new_seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol(version="impact-call-v3")})
     upgraded = DocumentImpactCallService.build_request(new_seed, envelope, manifest, original.selection)
     payload = json.loads(upgraded.messages[0]["content"])
     assert payload["analysis_protocol"]["version"] == "impact-call-v3"
