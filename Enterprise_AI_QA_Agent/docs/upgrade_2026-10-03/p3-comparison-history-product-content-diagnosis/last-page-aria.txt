@@ -1,0 +1,88 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Document Difference
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - heading "历史文档比较" [level=2]
+  - link "返回任务池":
+    - /url: /taskpool
+  - article "比较任务详情":
+    - paragraph: 项目：0b4993ad-75f1-48e6-a6c0-ed9f7f7a7f19 · 文档：615e0888-2edf-59ec-b093-8640ac90bda5
+    - paragraph: 比较任务：c24e3c2d-0a20-410b-be1f-f7b44afa6840
+    - button "刷新比较任务"
+    - status: 比较结果已保存 · 比较结果已保存 · 第 1 次领取
+    - paragraph: 旧侧解析快照：93fe6131-087f-4ef0-9335-fe452449ae56 → 新侧解析快照：50a8833e-490a-4bec-ad84-1ba6c8f6133e
+    - article "比较结果详情":
+      - heading "固定文档差异 · 比较已保存" [level=3]
+      - paragraph: 比较结果：c0df3c99-2279-4869-84fc-6eca343e95d7 · SHA256：418c73c7d03abda3a2c4c7d77e748cdfcbca3b35a5def1574a680c0dc5233e26
+      - region "旧侧固定来源":
+        - heading "旧侧" [level=4]
+        - paragraph: 原件版本：0ff31a1c-d50a-4257-898f-b3dfccc83aa3
+        - paragraph: 解析快照：93fe6131-087f-4ef0-9335-fe452449ae56
+        - paragraph: 原件 SHA256：c6a06b14dac8e15164436205b7cbe8037b1411d78dcdb9f0cbcdb9cb557a5f95
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - region "新侧固定来源":
+        - heading "新侧" [level=4]
+        - paragraph: 原件版本：b95b004b-4c78-4f41-8b53-b1b673421095
+        - paragraph: 解析快照：50a8833e-490a-4bec-ad84-1ba6c8f6133e
+        - paragraph: 原件 SHA256：e942ee3a8235a9ee4dd30f554f65f1a1286c769a2147f031f487f510c0250c08
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - paragraph: 原始文本 1 · 换行归一文本 1 · 章节 0 · 表格 1
+      - list:
+        - listitem: 双方 · extracted_text_positions · 字符位置属于解析抽取文本；源行、DOCX路径及PDF页码沿用解析器，不表示原件字符坐标或完整格式差异
+        - listitem: 旧侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+        - listitem: 新侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+      - text: 文本差异视图
+      - combobox "文本差异视图":
+        - option "原始抽取文本"
+        - option "仅归一换行" [selected]
+      - paragraph: 字符位置指向原始抽取文本；换行归一保留空格、缩进、数字和 Unicode。
+      - region "文本变化 1":
+        - heading "修改 1" [level=4]
+        - strong: 旧侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 7 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - strong: 新侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 9 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - group: 字符变化（1）
+      - group: 章节变化（0）
+      - group:
+        - text: 表格变化（1）
+        - heading "修改" [level=4]
+        - strong: 旧侧
+        - text: "[ { \"block_id\": \"block-3\", \"rows\": [ [ { \"text\": \"字段\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 0, 0 ], \"part\": \"word/document.xml\" } }, { \"text\": \"约束\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 0, 1 ], \"part\": \"word/document.xml\" } } ], [ { \"text\": \"有效期\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 1, 0 ], \"part\": \"word/document.xml\" } }, { \"text\": \"7 天\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 1, 1 ], \"part\": \"word/document.xml\" } } ] ] } ] 抽取文本字符 [20, 33) · 第 3—4 行"
+        - list:
+          - listitem: word/document.xml · 正文/表格位置 2
+        - strong: 新侧
+        - text: "[ { \"block_id\": \"block-3\", \"rows\": [ [ { \"text\": \"字段\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 0, 0 ], \"part\": \"word/document.xml\" } }, { \"text\": \"约束\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 0, 1 ], \"part\": \"word/document.xml\" } } ], [ { \"text\": \"有效期\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 1, 0 ], \"part\": \"word/document.xml\" } }, { \"text\": \"9 天\", \"source\": { \"kind\": \"docx\", \"start_line\": null, \"end_line\": null, \"page\": null, \"path\": [ 2, 1, 1 ], \"part\": \"word/document.xml\" } } ] ] } ] 抽取文本字符 [20, 33) · 第 3—4 行"
+        - list:
+          - listitem: word/document.xml · 正文/表格位置 2
+      - group: 固定比较策略与实际资源预算
+      - button "下载完整比较结果 JSON"
+  - text: ">_ 运行时事件控制台 idle "

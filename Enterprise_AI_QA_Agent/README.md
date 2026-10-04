@@ -232,7 +232,9 @@ uv run --locked --directory Agent_Server python -m src.cli.run_document_differen
 
 比较 CLI 同样支持 `--once --worker-id document-difference-probe` 和已登记的 `--stream`。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/difference-tasks`，请求包含 `creation_key`、`old_snapshot_id`、`new_snapshot_id`；双方必须属于同一项目/文档的固定解析快照。`difference-tasks/by-request?creation_key=...` 找回原提交，`difference-tasks/{task_id}` 查询状态，成功后读取 `difference-snapshots/{snapshot_id}`，失败轨迹读取 `difference-tasks/{task_id}/failure`。任务和结果列表支持分页；`version_id` 只筛选新侧原件版本，完整双方引用始终保留。
 
-比较不重解析、不调用 AI、不覆盖原件或历史快照；raw 是完整抽取文本，normalized 仅统一换行，章节/表格和来源沿用解析能力。修改策略只影响新提交，原请求重放沿用固定依据。关闭派发或没有登记比较流时仍可读取历史，新提交明确返回不可用。当前前端类型/API 适配器已接入，比较页面及通用任务池入口继续实施；不得将上传或解析成功显示为比较成功。
+比较不重解析、不调用 AI、不覆盖原件或历史快照；raw 是完整抽取文本，normalized 仅统一换行，章节/表格和来源沿用解析能力。修改策略只影响新提交，原请求重放沿用固定依据。关闭派发或没有登记比较流时仍可读取历史，新提交明确返回不可用。
+
+通用任务池 `/api/v1/task-pool/entries` 的 `kind=document_difference` 从 PostgreSQL 只读投影公开任务字段，支持既有状态、项目、查询与分页筛选。前端任务池可打开 `/projects/{project_id}/documents/{document_id}/differences/{task_id}`，刷新后仍读取同一任务及固定双方来源，展示原始/换行归一文本、字符细节、章节/表格、警告、失败轨迹并下载完整 JSON。此历史入口不加载当前比较设置、不新建或重算任务。比较提交表单、双方快照选择和设置仍待接入文档详情；不得将上传或解析成功显示为比较成功。
 
 任务提交先写入 PostgreSQL Outbox，再由独立 Relay 投递到 Redis Streams。Relay 不应与 API 进程绑定，生产环境建议作为单独的进程或服务运行：
 

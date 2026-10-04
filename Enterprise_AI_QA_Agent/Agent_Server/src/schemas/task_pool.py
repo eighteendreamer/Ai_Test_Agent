@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from src.schemas.session import SessionSummary
 from src.schemas.case_planning_task import CasePlanningTaskRecord
+from src.schemas.document_differences import DocumentDifferenceTaskRecord
 
 
 class TaskPoolSessionSummary(SessionSummary):
@@ -21,7 +22,7 @@ class TaskPoolPage(BaseModel):
     has_more: bool = False
 
 
-TaskPoolKind = Literal["all", "session", "case_planning"]
+TaskPoolKind = Literal["all", "session", "case_planning", "document_difference"]
 TaskPoolState = Literal["all", "active", "completed", "failed"]
 
 
@@ -37,7 +38,17 @@ class TaskPoolPlanningEntry(BaseModel):
     task: CasePlanningTaskRecord
 
 
-TaskPoolEntry = Annotated[TaskPoolSessionEntry | TaskPoolPlanningEntry, Field(discriminator="kind")]
+class TaskPoolDocumentDifferenceEntry(BaseModel):
+    kind: Literal["document_difference"] = "document_difference"
+    project_name: str | None = None
+    document_title: str | None = None
+    task: DocumentDifferenceTaskRecord
+
+
+TaskPoolEntry = Annotated[
+    TaskPoolSessionEntry | TaskPoolPlanningEntry | TaskPoolDocumentDifferenceEntry,
+    Field(discriminator="kind"),
+]
 
 
 class TaskPoolEntriesPage(BaseModel):

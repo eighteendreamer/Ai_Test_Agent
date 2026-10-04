@@ -1586,3 +1586,50 @@ $env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs
 收尾核对：11份相关Python源码/测试py_compile通过；22种Python/TypeScript公开DTO字段逐项一致；73个本地链接可定位，正式PLAN与Codex镜像逐字节一致，原附件交付与接入章节相同；真实三格式原件/比较JSON/失败轨迹哈希及XML计数已实际核对。
 
 提交核对：164个本轮相关文件；152份源码/方案/文本工件凭据格式扫描无匹配。136份实际工件工作区/暂存字节一致，17份原件经Git过滤后检出仍逐字节一致；完整暂存diff检查通过，用户.gitignore未暂存。新后端测试按既有忽略策略显式加入。交付字节校验脚本曾混用git diff和ls-files的路径基准而报KeyError，改为统一仓库根目录后通过；未据此改变产品代码或证据。
+
+
+## P3.4 历史比较页面与任务池交付（2026-10-04；研究基线6dd162b）
+
+先读取原目标附件、任务池SQL/DTO、实际router/App、解析页面、生产与浏览器夹具，再在P3_4_DESIGN.md记录决定。任务池按原PG单次UNION分页增加document_difference；白名单公开字段，不序列化整个任务行。文档当前项目与任务不符时仅使用通用标题，防止改绑后新项目标题外泄。前后端判别联合、筛选、标题、阶段、统计、状态及动作同步更新，旧session与case_planning分支保持。
+
+正式历史路由 /projects/:projectId/documents/:documentId/differences/:taskId 使用三个固定身份；DocumentDifferenceTask/DocumentDifferenceSnapshot可供后续文档详情复用。读取任务指定结果，核对双方project/document/version/snapshot/原件与解析哈希及task_id；切换、卸载与较晚响应有代次保护。只读历史不加载MySQL当前策略、不重算/新提交，失败和读取错误可检索/刷新。展示raw/normalized、字符细节省略状态、章节/表格、来源、警告、固定策略，有界展开和完整JSON下载。新入口不是文档比较提交表单，下一步仍需双方版本/快照选择、设置与未知提交身份恢复。
+
+实际验证：
+
+- p3-comparison-task-pool-first.xml：在仓库根误跑，2项收集错误，src不在导入路径。按已有命令回到Agent_Server执行，p3-comparison-task-pool-first-corrected.xml为3通过/0跳过（9.44秒），真实DOCX/解析子进程/MySQL/PG/RustFS；分页跨24条、状态/项目/查询、公开字段、同时间排序、文档改绑标题隔离及只读attempt。
+- 首轮前端14通过/1失败，夹具误把failure.json诊断正文当公开失败DTO；读取实际summary.failed_task.failure_artifact修正。p3-comparison-history-frontend.xml为22通过，最终p3-comparison-history-frontend-final.xml为25通过/0失败：实际已保存DOCX样本，项目/任务/结果/双方引用/哈希拒绝、切换较晚响应、卸载停止轮询、真实失败轨迹、原身份读取重试、文字转义、部分提取、预算细节省略、有界展示、JSON下载及原解析/任务池/比较适配器回归。组件单元HTTP使用替代响应，不能代替真实浏览器/API。
+- p3-comparison-history-regression.xml：28通过/0跳过（59.07秒），真实规划任务池/浏览器、解析/比较任务及新投影。既有规划浏览器默认证据路径覆盖了历史工件；本轮另存新字节并从HEAD恢复原JSON/PNG，新增可选QA_TASK_POOL_BROWSER_EVIDENCE_DIR后实际复验，p3-comparison-history-planning-regression-verified.xml为1通过（12.12秒）。该宿主资源监控仍明确503，不冒充完整规划产品验收。
+- p3-comparison-history-product-first.xml：1失败（81.40秒），浏览器测试定位器写“类型”，实际aria标签是“任务类型”。另在继续运行前核对本地Playwright签名，URL断言采用现有正则写法；修订定位器后p3-comparison-history-product-second.xml为1通过（69.42秒）。没有为测试错误添加产品特判。
+- p3-comparison-history-product-verified.xml：2通过/0跳过（123.12秒），最终实际代码完整App/侧栏/任务池/正式历史路由、生产uvicorn、独立解析/比较CLI和MySQL/PG/RustFS/Redis。真实DOCX V1/V2=7/9，新的反向任务存在时选中旧历史；等待任务轮询完成；真实CPU超限失败轨迹与退出码可见；关闭派发并重启API后原路由刷新与JSON下载逐字段相同；错误项目404无结果。浏览器page_errors为空、比较历史不请求当前设置、模型调用0。同时原完整产品DOCX上传/版本/解析/设置/导航/重启/历史下载回归通过。
+
+最终比较产品证据p3-comparison-history-product-verified/，原解析产品回归p3-comparison-history-parse-product-regression/，各自保留真实原件、截图、aria、网络、完整JSON与进程stdout/stderr。产品浏览器夹具实际npm build包括typecheck，比较构建Vite6.81秒；两个产品夹具顺序运行，不并发覆盖dist。隔离存储结束后对象被清理，历史URI不是在线交付地址，原件与结果内容在Git证据目录保存。
+
+关键命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_TASK_POOL='1'
+$env:RUN_LIVE_TASK_POOL_BROWSER='1'
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_task_pool_document_differences.py tests/test_task_pool_entries.py tests/test_task_pool_browser.py tests/test_document_difference_tasks.py tests/test_document_parse_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-comparison-history-regression.xml
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_FULL_PRODUCT='1'
+$env:RUN_LIVE_DOCUMENT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_DIFFERENCE_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-comparison-history-product-verified')
+$env:QA_DOCUMENT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-comparison-history-parse-product-regression')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_difference_full_product.py tests/test_document_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-comparison-history-product-verified.xml
+```
+
+前端agent_web执行npm run test -- src/views/TaskPoolView.test.ts src/features/tools/plugins/DocumentDifferenceTask.test.ts src/features/tools/plugins/ApiDocParsing.test.ts src/services/sessions.task-pool.api.test.ts src/services/documentDifferences.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p3-comparison-history-frontend-final.xml。新增配置仍沿用既有MySQL；本轮无新业务表或依赖，PG比较表必须由既有生产初始化建立，隔离测试不代表生产历史迁移。只提交本轮相关文件，不包含用户.gitignore，不推送/建PR。PLAN、原附件与Codex镜像已同步，完整P0—P5未完成，下一步继续比较提交产品入口和剩余范围。
+
+
+### 收尾补强：网络断言与全局提示框溢出根因
+
+复查发现网络事件是包含url/method/status的对象，旧断言误按字符串判定，未证明“没有设置读取/比较提交”。保存的实际记录含16次比较读取、0次设置读取；修正为读取event.url，要求确切任务/结果GET存在并禁止比较POST，再执行完整生产场景。不能以旧空列表当作该项通过。
+
+截图审查增加真实布局检查后，p3-comparison-history-product-network-verified、product-layout-first、product-layout-diagnosis、product-content-diagnosis分别1失败（57.20/54.97/54.28/57.59秒）。最小宽度调整无效，已撤回任务池改动；换为短页面诊断，再核对实际App溢出元素。真实数据证明隐藏service-tooltip-meta的264px内容框产生469px滚动宽度，经顶部状态栏传播到全局shell；Playwright正常滚动定位使shellScrollLeft=101、侧栏left=-101。健康接口已有hide_password=True，不是密码明文泄露。短诊断首次脚本漏tests导入路径，修正后执行；替代HTTP/无长地址场景不复现，不能代替生产证据。
+
+p3-comparison-layout-long-target-before使用健康DTO的掩码长地址复现相同101px偏移，1失败（24.27秒）。根因修复仅在既有service-tooltip-meta增加overflow-wrap:anywhere；未重置scrollLeft、隐藏溢出文本或增加业务特判。最终p3-comparison-history-product-final.xml **3通过、0跳过（138.66秒）**，其中**2项真实生产完整产品比较/原上传解析流程，1项替代HTTP的完整App布局回归**；不将替代HTTP称为真实存储验收。最终真实layout.json为shellWidth=viewport=1440、shellScrollLeft=0、sidebarLeft=0、contentOverflow为空。实际网络记录存在指定历史任务和结果GET，没有比较POST或当前设置请求；关闭派发、API重启、失败轨迹、错误项目与完整JSON下载继续通过。重启窗口App健康/会话轮询出现预期连接拒绝，stdout/stderr与网络记录保留；重启后加载恢复，浏览器JS错误为空。
+
+最终证据以p3-comparison-history-product-final/、p3-comparison-history-parse-product-final/和p3-comparison-layout-long-target-verified/为准，原失败与中间结果保留，次数不累加为覆盖数。最终三个产品/布局夹具均实际构建并含typecheck。18项公开比较任务字段与TypeScript契约、PG任务池判别联合及当前5个后端测试模块编译另核对通过。完整P0—P5仍未完成；下一步仍是文档详情比较提交/双侧版本与快照选择/策略/未知提交恢复，随后继续Git、P4及其余范围。
+
+交付核对：暂存相关文件327份（报告自身与空的源文件diff检查工件随后加入）；266份源码/方案/文本工件凭据格式扫描，唯一匹配为原有英文翻译Password标签，核对后无凭据格式匹配。304份原始工件工作区/暂存字节一致；最终下载/真实网络GET/零比较POST/布局和镜像/附件章节一致性实际核对。直接对原始工件运行git diff --check出现CRLF/原始空白提示，未改写证据；改为源码、类型、Vue、CSS及方案的diff检查通过，原件/JSON/进程日志另做字节核验。新增后端测试显式加入，用户.gitignore未暂存。

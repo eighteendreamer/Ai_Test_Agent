@@ -832,11 +832,12 @@ export interface TaskPoolPage {
   has_more: boolean;
 }
 
-export type TaskPoolKind = "all" | "session" | "case_planning";
+export type TaskPoolKind = "all" | "session" | "case_planning" | "document_difference";
 export type TaskPoolState = "all" | "active" | "completed" | "failed";
 export type TaskPoolEntry =
   | { kind: "session"; project_name: string | null; session: TaskPoolSessionSummary }
-  | { kind: "case_planning"; project_name: string | null; task: CasePlanningTaskRecord };
+  | { kind: "case_planning"; project_name: string | null; task: CasePlanningTaskRecord }
+  | { kind: "document_difference"; project_name: string | null; document_title: string | null; task: DocumentDifferenceTaskRecord };
 export interface TaskPoolEntriesPage {
   items: TaskPoolEntry[];
   limit: number;

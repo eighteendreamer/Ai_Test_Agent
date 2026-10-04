@@ -11,6 +11,7 @@ const router = createRouter({
     { path: "/taskpool", name: "taskpool", component: () => import("../views/TaskPoolView.vue"), meta: { label: "Task Pool" } },
     { path: "/projects", name: "projects", component: () => import("../views/ProjectsView.vue"), meta: { label: "Test Projects" } },
     { path: "/projects/:projectId", name: "project-detail", component: () => import("../views/ProjectsView.vue"), meta: { label: "Project Detail" } },
+    { path: "/projects/:projectId/documents/:documentId/differences/:taskId", name: "document-difference", component: () => import("../views/DocumentDifferenceView.vue"), meta: { label: "Document Difference" } },
     { path: "/knowledge", name: "knowledge", component: () => import("../views/KnowledgeView.vue"), meta: { label: "Knowledge" } },
     { path: "/tools", name: "tools", component: () => import("../views/ToolsView.vue"), meta: { label: "Tools" } },
     { path: "/reports", name: "reports", component: () => import("../views/ReportsView.vue"), meta: { label: "Reports" } },

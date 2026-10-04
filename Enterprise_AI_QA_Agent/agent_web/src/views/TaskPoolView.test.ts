@@ -61,4 +61,17 @@ describe("mixed task-pool page", () => {
     expect(w.find('[data-task-id="chosen-task"]').exists()).toBe(true);
     expect(w.find('[data-task-id="stale-task"]').exists()).toBe(false); w.unmount();
   });
+
+  it("renders comparison fields and opens the exact historical task route", async () => {
+    api.listTaskPoolEntries.mockResolvedValue({ items: [{ kind: "document_difference", project_name: "需求项目",
+      document_title: "登录需求", task: { id: "history", project_id: "project", document_id: "document", status: "completed",
+        phase: "finished", attempt_no: 1, updated_at: "2026-10-04T00:00:00Z", message: "比较结果已保存" } }], has_more: false });
+    const w = mount(TaskPoolView); await flushPromises();
+    expect(w.text()).toContain("登录需求"); expect(w.text()).toContain("比较已保存"); expect(w.text()).toContain("领取次数 1");
+    await w.get('button[aria-label="查看比较任务"]').trigger("click");
+    expect(push).toHaveBeenCalledWith({ name: "document-difference", params: { projectId: "project", documentId: "document", taskId: "history" } });
+    await w.get("select").setValue("document_difference"); await flushPromises();
+    expect(api.listTaskPoolEntries).toHaveBeenLastCalledWith(24, 0, { kind: "document_difference", state: "all", query: "" });
+    w.unmount();
+  });
 });

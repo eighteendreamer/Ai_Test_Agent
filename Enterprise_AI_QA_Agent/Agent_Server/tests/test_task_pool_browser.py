@@ -152,7 +152,9 @@ createApp({render:()=>h(NMessageProvider,null,{default:()=>h(RouterView)})}).use
                         assert any(e.kind == 'document' and e.source_id == document.id for e in saved.evidence)
                         assert not any(method == 'POST' for method, _ in requests)
                         assert not errors, errors
-                        evidence = Path(__file__).resolve().parents[2] / 'docs/upgrade_2026-10-03'
+                        evidence = Path(os.getenv('QA_TASK_POOL_BROWSER_EVIDENCE_DIR',
+                            str(Path(__file__).resolve().parents[2] / 'docs/upgrade_2026-10-03')))
+                        evidence.mkdir(parents=True, exist_ok=True)
                         await page.screenshot(path=str(evidence / 'p2-task-pool-browser.png'), full_page=True)
                         (evidence / 'p2-task-pool-browser.json').write_text(json.dumps({
                             'project_id': project.id, 'chosen_task_id': chosen.id, 'latest_task_id': latest.id,

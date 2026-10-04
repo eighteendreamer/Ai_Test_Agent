@@ -28,21 +28,27 @@ const tabs = computed(() => [
   { id: "failed" as TaskPoolState, label: t("taskpool.tab_failed") },
 ]);
 function data(row: TaskPoolEntry) { return row.kind === "session" ? row.session : row.task; }
-function title(row: TaskPoolEntry) { return row.kind === "session" ? row.session.title : t("taskpool.kind_planning"); }
+function title(row: TaskPoolEntry) {
+  return row.kind === "session" ? row.session.title : row.kind === "document_difference"
+    ? row.document_title || t("taskpool.kind_difference") : t("taskpool.kind_planning");
+}
 function parent(row: TaskPoolEntry) { return row.kind === "session" ? row.session.parent_session_id : ""; }
 function active(row: TaskPoolEntry) { return ["queued", "running", "waiting_approval"].includes(data(row).status); }
 function statusLabel(row: TaskPoolEntry): string {
   const status = data(row).status;
   if (row.kind === "case_planning" && status === "completed") return t("taskpool.status_planned");
+  if (row.kind === "document_difference" && status === "completed") return t("taskpool.status_compared");
   const keys: Record<string, string> = { queued: "queued", waiting_approval: "waiting_approval", completed: "completed",
     failed: "failed", running: "running", interrupted: "interrupted", idle: "idle" };
   return t(`taskpool.status_${keys[status] || "idle"}`);
 }
 function taskKind(row: TaskPoolEntry): string {
   if (row.kind === "case_planning") return t("taskpool.kind_planning");
+  if (row.kind === "document_difference") return t("taskpool.kind_difference");
   return t(row.session.session_mode === "background_task" ? "taskpool.kind_child" : "taskpool.kind_parent");
 }
 function modeLabel(row: TaskPoolEntry): string {
+  if (row.kind === "document_difference") return t(`taskpool.difference_phase_${row.task.phase}`);
   if (row.kind === "case_planning") {
     const phases = ["retrieval", "ready", "invoking", "response", "query", "finished"];
     return phases.includes(row.task.phase) ? t(`taskpool.phase_${row.task.phase}`) : row.task.phase;
@@ -52,6 +58,7 @@ function modeLabel(row: TaskPoolEntry): string {
   return row.session.mode_key;
 }
 function workerStats(row: TaskPoolEntry): string {
+  if (row.kind === "document_difference") return `${t("taskpool.attempt_count")} ${row.task.attempt_no}`;
   if (row.kind === "case_planning") return `${t("taskpool.round_count")} ${row.task.round_count}`;
   const workers = row.session.worker_dispatches;
   if (!workers.length) return t("taskpool.no_dispatch_records");
@@ -63,9 +70,17 @@ function workerStats(row: TaskPoolEntry): string {
 function openTask(row: TaskPoolEntry) {
   if (row.kind === "case_planning") {
     void router.push({ name: "project-detail", params: { projectId: row.task.project_id }, query: { planning_task_id: row.task.id } });
+  } else if (row.kind === "document_difference") {
+    void router.push({ name: "document-difference", params: {
+      projectId: row.task.project_id, documentId: row.task.document_id, taskId: row.task.id,
+    } });
   } else {
     void router.push("/reports");
   }
+}
+function actionLabel(row: TaskPoolEntry) {
+  return t(row.kind === "session" ? "taskpool.open_report"
+    : row.kind === "document_difference" ? "taskpool.open_difference" : "taskpool.open_planning");
 }
 async function loadTasks() {
   const request = ++generation;
@@ -109,7 +124,7 @@ onUnmounted(() => { disposed = true; generation++; if (searchTimer) clearTimeout
       <div class="task-toolbar">
         <div class="task-tabs"><button v-for="tab in tabs" :key="tab.id" class="tab-btn" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button></div>
         <div class="task-filters">
-          <select v-model="kind" :aria-label="t('taskpool.col_type')"><option value="all">{{ t("taskpool.kind_all") }}</option><option value="session">{{ t("taskpool.kind_session") }}</option><option value="case_planning">{{ t("taskpool.kind_planning") }}</option></select>
+          <select v-model="kind" :aria-label="t('taskpool.col_type')"><option value="all">{{ t("taskpool.kind_all") }}</option><option value="session">{{ t("taskpool.kind_session") }}</option><option value="case_planning">{{ t("taskpool.kind_planning") }}</option><option value="document_difference">{{ t("taskpool.kind_difference") }}</option></select>
           <span class="filter-pill">{{ t("taskpool.page_number", { number: String(offset / pageSize + 1) }) }}</span>
         </div>
       </div>
@@ -124,8 +139,8 @@ onUnmounted(() => { disposed = true; generation++; if (searchTimer) clearTimeout
             <td class="col-type"><span class="badge badge-gray">{{ taskKind(row) }}</span></td>
             <td class="col-model"><div v-if="row.kind === 'session'" class="mono">{{ row.session.selected_agent || '-' }}</div><div class="sub-meta">{{ modeLabel(row) }}</div></td>
             <td class="col-status"><span class="status-indicator" :class="`status-${data(row).status}`"><span v-if="active(row)" class="pulse-dot"></span>{{ statusLabel(row) }}</span></td>
-            <td class="col-stats"><div>{{ workerStats(row) }}</div><div v-if="row.kind === 'case_planning'" class="sub-meta">{{ row.task.message }}</div><div v-else class="sub-meta">{{ row.session.worker_dispatches.length }} {{ t("taskpool.dispatch_records") }}</div></td>
-            <td class="col-actions align-right"><button class="action-btn" :aria-label="row.kind === 'case_planning' ? t('taskpool.open_planning') : t('taskpool.open_report')" :title="row.kind === 'case_planning' ? t('taskpool.open_planning') : t('taskpool.open_report')" @click="openTask(row)"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
+            <td class="col-stats"><div>{{ workerStats(row) }}</div><div v-if="row.kind !== 'session'" class="sub-meta">{{ row.task.message }}</div><div v-else class="sub-meta">{{ row.session.worker_dispatches.length }} {{ t("taskpool.dispatch_records") }}</div></td>
+            <td class="col-actions align-right"><button class="action-btn" :aria-label="actionLabel(row)" :title="actionLabel(row)" @click="openTask(row)"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
           </tr></tbody>
         </table>
       </div>

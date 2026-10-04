@@ -22,6 +22,12 @@ from src.runtime.planning_task_handler import PlanningTaskHandler
 from src.schemas.case_planning_task import CasePlanningTaskRequest
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
+from src.application.documents.parser_config_service import DocumentParserConfigService
+from src.application.documents.parsing_service import DocumentParsingService
+from src.application.documents.difference_config_service import DocumentDifferenceConfigService
+from src.application.documents.difference_service import DocumentDifferenceService
+from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
+from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
 
 
 @asynccontextmanager
@@ -38,13 +44,39 @@ async def pool_environment(tmp_path):
                 assert cur.fetchone()['existing'] is None
         env.sessions = PostgresSessionStore(env.settings)
         await env.sessions.initialize()
+        env.parse_store = PostgresDocumentParseStore(env.settings, lease_seconds=30)
+        env.difference_store = PostgresDocumentDifferenceStore(env.settings, lease_seconds=30)
+        document_tables = [*env.difference_store.tables, *env.parse_store.tables]
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            for table in document_tables:
+                cur.execute('SELECT to_regclass(%s) AS existing', (table,))
+                assert cur.fetchone()['existing'] is None
+        env.parsing = DocumentParsingService(store=env.parse_store, documents=env.docs, projects=env.projects,
+            configs=DocumentParserConfigService(config_store=env.configs, project_service=env.projects),
+            objects=env.objects, stream='isolated:pool:parsing')
+        env.differences = DocumentDifferenceService(store=env.difference_store, documents=env.docs, projects=env.projects,
+            configs=DocumentDifferenceConfigService(config_store=env.configs, project_service=env.projects),
+            objects=env.objects, parsing=env.parsing, stream='isolated:pool:differences')
+        await env.parsing.initialize()
+        await env.differences.initialize()
         try:
             # Keep this fixture import lazy so the pre-implementation API failure is observable.
             from src.runtime.postgres_task_pool_store import PostgresTaskPoolStore
             env.pool = TaskPoolService(store=env.sessions, entries_store=PostgresTaskPoolStore(env.settings))
             yield env
         finally:
+            owned = set()
             with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for store in (env.difference_store, env.parse_store):
+                    cur.execute(f'SELECT checkpoint,failure_artifact FROM {store._tasks}')
+                    for row in cur.fetchall():
+                        for field in ('checkpoint', 'failure_artifact'):
+                            if row[field]: owned.add(row[field]['storage_uri'])
+            for uri in owned:
+                await env.objects.delete_object_uri(uri)
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for table in document_tables:
+                    cur.execute(f'DROP TABLE "{table}"')
                 for table in reversed(tables):
                     cur.execute(f'DROP TABLE "{table}"')
 

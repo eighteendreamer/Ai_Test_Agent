@@ -1,6 +1,6 @@
 """Read public task entries from their authoritative tables, with one paged query.
 
-Uses the existing Session projection and planning public DTO. No task inputs,
+Uses the existing Session projection and domain public DTOs. No task inputs,
 checkpoints, lease details or private Session metadata leave this projection.
 """
 from __future__ import annotations
@@ -13,8 +13,10 @@ from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_session_store import _task_pool_session_from_row
 from src.schemas.case_planning_task import CasePlanningTaskRecord
+from src.schemas.document_differences import DocumentDifferenceTaskRecord
 from src.schemas.task_pool import (
     TaskPoolEntry, TaskPoolKind, TaskPoolState, TaskPoolPlanningEntry, TaskPoolSessionEntry,
+    TaskPoolDocumentDifferenceEntry,
 )
 
 
@@ -29,7 +31,9 @@ class PostgresTaskPoolStore:
         self._sessions = settings.database.postgres_session_table
         self._tasks = settings.database.postgres_case_planning_task_table
         self._projects = settings.database.postgres_project_table
-        for name in (self._sessions, self._tasks, self._projects):
+        self._docs = settings.database.postgres_api_doc_table
+        self._differences = self._docs + "_diff_tasks"
+        for name in (self._sessions, self._tasks, self._projects, self._docs, self._differences):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", name):
                 raise ValueError("Invalid task-pool table identifier")
 
@@ -52,6 +56,8 @@ class PostgresTaskPoolStore:
             parameters.append(query.lower())
         where = " AND ".join(filters) or "TRUE"
         parameters.extend([limit, offset])
+        # Whitelist the public domain DTO, never serialize the entire task row.
+        difference_fields = ",".join(f"'{name}',d.{name}" for name in DocumentDifferenceTaskRecord.model_fields)
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 WITH entries AS (
@@ -63,22 +69,31 @@ class PostgresTaskPoolStore:
                     SELECT 'case_planning',id::text,'用例规划',status,project_id,updated_at,
                            concat_ws(' ',id::text,creation_key,phase,message,'用例规划')
                     FROM {self._tasks}
+                    UNION ALL
+                    SELECT 'document_difference',d.id::text,
+                           COALESCE(a.record->>'title','文档比较'),d.status,d.project_id,d.updated_at,
+                           concat_ws(' ',d.id::text,d.creation_key,d.phase,d.message,d.document_id::text,
+                                     d.old_snapshot_id::text,d.new_snapshot_id::text,a.record->>'title','文档比较')
+                    FROM {self._differences} d
+                    LEFT JOIN {self._docs} a ON a.id=d.document_id AND a.project_id=d.project_id
                 ), page AS (
                     SELECT e.kind,e.id,e.title,e.status,e.project_id,e.updated_at,p.name AS project_name
                     FROM entries e LEFT JOIN {self._projects} p ON p.id=e.project_id
                     WHERE {where}
                     ORDER BY e.updated_at DESC,e.kind,e.id LIMIT %s OFFSET %s
                 )
-                SELECT page.*,COALESCE(s.created_at,t.created_at) AS created_at,
+                SELECT page.*,COALESCE(s.created_at,t.created_at,d.created_at) AS created_at,
                        s.session_mode,s.runtime_mode,s.mode_key,s.selected_agent,
                        COALESCE(s.metadata->'worker_dispatches','[]'::jsonb) AS worker_dispatches,
                        COALESCE(s.metadata->>'parent_session_id','') AS parent_session_id,
                        t.creation_key,t.phase,t.message,t.attempt_no,t.plan_id,
                        COALESCE((t.checkpoint->>'next_round')::integer,0) AS round_count,
-                       t.started_at,t.deadline_at,t.completed_at
+                       t.started_at,t.deadline_at,t.completed_at,
+                       CASE WHEN d.id IS NOT NULL THEN jsonb_build_object({difference_fields}) END AS difference_task
                 FROM page
                 LEFT JOIN {self._sessions} s ON page.kind='session' AND s.id=page.id
                 LEFT JOIN {self._tasks} t ON page.kind='case_planning' AND t.id::text=page.id
+                LEFT JOIN {self._differences} d ON page.kind='document_difference' AND d.id::text=page.id
                 ORDER BY page.updated_at DESC,page.kind,page.id
             """, tuple(parameters))
             rows = cur.fetchall()
@@ -87,6 +102,9 @@ class PostgresTaskPoolStore:
             if row["kind"] == "session":
                 result.append(TaskPoolSessionEntry(project_name=row["project_name"],
                     session=_task_pool_session_from_row(row)))
+            elif row["kind"] == "document_difference":
+                result.append(TaskPoolDocumentDifferenceEntry(project_name=row["project_name"],
+                    document_title=row["title"], task=DocumentDifferenceTaskRecord.model_validate(row["difference_task"])))
             else:
                 public = {name: row[name] for name in CasePlanningTaskRecord.model_fields}
                 public["project_id"] = str(public["project_id"])
