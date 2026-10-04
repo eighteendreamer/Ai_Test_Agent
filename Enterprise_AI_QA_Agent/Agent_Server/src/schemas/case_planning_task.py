@@ -1,8 +1,6 @@
 """Durable, project-scoped planning inputs; no synthetic Agent session."""
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -11,22 +9,10 @@ from pydantic import Field
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningModel,
 )
-from src.schemas.model_config import ModelConfigRecord
+from src.schemas.model_config import model_invocation_parameters as planning_model_parameters
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
-
-
-def planning_model_parameters(config: ModelConfigRecord) -> dict[str, Any]:
-    # Explicit allowlist: never persist keys, OAuth tokens or header values.
-    parameters = config.model_dump(mode="json", include={
-        "key", "provider", "transport", "model_id", "temperature", "max_tokens",
-        "max_output_tokens", "context_window", "capabilities", "auth_type", "oauth_provider",
-    })
-    for name in ("api_base_url", "extra_headers"):
-        encoded = json.dumps(getattr(config, name), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-        parameters[f"{name}_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
-    return parameters
 
 
 class CasePlanningTaskRequest(CasePlanningRequest):

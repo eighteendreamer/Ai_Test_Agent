@@ -9,6 +9,7 @@ from src.schemas.api_docs import ApiDocumentAsset
 from src.schemas.case_management import TestCaseBundle, TestCaseRecord, TestCaseSourceRef
 from src.schemas.document_differences import DocumentDifferenceResult, DocumentDifferenceSnapshot, UUID_PATTERN
 from src.schemas.document_parsing import DocumentParseSnapshotView
+from src.schemas.document_impact_analysis import DocumentImpactAnalysisContext
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -93,6 +94,7 @@ class DocumentImpactSourceSeed(BaseModel):
     config: DocumentImpactSettingsRecord
     difference_snapshot: DocumentDifferenceSnapshot
     cases: list[DocumentImpactCaseReference]
+    analysis_context: DocumentImpactAnalysisContext | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")
@@ -107,12 +109,17 @@ class DocumentImpactSourceSeed(BaseModel):
             raise ValueError("影响输入用例版本不能重复")
         if len(self.cases) > self.config.payload.max_case_versions:
             raise ValueError("影响输入用例版本数超过固定策略")
+        if self.analysis_context and self.analysis_context.project.id != self.project_id:
+            raise ValueError("影响模型依据必须属于固定项目")
         return self
 
 
 class DocumentImpactTaskRequest(DocumentImpactSelection):
     creation_key: str = Field(min_length=1, max_length=160)
     difference_snapshot_id: str = Field(pattern=UUID_PATTERN)
+    model_key: str | None = Field(default=None, min_length=1, max_length=255, pattern=r"^\S(?:.*\S)?$")
+    environment_key: str | None = Field(default=None, min_length=1, max_length=160, pattern=r"^\S(?:.*\S)?$")
+    target_release: str | None = Field(default=None, min_length=1, max_length=160, pattern=r"^\S(?:.*\S)?$")
 
 
 class DocumentImpactInputCheckpoint(BaseModel):

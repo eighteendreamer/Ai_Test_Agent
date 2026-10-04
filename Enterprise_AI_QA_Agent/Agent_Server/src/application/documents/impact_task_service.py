@@ -1,8 +1,7 @@
 """Fixed impact submissions and persistent input preparation.
 
-This stage deliberately leaves tasks running at input_saved. Analysis, model
-provenance and batch/result publication are subsequent stages, not inferred from
-successful object reads.
+This stage leaves tasks running at input_saved, with frozen model provenance.
+Batch/result publication is not inferred from successful object reads.
 """
 from __future__ import annotations
 
@@ -13,15 +12,17 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from src.application.documents.impact_sources import canonical_impact_json
+from src.application.documents.impact_analysis_context import DocumentImpactAnalysisContexts
 from src.schemas.document_impact import DocumentImpactInputCheckpoint, DocumentImpactInputEnvelope
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentImpactTaskService:
-    def __init__(self, *, store, sources, documents, projects, objects, stream):
+    def __init__(self, *, store, sources, documents, projects, objects, stream, analysis_contexts=None):
         self._store, self._sources, self._docs = store, sources, documents
         self._projects, self._objects, self._stream = projects, objects, stream
+        self._analysis_contexts = analysis_contexts
 
     async def initialize(self):
         await self._store.initialize()
@@ -41,8 +42,19 @@ class DocumentImpactTaskService:
             return prior
         if not self._stream:
             raise RuntimeError("持久影响分析的派发流尚未启用")
-        await self._projects.require_active(project_id)
+        project = await self._projects.require_active(project_id)
+        if self._analysis_contexts is None:
+            logger.warning("document_impact_submission_unconfigured", extra={"project_id": project_id,
+                "document_id": document_id})
+            raise RuntimeError("影响分析模型依据服务尚未注入，不能提交新任务")
+        try:
+            context = await self._analysis_contexts.capture(project, request)
+        except (ValueError, KeyError, OSError, RuntimeError) as exc:
+            logger.warning("document_impact_analysis_context_rejected", extra={"project_id": project_id,
+                "document_id": document_id, "error_type": type(exc).__name__})
+            raise
         seed = await self._sources.capture(project_id, document_id, request.difference_snapshot_id, request)
+        seed.analysis_context = context
         return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)
 
     async def get(self, project_id, document_id, task_id):
@@ -75,6 +87,16 @@ class DocumentImpactTaskService:
             raise KeyError("当前文档没有该影响提交依据")
         envelope = await self._read_input(seed, checkpoint)
         return checkpoint, envelope
+
+    async def prepare_analysis_request(self, project_id, document_id, task_id):
+        """Read saved evidence and build a request, without model dispatch."""
+        _, envelope = await self.read_input(project_id, document_id, task_id)
+        seed = await self._store.get_seed(project_id, document_id, task_id)
+        request = DocumentImpactAnalysisContexts.build_request(seed, envelope)
+        logger.info("document_impact_analysis_request_prepared", extra={"project_id": project_id,
+            "task_id": task_id, "input_sha256": envelope.input_sha256,
+            "prompt_sha256": seed.analysis_context.prompt.sha256})
+        return seed.analysis_context, request
 
     async def _read_input(self, seed, checkpoint):
         raw = (await self._objects.read_object_uri(checkpoint.storage_uri))["content"]

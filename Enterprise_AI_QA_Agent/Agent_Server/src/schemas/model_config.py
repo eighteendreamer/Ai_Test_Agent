@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from typing import Any, Literal
@@ -138,6 +139,18 @@ class ModelConfigRecord(BaseModel):
         # Keep the legacy max_tokens field aligned with max_output_tokens.
         self.max_tokens = int(self.max_output_tokens)
         return self
+
+
+def model_invocation_parameters(config: ModelConfigRecord) -> dict[str, Any]:
+    # Explicit allowlist: never persist keys, OAuth tokens or header values.
+    parameters = config.model_dump(mode="json", include={
+        "key", "provider", "transport", "model_id", "temperature", "max_tokens",
+        "max_output_tokens", "context_window", "capabilities", "auth_type", "oauth_provider",
+    })
+    for name in ("api_base_url", "extra_headers"):
+        encoded = json.dumps(getattr(config, name), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        parameters[f"{name}_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
+    return parameters
 
 
 class ModelConfigPublic(BaseModel):

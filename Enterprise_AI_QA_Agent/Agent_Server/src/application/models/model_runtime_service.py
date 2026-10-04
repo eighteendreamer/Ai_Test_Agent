@@ -25,6 +25,7 @@ from src.schemas.model_config import (
     ModelInvocationRequest,
     ModelInvocationResult,
     UnifiedMessage,
+    model_invocation_parameters,
 )
 from src.schemas.tool_runtime import ModelToolCall
 
@@ -113,9 +114,9 @@ class ModelRuntimeService:
                 raw_response={"mode": "missing_active_model", "model_key": model_key},
             )
         if expected_parameters is not None:
-            from src.schemas.case_planning_task import planning_model_parameters
-            if planning_model_parameters(config) != expected_parameters:
-                raise ValueError("规划模型参数已变化，不能使用新配置续写原任务")
+            if model_invocation_parameters(config) != expected_parameters:
+                logger.warning("model_invocation_parameters_changed", extra={"model_key": model_key})
+                raise ValueError("模型参数已变化，不能使用新配置续写原任务")
         try:
             api_key = await self._resolve_auth_token(config)
         except Exception as exc:

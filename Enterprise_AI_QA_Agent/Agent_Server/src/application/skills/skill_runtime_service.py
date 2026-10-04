@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+
 from src.registry.skills import SkillRegistry
+from src.schemas.skill_snapshot import SkillPromptSnapshot
 
 
 class SkillRuntimeService:
@@ -19,20 +22,7 @@ class SkillRuntimeService:
         for skill in self._skill_registry.get_many(skill_keys):
             skill_file = self._skills_root / skill.key / "SKILL.md"
             if include_content and skill_file.exists():
-                content = skill_file.read_text(encoding="utf-8")
-                references = self.list_references(skill.key)
-                reference_catalog = ""
-                if references:
-                    reference_catalog = (
-                        "\nAvailable references (load only when needed with the registered `skill` tool):\n"
-                        + "\n".join(f"- {path}" for path in references)
-                    )
-                blocks.append(
-                    f"## Skill: {skill.name}\n"
-                    f"Source: {skill_file}\n"
-                    f"{content.strip()}"
-                    f"{reference_catalog}"
-                )
+                blocks.append(self._full_prompt_block(skill))
                 continue
             blocks.append(
                 f"- {skill.key}: {skill.name} - {skill.description} "
@@ -40,6 +30,30 @@ class SkillRuntimeService:
                 "Use the registered `skill` loader with this key to load the full instructions."
             )
         return blocks
+
+    def _full_prompt_block(self, skill, *, require_content=False):
+        skill_file = self._skills_root / skill.key / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+        if require_content and not content.strip():
+            raise ValueError(f"Skill正文为空: {skill.key}")
+        references = self.list_references(skill.key)
+        reference_catalog = ""
+        if references:
+            reference_catalog = (
+                "\nAvailable references (load only when needed with the registered `skill` tool):\n"
+                + "\n".join(f"- {path}" for path in references)
+            )
+        return f"## Skill: {skill.name}\nSource: {skill_file}\n{content.strip()}{reference_catalog}"
+
+    def capture_prompt_blocks(self, skill_keys: list[str]) -> list[SkillPromptSnapshot]:
+        """Capture effective instructions, never a metadata-only fallback."""
+        snapshots = []
+        for key in dict.fromkeys(skill_keys):
+            skill = self._skill_registry.get(key)
+            block = self._full_prompt_block(skill, require_content=True)
+            snapshots.append(SkillPromptSnapshot(key=key, prompt_block=block,
+                sha256=hashlib.sha256(block.encode("utf-8")).hexdigest()))
+        return snapshots
 
     def list_references(self, skill_key: str) -> list[str]:
         if not self._skill_registry.get_many([skill_key]):

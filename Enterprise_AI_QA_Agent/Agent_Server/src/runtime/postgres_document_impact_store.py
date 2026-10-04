@@ -6,6 +6,8 @@ separate; this store currently exposes submission, ownership and input storage.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 
@@ -51,6 +53,18 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
 
     def _input_values(self, seed):
         return (seed.difference_snapshot.id,)
+
+    @staticmethod
+    def request_hash(payload):
+        parameters = payload.model_dump(mode="json", exclude={"creation_key"})
+        # Preserve original submission hashes when new optional fields are absent.
+        # An explicit model/environment/release still participates in identity.
+        for key in ("model_key", "environment_key", "target_release"):
+            if parameters.get(key) is None:
+                parameters.pop(key, None)
+        encoded = json.dumps(parameters, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     def _claim_phase_sql(self):
         return "CASE WHEN input_checkpoint IS NULL THEN 'preparing' ELSE 'input_saved' END"

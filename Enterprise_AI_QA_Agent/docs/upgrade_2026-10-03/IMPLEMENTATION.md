@@ -1876,3 +1876,36 @@ $env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-
 三份方案字节、20个本地引用、XML和凭据格式核对记录见plan-sync-e152-validation.json。提交前按相关文件核对diff与暂存字节；用户.gitignore不改不提交，无推送/PR。完整升级及P4模型/需求/矩阵/增量闭环仍未完成。
 
 此次首轮暂存diff检查将保留原字节的Windows证据CRLF识别为行尾空白，检查失败并停止提交。第二次检查确认CRLF问题已消除，但真实Markdown换行的两个空格和PDF交叉引用表的空格仍被报出。证据属性明确保留原字节，CRLF按真实格式检查；PDF声明binary，只有Markdown原件允许其有意义的行尾空格。源码与方案仍执行完整空白检查，原始工件不改写；最终检查通过后提交。
+
+## P4固定模型、Prompt、Skill与环境声明（2026-10-04，研究基线f5111e9e）
+
+按目标附件重新研究实际模型schema/runtime/MySQL store/registry、规划seed/检查点、Skill全文装配及项目schema，读取本地用例生成、评测工程化、Agent轨迹课程。模型参数快照从规划schema移至模型契约层，旧planning_model_parameters导入兼容；ModelRuntimeService不再反向依赖规划领域。新增影响AnalysisContexts与typed context、产品分析Skill，复用原Skill全文装配捕获effective块和SHA-256。仅新任务提交需要注入依据服务；同请求恢复先回查，不抓新配置。
+
+可编辑model_key/analysis_guidance/max_input_bytes保存MySQL独立配置document.impact_analysis_settings；冻结小型context随PG seed，完整证据仍RustFS。独立配置避免旧输入schema新增默认值改变历史canonical hash。模型密钥/OAuth及header/endpoint原值不进seed；后两者只hash，项目URL/description也只保存指纹。环境/目标发布版本仅user_declared、部署状态unknown，没有凭标签假定已生效。旧seed/请求hash保持兼容，不补造旧模型；新增非空选项参与创建身份。
+
+输入检查点后prepare_analysis_request核对固定输入、构造完整证据/JSON/原来源及固定Prompt。max_input_bytes只计算canonical Prompt/messages UTF-8内容，不是假Tokenizer、精确模型窗口计量或完整provider payload大小。超限拒绝、不截断；输出>=窗口、缺配置/Skill/注入与坏Prompt hash明确拒绝。构造请求没有模型dispatch/响应持久化，不把任务input_saved当分析成功。
+
+实际新专项先12通过0跳过47.37秒；扩大第一次75通过1失败91.20秒：规划独立CLI的所有业务断言已走完，finally因parse FK表没有登记清理失败。按实际planning_worker_runtime补夹具启动前归属检查和快照→任务清理，不改产品或业务断言。首次9张PG与1张MySQL隔离表查证仅内部FK后清理，无CASCADE；清理记录因SQLAlchemy RowMapping不能JSON序列化首写失败，清理已提交，后续重新只读核对全表不存在并保存记录。原规划测试写固定文件名覆盖了旧CLI证据，已保存本次新字节到p4-analysis-context-regression-first-planning，再恢复HEAD原字节；新QA_PLANNING_TASK_EVIDENCE_DIR防止再次覆盖。
+
+最终以下命令9模块 **76通过、0跳过，89.95秒**（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-analysis-context-verified')
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-analysis-context-sources-verified')
+$env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-analysis-context-planning-verified')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_case_planning_tasks.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_skill_registry_reload.py tests/test_skill_management_boundaries.py tests/test_test_case_generation_pipeline.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-analysis-context-regression-verified.xml
+```
+
+新5项专项含真实MD/DOCX/PDF、MySQL模型/分析配置、PG任务/新Store恢复、RustFS完整输入和3次受控HTTP（每格式1次）；旧12步嵌套JSON、原来源、system prompt和输出参数进入实际请求。修改策略为1字节、项目、模型参数及移除Skill后仍恢复旧request；参数变化拒绝，HTTP增加0。凭据单独轮换不改变非敏感快照。历史seed/hash回放、缺配置/Skill、未注入与不可能输出预算、坏Prompt哈希及字节超限均有实际断言。单输入大小限制不是已实现分批；3次HTTP的响应是受控固定文本，不是实际AI影响判断，未提交候选。
+
+独立规划CLI的真实中断/重启/终态重投在76项内通过；影响恢复仍只新Store/Service读同PG，不冒充独立影响进程。实际当前schema另外读取p4-fixed-input-tasks-query-final三份已提交输入，canonical/object hash未变且旧模型context保持None。编译核对首轮按utf-8字符串读取含BOM源码导致验证脚本SyntaxError，随后使用真实源码字节compile正确处理编码标记，并通过；产品pytest导入没有此错误。
+
+无新依赖、生产迁移或公开前后端契约变更；故未重复前端构建/浏览器。没有生产impact初始化/流/独立Worker/公开API，也没有调用真实默认影响模型或执行业务测试。候选/引用核验、需求评审/矩阵/增量、环境部署证据与P0—P5其余范围仍未完成。下一步批次清单/跨节读取/真实预算和持久意图/响应/未知恢复，之后才接结果与正式产品验收。
+
+原方案/项目PLAN/Codex镜像全文同步，原失败/历史证据保留，校验记录见p4-analysis-context-validation.json。相关源码与测试实际引用已检索，新增测试因ignore显式加入；用户.gitignore不改不提交，不推送或建PR。
+
+交付暂存复核：114份相关文件，95份原始工件/验证元数据与暂存字节一致；3份方案全文一致、20个本地引用存在、14份源码字节编译通过，凭据格式扫描无匹配。最终暂存diff检查通过，历史CLI工件与HEAD原字节一致，用户.gitignore未暂存且哈希保持原值。测试会话均已终止，未推送/建PR；完整目标继续。

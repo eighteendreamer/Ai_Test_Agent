@@ -14,6 +14,11 @@ from psycopg.errors import CheckViolation
 from sqlalchemy.exc import IntegrityError
 
 from src.application.documents.impact_task_service import DocumentImpactTaskService
+from src.application.documents.impact_analysis_context import DocumentImpactAnalysisContexts, IMPACT_SKILL_KEY
+from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.skills.skill_runtime_service import SkillRuntimeService
+from src.infrastructure.model_config_store import MySQLModelConfigStore
+from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_document_impact_store import PostgresDocumentImpactStore
 from src.runtime.store import ContinuationLeaseLostError
@@ -21,6 +26,10 @@ from src.schemas.api_docs import ApiDocVersionUploadRequest
 from src.schemas.case_management import TestCaseVersionCreateRequest as VersionRequest
 from src.schemas.document_impact import DocumentImpactPolicy, DocumentImpactTaskRequest
 from src.schemas.project import ProjectCreateRequest
+from src.schemas.settings import ModelConfigUpdateRequest
+from src.schemas.model_config import ModelCapabilitiesOverride
+from src.registry.models import ModelRegistry
+from src.registry.skills import SkillRegistry
 from test_document_difference_tasks import comparison_environment
 from test_document_impact_sources import draft, setup, source
 
@@ -38,12 +47,33 @@ async def task_environment(tmp_path, extension="md"):
         await env.cases.submit_review(case.case.id)
         await env.cases.activate(case.case.id)
         store = PostgresDocumentImpactStore(env.settings, lease_seconds=30)
+        model_table = "up_im_" + uuid4().hex[:12]
+        env.settings.database.llm_model_table = model_table
+        with mysql_raw_connection(env.settings) as conn, conn.cursor() as cur:
+            cur.execute("SHOW TABLES LIKE %s", (model_table,))
+            assert cur.fetchone() is None
+        models = MySQLModelConfigStore(env.settings)
+        await asyncio.to_thread(models.initialize)
+        await asyncio.to_thread(models.upsert, ModelConfigUpdateRequest(model_name="impact-fixture", provider="openai",
+            transport="openai_chat_completions", base_url="http://127.0.0.1:9/v1", api_key="local-fixture-marker",
+            is_active=True, use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
+            context_window=128000, max_output_tokens=1024))
+        skills_root = tmp_path / "analysis-skills"
+        skill_file = skills_root / IMPACT_SKILL_KEY / "SKILL.md"
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_bytes((Path(__file__).resolve().parents[1] / "src" / "SKILLS" / IMPACT_SKILL_KEY / "SKILL.md").read_bytes())
+        runtime = ModelRuntimeService(ModelRegistry(models), env.settings)
+        skill_runtime = SkillRuntimeService(SkillRegistry(skills_root))
+        contexts = DocumentImpactAnalysisContexts(models=runtime, skills=skill_runtime, configs=impact_configs)
+        env.impact_models, env.impact_runtime, env.impact_skill_file = models, runtime, skill_file
+        env.impact_contexts, env.impact_skills = contexts, skill_runtime
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             for table in store.tables:
                 cur.execute("SELECT to_regclass(%s) AS existing", (table,))
                 assert cur.fetchone()["existing"] is None
         service = DocumentImpactTaskService(store=store, sources=sources, documents=env.docs,
-            projects=env.projects, objects=env.objects, stream="isolated:impact:" + uuid4().hex)
+            projects=env.projects, objects=env.objects, stream="isolated:impact:" + uuid4().hex,
+            analysis_contexts=contexts)
         owned, original_upload = [], env.objects.store_uploaded_bytes
         async def tracked(**kwargs):
             saved = await original_upload(**kwargs)
@@ -61,6 +91,9 @@ async def task_environment(tmp_path, extension="md"):
             with postgres_connect(env.settings) as conn, conn.cursor() as cur:
                 for table in store.tables:
                     cur.execute(f'DROP TABLE "{table}"')
+            with mysql_raw_connection(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"DROP TABLE `{model_table}`")
+                conn.commit()
 
 
 def expire(store, task_id):

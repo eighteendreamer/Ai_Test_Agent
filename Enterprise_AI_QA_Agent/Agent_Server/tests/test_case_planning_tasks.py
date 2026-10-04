@@ -508,6 +508,14 @@ async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_do
         group = "fixture-process:case_planning" if production_cli else "fixture-process"
         extra_tables = []
         if production_cli:
+            from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
+            # The production read runtime initializes parse metadata too. Record
+            # ownership before starting it and release children before doc versions.
+            for table in PostgresDocumentParseStore(env.settings).tables:
+                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cur.fetchone()["existing"] is None
+                extra_tables.append(table)
             for field in ("postgres_test_case_embedding_table", "postgres_recording_table", "postgres_recording_event_table"):
                 table = "up_pc_" + uuid4().hex[:12]
                 setattr(env.settings.database, field, table); extra_tables.append(table)
@@ -577,7 +585,10 @@ async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_do
             assert process.returncode == 0 and b"processed=1" in out, (out + err).decode(errors="replace")
             assert len(calls) == 3
             evidence_name = "p2-planning-worker-cli.json" if production_cli else "p2-planning-worker-probe.json"
-            (Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03" / evidence_name).write_text(json.dumps({
+            evidence_dir = Path(os.getenv("QA_PLANNING_TASK_EVIDENCE_DIR") or
+                str(Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"))
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            (evidence_dir / evidence_name).write_text(json.dumps({
                 "scope": "production CLI and dedicated planning runtime" if production_cli else "isolated process host; production RedisTaskWorker/PlanningTaskHandler; full API lifespan not used",
                 "task_id": task.id, "plan_id": result.plan_id, "attempt_count": result.attempt_no, "calls": calls,
                 "retained_fixed_case_version": True, "retained_document_bytes": True, "terminal_redelivery_no_model_calls": True,

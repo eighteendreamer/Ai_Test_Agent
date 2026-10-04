@@ -1,0 +1,56 @@
+...............................F........................................ [ 94%]
+....                                                                     [100%]
+================================== FAILURES ===================================
+_ test_independent_worker_restart_uses_mysql_model_http_and_persisted_document[True] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DependentObjectsStillExist: cannot drop table up_jd_67499e601d83_versions because other objects depend on it
+E   DETAIL:  constraint up_jd_67499e601d83_parse_tasks_version_id_fkey on table up_jd_67499e601d83_parse_tasks depends on table up_jd_67499e601d83_versions
+E   constraint up_jd_67499e601d83_parse_snapshots_version_id_fkey on table up_jd_67499e601d83_parse_snapshots depends on table up_jd_67499e601d83_versions
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_planning_tasks.py:459: in test_independent_worker_restart_uses_mysql_model_http_and_persisted_document
+    async with tasks_environment(tmp_path) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_planning_tasks.py:55: in tasks_environment
+    async with environment(tmp_path, live=True, model=model) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_planning.py:54: in environment
+    async with _stores(tmp_path, live) as (settings, project_store, case_store, configs, doc_store, objects):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_json_templates.py:104: in _stores
+    cursor.execute(f'DROP TABLE IF EXISTS "{table}"')
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.InternalError: (psycopg.errors.DependentObjectsStillExist) cannot drop table up_jd_67499e601d83_versions because other objects depend on it
+E   DETAIL:  constraint up_jd_67499e601d83_parse_tasks_version_id_fkey on table up_jd_67499e601d83_parse_tasks depends on table up_jd_67499e601d83_versions
+E   constraint up_jd_67499e601d83_parse_snapshots_version_id_fkey on table up_jd_67499e601d83_parse_snapshots depends on table up_jd_67499e601d83_versions
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+E   [SQL: DROP TABLE IF EXISTS "up_jd_67499e601d83_versions"]
+E   (Background on this error at: https://sqlalche.me/e/20/2j85)
+=========================== short test summary info ===========================
+FAILED tests/test_case_planning_tasks.py::test_independent_worker_restart_uses_mysql_model_http_and_persisted_document[True]
+1 failed, 75 passed in 91.20s (0:01:31)

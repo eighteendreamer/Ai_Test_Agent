@@ -28,9 +28,9 @@
 
 配置留在 MySQL，业务记录与冻结元数据留在 PostgreSQL，原件及大结果留在 RustFS。三方读取服务仅组装输入，不写数据库、不调用模型、不创建草稿或运行；后续持久任务负责冻结并推进完整闭环。
 
-## 持久影响任务：工程设计（内部固定提交/输入已验，模型及公开接入待实现）
+## 持久影响任务：工程设计（内部固定提交/输入及模型依据已验，批次与公开接入待实现）
 
-本次进一步读取 `difference_service.py`、`postgres_document_operation_store.py`、`document_operation_task_handler.py`、`planning_task_service.py`、`planning_service.py`、`planning_workflow.py`、`case_planning_task.py`、`document_impact.py` 和生产初始化/容器引用。尚未编写影响任务产品代码，以下是对步骤 3 的细化，不能当作公开接口已经存在。
+以下为内部固定输入实施前的设计查证记录：读取 `difference_service.py`、`postgres_document_operation_store.py`、`document_operation_task_handler.py`、`planning_task_service.py`、`planning_service.py`、`planning_workflow.py`、`case_planning_task.py`、`document_impact.py` 和生产初始化/容器引用。当前已实施范围以文末固定输入与模型依据验收节为准；这些设计目标不能当作公开接口已经存在。
 
 ### 代码事实与约束
 
@@ -108,7 +108,7 @@ ready → invoking〔先存逻辑调用ID、输入hash〕
 
 首轮6通过/1失败为SQLAlchemy包装CheckViolation成IntegrityError，调整异常断言没有改产品；后续全部输入专项通过。扩大回归60通过/2失败分别为旧解析1秒无心跳执行、旧真实比较0.6秒租约时序。原基线两项2通过6.42秒，当前两项2通过6.58秒；为验证职责将恢复场景lease=30再显式SQL过期、心跳场景lease=3且真实等待3.2秒，仍需至少2次heartbeat并跨完整租约。没有放宽产品租约、取消旧worker保护或删断言。最终相关5模块62通过/0跳过78.97秒；新增分页查询后7项复验通过17.22秒。编译通过；公开类型未改不重复前端构建。证据`p4-fixed-input-*`，失败XML不覆盖。
 
-下一步固定模型非敏感参数、Prompt/Skill、环境、实际调用预算和批次清单/响应检查点，再接AI引用核验/候选与生产API/独立Worker/任务池/正式App。当前input seed尚无模型参数，不提前宣称AI分析可用；稳定需求/评审/矩阵/增量草稿/环境适用性仍待完成。
+下一步固定模型非敏感参数、Prompt/Skill、环境、实际调用预算和批次清单/响应检查点，再接AI引用核验/候选与生产API/独立Worker/任务池/正式App。此处为443f046a阶段的历史状态，当时input seed尚无模型参数；当前模型依据实现见文末，不宣称AI分析可用；稳定需求/评审/矩阵/增量草稿/环境适用性仍待完成。
 
 ## 三方读取的验收
 
@@ -137,3 +137,19 @@ ready → invoking〔先存逻辑调用ID、输入hash〕
 失败 XML/工件保留：旧断言/内部接口未同步；新专项错误匹配中文而原实现返回 archived；产品夹具误向旧 run 接口传 creation_key、未等待实际提交完成便刷新、把 Windows 主动终止码 1 当正常退出失败，以及未登记 embedding 流却预期 3 个 Job。均按实际 schema、请求处理事件、进程终态与生产初始化配置修正夹具，没有给产品增加特判。最终证据为 p4-version-reviews-regression-final、frontend-final、build-final、product-registered。
 
 历史迁移的按项目内部预览/执行、正文/hash 不变和停用/归档保持已在隔离环境验证；没有增加公开迁移入口，没有迁移生产历史数据，没有完整验收旧套件/原失败结果的迁移流程。后续要补运维入口/投影重建与完整迁移证据。默认模型、持久影响任务、需求评审、矩阵、增量草稿及 P0—P5 其他剩余项均保持未完成。
+
+## 模型、Prompt、Skill及环境声明冻结（研究基线f5111e9e）
+
+读取实际ModelRuntimeService、MySQLModelConfigStore/ModelRegistry、planning_model_parameters/规划工作流、SkillRegistry/SkillRuntimeService及项目schema；继续核对本地合成数据/评测/Agent协议课程。发现两个边界：runtime从planning schema导入通用模型快照职责倒挂；项目没有正式部署版本或能证明生效的环境实体。采用已有非敏感允许清单，不新建模型SDK；函数移到model_config，planning旧名作为兼容导入。环境只冻结用户声明，部署状态unknown。
+
+新增DocumentImpactAnalysisContexts及独立analysis schema。MySQL的document.impact_analysis_settings保存模型选择、可编辑分析指导和输入字节上限；提交冻结修订、实际模型参数、完整Prompt/Skill块及hash、项目信息指纹。PG seed保存小型固定依据，原件/完整输入继续RustFS。没有修改旧DocumentImpactInput及旧策略结构；历史三份已提交MD/DOCX/PDF对象以新schema重算canonical/object hash均不变。旧seed没有analysis_context保持None，不能默认接当前模型。
+
+SkillRuntimeService.capture_prompt_blocks复用原全文组装，捕获effective block和完整SHA-256，缺失/空文件不降级成元数据；原build_prompt_blocks行为保留。产品新增analyze-document-impact Skill，只提出候选，不执行或修改正式记录。新创建必须注入模型依据服务，读取/同请求恢复仍可无该服务；新增可选model/environment/release字段未填写时保持旧请求hash，有值时参与幂等身份。
+
+固定输入检查点后才可prepare_analysis_request，完整旧/新/当时来源与12步JSON均进入请求，不重新读取配置/Skill。max_input_bytes计canonical Prompt/messages UTF-8内容，不是Token计量，不涵盖所有provider封装；超限拒绝、不截断。窗口/输出预算已冻结并拒绝输出>=窗口，但实际Tokenizer/估算、批次/跨节引用清单、总体预算和持久调用响应仍待实现。该构造函数不发送模型、不把输入标为分析完成。
+
+实测首轮12通过47.37秒；扩大首次75通过1失败91.20秒，失败仅在独立规划CLI测试finally：production planning runtime初始化parse表，旧夹具没登记/清理。按启动前to_regclass验证新增表归属，按快照→任务→文档历史顺序清理，不CASCADE，不改产品初始化。首次留下的9张PG与1张MySQL隔离表核对无外部FK后清理并再次确认不存在；清理元数据首写因RowMapping不能JSON序列化失败，清理已经提交，随后只读复核后保存记录。CLI历史文件首次被原夹具覆盖，实际新证据已另存并恢复HEAD原字节；后续通过QA_PLANNING_TASK_EVIDENCE_DIR写新目录。
+
+最终相关9模块76通过0跳过89.95秒。新专项实际MD/DOCX/PDF、MySQL模型/配置、PG任务/恢复、RustFS输入；每种格式实际HTTP一次发送固定Prompt/完整证据，改输出参数时HTTP增加0。修改指导/模型/项目并移除Skill后新Store恢复同依据。旧hash/seed回放、不伪造模型、坏Prompt hash、缺模型/Skill、未注入、输出>=窗口及1字节预算拒绝均验。原规划独立CLI实际进程中断/恢复和终态重投继续通过；这不证明独立影响Worker进程已实现，也不是默认模型影响判断。
+
+公开契约、生产容器/流/Worker/前端未接，无新依赖或生产迁移。输入任务仍running/input_saved，候选/引用核验、需求/评审/矩阵/增量与P0—P5其余目标保持未完成。下一步实现可追溯批次清单、调用预算、持久意图/响应与未知结果恢复，然后再接候选及真实默认模型。
