@@ -19,9 +19,11 @@ from src.runtime.store import ContinuationLeaseLostError
 logger = logging.getLogger(__name__)
 
 
-class PostgresDocumentOperationStore(ABC):
+class PostgresDocumentTaskStore(ABC):
     _extra_input_columns = ()
     _uuid_record_fields = ("id", "project_id", "document_id", "version_id", "snapshot_id")
+    _additional_phases = ()
+    _timeout_json_path = "{config,payload,policy,timeout_seconds}"
 
     def __init__(self, settings, *, lease_seconds: float = 30):
         self._settings = settings
@@ -46,11 +48,21 @@ class PostgresDocumentOperationStore(ABC):
     def _input_values(self, seed):
         return ()
 
+    def _claim_phase_sql(self):
+        return f"CASE WHEN checkpoint IS NULL THEN '{self._working_phase}' ELSE 'result_saved' END"
+
+    def _claim_values(self, row):
+        return {}
+
+    def _initialize_results(self, cur):
+        """Tasks without a final-result store need no additional tables."""
+
     @property
     def tables(self):
-        return [self._snapshots, self._tasks]
+        return [self._tasks]
 
     async def initialize(self):
+        phases = ",".join(f"'{phase}'" for phase in ("queued", self._working_phase, *self._additional_phases, "result_saved", "finished"))
         def create():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._tasks} (
@@ -60,7 +72,7 @@ class PostgresDocumentOperationStore(ABC):
                     {self._input_schema()}
                     creation_key TEXT NOT NULL, request_hash TEXT NOT NULL, seed JSONB NOT NULL,
                     status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','completed','failed')),
-                    phase TEXT NOT NULL DEFAULT 'queued' CHECK(phase IN ('queued','{self._working_phase}','result_saved','finished')),
+                    phase TEXT NOT NULL DEFAULT 'queued' CHECK(phase IN ({phases})),
                     message TEXT NOT NULL DEFAULT '{self._label}任务已保存，等待 Worker',
                     attempt_no INTEGER NOT NULL DEFAULT 0, attempt_id UUID NULL, worker_id TEXT NULL,
                     lease_token TEXT NULL, lease_expires_at TIMESTAMPTZ NULL,
@@ -68,14 +80,8 @@ class PostgresDocumentOperationStore(ABC):
                     error_code TEXT NULL, failure_artifact JSONB NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), completed_at TIMESTAMPTZ NULL,
                     UNIQUE(project_id,document_id,creation_key))""")
-                cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._snapshots} (
-                    id UUID PRIMARY KEY, task_id UUID NOT NULL UNIQUE REFERENCES {self._tasks}(id),
-                    project_id UUID NOT NULL REFERENCES {self._projects}(id),
-                    document_id UUID NOT NULL REFERENCES {self._docs}(id),
-                    version_id UUID NOT NULL REFERENCES {self._docs}_versions(id),
-                    record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)""")
                 cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{self._tasks}_document ON {self._tasks}(project_id,document_id,created_at DESC)")
-                cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{self._snapshots}_version ON {self._snapshots}(project_id,document_id,version_id,created_at DESC)")
+                self._initialize_results(cur)
         await asyncio.to_thread(create)
 
     @staticmethod
@@ -91,15 +97,6 @@ class PostgresDocumentOperationStore(ABC):
     @abstractmethod
     def _validate_seed(self, cur, seed):
         """Recheck operation-specific fixed inputs within the submission transaction."""
-
-    @abstractmethod
-    def _validate_snapshot(self, snapshot, seed):
-        """Validate operation-specific output identity before saving a checkpoint."""
-
-    def validate_snapshot_metadata(self, snapshot, seed):
-        if snapshot.seed != seed:
-            raise ValueError(f"{self._label}结果不能替换固定输入")
-        self._validate_snapshot(snapshot, seed)
 
     async def submit(self, seed, *, creation_key: str, request_hash: str, stream: str):
         def insert():
@@ -170,27 +167,15 @@ class PostgresDocumentOperationStore(ABC):
                 has_more=len(rows) > limit, limit=limit, offset=offset)
         return await asyncio.to_thread(read)
 
-    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
-        def read():
-            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                cur.execute(f"""SELECT s.record FROM {self._snapshots} s JOIN {self._tasks} t ON t.id=s.task_id
-                    WHERE s.project_id=%s AND s.document_id=%s AND (%s::uuid IS NULL OR s.version_id=%s::uuid)
-                    ORDER BY t.created_at DESC,t.id DESC LIMIT %s OFFSET %s""",
-                    (project_id, document_id, version_id, version_id, limit + 1, offset))
-                rows = cur.fetchall()
-            return self._snapshot_page_type(items=[self._snapshot_type.model_validate(row["record"]) for row in rows[:limit]],
-                has_more=len(rows) > limit, limit=limit, offset=offset)
-        return await asyncio.to_thread(read)
-
     async def claim(self, project_id, task_id, *, worker_id):
         def update():
             attempt, token = str(uuid4()), uuid4().hex
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                cur.execute(f"""UPDATE {self._tasks} SET status='running',phase=CASE WHEN checkpoint IS NULL THEN '{self._working_phase}' ELSE 'result_saved' END,
+                cur.execute(f"""UPDATE {self._tasks} SET status='running',phase={self._claim_phase_sql()},
                     attempt_no=attempt_no+1,attempt_id=%s,worker_id=%s,lease_token=%s,
                     lease_expires_at=clock_timestamp()+%s*INTERVAL '1 second',
                     deadline_at=COALESCE(deadline_at,clock_timestamp()+
-                        (seed->'config'->'payload'->'policy'->>'timeout_seconds')::double precision*INTERVAL '1 second'),
+                        (seed#>>'{self._timeout_json_path}')::double precision*INTERVAL '1 second'),
                     updated_at=NOW(),message='Worker 已领取{self._label}任务' WHERE project_id=%s AND id=%s
                     AND (status='queued' OR (status='running' AND lease_expires_at<=clock_timestamp()))
                     RETURNING *,EXTRACT(EPOCH FROM (deadline_at-clock_timestamp())) AS remaining_seconds""",
@@ -199,8 +184,8 @@ class PostgresDocumentOperationStore(ABC):
             if not row:
                 return None
             return self._claim_type(task=self._record(row), seed=self._seed_type.model_validate(row["seed"]),
-                snapshot=self._snapshot_type.model_validate(row["checkpoint"]) if row["checkpoint"] else None,
-                attempt_id=attempt, worker_id=worker_id, lease_token=token, remaining_seconds=float(row["remaining_seconds"]))
+                attempt_id=attempt, worker_id=worker_id, lease_token=token, remaining_seconds=float(row["remaining_seconds"]),
+                **self._claim_values(row))
         claim = await asyncio.to_thread(update)
         logger.info(f"{self._log_prefix}_task_claimed" if claim else f"{self._log_prefix}_task_claim_skipped",
             extra={"project_id": project_id, "task_id": task_id, "worker_id": worker_id})
@@ -233,6 +218,65 @@ class PostgresDocumentOperationStore(ABC):
         doc = cur.fetchone()
         if not doc or str(doc["project_id"]) != claim.task.project_id:
             raise ValueError(f"文档项目归属已变化，不能发布原项目{self._label}结果")
+
+    def _record(self, row):
+        keys = {name: row[name] for name in self._task_type.model_fields}
+        for name in self._uuid_record_fields:
+            keys[name] = str(keys[name]) if keys[name] is not None else None
+        return self._task_type.model_validate(keys)
+
+    async def finish_failed(self, claim, *, error_code, message):
+        def update():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._owned(cur, claim)
+                cur.execute(f"""UPDATE {self._tasks} SET status='failed',phase='finished',error_code=%s,message=%s,
+                    updated_at=NOW(),completed_at=NOW(),lease_token=NULL,worker_id=NULL,lease_expires_at=NULL
+                    WHERE id=%s RETURNING *""", (error_code, message, claim.task.id))
+                return self._record(cur.fetchone())
+        saved = await asyncio.to_thread(update)
+        logger.info(f"{self._log_prefix}_task_finished", extra={"task_id": saved.id, "status": saved.status})
+        return saved
+
+
+class PostgresDocumentOperationStore(PostgresDocumentTaskStore):
+    """Single final snapshot over the shared document task lifecycle."""
+
+    @property
+    def tables(self):
+        return [self._snapshots, self._tasks]
+
+    def _claim_values(self, row):
+        return {"snapshot": self._snapshot_type.model_validate(row["checkpoint"]) if row["checkpoint"] else None}
+
+    def _initialize_results(self, cur):
+        cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._snapshots} (
+            id UUID PRIMARY KEY, task_id UUID NOT NULL UNIQUE REFERENCES {self._tasks}(id),
+            project_id UUID NOT NULL REFERENCES {self._projects}(id),
+            document_id UUID NOT NULL REFERENCES {self._docs}(id),
+            version_id UUID NOT NULL REFERENCES {self._docs}_versions(id),
+            record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL)""")
+        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{self._snapshots}_version ON {self._snapshots}(project_id,document_id,version_id,created_at DESC)")
+
+    @abstractmethod
+    def _validate_snapshot(self, snapshot, seed):
+        """Validate operation-specific output identity before saving a checkpoint."""
+
+    def validate_snapshot_metadata(self, snapshot, seed):
+        if snapshot.seed != seed:
+            raise ValueError(f"{self._label}结果不能替换固定输入")
+        self._validate_snapshot(snapshot, seed)
+
+    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"""SELECT s.record FROM {self._snapshots} s JOIN {self._tasks} t ON t.id=s.task_id
+                    WHERE s.project_id=%s AND s.document_id=%s AND (%s::uuid IS NULL OR s.version_id=%s::uuid)
+                    ORDER BY t.created_at DESC,t.id DESC LIMIT %s OFFSET %s""",
+                    (project_id, document_id, version_id, version_id, limit + 1, offset))
+                rows = cur.fetchall()
+            return self._snapshot_page_type(items=[self._snapshot_type.model_validate(row["record"]) for row in rows[:limit]],
+                has_more=len(rows) > limit, limit=limit, offset=offset)
+        return await asyncio.to_thread(read)
 
     async def save_snapshot_checkpoint(self, claim, snapshot):
         def update():
@@ -295,9 +339,3 @@ class PostgresDocumentOperationStore(ABC):
                 row = cur.fetchone()
                 return self._snapshot_type.model_validate(row["record"]) if row else None
         return await asyncio.to_thread(read)
-
-    def _record(self, row):
-        keys = {name: row[name] for name in self._task_type.model_fields}
-        for name in self._uuid_record_fields:
-            keys[name] = str(keys[name]) if keys[name] is not None else None
-        return self._task_type.model_validate(keys)

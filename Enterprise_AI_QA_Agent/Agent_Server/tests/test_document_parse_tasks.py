@@ -168,6 +168,9 @@ async def test_actual_parallel_submission_is_one_task_and_one_outbox(tmp_path):
 
 async def test_actual_saved_result_recovers_without_reparsing_and_fences_old_attempt(tmp_path, monkeypatch):
     async with parsing_environment(tmp_path) as (env, service, store, _, _):
+        # Direct service execution has no heartbeat. This test expires the
+        # lease explicitly after saving, not through parser/startup wall time.
+        store.lease_seconds = 30
         project, doc, _ = await upload(env, tmp_path)
         task = await service.submit(project.id, doc.id, DocumentParseTaskRequest(creation_key="recovery", version_id=doc.current_version_id))
         original_claim = await store.claim(project.id, task.id, worker_id="interrupted-worker")

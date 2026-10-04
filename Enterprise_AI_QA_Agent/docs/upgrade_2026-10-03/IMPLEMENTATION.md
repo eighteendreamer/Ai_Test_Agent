@@ -1827,3 +1827,32 @@ $env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2
 三份全文SHA256、原项目历史字节、链接存在性、XML实际结果、完整阶段与核心约束、原件/输入hash另核对，结果保存在plan-current-validation.json；Git仅提交本轮方案/设计/记录及新证据，不提交用户.gitignore，不推送或建PR。完整P0—P5和P4业务闭环继续未完成。
 
 交付核对：21份暂存文件均在本轮文档目录，17份原件/输入/验证与历史备份的暂存字节一致；三份方案全文一致，21个本地链接存在，4份固定输入canonical SHA256一致，XML为31项/0错误/0失败/0跳过。可解码暂存文本凭据格式扫描无匹配，方案/设计/记录/属性diff检查通过；用户.gitignore未暂存。
+
+## P4固定提交与输入检查点（2026-10-04，研究基线443f046a）
+
+先读原目标附件、当前主方案/P4设计、来源/版本/比较/解析/规划/租约/数据库适配及真实测试夹具。确认旧来源prepare每次读取当前配置/候选，不适合恢复；共享document operation强制最终快照，不适合输入和批次阶段。新增元数据capture、固定prepare和全record hash，比较get_snapshot只读metadata；原prepare仍共用内核。对已选version捕获治理快照及完整record hash，不更换当前启用/最新版本，不重新下载模板。
+
+PostgresDocumentTaskStore抽取既有提交/Outbox/租约/查询/失败职责，单结果PostgresDocumentOperationStore保持旧解析/比较表、DTO与结果语义。新增内部ImpactStore自己的任务表/input_checkpoint，ImpactTaskService元数据提交、原请求查询、固定输入准备/读取和分页。任务/Outbox同事务；正文RustFS、元数据PG，配置MySQL。未知提交保留对象/错误，不在input_saved状态标AI完成；后续模型参数/Prompt/Skill/环境、批次/响应/结果、API/Worker/页面仍未接，不伪装公开能力。
+
+实际验证（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-fixed-input-tasks-final')
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-fixed-input-sources-final')
+$env:QA_DOCUMENT_DIFFERENCE_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-fixed-input-difference-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_tasks.py tests/test_document_impact_sources.py tests/test_document_parse_tasks.py tests/test_document_difference_tasks.py tests/test_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-fixed-input-regression-final.xml
+```
+
+**62通过、0跳过，78.97秒**。新7项真实MD/DOCX/PDF、MySQL/PG/RustFS专项：提交不下载；随后改策略为拒绝级预算、文档追加V3、用例追加/归档及新用例后仍读取固定范围；8次并发只1任务/Outbox；检查点实际提交成功但回执丢失，新Store/Service读取同PG恢复而不prepare，旧worker和检查点改写拒绝；Outbox约束失败回滚、完整record篡改拒绝；错误项目/坏对象和准备拒绝不报告分析成功。输入后仍running/input_saved；人工测试终态failed保留输入且不可重领。模型0调用。随后新增版本筛选/分页并专项复验 **7通过、0跳过17.22秒**，证据query-final，不改写此前final结果。编译实际通过。
+
+首轮7项6通过/1失败是只捕获底层CheckViolation，实际SQLAlchemy包装为IntegrityError；修正测试断言，产品未吞错。扩大首轮60通过/2失败分别为原解析1秒租约下无heartbeat直接execute、原比较0.6秒真实Worker租约时序。以原443f046a文件临时隔离复验两项2通过6.42秒，随后恢复工作区字节，当前两项2通过6.58秒。恢复测试改为lease=30并显式SQL过期，心跳测试lease=3/真实等待3.2秒且至少2次续租，仍验证跨整个lease及终态重投；没有给产品放宽租约、取消写入保护或弱化业务断言。最终扩大回归全过；所有失败XML保留。
+
+共享抽取只移动原任务/最终结果职责并加入领域阶段与配置timeout路径，未更改公开DTO/原解析比较API；现有真实解析CLI、比较Redis Worker、结果固定/故障/恢复也在62项内通过。本轮没有独立impact进程/真实影响模型/正式App验收，没有生产初始化/DDL迁移、前端改动或新依赖。新源码仍内部能力，未知未引用对象的运维核对/补偿入口后续完善。完整P0—P5未完成。
+
+方案/原附件/镜像全文同步，实际XML和3个MD/DOCX/PDF持久输入canonical/object哈希/大小/状态核对见p4-fixed-input-validation.json。新增测试受项目ignore须显式加入；用户.gitignore不改不提交，无推送/PR。
+
+交付复核：147份相关暂存文件，134份原始证据字节与暂存一致；文本凭据格式扫描无匹配，3份方案全文一致，20个本地链接存在。产品源码/实际测试与方案diff检查通过；源码编译实际通过，没有活跃测试会话遗留。公开前后端契约未改，新的内部任务DTO仅由本轮服务/Store/测试消费，消费者引用另逐项核对。没有生产迁移；部署接入与模型验收继续。

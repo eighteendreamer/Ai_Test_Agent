@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="7" time="18.756" timestamp="2026-10-04T20:35:56.173349+08:00" hostname="EIghteen"><testcase classname="tests.test_document_impact_tasks" name="test_submission_freezes_scope_without_download_and_prepares_after_mutation[md]" time="2.436" /><testcase classname="tests.test_document_impact_tasks" name="test_submission_freezes_scope_without_download_and_prepares_after_mutation[docx]" time="2.306" /><testcase classname="tests.test_document_impact_tasks" name="test_submission_freezes_scope_without_download_and_prepares_after_mutation[pdf]" time="2.330" /><testcase classname="tests.test_document_impact_tasks" name="test_concurrent_submission_and_replay_precede_changed_configuration" time="2.002" /><testcase classname="tests.test_document_impact_tasks" name="test_saved_checkpoint_unknown_reply_new_store_and_stale_worker" time="2.221" /><testcase classname="tests.test_document_impact_tasks" name="test_outbox_failure_rolls_back_submission_and_fixed_version_tampering_is_rejected" time="1.867"><failure message="sqlalchemy.exc.IntegrityError: (psycopg.errors.CheckViolation) new row for relation &quot;up_dp_ob_a9d96ad4db4c&quot; violates check constraint &quot;reject_impact&quot;&#10;DETAIL:  Failing row contains (4, document-impact:6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0, isolated:impact:75387c56669f44aeba222d2445531d29, {&quot;task_id&quot;: &quot;6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0&quot;, &quot;task_type&quot;:..., 0, null, null, null, null, 2026-10-04 12:36:12.057637+00, 2026-10-04 12:36:12.057637+00).&#10;[SQL: INSERT INTO up_dp_ob_a9d96ad4db4c(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)]&#10;[parameters: ('document-impact:6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0', 'isolated:impact:75387c56669f44aeba222d2445531d29', '{&quot;schema_version&quot;:1,&quot;task_type&quot;:&quot;document_impact&quot;,&quot;project_id&quot;:&quot;0b226708-dc8d-4323-b4dc-3a8a58622f69&quot;,&quot;task_id&quot;:&quot;6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0&quot;}')]&#10;(Background on this error at: https://sqlalche.me/e/20/gkpj)">..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.CheckViolation: new row for relation "up_dp_ob_a9d96ad4db4c" violates check constraint "reject_impact"
+E   DETAIL:  Failing row contains (4, document-impact:6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0, isolated:impact:75387c56669f44aeba222d2445531d29, {"task_id": "6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0", "task_type":..., 0, null, null, null, null, 2026-10-04 12:36:12.057637+00, 2026-10-04 12:36:12.057637+00).
+
+The above exception was the direct cause of the following exception:
+tests\test_document_impact_tasks.py:209: in test_outbox_failure_rolls_back_submission_and_fixed_version_tampering_is_rejected
+    await service.submit(project.id, doc.id, request)
+src\application\documents\impact_task_service.py:46: in submit
+    return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_document_operation_store.py:134: in submit
+    saved = await asyncio.to_thread(insert)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_document_operation_store.py:131: in insert
+    cur.execute(f"INSERT INTO {self._outbox}(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)",
+src\infrastructure\sqlalchemy_runtime.py:165: in execute
+    result = self._connection.exec_driver_sql(statement, _normalize_execute_parameters(parameters))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.IntegrityError: (psycopg.errors.CheckViolation) new row for relation "up_dp_ob_a9d96ad4db4c" violates check constraint "reject_impact"
+E   DETAIL:  Failing row contains (4, document-impact:6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0, isolated:impact:75387c56669f44aeba222d2445531d29, {"task_id": "6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0", "task_type":..., 0, null, null, null, null, 2026-10-04 12:36:12.057637+00, 2026-10-04 12:36:12.057637+00).
+E   [SQL: INSERT INTO up_dp_ob_a9d96ad4db4c(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)]
+E   [parameters: ('document-impact:6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0', 'isolated:impact:75387c56669f44aeba222d2445531d29', '{"schema_version":1,"task_type":"document_impact","project_id":"0b226708-dc8d-4323-b4dc-3a8a58622f69","task_id":"6f6f67ee-7c9e-4b55-96fd-b8c62f2ea6f0"}')]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)</failure></testcase><testcase classname="tests.test_document_impact_tasks" name="test_corruption_scope_and_prepare_failure_do_not_become_analysis_success" time="2.045" /></testsuite></testsuites>

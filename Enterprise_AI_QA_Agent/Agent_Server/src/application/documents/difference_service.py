@@ -94,11 +94,16 @@ class DocumentDifferenceService:
         return await self._store.list_snapshots(project_id, document_id, version_id=version_id, limit=limit, offset=offset)
 
     async def read_snapshot(self, project_id, document_id, snapshot_id):
+        snapshot = await self.get_snapshot(project_id, document_id, snapshot_id)
+        return snapshot, await self._read_result(snapshot)
+
+    async def get_snapshot(self, project_id, document_id, snapshot_id):
+        """Fixed metadata for downstream submissions; no object download."""
         await self._require_document(project_id, document_id)
         snapshot = await self._store.get_snapshot(project_id, document_id, snapshot_id)
         if snapshot is None:
             raise KeyError("当前文档没有该比较结果")
-        return snapshot, await self._read_result(snapshot)
+        return snapshot
 
     async def _read_result(self, snapshot):
         raw = (await self._objects.read_object_uri(snapshot.storage_uri))["content"]

@@ -359,12 +359,14 @@ async def test_real_outbox_redis_worker_heartbeats_and_terminal_redelivery(tmp_p
     async with comparison_environment(tmp_path) as (env, service, store, _, parsing, parse_store):
         project, doc, _, _, request = await inputs(env, parsing, parse_store, tmp_path)
         task = await service.submit(project.id, doc.id, request)
-        store.lease_seconds = 0.6
+        # Cross an entire real lease interval, while allowing database/Windows
+        # scheduling jitter. Without heartbeats this still expires before save.
+        store.lease_seconds = 3
         calls, renewals = [], []
         compare, heartbeat = service._comparator.compare, store.heartbeat
         async def observed_compare(**kwargs):
             calls.append(1)
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(3.2)
             return await compare(**kwargs)
         async def observed_heartbeat(claim):
             await heartbeat(claim)

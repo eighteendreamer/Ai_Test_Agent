@@ -10,11 +10,21 @@ from uuid import UUID
 
 from src.schemas.case_management import TestCaseBundle
 from src.schemas.document_impact import (
-    DocumentImpactInput, DocumentImpactInputEnvelope, DocumentImpactOriginalEvidence, DocumentImpactSourceLink,
+    DocumentImpactCaseReference, DocumentImpactInput, DocumentImpactInputEnvelope,
+    DocumentImpactOriginalEvidence, DocumentImpactSourceLink, DocumentImpactSourceSeed,
 )
 from src.schemas.document_parsing import DocumentParseSnapshot, DocumentParseSnapshotView
 
 logger = logging.getLogger(__name__)
+
+
+def canonical_impact_json(value):
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def impact_record_hash(value):
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
 
 
 class _SourceGap(ValueError):
@@ -32,7 +42,8 @@ class DocumentImpactSources:
         config = await self._configs.get_settings(project_id)
         try:
             async with asyncio.timeout(config.payload.timeout_seconds):
-                result = await self._prepare(project_id, document_id, difference_snapshot_id, selection, config)
+                seed = await self._capture(project_id, document_id, difference_snapshot_id, selection, config)
+                result = await self._prepare_fixed(seed)
         except TimeoutError:
             logger.warning("document_impact_input_timeout", extra={"project_id": project_id,
                 "document_id": document_id, "difference_snapshot_id": difference_snapshot_id})
@@ -49,14 +60,18 @@ class DocumentImpactSources:
             "input_sha256": result.input_sha256})
         return result
 
-    async def _prepare(self, project_id, document_id, difference_snapshot_id, selection, config):
-        snapshot, difference = await self._differences.read_snapshot(project_id, document_id, difference_snapshot_id)
-        views = []
-        for fixed in (snapshot.seed.old_snapshot, snapshot.seed.new_snapshot):
-            actual, result = await self._parsing.read_snapshot(project_id, document_id, fixed.id)
-            if actual != fixed:
-                raise ValueError("文档影响输入与比较固定解析快照不一致")
-            views.append(DocumentParseSnapshotView(snapshot=actual, result=result))
+    async def capture(self, project_id, document_id, difference_snapshot_id, selection):
+        """Freeze metadata without RustFS downloads or model invocation."""
+        config = await self._configs.get_settings(project_id)
+        async with asyncio.timeout(config.payload.timeout_seconds):
+            seed = await self._capture(project_id, document_id, difference_snapshot_id, selection, config)
+        logger.info("document_impact_metadata_captured", extra={"project_id": project_id,
+            "document_id": document_id, "difference_snapshot_id": difference_snapshot_id,
+            "case_version_count": len(seed.cases), "config_revision": config.revision})
+        return seed
+
+    async def _capture(self, project_id, document_id, difference_snapshot_id, selection, config):
+        snapshot = await self._differences.get_snapshot(project_id, document_id, difference_snapshot_id)
         ids = list(dict.fromkeys(selection.case_version_ids))
         if ids:
             if len(ids) > config.payload.max_case_versions:
@@ -71,7 +86,43 @@ class DocumentImpactSources:
         for case, version in pairs:
             if case.project_id != project_id or version.case_id != case.id:
                 raise KeyError("文档影响输入的用例版本不属于当前项目")
-        bundles = [TestCaseBundle(case=case, version=version) for case, version in pairs]
+        # Hash the entire immutable record, including provenance and instructions.
+        # Historical content_hash alone does not cover every DTO field.
+        references = [DocumentImpactCaseReference(case=case.model_copy(deep=True), version_id=version.id,
+            content_hash=version.content_hash, version_record_sha256=impact_record_hash(version)) for case, version in pairs]
+        self._check_chars(sum(len(version.model_dump_json()) for _, version in pairs), config.payload.max_context_chars)
+        return DocumentImpactSourceSeed(project_id=project_id, document_id=document_id,
+            version_id=snapshot.seed.version_id, config=config, difference_snapshot=snapshot,
+            selection="explicit" if ids else "project_current", cases=references)
+
+    async def prepare_fixed(self, seed, *, remaining_seconds=None):
+        """Use only captured versions/configuration; never reselect current cases."""
+        seconds = seed.config.payload.timeout_seconds
+        if remaining_seconds is not None:
+            seconds = min(seconds, remaining_seconds)
+        async with asyncio.timeout(max(0, seconds)):
+            return await self._prepare_fixed(seed)
+
+    async def _prepare_fixed(self, seed):
+        project_id, document_id, config = seed.project_id, seed.document_id, seed.config
+        snapshot, difference = await self._differences.read_snapshot(project_id, document_id, seed.difference_snapshot.id)
+        if snapshot != seed.difference_snapshot:
+            raise ValueError("文档影响比较元数据与固定提交不同")
+        views = []
+        for fixed in (snapshot.seed.old_snapshot, snapshot.seed.new_snapshot):
+            actual, result = await self._parsing.read_snapshot(project_id, document_id, fixed.id)
+            if actual != fixed:
+                raise ValueError("文档影响输入与比较固定解析快照不一致")
+            views.append(DocumentParseSnapshotView(snapshot=actual, result=result))
+        versions = await self._cases.get_versions([item.version_id for item in seed.cases])
+        current_cases = await self._cases.get_cases(list(dict.fromkeys(item.case.id for item in seed.cases)))
+        bundles = []
+        for item in seed.cases:
+            version = versions[item.version_id]
+            if (current_cases[item.case.id].project_id != project_id or version.case_id != item.case.id or
+                version.content_hash != item.content_hash or impact_record_hash(version) != item.version_record_sha256):
+                raise ValueError("文档影响用例版本或项目与固定提交不同")
+            bundles.append(TestCaseBundle(case=item.case.model_copy(deep=True), version=version))
         # Lower bound before reading more objects; final canonical size is also checked.
         context_chars = sum(len(view.result.text) for view in views) + sum(
             len(bundle.version.model_dump_json()) for bundle in bundles)
@@ -93,13 +144,27 @@ class DocumentImpactSources:
                     source_ref=source, evidence_id=evidence.id if evidence else None,
                     status="missing" if evidence is None else "partial" if codes else "available", codes=codes))
         payload = DocumentImpactInput(project_id=project_id, document_id=document_id,
-            selection="explicit" if ids else "project_current", config=config,
+            selection=seed.selection, config=config,
             difference_snapshot=snapshot, difference=difference, old=views[0], new=views[1],
             cases=bundles, originals=list(originals.values()), source_links=links)
-        canonical = await asyncio.to_thread(lambda: json.dumps(payload.model_dump(mode="json"),
-            ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False))
-        self._check_chars(len(canonical), config.payload.max_context_chars)
-        return DocumentImpactInputEnvelope(input_sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest(), input=payload)
+        canonical = await asyncio.to_thread(canonical_impact_json, payload)
+        self._check_chars(len(canonical.decode("utf-8")), config.payload.max_context_chars)
+        return DocumentImpactInputEnvelope(input_sha256=hashlib.sha256(canonical).hexdigest(), input=payload)
+
+    @staticmethod
+    def validate_fixed_input(seed, envelope):
+        payload = envelope.input
+        if (payload.project_id != seed.project_id or payload.document_id != seed.document_id or
+            payload.config != seed.config or payload.selection != seed.selection or
+            payload.difference_snapshot != seed.difference_snapshot or
+            payload.old.snapshot != seed.difference_snapshot.seed.old_snapshot or
+            payload.new.snapshot != seed.difference_snapshot.seed.new_snapshot or
+            impact_record_hash(payload) != envelope.input_sha256 or len(payload.cases) != len(seed.cases)):
+            raise ValueError("已保存文档影响输入与固定提交不一致")
+        for fixed, bundle in zip(seed.cases, payload.cases):
+            if (bundle.case != fixed.case or bundle.version.id != fixed.version_id or
+                impact_record_hash(bundle.version) != fixed.version_record_sha256):
+                raise ValueError("已保存文档影响用例内容与固定提交不一致")
 
     @staticmethod
     def _check_chars(count, maximum):
