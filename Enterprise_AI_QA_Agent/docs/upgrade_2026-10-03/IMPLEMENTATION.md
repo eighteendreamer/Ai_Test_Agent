@@ -1525,3 +1525,21 @@ $env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2
 直接同步正式PLAN、原用户粘贴附件及Codex镜像，更新本轮已有/剩余范围。当前新增比较Service/Store/Handler尚未注册到生产容器或公开路由；没有改前端、公开API、生产表或依赖，因此本轮未运行前端构建/浏览器。新diff表只在隔离测试初始化，原解析表schema无变化；比较专属CLI、生产初始化/API、任务池/前端和部署迁移仍待继续。Git、P4影响/追踪/增量草稿、其他P0/P2/P5及默认模型/生产历史迁移均保持未完成，不标记完整目标完成。
 
 交付实际核对：12个相关Python文件py_compile通过；正式PLAN/Codex镜像逐字节相同，原附件差异章节相同并保留编号；原件/固定解析JSON/比较正文哈希、结果身份与策略及所有XML计数一致。最终Redis工件实际记录5次续租、1次比较、1次原执行及1次终态重投，attempt始终1；进程失败trace哈希匹配任务工件。112个源码/方案/文本工件敏感格式扫描无匹配。仅132个相关文件暂存，新的被忽略后端测试显式加入，用户 `.gitignore` 不暂存；30份原件工作区、暂存和过滤后检出字节一致，源码/测试/方案及全范围暂存diff检查均通过。只创建本地中文commit，不推送或建PR。
+
+## 方案当前状态统一与比较产品接入细化（2026-10-04，基线 22be347）
+
+响应“更新这个方案”，直接修订原用户粘贴附件、项目 PLAN 与所选 Codex 镜像，保留原附件备份及章节编号；同步 P3_4_DESIGN。此次没有新增产品代码、公开契约、表、依赖或生产配置，没有执行生产迁移。
+
+先核对 upload_document/upload_version、对象存储保存、比较 Service/Store/DTO/配置、production main/container、现有解析独立运行时/路由/前端 API 约定。确认上传不调用 Git，比较持久组件已提交到 22be347，但比较生产 main/container 尚未注册。修正正文与状态表中“解析页面未实现”“比较内核待实现”等过时状态；保留旧基线的历史验收范围，当前状态按首页/第六节读取。
+
+补充比较配置 provider、生产初始化顺序、独立 CLI/运行时、拟新增公开路由、前端类型/适配器、完整页面及任务池的依据→接入做法→完成条件。页面仅推荐相邻双方可用快照，明确提交固定输入的比较任务后才产生比较状态；上传或解析成功不能代替比较成功。保持生成模板只用于生成、项目内选取→初排→AI补全→最终冻结、上传独立于Git、旧版本/原失败保留以及完整P0—P5范围。P4只提出有引用依据的影响候选，确定性差异不能直接停用正式用例。
+
+在 Agent_Server 实际执行：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_artifact_storage_service.py tests/test_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-plan-refresh-22be347.xml
+```
+
+结果 **49 passed in 10.51s，0失败、0错误、0跳过**。差异内核包含实际MD/DOCX/PDF及真实解析/比较受限进程、来源与资源边界；上传相关项使用已有替代存储夹具。没有重新运行真实MySQL/PostgreSQL/RustFS/Redis、生产API/CLI或浏览器、默认外部模型验收；历史84项/诊断3项仅解析原XML核对，未算作本轮新通过。
+
+实际文档校验通过：67个绝对本地链接可定位，原附件与正式方案的新接入章节相同，Codex镜像与正式方案逐字节相同；原验收XML与当前49项XML计数一致。相关文档diff检查通过。仅提交本轮方案、设计、验收记录和XML，用户.gitignore保持未暂存。完整升级目标仍未完成；接下来按新接入安排推进，不重复实施已验比较内核和持久服务。

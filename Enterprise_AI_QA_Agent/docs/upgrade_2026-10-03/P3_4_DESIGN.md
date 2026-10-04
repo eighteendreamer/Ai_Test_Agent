@@ -38,7 +38,7 @@
 
 随后单独验证 MySQL 固定配置、PG/RustFS/Redis 任务恢复与项目隔离，再用生产 API、独立 CLI 和实际完整产品页面验证提交、查询、选择历史、重启与结果下载。真实存储和浏览器未测前，状态只写“内核专项通过/任务和页面待实现”。
 
-## 本轮实施与验证状态
+## 此前内核实施与验证状态（交付 b701b9d）
 
 已新增比较 DTO、确定性内核、受限进程适配器和固定内部 Worker；未新增公开比较路由或第二套任务平台。raw/normalized、字符映射、章节/表格、输入身份及实际比较策略随结果返回。两侧已验证快照由现有 `DocumentParsingService.read_snapshot` 获取，计算内核本身不读取数据库或替代对象哈希核验。
 
@@ -60,7 +60,7 @@ Worker执行时通过现有固定快照读取核对RustFS对象，再核对返�
 
 实际检查 `DocumentParseTaskHandler` 和 `RedisTaskWorker` 后，领取/心跳/取消/终态重投也能复用：抽取内部 `DocumentOperationTaskHandler`，两个业务各自保留明确Command DTO和task_type、日志前缀。先用真实Outbox→Redis→现有Worker类→比较受限进程验证，并记录该范围；比较专属独立CLI/生产API/完整页面仍另验。算法实现版本沿用解析器的有界字符串做法，让旧版本任务可以被读取并明确终止，不能因Literal版本枚举改变而反复领取失败；schema_version仍固定。
 
-## 本轮持久服务及Worker实际结果
+## 持久服务及 Worker 实际结果（交付 22be347）
 
 先核对实际解析Store/Handler、MySQL配置和RedisWorker，再抽取 `PostgresDocumentOperationStore` 与 `DocumentOperationTaskHandler` 共用生命周期；解析业务保留旧表、DTO、phase、校验与日志身份。比较使用独立 `_diff_tasks/_diff_snapshots`，两侧解析快照外键和固定元数据、MySQL策略修订、算法/Python身份共同保存；version_id仅表示新侧版本，完整两侧始终可查。
 
@@ -71,3 +71,36 @@ Worker执行时通过现有固定快照读取核对RustFS对象，再核对返�
 首轮存储测试 **7通过、1失败** 是夹具错期待底层psycopg异常，项目实际SQLAlchemy包装IntegrityError；核对既有事务失败测试后修正，确认底层确为外键拒绝。首轮Worker **2通过、1失败** 是夹具未按实际 `update_document(doc_id, **changes)` 调用，修正为关键字。原失败XML保留；产品未为夹具错误加兼容特判。诊断日志随后补phase/input_snapshot_id/内部原因，相关3项实际复验通过，Redis次数/失败完整trace另存工件。历史重跑数不累加为覆盖数。
 
 本轮仍未接比较专属独立CLI、生产启动注入、公开API、任务池和前端；未运行前端构建/浏览器，未迁移生产数据。新表目前仅在隔离真实测试中初始化；后续先接独立CLI及生产注入/API并同步前端类型，再做真实完整页面。Git、P4影响/追踪/增量草稿及其他P0—P5继续保留未完成。
+
+## 比较产品接入的具体实施安排（基线 22be347，待实施）
+
+下面是接下来需要实施的内容，不能视为已存在的公开接口。现有比较 Service/Store/Handler 已可复用，不重新设计比较算法或租约任务平台。
+
+| 实际依据 | 接入做法 | 完成条件 |
+|---|---|---|
+| [containers.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/containers.py) 的解析配置 provider；[main.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/main.py) 的解析初始化及路由注册 | 增加比较配置 provider；先初始化项目、文档、Outbox 和解析来源表，再初始化比较 Store/Service，绑定到 app.state 并注册独立路由 | 真实生产 API 启动、设置保存、任务提交/查询及重启后的同请求找回均通过 |
+| [document_parse_worker_runtime.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_parse_worker_runtime.py)、[run_document_parse_worker.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/cli/run_document_parse_worker.py) | 增加比较专属运行时与 CLI；公共资源初始化/关闭复用现有方式，领域服务保留独立初始化。比较运行时只读取解析来源；不派发解析任务，不启动模型、浏览器或业务工具 | 真正启动独立 CLI，经 Outbox→Redis 领取并完成比较；原解析 CLI 同时回归通过 |
+| [document_parsing.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/document_parsing.py)；[document_differences.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/document_differences.py) | 沿用项目 UUID、分页、错误与幂等查询约定，公开现有比较 DTO。按请求查询路由先于 task_id 路由注册 | 错误项目不可读写，输入冲突可辨认，未知提交能按原身份查询；失败轨迹可读 |
+| [types.ts](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/types.ts)、[documentParsing.api.ts](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/services/documentParsing.api.ts) 和 API 聚合入口 | 新增比较类型及独立 API 适配器，字段与 Python DTO 同步；版本/快照、任务、结果和警告分别建模 | 适配器测试、类型检查和构建通过；不据此声称页面已实现 |
+| 现有文档详情的解析选择、任务轮询、历史与 JSON 下载 | 增加双方版本及解析快照选择、差异视图、设置、历史、失败诊断和完整结果下载 | 实际完整 App/路由/侧栏→文档详情→比较→API 重启→历史/下载通过；原上传和解析入口回归通过 |
+| 现有通用任务池只读投影 | 增加 document_difference 类型及按确切任务身份打开历史比较；继续从 PG 读取状态 | 筛选、分页、刷新和打开历史结果通过；不另建状态来源 |
+
+**拟新增公开契约：** 以下路径均位于现有 `/projects/{project_id}` 下；首期不删除或改变解析接口。
+
+| 路径及方法 | 语义 |
+|---|---|
+| `GET/PUT /document-difference-settings` | 读取/修改 MySQL 项目比较策略；修改只影响新提交 |
+| `POST /documents/{document_id}/difference-tasks` | 接收现有 creation_key、old_snapshot_id、new_snapshot_id，返回固定任务，HTTP 202 |
+| `GET /documents/{document_id}/difference-tasks/by-request` | 按 creation_key 找回原提交，不能改用最新快照另建任务 |
+| `GET /documents/{document_id}/difference-tasks`、`GET .../{task_id}`、`GET .../{task_id}/failure` | 分页任务、查询状态和读取校验后的失败轨迹 |
+| `GET /documents/{document_id}/difference-snapshots`、`GET .../{snapshot_id}` | 分页不可变历史结果；读取两侧固定引用、summary、warnings、effective_policy 及完整结果 |
+
+任务/结果列表的 version_id 只筛选**新侧原件版本**；旧侧版本和双方 snapshot_id 始终显示。现有 `qa:tasks:document_difference` 常量用于独立流，在已有 Outbox 流配置中登记，复用消费组、连接与保留设置。未启用派发时仍能查询历史；提交入口明确显示不可调度状态，不能报告已开始执行。新表初始化的部署权限与已有解析来源外键须实际验收，不以隔离测试替代生产数据迁移。
+
+上传、解析和比较是三个独立状态。解析完成后，页面默认**推荐当前新版本与前一版本的可用解析快照**，允许选择历史及同一原件的不同解析快照；双方没有可用快照时提示解析缺口。只有提交比较任务后才出现比较状态，上传成功或解析成功不等于已比较。提交响应未知时保留原请求身份和双方引用，先回查；历史查看不读取当前比较设置，不替换为当前默认快照。
+
+**真实验收顺序：** 用真实 MD/DOCX/PDF V1/V2 及隔离 MySQL/PostgreSQL/RustFS/Redis，先运行生产 API 与独立解析 CLI 生成双方快照，再通过生产 API 提交比较、修改当前设置、重启 API、重放同请求，最后运行独立比较 CLI 并核对正文、来源、固定策略、历史/失败读取与终态重投。保留原件和子进程 stdout/stderr，核对仅一次计算、不可覆盖输入以及正确回收。之后再运行完整产品浏览器流程和任务池专项；默认外部模型、Git、P4 影响分析均不算该项通过。
+
+## AI 影响判断与增量更新（P4，待实施）
+
+确定性比较只提供证据。AI 基于双方快照、差异、用例原编写来源和当前用例提出需求匹配与影响候选；实际生效状态需要项目环境依据。没有可靠依据的匹配进入评审。不得仅凭“有文本变化”自动停用用例或覆盖正式版本；确认后的修改生成新草稿，删除只提出停用候选，旧用例和原运行结果保留。
