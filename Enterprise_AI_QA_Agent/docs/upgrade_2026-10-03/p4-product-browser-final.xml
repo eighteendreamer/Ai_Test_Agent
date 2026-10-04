@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="86.814" timestamp="2026-10-05T02:33:37.904140+08:00" hostname="EIghteen"><testcase classname="tests.test_document_impact_full_product" name="test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download" time="83.138"><failure message="playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for get_by_label(&quot;任务总超时（秒）&quot;, exact=True)&#10;    - locator resolved to &lt;input max=&quot;600&quot; step=&quot;any&quot; min=&quot;0.001&quot; required=&quot;&quot; type=&quot;number&quot; data-v-c5feed8a=&quot;&quot; aria-label=&quot;任务总超时（秒）&quot;/&gt;&#10;    - fill(&quot;300&quot;)&#10;  - attempting fill action&#10;    2 × waiting for element to be visible, enabled and editable&#10;      - element is not visible&#10;    - retrying fill action&#10;    - waiting 20ms&#10;    2 × waiting for element to be visible, enabled and editable&#10;      - element is not visible&#10;    - retrying fill action&#10;      - waiting 100ms&#10;    59 × waiting for element to be visible, enabled and editable&#10;       - element is not visible&#10;     - retrying fill action&#10;       - waiting 500ms">tests\test_document_impact_full_product.py:191: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:18248: in fill
+    await self._impl_obj.fill(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:219: in fill
+    return await self._frame.fill(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:636: in fill
+    await self._fill(**locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:648: in _fill
+    await self._channel.send("fill", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_label("任务总超时（秒）", exact=True)
+E       - locator resolved to &lt;input max="600" step="any" min="0.001" required="" type="number" data-v-c5feed8a="" aria-label="任务总超时（秒）"/&gt;
+E       - fill("300")
+E     - attempting fill action
+E       2 × waiting for element to be visible, enabled and editable
+E         - element is not visible
+E       - retrying fill action
+E       - waiting 20ms
+E       2 × waiting for element to be visible, enabled and editable
+E         - element is not visible
+E       - retrying fill action
+E         - waiting 100ms
+E       59 × waiting for element to be visible, enabled and editable
+E          - element is not visible
+E        - retrying fill action
+E          - waiting 500ms</failure></testcase></testsuite></testsuites>

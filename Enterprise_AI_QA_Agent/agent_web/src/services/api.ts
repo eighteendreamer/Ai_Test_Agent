@@ -9,6 +9,7 @@ import * as compatibility from "./compatibility.api";
 import * as system from "./system.api";
 import * as documentParsing from "./documentParsing.api";
 import * as documentDifferences from "./documentDifferences.api";
+import * as documentImpacts from "./documentImpacts.api";
 
 export const api = {
   ...sessions,
@@ -22,4 +23,5 @@ export const api = {
   ...system,
   ...documentParsing,
   ...documentDifferences,
+  ...documentImpacts,
 };

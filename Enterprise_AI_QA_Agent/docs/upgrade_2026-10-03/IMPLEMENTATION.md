@@ -2074,3 +2074,46 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade
 源码字节编译、三份完整方案/本地链接、此前工作流原始证据hash及Git暂存原始字节核对见p4-production-validation.json。既有工作流协议/旧Input/CallInput/CallSelection/响应Schema未改，未知调用和terminal行为未放宽。未验证默认外部模型业务判断、正式App/任务池/浏览器或生产历史迁移。完整P0—P5保持未完成；下一步继续正式入口与真实AI/需求闭环。中文相关commit不推送、不建PR。
 
 最终审阅仅将本轮新增配置import放回既有documents分组；独立Worker导入/未登记流/资源回收7项复验通过17.25秒（p4-production-imports.xml/.log），生产行为未变。离线核对5场景101个实际对象引用及完整冻结消息/物理HTTP匹配、374个此前工作流原始证据、3旧输入和6旧请求hash、三份方案全文及28个本地链接。新增原始证据734文件的限定凭据格式扫描无命中，不代表穷尽泄露检查。
+
+## 2026-10-05：影响正式App、固定提交恢复和任务池
+
+研究基线3ae0d9d9；先重读原目标附件、当前方案、影响API/DTO与任务服务、比较页面/恢复机制、任务池SQL/公开投影、正式App/router测试及本地Agent轨迹课程。研究记录P4_PRODUCT_DESIGN.md。新增专用影响公开摘要，联合读取PG权威表，保留确定分页/筛选/相同时序排序/同项目标题；不把包含input_checkpoint的完整任务DTO直接投影。共享真实池fixture初始化已存在影响表并按所有权回收输入对象；无缺表静默降级。
+
+正式比较结果内接DocumentImpactPanel，聚合既有影响客户端。按项目当前范围或明确版本提交，不过滤测试模式；保存creation_key/完整请求后发送，未知回执重放保留原参数，晚响应不能改写新文档/历史。四类设置复用现有MySQL API/配置；没有新环境策略或依赖。结果独立显示文档规则与case单元判断，保留所有单元未完成原因、引用/验证点、潜在冲突、partial/pending_review/deployment unknown；归档只读、不启用/停用/执行。taskpool前后端联合类型、两个语言包（其余语言沿既有fallback）、路由及消费者同步。
+
+真实池命令（Agent_Server）与结果：
+
+```powershell
+$env:RUN_LIVE_TASK_POOL='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_task_pool_document_impacts.py tests/test_task_pool_entries.py tests/test_task_pool_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-product-pool-first.xml
+```
+
+4通过0跳过10.70秒；真实DOCX/进程、MySQL/PG/RustFS输入检查点/混合历史分页/项目隔离/标题重新绑定/只读查询实测。该专项直接提交source capture阶段用于投影验证，未冒充冻结模型与完整正式API产品验收。
+
+前端命令（agent_web）：
+
+```powershell
+npm run test -- src/features/tools/plugins/DocumentImpactProduct.test.ts src/features/tools/plugins/DocumentDifferenceTask.test.ts src/features/tools/plugins/ApiDocDifferences.test.ts src/views/TaskPoolView.test.ts src/services/documentImpacts.api.test.ts
+npm run build
+```
+
+最终62通过无未处理错误，构建含vue-tsc通过。引用数据来自此前真实生产正常/中断样本；核对未知回执、原身份重试、历史/项目切换、终态停止轮询、四类配置、字面JSON及错误呈现。前端首轮58断言通过但2项未处理错误来自旧比较测试直接挂载新增子组件、mock未配置API。隔离子组件后58通过，再增加真实中断/转义/失败等4项，最终62通过；原log保留，不把首轮写成全绿。
+
+正式产品命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-product-browser-preparation')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-product-browser-preparation.xml
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_DIFFERENCE_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-product-comparison-regression')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_difference_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-product-comparison-regression.xml
+```
+
+影响1通过0跳过67.93秒，比较回归1通过0跳过65.68秒。实际构建App/router/生产API（没有Provider替换）和独立解析/比较/影响CLI，隔离MySQL/PG/Redis与实际RustFS/HTTP。四类配置在页面保存并查询实际MySQL；真实DOCX7→9及12步跨模式JSON，明确选择V1，服务器202后真实丢弃回执，刷新只GET原提交，提交后配置/新草稿不替换原seed。容量样本真实进入Worker后准备失败，原成功结果保留，不增加HTTP。任务池选择指定历史/失败、关闭派发重启API后读取与下载完全相等。保留7次物理HTTP与完整冻结系统消息/全部续读消息对照、29份对象原始字节、PGseed/调用/MySQL配置、JSON下载、截图及进程输出；页面无pageerror，1440宽视口正文无横向溢出。
+
+四轮原失败分开保留：browser-first54.34秒为拼入/home的导航错误；browser-verified47.10秒为未等待POST路由完成就断言；browser-final86.83秒为刷新后设置已折叠；browser-validated60.60秒为容量1在capture就拒绝、没有创建任务。最后依据实际capture/prepare分别校验的实现重新设计失败样本。未改生产状态或放宽上限掩盖错误。
+
+三份完整方案同步；限定格式敏感扫描、字节/引用/链接及相关暂存核对记录另见p4-product-validation.json。用户.gitignore未编辑或提交。没有生产历史迁移、真实默认外部模型语义判断及其他格式影响浏览器场景；需求评审/矩阵/增量/适用性与P0—P5剩余项继续，不能标完整目标完成。

@@ -1,0 +1,67 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download _
+tests\test_document_impact_full_product.py:156: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    assert len(submitted_requests) == 1 and not sends
+E   assert (0 == 1)
+E    +  where 0 = len([])
+---------------------------- Captured stderr call -----------------------------
+Error occurred in event listener
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_helper.py", line 442, in handle
+    return await self._handle_internal(route)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_helper.py", line 483, in _handle_internal
+    await asyncio.ensure_future(coro_or_future)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_full_product.py", line 150, in drop_reply
+    response = await route.fetch(); assert response.status == 202
+               ^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\async_api\_generated.py", line 854, in fetch
+    await self._impl_obj.fetch(
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_network.py", line 480, in fetch
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_connection.py", line 632, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TargetClosedError: Route.fetch: Request context disposed.
+Call log:
+  - → POST http://127.0.0.1:51737/api/v1/projects/8738b8ba-d675-45d5-ae6b-8dd3149bf36d/documents/34e65fdd-906d-56e6-a71d-a244b1e57cb0/impact-tasks
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+    - content-type: application/json
+    - origin: http://127.0.0.1:51737
+    - referer: http://127.0.0.1:51737/projects/8738b8ba-d675-45d5-ae6b-8dd3149bf36d/documents/34e65fdd-906d-56e6-a71d-a244b1e57cb0/differences/eea9e657-94d1-4207-945d-b4562417f47b
+    - sec-ch-ua: "Not=A?Brand";v="99", "HeadlessChrome";v="151", "Chromium";v="151"
+    - sec-ch-ua-mobile: ?0
+    - sec-ch-ua-platform: "Windows"
+    - content-length: 253
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_page.py", line 308, in _on_route
+    handled = await route_handler.handle(route)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\playwright\_impl\_helper.py", line 451, in handle
+    raise rewrite_error(
+playwright._impl._errors.TargetClosedError: "Route.fetch: Request context disposed.
+Call log:
+  - → POST http://127.0.0.1:51737/api/v1/projects/8738b8ba-d675-45d5-ae6b-8dd3149bf36d/documents/34e65fdd-906d-56e6-a71d-a244b1e57cb0/impact-tasks
+    - user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36
+    - accept: */*
+    - accept-encoding: gzip,deflate,br
+    - content-type: application/json
+    - origin: http://127.0.0.1:51737
+    - referer: http://127.0.0.1:51737/projects/8738b8ba-d675-45d5-ae6b-8dd3149bf36d/documents/34e65fdd-906d-56e6-a71d-a244b1e57cb0/differences/eea9e657-94d1-4207-945d-b4562417f47b
+    - sec-ch-ua: "Not=A?Brand";v="99", "HeadlessChrome";v="151", "Chromium";v="151"
+    - sec-ch-ua-mobile: ?0
+    - sec-ch-ua-platform: "Windows"
+    - content-length: 253
+" while running route callback.
+Consider awaiting `await page.unroute_all(behavior='ignoreErrors')`
+before the end of the test to ignore remaining routes in flight.
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_full_product.py::test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+1 failed in 47.10s

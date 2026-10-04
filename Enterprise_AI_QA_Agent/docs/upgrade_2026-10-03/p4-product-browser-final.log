@@ -1,0 +1,39 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download _
+tests\test_document_impact_full_product.py:191: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:18248: in fill
+    await self._impl_obj.fill(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:219: in fill
+    return await self._frame.fill(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:636: in fill
+    await self._fill(**locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:648: in _fill
+    await self._channel.send("fill", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_label("任务总超时（秒）", exact=True)
+E       - locator resolved to <input max="600" step="any" min="0.001" required="" type="number" data-v-c5feed8a="" aria-label="任务总超时（秒）"/>
+E       - fill("300")
+E     - attempting fill action
+E       2 × waiting for element to be visible, enabled and editable
+E         - element is not visible
+E       - retrying fill action
+E       - waiting 20ms
+E       2 × waiting for element to be visible, enabled and editable
+E         - element is not visible
+E       - retrying fill action
+E         - waiting 100ms
+E       59 × waiting for element to be visible, enabled and editable
+E          - element is not visible
+E        - retrying fill action
+E          - waiting 500ms
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_full_product.py::test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+1 failed in 86.83s (0:01:26)

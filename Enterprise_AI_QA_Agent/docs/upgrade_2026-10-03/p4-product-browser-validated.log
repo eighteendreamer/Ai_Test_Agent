@@ -1,0 +1,175 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download _
+tests\test_document_impact_full_product.py:197: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    await expect(page.locator('.impact-task-status')).to_contain_text('等待影响分析')
+E   AssertionError: Locator expected to contain text '等待影响分析'
+E   Actual value: None
+E   Error: element(s) not found 
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator(".impact-task-status")
+E   
+E   Aria snapshot:
+E   - navigation:
+E     - img "Enterprise AI QA"
+E     - link "":
+E       - /url: /home
+E     - link "":
+E       - /url: /taskpool
+E     - link "":
+E       - /url: /projects
+E     - link "":
+E       - /url: /knowledge
+E     - link "":
+E       - /url: /tools
+E     - link "":
+E       - /url: /reports
+E     - button ""
+E     - link "":
+E       - /url: /settings
+E   - main:
+E     - text: 御策天检 / Document Difference
+E     - listbox:
+E       - option "E-API":
+E         - button "E-API":
+E           - img "E-API"
+E     - button ""
+E     - button " 编排轨迹"
+E     - text: 系统就绪 4/4
+E     - heading "历史文档比较" [level=2]
+E     - link "返回任务池":
+E       - /url: /taskpool
+E     - article "比较任务详情":
+E       - paragraph: 项目：8e0c9de0-091a-43f2-bec5-11f2cb6d7377 · 文档：b035844a-7461-5833-abfc-9eb543f66262
+E       - paragraph: 比较任务：460b663d-0ccb-4cdc-8aeb-4273efb7b4a9
+E       - button "刷新比较任务"
+E       - status: 比较结果已保存 · 比较结果已保存 · 第 1 次领取
+E       - paragraph: 旧侧解析快照：37992b32-c04e-45a7-bf4e-11e0149b61f4 → 新侧解析快照：4a08250c-cbed-4f0f-abbc-70a795dcc14b
+E       - article "比较结果详情":
+E         - heading "固定文档差异 · 比较已保存" [level=3]
+E         - paragraph: 比较结果：5382c845-7532-421f-813b-94abc7a1550a · SHA256：ba1659746cf8303cf7b545172a7433cbc6499b08931695090178d4e8709b4e24
+E         - region "旧侧固定来源":
+E           - heading "旧侧" [level=4]
+E           - paragraph: 原件版本：71f54670-d7e9-485d-b1c7-7953b6bf2d4c
+E           - paragraph: 解析快照：37992b32-c04e-45a7-bf4e-11e0149b61f4
+E           - paragraph: 原件 SHA256：6f6ced4d78ed1ff0765988e588c97029322098ff0d85b3e8e2012a63d603934c
+E           - paragraph: 解析器：docx lightweight-v1
+E           - group: 解析选项与依赖版本
+E         - region "新侧固定来源":
+E           - heading "新侧" [level=4]
+E           - paragraph: 原件版本：091be067-3d96-4ddb-810b-c0ec02ad3169
+E           - paragraph: 解析快照：4a08250c-cbed-4f0f-abbc-70a795dcc14b
+E           - paragraph: 原件 SHA256：d06e2b53ac524429dcb06d178212d3791c1a3046d280b6f2419642bb79c4968c
+E           - paragraph: 解析器：docx lightweight-v1
+E           - group: 解析选项与依赖版本
+E         - paragraph: 原始文本 1 · 换行归一文本 1 · 章节 0 · 表格 1
+E         - list:
+E           - listitem: 双方 · extracted_text_positions · 字符位置属于解析抽取文本；源行、DOCX路径及PDF页码沿用解析器，不表示原件字符坐标或完整格式差异
+E           - listitem: 旧侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+E           - listitem: 新侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+E         - text: 文本差异视图
+E         - combobox "文本差异视图":
+E           - option "原始抽取文本" [selected]
+E           - option "仅归一换行"
+E         - paragraph: 字符位置指向原始抽取文本；换行归一保留空格、缩进、数字和 Unicode。
+E         - region "文本变化 1":
+E           - heading "修改 1" [level=4]
+E           - strong: 旧侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+E           - text: 有效期 7 天
+E           - list:
+E             - listitem: block-3 · word/document.xml · 正文/表格位置 2
+E           - strong: 新侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+E           - text: 有效期 9 天
+E           - list:
+E             - listitem: block-3 · word/document.xml · 正文/表格位置 2
+E           - group: 字符变化（1）
+E         - group: 章节变化（0）
+E         - group: 表格变化（1）
+E         - group: 固定比较策略与实际资源预算
+E         - button "下载完整比较结果 JSON"
+E       - region "文档影响分析入口":
+E         - heading "分析文档变化对用例的影响" [level=4]
+E         - paragraph: 当前固定比较结果：5382c845-7532-421f-813b-94abc7a1550a
+E         - paragraph: 分析完整用例、当时编写来源与新旧差异；保存候选供评审，不直接改变启用版本或执行测试。
+E         - group:
+E           - text: 影响分析用例范围
+E           - combobox "影响分析用例范围" [disabled]:
+E             - option "项目非归档用例的启用版本与最新草稿" [disabled] [selected]
+E             - option "选择具体用例版本" [disabled]
+E           - text: 本次模型配置编号（留空使用项目设置）
+E           - textbox "本次影响模型" [disabled]
+E           - text: 环境声明
+E           - textbox "影响环境声明" [disabled]
+E           - text: 目标发布版本声明
+E           - textbox "影响发布版本声明" [disabled]
+E           - paragraph: 环境及发布版本仅为声明；当前环境是否生效仍需核实。
+E           - button "提交固定影响分析" [disabled]
+E         - group:
+E           - text: 项目影响分析设置
+E           - button "重新读取影响设置"
+E           - paragraph: 设置保存到项目配置；环境与目标发布版本仅为声明，生效情况仍需证据确认。
+E           - form "影响范围设置":
+E             - paragraph: 范围策略 · 项目覆盖 · 修订 2
+E             - group:
+E               - text: 用例版本数量上限
+E               - spinbutton "用例版本数量上限": "500"
+E               - text: 固定依据字符上限
+E               - spinbutton "固定依据字符上限": "1"
+E               - text: 任务总超时（秒）
+E               - spinbutton "任务总超时（秒）": "300"
+E               - button "保存影响范围设置"
+E           - form "影响模型指导设置":
+E             - paragraph: 模型指导 · 项目覆盖 · 修订 1
+E             - group:
+E               - text: 默认模型配置编号（留空使用系统默认）
+E               - textbox "影响默认模型配置编号": controlled-impact-product
+E               - text: 模型输入字节上限
+E               - spinbutton "模型输入字节上限": "256000"
+E               - text: 分析指导
+E               - textbox "影响分析指导": 产品实测引用完整原文与用例
+E               - button "保存影响模型指导"
+E           - form "影响分段设置":
+E             - paragraph: 分段与补读 · 项目覆盖 · 修订 1
+E             - group:
+E               - text: 单段字符上限
+E               - spinbutton "单段字符上限": "12000"
+E               - text: 分段数量上限
+E               - spinbutton "分段数量上限": "10000"
+E               - text: 边界上下文字符
+E               - spinbutton "边界上下文字符": "0"
+E               - text: 单次补读字节上限
+E               - spinbutton "单次补读字节上限": "256000"
+E               - button "保存影响分段设置"
+E           - form "影响调用预算设置":
+E             - paragraph: 调用预算 · 项目覆盖 · 修订 1
+E             - group:
+E               - text: 逻辑调用数量上限
+E               - spinbutton "逻辑调用数量上限": "250"
+E               - text: 累计预留估算量上限
+E               - spinbutton "累计预留估算量上限": "2000000"
+E               - text: 单次调用超时（秒）
+E               - spinbutton "单次调用超时（秒）": "120"
+E               - text: 响应字节上限
+E               - spinbutton "响应字节上限": "8000000"
+E               - text: 消息封装预留估算量
+E               - spinbutton "消息封装预留估算量": "1024"
+E               - text: 内容计量
+E               - combobox "影响内容计量":
+E                 - option "UTF-8字节估算" [selected]
+E                 - option "指定编码的内容计数"
+E               - paragraph: 消息总输入仍为估算；逻辑调用数量不等于SDK或HTTP发送次数。
+E               - button "保存影响调用预算"
+E           - status: 项目影响设置已保存；新任务冻结提交时的实际配置，历史任务保持原依据。
+E         - paragraph: 影响请求编号：a09dcb30-8dc5-45bf-87aa-2428c0f9322b
+E         - paragraph: 本请求固定比较：5382c845-7532-421f-813b-94abc7a1550a
+E         - button "查询上次影响提交"
+E         - button "重试原影响提交"
+E         - paragraph: 提交结果尚未确认；查询与重试保留原编号、用例范围和声明。
+E         - alert: 完整文档影响输入超过配置限制，未截断正文或用例
+E         - group: 影响任务历史（1）
+E         - group: 已保存影响结果（1）
+E     - text: ">_ 运行时事件控制台 idle "
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_full_product.py::test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+1 failed in 60.60s (0:01:00)

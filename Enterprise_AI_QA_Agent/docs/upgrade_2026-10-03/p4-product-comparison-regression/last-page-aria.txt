@@ -1,0 +1,98 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Document Difference
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - heading "历史文档比较" [level=2]
+  - link "返回任务池":
+    - /url: /taskpool
+  - article "比较任务详情":
+    - paragraph: 项目：1aa52409-ed13-4ede-bce1-287428e0fc48 · 文档：e89fe0a5-08be-5100-a057-0f3b104ee076
+    - paragraph: 比较任务：0baa9101-82ac-4083-9879-58cd0fb5d749
+    - button "刷新比较任务"
+    - status: 比较结果已保存 · 比较结果已保存 · 第 1 次领取
+    - paragraph: 旧侧解析快照：06b135a7-3d6a-49e9-ab11-0e25f6b90fa7 → 新侧解析快照：3e18d217-aff5-4a64-9017-c8df93efd081
+    - article "比较结果详情":
+      - heading "固定文档差异 · 比较已保存" [level=3]
+      - paragraph: 比较结果：24fde9d7-e4aa-4596-a8b0-ad6ee5f948ed · SHA256：c83cfed864db5efec7eaad64abb386d7df673840539e9d8b329a9e16a387f372
+      - region "旧侧固定来源":
+        - heading "旧侧" [level=4]
+        - paragraph: 原件版本：a8536c4b-2f44-49b2-8803-94ec139c3b20
+        - paragraph: 解析快照：06b135a7-3d6a-49e9-ab11-0e25f6b90fa7
+        - paragraph: 原件 SHA256：f1fa18200f840b2ae458386df15cf402b3f5d4ae3361601c34b87b967c2e0e6d
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - region "新侧固定来源":
+        - heading "新侧" [level=4]
+        - paragraph: 原件版本：abf86540-25d7-4dfb-a05c-c6c3ed80bce1
+        - paragraph: 解析快照：3e18d217-aff5-4a64-9017-c8df93efd081
+        - paragraph: 原件 SHA256：20584b340ea30af71b58dd0adcd46c686618cc9cb13ebdf10960f24a7bef4da1
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - paragraph: 原始文本 1 · 换行归一文本 1 · 章节 0 · 表格 1
+      - list:
+        - listitem: 双方 · extracted_text_positions · 字符位置属于解析抽取文本；源行、DOCX路径及PDF页码沿用解析器，不表示原件字符坐标或完整格式差异
+        - listitem: 旧侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+        - listitem: 新侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+      - text: 文本差异视图
+      - combobox "文本差异视图":
+        - option "原始抽取文本" [selected]
+        - option "仅归一换行"
+      - paragraph: 字符位置指向原始抽取文本；换行归一保留空格、缩进、数字和 Unicode。
+      - region "文本变化 1":
+        - heading "修改 1" [level=4]
+        - strong: 旧侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 7 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - strong: 新侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 9 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - group: 字符变化（1）
+      - group: 章节变化（0）
+      - group: 表格变化（1）
+      - group: 固定比较策略与实际资源预算
+      - button "下载完整比较结果 JSON"
+    - region "文档影响分析入口":
+      - heading "分析文档变化对用例的影响" [level=4]
+      - paragraph: 当前固定比较结果：24fde9d7-e4aa-4596-a8b0-ad6ee5f948ed
+      - paragraph: 分析完整用例、当时编写来源与新旧差异；保存候选供评审，不直接改变启用版本或执行测试。
+      - group:
+        - text: 影响分析用例范围
+        - combobox "影响分析用例范围":
+          - option "项目非归档用例的启用版本与最新草稿" [selected]
+          - option "选择具体用例版本"
+        - text: 本次模型配置编号（留空使用项目设置）
+        - textbox "本次影响模型"
+        - text: 环境声明
+        - textbox "影响环境声明"
+        - text: 目标发布版本声明
+        - textbox "影响发布版本声明"
+        - paragraph: 环境及发布版本仅为声明；当前环境是否生效仍需核实。
+        - button "提交固定影响分析"
+      - group: 项目影响分析设置
+      - group: 影响任务历史（0）
+      - group: 已保存影响结果（0）
+  - text: ">_ 运行时事件控制台 idle "

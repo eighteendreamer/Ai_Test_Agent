@@ -13,7 +13,7 @@ const record = () => structuredClone(actual.task) as DocumentDifferenceTaskRecor
 const view = () => structuredClone(actual.snapshot) as unknown as DocumentDifferenceSnapshotView;
 const props = (task = record()) => ({ projectId: task.project_id, documentId: task.document_id, taskId: task.id });
 const wrappers: ReturnType<typeof mount>[] = [];
-function setup() { const wrapper = mount(DocumentDifferenceTask, { props: props() }); wrappers.push(wrapper); return wrapper; }
+function setup() { const wrapper = mount(DocumentDifferenceTask, { props: props(), global: { stubs: { DocumentImpactPanel: true } } }); wrappers.push(wrapper); return wrapper; }
 beforeEach(() => {
   vi.resetAllMocks(); vi.useFakeTimers();
   api.getDocumentDifferenceTask.mockResolvedValue(record()); api.readDocumentDifferenceSnapshot.mockResolvedValue(view());
@@ -83,7 +83,7 @@ it("shows read errors and retries the same task without creating a new one", asy
 
 it("emits only a verified task for the original submission and rejects changed request references", async () => {
   const task = record(); const request = { creation_key: task.creation_key, old_snapshot_id: task.old_snapshot_id, new_snapshot_id: task.new_snapshot_id };
-  const wrapper = mount(DocumentDifferenceTask, { props: { ...props(), request } }); wrappers.push(wrapper);
+  const wrapper = mount(DocumentDifferenceTask, { props: { ...props(), request }, global: { stubs: { DocumentImpactPanel: true } } }); wrappers.push(wrapper);
   await flushPromises(); expect(wrapper.emitted("updated")).toEqual([[task]]);
   await wrapper.setProps({ request: { ...request, old_snapshot_id: "another-snapshot" } }); await flushPromises();
   expect(wrapper.emitted("updated")).toHaveLength(1);

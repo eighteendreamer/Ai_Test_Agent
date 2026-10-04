@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/api";
 import type { DocumentDifferenceTaskRecord, DocumentDifferenceSnapshotView, DocumentDifferenceFailureView, DocumentDifferenceTaskRequest } from "../../../types";
 import DocumentDifferenceSnapshot from "./DocumentDifferenceSnapshot.vue";
+import DocumentImpactPanel from "./DocumentImpactPanel.vue";
 import { assertDifferenceTask } from "./documentDifferenceIdentity";
 
 const props = defineProps<{ projectId: string; documentId: string; taskId: string; request?: DocumentDifferenceTaskRequest }>();
@@ -87,6 +88,7 @@ onBeforeUnmount(() => { disposed = true; ++epoch; stopPolling(); });
       <p v-if="task.error_code">失败代码：{{ task.error_code }}</p>
     </template>
     <DocumentDifferenceSnapshot v-if="view" :view="view" />
+    <DocumentImpactPanel v-if="view" :project-id="projectId" :document-id="documentId" :difference-snapshot-id="view.snapshot.id" />
     <article v-if="failure" aria-label="比较失败诊断">
       <h4>比较失败诊断 · 退出码 {{ failure.exit_code ?? '未取得' }}</h4>
       <p>{{ failure.error }}</p><h5>stdout</h5><pre>{{ failure.stdout || '空输出' }}</pre>

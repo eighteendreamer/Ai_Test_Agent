@@ -58,3 +58,11 @@ p4-production-verified.log whitespace=cr-at-eol,-blank-at-eol
 p4-production-verified.xml whitespace=cr-at-eol,-blank-at-eol
 # Vitest ends its raw console output with an extra empty line.
 p4-production-frontend-tests.log whitespace=cr-at-eol,-blank-at-eof
+# Preserve product/browser observations and original failures byte for byte.
+p4-product-* -text whitespace=cr-at-eol
+p4-product-*/** -text whitespace=cr-at-eol
+p4-product-*/**/*.object binary
+p4-product-*/**/*.docx binary
+p4-product-frontend-*.log whitespace=cr-at-eol,-blank-at-eof
+p4-product-browser-*.log whitespace=cr-at-eol,-blank-at-eol
+p4-product-browser-*.xml whitespace=cr-at-eol,-blank-at-eol

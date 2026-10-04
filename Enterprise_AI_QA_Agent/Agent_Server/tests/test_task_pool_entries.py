@@ -28,6 +28,7 @@ from src.application.documents.difference_config_service import DocumentDifferen
 from src.application.documents.difference_service import DocumentDifferenceService
 from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
+from src.runtime.postgres_document_impact_store import PostgresDocumentImpactStore
 
 
 @asynccontextmanager
@@ -46,7 +47,8 @@ async def pool_environment(tmp_path):
         await env.sessions.initialize()
         env.parse_store = PostgresDocumentParseStore(env.settings, lease_seconds=30)
         env.difference_store = PostgresDocumentDifferenceStore(env.settings, lease_seconds=30)
-        document_tables = [*env.difference_store.tables, *env.parse_store.tables]
+        env.impact_store = PostgresDocumentImpactStore(env.settings, lease_seconds=30)
+        document_tables = [*env.impact_store.tables, *env.difference_store.tables, *env.parse_store.tables]
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             for table in document_tables:
                 cur.execute('SELECT to_regclass(%s) AS existing', (table,))
@@ -59,6 +61,7 @@ async def pool_environment(tmp_path):
             objects=env.objects, parsing=env.parsing, stream='isolated:pool:differences')
         await env.parsing.initialize()
         await env.differences.initialize()
+        await env.impact_store.initialize()
         try:
             # Keep this fixture import lazy so the pre-implementation API failure is observable.
             from src.runtime.postgres_task_pool_store import PostgresTaskPoolStore
@@ -67,10 +70,11 @@ async def pool_environment(tmp_path):
         finally:
             owned = set()
             with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                for store in (env.difference_store, env.parse_store):
-                    cur.execute(f'SELECT checkpoint,failure_artifact FROM {store._tasks}')
+                for store in (env.impact_store, env.difference_store, env.parse_store):
+                    fields = ('checkpoint', 'failure_artifact', 'input_checkpoint') if store is env.impact_store else ('checkpoint', 'failure_artifact')
+                    cur.execute(f'SELECT {",".join(fields)} FROM {store._tasks}')
                     for row in cur.fetchall():
-                        for field in ('checkpoint', 'failure_artifact'):
+                        for field in fields:
                             if row[field]: owned.add(row[field]['storage_uri'])
             for uri in owned:
                 await env.objects.delete_object_uri(uri)

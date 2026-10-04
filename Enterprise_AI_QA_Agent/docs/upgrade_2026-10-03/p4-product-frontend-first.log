@@ -1,0 +1,68 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/tools/plugins/DocumentImpactProduct.test.ts src/features/tools/plugins/DocumentDifferenceTask.test.ts src/features/tools/plugins/ApiDocDifferences.test.ts src/views/TaskPoolView.test.ts src/services/documentImpacts.api.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 2 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+TypeError: api.getDocumentImpactSettings is not a function
+ ❯ load src/features/tools/plugins/DocumentImpactSettings.vue:39:48
+     37| async function load() {
+     38|   const generation = ++epoch; const projectId = props.projectId; busy.…
+     39|   const values = await Promise.allSettled([api.getDocumentImpactSettin…
+       |                                                ^
+     40|     api.getDocumentImpactBatchSettings(projectId), api.getDocumentImpa…
+     41|   if (disposed || generation !== epoch || projectId !== props.projectI…
+ ❯ immediate src/features/tools/plugins/DocumentImpactSettings.vue:84:97
+ ❯ callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:200:19
+ ❯ callWithAsyncErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:207:17
+ ❯ baseWatchOptions.call node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:884:47
+ ❯ job node_modules/@vue/reactivity/dist/reactivity.cjs.js:1902:18
+ ❯ Object.watch node_modules/@vue/reactivity/dist/reactivity.cjs.js:1937:7
+ ❯ doWatch node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:912:34
+ ❯ watch node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:845:10
+ ❯ setup src/features/tools/plugins/DocumentImpactSettings.vue:83:1
+
+This error originated in "src/features/tools/plugins/DocumentDifferenceTask.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "emits only a verified task for the original submission and rejects changed request references". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+TypeError: api.getProjectOverview is not a function
+ ❯ initialize src/features/tools/plugins/DocumentImpactPanel.vue:134:27
+    132|     }
+    133|   } catch (err) { storageWarning.value = err instanceof Error ? err.me…
+    134|   const projectRead = api.getProjectOverview(ctx.projectId).then(value…
+       |                           ^
+    135|     if (!current(ctx)) return;
+    136|     if (value.project.id !== ctx.projectId) throw new Error("影响入口与当前项目…
+ ❯ callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:200:19
+ ❯ callWithAsyncErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:207:17
+ ❯ baseWatchOptions.call node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:884:47
+ ❯ job node_modules/@vue/reactivity/dist/reactivity.cjs.js:1902:18
+ ❯ Object.watch node_modules/@vue/reactivity/dist/reactivity.cjs.js:1937:7
+ ❯ doWatch node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:912:34
+ ❯ watch node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:845:10
+ ❯ setup src/features/tools/plugins/DocumentImpactPanel.vue:142:1
+ ❯ callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:200:19
+
+This error originated in "src/features/tools/plugins/DocumentDifferenceTask.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "emits only a verified task for the original submission and rejects changed request references". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  5 passed (5)
+      Tests  58 passed (58)
+     Errors  2 errors
+   Start at  02:26:01
+   Duration  2.72s (transform 1.68s, setup 0ms, import 3.01s, tests 792ms, environment 5.94s)
+

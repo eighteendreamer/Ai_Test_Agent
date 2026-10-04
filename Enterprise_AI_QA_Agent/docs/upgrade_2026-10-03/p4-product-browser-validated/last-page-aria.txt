@@ -1,0 +1,159 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Document Difference
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - heading "历史文档比较" [level=2]
+  - link "返回任务池":
+    - /url: /taskpool
+  - article "比较任务详情":
+    - paragraph: 项目：8e0c9de0-091a-43f2-bec5-11f2cb6d7377 · 文档：b035844a-7461-5833-abfc-9eb543f66262
+    - paragraph: 比较任务：460b663d-0ccb-4cdc-8aeb-4273efb7b4a9
+    - button "刷新比较任务"
+    - status: 比较结果已保存 · 比较结果已保存 · 第 1 次领取
+    - paragraph: 旧侧解析快照：37992b32-c04e-45a7-bf4e-11e0149b61f4 → 新侧解析快照：4a08250c-cbed-4f0f-abbc-70a795dcc14b
+    - article "比较结果详情":
+      - heading "固定文档差异 · 比较已保存" [level=3]
+      - paragraph: 比较结果：5382c845-7532-421f-813b-94abc7a1550a · SHA256：ba1659746cf8303cf7b545172a7433cbc6499b08931695090178d4e8709b4e24
+      - region "旧侧固定来源":
+        - heading "旧侧" [level=4]
+        - paragraph: 原件版本：71f54670-d7e9-485d-b1c7-7953b6bf2d4c
+        - paragraph: 解析快照：37992b32-c04e-45a7-bf4e-11e0149b61f4
+        - paragraph: 原件 SHA256：6f6ced4d78ed1ff0765988e588c97029322098ff0d85b3e8e2012a63d603934c
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - region "新侧固定来源":
+        - heading "新侧" [level=4]
+        - paragraph: 原件版本：091be067-3d96-4ddb-810b-c0ec02ad3169
+        - paragraph: 解析快照：4a08250c-cbed-4f0f-abbc-70a795dcc14b
+        - paragraph: 原件 SHA256：d06e2b53ac524429dcb06d178212d3791c1a3046d280b6f2419642bb79c4968c
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - paragraph: 原始文本 1 · 换行归一文本 1 · 章节 0 · 表格 1
+      - list:
+        - listitem: 双方 · extracted_text_positions · 字符位置属于解析抽取文本；源行、DOCX路径及PDF页码沿用解析器，不表示原件字符坐标或完整格式差异
+        - listitem: 旧侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+        - listitem: 新侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+      - text: 文本差异视图
+      - combobox "文本差异视图":
+        - option "原始抽取文本" [selected]
+        - option "仅归一换行"
+      - paragraph: 字符位置指向原始抽取文本；换行归一保留空格、缩进、数字和 Unicode。
+      - region "文本变化 1":
+        - heading "修改 1" [level=4]
+        - strong: 旧侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 7 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - strong: 新侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 9 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - group: 字符变化（1）
+      - group: 章节变化（0）
+      - group: 表格变化（1）
+      - group: 固定比较策略与实际资源预算
+      - button "下载完整比较结果 JSON"
+    - region "文档影响分析入口":
+      - heading "分析文档变化对用例的影响" [level=4]
+      - paragraph: 当前固定比较结果：5382c845-7532-421f-813b-94abc7a1550a
+      - paragraph: 分析完整用例、当时编写来源与新旧差异；保存候选供评审，不直接改变启用版本或执行测试。
+      - group:
+        - text: 影响分析用例范围
+        - combobox "影响分析用例范围" [disabled]:
+          - option "项目非归档用例的启用版本与最新草稿" [disabled] [selected]
+          - option "选择具体用例版本" [disabled]
+        - text: 本次模型配置编号（留空使用项目设置）
+        - textbox "本次影响模型" [disabled]
+        - text: 环境声明
+        - textbox "影响环境声明" [disabled]
+        - text: 目标发布版本声明
+        - textbox "影响发布版本声明" [disabled]
+        - paragraph: 环境及发布版本仅为声明；当前环境是否生效仍需核实。
+        - button "提交固定影响分析" [disabled]
+      - group:
+        - text: 项目影响分析设置
+        - button "重新读取影响设置"
+        - paragraph: 设置保存到项目配置；环境与目标发布版本仅为声明，生效情况仍需证据确认。
+        - form "影响范围设置":
+          - paragraph: 范围策略 · 项目覆盖 · 修订 2
+          - group:
+            - text: 用例版本数量上限
+            - spinbutton "用例版本数量上限": "500"
+            - text: 固定依据字符上限
+            - spinbutton "固定依据字符上限": "1"
+            - text: 任务总超时（秒）
+            - spinbutton "任务总超时（秒）": "300"
+            - button "保存影响范围设置"
+        - form "影响模型指导设置":
+          - paragraph: 模型指导 · 项目覆盖 · 修订 1
+          - group:
+            - text: 默认模型配置编号（留空使用系统默认）
+            - textbox "影响默认模型配置编号": controlled-impact-product
+            - text: 模型输入字节上限
+            - spinbutton "模型输入字节上限": "256000"
+            - text: 分析指导
+            - textbox "影响分析指导": 产品实测引用完整原文与用例
+            - button "保存影响模型指导"
+        - form "影响分段设置":
+          - paragraph: 分段与补读 · 项目覆盖 · 修订 1
+          - group:
+            - text: 单段字符上限
+            - spinbutton "单段字符上限": "12000"
+            - text: 分段数量上限
+            - spinbutton "分段数量上限": "10000"
+            - text: 边界上下文字符
+            - spinbutton "边界上下文字符": "0"
+            - text: 单次补读字节上限
+            - spinbutton "单次补读字节上限": "256000"
+            - button "保存影响分段设置"
+        - form "影响调用预算设置":
+          - paragraph: 调用预算 · 项目覆盖 · 修订 1
+          - group:
+            - text: 逻辑调用数量上限
+            - spinbutton "逻辑调用数量上限": "250"
+            - text: 累计预留估算量上限
+            - spinbutton "累计预留估算量上限": "2000000"
+            - text: 单次调用超时（秒）
+            - spinbutton "单次调用超时（秒）": "120"
+            - text: 响应字节上限
+            - spinbutton "响应字节上限": "8000000"
+            - text: 消息封装预留估算量
+            - spinbutton "消息封装预留估算量": "1024"
+            - text: 内容计量
+            - combobox "影响内容计量":
+              - option "UTF-8字节估算" [selected]
+              - option "指定编码的内容计数"
+            - paragraph: 消息总输入仍为估算；逻辑调用数量不等于SDK或HTTP发送次数。
+            - button "保存影响调用预算"
+        - status: 项目影响设置已保存；新任务冻结提交时的实际配置，历史任务保持原依据。
+      - paragraph: 影响请求编号：a09dcb30-8dc5-45bf-87aa-2428c0f9322b
+      - paragraph: 本请求固定比较：5382c845-7532-421f-813b-94abc7a1550a
+      - button "查询上次影响提交"
+      - button "重试原影响提交"
+      - paragraph: 提交结果尚未确认；查询与重试保留原编号、用例范围和声明。
+      - alert: 完整文档影响输入超过配置限制，未截断正文或用例
+      - group: 影响任务历史（1）
+      - group: 已保存影响结果（1）
+  - text: ">_ 运行时事件控制台 idle "

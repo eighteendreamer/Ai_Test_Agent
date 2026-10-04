@@ -74,4 +74,16 @@ describe("mixed task-pool page", () => {
     expect(api.listTaskPoolEntries).toHaveBeenLastCalledWith(24, 0, { kind: "document_difference", state: "all", query: "" });
     w.unmount();
   });
+
+  it("labels impact results as saved and opens the fixed impact task", async () => {
+    api.listTaskPoolEntries.mockResolvedValue({ items: [{ kind: "document_impact", project_name: "需求项目", document_title: "订单需求",
+      task: { id: "impact-history", project_id: "project", document_id: "document", status: "completed", phase: "finished",
+        attempt_no: 2, updated_at: "2026-10-05T00:00:00Z", message: "候选结果已保存" } }], has_more: false });
+    const w = mount(TaskPoolView); await flushPromises();
+    expect(w.text()).toContain("文档影响分析"); expect(w.text()).toContain("影响结果已保存"); expect(w.text()).toContain("领取次数 2");
+    await w.get('button[aria-label="查看影响任务"]').trigger("click");
+    expect(push).toHaveBeenCalledWith({ name: "document-impact", params: { projectId: "project", documentId: "document", taskId: "impact-history" } });
+    await w.get("select").setValue("document_impact"); await flushPromises();
+    expect(api.listTaskPoolEntries).toHaveBeenLastCalledWith(24, 0, { kind: "document_impact", state: "all", query: "" }); w.unmount();
+  });
 });
