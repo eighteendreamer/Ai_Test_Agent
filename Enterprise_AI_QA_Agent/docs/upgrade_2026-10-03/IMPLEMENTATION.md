@@ -1805,3 +1805,25 @@ $env:QA_CASE_VERSION_REVIEWS_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\d
 没有新依赖/表或可编辑配置；评审业务记录在 PG，现有配置仍在 MySQL、原件/大工件在 RustFS。没有运行真实模型判断、embedding 模型或该业务用例，没有生产历史迁移；历史迁移内部预览/执行和旧正文/hash、停用/归档仅隔离专项，运维入口/投影重建、旧套件/原失败完整迁移流程继续。方案、原附件和镜像同步；完整 P4 影响任务/AI/需求评审/矩阵/增量草稿、P2 恢复/默认模型、模块化生成、人工录制、Docker 和 P5 保持未完成，不推送/建 PR。
 
 交付复核：暂存范围 140 份相关文件，120 份原始证据/验证元数据与暂存字节一致，122 份可解码文本凭据格式扫描无匹配；源码/测试/方案 diff 检查通过。42 个本地引用路径存在，项目 PLAN/Codex镜像字节一致，原附件当前验收及版本治理正文一致，原备份保持不变。用户 .gitignore 未暂存。最终结果逐项从 XML、实际 result.json、浏览器错误与 Job/固定运行记录核对，未将其他 P0—P5 未验证部分标为完成。
+
+## 原方案整理、三份全文同步与P4持久设计细化（2026-10-04，基线918cdace）
+
+本次回应“更新这个方案”：直接整理原附件、项目PLAN及Codex镜像，全文三份一致。旧项目方案正文中混入大量实施历史，多处历史“工作区开发中”“当前尚缺”混在主方案中；保留原字节到PLAN_HISTORY_918cdace.md，原附件当前版本另保存已粘贴的文本.history_918cdace.txt，已有.original.txt不动。当前方案独立列出代码依据、完整目标行为、P0—P5待办和已验范围；不累计历史测试数字、不缩小全量目标。
+
+查证原目标附件、对照报告、当前版本/规划/文档及来源调用链、本地课程、租约和模型调用检查点、main.py/containers.py。确认上传不依赖Git，执行不读生成模板；仍按当前项目选取→初排→AI以条件来源检查衔接→补前置→最终冻结执行。将已经提交的版本治理如实标记为已有验收，生产历史迁移另验。
+
+P4_DESIGN补齐待实现的持久分析：元数据提交先固定身份/默认选取/参数，耗时对象读取放Worker，扩展固定seed读取避免重启读当前配置/用例；证据容量与模型Token预算分开；分批范围/跨节引用/完整用例、调用意图/先存响应、未知响应和旧worker隔离、引用核验、候选评审及环境生效规则。现有document operation的checkpoint只代表最终快照，不能原样充当批次状态；复用既有Outbox/Redis/租约及模型适配，新增自身领域数据而非另造执行框架。本轮没有实施impact产品代码或新公开契约。
+
+实际复验（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'plan-current-input-verification')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_sources.py tests/test_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-current-input-verification.xml
+```
+
+**31通过、0跳过，终端22.66秒**。实际MD/DOCX/PDF、受限解析/比较进程和隔离MySQL/PG/RustFS，固定三方输入/旧来源/哈希/缺口/预算及V1启用/V2草稿保留均通过；新证据目录包含真实原件、input.json、lifecycle-retained.json和部分DOCX输入，旧失败证据没有覆盖。没有影响模型调用、前端代码变更，故不重复前端构建/浏览器；没有生产迁移、人工DeepSeek录制或Docker测试。
+
+三份全文SHA256、原项目历史字节、链接存在性、XML实际结果、完整阶段与核心约束、原件/输入hash另核对，结果保存在plan-current-validation.json；Git仅提交本轮方案/设计/记录及新证据，不提交用户.gitignore，不推送或建PR。完整P0—P5和P4业务闭环继续未完成。
+
+交付核对：21份暂存文件均在本轮文档目录，17份原件/输入/验证与历史备份的暂存字节一致；三份方案全文一致，21个本地链接存在，4份固定输入canonical SHA256一致，XML为31项/0错误/0失败/0跳过。可解码暂存文本凭据格式扫描无匹配，方案/设计/记录/属性diff检查通过；用户.gitignore未暂存。
