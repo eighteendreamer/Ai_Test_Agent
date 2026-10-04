@@ -1402,3 +1402,35 @@ $env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs
 收尾实际核对：五份最终XML的计数/失败/跳过与正文一致；项目PLAN和Codex镜像字节一致，附件上传/解析章节与正式方案一致且保留原编号，绝对本地链接均存在。前后端新增能力/目录/诊断契约引用核对通过，13个相关Python文件实际编译通过，源码/测试/Markdown及文本证据敏感格式扫描无匹配；未输出可能的匹配值。仅本轮相关文件进入提交，用户 `.gitignore` 留在工作区；三个新增被忽略的后端测试显式纳入提交。
 
 暂存范围实际为65个本轮相关文件；8份Markdown/PDF/DOCX原件的工作区、暂存对象与Git过滤后检出字节全部一致，结果JSON中的来源哈希匹配。源码/测试/方案的暂存diff检查通过。完整diff检查报告6处：两个实际BOM/CRLF Markdown原件的5行CR字符，以及 `p3-document-parse-catalog-before.xml` 原失败输出1处尾空白；为保留真实原件哈希及失败证据未改写这些工件，不将完整diff检查报告为全通过。仅本地中文commit，不推送、不创建PR。
+
+## 完整产品文档路径实际验收（2026-10-04，基线 96d8f44）
+
+上一目标轮属于实质进展：解析入口、默认快照与方案已提交。继续先读目标附件及工作区，确认仅用户 `.gitignore` 未提交。查证此前 `document_plugin_browser.py` 生成插件宿主页，生产解析专项只用HTTP；它们未验证正式 `index.html`/main/App/Pinia/router、侧栏和ToolsView事件。核对App初始化的Agent/工具/模式查询、会话创建/SSE，ProjectsView创建表单和ToolsView文档Tab。安装的Vite `resolvePreviewOptions` 明确preview继承server.proxy；无需造入口或改代理配置。
+
+先写入PLAN的实际验收设计，再新增 `tests/test_document_full_product.py`，复用已验证的 `isolated_runtime`、生产进程、受控模型启动配置和解析Worker CLI。独立PG数据库隔离所有业务表，MySQL使用专属配置表，Redis为本次容器，原件/解析结果真存RustFS。前端实际执行项目 `npm run build`，用既有Vite配置启动preview，浏览器打开正式首页并操作真实侧栏/路由。没有替换AppContainer服务、伪造API响应或生成插件宿主。
+
+| 原始证据 | 结果与处理 |
+|---|---|
+| `p3-document-full-product-first.xml`、`p3-document-full-product/` | **1失败，89.34秒**。页面及项目API均成功；测试使用完整无图标名称定位“新建项目”超时。按真实模板改用对应页面按钮范围及文本。截图、网络、构建/API输出保留 |
+| `p3-document-full-product-fixed.xml`、`p3-document-full-product-fixed/` | **1失败，59.12秒**。已界面创建项目、上传原件、MySQL保存超时70、独立CLI解析V1并上传V2；测试错误按直接文档读取版本回执的original_asset。按 `ApiDocVersionResult.document` 实际契约读取，使用Pydantic验证。没有改产品代码 |
+| `p3-document-full-product-verified.xml`、`p3-document-full-product-verified/` | **1通过，62.08秒**。实际正式前端构建/App、生产API、独立解析CLI与真实隔离存储完整文档流程；类型检查与构建通过，Vite **6.56秒** |
+
+最终证明：浏览器从首页侧栏创建正式项目；工具文档Tab上传正文/表格DOCX7天；设置面板保存项目超时70，直接MySQL读取内容和修订一致；CLI V1成功，另上传表格9天V2并CLI解析成功；离开文档页进入项目页，停止并重启API，刷新真实App再进入文档页，旧V1快照仍7天，下载的完整JSON与原结果逐项一致。PG直接核对项目名称、2个原件版本和2个快照，任务列表正好2项。无页面错误、解析模型调用0。网络记录和built_assets证明浏览器加载正式构建资产，未使用临时探针入口。
+
+故障记录不抹除：计划内停止API的窗口出现一次会话轮询代理500，preview还记录SSE ECONNRESET和连接ECONNREFUSED。测试明确用停机起止范围区分已注入故障与正常业务请求；正常及恢复后API请求无错误，页面状态恢复，不能声称整个过程中HTTP零失败。完整stdout/stderr留存，空stderr仍按原样保存。
+
+第二次夹具在读取回执时失败，V2已提交但尚未加入owned列表。隔离数据库已清理后，依据截图中确切文档/版本身份和实际上传路径，读取唯一V2对象并与临时DOCX逐字节比对后删除；`asset-cleanup.json`保存大小/哈希及动作，未操作其他对象。新夹具从本次隔离PG资产及解析检查点/失败记录补查所有工件，断言失败也不会丢失清理依据；最终隔离数据库/表/容器/对象均由原运行时清理。历史工件引用临时地址，不保证仍在线。
+
+本轮主命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-full-product-verified')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-full-product-verified.xml
+```
+
+两次失败分别使用first/fixed输出目录和XML，不覆盖历史。本轮没有更改产品源码、依赖或生产配置；新增的是实际产品验收及方案/证据。最终类型检查/构建已经由该测试实际运行；既有后端129项/插件3项未在本轮重跑，不重复计为本轮通过。人工查看完整产品截图，确认正式壳、Tools文档入口、不可变历史快照及原文表格7天可读。
+
+更新项目PLAN、用户所贴原方案及Codex镜像，保留原附件章节与备份；仅文档主流程的完整产品入口由待验改为本轮已验。未操作的其他项目/用例/模板/导入/Agent业务页面、更多事务/网络故障组合、生产历史迁移、默认外部模型、P3.4确定性差异、Git和P4/P5仍未完成。全文目标不缩小，不标记完整P0—P5完成。
+
+交付核对：本轮51个相关文件（新增实际验收测试、方案与原始证据），用户 `.gitignore` 不暂存。新测试实际py_compile通过；原附件上传/解析章节和正式方案一致，Codex镜像逐字节一致，绝对本地链接均可定位。三份XML的失败/终态计数、实际来源哈希、项目设置/版本/快照身份及计划内500记录与正文一致。源码/方案/文本工件敏感格式扫描无匹配，两个DOCX的工作区、暂存和过滤后检出字节一致。源码及方案暂存diff检查通过；完整diff检查保留两份原始 `last-page.txt` 在“选择新版本文件”处的实际尾空格，不改写页面采集证据，不报告完整diff全通过。只创建本地中文commit，不推送或建PR。
