@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import logging
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from src.application.documents.api_docs_service import ApiDocNotFoundError
+
+from src.schemas.document_parsing import (
+    DocumentParseSnapshotView, DocumentParseTaskRecord, DocumentParseTaskRequest,
+    DocumentParsingSettings, DocumentParsingSettingsRecord,
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/projects/{project_id}", tags=["document-parsing"])
+
+
+async def _call(request, project_id, service_name, operation, *args, **kwargs):
+    try:
+        service = getattr(request.app.state, service_name)
+        return await getattr(service, operation)(str(project_id), *args, **kwargs)
+    except (KeyError, ApiDocNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        logger.warning("document_parsing_request_rejected", extra={"project_id": str(project_id), "operation": operation})
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception as exc:
+        logger.error("document_parsing_service_unavailable", extra={"project_id": str(project_id),
+            "operation": operation, "error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="文档解析服务暂时不可用；提交结果未知时，请按原请求身份查询或重试") from None
+
+
+@router.get("/document-parsing-settings", response_model=DocumentParsingSettingsRecord)
+async def get_settings(project_id: UUID, request: Request):
+    return await _call(request, project_id, "document_parser_config_service", "get_settings")
+
+
+@router.put("/document-parsing-settings", response_model=DocumentParsingSettingsRecord)
+async def save_settings(project_id: UUID, payload: DocumentParsingSettings, request: Request):
+    return await _call(request, project_id, "document_parser_config_service", "save_settings", payload)
+
+
+@router.post("/documents/{document_id}/parse-tasks", response_model=DocumentParseTaskRecord, status_code=202)
+async def submit(project_id: UUID, document_id: UUID, payload: DocumentParseTaskRequest, request: Request):
+    return await _call(request, project_id, "document_parsing_service", "submit", str(document_id), payload)
+
+
+@router.get("/documents/{document_id}/parse-tasks/by-request", response_model=DocumentParseTaskRecord)
+async def get_by_request(project_id: UUID, document_id: UUID, request: Request,
+    creation_key: str = Query(min_length=1, max_length=160)):
+    return await _call(request, project_id, "document_parsing_service", "get_by_request", str(document_id), creation_key)
+
+
+@router.get("/documents/{document_id}/parse-tasks/{task_id}", response_model=DocumentParseTaskRecord)
+async def get_task(project_id: UUID, document_id: UUID, task_id: UUID, request: Request):
+    return await _call(request, project_id, "document_parsing_service", "get", str(document_id), str(task_id))
+
+
+@router.get("/documents/{document_id}/parse-snapshots/{snapshot_id}", response_model=DocumentParseSnapshotView)
+async def read_snapshot(project_id: UUID, document_id: UUID, snapshot_id: UUID, request: Request):
+    snapshot, result = await _call(request, project_id, "document_parsing_service", "read_snapshot", str(document_id), str(snapshot_id))
+    return {"snapshot": snapshot.model_dump(mode="json"), "result": result.model_dump(mode="json")}

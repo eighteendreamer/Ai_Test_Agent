@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.398" timestamp="2026-10-04T11:01:38.335277+08:00" hostname="EIghteen"><testcase classname="tests.test_case_import_parser" name="test_malformed_xlsx_xml_and_macro_payload_are_visible_errors[xl/workbook.xml]" time="0.035"><failure message="  File &quot;&lt;string&gt;&quot;, line 1&#10;lxml.etree.XMLSyntaxError: Couldn't find end of Start Tag invalid line 1, line 1, column 9">tests\test_case_import_parser.py:204: in test_malformed_xlsx_xml_and_macro_payload_are_visible_errors
+    CaseImportParser().inspect(filename=path.name, content=stream.getvalue())
+src\application\test_cases\import_parser.py:64: in inspect
+    with self._workbook(content) as workbook:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src\application\test_cases\import_parser.py:98: in _workbook
+    workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\openpyxl\reader\excel.py:348: in load_workbook
+    reader.read()
+..\.venv\Lib\site-packages\openpyxl\reader\excel.py:293: in read
+    self.read_workbook()
+..\.venv\Lib\site-packages\openpyxl\reader\excel.py:153: in read_workbook
+    self.parser.parse()
+..\.venv\Lib\site-packages\openpyxl\reader\workbook.py:45: in parse
+    node = fromstring(src)
+           ^^^^^^^^^^^^^^^
+src/lxml/etree.pyx:3434: in lxml.etree.fromstring
+    ???
+src/lxml/parser.pxi:2080: in lxml.etree._parseMemoryDocument
+    ???
+src/lxml/parser.pxi:1923: in lxml.etree._parseDoc
+    ???
+src/lxml/parser.pxi:1948: in lxml.etree._parseDoc_bytes
+    ???
+src/lxml/parser.pxi:1195: in lxml.etree._BaseParser._parseDoc
+    ???
+src/lxml/parser.pxi:647: in lxml.etree._ParserContext._handleParseResultDoc
+    ???
+src/lxml/parser.pxi:765: in lxml.etree._handleParseResult
+    ???
+src/lxml/parser.pxi:689: in lxml.etree._raiseParseError
+    ???
+E     File "&lt;string&gt;", line 1
+E   lxml.etree.XMLSyntaxError: Couldn't find end of Start Tag invalid line 1, line 1, column 9</failure></testcase><testcase classname="tests.test_case_import_parser" name="test_malformed_xlsx_xml_and_macro_payload_are_visible_errors[xl/worksheets/sheet1.xml]" time="0.018" /></testsuite></testsuites>

@@ -13,12 +13,14 @@ from dataclasses import dataclass
 
 from src.containers import AppContainer
 from src.application.test_cases.planning_service import CasePlanningService
+from src.application.documents.parsing_service import DocumentParsingService
 from src.core.config import Settings
 from src.core.request_context import bind_request_context
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_vector_store import RedisVectorStore
 from src.infrastructure.sqlalchemy_runtime import sqlalchemy_engine_lifespan
 from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
+from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,11 @@ async def planning_worker_runtime(settings: Settings):
         await initialize("projects", container.project_service().initialize())
         await initialize("cases", container.test_case_service().initialize())
         await initialize("documents", container.api_docs_service().initialize())
+        document_parsing = DocumentParsingService(store=PostgresDocumentParseStore(settings),
+            documents=container.api_docs_service(), projects=container.project_service(),
+            configs=container.document_parser_config_service(), objects=objects, stream=None)
+        await initialize("document_parsing", document_parsing.initialize())
+        container.api_docs_service().set_parsing_service(document_parsing)
         await initialize("recordings", container.recording_store().initialize())
         container.project_planning_sources().set_recording_sources(
             recording_store=container.recording_store(), recording_graph_store=graphs)

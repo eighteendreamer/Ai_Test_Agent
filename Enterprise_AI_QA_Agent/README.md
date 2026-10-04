@@ -212,6 +212,16 @@ IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 
 
 ### 1.1 启动 PostgreSQL Outbox Relay
 
+需求文档解析使用独立 Worker。可编辑解析选项和资源策略保存在 MySQL（项目接口 `/api/v1/projects/{project_id}/document-parsing-settings`）；原件仍在 RustFS，解析任务、固定输入和不可变快照元数据在 PostgreSQL。Markdown、DOCX、文本型 PDF 的后端链路已接通；扫描 PDF 没有 OCR 能力，Docling 仅预留注册入口。解析页面操作入口仍待完善。
+
+使用现有 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED` 开启持久派发，并将 `qa:tasks:document_parsing` 加入现有 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS`（保留其他已登记流）。先启动下方 Relay，再运行：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_document_parse_worker
+```
+
+有界验收可以增加 `--once --worker-id document-parse-probe`；`--stream` 仅用于明确登记的独立传输流。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/parse-tasks`，请求包含 `creation_key`、固定 `version_id` 和可选 `options`。以原请求身份查询或重试可以找回已提交任务；成功后按 `snapshot_id` 查询 `parse-snapshots/{snapshot_id}`。修改策略或重解析使用新的请求身份，旧快照保留。原件版本与解析快照是不同记录；已有持久引用的文档删除返回冲突，防止丢失历史依据。
+
 任务提交先写入 PostgreSQL Outbox，再由独立 Relay 投递到 Redis Streams。Relay 不应与 API 进程绑定，生产环境建议作为单独的进程或服务运行：
 
 ```bash

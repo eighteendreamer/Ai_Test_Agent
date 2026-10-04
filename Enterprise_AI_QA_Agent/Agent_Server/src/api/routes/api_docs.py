@@ -266,5 +266,7 @@ async def delete_api_doc(doc_id: str, request: Request):
         return await request.app.state.api_docs_service.delete_document(doc_id)
     except ApiDocNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ApiDocConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - sanitize unexpected failures at the HTTP boundary.
         _raise_api_doc_internal_error(exc, operation="delete", doc_id=doc_id)

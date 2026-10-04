@@ -192,12 +192,13 @@ def test_actual_rows_not_cached_dimensions_enforce_limits(tmp_path):
         CaseImportParser(CaseImportLimits(max_cases=1)).parse(filename=path.name, content=path.read_bytes(), options=CaseImportOptions(mode_key="api_testing"))
 
 
-def test_malformed_xlsx_xml_and_macro_payload_are_visible_errors(tmp_path):
+@pytest.mark.parametrize("damaged_part", ["xl/workbook.xml", "xl/worksheets/sheet1.xml"])
+def test_malformed_xlsx_xml_and_macro_payload_are_visible_errors(tmp_path, damaged_part):
     path = _file(tmp_path)
     stream = io.BytesIO()
     with zipfile.ZipFile(path) as source, zipfile.ZipFile(stream, "w") as target:
         for item in source.infolist():
-            content = b"<invalid" if item.filename == "xl/workbook.xml" else source.read(item.filename)
+            content = b"<invalid" if item.filename == damaged_part else source.read(item.filename)
             target.writestr(item, content)
     with pytest.raises(ValueError, match="无法读取 Excel 文件结构"):
         CaseImportParser().inspect(filename=path.name, content=stream.getvalue())

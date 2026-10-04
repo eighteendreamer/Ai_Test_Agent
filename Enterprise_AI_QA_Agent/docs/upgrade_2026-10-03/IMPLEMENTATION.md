@@ -1288,3 +1288,67 @@ $env:RUN_LIVE_API_DOC_BROWSER='1'
 使用本地 importlib.metadata 核对安装版本 python-docx 1.2.0、pypdf 6.19.0；读取已有 p3-document-parsers-config-first.xml，确认 33 项中 2 失败、0 跳过，即 31 通过。两项失败均为测试夹具 AttributeError；本轮未修改或重跑该测试，不报告配置专项已通过。上一阶段版本回归结果沿用其原记录，不声称本轮重新运行。
 
 文档验证包含 git diff --check、三份方案的解析章节一致性、项目 PLAN 与 Codex 镜像字节一致性及本地引用存在性。仅暂存本轮方案文档，既有源码/测试/锁文件和用户 .gitignore 保留工作区状态；不推送、不创建 PR。
+
+## P3 轻量解析、持久任务及快照消费（2026-10-04）
+
+依据先于实现：现有 `_read_record_content` 直接解码对象字节，PDF 上传通过不能证明文字可读；原 `api_document` 不接受 DOCX。既有 `CaseImportProcess`/`import_worker` 已有受限进程；`PostgresPlanningTaskStore`、`PlanningTaskHandler`、专用规划运行时已验证业务任务与传输分离。复用相同的固定输入、项目事务/Outbox、租约 fencing 和结果检查点方式；解析不使用 Session、模型或浏览器启动。查阅本地课程《评测工程化与CICD》《Agent轨迹与协议鲁棒性》的版本/轨迹/幂等要求，以及 python-docx Document 和 pypdf 文本提取官方说明。DOCX 页码/页眉脚/批注/修订和图像、PDF 表格/标题与扫描页的能力限制直接记录，不由 AI 编造补齐。
+
+实际实现：
+
+- 统一解析契约及工厂：原件 SHA/大小、完整文本、块/章节/表格、来源位置、实际选项、解析器/依赖版本、能力、complete/partial/unsupported 与警告。Markdown 保留 BOM 解码后的 CRLF 全文及确定性行位置；DOCX 正文顺序、表格/嵌套/合并提示；PDF 分页文本及结构/OCR 警告。Docling HTTP 只保留能力注册与统一结果转换，未部署/调用容器。
+- 共享 `LimitedParserProcess`：Excel 与文档适配器共用固定内部模块入口，独立子进程/线程等待，输入与输出限制、CPU/RSS/时间限制、取消及后代回收；正常失败完整保留 stdout/stderr，洪泛保留有界前缀并明确标记。实际重复取消测试复现清理前返回，改为持续 shield 清理任务，直至其 finally 完成。
+- MySQL `document.parsing_settings`：缺失时初始化全局默认、项目覆盖、修订与实际完整策略复制；提交时拒绝归档或不可用解析器。新增项目配置 API，沿用现有 AppContainer 配置存储与日志。
+- PostgreSQL：沿用目录表派生 `_parse_tasks`、`_parse_snapshots`，固定文档/原件版本、资产、配置修订/选项及解析器身份；项目事务重新核对归属与原件，任务和 Outbox 同事务。并发同请求只保存一次，改变版本/选项的同身份请求被拒绝。Lease/attempt fencing、检查点及终态不可重领；终态和快照同事务，结果检查点恢复不重新解析，原 deadline 不重置。
+- RustFS：原件沿用既有资产；解析结果及失败轨迹分别保存。失败轨迹保留退出码/完整受限 stdout/stderr，不写普通日志。结果写入后先保存检查点，再提交终态；未知提交结果不删除工件。快照读取核对大小/哈希、原件身份、实际选项/解析器与元数据；重解析追加，历史不改写。
+- 后端 API、独立 `run_document_parse_worker`、生产初始化与只读规划 Worker 已接线。现有文档全文按固定原件版本读取已保存快照；无快照 PDF/DOCX 明确报错，禁止二进制文本回退。生成和规划保存具体解析快照/哈希/结构/警告；旧 V1 与新 V2 内容各读对应历史。因新业务外键引用而不能删除的文档返回 409，数据库回滚保留原件；实际错误是 SQLAlchemy IntegrityError 包装的 ForeignKeyViolation，按真实包装层识别。
+- DOCX 原件使用专用 `requirement_document` 策略，未扩大所有 API 文档准入。前端文件选择、解析契约/API 消费方成对同步；尚未增加完整解析任务/历史/警告面板。
+
+新增精确依赖 python-docx 1.2.0（MIT）、pypdf 6.19.0（BSD-3-Clause），按官方/PyPI 元数据核对与 Python >=3.11 兼容，实际运行 Python 3.11.16。只安装解析依赖及传递的 lxml 6.1.3；根 `uv lock` 更新时补入此前已在 dev 声明但未锁定的 Alembic/Mako/MarkupSafe，已有包版本无变化。README 明确根锁文件为生效锁，后端历史 `uv.lock` 不改。`uv lock --check`、`uv pip check` 实际通过。
+
+安装 lxml 后扩大回归复现 Excel workbook XML 原始错误从 ElementTree ParseError 变为 lxml XMLSyntaxError。检查已安装 openpyxl XML 分支与两种异常 MRO，使用共同 SyntaxError 基类归一同一文件结构错误；未关闭 lxml。实际工作簿 XML 和工作表 XML 故障样本、宏内容及两种解析路径均重新验证。
+
+| 证据 | 实际结果 | 说明 |
+|---|---|---|
+| `p3-document-parsers-config-first.xml` / `config-fixed.xml` | 31 通过、2 失败 → 33 通过 | 旧配置夹具错误将 tuple 当对象，按已有夹具的真实返回契约修正；真实 MySQL 变体已执行 |
+| `p3-document-parser-boundaries-before.xml` / `boundaries-fixed.xml` | 26 通过、3 失败、1 跳过 → 39 通过 | 重复取消提前返回、空/仅页眉 DOCX 误报 complete；开启真实证据生成后无跳过 |
+| `p3-document-parser-import-regression.xml` / `import-fixed.xml` | 68 通过、1 失败 → 70 通过 | lxml 改变 openpyxl 异常类型，扩大真实导入回归 |
+| `p3-document-parser-xlsx-compatibility-before.xml` / `xlsx-elementtree.xml` | 1 通过、1 失败 → ElementTree 17 通过 | 加入实际损坏工作表样本；lxml 路径随 70 项回归通过 |
+| `p3-document-parse-tasks-first.xml` / `tasks-http.xml` / `tasks-cli.xml` | 4 → 5 → 6 通过 | 真实 PG/MySQL/RustFS；Outbox/Redis Worker 类、独立 Worker CLI |
+| `p3-document-parse-snapshot-consumers.xml` / `consumers-fixed.xml` / `docx-sources.xml` | 各 1 失败 | 新夹具先误用生成 collect 方法名、再漏必填 objective；修正后实际删除异常又暴露 SQLAlchemy 包装层。按实际签名与失败修正，最终均纳入扩大回归 |
+| `p3-document-parse-integration-final.xml` | **163 通过、3 跳过，89.71 秒** | 本轮文件/进程/配置/任务/CLI/导入/版本/资产/生成/规划/生命周期回归。三项跳过：外部默认模型、PG/MySQL 生命周期开关 |
+| `p3-document-parse-lifespan-live.xml` | **8 通过，10.63 秒** | 实际开启 PG/MySQL，补验上行两项跳过。该文件含其他生命周期回归，不将 8 项全部重复计入上行总数 |
+| `p3-document-parse-cli-logging.xml` / `p3-document-parse-cli/` | **1 通过、7 未选择，11.74 秒** | 按现有 configure_logging 接入日志，实测独立 CLI 输出 processed=1，任务身份及终态日志可查；快照/结果和完整输出留存 |
+| `p3-document-parser-import-browser.xml` | **3 通过，12.94 秒** | 真实 Chromium/既有导入组件/真实 API/隔离存储，rows/split/JSON；没有验收新的解析页面 |
+| `npm run build` | **类型检查与构建通过，Vite 14.11 秒** | 前端新增契约/API 与 DOCX 文件选择；没有以构建代替解析页面验收 |
+
+实际样本：`p3-document-parser-files/` 内的带正文和表格 DOCX、分页文本 PDF、BOM/CRLF Markdown 及结果 JSON。新增任务专项将这些类型实际上传、读取 RustFS 原件、派发、解析与回读；实际 PDF 内容 7→9 天形成新原件 V2，旧 V1/快照保持 7 天。库升级/选项切换对已读依据不原地改写。CLI 工件引用测试资源，验收结束已清理隔离表、Redis 流和对象，文件工件保留作证据，不宣称该临时地址仍在线。
+
+浏览器测试沿用旧入口会写入 `p1-import-browser-*`；本轮检查结果后另存为 `p3-document-parser-import-browser-*`，恢复旧 P1 证据，避免覆盖历史验收。其截图为原导入组件的隔离宿主，未表示完整产品启动或 DOCX 解析面板已验收。
+
+主要命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:RUN_LIVE_CASE_IMPORT_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-parser-files')
+$env:QA_DOCUMENT_PARSE_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-parse-cli')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_parsers.py tests/test_document_parser_process.py tests/test_document_parser_config.py tests/test_document_parse_tasks.py tests/test_case_import_process.py tests/test_case_import_parser.py tests/test_case_import_service.py tests/test_api_doc_versions.py tests/test_api_doc_original_assets.py tests/test_api_doc_catalog_atomicity.py tests/test_test_case_generation_pipeline.py tests/test_case_planning.py tests/test_lifespan_resource_cleanup.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p3-document-parse-integration-final.xml
+
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_lifespan_resource_cleanup.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-parse-lifespan-live.xml
+```
+
+独立 CLI 日志专项使用同一真实开关与 `QA_DOCUMENT_PARSE_TASK_EVIDENCE_DIR`，运行 `tests/test_document_parse_tasks.py -k independent_worker`；导入浏览器开启 `RUN_LIVE_CASE_IMPORT_BROWSER=1`。ElementTree 专项只在对应测试进程设 `OPENPYXL_LXML=False`，未修改产品配置。新/改解析 Python 文件已实际 py_compile；功能验收以前述真实文件/存储/进程为准。
+
+本阶段是完整目标中的解析后端与来源基础。待完成：解析页面、任务/快照列表和警告/历史操作、更多响应丢失/事务/网络故障边界及完整生产 API 启动；确定性差异、Git 来源、需求影响与追踪/增量草稿；P2 步骤归属/未知副作用/计划修订/默认模型，以及人工 UI 录制、Docker 真实证据、模块化生成和 P5。未运行生产历史迁移，未部署 Docling，未调用默认外部模型，本轮不宣称 P3 或 P0—P5 完成。
+
+收尾核对：已直接更新用户所贴方案原文件及项目 PLAN，并同步所选 Codex 计划；原始附件备份保留。修正上传章节、接口和第六节中仍把解析快照/来源消费写为待实现的过时表述，加入解析专项状态，上一阶段 160 项版本回归与当前 163 项解析回归分别标注。当前正文明确后端已接通、解析页面/完整生产和差异/追踪未完成；原件保存与版本比较不依赖 Git，生成模板不参与执行的约定保持一致。
+
+实际执行三份方案的一致性、全部绝对本地链接存在性及 XML 结果核对：项目 PLAN 与 Codex 镜像逐字节一致，两份方案的解析章节一致，最终结果为 163/8/1/3/17 项通过且对应 XML 无失败。该步骤读取此前真实测试记录，没有重新运行这五组功能测试。人工查看本轮导入截图，确认显示已提交批次、完整 JSON 和未登录负向条件；截图是既有导入组件的隔离宿主，不属于新解析页面验收。
+
+交付文件范围检查为 75 个相关文件，用户 `.gitignore` 排除；对源码、测试、Markdown、JSON/XML 和 CLI 文本工件做敏感格式扫描，无匹配，未输出匹配值。29 个本轮 Python 文件实际 py_compile 通过；`uv lock --check`、`uv pip check` 和已跟踪文件 `git diff --check` 通过。根锁仍是生效锁，生产历史数据未迁移。仅提交本轮相关实现、测试、方案和原始证据，不推送、不创建 PR。
+
+暂存后实际发现 PDF 样本检出会从 897 字节变成 978 字节：`git show :路径` 与原件一致，`git cat-file --filters` 与原件不一致。依照 [Git 官方属性说明](https://git-scm.com/docs/gitattributes) 中 `-text` 禁止检入/检出换行转换的规则，只在本轮样本目录增加针对 `requirements.pdf` 的属性，不修改 Git 配置。修复后原件、暂存对象及检出字节相同，均为 897 字节；pypdf 实际读取检出字节，文本与原件相同，证据 JSON 的来源哈希匹配。最终相关文件数为 76；源码/文档的暂存 diff 检查通过，完整 diff 检查仍有原失败 XML 的两处尾空白，保留原始测试输出。

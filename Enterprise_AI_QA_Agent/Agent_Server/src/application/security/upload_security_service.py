@@ -88,6 +88,7 @@ class UploadSecurityService:
         ".html",
     }
     API_DOC_EXTENSIONS = {".json", ".yaml", ".yml", ".har", ".md", ".txt", ".log", ".pdf"}
+    REQUIREMENT_DOC_EXTENSIONS = {".md", ".txt", ".docx", ".pdf"}
     SKILL_EXTENSIONS = {".md", ".zip"}
     MALICIOUS_PATTERNS = [
         (re.compile(r"<script\b", re.IGNORECASE), "Detected embedded script tag."),
@@ -369,6 +370,8 @@ class UploadSecurityService:
             return self.CHAT_ATTACHMENT_EXTENSIONS
         if profile == "api_document":
             return self.API_DOC_EXTENSIONS
+        if profile == "requirement_document":
+            return self.REQUIREMENT_DOC_EXTENSIONS
         if profile == "skill_package":
             return self.SKILL_EXTENSIONS
         return self.CHAT_ATTACHMENT_EXTENSIONS | self.API_DOC_EXTENSIONS | self.SKILL_EXTENSIONS

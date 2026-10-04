@@ -12,6 +12,7 @@ from src.application.context.observation_runtime_service import ObservationRunti
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.documents.api_docs_service import ApiDocsService
+from src.application.documents.parser_config_service import DocumentParserConfigService
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
 from src.application.intent.semantic_intent_service import SemanticIntentService
@@ -238,6 +239,11 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # ── Documents & Knowledge ────────────────────────────────────────
+    document_parser_config_service = providers.Singleton(
+        DocumentParserConfigService,
+        config_store=application_config_store,
+        project_service=project_service,
+    )
     api_docs_service = providers.Singleton(
         ApiDocsService,
         settings=settings,

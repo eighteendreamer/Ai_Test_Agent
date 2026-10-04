@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Protocol
 
 from pydantic import ValidationError
+from psycopg.errors import ForeignKeyViolation
+from sqlalchemy.exc import IntegrityError
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -503,13 +505,19 @@ class PostgresApiDocStore:
         return record
 
     def _delete_sync(self, doc_id: str) -> ApiDocRecord | None:
-        with postgres_connect(self._settings) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"DELETE FROM {self._table} WHERE id = %s RETURNING record",
-                    (doc_id,),
-                )
-                row = cur.fetchone()
+        try:
+            with postgres_connect(self._settings) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"DELETE FROM {self._table} WHERE id = %s RETURNING record",
+                        (doc_id,),
+                    )
+                    row = cur.fetchone()
+        except IntegrityError as exc:
+            if not isinstance(exc.orig, ForeignKeyViolation):
+                raise
+            logger.warning("api_doc_delete_referenced", extra={"api_doc_id": doc_id})
+            raise ApiDocConflictError("文档已有持久业务引用，不能删除原件或历史版本") from exc
         return self._from_value(row["record"]) if row else None
 
     def _migrate_legacy_catalog_sync(self, catalog_path: Path) -> dict[str, int]:

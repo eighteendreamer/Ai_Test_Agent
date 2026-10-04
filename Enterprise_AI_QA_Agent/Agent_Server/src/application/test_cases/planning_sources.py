@@ -87,6 +87,9 @@ class ProjectPlanningSources:
                        "has_more": end < len(lines), "source_uri": doc.storage_uri,
                        "content_asset_id": (result.get("content_asset") or {}).get("id"),
                        "content_sha256": result.get("content_sha256"), "catalog_revision": doc.catalog_revision}
+            if result.get("parse_snapshot"):
+                payload["parse_snapshot"] = result["parse_snapshot"]
+                payload["parse_structure"] = result.get("parse_structure")
             version = doc.current_version_id or doc.updated_at.isoformat()
         else:
             if self._recordings is None or self._graphs is None:

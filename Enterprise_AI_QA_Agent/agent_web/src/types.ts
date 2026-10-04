@@ -1245,6 +1245,147 @@ export interface ApiDocContentResult {
   read_error?: string | null;
   content_asset?: ApiDocumentAsset | null;
   content_sha256?: string | null;
+  parse_snapshot?: DocumentParseSnapshot | null;
+  parse_structure?: DocumentParseStructure | null;
+}
+
+export interface DocumentParseOptions {
+  parser_id: string;
+  encoding: "utf-8-sig" | "utf-16" | "gb18030";
+  pdf_extraction_mode: "plain" | "layout";
+}
+
+export interface DocumentParsingSettings {
+  options: DocumentParseOptions;
+  policy: {
+    timeout_seconds: number;
+    max_cpu_seconds: number;
+    max_memory_bytes: number;
+    max_output_bytes: number;
+    limits: { max_bytes: number; max_expanded_bytes: number; max_zip_entries: number; max_pages: number;
+      max_blocks: number; max_text_chars: number; max_table_cells: number };
+  };
+  parser_by_extension: Record<string, string>;
+}
+
+export interface DocumentParsingSettingsRecord {
+  scope_key: string;
+  revision: number;
+  payload: DocumentParsingSettings;
+}
+
+export interface DocumentParserCapability {
+  parser_id: string;
+  formats: string[];
+  implementation_version: string;
+  text: boolean;
+  sections: boolean;
+  tables: boolean;
+  ocr: boolean;
+  source_positions: string[];
+  transport: "local" | "http";
+  available: boolean;
+}
+
+export interface DocumentSourceLocation {
+  kind: "line" | "docx" | "page";
+  start_line?: number | null;
+  end_line?: number | null;
+  page?: number | null;
+  path: number[];
+  part?: string | null;
+}
+
+export interface DocumentParseWarning {
+  code: string;
+  message: string;
+  source?: DocumentSourceLocation | null;
+}
+
+export interface DocumentTextBlock {
+  id: string;
+  kind: "text" | "heading" | "table" | "code";
+  text: string;
+  start_char: number;
+  end_char: number;
+  source: DocumentSourceLocation;
+  heading_level?: number | null;
+}
+
+export interface DocumentParseStructure {
+  blocks: Array<Omit<DocumentTextBlock, "text">>;
+  sections: Array<{ id: string; heading_block_id: string; title: string; level: number;
+    parent_id?: string | null; start_char: number; end_char: number }>;
+  tables: Array<{ block_id: string; rows: Array<Array<{ text: string; source: DocumentSourceLocation }>> }>;
+}
+
+export interface DocumentParseSeed {
+  project_id: string;
+  document_id: string;
+  version_id: string;
+  original_asset: ApiDocumentAsset;
+  config: DocumentParsingSettingsRecord;
+  options: DocumentParseOptions;
+  parser: DocumentParserCapability;
+}
+
+export interface DocumentParseSnapshot {
+  id: string;
+  task_id: string;
+  seed: DocumentParseSeed;
+  storage_uri: string;
+  sha256: string;
+  size_bytes: number;
+  status: "complete" | "partial" | "unsupported";
+  parser: DocumentParserCapability;
+  dependency_versions: Record<string, string>;
+  warnings: DocumentParseWarning[];
+  created_at: string;
+}
+
+export interface DocumentParseResult extends Omit<DocumentParseStructure, "blocks"> {
+  schema_version: "document-parse-v1";
+  filename: string;
+  source_sha256: string;
+  source_size_bytes: number;
+  parser: DocumentParserCapability;
+  dependency_versions: Record<string, string>;
+  options: DocumentParseOptions;
+  text: string;
+  blocks: DocumentTextBlock[];
+  warnings: DocumentParseWarning[];
+  status: "complete" | "partial" | "unsupported";
+  metadata: Record<string, unknown>;
+}
+
+export interface DocumentParseTaskRequest {
+  creation_key: string;
+  version_id: string;
+  options?: DocumentParseOptions | null;
+}
+
+export interface DocumentParseTaskRecord {
+  id: string;
+  project_id: string;
+  document_id: string;
+  version_id: string;
+  creation_key: string;
+  status: "queued" | "running" | "completed" | "failed";
+  phase: "queued" | "parsing" | "result_saved" | "finished";
+  attempt_no: number;
+  snapshot_id?: string | null;
+  error_code?: string | null;
+  failure_artifact?: { storage_uri: string; sha256: string; size_bytes: number; exit_code?: number | null } | null;
+  message: string;
+  created_at: string;
+  updated_at: string;
+  deadline_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface DocumentParseSnapshotView {
+  snapshot: DocumentParseSnapshot;
+  result: DocumentParseResult;
 }
 
 export interface ApiDocUpdateRequest {

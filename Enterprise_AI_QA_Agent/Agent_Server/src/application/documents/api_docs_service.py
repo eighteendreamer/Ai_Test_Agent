@@ -56,6 +56,10 @@ class ApiDocsService:
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._catalog_store = catalog_store or JsonApiDocStore(self._catalog_path)
         self._project_service = project_service
+        self._parsing_service = None
+
+    def set_parsing_service(self, service):
+        self._parsing_service = service
 
     async def initialize(self) -> None:
         await self._catalog_store.initialize()
@@ -98,7 +102,29 @@ class ApiDocsService:
         content_asset = next((asset for asset in [*record.derived_assets,
             *([record.original_asset] if record.original_asset else [])] if asset.storage_uri == record.storage_uri), None)
         content_sha256 = None
-        if record.storage_uri:
+        parsed = None
+        parse_error = None
+        if self._parsing_service and record.current_version_id and record.project_id:
+            try:
+                parsed = await self._parsing_service.latest_snapshot(record.project_id, record.id, record.current_version_id)
+            except Exception as exc:
+                parse_error = "解析快照无法读取或固定依据校验失败"
+                logger.error("api_doc_parse_snapshot_read_failed", extra={"api_doc_id": record.id,
+                    "version_id": record.current_version_id, "error_type": type(exc).__name__})
+        binary_document = Path(record.filename).suffix.lower() in {".pdf", ".docx"}
+        if parse_error:
+            content, read_error = "", parse_error
+        elif parsed:
+            snapshot, result = parsed
+            if result.status == "unsupported":
+                content, read_error = "", "解析器未提取到可用文本，请查看解析警告"
+            else:
+                content = result.text
+                content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                content_asset = snapshot.seed.original_asset
+        elif binary_document:
+            content, read_error = "", "该文档尚无可用解析快照，请先提交文档解析任务"
+        elif record.storage_uri:
             try:
                 stored = await self._artifact_storage_service.read_object_uri(record.storage_uri)
                 raw = stored["content"]
@@ -128,6 +154,10 @@ class ApiDocsService:
             "read_error": read_error,
             "content_asset": content_asset.model_dump(mode="json") if content_asset else None,
             "content_sha256": content_sha256,
+            "parse_snapshot": parsed[0].model_dump(mode="json") if parsed else None,
+            "parse_structure": {"sections": [item.model_dump(mode="json") for item in parsed[1].sections],
+                "tables": [item.model_dump(mode="json") for item in parsed[1].tables],
+                "blocks": [item.model_dump(mode="json", exclude={"text"}) for item in parsed[1].blocks]} if parsed else None,
         }
 
     async def search_documents(
@@ -510,7 +540,8 @@ class ApiDocsService:
         owned_uris = []
         try:
             original_result = await self._store_upload(content=content, filename=filename,
-                object_prefix=f"api-docs/{doc_id}/{version_id}/original", profile="api_document", source=source,
+                object_prefix=f"api-docs/{doc_id}/{version_id}/original",
+                profile="requirement_document" if Path(filename).suffix.lower() == ".docx" else "api_document", source=source,
                 content_type=declared_content_type)
             owned_uris.append(str(original_result["uri"]))
             original_asset = self._asset(original_result, content=content, filename=filename,
@@ -993,6 +1024,8 @@ class ApiDocsService:
 
         if suffix == ".md":
             return "Markdown 文档", None
+        if suffix == ".docx":
+            return "Word 文档", None
         if suffix in {".txt", ".log"}:
             return "文本文件", None
         return "其他文档", None

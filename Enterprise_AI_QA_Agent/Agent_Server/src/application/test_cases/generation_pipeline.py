@@ -95,6 +95,9 @@ class ProjectTestCaseContextProvider:
             source_metadata = {"format_label": doc.format_label,
                 "content_asset_id": asset.get("id"), "content_sha256": content.get("content_sha256"),
                 "catalog_revision": doc.catalog_revision, "truncated": bool(content.get("truncated"))}
+            if content.get("parse_snapshot"):
+                source_metadata["parse_snapshot"] = content["parse_snapshot"]
+                warnings.extend(item["message"] for item in content["parse_snapshot"].get("warnings", []))
             text = str(content.get("content") or "")[:limit]
             remaining_chars -= len(text)
             api_documents.append(
@@ -108,6 +111,7 @@ class ProjectTestCaseContextProvider:
                     "version_id": doc.current_version_id,
                     **source_metadata,
                     "content": text,
+                    "parse_structure": content.get("parse_structure"),
                     "truncated": bool(content.get("truncated")),
                 }
             )

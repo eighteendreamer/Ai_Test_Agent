@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-file-arrow-up"></i>
               <strong>{{ uploadFile?.name || t("apiDocs.select_local_file") }}</strong>
               <span>{{ t("apiDocs.upload_format_hint") }}</span>
-              <input type="file" accept=".json,.yaml,.yml,.har,.txt,.md,.log,.pdf" @change="onUploadFileChange">
+              <input type="file" accept=".json,.yaml,.yml,.har,.txt,.md,.log,.pdf,.docx" @change="onUploadFileChange">
             </label>
           </template>
 

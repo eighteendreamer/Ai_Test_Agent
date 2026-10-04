@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from xml.etree.ElementTree import ParseError
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
@@ -96,7 +95,9 @@ class CaseImportParser:
                 if any(item.filename.lower().endswith("vbaproject.bin") for item in entries):
                     raise ValueError("用例导入不接受宏内容")
             workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
-        except (zipfile.BadZipFile, KeyError, OSError, ParseError, InvalidFileException) as exc:
+        # openpyxl selects lxml when installed, otherwise ElementTree. Both
+        # XMLSyntaxError and ParseError derive from the standard SyntaxError.
+        except (zipfile.BadZipFile, KeyError, OSError, SyntaxError, InvalidFileException) as exc:
             raise ValueError("无法读取 Excel 文件结构") from exc
         try:
             if not workbook.worksheets:

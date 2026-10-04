@@ -9,7 +9,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from src.application.test_cases import import_process
+from src.runtime import limited_parser_process as import_process
 from src.application.test_cases.import_process import CaseImportProcess, ImportProcessError
 from src.schemas.case_import import CaseImportOptions, CaseImportPolicy
 
