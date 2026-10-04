@@ -5,9 +5,11 @@ import logging
 
 from src.schemas.document_impact import DocumentImpactPolicy, DocumentImpactSettingsRecord
 from src.schemas.document_impact_analysis import DocumentImpactAnalysisPolicy, DocumentImpactAnalysisSettings
+from src.schemas.document_impact_batches import DocumentImpactBatchPolicy, DocumentImpactBatchSettings
 
 CONFIG_KEY = "document.impact_settings"
 ANALYSIS_CONFIG_KEY = "document.impact_analysis_settings"
+BATCH_CONFIG_KEY = "document.impact_batch_settings"
 logger = logging.getLogger(__name__)
 
 
@@ -20,6 +22,8 @@ class DocumentImpactConfigService:
             DocumentImpactPolicy().model_dump(mode="json"), only_if_missing=True)
         await asyncio.to_thread(self._configs.save, ANALYSIS_CONFIG_KEY,
             DocumentImpactAnalysisPolicy().model_dump(mode="json"), only_if_missing=True)
+        await asyncio.to_thread(self._configs.save, BATCH_CONFIG_KEY,
+            DocumentImpactBatchPolicy().model_dump(mode="json"), only_if_missing=True)
         logger.info("document_impact_settings_initialized", extra={"config_key": CONFIG_KEY})
 
     async def get_settings(self, project_id):
@@ -58,3 +62,22 @@ class DocumentImpactConfigService:
         logger.info("document_impact_settings_saved", extra={"project_id": project_id, "revision": record.revision})
         return DocumentImpactSettingsRecord(scope_key=record.scope_key, revision=record.revision,
             payload=DocumentImpactPolicy.model_validate(record.payload))
+
+    async def get_batch_settings(self, project_id):
+        await self._projects.get(project_id)
+        record = await asyncio.to_thread(self._configs.get, BATCH_CONFIG_KEY, scope_key=project_id)
+        if record is None:
+            record = await asyncio.to_thread(self._configs.get, BATCH_CONFIG_KEY)
+        if record is None:
+            raise RuntimeError("文档影响分批策略尚未初始化")
+        return DocumentImpactBatchSettings(scope_key=record.scope_key, revision=record.revision,
+            payload=DocumentImpactBatchPolicy.model_validate(record.payload))
+
+    async def save_batch_settings(self, project_id, payload: DocumentImpactBatchPolicy):
+        await self._projects.require_active(project_id)
+        record = await asyncio.to_thread(self._configs.save, BATCH_CONFIG_KEY,
+            payload.model_dump(mode="json"), scope_key=project_id)
+        logger.info("document_impact_batch_settings_saved", extra={"project_id": project_id,
+            "revision": record.revision})
+        return DocumentImpactBatchSettings(scope_key=record.scope_key, revision=record.revision,
+            payload=DocumentImpactBatchPolicy.model_validate(record.payload))

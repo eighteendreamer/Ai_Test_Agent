@@ -1917,3 +1917,36 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_202
 方案基线更新为已提交e033b14f；第六节明确76项通过是上次实施阶段的历史验证，本次文档更新没有重跑。三份方案同步及本地链接实际核对，提交前检查工作区和暂存diff。本次没有产品源码、公开契约或依赖变化，未运行功能测试、前端构建、浏览器或生产迁移；不将文档同步报告为完整升级完成。用户.gitignore保持原字节且不提交；只提交本轮PLAN和实施记录，不推送、不建PR。
 
 同步脚本首轮git show使用错误的仓库相对路径，exit 128，未写镜像；改用git rev-parse --show-prefix取得实际父仓库前缀后验证通过：三份方案字节相同，20个本地链接存在，既有XML确认为76通过/0失败/0跳过。方案SHA-256为a43588e9070b5b538bf856f9247a5dfe43b7845517eeb4e166c806c102a2c8f9。未改原XML或业务证据。
+
+## 固定范围清单、来源读取和引用位置核验（2026-10-04，研究基线918cf08a）
+
+查实际document_parsing的半开Python字符位置、差异raw/normalized/section/table、完整impact输入与来源、PG共享租约及规划检查点；查本地评测工程化/Agent协议课程。锁文件与实际安装均有tiktoken 0.14.0（langchain-openai依赖），其本地model.py明确未知模型可能无映射，且前缀映射不能证明真实模型存在；因此本轮没有将任意模型字符串套为精确Token计量。课程读取首用未安装bs4失败，改标准库HTMLParser成功，不添加依赖。
+
+新增独立批次schema/DocumentImpactBatches、MySQL配置document.impact_batch_settings，提交冻结可选batch_settings；旧seed缺失保持None，DocumentImpactInput/旧策略未改，旧三份MD/DOCX/PDF输入canonical hash实际复验一致。策略控制段长、总分段数、边界上下文与读取字节上限，不是模型Token预算。
+
+清单枚举全部来源角色/资产/快照/原件与文本hash、章节/警告、用例完整版本hash、四类差异与来源缺口。相同固定快照合并但角色保留；按已有章节起点/块终点划分，超大块分段留split标记；分隔与末尾不遗漏，核心范围无重叠。块范围用bisect及章节活动范围查找，避免每段扫描所有块；清单校验与固定输入重建相等。空来源保留空段，不把它说成读取或分析成功。
+
+固定读取保留原字符位置/来源/相关章节/表格，支持跨节任意合法范围；用例读取保留全部JSON/说明/来源。超过读取字节或分段数量拒绝，不截断；大表格/用例仍可能需要新任务调策略。引用对固定原文hash+切片或用例版本hash+字面路径和值核对；键中点号、数组索引、false/0/null区分，负索引、未知版本、引用篡改拒绝。位置一致不是语义成立，AI和评审另验。
+
+RustFS保存manifest正文；PG新增独立impact_manifests表（task FK、不可改对象检查点），不用向旧任务表加可变列。当前attempt/worker/token/租约以及fixed input hash核验后写；task阶段analyzing表示清单就绪而非模型成功。有清单后claim维持阶段，原deadline不变；未知PG响应异常传播保留对象，新Store/Service读取原对象，不重抓配置、不重新上传。当前无模型请求批次/响应状态机、独立影响Worker或公开入口，仍是内部范围准备。
+
+真实功能专项首轮15通过/3失败64.27秒；失败都是新夹具缺TestCaseVersionCreateRequest必填model_key/prompt_version/skill_versions。按已读schema补齐原来源，无产品放宽；第二轮18通过65.91秒。新增清单来源缺口后最终10模块82通过0跳过108.09秒。测试实际创建/上传/解析/比较MD/DOCX/PDF；长MD23986字符，两来源共82段，逐段正文重建相等及Final跨节读取通过。MySQL配置、PG固定seed/清单/丢失回执后恢复/5路同检查点写入/旧attempt拒绝/終态保存、RustFS对象哈希/损坏拒绝均通过。
+
+命令（Agent_Server，stdout/stderr合并保存）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-manifest-final')
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-manifest-sources-final')
+$env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-manifest-planning-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_batches.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_case_planning_tasks.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_skill_registry_reload.py tests/test_skill_management_boundaries.py tests/test_test_case_generation_pipeline.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-manifest-final.xml
+```
+
+本次输出重定向到p4-manifest-final.log；实际汇总108.09秒。8份源码字节编译通过。原模型HTTP专项3次受控请求仍验，新的清单专项模型调用0；独立规划CLI在最终回归内真实进程中断/重启通过，但清单恢复只是新Store/Service而非独立影响进程。前端/公开契约未改，未重复构建/浏览器，没有默认影响模型或生产历史迁移。新增PG表仅隔离验收；生产初始化/运维迁移仍须接入。
+
+方案/原附件/Codex镜像同步；证据first/verified/final保留，未覆盖历史原件/失败。两次文档patch因段落匹配失败未写入，读取核对后采用精确替换成功。新增测试因现有ignore显式加入；用户.gitignore保持原字节，不提交、不推送、不建PR。P4模型批次/预算/持久响应/候选、需求评审/矩阵/增量及P0—P5其余范围继续。
+
+交付暂存复核：122份相关文件，110份原始证据/验证元数据与暂存字节相同；3份方案全文相同、20个本地链接存在、8份源码字节编译通过。旧三份固定输入canonical hash及旧规划CLI原件保持不变；凭据格式扫描无匹配。最终暂存diff检查通过；用户.gitignore原SHA-256保持不变且未暂存。测试会话均已结束，无生产迁移/默认模型/前端改动，完整目标仍未完成。

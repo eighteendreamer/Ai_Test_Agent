@@ -29,6 +29,9 @@ class DocumentImpactAnalysisContexts:
     def __init__(self, *, models, skills, configs):
         self._models, self._skills, self._configs = models, skills, configs
 
+    async def capture_batch_settings(self, project_id):
+        return await self._configs.get_batch_settings(project_id)
+
     async def capture(self, project, request):
         config = await self._configs.get_analysis_settings(project.id)
         key = request.model_key or config.payload.model_key

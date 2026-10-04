@@ -1,7 +1,7 @@
-"""Fixed impact submissions and persistent input preparation.
+"""Fixed impact submissions, persistent input and analysis scope preparation.
 
-This stage leaves tasks running at input_saved, with frozen model provenance.
-Batch/result publication is not inferred from successful object reads.
+This stage leaves tasks running at input_saved or analyzing (scope ready).
+Model invocation and final results are not inferred from successful object reads.
 """
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from uuid import uuid4
 
 from src.application.documents.impact_sources import canonical_impact_json
 from src.application.documents.impact_analysis_context import DocumentImpactAnalysisContexts
+from src.application.documents.impact_batches import DocumentImpactBatches
 from src.schemas.document_impact import DocumentImpactInputCheckpoint, DocumentImpactInputEnvelope
+from src.schemas.document_impact_batches import DocumentImpactBatchManifest, DocumentImpactManifestCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +51,14 @@ class DocumentImpactTaskService:
             raise RuntimeError("影响分析模型依据服务尚未注入，不能提交新任务")
         try:
             context = await self._analysis_contexts.capture(project, request)
+            batch_settings = await self._analysis_contexts.capture_batch_settings(project.id)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             logger.warning("document_impact_analysis_context_rejected", extra={"project_id": project_id,
                 "document_id": document_id, "error_type": type(exc).__name__})
             raise
         seed = await self._sources.capture(project_id, document_id, request.difference_snapshot_id, request)
         seed.analysis_context = context
+        seed.batch_settings = batch_settings
         return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)
 
     async def get(self, project_id, document_id, task_id):
@@ -107,6 +111,54 @@ class DocumentImpactTaskService:
             raise ValueError("影响输入内容哈希与检查点不同")
         self._sources.validate_fixed_input(seed, envelope)
         return envelope
+
+    async def read_manifest(self, project_id, document_id, task_id):
+        await self.get(project_id, document_id, task_id)
+        checkpoint = await self._store.get_manifest_checkpoint(project_id, document_id, task_id)
+        if checkpoint is None:
+            raise ValueError("该影响任务尚未保存批次清单")
+        _, envelope = await self.read_input(project_id, document_id, task_id)
+        seed = await self._store.get_seed(project_id, document_id, task_id)
+        if checkpoint.task_id != task_id or checkpoint.input_sha256 != envelope.input_sha256:
+            raise ValueError("影响批次检查点与固定输入不同")
+        raw = (await self._objects.read_object_uri(checkpoint.storage_uri))["content"]
+        if len(raw) != checkpoint.size_bytes or hashlib.sha256(raw).hexdigest() != checkpoint.sha256:
+            raise ValueError("影响批次对象大小或哈希不一致")
+        manifest = await asyncio.to_thread(DocumentImpactBatchManifest.model_validate_json, raw)
+        await asyncio.to_thread(DocumentImpactBatches.validate, seed, envelope, manifest)
+        return checkpoint, manifest
+
+    async def prepare_manifest(self, claim):
+        """Persist the whole declared scope, without invoking or completing analysis."""
+        prior = await self._store.get_manifest_checkpoint(claim.task.project_id, claim.task.document_id, claim.task.id)
+        if prior is not None:
+            await self.read_manifest(claim.task.project_id, claim.task.document_id, claim.task.id)
+            return prior
+        if claim.seed.batch_settings is None:
+            raise ValueError("历史影响任务未冻结分批策略，请创建新任务")
+        # Read durable state: the original claim may predate prepare_input.
+        task = await self.get(claim.task.project_id, claim.task.document_id, claim.task.id)
+        remaining = min(claim.remaining_seconds, (task.deadline_at - datetime.now(timezone.utc)).total_seconds())
+        if remaining <= 0:
+            logger.warning("document_impact_manifest_deadline", extra={"task_id": task.id})
+            raise TimeoutError("影响任务原预算已耗尽，不能建立批次清单")
+        async with asyncio.timeout(remaining):
+            input_checkpoint, envelope = await self.read_input(claim.task.project_id, claim.task.document_id, claim.task.id)
+            manifest = await asyncio.to_thread(DocumentImpactBatches.build, claim.seed, envelope)
+            encoded = await asyncio.to_thread(canonical_impact_json, manifest)
+            saved = await self._objects.store_uploaded_bytes(content=encoded, filename="manifest.json",
+                content_type="application/json", object_prefix=f"document-impacts/{claim.task.project_id}/"
+                f"{claim.task.id}/{claim.attempt_id}/manifest/{uuid4()}")
+        checkpoint = DocumentImpactManifestCheckpoint(task_id=claim.task.id,
+            input_sha256=input_checkpoint.input_sha256, storage_uri=saved["uri"],
+            sha256=hashlib.sha256(encoded).hexdigest(), size_bytes=len(encoded), created_at=datetime.now(timezone.utc))
+        # An unconfirmed PG write must propagate; never delete or overwrite its object on an assumption.
+        try:
+            return await self._store.save_manifest_checkpoint(claim, checkpoint)
+        except Exception as exc:
+            logger.warning("document_impact_manifest_commit_unconfirmed", extra={"task_id": claim.task.id,
+                "attempt_id": claim.attempt_id, "manifest_sha256": checkpoint.sha256, "error_type": type(exc).__name__})
+            raise
 
     async def prepare_input(self, claim):
         """Save exact content; do not mark AI analysis completed or invoke models."""

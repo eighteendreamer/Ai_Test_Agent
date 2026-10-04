@@ -1,7 +1,7 @@
-"""Impact submissions and immutable input checkpoints on existing leased tasks.
+"""Impact submissions and immutable input/scope checkpoints on leased tasks.
 
 Input readiness is not an analysis result. The final snapshot lifecycle remains
-separate; this store currently exposes submission, ownership and input storage.
+separate; a saved manifest is not a model response or a completed analysis.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from src.schemas.document_impact import (
     DocumentImpactClaim, DocumentImpactCommand, DocumentImpactSourceSeed,
     DocumentImpactTaskPage, DocumentImpactTaskRecord,
 )
+from src.schemas.document_impact_batches import DocumentImpactManifestCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,18 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
         super().__init__(settings, lease_seconds=lease_seconds)
         self._cases = settings.database.postgres_test_case_table
         self._versions = settings.database.postgres_test_case_version_table
-        for table in (self._cases, self._versions):
+        self._manifests = self._docs + "_impact_manifests"
+        for table in (self._cases, self._versions, self._manifests):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid impact case table identifier")
+
+    @property
+    def tables(self):
+        return [self._manifests, self._tasks]
+
+    def _initialize_results(self, cur):
+        cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._manifests} (
+            task_id UUID PRIMARY KEY REFERENCES {self._tasks}(id), record JSONB NOT NULL)""")
 
     def _input_schema(self):
         return f"""difference_snapshot_id UUID NOT NULL REFERENCES {self._docs}_diff_snapshots(id),
@@ -67,7 +77,9 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
         return hashlib.sha256(encoded).hexdigest()
 
     def _claim_phase_sql(self):
-        return "CASE WHEN input_checkpoint IS NULL THEN 'preparing' ELSE 'input_saved' END"
+        return (f"CASE WHEN input_checkpoint IS NULL THEN 'preparing' WHEN EXISTS("
+            f"SELECT 1 FROM {self._manifests} m WHERE m.task_id={self._tasks}.id) "
+            "THEN 'analyzing' ELSE 'input_saved' END")
 
     def _validate_seed(self, cur, seed):
         cur.execute(f"SELECT record FROM {self._docs}_diff_snapshots WHERE project_id=%s AND document_id=%s AND id=%s",
@@ -113,3 +125,37 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
                 row = cur.fetchone()
                 return self._seed_type.model_validate(row["seed"]) if row else None
         return await asyncio.to_thread(read)
+
+    async def get_manifest_checkpoint(self, project_id, document_id, task_id):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT m.record FROM {self._manifests} m JOIN {self._tasks} t ON t.id=m.task_id "
+                    "WHERE t.project_id=%s AND t.document_id=%s AND t.id=%s", (project_id, document_id, task_id))
+                row = cur.fetchone()
+                return DocumentImpactManifestCheckpoint.model_validate(row["record"]) if row else None
+        return await asyncio.to_thread(read)
+
+    async def save_manifest_checkpoint(self, claim, checkpoint):
+        def update():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._fixed_document(cur, claim)
+                row = self._owned(cur, claim)
+                if (checkpoint.task_id != claim.task.id or self._seed_type.model_validate(row["seed"]) != claim.seed or
+                    not row["input_checkpoint"] or
+                    row["input_checkpoint"]["input_sha256"] != checkpoint.input_sha256):
+                    raise ValueError("影响批次检查点不能替换固定任务或输入")
+                cur.execute(f"SELECT record FROM {self._manifests} WHERE task_id=%s", (claim.task.id,))
+                prior = cur.fetchone()
+                if prior:
+                    if prior["record"] != checkpoint.model_dump(mode="json"):
+                        raise ValueError("已保存影响批次检查点不能改写")
+                    return DocumentImpactManifestCheckpoint.model_validate(prior["record"])
+                cur.execute(f"INSERT INTO {self._manifests}(task_id,record) VALUES(%s,%s::jsonb)",
+                    (claim.task.id, checkpoint.model_dump_json()))
+                cur.execute(f"UPDATE {self._tasks} SET phase='analyzing',"
+                    "message='影响范围清单已保存，尚未调用模型',updated_at=NOW() WHERE id=%s", (claim.task.id,))
+                return checkpoint
+        saved = await asyncio.to_thread(update)
+        logger.info("document_impact_manifest_checkpoint_saved", extra={"project_id": claim.task.project_id,
+            "task_id": claim.task.id, "input_sha256": saved.input_sha256, "manifest_sha256": saved.sha256})
+        return saved

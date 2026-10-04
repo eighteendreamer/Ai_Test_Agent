@@ -10,6 +10,7 @@ from src.schemas.case_management import TestCaseBundle, TestCaseRecord, TestCase
 from src.schemas.document_differences import DocumentDifferenceResult, DocumentDifferenceSnapshot, UUID_PATTERN
 from src.schemas.document_parsing import DocumentParseSnapshotView
 from src.schemas.document_impact_analysis import DocumentImpactAnalysisContext
+from src.schemas.document_impact_batches import DocumentImpactBatchSettings
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -95,6 +96,7 @@ class DocumentImpactSourceSeed(BaseModel):
     difference_snapshot: DocumentDifferenceSnapshot
     cases: list[DocumentImpactCaseReference]
     analysis_context: DocumentImpactAnalysisContext | None = None
+    batch_settings: DocumentImpactBatchSettings | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")
