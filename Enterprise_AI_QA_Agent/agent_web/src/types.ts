@@ -1411,6 +1411,202 @@ export interface DocumentParseFailureView {
   stderr: string;
 }
 
+export interface DocumentDifferencePolicy {
+  max_input_bytes: number;
+  max_text_chars: number;
+  max_lines: number;
+  max_structure_items: number;
+  max_changes: number;
+  max_character_pair_product: number;
+  max_character_detail_chars: number;
+  timeout_seconds: number;
+  max_cpu_seconds: number;
+  max_memory_bytes: number;
+  max_output_bytes: number;
+}
+
+export interface DocumentDifferenceSettings {
+  policy: DocumentDifferencePolicy;
+}
+
+export interface DocumentDifferenceSettingsRecord {
+  scope_key: string;
+  revision: number;
+  payload: DocumentDifferenceSettings;
+}
+
+export interface DocumentDifferenceReference {
+  project_id: string;
+  document_id: string;
+  version_id: string;
+  snapshot_id: string;
+  result_sha256: string;
+  original_sha256: string;
+  parser: DocumentParserCapability;
+  options: DocumentParseOptions;
+  dependency_versions: Record<string, string>;
+}
+
+export interface DocumentDifferenceRange {
+  start_char: number;
+  end_char: number;
+  text: string;
+  start_line?: number | null;
+  end_line?: number | null;
+  sources: Array<{ block_id: string; source: DocumentSourceLocation }>;
+}
+
+export interface DocumentCharacterDifference {
+  operation: "insert" | "delete" | "replace";
+  old: DocumentDifferenceRange;
+  new: DocumentDifferenceRange;
+}
+
+export interface DocumentTextDifference extends DocumentCharacterDifference {
+  character_status: "complete" | "omitted";
+  characters: DocumentCharacterDifference[];
+}
+
+export interface DocumentDifferenceView {
+  kind: "raw" | "normalized";
+  normalization: "none" | "line-endings-v1";
+  changes: DocumentTextDifference[];
+}
+
+export interface DocumentSectionDifference {
+  operation: "insert" | "delete" | "replace";
+  old: DocumentParseStructure["sections"];
+  new: DocumentParseStructure["sections"];
+  old_ranges: DocumentDifferenceRange[];
+  new_ranges: DocumentDifferenceRange[];
+}
+
+export interface DocumentTableDifference {
+  operation: "insert" | "delete" | "replace";
+  old: DocumentParseStructure["tables"];
+  new: DocumentParseStructure["tables"];
+  old_ranges: DocumentDifferenceRange[];
+  new_ranges: DocumentDifferenceRange[];
+}
+
+export interface DocumentDifferenceWarning {
+  code: string;
+  message: string;
+  side: "old" | "new" | "both";
+  source?: DocumentSourceLocation | null;
+}
+
+export interface DocumentDifferenceResult {
+  schema_version: "document-difference-v1";
+  implementation_version: string;
+  old: DocumentDifferenceReference;
+  new: DocumentDifferenceReference;
+  policy: DocumentDifferencePolicy;
+  originals_equal: boolean;
+  parsing_basis_changed: boolean;
+  raw: DocumentDifferenceView;
+  normalized: DocumentDifferenceView;
+  sections: DocumentSectionDifference[];
+  tables: DocumentTableDifference[];
+  warnings: DocumentDifferenceWarning[];
+}
+
+export interface DocumentDifferenceSeed {
+  project_id: string;
+  document_id: string;
+  version_id: string;
+  old_snapshot: DocumentParseSnapshot;
+  new_snapshot: DocumentParseSnapshot;
+  config: DocumentDifferenceSettingsRecord;
+  implementation_version: string;
+  python_version: string;
+}
+
+export interface DocumentDifferenceSummary {
+  raw_changes: number;
+  normalized_changes: number;
+  section_changes: number;
+  table_changes: number;
+  originals_equal: boolean;
+  parsing_basis_changed: boolean;
+}
+
+export interface DocumentDifferenceSnapshot {
+  id: string;
+  task_id: string;
+  seed: DocumentDifferenceSeed;
+  storage_uri: string;
+  sha256: string;
+  size_bytes: number;
+  status: "complete" | "partial";
+  effective_policy: DocumentDifferencePolicy;
+  summary: DocumentDifferenceSummary;
+  warnings: DocumentDifferenceWarning[];
+  created_at: string;
+}
+
+export interface DocumentDifferenceTaskRequest {
+  creation_key: string;
+  old_snapshot_id: string;
+  new_snapshot_id: string;
+}
+
+export interface DocumentDifferenceFailureArtifact {
+  storage_uri: string;
+  sha256: string;
+  size_bytes: number;
+  exit_code?: number | null;
+}
+
+export interface DocumentDifferenceTaskRecord {
+  id: string;
+  project_id: string;
+  document_id: string;
+  version_id: string;
+  old_snapshot_id: string;
+  new_snapshot_id: string;
+  creation_key: string;
+  status: "queued" | "running" | "completed" | "failed";
+  phase: "queued" | "comparing" | "result_saved" | "finished";
+  attempt_no: number;
+  snapshot_id?: string | null;
+  error_code?: string | null;
+  failure_artifact?: DocumentDifferenceFailureArtifact | null;
+  message: string;
+  created_at: string;
+  updated_at: string;
+  deadline_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface DocumentDifferenceTaskPage {
+  items: DocumentDifferenceTaskRecord[];
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface DocumentDifferenceSnapshotPage {
+  items: DocumentDifferenceSnapshot[];
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface DocumentDifferenceSnapshotView {
+  snapshot: DocumentDifferenceSnapshot;
+  result: DocumentDifferenceResult;
+}
+
+export interface DocumentDifferenceFailureView {
+  task_id: string;
+  artifact: DocumentDifferenceFailureArtifact;
+  exit_code?: number | null;
+  error: string;
+  stdout: string;
+  stderr: string;
+}
+
 export interface ApiDocUpdateRequest {
   title?: string | null;
   project_id?: string | null;

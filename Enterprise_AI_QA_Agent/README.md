@@ -222,6 +222,18 @@ uv run --locked --directory Agent_Server python -m src.cli.run_document_parse_wo
 
 有界验收可以增加 `--once --worker-id document-parse-probe`；`--stream` 仅用于明确登记的独立传输流。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/parse-tasks`，请求包含 `creation_key`、固定 `version_id` 和可选 `options`。以原请求身份查询或重试可以找回已提交任务；成功后按 `snapshot_id` 查询 `parse-snapshots/{snapshot_id}`。修改策略或重解析使用新的请求身份，旧快照保留。原件版本与解析快照是不同记录；已有持久引用的文档删除返回冲突，防止丢失历史依据。
 
+文档版本比较使用独立 Worker。比较设置接口为 `/api/v1/projects/{project_id}/document-difference-settings`（MySQL）；固定任务、双方解析快照引用和不可变结果元数据在 PostgreSQL，完整结果及失败轨迹在 RustFS。生产 API 初始化比较表之前先初始化解析来源表，上传文件的保存不依赖 Git。
+
+保留已登记流，并将 `qa:tasks:document_difference` 加入 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS`，使用同一 Relay，再启动：
+
+```bash
+uv run --locked --directory Agent_Server python -m src.cli.run_document_difference_worker
+```
+
+比较 CLI 同样支持 `--once --worker-id document-difference-probe` 和已登记的 `--stream`。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/difference-tasks`，请求包含 `creation_key`、`old_snapshot_id`、`new_snapshot_id`；双方必须属于同一项目/文档的固定解析快照。`difference-tasks/by-request?creation_key=...` 找回原提交，`difference-tasks/{task_id}` 查询状态，成功后读取 `difference-snapshots/{snapshot_id}`，失败轨迹读取 `difference-tasks/{task_id}/failure`。任务和结果列表支持分页；`version_id` 只筛选新侧原件版本，完整双方引用始终保留。
+
+比较不重解析、不调用 AI、不覆盖原件或历史快照；raw 是完整抽取文本，normalized 仅统一换行，章节/表格和来源沿用解析能力。修改策略只影响新提交，原请求重放沿用固定依据。关闭派发或没有登记比较流时仍可读取历史，新提交明确返回不可用。当前前端类型/API 适配器已接入，比较页面及通用任务池入口继续实施；不得将上传或解析成功显示为比较成功。
+
 任务提交先写入 PostgreSQL Outbox，再由独立 Relay 投递到 Redis Streams。Relay 不应与 API 进程绑定，生产环境建议作为单独的进程或服务运行：
 
 ```bash

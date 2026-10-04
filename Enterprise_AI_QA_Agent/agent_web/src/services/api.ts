@@ -8,6 +8,7 @@ import * as docker from "./docker.api";
 import * as compatibility from "./compatibility.api";
 import * as system from "./system.api";
 import * as documentParsing from "./documentParsing.api";
+import * as documentDifferences from "./documentDifferences.api";
 
 export const api = {
   ...sessions,
@@ -20,4 +21,5 @@ export const api = {
   ...compatibility,
   ...system,
   ...documentParsing,
+  ...documentDifferences,
 };

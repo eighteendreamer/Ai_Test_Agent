@@ -1543,3 +1543,46 @@ $env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2
 结果 **49 passed in 10.51s，0失败、0错误、0跳过**。差异内核包含实际MD/DOCX/PDF及真实解析/比较受限进程、来源与资源边界；上传相关项使用已有替代存储夹具。没有重新运行真实MySQL/PostgreSQL/RustFS/Redis、生产API/CLI或浏览器、默认外部模型验收；历史84项/诊断3项仅解析原XML核对，未算作本轮新通过。
 
 实际文档校验通过：67个绝对本地链接可定位，原附件与正式方案的新接入章节相同，Codex镜像与正式方案逐字节相同；原验收XML与当前49项XML计数一致。相关文档diff检查通过。仅提交本轮方案、设计、验收记录和XML，用户.gitignore保持未暂存。完整升级目标仍未完成；接下来按新接入安排推进，不重复实施已验比较内核和持久服务。
+
+## P3.4 独立比较 CLI、生产 API 与前端契约（2026-10-04，查证基线 6f4d227）
+
+前一轮直接修订方案并提交6f4d227，属于实际进展；完整P0—P5目标继续。先重读用户指定原附件，核对HEAD/worktree（仅用户.gitignore），再读取生产main/container、解析运行时/CLI/路由、比较schema/service/store/handler、前端类型/API聚合与现有生产测试。调研结论先写P3_4_DESIGN，再实施；没有复制新的任务平台或增加默认模型判断。
+
+比较服务的stream=None已支持历史/原请求读取并拒绝新任务，直接复用。新增比较配置provider，main在解析来源表初始化后创建比较Store/Service、app.state及公开路由。MySQL仍只保存可编辑策略，PG保存固定输入/任务/结果元数据，RustFS保存正文与失败轨迹；生产启动新增比较表初始化，旧解析schema和公开契约保持。
+
+将解析Worker的项目/配置/文档/Outbox/SQLAlchemy/对象/Redis初始化与关闭抽为内部document_operation_worker_runtime。解析包装保留旧dataclass、事件名、消费组和CLI输出；比较包装独立创建Store/Service，先初始化stream=None的解析来源，仅读取已保存快照，不派发解析、不运行模型/工具或浏览器。新增run_document_difference_worker，使用原RedisTaskWorker/typed Handler，支持once/worker-id/已登记stream。启动异常/取消及队列连接失败时实际验证已取得资源关闭；两个CLI导入不启动生产API。
+
+解析/比较路由共用内部document_operation_calls，保持原404/409/503映射、项目UUID/分页及未知提交找回提示，解析本地_call包装保留。比较settings、提交/by-request/任务/失败/结果分页与固定结果读取已注册生产router；by-request排在task_id之前。新增前端完整比较DTO和documentDifferences.api，并接API聚合。README同步流登记、独立CLI、请求/查询及限制；比较页面和任务池尚未实现。
+
+新增tests/test_document_difference_production.py，复用现有独立PG数据库、隔离MySQL配置表、实际RustFS、Docker Redis及Processes夹具，运行完整生产uvicorn和独立CLI，不替换AppContainer provider。受控模型配置仅用于满足既有启动要求，整个文档场景实际模型调用为0。MD含BOM/CRLF、DOCX含表格、PDF有两页，真实V1=7/V2=9；通过产品上传路由保存原件及新版本，经两次独立解析CLI取得双方快照，再提交比较Outbox/Redis并运行独立比较CLI。全部stdout/stderr按子进程原样保存。
+
+| 实际记录 | 结果 |
+|---|---|
+| p3-document-difference-production-first.xml | 首轮DOCX真实全链路1通过、2未选中，54.11秒；没有把未选中算跳过 |
+| p3-document-worker-runtime-first.xml | CLI导入及启动失败/取消资源回收5通过，15.70秒 |
+| p3-document-difference-wiring-regression.xml | 既有持久比较/解析/内核/真实来源、独立解析CLI及新增runtime回收89通过、0跳过，79.16秒 |
+| p3-document-difference-production-verified.xml | MD/DOCX/PDF完整API+独立解析/比较CLI3项及原解析生产回归1项，共4通过、0跳过，175.88秒 |
+| 前端3份API测试 | 6通过：新比较适配器及既有规划/任务池API，实际执行npm run test；HTTP替代响应不作为浏览器或真实服务端证明 |
+| npm run build | 类型检查与构建通过，Vite9.82秒；没有比较UI，因此未执行比较浏览器 |
+
+生产专项核对配置70秒/1000行固定于任务，修改当前设置80秒/2000行及API重启后同请求仍返回同任务/Outbox仅1条；双方版本/快照准确，raw/normalized完整差异可还原新文本，源位置与原件/解析JSON/比较结果哈希可核对。成功终态再次投Redis并运行独立CLI，attempt保持1且结果相同。列表按新侧版本筛选、分页/offset/参数拒绝/错误项目隔离及未知请求均实际HTTP测试。限制CPU触发实际子进程失败，条目failed、exit_code/完整stdout/stderr保存RustFS并经API读取，trace哈希匹配；Worker退出0表示消息处理完成，不表示比较成功。关闭派发后再次启动生产API，原终态请求/历史/失败可读，新身份503且没有第三个任务。
+
+每种格式在p3-document-difference-production-verified/{md,docx,pdf}/保留原件、两份来源JSON、比较JSON、failure JSON、summary、Docker输出及16份进程日志。初次DOCX证据独立保留，旧解析回归在p3-document-parse-wiring-verified/保留日志和summary。夹具只清理自己新建的DB/MySQL表/Redis容器；结束前查询解析和比较检查点/失败与资产表补充对象归属，避免断言前已提交对象漏清。新证据目录attributes保留原件、JSON及日志字节；存储地址不保证清理后仍在线。
+
+实际生产命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_PRODUCTION='1'
+$env:RUN_LIVE_DOCUMENT_PARSE_PRODUCTION='1'
+$env:QA_DOCUMENT_DIFFERENCE_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-difference-production-verified')
+$env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-parse-wiring-verified')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_difference_production.py tests/test_document_parse_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-difference-production-verified.xml
+```
+
+扩大回归启用RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS、RUN_LIVE_DOCUMENT_PARSERS、RUN_LIVE_DOCUMENT_DIFFERENCES，运行test_document_worker_runtime、test_document_difference_tasks、test_document_parse_tasks、test_document_parse_catalog、test_document_difference_storage、test_document_differences、test_document_parsers、test_document_parser_process；QA_DOCUMENT_DIFFERENCE_TASK_EVIDENCE_DIR指向p3-document-difference-wiring-tasks，QA_DOCUMENT_PARSER_EVIDENCE_DIR指向p3-document-difference-wiring-parser。前端在agent_web执行npm run test -- src/services/documentDifferences.api.test.ts src/services/projects.planning-tasks.api.test.ts src/services/sessions.task-pool.api.test.ts，然后npm run build。
+
+本轮没有新增依赖或修改生产配置，不运行生产历史迁移、默认外部模型或Docling容器。比较页面/任务池/完整浏览器、Git来源、P4影响/追踪/增量草稿及P0/P2/P5剩余工作继续；不能以此文档专项宣称整体目标完成。正式PLAN/原用户粘贴附件/Codex镜像与实际结果同步；本轮相关中文commit不包含用户.gitignore，不推送或创建PR。
+
+收尾核对：11份相关Python源码/测试py_compile通过；22种Python/TypeScript公开DTO字段逐项一致；73个本地链接可定位，正式PLAN与Codex镜像逐字节一致，原附件交付与接入章节相同；真实三格式原件/比较JSON/失败轨迹哈希及XML计数已实际核对。
+
+提交核对：164个本轮相关文件；152份源码/方案/文本工件凭据格式扫描无匹配。136份实际工件工作区/暂存字节一致，17份原件经Git过滤后检出仍逐字节一致；完整暂存diff检查通过，用户.gitignore未暂存。新后端测试按既有忽略策略显式加入。交付字节校验脚本曾混用git diff和ls-files的路径基准而报KeyError，改为统一仓库根目录后通过；未据此改变产品代码或证据。

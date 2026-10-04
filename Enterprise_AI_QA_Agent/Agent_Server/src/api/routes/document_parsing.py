@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from src.application.documents.api_docs_service import ApiDocNotFoundError
+from fastapi import APIRouter, Query, Request
+from src.api.document_operation_calls import call_document_operation
 
 from src.schemas.document_parsing import (
     DocumentParseSnapshotView, DocumentParseTaskRecord, DocumentParseTaskRequest,
@@ -13,23 +12,12 @@ from src.schemas.document_parsing import (
     DocumentParserCapability,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}", tags=["document-parsing"])
 
 
 async def _call(request, project_id, service_name, operation, *args, **kwargs):
-    try:
-        service = getattr(request.app.state, service_name)
-        return await getattr(service, operation)(str(project_id), *args, **kwargs)
-    except (KeyError, ApiDocNotFoundError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from None
-    except ValueError as exc:
-        logger.warning("document_parsing_request_rejected", extra={"project_id": str(project_id), "operation": operation})
-        raise HTTPException(status_code=409, detail=str(exc)) from None
-    except Exception as exc:
-        logger.error("document_parsing_service_unavailable", extra={"project_id": str(project_id),
-            "operation": operation, "error_type": type(exc).__name__})
-        raise HTTPException(status_code=503, detail="文档解析服务暂时不可用；提交结果未知时，请按原请求身份查询或重试") from None
+    return await call_document_operation(request, project_id, service_name, operation, *args,
+        log_prefix="document_parsing", label="解析", **kwargs)
 
 
 @router.get("/document-parsing-settings", response_model=DocumentParsingSettingsRecord)

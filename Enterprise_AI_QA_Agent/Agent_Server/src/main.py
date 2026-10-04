@@ -35,6 +35,7 @@ from src.api.routes.case_imports import router as case_imports_router
 from src.api.routes.case_plans import router as case_plans_router
 from src.api.routes.case_planning_tasks import router as case_planning_tasks_router
 from src.api.routes.document_parsing import router as document_parsing_router
+from src.api.routes.document_differences import router as document_differences_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
 from src.api.routes.security_bugs import router as security_bugs_router
@@ -57,6 +58,8 @@ from src.application.compatibility import CompatibilityRunnerService
 from src.application.documents.api_docs_service import ApiDocsService
 from src.application.documents.parsing_service import DocumentParsingService, DOCUMENT_PARSE_STREAM
 from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
+from src.application.documents.difference_service import DocumentDifferenceService, DOCUMENT_DIFFERENCE_STREAM
+from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
 from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
@@ -454,6 +457,18 @@ async def _initialize_lifespan_resources(
     app.state.document_parse_store = document_parse_store
     app.state.document_parser_config_service = document_parser_config_service
     app.state.document_parsing_service = document_parsing_service
+    document_difference_store = PostgresDocumentDifferenceStore(settings,
+        lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+    document_difference_config_service = container.document_difference_config_service()
+    document_difference_service = DocumentDifferenceService(store=document_difference_store,
+        documents=api_docs_service, projects=project_service, configs=document_difference_config_service,
+        objects=container.artifact_storage_service(), parsing=document_parsing_service, stream=(DOCUMENT_DIFFERENCE_STREAM
+            if settings.orchestration.redis_task_dispatch_enabled
+            and DOCUMENT_DIFFERENCE_STREAM in settings.orchestration.task_stream_names else None))
+    await document_difference_service.initialize()
+    app.state.document_difference_store = document_difference_store
+    app.state.document_difference_config_service = document_difference_config_service
+    app.state.document_difference_service = document_difference_service
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -959,6 +974,7 @@ app.include_router(case_imports_router, prefix=settings.api_v1_prefix)
 app.include_router(case_plans_router, prefix=settings.api_v1_prefix)
 app.include_router(case_planning_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(document_parsing_router, prefix=settings.api_v1_prefix)
+app.include_router(document_differences_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)
