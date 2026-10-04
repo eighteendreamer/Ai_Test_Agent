@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-04。本轮研究基线：`232e6ca6`；已新增内部响应协议冻结、结构化补读/单元候选、实际交付范围核验和独立持久核验记录，相关功能与回归验证见第六节。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
+修订日期：2026-10-05。本次方案核对基线：`7f7fb743`。本次仅更新方案及核对记录；已有内部响应协议冻结、结构化补读/单元候选、实际交付范围核验和独立持久核验记录，历史功能验证见第六节，不作为本次新运行的测试。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
 
 方案中的目标行为与实际内部/公开能力分开。完整 P0—P5 尚未完成。
 
@@ -30,7 +30,7 @@
 | [固定计划创建运行](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_run_service.py)、[执行上下文](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) | 复用正式套件、RunItem、原子领取及完整上下文，不创建替代执行平台 |
 | [Agent 适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py)、[回执核验](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_assessment.py) | 新 Agent 策略已接既有图/审批/证据；继续补准备状态、未知副作用和真实模型验收，保留旧运行策略恢复 |
 | [文档服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py)、[对象存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/artifacts/artifact_storage_service.py) | 原件与派生内容已分存；复用稳定文档身份、版本事务、哈希和原提交查询，上传不调用 Git |
-| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；内部影响提交与输入检查点已验，生产影响任务、AI 候选、需求和矩阵仍需接入 |
+| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；内部影响提交、调用与单元候选核验已有实现，全范围候选、生产影响入口、需求和矩阵仍待接入 |
 | [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 现已抽出共享任务/Outbox/租约职责；解析与比较子类保留最终快照语义，影响任务另存输入检查点。规划保存调用意图和响应，P4 后续批次检查点参考该做法 |
 
 测试设计继续参考项目本地课程：用例生成与数据治理、线上流量闭环、评测工程化、Agent 轨迹与协议鲁棒性。采用来源、版本、轨迹和评审原则；其中依赖版本、统计比例、阈值不是本产品的实测事实。
@@ -45,6 +45,19 @@
 | 派发、语义召回、图关系等 | 沿用 Redis、向量、图谱；可重建投影，不替代冻结业务记录 |
 
 模型密钥、凭据和 OAuth token 不进入普通日志、任务参数快照或向量。共享数据明确归属项目/运行；禁止自由文本项目名代替正式 `project_id`。
+
+### 1.3 本次纠正的含义与实现边界
+
+| 用户要求 | 当前代码核对与方案约定 |
+|---|---|
+| 模板只用于生成 | `CasePlanningService._system_prompt` 已明确不读取生成模板；执行仍以完整固定用例及自身说明为依据 |
+| 选取、初排、补全、再排序 | 产品目标保留这个顺序；当前规划在同一 AI 查询/结束循环内完成相关性与依赖判断，后端最后按依赖排序，尚不能宣称已有独立持久化的“初排阶段” |
+| 简单说明如何检测缺口 | AI 阅读操作与预期，判断必要条件由谁提供；通过项目内只读查询补依据，后端核对引用和依赖。规划合理与实际执行成功分别验收 |
+| 必要前置可以不直接匹配用户目标 | 查询并完整读取项目内正式用例后可加入 dependency；仅初始候选没有前置不等于项目没有前置；没有正式用例时有可靠依据才补 prepare |
+| 上传不需要 Git 缓存 | `upload_document` / `upload_version` 直接保存原件对象和数据库版本；Git 来源信息是可选参数，普通上传不读取仓库、不调用 Git 命令 |
+| 工程方案必须说明哪些可用 | 区分源码已实现、历史专项已验证、完整产品待验收。单元结束与引用一致不等于全范围分析、业务判断正确或需求已经生效 |
+
+本次核对范围为上述上传、规划和影响调用链及已有 Worker 生命周期。没有修改产品代码、配置或数据库结构；第六节保留历史验证，不补造新的功能通过记录。
 
 ## 二、JSON 用例与 Agent 执行
 
@@ -100,6 +113,8 @@ AI 只围绕一个问题检查初排后的用例：
 例如，查询真实订单没有订单ID，可以补项目内创建订单用例，或按项目资料补创建准备步骤；验证“订单不存在”的错误响应就保持不存在。是否还需要账号/会话由具体依据决定。规划只证明逻辑连贯，真实条件是否成立由执行证据确认。
 
 现有规划每回合返回 `query` 或 `finish`：后端执行项目隔离的只读查询，AI提交目标、正式前置、准备、数据绑定和缺口。后端核对项目/版本/引用/依赖循环/顺序，不取代 AI 判断业务必要性。具体输出路径使用字面量 `output_path_tokens`，不能把包含点号的字段误当嵌套路径。引用前序输出必须同时声明依赖。
+
+实际代码中，`_recall` 获取候选并读取完整版本，`_system_prompt` 要求 AI 选择目标、判断条件来源、按需查询和补全，`_validate` 用 `TopologicalSorter` 按最终依赖排序。当前并没有独立保存初排结果及逐次补全差异。后续若需要界面展示“最初选了哪些、为何补入、顺序如何变化”，应先研究并保存同一规划任务的阶段记录，复用已有回合检查点；不能凭当前最终计划还原并伪造中间决策。
 
 ### 2.4 冻结、执行与证据
 
@@ -250,6 +265,23 @@ RustFS保存核验正文；独立PG impact_response_checks按(call_id,validator_
 
 当前没有自动协调器、全范围候选汇总、生产影响API/独立Worker/CLI或正式页面；补读→继续专项由显式调用方接续，并不冒充自动循环。首轮真实功能31项通过后补充协议冻结、旧调用hash及对象未知写入边界；最终相关回归另列第六节。没有调用默认影响模型，不将受控HTTP响应当作真实AI判断。
 
+### 3.5.5 自动补读、跨单元影响与全范围结果〔待实施方案〕
+
+当前 `DocumentImpactTaskService` 可准备固定输入和范围，但没有自动执行整个分析的 `execute` 流程；调用服务只把同一调用链的旧消息与完整响应带入续读请求。分别遍历文档、差异和用例单元，不能证明某个文档单元发现的规则已经交给全部相关用例判断。
+
+下一步先按以下职责研究和实施，具体新增契约待核对所有消费者后确定：
+
+| 工作 | 采用做法与验收依据 |
+|---|---|
+| 自动接续 | 读取已保存响应与核验记录；read_requested 按明确固定身份补读，继续原单元；unit_finished 保存单元结论。rejected、ineligible、预算耗尽和未知发送结果各自保留原因，不用循环结束代替分析完整 |
+| 规则候选进入用例判断 | 先从固定旧/新文档及差异取得有引用的变化候选；再将这些候选作为明确的固定输入，与完整用例、当时编写来源一并判断。新增需求保留“暂无关联用例”候选。跨单元候选传递必须有持久身份和来源，不能只在进程变量中传递或只传摘要 |
+| 范围与冲突汇总 | 对声明的文档范围、差异和用例分别列出已分析、依据不足、未处理及失败项；保存候选之间的重复、矛盾和不确定关联。完整性按范围逐项核对，业务语义仍待评审，部署生效仍需真实依据 |
+| 不可变结果 | 大结果保存在 RustFS，PG 保存结果身份、对象哈希、固定输入/范围/候选来源及完整性状态。结果保存与任务终态按既有事务/Outbox路径接入；回执未知先读原记录，不覆盖或重新调用已保存的单元 |
+| Worker 接入 | 参考 [DocumentOperationTaskHandler](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_operation_task_handler.py) 的领取/心跳/取消，以及 [独立比较 Worker](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/document_difference_worker_runtime.py) 的资源生命周期，接入既有任务平台；自动协调策略如需编辑则保存在 MySQL并在提交时冻结 |
+| 实际验收 | 用真实 MD/DOCX/PDF 验证跨节规则传递到后续用例、完整JSON、未处理范围、矛盾候选、多 Worker、租约丢失、预算耗尽和结果提交回执丢失；再用独立影响进程中断/恢复证明读已有响应不重发，最后单独验收真实默认模型与正式页面 |
+
+新协调输入/响应协议如需扩展，使用新版本及新任务冻结，不改变已有任务的请求、Schema、原输入或响应哈希。现有单元服务是复用基础，自动协调、候选传递、最终结果和生产入口均尚未完成；不能仅增加一个 for 循环后宣称需求影响闭环可用。
+
 ### 3.6 需求评审、增量草稿与环境适用性
 
 保存项目/文档下稳定需求身份、不可变需求版本及验证点。章节标题、块ID和哈希不是跨版本业务身份；AI提出匹配候选，人工可接受/拒绝/重新关联，所有决定追加记录原文依据和固定输入。删除只提出停用候选，保留历史。
@@ -358,7 +390,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下是 `232e6ca6` 基线及本轮响应专项后的状态。模型依据76项、范围清单82项均属此前阶段；本轮调用与相关回归另列，历史测试数量不累计成覆盖数。
+以下是 `7f7fb743` 已提交代码的状态。模型依据76项、范围清单82项及响应专项141项均属此前实际运行；历史测试数量不累计成覆盖数。本次为方案修订，只重新核对代码、证据和三份方案一致性，没有重跑后端功能测试、前端构建、浏览器或生产迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -387,7 +419,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 新调用专项19项包含真实MD/DOCX/PDF×原生/ LangChain两适配器的6组HTTP场景、12步完整JSON及当时来源、6路并发唯一逻辑发送权、完整跨节续读、请求/意图/响应PG提交回执丢失、实际HTTP中断及新租约未知恢复、显式重试和预算保留、截断/空/工具/供应商错误/超大响应分类、Tokenizer内容计数、实际模型参数/适配器核对及对象保存失败。单次逻辑意图在HTTP500场景实际产生3次SDK传输；不据此宣称物理发送恰好一次。新Store/Service恢复不等于独立影响Worker重启，受控HTTP固定文本不等于真实AI业务判断。源码字节编译、历史hash、三份方案、本地引用、凭据格式及暂存原件字节核对见 `p4-calls-validation.json`。
 
-本轮响应专项首轮 **31通过、0跳过（88.02秒）**；增加提交阶段协议冻结、旧请求hash与未知对象写入边界后，扩大首次 **138通过、3失败（284.92秒）**。三失败为旧提交测试在整个seed字符串搜索content_json，新Schema合法字段名被误判为正文；改为对实际用例引用字段集合/哈希进行检查，保留禁止下载钩子及文档/用例变更后的固定输入验证。补充可供模型补读的固定用例/差异身份目录后，最终12模块 **141通过、0跳过（291.57秒）**。失败XML/log/目录保留，最终依据为 `p4-responses-final.xml/.log` 及对应真实原件/存储/HTTP目录。
+此前响应专项首轮 **31通过、0跳过（88.02秒）**；增加提交阶段协议冻结、旧请求hash与未知对象写入边界后，扩大首次 **138通过、3失败（284.92秒）**。三失败为旧提交测试在整个seed字符串搜索content_json，新Schema合法字段名被误判为正文；改为对实际用例引用字段集合/哈希进行检查，保留禁止下载钩子及文档/用例变更后的固定输入验证。补充可供模型补读的固定用例/差异身份目录后，最终12模块 **141通过、0跳过（291.57秒）**。失败XML/log/目录保留，最终依据为 `p4-responses-final.xml/.log` 及对应真实原件/存储/HTTP目录。
 
 新响应专项40项，其中16项为解析协议/六份已提交旧调用请求回放，24项为真实文件/HTTP/MySQL/PG/RustFS功能。6组文件×适配器验证完整12步JSON、False/0/null与最后一步、提交协议Schema变化后仍按旧seed准备请求、局部候选/依据缺口、后续用例/文档变化及终态查询；其他场景覆盖显式补读接续、未读/归一/错误/未知引用与协议、5路核验竞争、实际PG提交回执丢失、核验对象未知写入/保留/重做不发模型、对象篡改和不完整回执分类。unit_finished仍只是单元结构结束与模型声明，语义pending_review、部署unknown；没有自动协调或全范围发布。
 
