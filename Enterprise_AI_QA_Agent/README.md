@@ -212,7 +212,7 @@ IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 
 
 ### 1.1 启动 PostgreSQL Outbox Relay
 
-需求文档解析使用独立 Worker。可编辑解析选项和资源策略保存在 MySQL（项目接口 `/api/v1/projects/{project_id}/document-parsing-settings`）；原件仍在 RustFS，解析任务、固定输入和不可变快照元数据在 PostgreSQL。Markdown、DOCX、文本型 PDF 的后端链路已接通；扫描 PDF 没有 OCR 能力，Docling 仅预留注册入口。解析页面操作入口仍待完善。
+需求文档解析使用独立 Worker。可编辑解析选项和资源策略保存在 MySQL（项目接口 `/api/v1/projects/{project_id}/document-parsing-settings`）；原件仍在 RustFS，解析任务、固定输入和不可变快照元数据在 PostgreSQL。文档详情已提供原件版本选择、解析提交/请求找回、状态轮询、历史快照、结构/警告、失败诊断及项目设置。格式选择依据 `/document-parsers` 返回的实际能力；Markdown、DOCX、文本型 PDF 已接通，扫描 PDF 没有 OCR 能力，Docling 仅预留注册入口。任务和快照列表支持固定版本筛选与分页；默认快照按 PostgreSQL 记录的任务提交顺序选择已保存结果，较早任务晚完成不会覆盖新提交的结果。新任务等待/失败状态与历史结果分别展示，历史依据继续按快照身份固定。
 
 使用现有 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED` 开启持久派发，并将 `qa:tasks:document_parsing` 加入现有 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS`（保留其他已登记流）。先启动下方 Relay，再运行：
 

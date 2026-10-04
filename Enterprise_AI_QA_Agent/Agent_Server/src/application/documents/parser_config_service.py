@@ -33,6 +33,10 @@ class DocumentParserConfigService:
         self._validate_parsers(payload)
         return DocumentParsingSettingsRecord(scope_key=record.scope_key, revision=record.revision, payload=payload)
 
+    async def capabilities(self, project_id: str):
+        await self._projects.get(project_id)
+        return self._factory.capabilities()
+
     async def save_settings(self, project_id: str, payload: DocumentParsingSettings) -> DocumentParsingSettingsRecord:
         await self._projects.require_active(project_id)
         self._validate_parsers(payload)

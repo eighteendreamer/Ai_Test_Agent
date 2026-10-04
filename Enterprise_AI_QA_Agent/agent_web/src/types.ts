@@ -1388,6 +1388,29 @@ export interface DocumentParseSnapshotView {
   result: DocumentParseResult;
 }
 
+export interface DocumentParseTaskPage {
+  items: DocumentParseTaskRecord[];
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface DocumentParseSnapshotPage {
+  items: DocumentParseSnapshot[];
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface DocumentParseFailureView {
+  task_id: string;
+  artifact: NonNullable<DocumentParseTaskRecord["failure_artifact"]>;
+  exit_code?: number | null;
+  error: string;
+  stdout: string;
+  stderr: string;
+}
+
 export interface ApiDocUpdateRequest {
   title?: string | null;
   project_id?: string | null;

@@ -138,7 +138,7 @@ watch(() => props.document.id, () => {
     <div v-if="canWrite && document.project_id" class="version-actions">
       <template v-if="document.current_version_id">
         <label>{{ t("apiDocs.new_version_file") }}
-          <input :aria-label="t('apiDocs.new_version_file')" type="file" accept=".json,.yaml,.yml,.har,.txt,.md,.log,.pdf" :disabled="busy"
+          <input :aria-label="t('apiDocs.new_version_file')" type="file" accept=".json,.yaml,.yml,.har,.txt,.md,.log,.pdf,.docx" :disabled="busy"
             @change="file = ($event.target as HTMLInputElement).files?.[0] ?? null">
         </label>
         <button class="primary-btn" :disabled="busy || !file" @click="submit()">{{ t("apiDocs.upload_new_version") }}</button>

@@ -16,7 +16,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.document_parsing import (
     DocumentParseClaim, DocumentParseCommand, DocumentParseSeed,
-    DocumentParseSnapshot, DocumentParseTaskRecord,
+    DocumentParseSnapshot, DocumentParseTaskRecord, DocumentParseTaskPage, DocumentParseSnapshotPage,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,8 +103,8 @@ class PostgresDocumentParseStore:
                 if not version or version["record"]["snapshot"].get("original_asset") != seed.original_asset.model_dump(mode="json"):
                     raise ValueError("原件资产与固定文档版本不一致")
                 task_id = str(uuid4())
-                cur.execute(f"""INSERT INTO {self._tasks}(id,project_id,document_id,version_id,creation_key,request_hash,seed)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb) RETURNING *""",
+                cur.execute(f"""INSERT INTO {self._tasks}(id,project_id,document_id,version_id,creation_key,request_hash,seed,created_at)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,clock_timestamp()) RETURNING *""",
                     (task_id, seed.project_id, seed.document_id, seed.version_id, creation_key, request_hash, seed.model_dump_json()))
                 row = cur.fetchone()
                 command = DocumentParseCommand(project_id=seed.project_id, task_id=task_id)
@@ -133,6 +133,30 @@ class PostgresDocumentParseStore:
                 cur.execute(f"SELECT * FROM {self._tasks} WHERE project_id=%s AND id=%s", (project_id, task_id))
                 row = cur.fetchone()
                 return self._record(row) if row else None
+        return await asyncio.to_thread(read)
+
+    async def list_tasks(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"""SELECT * FROM {self._tasks} WHERE project_id=%s AND document_id=%s
+                    AND (%s::uuid IS NULL OR version_id=%s::uuid)
+                    ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s""",
+                    (project_id, document_id, version_id, version_id, limit + 1, offset))
+                rows = cur.fetchall()
+            return DocumentParseTaskPage(items=[self._record(row) for row in rows[:limit]],
+                has_more=len(rows) > limit, limit=limit, offset=offset)
+        return await asyncio.to_thread(read)
+
+    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"""SELECT s.record FROM {self._snapshots} s JOIN {self._tasks} t ON t.id=s.task_id
+                    WHERE s.project_id=%s AND s.document_id=%s AND (%s::uuid IS NULL OR s.version_id=%s::uuid)
+                    ORDER BY t.created_at DESC,t.id DESC LIMIT %s OFFSET %s""",
+                    (project_id, document_id, version_id, version_id, limit + 1, offset))
+                rows = cur.fetchall()
+            return DocumentParseSnapshotPage(items=[DocumentParseSnapshot.model_validate(row["record"]) for row in rows[:limit]],
+                has_more=len(rows) > limit, limit=limit, offset=offset)
         return await asyncio.to_thread(read)
 
     async def claim(self, project_id, task_id, *, worker_id):
@@ -238,7 +262,10 @@ class PostgresDocumentParseStore:
     async def latest_snapshot(self, project_id, document_id, version_id):
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                cur.execute(f"SELECT record FROM {self._snapshots} WHERE project_id=%s AND document_id=%s AND version_id=%s ORDER BY created_at DESC,id DESC LIMIT 1",
+                # Select by database submission order, independent of Worker clocks or completion order.
+                cur.execute(f"""SELECT s.record FROM {self._snapshots} s JOIN {self._tasks} t ON t.id=s.task_id
+                    WHERE s.project_id=%s AND s.document_id=%s AND s.version_id=%s
+                    ORDER BY t.created_at DESC,t.id DESC LIMIT 1""",
                     (project_id, document_id, version_id))
                 row = cur.fetchone()
                 return DocumentParseSnapshot.model_validate(row["record"]) if row else None

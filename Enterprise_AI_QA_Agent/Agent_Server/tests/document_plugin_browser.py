@@ -22,13 +22,15 @@ from src.application.integrations.integration_catalog_service import Integration
 
 
 @asynccontextmanager
-async def document_plugin_browser(env, evidence_prefix):
+async def document_plugin_browser(env, evidence_prefix, *, setup_app=None):
     app = FastAPI()
     app.state.api_docs_service = env.docs
     app.state.project_service = env.projects
     app.state.integration_catalog_service = IntegrationCatalogService(settings=env.settings)
     for route in (router, projects_router, integrations_router):
         app.include_router(route, prefix="/api/v1")
+    if setup_app:
+        setup_app(app)
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     backend_port = listener.getsockname()[1]

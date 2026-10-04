@@ -240,6 +240,29 @@ class DocumentParseTaskRecord(BaseModel):
     completed_at: datetime | None = None
 
 
+class DocumentParseTaskPage(BaseModel):
+    items: list[DocumentParseTaskRecord]
+    has_more: bool
+    limit: int
+    offset: int
+
+
+class DocumentParseSnapshotPage(BaseModel):
+    items: list[DocumentParseSnapshot]
+    has_more: bool
+    limit: int
+    offset: int
+
+
+class DocumentParseFailureView(BaseModel):
+    task_id: str
+    artifact: DocumentParseFailureArtifact
+    exit_code: int | None = None
+    error: str
+    stdout: str
+    stderr: str
+
+
 class DocumentParseClaim(BaseModel):
     task: DocumentParseTaskRecord
     seed: DocumentParseSeed

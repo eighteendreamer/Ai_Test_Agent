@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from src.application.documents.parser_process import DocumentParseProcess
 from src.runtime.limited_parser_process import ParserProcessError
-from src.schemas.document_parsing import DocumentParseResult, DocumentParseSeed, DocumentParseSnapshot, DocumentParseFailureArtifact
+from src.schemas.document_parsing import DocumentParseResult, DocumentParseSeed, DocumentParseSnapshot, DocumentParseFailureArtifact, DocumentParseFailureView
 
 logger = logging.getLogger(__name__)
 DOCUMENT_PARSE_STREAM = "qa:tasks:document_parsing"
@@ -70,6 +70,32 @@ class DocumentParsingService:
             raise KeyError("当前文档没有该解析快照")
         result = await self._read_snapshot_result(snapshot)
         return snapshot, result
+
+    async def _require_version(self, project_id, document_id, version_id):
+        await self._require_document(project_id, document_id)
+        if version_id:
+            await self._docs.get_version(document_id, version_id)
+
+    async def list_tasks(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        await self._require_version(project_id, document_id, version_id)
+        return await self._store.list_tasks(project_id, document_id, version_id=version_id, limit=limit, offset=offset)
+
+    async def list_snapshots(self, project_id, document_id, *, version_id=None, limit=20, offset=0):
+        await self._require_version(project_id, document_id, version_id)
+        return await self._store.list_snapshots(project_id, document_id, version_id=version_id, limit=limit, offset=offset)
+
+    async def read_failure(self, project_id, document_id, task_id):
+        task = await self.get(project_id, document_id, task_id)
+        artifact = task.failure_artifact
+        if task.status != "failed" or artifact is None:
+            raise ValueError("该解析任务没有已保存的进程失败诊断")
+        raw = (await self._objects.read_object_uri(artifact.storage_uri))["content"]
+        if len(raw) != artifact.size_bytes or hashlib.sha256(raw).hexdigest() != artifact.sha256:
+            raise ValueError("解析失败诊断大小或哈希不一致")
+        payload = json.loads(raw)
+        if payload.get("exit_code") != artifact.exit_code:
+            raise ValueError("解析失败诊断退出码不一致")
+        return DocumentParseFailureView(task_id=task.id, artifact=artifact, **payload)
 
     async def latest_snapshot(self, project_id, document_id, version_id):
         await self._require_document(project_id, document_id)

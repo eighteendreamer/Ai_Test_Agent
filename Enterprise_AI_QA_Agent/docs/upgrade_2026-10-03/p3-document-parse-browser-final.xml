@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="29.100" timestamp="2026-10-04T12:26:16.889195+08:00" hostname="EIghteen"><testcase classname="tests.test_document_parsing_browser" name="test_browser_docx_lost_submission_refresh_immutable_versions_and_json_download" time="11.291" /><testcase classname="tests.test_document_parsing_browser" name="test_browser_pdf_mysql_settings_new_snapshot_and_actual_failure_diagnostics" time="8.815" /><testcase classname="tests.test_document_parsing_browser" name="test_browser_markdown_source_is_escaped_and_archived_project_keeps_history_readable" time="0.831"><failure message="src.application.security.upload_security_service.UploadSecurityError: 上传未通过安全校验，文件已隔离。原因：检测到脚本标签内容。建议：请删除高风险脚本或命令执行内容后重新上传">tests\test_document_parsing_browser.py:203: in test_browser_markdown_source_is_escaped_and_archived_project_keeps_history_readable
+    document = await env.docs.upload_document(filename="requirements.md", project_id=project.id, request_id=uuid4().hex,
+tests\test_case_planning.py:79: in track_upload
+    document = await upload(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\api_docs_service.py:353: in upload_document
+    record = await self._prepare_document_assets(doc_id=doc_id, **parameters)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\api_docs_service.py:542: in _prepare_document_assets
+    original_result = await self._store_upload(content=content, filename=filename,
+src\application\documents\api_docs_service.py:961: in _store_upload
+    return await self._upload_security_service.secure_store_upload(
+src\application\security\upload_security_service.py:177: in secure_store_upload
+    raise UploadSecurityError(
+E   src.application.security.upload_security_service.UploadSecurityError: 上传未通过安全校验，文件已隔离。原因：检测到脚本标签内容。建议：请删除高风险脚本或命令执行内容后重新上传</failure></testcase></testsuite></testsuites>

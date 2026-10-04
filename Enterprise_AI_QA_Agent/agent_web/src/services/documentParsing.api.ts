@@ -1,6 +1,7 @@
 import type {
   DocumentParsingSettings, DocumentParsingSettingsRecord, DocumentParseTaskRequest,
-  DocumentParseTaskRecord, DocumentParseSnapshotView,
+  DocumentParseTaskRecord, DocumentParseSnapshotView, DocumentParseTaskPage,
+  DocumentParseSnapshotPage, DocumentParseFailureView, DocumentParserCapability,
 } from "../types";
 import { request } from "./http";
 
@@ -14,6 +15,10 @@ function documentPath(projectId: string, documentId: string): string {
 
 export function getDocumentParsingSettings(projectId: string): Promise<DocumentParsingSettingsRecord> {
   return request(`${projectPath(projectId)}/document-parsing-settings`);
+}
+
+export function getDocumentParserCapabilities(projectId: string): Promise<DocumentParserCapability[]> {
+  return request(`${projectPath(projectId)}/document-parsers`);
 }
 
 export function saveDocumentParsingSettings(projectId: string, payload: DocumentParsingSettings): Promise<DocumentParsingSettingsRecord> {
@@ -34,4 +39,22 @@ export function getDocumentParseSubmission(projectId: string, documentId: string
 
 export function readDocumentParseSnapshot(projectId: string, documentId: string, snapshotId: string): Promise<DocumentParseSnapshotView> {
   return request(`${documentPath(projectId, documentId)}/parse-snapshots/${encodeURIComponent(snapshotId)}`);
+}
+
+function catalogQuery(versionId?: string, offset = 0): string {
+  const query = new URLSearchParams({ limit: "20", offset: String(offset) });
+  if (versionId) query.set("version_id", versionId);
+  return query.toString();
+}
+
+export function listDocumentParseTasks(projectId: string, documentId: string, versionId?: string, offset = 0): Promise<DocumentParseTaskPage> {
+  return request(`${documentPath(projectId, documentId)}/parse-tasks?${catalogQuery(versionId, offset)}`);
+}
+
+export function listDocumentParseSnapshots(projectId: string, documentId: string, versionId?: string, offset = 0): Promise<DocumentParseSnapshotPage> {
+  return request(`${documentPath(projectId, documentId)}/parse-snapshots?${catalogQuery(versionId, offset)}`);
+}
+
+export function readDocumentParseFailure(projectId: string, documentId: string, taskId: string): Promise<DocumentParseFailureView> {
+  return request(`${documentPath(projectId, documentId)}/parse-tasks/${encodeURIComponent(taskId)}/failure`);
 }

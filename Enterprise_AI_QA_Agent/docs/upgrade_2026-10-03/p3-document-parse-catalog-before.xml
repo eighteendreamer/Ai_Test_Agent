@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="16.272" timestamp="2026-10-04T11:55:06.457352+08:00" hostname="EIghteen"><testcase classname="tests.test_document_parse_catalog" name="test_older_submission_finishing_later_cannot_replace_newer_snapshot" time="4.527"><failure message="AssertionError: late older Worker replaced newer submitted result&#10;assert '76cdadbd-b25...-5591907dc943' == 'ee84a69f-b8b...-864b76950766'&#10;  &#10;  - ee84a69f-b8b3-4563-b8b4-864b76950766&#10;  + 76cdadbd-b250-4a5d-b219-5591907dc943">tests\test_document_parse_catalog.py:39: in test_older_submission_finishing_later_cannot_replace_newer_snapshot
+    assert default["parse_snapshot"]["id"] == new_snapshot.id, "late older Worker replaced newer submitted result"
+E   AssertionError: late older Worker replaced newer submitted result
+E   assert '76cdadbd-b25...-5591907dc943' == 'ee84a69f-b8b...-864b76950766'
+E     
+E     - ee84a69f-b8b3-4563-b8b4-864b76950766
+E     + 76cdadbd-b250-4a5d-b219-5591907dc943</failure></testcase><testcase classname="tests.test_document_parse_catalog" name="test_http_catalog_paginates_fixed_versions_and_does_not_leak_other_projects" time="2.721"><failure message="AssertionError: {&quot;detail&quot;:&quot;Method Not Allowed&quot;}&#10;assert 405 == 200&#10; +  where 405 = &lt;Response [405 Method Not Allowed]&gt;.status_code">tests\test_document_parse_catalog.py:60: in test_http_catalog_paginates_fixed_versions_and_does_not_leak_other_projects
+    assert response.status_code == 200, response.text
+E   AssertionError: {"detail":"Method Not Allowed"}
+E   assert 405 == 200
+E    +  where 405 = &lt;Response [405 Method Not Allowed]&gt;.status_code</failure></testcase></testsuite></testsuites>

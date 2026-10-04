@@ -1352,3 +1352,53 @@ $env:RUN_LIVE_MYSQL_TESTS='1'
 交付文件范围检查为 75 个相关文件，用户 `.gitignore` 排除；对源码、测试、Markdown、JSON/XML 和 CLI 文本工件做敏感格式扫描，无匹配，未输出匹配值。29 个本轮 Python 文件实际 py_compile 通过；`uv lock --check`、`uv pip check` 和已跟踪文件 `git diff --check` 通过。根锁仍是生效锁，生产历史数据未迁移。仅提交本轮相关实现、测试、方案和原始证据，不推送、不创建 PR。
 
 暂存后实际发现 PDF 样本检出会从 897 字节变成 978 字节：`git show :路径` 与原件一致，`git cat-file --filters` 与原件不一致。依照 [Git 官方属性说明](https://git-scm.com/docs/gitattributes) 中 `-text` 禁止检入/检出换行转换的规则，只在本轮样本目录增加针对 `requirements.pdf` 的属性，不修改 Git 配置。修复后原件、暂存对象及检出字节相同，均为 897 字节；pypdf 实际读取检出字节，文本与原件相同，证据 JSON 的来源哈希匹配。最终相关文件数为 76；源码/文档的暂存 diff 检查通过，完整 diff 检查仍有原失败 XML 的两处尾空白，保留原始测试输出。
+
+## P3 解析产品入口、默认快照及生产解析进程（2026-10-04，基线 9be9aa7）
+
+先查证：已有解析提交/单任务/单快照 API，没有分页目录或操作面板；新版本选择没有 DOCX。真实 PG/MySQL/RustFS 的两次 PDF 解析复现“旧 plain 任务晚完成覆盖新 layout 默认依据”，目录 HTTP 返回405，原始证据 `p3-document-parse-catalog-before.xml` 为2失败。沿既有规划分页契约补目录；默认快照按 PostgreSQL 在项目/文档锁后记录的任务提交时间及身份选取，列表采用相同顺序，不依赖 Worker 完成时间。历史来源继续引用固定 snapshot。新任务失败或排队时展示其状态，保留已保存结果。
+
+实际修改：
+
+- 后端契约、路由、应用服务、PG存储同步增加能力目录、项目/文档/固定版本分页、失败诊断读取。失败工件核验大小/SHA/退出码后返回实际错误、stdout/stderr；完成任务不伪造失败诊断，损坏工件明确返回409。目录查询仍核对项目/文档及可选历史版本。
+- `ApiDocsPlugin.vue` 接入独立 `ApiDocParsing.vue`、`DocumentParsingSettings.vue`、`DocumentParseSnapshot.vue`。支持固定原件选择、提交/同请求找回、轮询、分页历史、警告/全文/结构/位置、完整JSON下载及失败诊断。MySQL设置控制后续新任务；能力目录来自实际工厂，未支持格式和缺原件可见。新版本上传选择补DOCX。
+- 浏览器保存非敏感请求身份/固定版本；响应未知不能换请求，缓存终态重新查服务端，显式选中的历史视图不会被后台完成覆盖。身份变更/关闭阻止旧返回并停止轮询；MySQL配置不可用时PG历史仍可读。归档历史可读，新提交与配置修改禁止。
+- 新增真实目录、实际插件浏览器、生产API/独立解析CLI三组测试；原件使用本轮目录的Git属性保持字节。生产专项复用既有隔离完整运行时/进程夹具，模型配置仅供API启动，解析实际模型调用0。
+
+| 验证及原始证据 | 实际结果与边界 |
+|---|---|
+| `p3-document-parse-catalog-before.xml` / `catalog-first.xml` / `catalog-fixed.xml` | 2失败 → 2通过1失败 → **3通过，12.03秒**。中间夹具错误认为加密错误必在stderr；实际固定Worker通过结果文件保存error，stdout/stderr可空，按真实契约修正。后续能力目录断言随扩大回归通过 |
+| `p3-document-parse-ui-regression.xml` | **129通过、2跳过，62.36秒**。含真实PG/MySQL/RustFS、目录/进程/版本/来源及受影响回归；跳过为实际文件证据目录未设置与外部默认模型 |
+| `p3-document-parse-ui-parser-files.xml` / `ui-parser-files-verified.xml` | 首次筛选名称错误，16未选择，不能算通过；设置真实样本目录后正确筛选 **1通过、15未选择，0.51秒**，三个格式原件及结果实际生成。上行存储/文件项已补验，外部默认模型未验 |
+| `p3-document-parse-browser-first.xml` / `browser-fixed.xml` | 1通过1失败 → **2通过，22.80秒**。响应中断夹具在HTTP尚未完成前检查捕获结果；改为等待重试按钮可用，未改产品逻辑 |
+| `p3-document-parse-browser-final.xml` / `browser-safe-final.xml` | 各2通过1失败。新增Markdown夹具中的脚本被既有扫描拒绝，保留扫描并断言拒绝，用普通标签验证文本呈现；第二次夹具误把Playwright page.url属性当函数，按实际API修正 |
+| `p3-document-parse-browser-verified.xml` | **3通过，32.86秒**。实际ApiDocsPlugin/样式/生产路由、隔离PG/MySQL/RustFS/Redis、Worker类与独立解析进程。实际浏览器，并非完整产品App启动 |
+| `p3-document-parse-production-first.xml` / `production-final.xml` | **1通过，41.09秒** → 补实际能力API后 **1通过，43.36秒**。真正uvicorn `src.main:app` 全生命周期、独立解析Worker CLI及真实隔离存储；不调用默认外部模型 |
+| 受影响前端四文件与 `npm run build` | **15通过，3.37秒**；类型检查与构建通过，Vite **8.94秒**。首次类型检查发现组件名与类型名重复，类型别名修正后通过 |
+
+实际浏览器场景：DOCX先上传带表格的7天原件，POST实际提交后中断响应，刷新原请求找回，只有1任务/attempt1；新原件9天形成V2，新解析后旧V1和快照仍7天，完整JSON下载实际读取比对。PDF通过设置面板将plain存为layout，形成新快照，旧快照保持；加密PDF真实失败，无快照，不解码二进制回退，失败诊断忠实显示空stdout/stderr。Markdown原件BOM/CRLF逐字节保留，标签作为文本；危险脚本被既有扫描拒绝；归档后历史仍可读，界面无新提交/保存入口，实际HTTP新解析409。人工查看三份截图，核对警告、原件/快照身份、失败诊断和归档文本展示。
+
+生产专项：真实DOCX上传核对RustFS字节；提交后MySQL超时60改80；API重启仍同请求同任务、Outbox1；独立CLI执行冻结60的策略，正文/表格7天，历史全文引用实际快照。终态重投没有重新解析、attempt1，模型调用0。完整API和CLI stdout/stderr、summary保存于 `p3-document-parse-production/`。结束后清理本次隔离PG数据库、MySQL表、Redis容器及RustFS对象；从检查点/失败记录补查工件以避免失败断言漏清理，没有执行生产历史迁移。
+
+关键重现命令（Agent_Server；依赖现有测试数据库/对象存储与Docker环境）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_parse_catalog.py -q --tb=short
+
+$env:RUN_LIVE_DOCUMENT_PARSE_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_parsing_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-parse-browser-verified.xml
+
+$env:RUN_LIVE_DOCUMENT_PARSE_PRODUCTION='1'
+$env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-parse-production')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_parse_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-parse-production-final.xml
+```
+
+前端（agent_web）命令：`npm run test -- src/features/tools/plugins/ApiDocParsing.test.ts src/features/tools/plugins/ApiDocVersions.test.ts src/features/tools/plugins/ApiDocAssets.test.ts src/features/tools/plugins/ApiDocsPlugin.importSources.test.ts`、`npm run build`。表中已有终态结果不为文档同步重复运行。
+
+直接同步项目PLAN、用户粘贴原文件及Codex镜像，保留附件章节结构与原始备份。首页/§3.1/§3.3/接口/第六节统一到实际解析入口及生产专项状态；旧阶段的163项后端记录保留为历史，不与本轮129项相加。上传不使用Git、模板仅生成、项目内选取→初排→补全→冻结保持一致。
+
+本轮交付是完整P0—P5中的解析入口与生产解析进程专项。完整产品App/导航/项目页、更多事务/网络故障、生产历史迁移未验；确定性差异、可选Git、影响/追踪/增量草稿仍待实现。P2步骤归属/未知副作用/计划修订/默认模型、模块化生成、DeepSeek人工录制链、Docker实际性能/安全证据及P5保持未完成。未部署Docling，不标记整个目标完成。
+
+收尾实际核对：五份最终XML的计数/失败/跳过与正文一致；项目PLAN和Codex镜像字节一致，附件上传/解析章节与正式方案一致且保留原编号，绝对本地链接均存在。前后端新增能力/目录/诊断契约引用核对通过，13个相关Python文件实际编译通过，源码/测试/Markdown及文本证据敏感格式扫描无匹配；未输出可能的匹配值。仅本轮相关文件进入提交，用户 `.gitignore` 留在工作区；三个新增被忽略的后端测试显式纳入提交。
+
+暂存范围实际为65个本轮相关文件；8份Markdown/PDF/DOCX原件的工作区、暂存对象与Git过滤后检出字节全部一致，结果JSON中的来源哈希匹配。源码/测试/方案的暂存diff检查通过。完整diff检查报告6处：两个实际BOM/CRLF Markdown原件的5行CR字符，以及 `p3-document-parse-catalog-before.xml` 原失败输出1处尾空白；为保留真实原件哈希及失败证据未改写这些工件，不将完整diff检查报告为全通过。仅本地中文commit，不推送、不创建PR。

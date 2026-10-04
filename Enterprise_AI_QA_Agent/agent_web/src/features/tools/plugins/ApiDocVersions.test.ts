@@ -72,6 +72,7 @@ it("finds a saved submission without resending the file and reads a selected his
   api.getApiDocVersionSubmission.mockResolvedValue({ document: document(2), version: version(2), created_new: true });
   const wrapper = mount(ApiDocVersions, { props: { document: document(3), canWrite: true } });
   await flushPromises();
+  expect(wrapper.get('input[type="file"]').attributes("accept")).toContain(".docx");
   await button(wrapper, "apiDocs.find_submission").trigger("click");
   await flushPromises();
   expect(api.uploadApiDocVersion).not.toHaveBeenCalled();
