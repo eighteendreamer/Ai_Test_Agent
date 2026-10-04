@@ -15,7 +15,7 @@ from src.schemas.document_impact_responses import (
 
 
 def capture_impact_response_protocol():
-    value = {"version": "impact-call-v2", "scope": "one declared unit only",
+    value = {"version": "impact-call-v3", "scope": "one declared unit only",
         "response_schema": DocumentImpactDecision.model_json_schema(),
         "instruction": "Read primary and fixed evidence. Request more fixed ranges when cross-section rules are needed. "
             "Propose candidates with exact source slices and literal case JSON paths; report uncertain/missing evidence. "
@@ -24,6 +24,9 @@ def capture_impact_response_protocol():
             "in primary/additional_fixed_reads or earlier user messages; normalized diff offsets are not original offsets. "
             "Case impacts must cite a complete version actually supplied in this call history. Catalog metadata is not text evidence. "
             "Use fixed_case_catalog and fixed_difference_catalog identities to request additional fixed evidence. "
+            "Copy version_record_sha256 from fixed_case_catalog for case citations; it identifies the complete version record "
+            "and is different from content_hash. Never invent or calculate this hash. Catalog hashes do not replace reading "
+            "the complete case. Copy text_sha256 from the supplied source and quote its exact original slice. "
             "Applicability is only a suggestion; deployment remains unknown and all candidates require review. "
             "Do not claim complete project coverage from this unit. Do not execute or change official records."}
     digest = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,

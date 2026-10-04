@@ -2117,3 +2117,37 @@ $env:QA_DOCUMENT_DIFFERENCE_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '
 四轮原失败分开保留：browser-first54.34秒为拼入/home的导航错误；browser-verified47.10秒为未等待POST路由完成就断言；browser-final86.83秒为刷新后设置已折叠；browser-validated60.60秒为容量1在capture就拒绝、没有创建任务。最后依据实际capture/prepare分别校验的实现重新设计失败样本。未改生产状态或放宽上限掩盖错误。
 
 三份完整方案同步；限定格式敏感扫描、字节/引用/链接及相关暂存核对记录另见p4-product-validation.json。用户.gitignore未编辑或提交。没有生产历史迁移、真实默认外部模型语义判断及其他格式影响浏览器场景；需求评审/矩阵/增量/适用性与P0—P5剩余项继续，不能标完整目标完成。
+
+## 2026-10-05：真实默认模型诊断与引用依据修复
+
+研究基线0aa271f1，重读原目标、方案、影响调用/响应/协调及配置、实际模型注册和已有真实模型规划/失败证据、本地Agent轨迹协议课程。只读默认MySQL模型元数据确认为step-5-preview/8192输出/原生适配器/SDK60秒。研究与范围见P4_DEFAULT_MODEL_DESIGN.md。
+
+三轮实际文件及存储的复杂单元探针分别1失败126.06/125.80/126.86秒：V1/V2修改保留期、新增导出、删除优惠、不变负向条件，三个完整8步用例，最后一步业务预期及false/0/null均进入完整冻结请求；第二/三轮物理请求证明实际发送。第一轮httpx取证未覆盖OpenAI3.14.0实际httpx2客户端，不能将0截获当未发送；第二轮修正到实际SDK类send，截获两次同正文POST，第一次60.156秒ReadTimeout、第二次59.078秒时取消。第三轮新v3同样超时，第二次显式记录cancelled_without_response。都保存PG意图/unknown与原件、解析、输入、清单、请求及对象原字节，没有响应或语义结论；原目录/XML/log不重写，原未知调用不自动重发。
+
+首轮真实固定请求逐值核对：Schema要求version_record_sha256，但三个用例的该值都未交给模型。修复新提交capture为impact-call-v3及复制引用指导，给出清单已有的记录哈希及正文哈希；保留旧v2默认/合法Schema、原目录形状和旧请求消息。引用验证没有放宽，目录不代替完整用例读取。受控HTTP专项的引用改为使用实际发送目录，避免fixture另算模型不可得的哈希。新增失败输入回放证明旧请求完整等于重建、新v3包括正确hash、False/0/null路径与content_hash混用拒绝，以及SDK实际消息/固定输出预算。
+
+复杂探针命令（Agent_Server；每轮分别指定新证据目录和同名XML/log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-citation-v3')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_model.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-citation-v3.xml
+```
+
+三次失败后停止重复复杂请求，直接执行现有SettingsService._test_api_key_connection的ping/pong（仅_settings依赖按现有方法设置，不替换Provider）：一次POST2037ms、返回pong，源模型参数前后不变；记录p4-default-model-health-diagnostic/及.log。仅为只读连接诊断，没有经产品API，不证明复杂影响、自动全范围或部署语义。没有修改8192输出、SDK60秒或重试；仅隔离项目MySQL总任务期限600秒。后续研究实际自动协调的单元输入、跨节补读和耗时，不能盲重跑或归因未经证明。
+
+引用修复命令（Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-citation-basis-replay.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-citation-basis-live')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_workflow.py tests/test_document_impact_batches.py tests/test_document_impact_analysis_context.py tests/test_document_impact_tasks.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-citation-basis-live.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-citation-basis-production')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-citation-basis-production.xml
+```
+
+回放3通过0跳过0.39秒；相关7模块102通过0跳过389.54秒（包含3回放）；独立生产API/解析/比较/影响CLI1通过0跳过68.54秒。后者实际隔离MySQL/PG/Redis、RustFS和HTTP，无Provider替换，6物理调用全文匹配固定请求、均v3与给定哈希。结果仍partial/pending_review/deployment unknown，不把受控模型当默认语义。未知、未读、旧输入/响应恢复及终态规则保留。
+
+没有新增依赖/数据库Schema/公开API或前端契约，本轮不重复前端构建/浏览器、没有生产迁移。资源只清理已验证归属的表及对象，用户.gitignore保持原字节并排除提交。三份方案同步；原始字节、限定凭据格式扫描、链接及暂存核对另记p4-citation-basis-validation.json。完整P0—P5未完成，下一步继续真实自动协调语义及原目标的需求/评审/增量/矩阵、P2/P1/P0/P5和迁移。

@@ -1,0 +1,18 @@
+default_model_http_started {"attempt": 1, "method": "POST", "request_sha256": "bcbc6b61ab3f5e24126e98f9a269336599d40f558d084663aa53643ee93deb37"}
+default_model_http_started {"attempt": 2, "method": "POST", "request_sha256": "bcbc6b61ab3f5e24126e98f9a269336599d40f558d084663aa53643ee93deb37"}
+F
+================================== FAILURES ===================================
+________ test_default_model_real_multirule_evidence_and_complete_cases ________
+tests\test_document_impact_default_model.py:235: in test_default_model_real_multirule_evidence_and_complete_cases
+    assert record.phase == "response_saved", {"phase": record.phase, "outcome": record.outcome_code, "physical_sends": len(wire)}
+E   AssertionError: {'phase': 'outcome_unknown', 'outcome': 'dispatch_TimeoutError', 'physical_sends': 2}
+E   assert 'outcome_unknown' == 'response_saved'
+E     
+E     - response_saved
+E     + outcome_unknown
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.impact_calls:impact_calls.py:312 document_impact_call_dispatch_unconfirmed
+WARNING  src.runtime.postgres_document_impact_calls:postgres_document_impact_calls.py:182 document_impact_call_outcome_unknown
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_default_model.py::test_default_model_real_multirule_evidence_and_complete_cases
+1 failed in 126.86s (0:02:06)

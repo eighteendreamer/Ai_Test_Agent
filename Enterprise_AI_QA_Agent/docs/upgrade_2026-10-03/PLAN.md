@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-05。本次方案核对基线：`fef8436f`。本次更新上传版本与比较的方案正文，区分文档身份、原件版本、解析快照和可选Git来源，合并重复解释并保留可行性依据；本次没有新增产品功能。此前完成的文档影响正式页面、固定比较提交/恢复、四类项目配置编辑、具体用例版本选择、任务池及历史结果查看，其实际DOCX、独立CLI、数据库、HTTP与构建App验收见3.5.7和6.3。生成模板只用于生成。默认外部模型语义、需求评审/矩阵/增量草稿、生产迁移及完整P0—P5仍未完成。三份方案全文同步；历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，历史命令、失败及局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。
+修订日期：2026-10-05。本次研究基线：`0aa271f1`。本轮实际默认模型的三次复杂影响探针均超时，保留未知调用；确认一次逻辑调用有两次SDK物理发送，并从真实请求查明、修复缺失用例版本记录哈希的输入契约。换用现有简短连接检查后一次HTTP约2.04秒返回pong，不代表复杂分析通过。新任务使用v3引用指导，旧v2请求保持不变，相关102项回归与1项独立生产Worker验证通过，详见3.5.8及6.4。此前上传与可选Git边界、生成模板只用于生成等约定保留；正式App/任务池的历史验收见3.5.7和6.3。默认外部模型语义、需求评审/矩阵/增量草稿、生产迁移及完整P0—P5仍未完成。三份方案全文同步；历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，历史命令、失败及局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。
 
 方案中的目标行为与实际内部/公开能力分开。完整 P0—P5 尚未完成。
 
@@ -288,7 +288,7 @@ SDK保持原有重试：当前受控HTTP500实测1次逻辑意图产生3次HTTP�
 
 ### 3.5.4 固定响应协议、候选与独立核验记录〔内部已验〕
 
-依据现有typed规划协议、先保存响应再解析及固定引用读取，接入 [DocumentImpactResponseService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_response_service.py)；查证细节见 [P4_RESPONSES_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_RESPONSES_DESIGN.md)。新任务提交冻结impact-call-v2的完整响应Schema、指导正文和SHA-256，之后准备请求读取seed快照。代码当前Schema变化不能替换已提交任务的协议。历史seed没有协议快照保持None，已保存请求/响应及其显式未知重试仍按原请求恢复；准备新单元或新续读时另建任务。旧请求、未知重试及原Input/hash不重写。
+依据现有typed规划协议、先保存响应再解析及固定引用读取，接入 [DocumentImpactResponseService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_response_service.py)；查证细节见 [P4_RESPONSES_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_RESPONSES_DESIGN.md)。该阶段最初冻结impact-call-v2的完整响应Schema、指导正文和SHA-256；当前新任务升级v3提供版本记录引用哈希，见3.5.8。已提交v2任务继续读取其seed协议及原目录形状。代码当前Schema变化不能替换已提交任务的协议。历史seed没有协议快照保持None，已保存请求/响应及其显式未知重试仍按原请求恢复；准备新单元或新续读时另建任务。旧请求、未知重试及原Input/hash不重写。
 
 impact-response-v1明确read或finish：read只能请求固定分段、完整用例、差异或原文区间；finish保存本单元的analyzed/evidence_insufficient声明、规则变化候选、用例影响/验证点、理由/引用和未解决项。局部候选key不是正式需求身份；applicability_suggestion只为模型建议，后端deployment_status仍unknown，semantic_status仍pending_review。单元结束不证明全范围覆盖，依据不足也不伪装完整。
 
@@ -344,6 +344,16 @@ RustFS保存核验正文；独立PG impact_response_checks按(call_id,validator_
 任务详情轮询非终态，结果从固定snapshot读取。分别展示文档规则原文引用、case单元的用例影响/字段引用/验证点、所有单元处理状态、未完成原因、依据限制及潜在冲突；false、0、null保留字面JSON。completed仅标“影响结果已保存”，partial、pending_review和deployment unknown独立呈现；没有启用/停用/执行操作。支持下载完整固定结果，归档项目保留只读历史。
 
 本轮真实DOCX7→9、完整12步用例、构建App/router、生产API与独立解析/比较/影响CLI、实际MySQL/PG/RustFS/Redis及HTTP已验证：四类配置保存、明确选择版本、实际丢弃已提交回执、刷新找回同任务、提交后指导/新草稿不替换固定依据、真实准备容量失败、任务池查看指定旧结果/失败、API重启关闭派发后读取及完整JSON下载。受控响应证明链路及引用，不证明默认外部模型业务语义；需求评审/矩阵/增量草稿仍继续。
+
+### 3.5.8 默认模型取证与用例引用依据修复
+
+查证与实际样本见 [P4_DEFAULT_MODEL_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DEFAULT_MODEL_DESIGN.md)。使用真实Markdown V1/V2、修改/新增/删除规则、不变负向条件与三个完整8步用例，配置/业务/大对象分别使用隔离MySQL、PG和实际RustFS，调用当前真实默认模型step-5-preview；没有提高8192输出上限或修改60秒SDK超时。
+
+三次复杂探针均未取得响应，实际调用120秒后保存unknown。第一轮拦截httpx未覆盖当前SDK的httpx2，不能声称未发送；第二/三轮拦截实际SDK客户端均确认两次相同POST，第一次ReadTimeout，第二次被总预算取消。第三轮已经使用修复后的v3；原证据及未知调用保留，不自动重发，也不将引用缺口当作超时根因。连续失败后切换现有连接检查，一次HTTP约2.04秒返回pong；后续应研究实际自动协调的单元输入、跨节补读及耗时，不能继续盲重跑同一复杂探针，不能将连接成功当影响语义验收。
+
+实际固定请求要求模型输出`version_record_sha256`，却只提供case_id/version_id和完整JSON，没有提供该记录哈希。新提交冻结impact-call-v3，在用例目录提供清单中已核验的记录哈希与正文哈希；指导明确复制记录哈希而非content_hash。完整用例仍必须实际读取，引用路径/值和未读拒绝不放宽；目录哈希不等于证据已读。旧v2请求目录与消息保持原样，历史输入、请求及协议hash不重写。没有新增依赖、公开API字段或数据库迁移。
+
+真实失败输入的旧请求回放、新目录与字面false/0/null引用、实际SDK请求全文和固定输出预算已验证3项；真实文件/HTTP/存储及独立生产Worker的回归按6.4记录。默认模型语义、自动全范围人工基线仍未通过，需求评审、增量草稿和矩阵继续推进。
 
 ### 3.6 需求评审、增量草稿与环境适用性
 
@@ -453,7 +463,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下为截至 `fef8436f` 的已提交状态；本次仅修订方案，未增加功能验收结果。各历史专项保留原基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；正式生产进程与相关回归另列，历史测试数量不累计成覆盖数。公开影响API、前端正式页面与任务池已接；正式App功能及浏览器验证见6.3，未进行生产迁移。
+以下为 `0aa271f1` 研究基线及本轮默认模型取证/引用修复后的状态，各历史专项保留原基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；正式生产进程与相关回归另列，历史测试数量不累计成覆盖数。公开影响API、前端正式页面与任务池已接；正式App功能及浏览器验证见6.3，本轮见6.4，未进行生产迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -515,3 +525,13 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 浏览器原始失败均保留：54.34秒失败为把初始/home路径错误拼入站点根；47.10秒失败为未等待实际POST回执丢弃；86.83秒失败为刷新后设置折叠栏已关闭；60.60秒失败为误把API提交前容量拒绝当作Worker失败。最后依据capture/prepare真实职责重新设计容量样本，任务确实创建后在准备阶段失败，原成功历史保留且不增加模型发送。前端首轮58断言通过但有2项旧mock未隔离子组件的未处理错误，已修正测试挂载；最终62项无错误，不掩盖原记录。
 
 实际成功流程保留7次物理HTTP、29份原始对象、固定PGseed/请求、MySQL配置、原文引用、下载结果及页面截图；重启后下载全文等于正式API历史，页面无pageerror，1440宽视口正文无横向溢出。只使用受控HTTP，不将其当真实默认模型判断。没有新增依赖或业务环境配置，不修改已保存输入/模型协议及终态；生产历史迁移、默认模型、需求评审/增量/矩阵/适用性及其余P0—P5仍未完成。
+
+### 6.4 默认模型诊断与引用协议修复〔研究基线0aa271f1〕
+
+三次默认模型单元探针分别1失败、126.06/125.80/126.86秒，固定真实文件、解析/比较、三个完整8步用例、PG输入及RustFS原字节均保留。首次物理取证漏覆盖当前SDK的httpx2；第二次确认两次同正文POST；第三次修复引用输入后仍为ReadTimeout及明确取消，任务调用保留outcome_unknown，没有响应或语义通过结论。原证据为p4-default-model-first/transport/citation-v3的XML/log/独立目录，不覆盖。三个项目总时限600秒在隔离MySQL，默认模型8192输出与60秒SDK超时未改；对应源模型前后参数一致。
+
+换用项目既有SettingsService连接检查的ping/pong，直接调用现有方法，不替换提供商，实际一次POST、2037ms、返回pong。证据p4-default-model-health-diagnostic/及.log。这个只读诊断没有经过产品API，也没有文档影响或部署语义，不代替自动协调验收。
+
+真实失败输入回放3通过、0跳过（0.39秒）；随后新协议、实际MD/DOCX/PDF×两适配器、固定读取、候选核验、持久响应/恢复、协调及旧输入回归 **102通过、0跳过（389.54秒）**；MD正式生产API、独立解析/比较/影响CLI、实际MySQL/PG/Redis/RustFS及HTTP **1通过、0跳过（68.54秒）**。分别保存p4-citation-basis-replay/live/production的XML/log及目录，3项回放包含在102项内，不累加为覆盖数。
+
+离线核对正式生产6次物理HTTP消息等于对应完整冻结请求，均使用v3和给定版本记录哈希；结果仍partial、semantic pending_review、deployment unknown。真实引用、未读拒绝及历史恢复通过，不冒充默认模型语义通过。公开API/前端契约、依赖与数据库Schema未改，不重跑前端构建/浏览器或执行生产迁移。完整P0—P5及需求评审/增量/矩阵仍未完成，继续按原目标推进。

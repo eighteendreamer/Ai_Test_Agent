@@ -91,7 +91,7 @@ class DocumentImpactDecision(ImpactBatchModel):
 
 
 class DocumentImpactResponseProtocolSnapshot(ImpactBatchModel):
-    version: Literal["impact-call-v2"] = "impact-call-v2"
+    version: Literal["impact-call-v2", "impact-call-v3"] = "impact-call-v2"
     scope: Literal["one declared unit only"] = "one declared unit only"
     response_schema: dict[str, Any]
     instruction: str = Field(min_length=1)

@@ -1,0 +1,16 @@
+F
+================================== FAILURES ===================================
+________ test_default_model_real_multirule_evidence_and_complete_cases ________
+tests\test_document_impact_default_model.py:218: in test_default_model_real_multirule_evidence_and_complete_cases
+    assert record.phase == "response_saved", {"phase": record.phase, "outcome": record.outcome_code, "physical_sends": len(wire)}
+E   AssertionError: {'phase': 'outcome_unknown', 'outcome': 'dispatch_TimeoutError', 'physical_sends': 0}
+E   assert 'outcome_unknown' == 'response_saved'
+E     
+E     - response_saved
+E     + outcome_unknown
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.impact_calls:impact_calls.py:308 document_impact_call_dispatch_unconfirmed
+WARNING  src.runtime.postgres_document_impact_calls:postgres_document_impact_calls.py:182 document_impact_call_outcome_unknown
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_default_model.py::test_default_model_real_multirule_evidence_and_complete_cases
+1 failed in 126.06s (0:02:06)

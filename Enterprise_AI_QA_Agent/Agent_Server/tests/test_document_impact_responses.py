@@ -100,12 +100,18 @@ async def test_actual_files_http_complete_candidates_immutable_checks_and_recove
         holder = {}
         def responder(body):
             payload = json.loads(body["messages"][-1]["content"])
-            assert payload["analysis_protocol"]["version"] == "impact-call-v2"
+            assert payload["analysis_protocol"]["version"] == "impact-call-v3"
             assert "DocumentImpactRuleCandidate" in payload["analysis_protocol"]["response_schema"]["$defs"]
             assert {item["version_id"] for item in payload["fixed_case_catalog"]}=={item.version_id for item in holder["manifest"].cases}
             assert {item["id"] for item in payload["fixed_difference_catalog"]}=={f"{item.kind}:{item.index}" for item in holder["manifest"].differences}
             assert len(payload["primary"]["case"]["version"]["content_json"]["steps"]) == 12
-            return "```json\n" + json.dumps(finish(holder["unit"], holder["manifest"], views, case), ensure_ascii=False) + "\n```"
+            proposal = finish(holder["unit"], holder["manifest"], views, case)
+            catalog = {item["version_id"]: item for item in payload["fixed_case_catalog"]}
+            for candidate in proposal["candidates"]:
+                for impact in candidate["case_impacts"]:
+                    for citation in impact["citations"]:
+                        citation["version_record_sha256"] = catalog[citation["version_id"]]["version_record_sha256"]
+            return "```json\n" + json.dumps(proposal, ensure_ascii=False) + "\n```"
         with provider(responder=responder) as (endpoint, sends, _, _):
             claim, manifest, selection, calls = await prepared(values, endpoint, adapter=adapter)
             holder.update(unit=selection.unit, manifest=manifest)

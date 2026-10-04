@@ -110,7 +110,11 @@ class DocumentImpactCallService:
             "environment": seed.analysis_context.environment.model_dump(mode="json"),
             "primary": primary, "additional_fixed_reads": reads,
             "fixed_source_catalog": [source.model_dump(mode="json") for source in manifest.sources],
-            "fixed_case_catalog": [case.model_dump(mode="json", include={"case_id", "version_id"}) for case in manifest.cases],
+            # v2 requests retain their original catalog shape for fixed-history replay.
+            # v3 supplies the existing verified record hash required by citations.
+            "fixed_case_catalog": [case.model_dump(mode="json", include={"case_id", "version_id"} if
+                protocol.version == "impact-call-v2" else {"case_id", "version_id", "content_hash", "version_record_sha256"})
+                for case in manifest.cases],
             "fixed_difference_catalog": [{"id": f"{item.kind}:{item.index}", **item.model_dump(mode="json")}
                 for item in manifest.differences],
             "source_gaps": [gap.model_dump(mode="json") for gap in manifest.source_gaps],
