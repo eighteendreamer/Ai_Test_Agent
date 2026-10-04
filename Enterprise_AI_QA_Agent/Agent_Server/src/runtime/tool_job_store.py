@@ -13,6 +13,10 @@ class ToolJobStore(Protocol):
     async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
     async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None: ...
+    async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
+                               output_payload: dict, status: ToolJobStatus, summary: str,
+                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None: ...
     async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
                                    summary: str, error_message: str | None) -> ToolJobRecord | None: ...
     async def get_job(self, job_id: str) -> ToolJobRecord | None: ...
@@ -73,6 +77,31 @@ class InMemoryToolJobStore:
                 job.heartbeat_at = job.updated_at = datetime.utcnow()
                 return job.model_copy(deep=True)
             return None
+
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != ToolJobStatus.running or "tool_output_observation" in job.metadata:
+                return None
+            job.output_payload = output_payload
+            job.metadata["tool_output_observation"] = observation
+            job.updated_at = datetime.utcnow()
+            return job.model_copy(deep=True)
+
+    async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
+                               output_payload: dict, status: ToolJobStatus, summary: str,
+                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None:
+        if status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed}:
+            raise ValueError("Observed output requires a terminal tool status")
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if (job is None or job.status not in {ToolJobStatus.running, ToolJobStatus.resume_requested}
+                or job.output_payload != expected_output or job.metadata.get("tool_output_observation") != expected_observation):
+                return None
+            job.status, job.output_payload, job.summary, job.error_message = status, output_payload, summary, error_message
+            job.artifact_count = artifact_count
+            job.completed_at = job.updated_at = datetime.utcnow()
+            return job.model_copy(deep=True)
 
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         values = list(self._jobs.values())

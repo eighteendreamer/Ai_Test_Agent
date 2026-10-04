@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ToolJobStatus(str, Enum):
@@ -19,6 +19,16 @@ class ToolJobStatus(str, Enum):
     failed = "failed"
     denied = "denied"
     cancelled = "cancelled"
+
+
+class ToolOutputObservation(BaseModel):
+    """A returned, sanitized tool output; business assertions are still separate."""
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    status: Literal["completed", "partial", "failed"]
+    output_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observed_at: datetime
 
 
 class ToolArtifactRecord(BaseModel):

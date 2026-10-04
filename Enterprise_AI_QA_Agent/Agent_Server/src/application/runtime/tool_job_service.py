@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime
+from copy import deepcopy
+import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.runtime.tool_job_store import ToolJobStore
 from src.schemas.agent import ToolDescriptor
-from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus
+from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation
+from src.infrastructure.storage_utils import make_json_safe
+
+logger = logging.getLogger(__name__)
+OUTPUT_OBSERVATION_KEY = "tool_output_observation"
 
 TEXT_ARTIFACT_EXTENSIONS = {
     ".txt",
@@ -104,6 +111,10 @@ class ToolJobService:
         summary: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolJobRecord | None:
+        if not summary and not metadata:
+            # The runtime's ordinary heartbeat must not overwrite output or
+            # resurrect a terminal job with an earlier whole-row snapshot.
+            return await self._store.heartbeat_job_execution(job_id)
         job = await self._store.get_job(job_id)
         if job is None:
             return None
@@ -114,6 +125,83 @@ class ToolJobService:
         if metadata:
             job.metadata.update(metadata)
         return await self._store.save_job(job)
+
+    @staticmethod
+    def _output_hash(output: dict) -> str:
+        raw = json.dumps(make_json_safe(output), ensure_ascii=False, sort_keys=True,
+            allow_nan=False, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _output_observation(self, job: ToolJobRecord) -> ToolOutputObservation:
+        observation = ToolOutputObservation.model_validate(job.metadata.get(OUTPUT_OBSERVATION_KEY))
+        if observation.output_hash != self._output_hash(job.output_payload):
+            raise ValueError(f"ToolJob {job.id} output no longer matches its returned-output checkpoint")
+        return observation
+
+    async def observe_output(self, job_id: str, *, status: str, output_payload: dict) -> ToolJobRecord:
+        payload = deepcopy(make_json_safe(output_payload))
+        observation = ToolOutputObservation(status=status, output_hash=self._output_hash(payload), observed_at=datetime.utcnow())
+        try:
+            saved = await self._store.observe_job_output(job_id, output_payload=payload,
+                observation=observation.model_dump(mode="json"))
+        except Exception as exc:
+            # A lost commit acknowledgement is uncertain; query this identity
+            # rather than replace its output or call the tool again.
+            logger.warning("tool_output_observation_acknowledgement_uncertain", extra={
+                "tool_job_id": job_id, "error_type": type(exc).__name__})
+            saved = None
+        if saved is None:
+            saved = await self._store.get_job(job_id)
+            if (saved is None or OUTPUT_OBSERVATION_KEY not in saved.metadata
+                or self._output_observation(saved).output_hash != observation.output_hash):
+                raise RuntimeError(f"ToolJob {job_id} returned output could not be confirmed in storage")
+        logger.info("tool_output_observation_saved", extra={"tool_job_id": job_id,
+            "tool_key": saved.tool_key, "run_item_id": saved.metadata.get("run_item_id"),
+            "operation_status": observation.status})
+        return saved
+
+    async def finish_output_processing(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
+                                       summary: str, artifacts: list[dict] | None = None) -> ToolJobRecord:
+        job = await self._store.get_job(job_id)
+        if job is None:
+            raise ValueError(f"ToolJob {job_id} disappeared during output processing")
+        if job.status not in {ToolJobStatus.running, ToolJobStatus.resume_requested}:
+            return job
+        self._output_observation(job)
+        await self._save_artifacts(job, artifacts or [])
+        return await self._settle_observed_output(job, status=status, output_payload=output_payload,
+            summary=summary, error_message=str(output_payload.get("error") or summary) if status == ToolJobStatus.failed else None)
+
+    async def recover_observed_output(self, job_id: str, *, reason: str) -> ToolJobRecord | None:
+        job = await self._store.get_job(job_id)
+        if job is None or job.status not in {ToolJobStatus.running, ToolJobStatus.resume_requested}:
+            return job
+        if OUTPUT_OBSERVATION_KEY not in job.metadata:
+            return None  # No returned result: effects still require actual reconciliation.
+        observation = self._output_observation(job)
+        output = deepcopy(job.output_payload)
+        output["output_delivery"] = {"status": "interrupted", "reason": reason,
+            "operation_status": observation.status}
+        status = ToolJobStatus.failed if observation.status == "failed" else ToolJobStatus.partial
+        saved = await self._settle_observed_output(job, status=status, output_payload=output,
+            summary=str(output.get("summary") or job.summary) + "；工具响应已保留，后续结果交付未完成。",
+            error_message=reason)
+        logger.warning("tool_output_observation_recovered", extra={"tool_job_id": job_id,
+            "tool_key": saved.tool_key, "run_item_id": saved.metadata.get("run_item_id"), "status": saved.status.value})
+        return saved
+
+    async def _settle_observed_output(self, job, *, status, output_payload, summary, error_message):
+        count = len(await self._store.list_artifacts(tool_job_id=job.id))
+        saved = await self._store.settle_job_output(job.id, expected_output=job.output_payload,
+            expected_observation=job.metadata[OUTPUT_OBSERVATION_KEY], output_payload=make_json_safe(output_payload),
+            status=status, summary=summary, error_message=error_message, artifact_count=count)
+        if saved is None:
+            saved = await self._store.get_job(job.id)
+            if saved is None or saved.status in {ToolJobStatus.running, ToolJobStatus.resume_requested}:
+                raise RuntimeError(f"ToolJob {job.id} changed while its observed output was being settled")
+            logger.warning("tool_output_settlement_existing_terminal_preserved", extra={
+                "tool_job_id": job.id, "status": saved.status.value})
+        return saved
 
     async def mark_waiting_approval(
         self,

@@ -1043,3 +1043,51 @@ $env:RUN_LIVE_MYSQL_TESTS='1'
 ```
 
 本轮只新增功能验收测试、过程证据并更新方案与实施记录。测试文件编译、文档本地链接、镜像一致性、XML 计数和 Git diff 另核对；前端及产品源码没有变更，未重复构建前端。用户 `.gitignore` 保持未暂存，不提交无关文件。完整目标保持 active。
+
+## 工具实际返回的检查点与工件中断恢复（2026-10-04）
+
+先读取 ToolRuntime、ToolJob 服务及两个存储实现、Agent 审批恢复、Session 重放与结果核验，再对照本地《Agent轨迹与协议鲁棒性》的重复执行/中断场景。实际 HTTP POST 返回 201 和订单 ID 后，在工件交付阶段注入错误：原实现将真实输出替换为 error。先运行失败样本并保存 `p2-operation-output-before.xml`（2 失败、2 未选择，4.60 秒），修订 PLAN 后实施。这个缺口发生在工具响应保存顺序，增加 RunItem 快照不能修复。
+
+修改范围及契约：
+
+- `schemas/tool_job.py` 定义输出观察检查点，保存版本、哈希、返回状态和时间，置于既有 Job metadata。
+- 内存与 PostgreSQL ToolJobStore 增加原子观察及条件结算：只写入运行中的原任务；结算同时比较原输出及检查点，保留并发取消和其他终态。
+- ToolJobService 处理提交回执丢失后的同身份回查、内容校验、正常交付结算及中断恢复。普通运行心跳只更新心跳，不以旧整行覆盖证据。
+- ToolRuntime 在现有归一/脱敏之后、工件交付之前保存实际响应。后续失败保留响应并标明交付中断，不将真实 POST 结果换成 error。取消仍传播给原执行流程。
+- AgentCaseExecutionAdapter 核对原 session/turn/tool/call/参数与 project/run/item/原 execution attempt，在原审批恢复中重放已观察响应；没有返回检查点继续报告结果未知。
+
+没有新增表、依赖或可编辑配置，复用 PostgreSQL JSONB；MySQL 配置和 RustFS 原件/工件职责保持不变。存储协议的两个实现和服务调用已同步核对；前端 ToolJobRecord 仍使用原 `metadata/output_payload: Record<string, unknown>`，没有新增必填 API 字段或更改其状态枚举。本次未改前端，未重复构建。
+
+| 证据 | 实际结果 | 验证范围 |
+|---|---|---|
+| `p2-operation-output-first-fix.xml` | 5 通过，40.35 秒 | 初版实际 HTTP 输出保留及恢复、既有心跳 |
+| `p2-operation-output-storage.xml` | 5 通过，39.76 秒 | 更新为有真实业务状态的目标；POST 中断恢复后 GET/DELETE，最终按实际 count 不符判失败 |
+| `p2-operation-output-contract.xml` | 13 通过，48.24 秒 | 内存和真实隔离 PG/MySQL/RustFS；真实响应、提交回执丢失、新服务读取、输出/检查点损坏、取消终态保护和原审批恢复 |
+| `p2-operation-output-regression.xml` | 测试收集失败，1 error，4.53 秒 | `test_schema_migrations.py` 导入失败：`ModuleNotFoundError: No module named 'alembic.config'`；未执行迁移专项，不计通过 |
+| `p2-operation-output-regression-final.xml` | 184 通过、21 跳过，173.07 秒 | 去掉缺依赖的迁移专项后，实际 Agent/Session/审批/结果、deepagent 工具重放、工件、安全、性能、CLI 超时和 API 隔离回归；1 项默认外部模型未启用，20 项可选 deepagents 未安装 |
+| `p2-operation-output-cli.xml` 及 `p2-operation-output-cli/` | 1 通过，41.22 秒 | 重新启动完整生产 API 与独立执行 Worker CLI，真实隔离四类存储、实际 HTTP 操作、审批/创建后重启及终态重投；受控模型 |
+| `p2-operation-output-recovery.json` | 只有一次 POST；目标 failed；清理完成 | 工件阶段中断、真实 Session 租约恢复后读取原订单 ID，不伪造目标通过 |
+
+实际命令（Agent_Server；各命令在独立 shell 中设置所需开关）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:QA_TEST_GATE_OUTPUT_DIR=(Resolve-Path '..\docs\upgrade_2026-10-03').Path
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_tool_operation_observation.py tests/test_tool_runtime_heartbeat.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-operation-output-contract.xml
+
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_agent_case_assessment.py tests/test_tool_runtime_heartbeat.py tests/test_deep_agent_tool_replay.py tests/test_deep_agent_runtime_adapter.py tests/test_artifact_storage_service.py tests/test_performance_runtime_artifacts.py tests/test_security_output_compaction.py tests/test_security_approval_boundary.py tests/test_security_execution_environment_upgrade.py tests/test_perf_high_level_runners.py tests/test_api_mode_session_isolation.py tests/test_cli_executor_timeout.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p2-operation-output-regression-final.xml
+
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_TEST_GATE_OUTPUT_DIR=(Resolve-Path '..\docs\upgrade_2026-10-03\p2-operation-output-cli').Path
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_execution_worker_cli.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-operation-output-cli.xml
+
+..\.venv\Scripts\python.exe -X utf8 -m py_compile src/schemas/tool_job.py src/runtime/tool_job_store.py src/runtime/postgres_tool_job_store.py src/application/runtime/tool_job_service.py src/application/runtime/tool_runtime_service.py src/application/test_runs/agent_case_execution.py tests/test_tool_operation_observation.py
+```
+
+7 个 Python 文件实际编译通过。完整 CLI 输出使用新的证据子目录，未覆盖前一轮 CLI 原始记录；本轮失败 XML 原样保留。同步修正方案首页、§2.4、第六节和下一步，直接更新用户粘贴方案及 Codex 镜像，并校验链接/一致性与 Git diff。仅暂存本轮文件，保留用户 `.gitignore` 未暂存。
+
+本轮完成范围是**已返回的工具输出**保存与恢复，不承诺请求发送和检查点写入之间没有窗口。真正没有返回证据的业务效果、完整准备步骤归属/状态、执行中计划修订、默认外部模型、其他模式/页面和 P0/P3—P5 仍未完成。没有执行生产数据库迁移；缺少 Alembic 的迁移专项与缺少 deepagents 的可选运行项明确未验收。不扩大受控模型/本地 HTTP 的结论。

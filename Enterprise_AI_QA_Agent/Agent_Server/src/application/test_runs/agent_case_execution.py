@@ -173,6 +173,18 @@ class AgentCaseExecutionAdapter:
 
     async def _continue_approval(self, context, checkpoint, attempt, item, approval, payload, *, mode_key):
         job = await self._jobs.get_job(str(approval.metadata.get("tool_job_id") or ""))
+        if job is not None:
+            if (job.session_id != checkpoint.session_id or job.turn_id != checkpoint.turn_id
+                or job.tool_key != approval.tool_key
+                or job.call_id != str(approval.metadata.get("call_id") or approval.id)
+                or job.input_payload != approval.metadata.get("arguments", {})
+                or any(job.metadata.get(key) != value for key, value in {
+                    "project_id": context.project_id, "run_id": context.run_id,
+                    "run_item_id": item.id, "attempt_id": checkpoint.execution_attempt_id}.items())):
+                raise ValueError("审批工具响应检查点不属于本次固定执行身份")
+            if job.status.value in {"running", "resume_requested"}:
+                job = await self._jobs.recover_observed_output(job.id,
+                    reason="执行恢复时发现工具响应已保存，但后续结果交付被中断")
         if job is None or job.status.value not in {"waiting_approval", "completed", "partial", "failed", "denied", "cancelled"}:
             raise AgentCaseRecoveryRequired("审批工具结果未知，需核对原任务，不能重复操作")
         checkpoint = checkpoint.model_copy(update={"phase": "running"})

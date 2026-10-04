@@ -487,6 +487,7 @@ class ToolRuntimeService:
     ) -> ToolExecutionRecord:
         started_at = datetime.utcnow()
         job = None
+        observed_output = False
         job_heartbeat_stop: asyncio.Event | None = None
         job_heartbeat_task: asyncio.Task | None = None
         handler = self._handlers.get(tool.key)
@@ -606,6 +607,11 @@ class ToolRuntimeService:
             with trace_manager:
                 raw_result = await handler(call.arguments, job_context)
             result = self._normalize_result(tool, raw_result, context=job_context)
+            result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
+            resolved_status = self._resolve_result_status(result)
+            if job is not None and resolved_status in {"completed", "partial", "failed"}:
+                await self._tool_job_service.observe_output(job.id, status=resolved_status, output_payload=result)
+                observed_output = True
             if self._artifact_storage_service is not None:
                 result = await self._artifact_storage_service.store_output_artifacts(
                     result,
@@ -617,7 +623,14 @@ class ToolRuntimeService:
             resolved_status = self._resolve_result_status(result)
             summary = str(result.get("summary", f"Tool '{tool.key}' completed."))
             if job is not None and self._tool_job_service is not None:
-                if resolved_status == "failed":
+                if observed_output:
+                    settled = await self._tool_job_service.finish_output_processing(job.id,
+                        status=ToolJobStatus(resolved_status), summary=summary, output_payload=result,
+                        artifacts=result.get("artifacts", []) if isinstance(result, dict) else [])
+                    if settled.status == ToolJobStatus.cancelled:
+                        return await self.record_from_job(settled)
+                    result, resolved_status, summary = settled.output_payload, settled.status.value, settled.summary
+                elif resolved_status == "failed":
                     await self._tool_job_service.mark_failed(
                         job.id,
                         summary=summary,
@@ -681,6 +694,19 @@ class ToolRuntimeService:
             sanitized_error, _ = self._output_safety_policy.sanitize_text(str(exc))
             failure_summary = f"Tool '{tool.key}' failed: {sanitized_error}"
             if job is not None and self._tool_job_service is not None:
+                recovered = await self._tool_job_service.recover_observed_output(job.id, reason=sanitized_error)
+                if recovered is not None and recovered.status in {
+                    ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                    ToolJobStatus.denied, ToolJobStatus.cancelled,
+                }:
+                    logger.warning("tool_runtime_returned_output_preserved", extra={
+                        "tool_job_id": job.id, "tool_key": tool.key, "error_type": type(exc).__name__})
+                    # Avoid repeating a failed artifact-index read in record_from_job.
+                    return ToolExecutionRecord(call_id=call.id, tool_key=tool.key, tool_name=tool.name,
+                        status="denied" if recovered.status == ToolJobStatus.cancelled else recovered.status.value,
+                        summary=recovered.summary, trace_id=context.trace_id, job_id=job.id,
+                        input=call.arguments, output={**self._compact_tool_output_for_model(tool.key, recovered.output_payload),
+                            "output_processing_error": sanitized_error}, started_at=started_at, completed_at=recovered.completed_at)
                 await self._tool_job_service.mark_failed(
                     job.id,
                     summary=failure_summary,

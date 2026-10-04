@@ -32,6 +32,46 @@ class PostgresToolJobStore:
     async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._heartbeat_job_execution_sync, job_id)
 
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None:
+        return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation)
+
+    def _observe_job_output_sync(self, job_id, output_payload, observation):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE {self._settings.database.postgres_tool_job_table}
+                SET output_payload=%s::jsonb, metadata=metadata || %s::jsonb, updated_at=now()
+                WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation')
+                RETURNING *
+            """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False),
+                  json.dumps({"tool_output_observation": observation}, ensure_ascii=False), job_id))
+            row = cur.fetchone()
+            return _job_from_row(row) if row else None
+
+    async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
+                               output_payload: dict, status: ToolJobStatus, summary: str,
+                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None:
+        if status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed}:
+            raise ValueError("Observed output requires a terminal tool status")
+        return await asyncio.to_thread(self._settle_job_output_sync, job_id, expected_output,
+            expected_observation, output_payload, status, summary, error_message, artifact_count)
+
+    def _settle_job_output_sync(self, job_id, expected_output, expected_observation, output_payload,
+                               status, summary, error_message, artifact_count):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE {self._settings.database.postgres_tool_job_table}
+                SET output_payload=%s::jsonb, status=%s, summary=%s, error_message=%s,
+                    artifact_count=%s, completed_at=now(), updated_at=now()
+                WHERE id=%s AND status IN ('running','resume_requested')
+                  AND output_payload=%s::jsonb AND metadata->'tool_output_observation'=%s::jsonb
+                RETURNING *
+            """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False), status.value,
+                  summary, error_message, artifact_count, job_id,
+                  json.dumps(make_json_safe(expected_output), ensure_ascii=False),
+                  json.dumps(expected_observation, ensure_ascii=False)))
+            row = cur.fetchone()
+            return _job_from_row(row) if row else None
+
     def _heartbeat_job_execution_sync(self, job_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
