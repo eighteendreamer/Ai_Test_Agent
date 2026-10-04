@@ -1434,3 +1434,48 @@ $env:QA_DOCUMENT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upg
 更新项目PLAN、用户所贴原方案及Codex镜像，保留原附件章节与备份；仅文档主流程的完整产品入口由待验改为本轮已验。未操作的其他项目/用例/模板/导入/Agent业务页面、更多事务/网络故障组合、生产历史迁移、默认外部模型、P3.4确定性差异、Git和P4/P5仍未完成。全文目标不缩小，不标记完整P0—P5完成。
 
 交付核对：本轮51个相关文件（新增实际验收测试、方案与原始证据），用户 `.gitignore` 不暂存。新测试实际py_compile通过；原附件上传/解析章节和正式方案一致，Codex镜像逐字节一致，绝对本地链接均可定位。三份XML的失败/终态计数、实际来源哈希、项目设置/版本/快照身份及计划内500记录与正文一致。源码/方案/文本工件敏感格式扫描无匹配，两个DOCX的工作区、暂存和过滤后检出字节一致。源码及方案暂存diff检查通过；完整diff检查保留两份原始 `last-page.txt` 在“选择新版本文件”处的实际尾空格，不改写页面采集证据，不报告完整diff全通过。只创建本地中文commit，不推送或建PR。
+
+## P3.4 确定性差异内核与真实固定输入（2026-10-04，基线 44f6044）
+
+承接完整产品文档验收，先读目标原附件并核对工作区仅用户 `.gitignore`；不把完整P0—P5缩成文档专项。核对解析schema、工厂、快照读取/完整性验证、受限进程、PostgreSQL任务租约及已有真实存储夹具。参考项目 `analyze_document_diff` 分别截取新旧前6000字后交模型分类，不能直接采用为确定性全文比较；查证Python3.11官方difflib的二次复杂度、autojunk及opcode契约。研究结果先写入 `P3_4_DESIGN.md`，同步正式PLAN、原用户粘贴附件及Codex镜像，随后实现。
+
+新增文件：
+
+- `schemas/document_differences.py`：两侧固定引用、实际比较策略、raw/normalized行和字符区间、章节/表格、来源及警告；结果保留实际预算，空侧不能伪造来源，区间与原文长度一致。
+- `application/documents/difference_engine.py`：标准库SequenceMatcher，明确关闭autojunk，先去除完全相同前后段；仅归一CRLF/CR→LF，保存回映射。完整行差异保留，字符细化超预算显式omitted；差异/输入边界拒绝不返回截断成功。ordinal结构ID只在本快照内引用，章节按标题/层级/父标题路径、表格按完整行列内容比较。partial及能力警告保留，unsupported拒绝；解析依据改变不自动判为需求改变。
+- `difference_process.py`、`difference_worker.py`：复用既有LimitedParserProcess，不复制监控或任务平台；JSON准备/验证在线程，昂贵计算在固定内部子进程。资源限制、实际退出码和stdout/stderr走已有设施，取消等待进程/临时目录回收。尚未配置新的MySQL持久比较设置或公开接口。
+- `tests/test_document_differences.py`、`tests/test_document_difference_storage.py`：真实文件/进程及真实MySQL/PostgreSQL/RustFS固定输入；不将只验证JSON形状算成功，按完整差异重建新文本并核对每段源位置。
+
+| 原始验证记录 | 实际结果 |
+|---|---|
+| `p3-document-difference-core-first.xml` | **21通过、1失败，6.43秒**；DOCX夹具错误期待列0，实际 `parser_factory.table_rows` 使用 `[body,row,column]`，第二行第二列为 `[2,1,1]`。按代码和实际结果修正断言，无产品补丁；该轮DOCX失败前未写输出工件，后续改为断言前保存工件 |
+| `p3-document-difference-core-verified.xml` | **51通过、1跳过，8.91秒**，当时比较及既有解析回归；实际文件输出项缺专属目录，明确跳过 |
+| `p3-document-difference-storage-first.xml` | **3通过，14.19秒**；三种格式的真实上传版本、MySQL设置、PG/RustFS快照和比较 |
+| `p3-document-difference-final.xml` | **55通过、1跳过，24.34秒**；增加2万行相同重复内容及策略/范围校验 |
+| `p3-document-difference-parser-files.xml` | 上述实际文件输出项单独补验 **1通过，0.58秒** |
+| `p3-document-difference-reconstruction.xml` | **26通过，40.47秒**；raw及normalized完整差异和字符细化重建，真实存储复验 |
+| `p3-document-difference-delivery.xml` | **27通过，23.80秒**；增加实际无文本PDF解析后比较拒绝、结果内固定实际比较策略 |
+| `p3-document-difference-line-before.xml` | **1失败，0.54秒**；真实复现Unicode分行错位：比较器自写CR/LF拆行，Markdown工厂用splitlines，来源为2行而差异显示1行 |
+| `p3-document-difference-final-delivery.xml` | **57通过、0跳过，31.07秒**；改为与工厂相同splitlines(keepends=True)，保留Unicode字符；全部新增及既有解析器/进程回归通过 |
+
+最终真实存储专项：正式项目上传两版真实MD/DOCX/PDF，MySQL配置超时65后改80，PG任务及解析快照保存各自固定修订；RustFS原件字节及解析JSON哈希核对。现有快照读取服务验证后交比较进程，得出正文/表格/分页的7→9，输入引用准确；配置只有任务超时改变不产生解析依据变化。比较前后的PG快照记录与RustFS原件/快照JSON一致，旧V1仍可读；错误项目不能读取输入。既有解析任务直接由测试内服务领取并启动真实子进程，不把此测试称为新的比较Outbox/Redis/独立CLI验收。隔离对象/业务表继续按已有夹具清理，工件URI不保证仍在线。
+
+最终主命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_DIFFERENCES='1'
+$env:QA_DOCUMENT_DIFFERENCE_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-difference-core-final-delivery')
+$env:QA_DOCUMENT_DIFFERENCE_STORAGE_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-difference-storage-final-delivery')
+$env:QA_DOCUMENT_PARSER_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-document-difference-parser-final-delivery')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_differences.py tests/test_document_difference_storage.py tests/test_document_parsers.py tests/test_document_parser_process.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-document-difference-final-delivery.xml
+```
+
+每轮工件使用独立目录/XML，保留首轮夹具失败及真实分行失败，不覆盖历史；证据目录内 `.gitattributes` 保留MD BOM/CRLF及DOCX/PDF原始字节。历史JSON为当时内核契约记录，最终交付以final-delivery为准，不把多次重跑相加为覆盖数。
+
+直接更新用户所贴方案而非只在回复里更正；保留附件编号、原始备份，Codex镜像与正式方案同步。上传不依赖Git、模板只生成、项目选取→初排→补全→最终冻结的既有约定保持。新增研究文档记录依据、计算/来源边界、后续任务/页面接入与逐步验收。
+
+本轮没有改前端、公开API、业务存储schema、依赖或生产配置；因此没有运行前端构建/浏览器，也没有声称比较入口已可用。比较持久任务/配置/结果存储、Outbox/Redis/CLI、公开API/前端、Git及P4影响/追踪/增量草稿继续实施；其他P2/P0/P5及生产历史迁移仍待验，Docling不部署，完整目标未完成。下一步先研究共同持久任务生命周期，不能复制第二套平台或把比较伪装成解析快照。
+
+收尾实际核对：正式PLAN与Codex镜像逐字节一致，原附件差异章节内容一致且保持原编号；模板仅生成、初排后补全、上传无Git依赖的约定及绝对文件链接已检查。6个新增Python文件实际py_compile通过，6组最终core/storage的真实原件哈希/大小、解析快照哈希和7→9结果与XML计数一致。敏感格式扫描133个文本/源码文件无匹配；初始无边界模式把旧 `task-pool-*.xml` 文件名中的 `sk-` 子串当匹配，改用token边界重新扫描，无真实凭据匹配。
+
+本轮仅171个相关文件暂存，两个被忽略的新后端测试显式 `git add -f`，用户 `.gitignore` 未暂存。58份原件的工作区、暂存及Git过滤后检出字节完全一致。源码/测试/方案的暂存diff检查通过；全范围检查保留 `p3-document-difference-core-first.xml` 首轮真实失败输出中的一处 `E` 行尾空白，不改写原始失败记录，不报告全范围diff检查通过。只创建本地中文commit，不推送或建PR。

@@ -1,0 +1,189 @@
+{
+  "snapshot": {
+    "id": "5ea55981-1fc1-4147-8d6e-73f9472ee2b4",
+    "task_id": "2c2ea3cb-ac92-4f0f-9ad9-b74b8a1b3f72",
+    "seed": {
+      "project_id": "b96fd01c-5003-4fc6-a421-e44de5ce374a",
+      "document_id": "ca62f0ca-fca1-4f99-b4e9-f95502967649",
+      "version_id": "e87e568d-3da1-4cbf-aea5-e8dd458687c2",
+      "original_asset": {
+        "id": "d3e71060-8c5a-4da6-810e-620f382adeeb",
+        "version_id": null,
+        "kind": "original",
+        "filename": "requirements-v1.pdf",
+        "content_type": "application/octet-stream",
+        "size_bytes": 897,
+        "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+        "storage_uri": "fixture://original",
+        "bucket": null,
+        "object_name": null,
+        "created_at": "2026-10-04T05:26:20.968716Z",
+        "reason": "actual file comparison fixture",
+        "security_report": {}
+      },
+      "config": {
+        "scope_key": "project:b96fd01c-5003-4fc6-a421-e44de5ce374a",
+        "revision": 1,
+        "payload": {
+          "policy": {
+            "limits": {
+              "max_bytes": 20000000,
+              "max_expanded_bytes": 100000000,
+              "max_zip_entries": 3000,
+              "max_pages": 1000,
+              "max_blocks": 50000,
+              "max_text_chars": 5000000,
+              "max_table_cells": 50000
+            },
+            "timeout_seconds": 60.0,
+            "max_cpu_seconds": 30.0,
+            "max_memory_bytes": 536870912,
+            "max_output_bytes": 40000000
+          },
+          "options": {
+            "parser_id": "auto",
+            "encoding": "utf-8-sig",
+            "pdf_extraction_mode": "plain"
+          },
+          "parser_by_extension": {
+            ".md": "markdown",
+            ".txt": "markdown",
+            ".docx": "docx",
+            ".pdf": "pdf"
+          }
+        }
+      },
+      "options": {
+        "parser_id": "auto",
+        "encoding": "utf-8-sig",
+        "pdf_extraction_mode": "plain"
+      },
+      "parser": {
+        "parser_id": "pdf",
+        "formats": [
+          ".pdf"
+        ],
+        "implementation_version": "lightweight-v1",
+        "text": true,
+        "sections": false,
+        "tables": false,
+        "ocr": false,
+        "source_positions": [
+          "page"
+        ],
+        "transport": "local",
+        "available": true
+      }
+    },
+    "storage_uri": "fixture://result",
+    "sha256": "5002f81f85923b327abde886bc41461cd64a50250fc3ddc2ba422944d1583055",
+    "size_bytes": 1259,
+    "status": "complete",
+    "parser": {
+      "parser_id": "pdf",
+      "formats": [
+        ".pdf"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": false,
+      "tables": false,
+      "ocr": false,
+      "source_positions": [
+        "page"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {
+      "pypdf": "6.19.0"
+    },
+    "warnings": [
+      {
+        "code": "pdf_structure_unavailable",
+        "message": "仅提取分页文本；表格、标题结构及复杂布局无法可靠还原。",
+        "source": null
+      }
+    ],
+    "created_at": "2026-10-04T05:26:20.968716Z"
+  },
+  "result": {
+    "schema_version": "document-parse-v1",
+    "filename": "requirements-v1.pdf",
+    "source_sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+    "source_size_bytes": 897,
+    "parser": {
+      "parser_id": "pdf",
+      "formats": [
+        ".pdf"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": false,
+      "tables": false,
+      "ocr": false,
+      "source_positions": [
+        "page"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {
+      "pypdf": "6.19.0"
+    },
+    "options": {
+      "parser_id": "auto",
+      "encoding": "utf-8-sig",
+      "pdf_extraction_mode": "plain"
+    },
+    "text": "Order retention: 7 days.\nInvalid ID returns an error.\n",
+    "blocks": [
+      {
+        "id": "block-1",
+        "kind": "text",
+        "text": "Order retention: 7 days.",
+        "start_char": 0,
+        "end_char": 24,
+        "source": {
+          "kind": "page",
+          "start_line": null,
+          "end_line": null,
+          "page": 1,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-2",
+        "kind": "text",
+        "text": "Invalid ID returns an error.",
+        "start_char": 25,
+        "end_char": 53,
+        "source": {
+          "kind": "page",
+          "start_line": null,
+          "end_line": null,
+          "page": 2,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      }
+    ],
+    "sections": [],
+    "tables": [],
+    "warnings": [
+      {
+        "code": "pdf_structure_unavailable",
+        "message": "仅提取分页文本；表格、标题结构及复杂布局无法可靠还原。",
+        "source": null
+      }
+    ],
+    "status": "complete",
+    "metadata": {
+      "page_count": 2,
+      "empty_text_pages": 0
+    }
+  }
+}
