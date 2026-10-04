@@ -1668,3 +1668,20 @@ ApiDocsPlugin文档详情增加ApiDocDifferences；两侧来源复用DocumentSna
 PLAN、用户粘贴原文件和Codex镜像直接同步，原备份保留。本轮不新增依赖/数据库表/配置键，不执行生产历史迁移、不部署Docling、不推送/建PR；用户.gitignore不提交。完整P0—P5仍未完成，下一步先调研Git只读来源；P4影响/需求追踪/增量草稿与P2剩余恢复/真实默认模型、模块化生成、其他完整产品流程、人工录制和Docker证据及P5继续。
 
 交付收尾核对：项目PLAN与Codex镜像字节一致，附件实施段一致且原备份存在；三份最终XML计数、三个产品build、原请求网络GET、503、新旧固定输入/策略及下载JSON实际核对。只暂存本轮相关文件，原始工件按-text字节校验，源码/测试/Markdown的diff检查通过；敏感格式扫描无匹配。扫描首轮将历史task-pool文件名中的sk-子串误识别为凭据，核对文件名并补词边界后通过，未改写历史证据。用户.gitignore未暂存。
+
+
+## 直接修订所贴方案与 Git 来源边界（2026-10-04，基线 bf84f84）
+
+本次按用户“更新这个方案”的要求直接修订原附件、项目 PLAN 和所选 Codex PLAN。首页明确当前约定及验收范围，旧首页移到文件末尾保留。修正文档来源正文、接口说明、P3 顺序及第六节的旧状态；Git 设计同步标注未验收。模板只生成；项目内选取→初排→AI 按完整步骤补缺口→最终冻结→现有 Agent 执行保持不变。
+
+重新核对公开上传/版本路由、上传/原提交/父版本服务、代码审查 Git 读取和当前 Git 草稿引用。普通上传不携带 Git 来源参数；Git DTO/进程/内部适配未在生产容器/入口/公开 API/前端接线。方案因此将上传版本可行性与可选 Git 的待实施范围分开，不将上传验收扩大到 Git。
+
+本次实际命令（Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_versions.py tests/test_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-sync-2026-10-04-upload-diff.xml
+```
+
+结果 **37 通过、14 跳过，11.18 秒**。版本用真实文件/替代存储夹具；差异用实际 MD/DOCX/PDF 与受限进程。14 项为未启用的真实存储变体。stdout/stderr 保存在同名 log；本次没有运行真实三种存储部署、生产 API/CLI、完整浏览器、Git 读取或外部模型。此前 bf84f84 的前端 59/真实后端 27/完整产品 3 仅核对保存的最终 XML，不写成本次重新验收。
+
+本轮只提交方案、设计状态及本次验证记录；已有未验收 Git 产品草稿和用户 .gitignore 留在工作区，不纳入文档提交。不升级依赖、不迁移数据、不部署、不推送/建 PR。完整 P0—P5 仍未完成。
