@@ -1633,3 +1633,14 @@ p3-comparison-layout-long-target-before使用健康DTO的掩码长地址复现�
 最终证据以p3-comparison-history-product-final/、p3-comparison-history-parse-product-final/和p3-comparison-layout-long-target-verified/为准，原失败与中间结果保留，次数不累加为覆盖数。最终三个产品/布局夹具均实际构建并含typecheck。18项公开比较任务字段与TypeScript契约、PG任务池判别联合及当前5个后端测试模块编译另核对通过。完整P0—P5仍未完成；下一步仍是文档详情比较提交/双侧版本与快照选择/策略/未知提交恢复，随后继续Git、P4及其余范围。
 
 交付核对：暂存相关文件327份（报告自身与空的源文件diff检查工件随后加入）；266份源码/方案/文本工件凭据格式扫描，唯一匹配为原有英文翻译Password标签，核对后无凭据格式匹配。304份原始工件工作区/暂存字节一致；最终下载/真实网络GET/零比较POST/布局和镜像/附件章节一致性实际核对。直接对原始工件运行git diff --check出现CRLF/原始空白提示，未改写证据；改为源码、类型、Vue、CSS及方案的diff检查通过，原件/JSON/进程日志另做字节核验。新增后端测试显式加入，用户.gitignore未暂存。
+
+
+## 本次直接更新用户方案（2026-10-04，核对基线 6339f7f）
+
+用户要求更新其粘贴方案。本次直接修改原附件、项目 PLAN 和 Codex PLAN 镜像，保留原附件备份及各阶段历史记录。修订当前状态、§3.4 提交入口的依据/实施安排/验收条件及第六节；纠正正文仍称比较 CLI/公开 API 未完成和下一步重复接任务池的旧表述。
+
+重新读取实际上传/版本服务、比较 submit/replay、前端版本/快照/比较 API 及当前组件草稿。上传不使用 Git；模板只生成，执行为项目内选取→初排→AI 补全→最终冻结。文档详情提交/双方选择/设置/恢复已有未验收工作区草稿，不将其写成已交付。本次提交只含方案和记录，保留已有产品代码与用户 .gitignore 的工作区状态。
+
+实际运行（Agent_Server）：`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_differences.py -q --tb=short`，24 通过，7.36 秒，实际 MD/DOCX/PDF 与受限进程。没有重跑真实 MySQL/PG/RustFS/Redis、生产 API/CLI、浏览器或外部模型；先前产品结果只核对保存的证据，不宣称本次重新验收。
+
+方案同步另检查镜像字节、两份 §3.4 实施段一致性、当前状态与原附件备份、历史 XML 计数及文档 diff；未修改依赖、数据库、部署或产品契约。完整 P0—P5 仍未完成。
