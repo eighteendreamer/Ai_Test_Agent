@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-04。代码研究基线：`443f046a`，当前已增加P4内部固定提交与输入检查点。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
+修订日期：2026-10-04。当前已提交实现基线：`e152796c`；本次复核上传版本、固定影响输入及共享任务存储，更新实际交付边界。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
 
 方案中的目标行为与实际内部/公开能力分开。完整 P0—P5 尚未完成。
 
@@ -30,8 +30,8 @@
 | [固定计划创建运行](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_run_service.py)、[执行上下文](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) | 复用正式套件、RunItem、原子领取及完整上下文，不创建替代执行平台 |
 | [Agent 适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py)、[回执核验](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_assessment.py) | 新 Agent 策略已接既有图/审批/证据；继续补准备状态、未知副作用和真实模型验收，保留旧运行策略恢复 |
 | [文档服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py)、[对象存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/artifacts/artifact_storage_service.py) | 原件与派生内容已分存；复用稳定文档身份、版本事务、哈希和原提交查询，上传不调用 Git |
-| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；P4 影响任务、AI 候选、需求和矩阵仍需接入 |
-| [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 前者只保存最终结果检查点，后者保存调用意图和响应；P4 复用租约/Outbox/Worker基础设施，新增自身批次检查点，不直接套用单结果快照模型 |
+| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；内部影响提交与输入检查点已验，生产影响任务、AI 候选、需求和矩阵仍需接入 |
+| [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 现已抽出共享任务/Outbox/租约职责；解析与比较子类保留最终快照语义，影响任务另存输入检查点。规划保存调用意图和响应，P4 后续批次检查点参考该做法 |
 
 测试设计继续参考项目本地课程：用例生成与数据治理、线上流量闭环、评测工程化、Agent 轨迹与协议鲁棒性。采用来源、版本、轨迹和评审原则；其中依赖版本、统计比例、阈值不是本产品的实测事实。
 
@@ -133,7 +133,7 @@ Agent 策略不解释旧 `runner_arguments` 预占业务资源；浏览器、容
 
 ### 3.1 上传独立保存版本：不使用 Git 缓存
 
-现有文档服务和存储已具备独立版本能力；以下是已实现流程，完整生产历史迁移仍另验：
+已核对 `ApiDocsService.upload_document`、`upload_version` 和版本提交持久化路径：两者通过对象存储与目录 Store 保存，不调用 Git。现有版本能力有真实存储及产品验收记录；完整生产历史迁移仍另验。上传版本流程如下：
 
 1. 普通上传在当前项目创建稳定文档身份与 V1，原字节保存 RustFS。
 2. 文档详情明确“上传新版本”，提交文档身份、预期父版本和请求身份，另存 V2；V1保留。
@@ -143,6 +143,8 @@ Agent 策略不解释旧 `runner_arguments` 预占业务资源；浏览器、容
 同名文件不是同一业务文档；哈希也不能单独证明文档身份。相同请求返回原提交；新请求内容等于当前版本时返回当前版本；从V2恢复历史V1内容时应创建V3，历史相同哈希不能阻止恢复形成新版本。并发父版本冲突明确返回，未知数据库提交先回查，不误删已引用原件。
 
 OpenAPI/Postman/HAR转Markdown及项目URL派生修改均不覆盖原件。旧目录可以显式初始化历史V1，保留旧ID/对象；原件缺失如实标注，不根据预览伪造原件。Git未登记或不可用时，上传、解析、比较仍可独立使用。
+
+这里的“版本”是应用数据库中的版本记录，不是 Git commit。上传与 Git 仅复用后续文档处理服务：`上传字节 → RustFS 原件 → PG 文档版本 → 解析快照 → 差异`；可选 Git 入口先只读取得指定 commit 的文件字节，再进入该服务。上传时不建立 Git 仓库、不暂存或提交文件，也不要求配置仓库。
 
 ### 3.2 Git 仅作独立可选来源
 
@@ -190,7 +192,7 @@ P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Te
 | 保存候选 | 保存需求新增/修改/删除/不确定匹配，以及受影响用例/验证点、理由、依据不足和生效判断；不自动修改正式需求、停用用例或开始测试 |
 | 页面/运维 | 同步生产初始化、独立Worker/CLI、任务池投影、API/类型/文档比较页。未知提交先GET找回，历史查看不重新分析；独立CLI启动与进程重启需实际验证 |
 
-复用现有PG租约、Outbox和Redis Worker，新增明确的impact领域任务/批次/结果，不塞进planning或difference记录。当前文档任务存储的checkpoint语义是“最终结果”，不能把批次阶段冒充最终快照；先研究最小共享职责再扩展，保留旧解析/比较契约。
+复用现有PG租约、Outbox和Redis Worker，新增明确的impact领域任务/批次/结果，不塞进planning或difference记录。共享 `PostgresDocumentTaskStore` 已承载提交、查询、租约和失败生命周期；`PostgresDocumentOperationStore` 保留解析/比较的最终快照语义，`PostgresDocumentImpactStore` 独立保存不可改的 `input_checkpoint`。后续批次/响应/最终结果需新增对应领域记录，保留旧解析/比较契约。
 
 输入对象写入与PG事务不具备跨库原子性，采用项目已有提交回查/未引用对象补偿：未知提交保留对象，确认无引用才清理。旧worker迟到写入必须由attempt/租约身份拒绝；成功批次不可覆盖，整个任务失败也保留已完成结果。只有声明范围全部处理且结果核验通过才标分析完整；分析完成不代表评审通过或测试通过。
 
@@ -267,7 +269,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程、模块任务和恢复 |
 | P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归 | 准备拥有者/状态、未知副作用、计划修订、默认模型、其他模式及完整产品流程 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
-| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 已有内部输入及逐版本治理；持久任务/AI、需求/矩阵/增量及正式页面待实施 |
+| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 已有内部固定提交、持久输入检查点及逐版本治理；模型/批次/结果、生产接入、需求/矩阵/增量及正式页面待实施 |
 | P5 | 录制场景、步骤/别名、知识查询、失败定位、结果报告 | 先证明录制链可用，再按实际缺口实施 |
 
 当前依赖顺序为：**P4固定提交/证据〔内部专项已验〕→ 模型/Prompt/Skill/环境冻结及批次 → AI候选与引用核验 → 需求评审 → 增量草稿 → 矩阵/适用性/回归 → 正式产品验收**。随后继续上述P2/P1/P0/P5及迁移剩余项；阶段编号不代表前一阶段已经全部完成。
@@ -302,7 +304,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与本次验证
 
-以下是 `443f046a` 研究基线及本轮内部输入任务专项后的状态；历史测试数量不累计成覆盖数。
+以下是已提交实现 `e152796c` 的状态；本次核对来源调用链及任务层职责。历史测试数量不累计成覆盖数。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -318,5 +320,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 本轮实际回归：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
 此前方案整理的 **31通过、0跳过（22.66秒）** 证据仍保留在 `plan-current-input-verification.xml/`，不混为本轮运行。新输入专项首轮1失败是数据库适配包装异常断言不符，已修正；扩大回归60通过/2失败为既有极短租约时序，原基线/当前单独各2通过后按测试职责改为显式过期和实际跨租约心跳验证，最终62通过。失败XML保留。
+
+本次方案同步另实际运行影响任务专项：**7通过、0跳过（17.69秒）**，使用真实MD/DOCX/PDF及隔离MySQL/PG/RustFS；证据为 `plan-sync-e152-impact-verification.xml/.log/`。只核验固定提交/输入、并发重放、恢复与权限边界，不调用影响模型。上次最终暂存检查报告的文件末尾空行已移除，实施记录已纠正，不能把原失败检查记为通过。
 
 这些结果不证明待实施AI影响、矩阵、增量生成、人工录制或Docker可用。新增能力仍是内部服务，前端契约未改，本轮不重复前端构建/浏览器/默认模型，不执行生产迁移。方案同步、引用与Git范围另核对记入实施记录。完整升级目标继续保持未完成。

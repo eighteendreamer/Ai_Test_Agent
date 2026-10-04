@@ -1855,4 +1855,24 @@ $env:QA_DOCUMENT_DIFFERENCE_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\
 
 方案/原附件/镜像全文同步，实际XML和3个MD/DOCX/PDF持久输入canonical/object哈希/大小/状态核对见p4-fixed-input-validation.json。新增测试受项目ignore须显式加入；用户.gitignore不改不提交，无推送/PR。
 
-交付复核：147份相关暂存文件，134份原始证据字节与暂存一致；文本凭据格式扫描无匹配，3份方案全文一致，20个本地链接存在。产品源码/实际测试与方案diff检查通过；源码编译实际通过，没有活跃测试会话遗留。公开前后端契约未改，新的内部任务DTO仅由本轮服务/Store/测试消费，消费者引用另逐项核对。没有生产迁移；部署接入与模型验收继续。
+交付复核：147份相关暂存文件，134份原始证据字节与暂存一致；文本凭据格式扫描无匹配，3份方案全文一致，20个本地链接存在。当时已跟踪文件的 diff 检查通过，但最终暂存检查实际报告 `postgres_document_impact_store.py:102: new blank line at EOF`，提交仍继续执行；因此不能声称最终 diff 检查全部通过。源码编译实际通过，没有活跃测试会话遗留。末尾空行及检查记录在后续方案复核中修正，见下一节。公开前后端契约未改，新的内部任务DTO仅由本轮服务/Store/测试消费，消费者引用另逐项核对。没有生产迁移；部署接入与模型验收继续。
+
+## 原方案同步复核与检查记录纠正（2026-10-04，基线e152796c）
+
+直接更新用户粘贴附件、项目PLAN及Codex计划镜像，三份全文相同。按实际upload_document/upload_version与对象/目录存储调用说明上传不使用Git缓存；版本是PG业务版本，原件在RustFS，Git只作为独立可选来源。修正共享PostgresDocumentTaskStore/最终快照子类/影响输入检查点的职责说明，阶段表区分已验内部输入与待接模型、批次、生产入口。保留模板只生成、项目选取→初排→AI衔接补全→最终冻结执行和完整P0—P5范围。
+
+上次提交e152796c的最终暂存diff检查实际报告新文件末尾空行，但未阻止提交；此前“diff检查通过”的交付记录不准确，已在原记录中纠正。此次仅删除postgres_document_impact_store.py末尾多余空行，没有修改执行逻辑或公开契约。
+
+实际命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'plan-sync-e152-impact-verification')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-sync-e152-impact-verification.xml
+```
+
+本次实测 **7通过、0跳过，17.69秒**；使用真实MD/DOCX/PDF与隔离MySQL/PG/RustFS，覆盖固定提交/输入、后续文档与用例变化、并发幂等、输入回执丢失后的新Store恢复、旧worker拒绝、终态不可重领、Outbox回滚、完整版本篡改拒绝及固定版本分页。模型调用0；不是独立影响进程重启或生产历史迁移。stdout/stderr合并保存于plan-sync-e152-impact-verification.log，XML与14份原件/业务证据保留；该证据不替代此前62项回归。未重复前端构建/浏览器，因为前端和公开契约没有变化；没有调用影响模型或部署新Worker。
+
+三份方案字节、20个本地引用、XML和凭据格式核对记录见plan-sync-e152-validation.json。提交前按相关文件核对diff与暂存字节；用户.gitignore不改不提交，无推送/PR。完整升级及P4模型/需求/矩阵/增量闭环仍未完成。
+
+此次首轮暂存diff检查将保留原字节的Windows证据CRLF识别为行尾空白，检查失败并停止提交。第二次检查确认CRLF问题已消除，但真实Markdown换行的两个空格和PDF交叉引用表的空格仍被报出。证据属性明确保留原字节，CRLF按真实格式检查；PDF声明binary，只有Markdown原件允许其有意义的行尾空格。源码与方案仍执行完整空白检查，原始工件不改写；最终检查通过后提交。

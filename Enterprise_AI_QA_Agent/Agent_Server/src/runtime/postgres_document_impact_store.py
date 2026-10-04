@@ -99,4 +99,3 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
                 row = cur.fetchone()
                 return self._seed_type.model_validate(row["seed"]) if row else None
         return await asyncio.to_thread(read)
-
