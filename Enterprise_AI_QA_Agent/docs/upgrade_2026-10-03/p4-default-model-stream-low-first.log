@@ -1,0 +1,18 @@
+impact_stream_stage_observation {"logical_call_id": "e88ea438-e0e5-4c34-9a9d-8755f39d73f3", "stage": "discover_rules", "elapsed_seconds": 118.594, "phase": "response_saved", "outcome": null, "first_text_seconds": null, "received_text_chars": 0}
+F
+================================== FAILURES ===================================
+__________ test_actual_default_stream_discovery_then_complete_cases ___________
+tests\test_document_impact_stream_diagnostic.py:269: in test_actual_default_stream_discovery_then_complete_cases
+    discovery = await invoke_fixed(selection, context)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_stream_diagnostic.py:254: in invoke_fixed
+    assert response.metadata["mode"] == "ok" and response.metadata["finish_reason"] == "stop"
+E   AssertionError: assert ('ok' == 'ok'
+E     
+E       ok and 'length' == 'stop'
+E     
+E     - stop
+E     + length)
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_stream_diagnostic.py::test_actual_default_stream_discovery_then_complete_cases
+1 failed in 124.85s (0:02:04)

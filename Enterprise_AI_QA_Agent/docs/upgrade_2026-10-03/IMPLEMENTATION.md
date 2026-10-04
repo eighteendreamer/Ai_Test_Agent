@@ -2213,7 +2213,7 @@ $env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\
 
 新6组真实MD/DOCX/PDF×原生/LangChain、HTTP/MySQL/PG/RustFS，证明自动短引用补读、完整12步JSON/自身说明、False/0/null、规则R1还原、精确来源和终态只读。实际失败回放仍拒绝原v3误写，新的v4响应绑定到精确原单元；未知引用、UUID/哈希覆盖、目录篡改、原文/路径/值错误和未读引用仍拒绝。
 
-生产API/独立解析、比较、影响CLI与隔离MySQL/PG/Redis、真实RustFS和HTTP首次1通过60.78秒；補日志后最终源码1通过0跳过54.12秒。最终6物理消息均v4，保存完整HTTP、PG检查点及对象字节，部分解析/坐标限制仍为partial，semantic pending_review、deployment unknown。这不是默认模型语义验收。两次生产证据分别保留。
+生产API/独立解析、比较、影响CLI与隔离MySQL/PG/Redis、真实RustFS和HTTP首次1通过60.78秒；补日志后最终源码1通过0跳过54.12秒。最终6物理消息均v4，保存完整HTTP、PG检查点及对象字节，部分解析/坐标限制仍为partial，semantic pending_review、deployment unknown。这不是默认模型语义验收。两次生产证据分别保留。
 
 真实默认模型新任务1失败0跳过607.68秒，Handler运行600.953秒：7逻辑调用/11POST，两份完整impact-response-v2均read_requested/impact-bindings-v1，后续仍超时。最终5unknown/6unprocessed、规则0，三个完整8步用例未进入模型判断。600秒只写隔离项目MySQL；源模型8192输出、SDK60秒、单调用120秒、适配器及重试未改，前后参数相同。原11单元、wire、规范核验、unknown和未处理范围全部保留，终态历史读取/重投不发模型，不重领。
 
@@ -2227,3 +2227,46 @@ AssertionError: units contain unknown / unprocessed
 ```
 
 身份绑定在实际默认响应中有效，不等于影响语义闭环完成；不把规则0解释为没有变化。不再原样重跑该完整任务，接下来研究证据清单与推理任务分工、阶段预算及已有stream机制，并保留已确认需求评审/增量/矩阵、P2/P1/P0/P5和迁移范围。未重跑前端构建/浏览器（页面及契约未改）、未执行生产历史迁移，不改用户.gitignore、不推送或建PR。三份方案全文同步；字节、源码、固定消息、对象及限定凭据扫描另记p4-bound-protocol-validation.json。完整P0—P5仍未完成。
+
+## 2026-10-05：流式与输出预算实际查证，更新正式方案
+
+先完成上述交付的暂存/范围/原始字节核对：345份原始证据逐一等于Git index及原SHA，三份方案一致、用户.gitignore不变，git diff --cached --check通过。授权提交f8d2f34e【fix】固定文档影响响应身份并保留旧协议。没有推送或PR，完整目标仍active。
+
+接着读原目标附件、当前上传/用例/影响代码、默认失败输入、ModelRuntime/OpenAIClient/LangChain和planning_workflow实际调用。发现规划按冻结模型能力使用现有stream_handler，影响调用没有该上下文。SDK3.14.0实际AsyncStream._iter_events读取response.aiter_bytes；依据这条实际机制采集原始SSE，不拦截、更改或重建提供商响应。先写P4_STREAM_DIAGNOSTIC_DESIGN，再新增诊断测试。
+
+新诊断仍复用real_scenario创建真实Markdown V1/V2、三个完整8步JSON、解析/比较及隔离MySQL/PG/RustFS；源默认模型只读、SDK60秒、单调用120秒、输出8192、重试原值不改。每项用新任务，新未知不重发，原始证据用新目录保留。完整依据流式单元、规则/用例阶段分离、隔离low参数三项结果分别1失败/0跳过127.79、117.63、124.85秒，详见PLAN6.7。两次所谓“阶段分离”诊断未取得规则，因此没有运行到用例阶段，不能将准备过的完整用例当作实际已发送。
+
+命令在Agent_Server执行，每项同时通过Tee-Object保存实际.log，目录不得覆盖：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-stream-diagnostic-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_stream_diagnostic.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-stream-diagnostic-first.xml
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-stream-stages-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_stream_diagnostic.py::test_actual_default_stream_discovery_then_complete_cases -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-stream-stages-first.xml
+$env:QA_IMPACT_DIAGNOSTIC_REASONING_EFFORT='low'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-stream-low-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_stream_diagnostic.py::test_actual_default_stream_discovery_then_complete_cases -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-stream-low-first.xml
+```
+
+首次运行时模块仅包含完整依据测试；随后按实际失败新增阶段诊断。阶段首轮没有设置effort，low只用于最后一个新任务。最后的参数在隔离项目MySQL qa.impact_diagnostic_settings读写并保存修订，测试作用域既有_build_params增加官方定义的reasoning_effort，实际SDK发送没有替换提供商。正式PG seed/request尚不包含该参数，诊断记录明确这个边界，不伪造已完成的正式配置冻结。
+
+失败输出摘要，原XML/log保持：
+
+```text
+assert saved.phase == "response_saved"
+AssertionError: {'phase': 'outcome_unknown', 'outcome': 'dispatch_TimeoutError'}
+1 failed in 127.79s
+assert response.metadata["finish_reason"] == "stop"
+AssertionError: 'length' == 'stop'
+1 failed in 117.63s
+assert response.metadata["finish_reason"] == "stop"
+AssertionError: 'length' == 'stop'
+1 failed in 124.85s
+```
+
+发现阶段SSE实测持续有reasoning/同内容reasoning_content，但正文0；两次最后usage completion_tokens8192，finish_reason=length。reasoning_tokens=0矛盾保留、不伪造可信推理token。两个别名不相加。原1261/1680网络片段按大小/SHA/顺序还原成原SSE验证通过。首次中间摘要误输出全部usage数组导致工具输出截断，随后只保留最后usage和汇总；没有因此重发模型或改SSE。
+
+官方中文主页抓取超时；由官方英文首页进入Step 5模型文档和Chat Completions API，查证reasoning_effort=low/medium/high；安装SDK签名也查得同字段。官方依据链接保存在设计记录，不依赖第三方参数表。实际low仍截断，不能声称网关已有效控制深度。当前问题有实际输出预算消耗证据，不能把过去所有超时一并判成此根因。
+
+方案3.5.11/6.7纠正“先接流式即可修复”的推断，明确证据清单与推理任务分别冻结、系统提供引用位置、规则再到完整用例、传输/预算契约及旧协议兼容；这些后续仍待验证实施。保留上传不经Git、模板只用于生成、项目隔离和原失败；三份方案全文同步。没有正式生产流式/effort改动、SQL迁移、依赖升级、前端字段变化或全范围语义成功；未重跑前端/浏览器/独立Worker或生产历史迁移。全目标继续active。

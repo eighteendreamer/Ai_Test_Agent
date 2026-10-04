@@ -1,0 +1,17 @@
+impact_stream_http_started {"attempt": 1, "method": "POST", "request_sha256": "658d4fada8981b38e0ff911230ac06dc1222c164a1619de236728c2ae322e46c", "request_bytes": 56250, "stream": true, "stream_options": {"include_usage": true}, "message_count": 2}
+F
+================================== FAILURES ===================================
+_____________ test_actual_default_stream_complete_fixed_evidence ______________
+tests\test_document_impact_stream_diagnostic.py:112: in test_actual_default_stream_complete_fixed_evidence
+    assert saved.phase == "response_saved", {"phase": saved.phase, "outcome": saved.outcome_code}
+E   AssertionError: {'phase': 'outcome_unknown', 'outcome': 'dispatch_TimeoutError'}
+E   assert 'outcome_unknown' == 'response_saved'
+E     
+E     - response_saved
+E     + outcome_unknown
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.impact_calls:impact_calls.py:317 document_impact_call_dispatch_unconfirmed
+WARNING  src.runtime.postgres_document_impact_calls:postgres_document_impact_calls.py:182 document_impact_call_outcome_unknown
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_stream_diagnostic.py::test_actual_default_stream_complete_fixed_evidence
+1 failed in 127.79s (0:02:07)
