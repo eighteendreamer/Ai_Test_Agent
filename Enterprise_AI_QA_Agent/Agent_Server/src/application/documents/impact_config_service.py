@@ -7,11 +7,13 @@ from src.schemas.document_impact import DocumentImpactPolicy, DocumentImpactSett
 from src.schemas.document_impact_analysis import DocumentImpactAnalysisPolicy, DocumentImpactAnalysisSettings
 from src.schemas.document_impact_batches import DocumentImpactBatchPolicy, DocumentImpactBatchSettings
 from src.schemas.document_impact_calls import DocumentImpactInvocationPolicy, DocumentImpactInvocationSettings
+from src.schemas.document_impact_reasoning import DocumentImpactReasoningPolicy, DocumentImpactReasoningSettings
 
 CONFIG_KEY = "document.impact_settings"
 ANALYSIS_CONFIG_KEY = "document.impact_analysis_settings"
 BATCH_CONFIG_KEY = "document.impact_batch_settings"
 INVOCATION_CONFIG_KEY = "document.impact_invocation_settings"
+REASONING_CONFIG_KEY = "document.impact_reasoning_settings"
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,8 @@ class DocumentImpactConfigService:
             DocumentImpactBatchPolicy().model_dump(mode="json"), only_if_missing=True)
         await asyncio.to_thread(self._configs.save, INVOCATION_CONFIG_KEY,
             DocumentImpactInvocationPolicy().model_dump(mode="json"), only_if_missing=True)
+        await asyncio.to_thread(self._configs.save, REASONING_CONFIG_KEY,
+            DocumentImpactReasoningPolicy().model_dump(mode="json"), only_if_missing=True)
         logger.info("document_impact_settings_initialized", extra={"config_key": CONFIG_KEY})
 
     async def get_settings(self, project_id):
@@ -104,3 +108,22 @@ class DocumentImpactConfigService:
             "revision": record.revision})
         return DocumentImpactInvocationSettings(scope_key=record.scope_key, revision=record.revision,
             payload=DocumentImpactInvocationPolicy.model_validate(record.payload))
+
+    async def get_reasoning_settings(self, project_id):
+        await self._projects.get(project_id)
+        record = await asyncio.to_thread(self._configs.get, REASONING_CONFIG_KEY, scope_key=project_id)
+        if record is None:
+            record = await asyncio.to_thread(self._configs.get, REASONING_CONFIG_KEY)
+        if record is None:
+            raise RuntimeError("文档影响推理任务策略尚未初始化")
+        return DocumentImpactReasoningSettings(scope_key=record.scope_key, revision=record.revision,
+            payload=DocumentImpactReasoningPolicy.model_validate(record.payload))
+
+    async def save_reasoning_settings(self, project_id, payload: DocumentImpactReasoningPolicy):
+        await self._projects.require_active(project_id)
+        record = await asyncio.to_thread(self._configs.save, REASONING_CONFIG_KEY,
+            payload.model_dump(mode="json"), scope_key=project_id)
+        logger.info("document_impact_reasoning_settings_saved", extra={"project_id": project_id,
+            "revision": record.revision})
+        return DocumentImpactReasoningSettings(scope_key=record.scope_key, revision=record.revision,
+            payload=DocumentImpactReasoningPolicy.model_validate(record.payload))

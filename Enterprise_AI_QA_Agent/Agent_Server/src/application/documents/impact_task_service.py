@@ -57,6 +57,7 @@ class DocumentImpactTaskService:
             context = await self._analysis_contexts.capture(project, request)
             batch_settings = await self._analysis_contexts.capture_batch_settings(project.id)
             invocation_snapshot = await self._analysis_contexts.capture_invocation_snapshot(project.id, context.model.key)
+            reasoning_settings = await self._analysis_contexts.capture_reasoning_settings(project.id)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             logger.warning("document_impact_analysis_context_rejected", extra={"project_id": project_id,
                 "document_id": document_id, "error_type": type(exc).__name__})
@@ -65,6 +66,7 @@ class DocumentImpactTaskService:
         seed.analysis_context = context
         seed.batch_settings = batch_settings
         seed.invocation_snapshot = invocation_snapshot
+        seed.reasoning_settings = reasoning_settings
         seed.response_protocol = self._response_protocol_factory()
         seed.workflow_protocol = capture_impact_workflow_protocol()
         logger.info("document_impact_response_protocol_captured", extra={"project_id": project_id,

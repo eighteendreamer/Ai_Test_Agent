@@ -1,0 +1,84 @@
+FFFFF.sssss.............ssssss                                           [100%]
+================================== FAILURES ===================================
+_ test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy0-1] _
+tests\test_document_impact_reasoning_plan.py:41: in test_actual_failed_full_scope_is_owned_once_without_dropping_evidence
+    plan = DocumentImpactReasoningPlans.build(seed, envelope, manifest, impact_record_hash(manifest))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_reasoning_plan.py:58: in build
+    size = len(canonical_impact_json({"primary": candidate[0], "additional_fixed_reads": candidate[1:]}))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy1-4] _
+tests\test_document_impact_reasoning_plan.py:41: in test_actual_failed_full_scope_is_owned_once_without_dropping_evidence
+    plan = DocumentImpactReasoningPlans.build(seed, envelope, manifest, impact_record_hash(manifest))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_reasoning_plan.py:58: in build
+    size = len(canonical_impact_json({"primary": candidate[0], "additional_fixed_reads": candidate[1:]}))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy2-8] _
+tests\test_document_impact_reasoning_plan.py:41: in test_actual_failed_full_scope_is_owned_once_without_dropping_evidence
+    plan = DocumentImpactReasoningPlans.build(seed, envelope, manifest, impact_record_hash(manifest))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_reasoning_plan.py:58: in build
+    size = len(canonical_impact_json({"primary": candidate[0], "additional_fixed_reads": candidate[1:]}))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+______ test_group_reads_both_complete_original_versions_and_case_sources ______
+tests\test_document_impact_reasoning_plan.py:59: in test_group_reads_both_complete_original_versions_and_case_sources
+    plan = DocumentImpactReasoningPlans.build(seed, envelope, manifest, impact_record_hash(manifest))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_reasoning_plan.py:58: in build
+    size = len(canonical_impact_json({"primary": candidate[0], "additional_fixed_reads": candidate[1:]}))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+____ test_single_unreadable_unit_is_retained_with_explicit_retrieval_limit ____
+src\application\documents\impact_reasoning_plan.py:49: in build
+    value = DocumentImpactBatches.read_segment(seed, envelope, manifest, unit.id) if unit.kind == "segment" else (
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_batches.py:199: in read_segment
+    value = cls.read_range(seed, envelope, manifest, segment.source_id, segment.read_start_char, segment.read_end_char)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_batches.py:177: in read_range
+    return cls._within_budget(manifest, {"source": source.model_dump(mode="json", exclude={"sections"}),
+src\application\documents\impact_batches.py:166: in _within_budget
+    raise DocumentImpactReadBudgetExceeded(size, manifest.config.payload.max_retrieval_bytes)
+E   src.application.documents.impact_batches.DocumentImpactReadBudgetExceeded: 完整影响读取超过字节限制，未截断；请选择更小范围或创建新任务调整策略
+
+During handling of the above exception, another exception occurred:
+tests\test_document_impact_reasoning_plan.py:78: in test_single_unreadable_unit_is_retained_with_explicit_retrieval_limit
+    plan = DocumentImpactReasoningPlans.build(seed, envelope, manifest, impact_record_hash(manifest))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_reasoning_plan.py:55: in build
+    finish([unit], [], unavailable=True)
+src\application\documents\impact_reasoning_plan.py:45: in finish
+    discovery.append(DocumentImpactDiscoveryTask(id=impact_record_hash(body), **body))
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.impact_batches:impact_batches.py:163 document_impact_retrieval_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_reasoning_plan.py::test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy0-1]
+FAILED tests/test_document_impact_reasoning_plan.py::test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy1-4]
+FAILED tests/test_document_impact_reasoning_plan.py::test_actual_failed_full_scope_is_owned_once_without_dropping_evidence[policy2-8]
+FAILED tests/test_document_impact_reasoning_plan.py::test_group_reads_both_complete_original_versions_and_case_sources
+FAILED tests/test_document_impact_reasoning_plan.py::test_single_unreadable_unit_is_retained_with_explicit_retrieval_limit
+5 failed, 14 passed, 11 skipped in 5.38s

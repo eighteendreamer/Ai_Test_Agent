@@ -1,0 +1,110 @@
+{
+  "result": {
+    "implementation_version": "impact-coordinator-v1",
+    "task_id": "8ffe6d16-132f-4af0-9aeb-95207d50379a",
+    "input_sha256": "a0f5f62c4b9318f0286feaeba4285526276fdbd6f5a5b810b01b2e5c86859a2d",
+    "manifest_sha256": "ed770bf0c7c1fefdc258de80a3366921a7c4319e16cffbdcda8d5b4c86c9d322",
+    "protocol": {
+      "version": "impact-coordinator-v1",
+      "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
+      "case_instruction": "本阶段将rules中完整规则候选与当前完整固定用例及其编写来源比较。逐条返回candidate，key必须为对应rules.id，保留该规则的kind/summary及原文依据，case_impacts仅判断当前unit.id，每条说明none/minor/major/uncertain并引用当前用例实际字段。需要原文或来源时read补读。不得遗漏规则后声明analyzed；无法判断保留evidence_insufficient。discovery_units包含未完成范围时不能宣称完整或无变化。没有规则仍判断本用例来源是否充分。所有候选仍待评审，不能将模型建议当作部署事实或测试通过。",
+      "sha256": "76f3c582a070c4b136e1e629ecdea508f0f1fe814e4a8dbd917180ca9051f5b5"
+    },
+    "units": [
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:0cbca98e-2b01-49c6-9913-445ebde1029d:0:20"
+        },
+        "status": "unprocessed",
+        "calls": [
+          "2f1fbb3f-45bb-463a-8376-1f141c7a8df5"
+        ],
+        "final_check": {
+          "task_id": "8ffe6d16-132f-4af0-9aeb-95207d50379a",
+          "call_id": "2f1fbb3f-45bb-463a-8376-1f141c7a8df5",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "0ff3b6b854d62baa7017c8060838ee4e78bdb1cd04fea56b12be6c3cc8ce0bec",
+          "response_sha256": "b3c38f26788789b17d3b27e101ab76b3080ac0fe4bcdfe7da683280955221cc0",
+          "manifest_sha256": "ed770bf0c7c1fefdc258de80a3366921a7c4319e16cffbdcda8d5b4c86c9d322",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/6ea6eb32-b44e-4cb3-9236-8461642665f4/8ffe6d16-132f-4af0-9aeb-95207d50379a/b4bb8f26-6402-44ee-8b6e-ad4f861f97de/calls/645e815a-5cbf-42f2-bff3-fb2bb0195e91/response-check.json",
+            "sha256": "2596886abc52e0bbfe3b890360c4ef5596f5e423014f01667352df3d3facab0c",
+            "size_bytes": 1130
+          },
+          "created_at": "2026-10-04T22:03:59.457391Z"
+        },
+        "reason_codes": [
+          "call_budget_logical_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:d0de76b2-d62b-4fc1-a2e0-4c0a14c96361:0:20"
+        },
+        "status": "unprocessed",
+        "calls": [],
+        "final_check": null,
+        "reason_codes": [
+          "call_budget_logical_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "raw:0"
+        },
+        "status": "unprocessed",
+        "calls": [],
+        "final_check": null,
+        "reason_codes": [
+          "call_budget_logical_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "normalized:0"
+        },
+        "status": "unprocessed",
+        "calls": [],
+        "final_check": null,
+        "reason_codes": [
+          "call_budget_logical_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "case",
+          "id": "6dd69fef-de54-47db-89cc-0382131fbd5e"
+        },
+        "status": "unprocessed",
+        "calls": [],
+        "final_check": null,
+        "reason_codes": [
+          "call_budget_logical_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      }
+    ],
+    "rules": [],
+    "overlaps": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "status": "partial",
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 1
+}

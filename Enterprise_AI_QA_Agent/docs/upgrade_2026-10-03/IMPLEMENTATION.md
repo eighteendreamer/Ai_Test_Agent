@@ -2308,3 +2308,33 @@ Handler601.219秒、10逻辑调用/13物理POST。8份完整响应通过impact-t
 实际请求与固定范围研究另存p4-text-anchors-request-sizing.json：126/139字符原文被分2原文+6差异发现单元；Skill三方读取、协调单元和wire指令需阶段对齐，不能仅凭此归因全部超时。新引用降低模型重复填写系统位置的职责，真实规则有进展，完整业务尚未通过。后续研究证据任务聚合/覆盖映射及阶段契约，不原样重发此任务、不复制一个答案标多个单元完成、不放宽事实核验。
 
 PLAN3.5.12/6.8、当前进度表及两个外部副本全文同步，上传不经Git、模板仅生成及全P0—P5范围保留。之前345份v4与85份流式原始证据SHA/大小核对相同、用户.gitignore哈希未变。原件/对象/冻结消息/引用目录、三份方案及限定凭据扫描详见p4-text-anchors-validation.json；.gitattributes按现有方式保留新证据原字节。本轮无SQL表/列、新依赖、生产历史迁移或正式stream/effort配置改动。完整目标继续active，不能宣称交付完成。
+
+
+## 2026-10-05 固定推理计划基础及方案同步
+
+研究基线a0610ba3。新设计P4_REASONING_PLAN_DESIGN先核对实际v5失败范围、逐证据协调/候选hash、固定读取、配置冻结、租约及检查点。新增DocumentImpactReasoningPlans/PlanService和独立Schema、PG计划表，MySQL独立document.impact_reasoning_settings在新提交冻结；完整清单不变。对象存RustFS、检查点PG，同内容并发只保留原计划，未知回执保留对象，旧seed仍可读。计划不是模型响应，不推断任务终态或业务成功。生产Worker尚未准备/消费此计划，设置API/页面尚未接。
+
+实际命令均在Agent_Server执行，输出同时Tee-Object存同名.log；最初离线命令与修正后相同，仅输出目录名不同：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_reasoning_plan.py tests/test_document_impact_text_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-replay-first.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_reasoning_plan.py tests/test_document_impact_text_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-replay-fixed.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-reasoning-plan-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_reasoning_plan.py tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-live-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-reasoning-plan-production-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-production-first.xml
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-reasoning-plan-race-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_reasoning_plan.py::test_actual_concurrent_preparation_persists_one_plan -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-race-first.xml
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-reasoning-plan-segments-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_reasoning_plan.py::test_actual_multi_segment_scope_and_missing_source_are_preserved -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-reasoning-plan-segments-first.xml
+```
+
+首次回放5失败/14通过/11跳过5.38秒，错误是又把仅接受模型记录的规范hash函数用于dict。读取真实实现后沿用impact_batches/impact_calls规范字典序列化，不改Pydantic hash契约；修正19通过/11跳过3.89秒。11跳过为live开关缺失。完整8模块145通过0跳过460.29秒；此时两个后来增加的边界尚未收集，实际4路首次并发及多段/来源缺失各1通过8.04/6.73秒。丢回执场景实际先提交PG再报错，恢复不调用模型/当前配置/上传；MD/DOCX/PDF的真实原件及reasoning-plan.json已保存。
+
+独立生产MD正常场景1通过0跳过60.02秒，验证新表/seed不会破坏旧v5自动流程；不是分组协调器验收，也未中断影响Worker。生产消息与冻结请求、对象与SHA/大小另按validation核对。所有plan新专项HTTP0、not_started、full_model_workflow=False；未重跑默认模型未改的旧流程，原v5失败保留。
+
+源10文件py_compile和diff检查通过。公开路由/前端结果未改，未跑浏览器/前端构建，未执行生产历史迁移。三份方案3.5.13/6.9及当前进度同步；完整P0—P5仍未完成。p4-reasoning-plan-validation.json保存字节/原件/检查点/真实消息、旧345份v4+85份流式+328份v5证据、用户.gitignore及方案一致性检查。下一步为版本化分组协调与逐证据覆盖响应、阶段Skill、真实默认模型完整判断。
+
+证据验证脚本最初两次断言失败：误把request对象的impact-call-input-v1当分析协议版本，又漏算独立system_prompt。核对实际消息构造后按analysis_protocol.version及system_prompt+messages逐条计数匹配，最终257份新证据、758份历史证据、三份真实计划对象和6条生产消息均核对通过；没有修改业务结果或放宽事实核验。

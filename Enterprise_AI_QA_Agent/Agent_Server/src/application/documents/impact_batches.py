@@ -19,6 +19,12 @@ from src.schemas.document_impact_batches import (
 logger = logging.getLogger(__name__)
 
 
+class DocumentImpactReadBudgetExceeded(ValueError):
+    def __init__(self, size_bytes, limit_bytes):
+        super().__init__("完整影响读取超过字节限制，未截断；请选择更小范围或创建新任务调整策略")
+        self.size_bytes, self.limit_bytes = size_bytes, limit_bytes
+
+
 def _hash_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -157,7 +163,7 @@ class DocumentImpactBatches:
             logger.warning("document_impact_retrieval_rejected", extra={"project_id": manifest.project_id,
                 "input_sha256": manifest.input_sha256, "size_bytes": size,
                 "max_retrieval_bytes": manifest.config.payload.max_retrieval_bytes})
-            raise ValueError("完整影响读取超过字节限制，未截断；请选择更小范围或创建新任务调整策略")
+            raise DocumentImpactReadBudgetExceeded(size, manifest.config.payload.max_retrieval_bytes)
         return value
 
     @classmethod

@@ -14,6 +14,7 @@ from src.schemas.document_impact_batches import DocumentImpactBatchSettings
 from src.schemas.document_impact_calls import DocumentImpactInvocationSnapshot
 from src.schemas.document_impact_responses import DocumentImpactResponseProtocolSnapshot
 from src.schemas.document_impact_workflow import DocumentImpactWorkflowProtocol
+from src.schemas.document_impact_reasoning import DocumentImpactReasoningSettings
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -103,6 +104,7 @@ class DocumentImpactSourceSeed(BaseModel):
     invocation_snapshot: DocumentImpactInvocationSnapshot | None = None
     response_protocol: DocumentImpactResponseProtocolSnapshot | None = None
     workflow_protocol: DocumentImpactWorkflowProtocol | None = None
+    reasoning_settings: DocumentImpactReasoningSettings | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")
