@@ -36,3 +36,19 @@
 按项目连续失败换路线规则，停止重复复杂探针，调用`SettingsService._test_api_key_connection`已有简短ping/pong。实际一次HTTP、2037ms、返回pong，默认配置前后一致。这证明基本服务响应，不证明复杂输入可用；直接只读方法诊断也不等于正式设置API验收。后续研究真实自动协调的单元请求及跨节补读/耗时，保留完整用例和固定来源，不靠缩减目标、提高全局预算或把连接成功包装成语义通过。
 
 引用修复的真实失败输入回放3通过；实际MD/DOCX/PDF、两适配器、HTTP及MySQL/PG/RustFS相关回归102通过0跳过389.54秒；独立生产API/解析/比较/影响Worker的MD场景1通过0跳过68.54秒，6次物理消息与完整冻结请求匹配，结果保留partial/pending_review/unknown。回放3项包含在102内。失败、成功和连接诊断均分别保留原文件；具体命令见IMPLEMENTATION.md。
+
+## 本轮自动协调的研究与真实输入〔基线770f7159〕
+
+直接研究impact_workflow.execute/_unit、impact_calls.build_request/invoke、impact_batches.build/read_difference、共享document_operation_task_handler及既有真实HTTP协调专项，再复用同一real_scenario的实际原件、三条完整8步JSON和固定来源。新测试test_document_impact_default_workflow.py通过真实默认ModelRuntimeService执行既有工作流和共享Handler，不预填候选、不替换提供商。使用隔离项目MySQL总期限600秒；单调用120秒、SDK60秒、输出8192、重试及源默认配置保持原值。Handler负责租约心跳；本测试在同一pytest进程运行Handler，不能当作独立Worker进程或生产历史迁移。
+
+源码确认清单与推理单元当前一一对应：全部原文段、全部raw/normalized/section/table差异、全部完整用例依次执行。这个实际样本为2段、6条差异、3条用例，共11单元；当前先发现规则，再逐用例提供完整候选集合及其原文区间。续读带上此前完整消息、完整模型响应和新固定读取，不靠摘要替代历史。
+
+实际请求http-request-1.json为18948字节，SDK消息system正文2132字节、user正文14968字节，user内analysis_protocol约6020字节。这里UTF-8字节不是Token计数。第一次物理尝试ReadTimeout，SDK第二次尝试返回HTTP200及完整响应；原响应请求补读新版和差异，但将当前单元ID中d27写成4b27。保存响应后，现有核验正确拒绝unit_mismatch。另一个原文单元返回有效read并自动续读；续读请求48920字节，随后两次尝试未取得响应。以上是实际行为，不证明输入大小造成超时。
+
+当前OpenAIChatClient.invoke使用非流式chat.completions.create；同一客户端已有stream方法。本轮没有切换流式或改模型输出参数。后续可沿已有机制研究首响应/完整完成/读取空闲耗时，但必须冻结新策略并保存部分流和明确终态，不能把HTTP200或流式片段当完整候选，也不能据此推断供应商未执行原未知请求。
+
+下一步方向已写入PLAN3.5.9：固定身份由后端绑定、短引用严格转换并继续事实核验；证据清单与推理任务分开研究；预算与阶段调度联合核对；参考planning_workflow已有validation_feedback和轮次/检查点，处理已收到完整响应的可纠正协议问题。新协议需要版本化，v2/v3请求及coordinator-v1结果不重写。先回放本轮真实失败，再验证补读、错误/未读引用及恢复，最后真实模型及人工业务基线。没有证据时不宣称需求评审、矩阵、增量草稿闭环。
+
+最终1失败0跳过607.72秒，Handler实际运行601.281秒。6逻辑调用、11物理发送，其中5次ReadTimeout、2次HTTP200并保存完整响应、4次取消无响应。最终11单元状态为1rejected、4unknown、6unprocessed/task_deadline；候选规则0、结果partial/pending_review/deployment unknown。三个用例没有实际调用模型，无法评价其业务语义。completed只表示部分结果发布，测试在全范围业务断言失败；原固定输入、响应、未知及未处理范围全部保留。
+
+失败前已实际核对终态重投/历史读取不发模型、不重建/上传和终态不重领；源默认参数前后一致。所有原件、对象、物理请求及逻辑请求/响应/核验另存p4-default-model-automatic-first/，失败XML/log保留。兼容回放另3通过0跳过0.36秒，不重复此前102/1项回归作为本轮成绩。没有新生产代码、依赖、Schema或前端改动，本轮新协议只处于设计阶段，未重跑前端/浏览器、独立生产Worker或生产历史迁移。

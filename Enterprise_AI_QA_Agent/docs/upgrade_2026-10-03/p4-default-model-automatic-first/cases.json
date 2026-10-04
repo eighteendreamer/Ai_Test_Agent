@@ -1,0 +1,601 @@
+[
+  {
+    "case": {
+      "id": "95753b81-e289-4b04-9139-37712383d30d",
+      "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+      "case_key": "retention",
+      "title": "验证已支付订单超过7天不可查",
+      "mode_key": "api_testing",
+      "case_type": "json",
+      "priority": "P1",
+      "lifecycle_status": "draft",
+      "active_version_id": null,
+      "latest_version": 1,
+      "created_by": null,
+      "created_at": "2026-10-04T19:43:11.027548Z",
+      "updated_at": "2026-10-04T19:43:11.027548Z",
+      "archived_at": null,
+      "version_reviews": {
+        "3bf1cbeb-1f99-4f4e-8efe-39ece5e2267a": {
+          "version_id": "3bf1cbeb-1f99-4f4e-8efe-39ece5e2267a",
+          "version": 1,
+          "status": "draft",
+          "origin": "native",
+          "events": []
+        }
+      }
+    },
+    "version": {
+      "content_json": {
+        "objective": "验证已支付订单超过7天不可查",
+        "steps": [
+          {
+            "action": "记录受控环境信息1"
+          },
+          {
+            "action": "记录受控环境信息2"
+          },
+          {
+            "action": "记录受控环境信息3"
+          },
+          {
+            "action": "记录受控环境信息4"
+          },
+          {
+            "action": "记录受控环境信息5"
+          },
+          {
+            "action": "记录受控环境信息6"
+          },
+          {
+            "action": "记录受控环境信息7"
+          },
+          {
+            "action": "查询8天前已支付订单",
+            "expected": {
+              "status": 410,
+              "days": 7
+            }
+          }
+        ],
+        "extension": {
+          "zero": 0,
+          "null": null,
+          "false": false
+        }
+      },
+      "execution_notes": "阅读所有步骤，保留刻意缺失的负向条件。",
+      "generation_metadata": {},
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "3bf1cbeb-1f99-4f4e-8efe-39ece5e2267a",
+      "case_id": "95753b81-e289-4b04-9139-37712383d30d",
+      "version": 1,
+      "content_hash": "7241f3d102a5117b6183d989b84c476e8bbfcddc29249694d7a3286e6de9cc99",
+      "source_refs": [
+        {
+          "source_type": "api_doc",
+          "source_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+          "version": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+          "label": "",
+          "uri": null,
+          "metadata": {
+            "content_asset_id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+            "content_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "parse_snapshot": {
+              "id": "e7bf78c5-d9b1-4d27-be2f-08e46fe1a307",
+              "task_id": "4363931f-3bc2-465d-b129-b1fe80156e44",
+              "seed": {
+                "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+                "document_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+                "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                "original_asset": {
+                  "id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+                  "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                  "kind": "original",
+                  "filename": "requirements-v1.md",
+                  "content_type": "application/octet-stream",
+                  "size_bytes": 268,
+                  "sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+                  "storage_uri": "rustfs://qa-agent/api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "bucket": "qa-agent",
+                  "object_name": "api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "created_at": "2026-10-04T19:43:09.394188Z",
+                  "reason": "upload",
+                  "security_report": {}
+                },
+                "config": {
+                  "scope_key": "global",
+                  "revision": 1,
+                  "payload": {
+                    "policy": {
+                      "limits": {
+                        "max_bytes": 20000000,
+                        "max_expanded_bytes": 100000000,
+                        "max_zip_entries": 3000,
+                        "max_pages": 1000,
+                        "max_blocks": 50000,
+                        "max_text_chars": 5000000,
+                        "max_table_cells": 50000
+                      },
+                      "timeout_seconds": 60.0,
+                      "max_cpu_seconds": 30.0,
+                      "max_memory_bytes": 536870912,
+                      "max_output_bytes": 40000000
+                    },
+                    "options": {
+                      "parser_id": "auto",
+                      "encoding": "utf-8-sig",
+                      "pdf_extraction_mode": "plain"
+                    },
+                    "parser_by_extension": {
+                      ".md": "markdown",
+                      ".pdf": "pdf",
+                      ".txt": "markdown",
+                      ".docx": "docx"
+                    }
+                  }
+                },
+                "options": {
+                  "parser_id": "markdown",
+                  "encoding": "utf-8-sig",
+                  "pdf_extraction_mode": "plain"
+                },
+                "parser": {
+                  "parser_id": "markdown",
+                  "formats": [
+                    ".md",
+                    ".txt"
+                  ],
+                  "implementation_version": "lightweight-v1",
+                  "text": true,
+                  "sections": true,
+                  "tables": true,
+                  "ocr": false,
+                  "source_positions": [
+                    "line"
+                  ],
+                  "transport": "local",
+                  "available": true
+                }
+              },
+              "storage_uri": "rustfs://qa-agent/document-parsing/c7422632-7b0e-463b-b5a1-d8705f950d46/4363931f-3bc2-465d-b129-b1fe80156e44/021be526-d649-437f-80ba-ec5ffbb55a6a/e7bf78c5-d9b1-4d27-be2f-08e46fe1a307/result.json",
+              "sha256": "4773770eef01a6a4574b295d17fa6b31152fd4205d63480de9c5d9065b8e9826",
+              "size_bytes": 2998,
+              "status": "complete",
+              "parser": {
+                "parser_id": "markdown",
+                "formats": [
+                  ".md",
+                  ".txt"
+                ],
+                "implementation_version": "lightweight-v1",
+                "text": true,
+                "sections": true,
+                "tables": true,
+                "ocr": false,
+                "source_positions": [
+                  "line"
+                ],
+                "transport": "local",
+                "available": true
+              },
+              "dependency_versions": {},
+              "warnings": [],
+              "created_at": "2026-10-04T19:43:10.068350Z"
+            }
+          }
+        }
+      ],
+      "model_key": "manual",
+      "prompt_version": "manual-v1",
+      "skill_versions": {
+        "manual": "v1"
+      },
+      "created_at": "2026-10-04T19:43:11.027548Z"
+    }
+  },
+  {
+    "case": {
+      "id": "a4b3a8d1-600a-4f85-b9db-e69dff01491d",
+      "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+      "case_key": "unauth",
+      "title": "验证未登录拒绝管理访问",
+      "mode_key": "api_testing",
+      "case_type": "json",
+      "priority": "P1",
+      "lifecycle_status": "draft",
+      "active_version_id": null,
+      "latest_version": 1,
+      "created_by": null,
+      "created_at": "2026-10-04T19:43:11.038289Z",
+      "updated_at": "2026-10-04T19:43:11.038289Z",
+      "archived_at": null,
+      "version_reviews": {
+        "8ae38841-ab08-4143-b789-5c6153f53e94": {
+          "version_id": "8ae38841-ab08-4143-b789-5c6153f53e94",
+          "version": 1,
+          "status": "draft",
+          "origin": "native",
+          "events": []
+        }
+      }
+    },
+    "version": {
+      "content_json": {
+        "objective": "验证未登录拒绝管理访问",
+        "steps": [
+          {
+            "action": "记录受控环境信息1"
+          },
+          {
+            "action": "记录受控环境信息2"
+          },
+          {
+            "action": "记录受控环境信息3"
+          },
+          {
+            "action": "记录受控环境信息4"
+          },
+          {
+            "action": "记录受控环境信息5"
+          },
+          {
+            "action": "记录受控环境信息6"
+          },
+          {
+            "action": "记录受控环境信息7"
+          },
+          {
+            "action": "保持未登录，请求GET /admin",
+            "expected": {
+              "status": 401,
+              "login": false
+            }
+          }
+        ],
+        "extension": {
+          "zero": 0,
+          "null": null,
+          "false": false
+        }
+      },
+      "execution_notes": "阅读所有步骤，保留刻意缺失的负向条件。",
+      "generation_metadata": {},
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "8ae38841-ab08-4143-b789-5c6153f53e94",
+      "case_id": "a4b3a8d1-600a-4f85-b9db-e69dff01491d",
+      "version": 1,
+      "content_hash": "4cccd07915085f04ad2367e4b34d7d9eb66be62c4db1d46b56a60bdf82289a3a",
+      "source_refs": [
+        {
+          "source_type": "api_doc",
+          "source_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+          "version": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+          "label": "",
+          "uri": null,
+          "metadata": {
+            "content_asset_id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+            "content_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "parse_snapshot": {
+              "id": "e7bf78c5-d9b1-4d27-be2f-08e46fe1a307",
+              "task_id": "4363931f-3bc2-465d-b129-b1fe80156e44",
+              "seed": {
+                "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+                "document_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+                "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                "original_asset": {
+                  "id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+                  "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                  "kind": "original",
+                  "filename": "requirements-v1.md",
+                  "content_type": "application/octet-stream",
+                  "size_bytes": 268,
+                  "sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+                  "storage_uri": "rustfs://qa-agent/api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "bucket": "qa-agent",
+                  "object_name": "api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "created_at": "2026-10-04T19:43:09.394188Z",
+                  "reason": "upload",
+                  "security_report": {}
+                },
+                "config": {
+                  "scope_key": "global",
+                  "revision": 1,
+                  "payload": {
+                    "policy": {
+                      "limits": {
+                        "max_bytes": 20000000,
+                        "max_expanded_bytes": 100000000,
+                        "max_zip_entries": 3000,
+                        "max_pages": 1000,
+                        "max_blocks": 50000,
+                        "max_text_chars": 5000000,
+                        "max_table_cells": 50000
+                      },
+                      "timeout_seconds": 60.0,
+                      "max_cpu_seconds": 30.0,
+                      "max_memory_bytes": 536870912,
+                      "max_output_bytes": 40000000
+                    },
+                    "options": {
+                      "parser_id": "auto",
+                      "encoding": "utf-8-sig",
+                      "pdf_extraction_mode": "plain"
+                    },
+                    "parser_by_extension": {
+                      ".md": "markdown",
+                      ".pdf": "pdf",
+                      ".txt": "markdown",
+                      ".docx": "docx"
+                    }
+                  }
+                },
+                "options": {
+                  "parser_id": "markdown",
+                  "encoding": "utf-8-sig",
+                  "pdf_extraction_mode": "plain"
+                },
+                "parser": {
+                  "parser_id": "markdown",
+                  "formats": [
+                    ".md",
+                    ".txt"
+                  ],
+                  "implementation_version": "lightweight-v1",
+                  "text": true,
+                  "sections": true,
+                  "tables": true,
+                  "ocr": false,
+                  "source_positions": [
+                    "line"
+                  ],
+                  "transport": "local",
+                  "available": true
+                }
+              },
+              "storage_uri": "rustfs://qa-agent/document-parsing/c7422632-7b0e-463b-b5a1-d8705f950d46/4363931f-3bc2-465d-b129-b1fe80156e44/021be526-d649-437f-80ba-ec5ffbb55a6a/e7bf78c5-d9b1-4d27-be2f-08e46fe1a307/result.json",
+              "sha256": "4773770eef01a6a4574b295d17fa6b31152fd4205d63480de9c5d9065b8e9826",
+              "size_bytes": 2998,
+              "status": "complete",
+              "parser": {
+                "parser_id": "markdown",
+                "formats": [
+                  ".md",
+                  ".txt"
+                ],
+                "implementation_version": "lightweight-v1",
+                "text": true,
+                "sections": true,
+                "tables": true,
+                "ocr": false,
+                "source_positions": [
+                  "line"
+                ],
+                "transport": "local",
+                "available": true
+              },
+              "dependency_versions": {},
+              "warnings": [],
+              "created_at": "2026-10-04T19:43:10.068350Z"
+            }
+          }
+        }
+      ],
+      "model_key": "manual",
+      "prompt_version": "manual-v1",
+      "skill_versions": {
+        "manual": "v1"
+      },
+      "created_at": "2026-10-04T19:43:11.038289Z"
+    }
+  },
+  {
+    "case": {
+      "id": "563dc3f2-aa65-4eac-ab6e-3534b1711aab",
+      "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+      "case_key": "promotion",
+      "title": "验证有效优惠码减5元",
+      "mode_key": "ui_automation",
+      "case_type": "json",
+      "priority": "P1",
+      "lifecycle_status": "draft",
+      "active_version_id": null,
+      "latest_version": 1,
+      "created_by": null,
+      "created_at": "2026-10-04T19:43:11.046972Z",
+      "updated_at": "2026-10-04T19:43:11.046972Z",
+      "archived_at": null,
+      "version_reviews": {
+        "aa8dd42f-923c-4d9b-8c70-fe04b3d5ffa9": {
+          "version_id": "aa8dd42f-923c-4d9b-8c70-fe04b3d5ffa9",
+          "version": 1,
+          "status": "draft",
+          "origin": "native",
+          "events": []
+        }
+      }
+    },
+    "version": {
+      "content_json": {
+        "objective": "验证有效优惠码减5元",
+        "steps": [
+          {
+            "action": "记录受控环境信息1"
+          },
+          {
+            "action": "记录受控环境信息2"
+          },
+          {
+            "action": "记录受控环境信息3"
+          },
+          {
+            "action": "记录受控环境信息4"
+          },
+          {
+            "action": "记录受控环境信息5"
+          },
+          {
+            "action": "记录受控环境信息6"
+          },
+          {
+            "action": "记录受控环境信息7"
+          },
+          {
+            "action": "使用PROMO5创建订单",
+            "expected": {
+              "discount": 5
+            }
+          }
+        ],
+        "extension": {
+          "zero": 0,
+          "null": null,
+          "false": false
+        }
+      },
+      "execution_notes": "阅读所有步骤，保留刻意缺失的负向条件。",
+      "generation_metadata": {},
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "aa8dd42f-923c-4d9b-8c70-fe04b3d5ffa9",
+      "case_id": "563dc3f2-aa65-4eac-ab6e-3534b1711aab",
+      "version": 1,
+      "content_hash": "8e875b84cd90e4816cef3046fe743e349cafc5437e38633747361860b523c2fb",
+      "source_refs": [
+        {
+          "source_type": "api_doc",
+          "source_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+          "version": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+          "label": "",
+          "uri": null,
+          "metadata": {
+            "content_asset_id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+            "content_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "parse_snapshot": {
+              "id": "e7bf78c5-d9b1-4d27-be2f-08e46fe1a307",
+              "task_id": "4363931f-3bc2-465d-b129-b1fe80156e44",
+              "seed": {
+                "project_id": "c7422632-7b0e-463b-b5a1-d8705f950d46",
+                "document_id": "45676cfd-7c64-5547-a41a-a567c95d4cd1",
+                "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                "original_asset": {
+                  "id": "ed45a140-c381-4464-a98c-b6a0e493ebb9",
+                  "version_id": "b54eca99-a8d2-44a5-8d87-5bfb6b4d157f",
+                  "kind": "original",
+                  "filename": "requirements-v1.md",
+                  "content_type": "application/octet-stream",
+                  "size_bytes": 268,
+                  "sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+                  "storage_uri": "rustfs://qa-agent/api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "bucket": "qa-agent",
+                  "object_name": "api-docs/45676cfd-7c64-5547-a41a-a567c95d4cd1/b54eca99-a8d2-44a5-8d87-5bfb6b4d157f/original/requirements-v1.md",
+                  "created_at": "2026-10-04T19:43:09.394188Z",
+                  "reason": "upload",
+                  "security_report": {}
+                },
+                "config": {
+                  "scope_key": "global",
+                  "revision": 1,
+                  "payload": {
+                    "policy": {
+                      "limits": {
+                        "max_bytes": 20000000,
+                        "max_expanded_bytes": 100000000,
+                        "max_zip_entries": 3000,
+                        "max_pages": 1000,
+                        "max_blocks": 50000,
+                        "max_text_chars": 5000000,
+                        "max_table_cells": 50000
+                      },
+                      "timeout_seconds": 60.0,
+                      "max_cpu_seconds": 30.0,
+                      "max_memory_bytes": 536870912,
+                      "max_output_bytes": 40000000
+                    },
+                    "options": {
+                      "parser_id": "auto",
+                      "encoding": "utf-8-sig",
+                      "pdf_extraction_mode": "plain"
+                    },
+                    "parser_by_extension": {
+                      ".md": "markdown",
+                      ".pdf": "pdf",
+                      ".txt": "markdown",
+                      ".docx": "docx"
+                    }
+                  }
+                },
+                "options": {
+                  "parser_id": "markdown",
+                  "encoding": "utf-8-sig",
+                  "pdf_extraction_mode": "plain"
+                },
+                "parser": {
+                  "parser_id": "markdown",
+                  "formats": [
+                    ".md",
+                    ".txt"
+                  ],
+                  "implementation_version": "lightweight-v1",
+                  "text": true,
+                  "sections": true,
+                  "tables": true,
+                  "ocr": false,
+                  "source_positions": [
+                    "line"
+                  ],
+                  "transport": "local",
+                  "available": true
+                }
+              },
+              "storage_uri": "rustfs://qa-agent/document-parsing/c7422632-7b0e-463b-b5a1-d8705f950d46/4363931f-3bc2-465d-b129-b1fe80156e44/021be526-d649-437f-80ba-ec5ffbb55a6a/e7bf78c5-d9b1-4d27-be2f-08e46fe1a307/result.json",
+              "sha256": "4773770eef01a6a4574b295d17fa6b31152fd4205d63480de9c5d9065b8e9826",
+              "size_bytes": 2998,
+              "status": "complete",
+              "parser": {
+                "parser_id": "markdown",
+                "formats": [
+                  ".md",
+                  ".txt"
+                ],
+                "implementation_version": "lightweight-v1",
+                "text": true,
+                "sections": true,
+                "tables": true,
+                "ocr": false,
+                "source_positions": [
+                  "line"
+                ],
+                "transport": "local",
+                "available": true
+              },
+              "dependency_versions": {},
+              "warnings": [],
+              "created_at": "2026-10-04T19:43:10.068350Z"
+            }
+          }
+        }
+      ],
+      "model_key": "manual",
+      "prompt_version": "manual-v1",
+      "skill_versions": {
+        "manual": "v1"
+      },
+      "created_at": "2026-10-04T19:43:11.046972Z"
+    }
+  }
+]

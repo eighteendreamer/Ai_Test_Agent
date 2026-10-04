@@ -2151,3 +2151,35 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade
 回放3通过0跳过0.39秒；相关7模块102通过0跳过389.54秒（包含3回放）；独立生产API/解析/比较/影响CLI1通过0跳过68.54秒。后者实际隔离MySQL/PG/Redis、RustFS和HTTP，无Provider替换，6物理调用全文匹配固定请求、均v3与给定哈希。结果仍partial/pending_review/deployment unknown，不把受控模型当默认语义。未知、未读、旧输入/响应恢复及终态规则保留。
 
 没有新增依赖/数据库Schema/公开API或前端契约，本轮不重复前端构建/浏览器、没有生产迁移。资源只清理已验证归属的表及对象，用户.gitignore保持原字节并排除提交。三份方案同步；原始字节、限定凭据格式扫描、链接及暂存核对另记p4-citation-basis-validation.json。完整P0—P5未完成，下一步继续真实自动协调语义及原目标的需求/评审/增量/矩阵、P2/P1/P0/P5和迁移。
+
+## 2026-10-05：更新方案并实测真实默认模型自动流程
+
+研究基线770f7159；先重读原目标和方案，再读impact_workflow完整execute/_unit、impact_calls请求/发送/续读、impact_batches范围及差异、共享租约Handler、原真实HTTP协调测试与实际模型客户端。对照planning_workflow已有validation_feedback/轮次和检查点。没有使用子Agent或个人Skill。
+
+本轮新增test_document_impact_default_workflow.py，复用真实原件和存储场景，实际执行默认模型自动协调与共享Handler，而非单次全资料探针。配置在隔离MySQL、业务任务/版本/结果在隔离PG、原件及大对象在真实RustFS；源默认模型只读。实际SDK类send仅原样取证，不记录端点/认证头，不替换响应。普通上传仍不依赖Git，生成模板不参与执行。
+
+命令在Agent_Server执行；若再次执行必须使用新的证据目录/XML/log，原失败及未知调用不重发：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-automatic-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-automatic-first.xml 2>&1 | Tee-Object -FilePath ..\docs\upgrade_2026-10-03\p4-default-model-automatic-first.log
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-automatic-replay.xml 2>&1 | Tee-Object -FilePath ..\docs\upgrade_2026-10-03\p4-default-model-automatic-replay.log
+```
+
+自动流程1失败0跳过607.72秒：Handler运行601.281秒；600秒总预算仅写隔离项目策略，SDK60秒、单调用120秒、输出8192及重试原值不变。清单2原文段、6差异、3完整8步用例，共11单元。6逻辑调用实际11物理POST，其中5ReadTimeout、2完整HTTP200响应、4取消无响应。首响应误写当前单元ID中d27为4b27，被unit_mismatch拒绝；次响应合法read进入自动补读，续读随后超时。结束1rejected/4unknown/6task_deadline未处理、规则0，发布partial/pending_review/deployment unknown。三个用例均未实际进入模型判断，规则0不能解释为无变化。
+
+真实失败断言为：
+
+```text
+test_default_model_automatic_fixed_scope_and_terminal_history
+assert all(item.status == "analyzed" and not item.reason_codes and not item.unresolved for item in result.units)
+AssertionError: units contain rejected / unknown / unprocessed
+1 failed in 607.72s
+```
+
+同测试此前已经核对PG/RustFS持久结果、固定11单元、终态重投及历史读取不发模型/重建/上传、终态不可重领；不能把这些断言写成整项测试通过。源模型前后参数一致；原件、请求、响应、核验和对象原字节分别保存，测试结束后仅清理验证归属的隔离资源。兼容回放另3通过0跳过0.36秒。
+
+方案修正：去除当前表格及3.5内过时的“正式App/最终结果待接入”；新增3.5.9待实施设计和6.5实际失败。后端固定身份绑定/短引用转换、证据清单与推理任务职责、预算/调度/反馈、新协议兼容须先验证再实施。当前核验未放宽，旧v2/v3和coordinator-v1未改写。本轮只有测试与方案/研究记录变更，没有新生产协议、依赖、Schema、公开API或前端契约；未重跑前端/浏览器、独立生产Worker或生产迁移。完整P0—P5仍未完成。
+
+三份方案全文同步；原字节、引用、限定凭据扫描及暂存核对另记p4-default-model-automatic-validation.json。用户.gitignore不修改、不提交。本轮提交仅包含方案、测试和原始证据，不推送、不建PR。
