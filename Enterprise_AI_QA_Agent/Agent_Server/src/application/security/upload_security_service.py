@@ -87,7 +87,7 @@ class UploadSecurityService:
         ".yml",
         ".html",
     }
-    API_DOC_EXTENSIONS = {".json", ".yaml", ".yml", ".md", ".txt", ".log", ".pdf"}
+    API_DOC_EXTENSIONS = {".json", ".yaml", ".yml", ".har", ".md", ".txt", ".log", ".pdf"}
     SKILL_EXTENSIONS = {".md", ".zip"}
     MALICIOUS_PATTERNS = [
         (re.compile(r"<script\b", re.IGNORECASE), "Detected embedded script tag."),
@@ -427,7 +427,7 @@ class UploadSecurityService:
         text_like = (
             content_type.startswith("text/")
             or content_type in {"application/json", "application/xml", "application/yaml", "application/x-yaml"}
-            or Path(filename).suffix.lower() in {".md", ".txt", ".json", ".yaml", ".yml", ".xml", ".csv", ".log", ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css"}
+            or Path(filename).suffix.lower() in {".md", ".txt", ".json", ".yaml", ".yml", ".har", ".xml", ".csv", ".log", ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css"}
         )
         if not text_like:
             return ""

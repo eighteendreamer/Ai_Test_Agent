@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="36.689" timestamp="2026-10-04T08:45:00.653089+08:00" hostname="EIghteen"><testcase classname="tests.test_api_doc_assets_browser" name="test_actual_upload_detail_download_and_immutable_metadata_derivatives" time="33.712"><failure message="playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for get_by_label(&quot;项目 URL / Base URL&quot;, exact=True)">tests\test_api_doc_assets_browser.py:120: in test_actual_upload_detail_download_and_immutable_metadata_derivatives
+    await page.get_by_label("项目 URL / Base URL", exact=True).fill(host_url)
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:18248: in fill
+    await self._impl_obj.fill(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:219: in fill
+    return await self._frame.fill(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:636: in fill
+    await self._fill(**locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:648: in _fill
+    await self._channel.send("fill", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_label("项目 URL / Base URL", exact=True)</failure></testcase></testsuite></testsuites>

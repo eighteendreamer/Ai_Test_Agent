@@ -12,6 +12,7 @@ import type {
   ProjectRecord,
 } from "../../../types";
 import { formatServerDateTime } from "../../../utils/datetime";
+import ApiDocAssets from "./ApiDocAssets.vue";
 
 type ImportMode = "local" | "url" | "integration";
 
@@ -595,6 +596,8 @@ onBeforeUnmount(() => {
               <div><strong>{{ t("apiDocs.meta_updated_at") }}</strong>{{ formatServerDateTime(selectedDoc.updated_at) }}</div>
               <div><strong>RustFS URI：</strong>{{ selectedDoc.storage_uri }}</div>
             </div>
+
+            <ApiDocAssets :key="selectedDoc.id" :document="selectedDoc" />
 
             <div v-if="selectedDoc.preview_error" class="preview-inline-error">{{ selectedDoc.preview_error }}</div>
             <div v-else class="preview-code-shell">

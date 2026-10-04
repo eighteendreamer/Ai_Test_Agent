@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 from src.application.documents.api_docs_service import ApiDocNotFoundError
+from src.application.documents.api_doc_store import ApiDocConflictError
 from src.schemas.api_docs import (
     ApiDocImportIntegrationRequest,
     ApiDocImportUrlRequest,
@@ -61,6 +64,21 @@ async def upload_api_doc(payload: ApiDocUploadRequest, request: Request):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="upload")
+
+
+@router.get("/{doc_id}/original")
+@router.get("/{doc_id}/assets/{asset_id}")
+async def download_api_doc_asset(doc_id: str, request: Request, asset_id: str | None = None):
+    try:
+        asset, content = await request.app.state.api_docs_service.read_asset(doc_id, asset_id)
+        return Response(content=content, media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(asset.filename, safe='')}"})
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="read_asset", doc_id=doc_id)
 
 
 @router.patch("/{doc_id}")
@@ -72,8 +90,12 @@ async def update_api_doc(doc_id: str, payload: ApiDocUpdateRequest, request: Req
         )
     except (ApiDocNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ApiDocConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="update", doc_id=doc_id)
 
 
 @router.post("/import-url")

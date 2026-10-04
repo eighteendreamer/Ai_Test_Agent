@@ -1153,8 +1153,24 @@ export interface InputAttachment {
   metadata: Record<string, unknown>;
 }
 
+export interface ApiDocumentAsset {
+  id: string;
+  kind: "original" | "derived";
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  storage_uri: string;
+  bucket?: string | null;
+  object_name?: string | null;
+  created_at: string;
+  reason: string;
+  security_report: Record<string, unknown>;
+}
+
 export interface ApiDocRecord {
   id: string;
+  catalog_revision?: number;
   title: string;
   filename: string;
   project_id?: string | null;
@@ -1166,6 +1182,8 @@ export interface ApiDocRecord {
   content_type: string;
   size_bytes: number;
   storage_uri: string;
+  original_asset?: ApiDocumentAsset | null;
+  derived_assets?: ApiDocumentAsset[];
   bucket?: string | null;
   object_name?: string | null;
   endpoint_count?: number | null;

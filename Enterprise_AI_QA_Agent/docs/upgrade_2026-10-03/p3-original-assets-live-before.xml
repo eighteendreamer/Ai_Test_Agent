@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="4" time="4.226" timestamp="2026-10-04T08:29:45.282820+08:00" hostname="EIghteen"><testcase classname="tests.test_api_doc_original_assets" name="test_actual_openapi_original_survives_conversion_and_project_url_updates[False]" time="0.161"><failure message="KeyError: 'original_asset'">tests\test_api_doc_original_assets.py:35: in test_actual_openapi_original_survives_conversion_and_project_url_updates
+    assert record["original_asset"]["sha256"] == hashlib.sha256(raw).hexdigest()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'original_asset'</failure></testcase><testcase classname="tests.test_api_doc_original_assets" name="test_actual_openapi_original_survives_conversion_and_project_url_updates[True]" time="0.739"><failure message="KeyError: 'original_asset'">tests\test_api_doc_original_assets.py:35: in test_actual_openapi_original_survives_conversion_and_project_url_updates
+    assert record["original_asset"]["sha256"] == hashlib.sha256(raw).hexdigest()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'original_asset'</failure></testcase><testcase classname="tests.test_api_doc_original_assets" name="test_markdown_original_is_not_changed_when_metadata_creates_derivative[False]" time="0.007" /><testcase classname="tests.test_api_doc_original_assets" name="test_markdown_original_is_not_changed_when_metadata_creates_derivative[True]" time="0.476"><failure message="AssertionError: assert b'**\xe9\xa1\...xe3\x80\x82\n' == b'# \xe8\xae\...3\x80\x82\r\n'&#10;  &#10;  At index 0 diff: b'*' != b'#'&#10;  Use -v to get more diff">tests\test_api_doc_original_assets.py:63: in test_markdown_original_is_not_changed_when_metadata_creates_derivative
+    assert (await env.objects.read_object_uri(original_uri))["content"] == source.read_bytes()
+E   AssertionError: assert b'**\xe9\xa1\...xe3\x80\x82\n' == b'# \xe8\xae\...3\x80\x82\r\n'
+E     
+E     At index 0 diff: b'*' != b'#'
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

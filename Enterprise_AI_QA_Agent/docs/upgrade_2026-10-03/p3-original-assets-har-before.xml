@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="3.696" timestamp="2026-10-04T08:55:22.098007+08:00" hostname="EIghteen"><testcase classname="tests.test_api_doc_original_assets" name="test_actual_har_original_scan_conversion_and_rejected_extension_content[True]" time="0.798"><failure message="src.application.security.upload_security_service.UploadSecurityError: 该文件不允许上传，系统已拒绝处理。原因：当前入口不支持该文件类型 .har。建议：请确认当前上传入口支持该文件类型，或更换为受支持的文件格式">tests\test_api_doc_original_assets.py:260: in test_actual_har_original_scan_conversion_and_rejected_extension_content
+    document = await env.docs.upload_document(filename=source.name,
+tests\test_case_planning.py:79: in track_upload
+    document = await upload(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\api_docs_service.py:306: in upload_document
+    original_result = await self._store_upload(content=content, filename=filename,
+src\application\documents\api_docs_service.py:722: in _store_upload
+    return await self._upload_security_service.secure_store_upload(
+src\application\security\upload_security_service.py:182: in secure_store_upload
+    raise UploadSecurityError(self._format_error_message("rejected", report), report=report)
+E   src.application.security.upload_security_service.UploadSecurityError: 该文件不允许上传，系统已拒绝处理。原因：当前入口不支持该文件类型 .har。建议：请确认当前上传入口支持该文件类型，或更换为受支持的文件格式</failure></testcase></testsuite></testsuites>

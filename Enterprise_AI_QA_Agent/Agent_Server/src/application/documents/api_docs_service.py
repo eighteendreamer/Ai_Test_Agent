@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import mimetypes
@@ -16,7 +17,7 @@ import httpx
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.security.upload_security_service import UploadSecurityService
 from src.core.config import Settings
-from src.schemas.api_docs import ApiDocRecord, UploadedAttachmentRecord
+from src.schemas.api_docs import ApiDocRecord, ApiDocumentAsset, UploadedAttachmentRecord
 from src.schemas.integration import IntegrationRecord
 from src.application.documents.api_doc_store import ApiDocStore, JsonApiDocStore
 from src.application.projects.project_service import ProjectService
@@ -295,43 +296,48 @@ class ApiDocsService:
     ) -> ApiDocRecord:
         await self._require_bindable_project(project_id)
         content = self._decode_base64(content_base64)
+        doc_id = str(uuid4())
+        now = datetime.now(timezone.utc)
         original_filename = filename
         original_size_bytes = len(content)
         declared_content_type = self._normalize_optional_text(content_type) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
         original_content_type = declared_content_type
         normalized_project_url = self._normalize_optional_text(project_url)
-        converted = self._maybe_convert_api_document_to_markdown(
-            filename=filename,
-            content=content,
-            content_type=declared_content_type,
-            title=title,
-            project_name=project_name,
-            project_url=normalized_project_url,
-        )
-        if converted is not None:
-            filename = str(converted["filename"])
-            content = converted["content"]  # type: ignore[assignment]
-            declared_content_type = "text/markdown"
+        original_result = await self._store_upload(content=content, filename=filename,
+            object_prefix=f"api-docs/{doc_id}/original", profile="api_document", source=source,
+            content_type=declared_content_type)
+        original_asset = self._asset(original_result, content=content, filename=filename,
+            kind="original", reason="upload", created_at=now)
+        owned_uris = [original_asset.storage_uri]
+        derived_assets = []
+        try:
+            converted = self._maybe_convert_api_document_to_markdown(
+                filename=filename, content=content, content_type=declared_content_type,
+                title=title, project_name=project_name, project_url=normalized_project_url)
+            storage_result = original_result
+            if converted is not None:
+                filename = str(converted["filename"])
+                content = converted["content"]  # type: ignore[assignment]
+                declared_content_type = "text/markdown"
+                storage_result = await self._store_upload(content=content, filename=filename,
+                    object_prefix=f"api-docs/{doc_id}/derived/{uuid4()}", profile="api_document",
+                    source=source, content_type=declared_content_type)
+                owned_uris.append(str(storage_result["uri"]))
+                derived_assets.append(self._asset(storage_result, content=content, filename=filename,
+                    kind="derived", reason="api_conversion", created_at=now))
+        except Exception:
+            await self._cleanup_unreferenced_assets(doc_id, owned_uris)
+            raise
         preview_text, preview_truncated, preview_error = self._build_preview(filename, content, declared_content_type)
         if converted is not None:
             format_label = str(converted["format_label"])
             endpoint_count = converted.get("endpoint_count")  # type: ignore[assignment]
         else:
             format_label, endpoint_count = self._detect_format(filename, content, preview_text)
-        doc_id = str(uuid4())
-        now = datetime.now(timezone.utc)
         normalized_title = self._normalize_optional_text(title) or (
             str(converted.get("title")) if converted and converted.get("title") else None
         ) or Path(filename).stem or filename
         normalized_project_name = self._normalize_optional_text(project_name)
-        storage_result = await self._store_upload(
-            content=content,
-            filename=filename,
-            object_prefix=f"api-docs/{doc_id}",
-            profile="api_document",
-            source=source,
-            content_type=declared_content_type,
-        )
         content_type = str(storage_result.get("content_type") or declared_content_type)
 
         record = ApiDocRecord(
@@ -347,6 +353,8 @@ class ApiDocsService:
             content_type=content_type,
             size_bytes=len(content),
             storage_uri=str(storage_result["uri"]),
+            original_asset=original_asset,
+            derived_assets=derived_assets,
             bucket=str(storage_result.get("bucket") or ""),
             object_name=str(storage_result.get("object_name") or ""),
             endpoint_count=endpoint_count,
@@ -373,7 +381,7 @@ class ApiDocsService:
             },
         )
 
-        created = await self._catalog_store.create(record)
+        created = await self._save_asset_record(record, owned_uris=owned_uris)
         logger.info(
             "api_document_created",
             extra={"api_doc_id": created.id, "project_id": created.project_id, "source": created.source},
@@ -400,6 +408,7 @@ class ApiDocsService:
         if "project_url" in changes:
             item["project_url"] = self._normalize_optional_text(changes["project_url"])
         item["updated_at"] = datetime.now(timezone.utc)
+        item["catalog_revision"] = record.catalog_revision + 1
         metadata = item.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}
@@ -409,12 +418,76 @@ class ApiDocsService:
         metadata["project_url"] = item.get("project_url")
         if "project_url" in changes:
             await self._sync_markdown_project_url(item, item.get("project_url"))
-        updated = await self._catalog_store.update(ApiDocRecord.model_validate(item))
+        candidate = ApiDocRecord.model_validate(item)
+        existing_uris = self._asset_uris(record)
+        updated = await self._save_asset_record(candidate,
+            owned_uris=list(self._asset_uris(candidate) - existing_uris), expected_revision=record.catalog_revision)
         logger.info(
             "api_document_updated",
             extra={"api_doc_id": updated.id, "project_id": updated.project_id},
         )
         return updated
+
+    @staticmethod
+    def _asset(stored: dict, *, content: bytes, filename: str, kind: str, reason: str, created_at: datetime) -> ApiDocumentAsset:
+        return ApiDocumentAsset(id=str(uuid4()), kind=kind, filename=filename,
+            content_type=str(stored.get("content_type") or "application/octet-stream"),
+            size_bytes=len(content), sha256=hashlib.sha256(content).hexdigest(), storage_uri=str(stored["uri"]),
+            bucket=stored.get("bucket"), object_name=stored.get("object_name"), created_at=created_at,
+            reason=reason, security_report=stored.get("security_report") or {})
+
+    @staticmethod
+    def _asset_uris(record: ApiDocRecord) -> set[str]:
+        return {record.storage_uri, *(asset.storage_uri for asset in record.derived_assets),
+            *([record.original_asset.storage_uri] if record.original_asset else [])} - {""}
+
+    async def _cleanup_unreferenced_assets(self, doc_id: str, owned_uris: list[str]) -> None:
+        try:
+            current = await self._catalog_store.get(doc_id)
+        except Exception as exc:
+            logger.error("api_doc_asset_cleanup_reference_unknown", extra={"api_doc_id": doc_id,
+                "error_type": type(exc).__name__, "asset_count": len(owned_uris)})
+            return  # An uncertain commit can reference these objects; retain them.
+        referenced = self._asset_uris(current) if current else set()
+        for uri in set(owned_uris) - referenced:
+            try:
+                await self._artifact_storage_service.delete_object_uri(uri)
+            except Exception as exc:
+                logger.error("api_doc_asset_cleanup_failed", extra={"api_doc_id": doc_id,
+                    "error_type": type(exc).__name__})
+
+    async def _save_asset_record(self, record: ApiDocRecord, *, owned_uris: list[str],
+        expected_revision: int | None = None) -> ApiDocRecord:
+        try:
+            if expected_revision is None:
+                return await self._catalog_store.create(record)
+            return await self._catalog_store.update(record, expected_revision=expected_revision)
+        except Exception as exc:
+            logger.warning("api_doc_catalog_commit_unconfirmed", extra={"api_doc_id": record.id,
+                "error_type": type(exc).__name__, "operation": "update" if expected_revision is not None else "create"})
+            try:
+                saved = await self._catalog_store.get(record.id)
+            except Exception as read_exc:
+                logger.error("api_doc_catalog_commit_recheck_failed", extra={"api_doc_id": record.id,
+                    "error_type": type(read_exc).__name__})
+                raise RuntimeError("文档提交结果尚无法确认，已保留原件和派生对象") from read_exc
+            if saved is not None and saved.model_dump(mode="json") == record.model_dump(mode="json"):
+                return saved
+            await self._cleanup_unreferenced_assets(record.id, owned_uris)
+            raise
+
+    async def read_asset(self, doc_id: str, asset_id: str | None = None) -> tuple[ApiDocumentAsset, bytes]:
+        record = await self.get_document(doc_id)
+        asset = record.original_asset if asset_id is None else next((asset for asset in
+            [*record.derived_assets, *([record.original_asset] if record.original_asset else [])]
+            if asset.id == asset_id), None)
+        if asset is None:
+            raise ApiDocNotFoundError("此文档没有保存指定资产；历史原件缺失时不能使用转换结果替代")
+        content = (await self._artifact_storage_service.read_object_uri(asset.storage_uri))["content"]
+        if len(content) != asset.size_bytes or hashlib.sha256(content).hexdigest() != asset.sha256:
+            logger.error("api_doc_asset_integrity_failed", extra={"api_doc_id": doc_id, "asset_id": asset.id})
+            raise RuntimeError("文档资产字节与已保存的哈希或大小不一致")
+        return asset, content
 
     async def import_document_from_url(
         self,
@@ -538,12 +611,12 @@ class ApiDocsService:
         item = await self._catalog_store.delete(doc_id)
         if item is None:
             raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
-        uri = item.storage_uri
-        if uri:
+        for uri in self._asset_uris(item):
             try:
                 await self._artifact_storage_service.delete_object_uri(uri)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("api_doc_deleted_asset_cleanup_failed", extra={"api_doc_id": doc_id,
+                    "error_type": type(exc).__name__})
         return {"ok": True, "deleted_id": doc_id}
 
     async def _require_bindable_project(self, project_id: str | None) -> None:
@@ -560,13 +633,11 @@ class ApiDocsService:
             return
 
         uri = str(item.get("storage_uri") or "")
-        markdown = str(item.get("preview_text") or "")
-        if uri:
-            try:
-                stored = await self._artifact_storage_service.read_object_uri(uri)
-                markdown = self._decode_text(stored.get("content", b"")) or markdown
-            except Exception:
-                pass
+        if not uri:
+            logger.error("api_doc_derived_source_missing", extra={"api_doc_id": item.get("id")})
+            raise ValueError("无法读取完整 Markdown 内容，不能使用截断预览保存派生文档")
+        stored = await self._artifact_storage_service.read_object_uri(uri)
+        markdown = self._decode_text(stored["content"])
         if not markdown:
             return
 
@@ -575,21 +646,12 @@ class ApiDocsService:
             return
 
         content = updated.encode("utf-8")
-        storage_result: dict[str, Any] | None = None
-        bucket = str(item.get("bucket") or "")
-        object_name = str(item.get("object_name") or "")
-        if bucket and object_name:
-            try:
-                storage_result = await self._artifact_storage_service.store_uploaded_bytes(
-                    content=content,
-                    filename=filename or "api-document.md",
-                    object_prefix="",
-                    content_type="text/markdown",
-                    bucket_name=bucket,
-                    object_name=object_name,
-                )
-            except Exception:
-                storage_result = None
+        storage_result = await self._artifact_storage_service.store_uploaded_bytes(
+            content=content, filename=filename or "api-document.md",
+            object_prefix=f"api-docs/{item['id']}/derived/{uuid4()}", content_type="text/markdown")
+        asset = self._asset(storage_result, content=content, filename=filename or "api-document.md",
+            kind="derived", reason="project_url", created_at=datetime.now(timezone.utc))
+        item.setdefault("derived_assets", []).append(asset.model_dump(mode="python"))
 
         preview_text, preview_truncated, preview_error = self._build_preview(filename, content, "text/markdown")
         item["preview_text"] = preview_text
@@ -598,10 +660,9 @@ class ApiDocsService:
         item["preview_available"] = preview_text is not None
         item["size_bytes"] = len(content)
         item["content_type"] = "text/markdown"
-        if storage_result is not None:
-            item["storage_uri"] = str(storage_result.get("uri") or item.get("storage_uri") or "")
-            item["bucket"] = str(storage_result.get("bucket") or bucket)
-            item["object_name"] = str(storage_result.get("object_name") or object_name)
+        item["storage_uri"] = asset.storage_uri
+        item["bucket"] = asset.bucket
+        item["object_name"] = asset.object_name
         metadata = item.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}

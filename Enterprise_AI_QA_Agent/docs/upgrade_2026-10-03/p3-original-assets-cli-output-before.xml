@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="44.273" timestamp="2026-10-04T08:47:07.836313+08:00" hostname="EIghteen"><testcase classname="tests.test_execution_worker_cli" name="test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay" time="40.991"><failure message="FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p3-original-assets-cli\\p2-execution-worker-cli-probe'">tests\test_execution_worker_cli.py:453: in test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay
+    target.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py:1078: in write_text
+    with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py:1044: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p3-original-assets-cli\\p2-execution-worker-cli.json'
+
+During handling of the above exception, another exception occurred:
+tests\test_execution_worker_cli.py:348: in test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay
+    async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests\test_execution_worker_cli.py:208: in isolated_runtime
+    evidence.mkdir(exist_ok=True)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py:1116: in mkdir
+    os.mkdir(self, mode)
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p3-original-assets-cli\\p2-execution-worker-cli-probe'
+
+During handling of the above exception, another exception occurred:
+tests\test_execution_worker_cli.py:347: in test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay
+    async with controlled_http(tmp_path) as (business, calls, effects, orders, actual_id, errors):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests\test_execution_worker_cli.py:327: in controlled_http
+    evidence.mkdir(exist_ok=True)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py:1116: in mkdir
+    os.mkdir(self, mode)
+E   FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p3-original-assets-cli\\p2-execution-worker-cli-probe'</failure></testcase></testsuite></testsuites>

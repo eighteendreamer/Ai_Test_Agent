@@ -29,7 +29,7 @@
 | P2 补全 | AI 语义检查、项目查证、正式依赖或运行准备、负向条件保留、缺口可见 | 只读查询、正式依赖/准备结构、引用与拓扑校验、有界校验反馈已实现；专项 21 通过。当前真实模型三场景测试 1 通过，实际组件/HTTP/三种存储浏览器 1 通过，不等同实际 Agent 执行 |
 | P2 回归持久规划 | 固定父运行/失败/版本，复用持久任务与共享内核，按原身份找回及保存计划启动 | 本轮后端 92 通过、1 外部模型项跳过，前端 23 通过及构建通过；真实 Chromium 弹窗/ProjectsView 2 通过、概览 provider 补验 1 通过；生产规划 CLI 中断恢复 1 通过。完整 API/测试执行进程及默认模型仍未验收，详见文末 |
 | P2 执行 | 固定版本、依赖领取、输出绑定、检查点恢复、计划修订、结果证据与新回归 | 已有依赖、计划创建内部事务及上下文/回执核验。本步骤交付运行服务 Agent 策略、生产初始化注入、RunItem 审批/已保存决定恢复、持久意图/跨 attempt 重放及工具资源身份修复；扩大回归 359 通过、10 跳过、1 个模型项未选择，其中 8 个资源项另补验通过；前端 18 通过及构建通过。Agent 新回归及公开保存计划启动已接通，真实 Redis/Outbox/Worker 类与 Agent 审批/HTTP 结果专项通过，详见下方最新记录；默认模型目标回执验收仍失败；本轮完整 API lifespan/独立执行 CLI 的 API 场景与创建后重启已通过，其他模式真实工具、步骤级恢复/未知效果核对及计划修订仍待完成 |
-| P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 待实施 |
+| P3 上传 | 同一文档 V1/V2、原件与派生分存、重复判定、版本查询、解析失败可见 | 原件/安全/导入最终回归 65 通过，包含递增修订及旧 JSON/PG 目录兼容；实际文档插件 Chromium 1 通过、前端 5 通过及构建通过、完整 API/执行 CLI 1 通过。V1/V2、幂等、历史迁移、解析状态仍待实施，详见文末 |
 | P3 Git | 独立可选只读入口；明确关联才导入为已有文档版本；上传不依赖 Git | 待实施 |
 | P3 解析 | MD/python-docx/pypdf 工厂、统一结构/位置/版本/警告、独立受限进程；Docling 仅扩展入口 | 待实施 |
 | P3 差异 | 原文与归一确定性差异、位置映射、历史解析快照保留 | 待实施 |
@@ -1091,3 +1091,93 @@ $env:QA_TEST_GATE_OUTPUT_DIR=(Resolve-Path '..\docs\upgrade_2026-10-03\p2-operat
 7 个 Python 文件实际编译通过。完整 CLI 输出使用新的证据子目录，未覆盖前一轮 CLI 原始记录；本轮失败 XML 原样保留。同步修正方案首页、§2.4、第六节和下一步，直接更新用户粘贴方案及 Codex 镜像，并校验链接/一致性与 Git diff。仅暂存本轮文件，保留用户 `.gitignore` 未暂存。
 
 本轮完成范围是**已返回的工具输出**保存与恢复，不承诺请求发送和检查点写入之间没有窗口。真正没有返回证据的业务效果、完整准备步骤归属/状态、执行中计划修订、默认外部模型、其他模式/页面和 P0/P3—P5 仍未完成。没有执行生产数据库迁移；缺少 Alembic 的迁移专项与缺少 deepagents 的可选运行项明确未验收。不扩大受控模型/本地 HTTP 的结论。
+
+## P3.1 原件与派生内容分存及实际下载（2026-10-04）
+
+先核对上传/转换/URL 修改、上传安全、RustFS、目录三个存储实现、生产 DI、HTTP 路由和实际前端组件，再对照用例导入服务的提交后回查与引用清理实现。现有准备步骤缺少可靠的逐步执行归属，不能由工具 call_id 或最终回执反推；该问题保留为 P2 剩余工作，先完成可独立验证的原件基础。修改 PLAN §3.1 后实施。
+
+真实输入与根因：创建带 UTF-8 BOM 的 OpenAPI JSON 和 CRLF Markdown，通过现有上传及更新入口操作。旧实现未保存转换前 JSON，真实 RustFS 中的 Markdown 在更新项目 URL 时被覆盖。内存对象夹具没有重现覆盖行为，因此保留真实存储失败样本。补充历史目录丢失全文地址的样本，原实现将截断预览另存为完整派生文档；真实 PG/RustFS 与内存均复现失败。不是 Git 能力缺失，上传保存和本次验证全程不需要 Git。
+
+修改范围与契约：
+
+- `schemas/api_docs.py` 增加可选原件和派生资产，保存自身 ID、文件信息、字节哈希、对象引用、时间/原因及安全报告；旧记录默认缺失，不伪造历史原件。
+- `api_docs_service.py` 先使用既有安全策略扫描并保存原始字节，再转换为独立 Markdown。URL 修改从全文对象读取，另存新派生对象，保留原件与旧派生结果；读取失败明确报错，不由预览重建。
+- `ApiDocStore` 的 Protocol、内存、JSON 兼容及 PostgreSQL 实现同步增加可选目录修订条件更新，保留旧调用兼容。首版时间戳方案扩大回归失败，已改为递增 `catalog_revision`；旧 JSON/PG 目录缺字段按 0 读取并实际验证。目录冲突返回 409，丢弃的本次新对象按引用检查清理；并发获胜对象保留。
+- 创建或更新提交异常先按原目录 ID 回查。相同候选已经提交时返回已存记录；回查不可用时保留原件和派生对象并报告未确认；确定未引用才清理。既有删除入口清理原件和全部派生对象，失败有日志。
+- `api_docs.py` 新增原件/指定资产下载，按文档内资产身份定位，校验实际大小和 SHA256；缺失 404、存储或一致性故障为脱敏 500。文件名采用既有用例导入下载的 UTF-8 header 形式。
+- 前端类型、`tools.api.ts` 和实际 `ApiDocsPlugin.vue` 接通 `ApiDocAssets.vue`。展示原件、派生下载、历史缺失和失败重试；修改中英文上传说明，说明保留原件和生成 Markdown。实际浏览器下载已证明对象 URL 清理后文件仍可保存。
+- `upload_security_service.py` 将已有转换器及界面支持的 HAR 原件纳入 API 文档格式与文本内容扫描；未关闭扫描、未扩大聊天入口策略。实际 HAR 的转换/原件下载通过，转换会丢弃的危险文本仍被拒绝。
+
+本步只扩展既有 PostgreSQL 目录 JSON 与 RustFS 资产，不新增业务表、配置域或依赖。可编辑配置仍使用 MySQL。本轮未执行生产迁移，不安装 Docling 或解析器；DOCX 格式策略及 `python-docx`/`pypdf` 声明仍待后续查证实施。独立资产历史不是稳定文档身份/V1/V2、解析快照或差异，未将这些目标记作完成。
+
+| 证据 | 实际结果 | 范围 |
+|---|---|---|
+| `p3-original-assets-before.xml` | 1 失败、1 通过、1 跳过，3.03 秒 | 最初原件缺失样本；内存未重现真实覆盖 |
+| `p3-original-assets-live-before.xml` | 3 失败、1 通过，4.33 秒 | 真实 HTTP/PG/RustFS 的 JSON 原件缺失与 Markdown 覆盖 |
+| `p3-original-assets-first-fix.xml` | 4 通过，3.88 秒 | 首版真实文件修复专项 |
+| `p3-original-assets-storage.xml` | 42 通过，6.30 秒 | 原件下载、派生保留、提交回执丢失、并发目录冲突、缺失/损坏、安全扫描在转换前执行及既有存储回归 |
+| `p3-original-assets-preview-before.xml` | 2 失败、4 通过、13 未选择，5.79 秒 | 截断预览重建失败；更新提交回执丢失与不可回查时保留资产已通过 |
+| `p3-original-assets-storage-final.xml` | 48 通过，7.43 秒 | 最终内存及真实 PG/RustFS 原件/派生/提交边界，旧目录兼容及对象存储 |
+| `p3-original-assets-browser-first.xml` | 1 失败，10.52 秒 | 宿主页遗漏注册现有翻译，夹具修正 |
+| `p3-original-assets-browser-labels-before.xml` | 1 失败，36.69 秒 | URL 标签包含说明文本，精确标签定位不匹配；原件/派生下载已执行，修正夹具定位 |
+| `p3-original-assets-browser-final.xml/json/png` | 1 通过，6.37 秒 | 实际 ApiDocsPlugin 宿主页、生产文档路由、真实隔离存储；上传 BOM JSON、下载原件/Markdown、两次 URL 修改及旧派生仍可下载；页面错误为 0 |
+| `p3-original-assets-regression.xml` | 65 通过、10 跳过，14.11 秒 | 文档发现/导入/安全、生成、完整 JSON 及规划/导入消费者 |
+| `p3-original-assets-regression-live.xml` | 9 通过、19 未选择，10.63 秒 | 补验上行 8 个因未开启存储开关的跳过项，并包含原有真实存储专项；剩余 2 项默认外部模型未执行 |
+| 前端两文件专项 | 5 通过，1.71 秒 | 资产下载身份、旧原件缺失、错误重试及既有平台导入源逻辑 |
+| `npm run build` | 类型检查及构建通过，Vite 6.06 秒 | 当前前端源码 |
+| `p3-original-assets-cli-output-before.xml` | 1 失败，44.30 秒 | CLI 场景断言执行后保存证据因输出目录不存在失败；清理数据库/配置/容器在该错误之前完成，未修改产品行为 |
+| `p3-original-assets-cli.xml` 及 `p3-original-assets-cli/` | 1 通过，39.73 秒 | 创建输出目录后，完整生产 API lifespan/执行 Worker CLI、真实隔离 MySQL/PG/RustFS/Redis、受控模型、真实创建→查询→清理、审批/创建后重启及终态重投 |
+
+复现命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_original_assets.py tests/test_api_docs_bom.py tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_artifact_storage_service.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-original-assets-storage-final.xml
+
+$env:RUN_LIVE_API_DOC_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_assets_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-original-assets-browser-final.xml
+
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_document_dependency_http.py tests/test_api_docs_origin_security.py tests/test_api_doc_resolution.py tests/test_case_json_templates.py tests/test_case_planning.py tests/test_test_case_generation_pipeline.py tests/test_case_import_service.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p3-original-assets-regression.xml
+
+$env:RUN_LIVE_UPGRADE_STORAGE_TESTS='1'
+$env:RUN_LIVE_CASE_IMPORT_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_document_dependency_http.py tests/test_case_import_service.py -q --tb=short -rs -k 'True' --junitxml=../docs/upgrade_2026-10-03/p3-original-assets-regression-live.xml
+
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+New-Item -ItemType Directory -Path '../docs/upgrade_2026-10-03/p3-original-assets-cli' -Force | Out-Null
+$env:QA_TEST_GATE_OUTPUT_DIR=(Resolve-Path '../docs/upgrade_2026-10-03/p3-original-assets-cli').Path
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_execution_worker_cli.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-original-assets-cli.xml
+
+..\.venv\Scripts\python.exe -X utf8 -m py_compile src/schemas/api_docs.py src/application/documents/api_doc_store.py src/application/documents/api_docs_service.py src/api/routes/api_docs.py tests/test_api_doc_original_assets.py tests/test_api_doc_assets_browser.py
+```
+
+前端命令（agent_web）：
+
+```powershell
+npm run test -- src/features/tools/plugins/ApiDocAssets.test.ts src/features/tools/plugins/ApiDocsPlugin.importSources.test.ts
+npm run build
+```
+
+所有失败 XML 原样保留，不为隐藏失败覆盖记录；浏览器 Vite stdout/stderr 保存在 `p3-original-assets-browser-vite.log`，CLI 原始子进程输出保存在独立目录。真实外部默认模型与完整产品页未验收，浏览器明确使用实际插件的隔离宿主。历史原件缺失不自动补造；生产历史数据未迁移。
+
+已直接更新用户粘贴方案原文件，保留原始备份，项目 PLAN 与 Codex 镜像按字节同步。完整 P0—P5 保持未完成，下一步先研究稳定文档版本契约/幂等提交与历史迁移，再接通需求文档格式策略、解析快照和差异；P2 剩余恢复、P0 人工录制与 Docker、P4/P5 继续保留。提交仅包含本轮相关文件，用户 `.gitignore` 保持未暂存。
+
+### 最后兼容检查与并发根因修正
+
+原件先扫描后转换暴露了 HAR 格式冲突。已读取现有 `API_DOC_EXTENSIONS` 与 `_decode_text_preview`，实际 `.har` 被拒绝，见 `p3-original-assets-har-before.xml`（1 失败，3.70 秒）。补充 API 文档 HAR 原件格式和文本内容扫描后 `har-final.xml`（1 通过，3.29 秒），转换/下载字节一致，转换会丢弃的危险扩展文本仍拒绝。
+
+随后扩大回归在内存并发场景抓到 1 失败、62 通过（23.01 秒，`p3-original-assets-har-regression.xml`）。固定 `datetime.now` 后内存/真实 PostgreSQL 都稳定漏检（`clock-before.xml`，2 失败，3.47 秒）：原件读取与两次目录更新可能拿到同一个时间戳，旧条件未识别已被其他请求修改。参照现有 MySQL 配置存储的修订计数，目录 JSON 增加 `catalog_revision`；服务按已读修订递增，三个存储实现比较预期修订。旧 PG 缺字段使用 0，旧 JSON 按模型默认 0；无需新表。它只控制目录并发，不作为业务文档版本。固定时钟修复后 `clock-final.xml`（2 通过，3.23 秒）。
+
+最终证据（以下文件均位于 `docs/upgrade_2026-10-03/`，简写以 `p3-original-assets-` 为前缀）：
+
+| 证据 | 实际结果 | 范围 |
+|---|---|---|
+| `revision-final.xml` | 65 通过，24.19 秒 | 上述原件/安全/目录/对象专项和用例导入全部启用真实存储；固定时钟并发，以及旧 JSON/PG 目录没有修订字段仍能更新并拒绝陈旧写入 |
+| `browser-revision.xml` 及浏览器 JSON/截图 | 1 通过，6.89 秒 | 修订号接通后复验实际文档界面上传、原件/派生下载及两次 URL 修改 |
+| 前端测试及 `npm run build` | 5 通过（1.73 秒），类型检查/构建通过（Vite 6.04 秒） | 当前最终前端源码及修订号类型 |
+| `cli-revision.xml` 与 `p3-original-assets-cli-revision/` | 1 通过，40.96 秒 | 最终完整 API/执行 CLI，受控模型及真实隔离存储，审批/创建后重启、实际创建/查询/删除与终态重投 |
+
+最终后端命令沿用上文存储专项并增加 `tests/test_case_import_service.py`，设置 `RUN_LIVE_CASE_IMPORT_TESTS=1`，输出 `p3-original-assets-revision-final.xml`。浏览器命令输出 `p3-original-assets-browser-revision.xml`；CLI 提前创建独立 `p3-original-assets-cli-revision/` 并将其设为 `QA_TEST_GATE_OUTPUT_DIR`，输出 `p3-original-assets-cli-revision.xml`，保留旧轮次。7 个受影响 Python 源码/测试重新执行 py_compile。失败 CLI 的早期临时子进程目录已被 pytest 轮转回收，未虚称保存该轮全部日志；原 XML 保留，成功两轮完整日志分别保留在各自证据目录。HAR 与并发失败不计为通过，只有最后修复复验后记录最终状态。
+
+最终方案本地链接、原始备份、镜像字节一致性和 XML 数量已核对，敏感格式扫描没有匹配。代码、测试及 Markdown 的 `git diff --cached --check` 通过；完整检查提示 3 处 pytest 原始失败 XML 的尾部空白，保留原始证据，不改写失败输出。仅暂存本轮 70 个源码/测试/方案/证据文件，用户 `.gitignore` 未暂存。

@@ -17,6 +17,10 @@ from src.schemas.api_docs import ApiDocRecord
 logger = logging.getLogger(__name__)
 
 
+class ApiDocConflictError(ValueError):
+    """The catalog changed while a new immutable asset was being prepared."""
+
+
 class ApiDocStore(Protocol):
     async def initialize(self) -> None: ...
     async def list(
@@ -28,7 +32,7 @@ class ApiDocStore(Protocol):
     async def get(self, doc_id: str) -> ApiDocRecord | None: ...
     async def count_by_project(self, project_id: str) -> int: ...
     async def create(self, record: ApiDocRecord) -> ApiDocRecord: ...
-    async def update(self, record: ApiDocRecord) -> ApiDocRecord: ...
+    async def update(self, record: ApiDocRecord, *, expected_revision: int | None = None) -> ApiDocRecord: ...
     async def delete(self, doc_id: str) -> ApiDocRecord | None: ...
 
 
@@ -68,10 +72,12 @@ class InMemoryApiDocStore:
             self._records[record.id] = record.model_copy(deep=True)
         return record.model_copy(deep=True)
 
-    async def update(self, record: ApiDocRecord) -> ApiDocRecord:
+    async def update(self, record: ApiDocRecord, *, expected_revision: int | None = None) -> ApiDocRecord:
         async with self._lock:
             if record.id not in self._records:
                 raise KeyError(f"API document not found: {record.id}")
+            if expected_revision is not None and self._records[record.id].catalog_revision != expected_revision:
+                raise ApiDocConflictError("文档已被其他请求修改，请刷新后重试")
             self._records[record.id] = record.model_copy(deep=True)
         return record.model_copy(deep=True)
 
@@ -127,10 +133,12 @@ class JsonApiDocStore(InMemoryApiDocStore):
             self._commit(records, operation="create", doc_id=record.id)
         return record.model_copy(deep=True)
 
-    async def update(self, record: ApiDocRecord) -> ApiDocRecord:
+    async def update(self, record: ApiDocRecord, *, expected_revision: int | None = None) -> ApiDocRecord:
         async with self._lock:
             if record.id not in self._records:
                 raise KeyError(f"API document not found: {record.id}")
+            if expected_revision is not None and self._records[record.id].catalog_revision != expected_revision:
+                raise ApiDocConflictError("文档已被其他请求修改，请刷新后重试")
             records = {**self._records, record.id: record.model_copy(deep=True)}
             self._commit(records, operation="update", doc_id=record.id)
         return record.model_copy(deep=True)
@@ -225,8 +233,8 @@ class PostgresApiDocStore:
     async def create(self, record: ApiDocRecord) -> ApiDocRecord:
         return await asyncio.to_thread(self._create_sync, record)
 
-    async def update(self, record: ApiDocRecord) -> ApiDocRecord:
-        return await asyncio.to_thread(self._update_sync, record)
+    async def update(self, record: ApiDocRecord, *, expected_revision: int | None = None) -> ApiDocRecord:
+        return await asyncio.to_thread(self._update_sync, record, expected_revision)
 
     async def delete(self, doc_id: str) -> ApiDocRecord | None:
         return await asyncio.to_thread(self._delete_sync, doc_id)
@@ -298,15 +306,18 @@ class PostgresApiDocStore:
                 )
         return record
 
-    def _update_sync(self, record: ApiDocRecord) -> ApiDocRecord:
+    def _update_sync(self, record: ApiDocRecord, expected_revision: int | None = None) -> ApiDocRecord:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"UPDATE {self._table} SET project_id = %s, updated_at = %s, record = %s::jsonb "
-                    "WHERE id = %s",
-                    (record.project_id, record.updated_at, self._json(record), record.id),
+                    "WHERE id = %s AND (%s::bigint IS NULL OR COALESCE((record->>'catalog_revision')::bigint, 0) = %s::bigint)",
+                    (record.project_id, record.updated_at, self._json(record), record.id, expected_revision, expected_revision),
                 )
                 if cur.rowcount != 1:
+                    cur.execute(f"SELECT id FROM {self._table} WHERE id = %s", (record.id,))
+                    if cur.fetchone():
+                        raise ApiDocConflictError("文档已被其他请求修改，请刷新后重试")
                     raise KeyError(f"API document not found: {record.id}")
         return record
 

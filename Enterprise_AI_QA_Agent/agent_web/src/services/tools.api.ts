@@ -23,7 +23,7 @@ import type {
   IntegrationTestResponse,
   IntegrationUpdateRequest,
 } from "../types";
-import { request } from "./http";
+import { HttpError, readErrorMessage, request } from "./http";
 
 export function listAgents(): Promise<AgentDescriptor[]> {
   return request("/api/v1/registry/agents");
@@ -160,6 +160,13 @@ export function uploadAttachment(payload: {
 
 export function deleteApiDoc(docId: string): Promise<{ ok: boolean; deleted_id: string }> {
   return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}`, { method: "DELETE" });
+}
+
+export async function downloadApiDocAsset(docId: string, assetId?: string): Promise<Blob> {
+  const base = `/api/v1/registry/api-docs/${encodeURIComponent(docId)}`;
+  const response = await fetch(assetId ? `${base}/assets/${encodeURIComponent(assetId)}` : `${base}/original`);
+  if (!response.ok) throw new HttpError(await readErrorMessage(response), response.status);
+  return response.blob();
 }
 
 export function listIntegrations(): Promise<IntegrationRecord[]> {
