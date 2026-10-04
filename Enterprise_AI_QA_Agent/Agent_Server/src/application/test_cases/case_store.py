@@ -53,6 +53,9 @@ class TestCaseStore(Protocol):
         case_ids: list[str],
     ) -> dict[str, tuple[TestCaseRecord, TestCaseVersionRecord]]: ...
     async def list_versions(self, case_id: str) -> list[TestCaseVersionRecord]: ...
+    async def list_project_current_versions(
+        self, project_id: str, limit: int,
+    ) -> tuple[list[tuple[TestCaseRecord, TestCaseVersionRecord]], bool]: ...
     async def append_version(
         self,
         case_id: str,
@@ -204,6 +207,16 @@ class InMemoryTestCaseStore:
             for version_id in self._version_ids_by_case.get(case_id, [])
         ]
 
+    async def list_project_current_versions(self, project_id, limit):
+        async with self._lock:
+            pairs = [(case, version) for case in self._cases.values()
+                if case.project_id == project_id and case.lifecycle_status != "archived"
+                for version in (self._versions[id] for id in self._version_ids_by_case.get(case.id, []))
+                if version.id == case.active_version_id or version.version == case.latest_version]
+            pairs.sort(key=lambda pair: (pair[0].id, pair[1].version))
+            return [(case.model_copy(deep=True), version.model_copy(deep=True))
+                for case, version in pairs[:limit]], len(pairs) > limit
+
     async def append_version(
         self,
         case_id: str,
@@ -333,6 +346,21 @@ class PostgresTestCaseStore:
 
     async def list_versions(self, case_id: str) -> list[TestCaseVersionRecord]:
         return await asyncio.to_thread(self._list_versions_sync, case_id)
+
+    async def list_project_current_versions(self, project_id, limit):
+        return await asyncio.to_thread(self._list_project_current_versions_sync, project_id, limit)
+
+    def _list_project_current_versions_sync(self, project_id, limit):
+        # One statement snapshot: do not paginate mutable current-version pointers.
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT c.record AS case_record, v.record AS version_record "
+                f"FROM {self._case_table} c JOIN {self._version_table} v ON v.case_id = c.id "
+                "AND (v.id = c.active_version_id OR v.version = c.latest_version) "
+                "WHERE c.project_id = %s AND c.lifecycle_status <> 'archived' "
+                "ORDER BY c.id, v.version LIMIT %s", (project_id, limit + 1))
+            rows = cur.fetchall() or []
+        return [(self._case_from_value(row["case_record"]), self._version_from_value(row["version_record"]))
+            for row in rows[:limit]], len(rows) > limit
 
     async def append_version(
         self,

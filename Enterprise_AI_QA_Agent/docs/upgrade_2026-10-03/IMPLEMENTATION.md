@@ -1730,3 +1730,27 @@ $env:QA_DOCUMENT_GIT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\u
 收尾复核：最终独立 `npm run build` 含类型检查通过（Vite 5.85秒）。新增故障注入复现二进制 TimeoutExpired.stdout 被日志明文输出，`p3-git-timeout-diagnostic-before.xml` 为1失败；超时分支按既有二进制成功/失败诊断记录大小/SHA256，并保留stderr。最终后端132通过（56.76秒）。最后完整产品2项未因该诊断改动重跑，最终前端58项仍对应实际页面来源文字与数字约束。原方案中仍称Git待接入的当前状态已同步修正；历史阶段证据保留。
 
 交付检查：293份相关文件中268份文本进行了凭据格式扫描，URL凭据另核对，无匹配；271份原始证据工作区与暂存字节相同，源码/测试/方案diff检查通过。项目PLAN/Codex镜像字节一致，原附件Git小节正文一致，原附件备份存在。用户.gitignore未暂存；无生产数据迁移，无新依赖，未推送或创建PR。
+
+## P4.1 三方输入实际读取（2026-10-04，基线 4a02ae2）
+
+上一轮为实际进展：Git来源接入/实测/方案同步及提交4a02ae2。本轮重读目标附件、生成来源/完整版本/用例Store/精确资产/解析/比较服务，以及本地数据治理/评测课程，形成P4_DESIGN。未凭文档变化或source_refs数量认定覆盖。确认两项现有错位：旧版本全文入口选择该版本最新解析；追加版本使全用例draft，旧active_version_id保留却退出候选，已有测试还断言此状态。后一缺口本轮实测保存在existing-lifecycle-gap.json，不宣称已修复。
+
+新增内部DocumentImpactSources、输入契约与MySQL配置服务；CaseStore/Service增加单语句项目当前版本读取（内存实现用同一锁），同时读取启用与最新草稿，不按mode过滤；文档服务增加精确文本资产读取，复用原字节验证/解码。默认非归档当前范围，历史/归档版本可显式选择。解析来源按当时快照及完整元数据核对，文本来源按asset/version/hash读取；跨项目/缺失/损坏/部分解析/原生成截断分别留痕，没有最新/预览fallback。保留完整自定义JSON和canonical hash，数量/正文/时间预算从MySQL冻结，超限不截断。
+
+首轮4通过（14.53秒）；补真实图片DOCX及两种Store查询后7通过（16.21秒）；最后补生命周期实测记录后7通过（15.48秒）。扩大回归94通过、2跳过（64.04秒），跳过为当前默认外部模型生成与规划测试。新核心功能用真实MD/DOCX/PDF与真实隔离MySQL/PG/RustFS验收；扩大回归包含既有解析/比较Outbox、Redis与独立CLI。没有运行P4模型、生产P4API/Worker、浏览器或前端构建；无前端/公开契约变更。输入返回内存契约，未冒充已写入影响业务记录；生产初始化、持久影响任务及公开入口尚待接通。
+
+实际命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS='1'
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-impact-input-regression')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_sources.py tests/test_test_case_lifecycle.py tests/test_case_json_templates.py tests/test_test_case_generation_pipeline.py tests/test_case_planning.py tests/test_api_doc_versions.py tests/test_document_parse_tasks.py tests/test_document_difference_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-impact-input-regression.xml
+```
+
+最后单独运行新模块，QA_DOCUMENT_IMPACT_EVIDENCE_DIR指向p4-impact-input-final，XML及stdout/stderr合并日志同名保存。原件、输入、生命周期事实保留。方案与原附件/Codex镜像同步。没有新增依赖/业务表/生产迁移，不推送/建PR；用户.gitignore保留。完整P0—P5未完成；下一步优先解决版本评审/启用状态，接P4持久任务、AI候选、需求评审/追踪与增量草稿，并继续原有其余范围。
+
+交付核对：7份Python实际编译通过；42份文本凭据格式扫描无匹配；39份原始工件与暂存字节一致，4份最终输入canonical hash重算一致；源码/测试/方案diff检查通过。共50份相关文件，用户.gitignore未暂存。项目PLAN与Codex镜像字节一致，原附件已同步当前P4边界，原备份保留。

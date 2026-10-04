@@ -759,6 +759,13 @@ class ApiDocsService:
             raise RuntimeError("文档资产字节与已保存的哈希或大小不一致")
         return asset, content
 
+    async def read_text_asset(self, doc_id: str, asset_id: str) -> tuple[ApiDocumentAsset, str]:
+        """Read an exact text asset without selecting a newer parser snapshot."""
+        asset, content = await self.read_asset(doc_id, asset_id)
+        if Path(asset.filename).suffix.lower() in {".pdf", ".docx"}:
+            raise ValueError("二进制文档必须引用当时的明确解析快照，不能解码原件代替文本")
+        return asset, self._decode_text(content)
+
     async def import_document_from_url(
         self,
         *,

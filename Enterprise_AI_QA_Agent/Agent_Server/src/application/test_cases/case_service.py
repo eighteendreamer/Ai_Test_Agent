@@ -235,6 +235,12 @@ class TestCaseService:
         await self.get_case(case_id)
         return await self._store.list_versions(case_id)
 
+    async def list_project_current_versions(self, project_id: str, limit: int):
+        await self._project_service.get(project_id)
+        if limit < 1:
+            raise ValueError("Current case version limit must be positive")
+        return await self._store.list_project_current_versions(project_id, limit)
+
     async def get_version(self, version_id: str) -> TestCaseVersionRecord:
         version = await self._store.get_version(version_id)
         if version is None:
