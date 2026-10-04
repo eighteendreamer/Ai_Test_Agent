@@ -184,3 +184,19 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_202
 本次输出重定向到p4-manifest-final.log；实际汇总108.09秒。8份源码字节编译通过。原模型HTTP专项3次受控请求仍验，新的清单专项模型调用0；独立规划CLI在最终回归内真实进程中断/重启通过，但清单恢复只是新Store/Service而非独立影响进程。前端/公开契约未改，未重复构建/浏览器，没有默认影响模型或生产历史迁移。新增PG表仅隔离验收；生产初始化/运维迁移仍须接入。
 
 方案/原附件/Codex镜像同步；证据first/verified/final保留，未覆盖历史原件/失败。两次文档patch因段落匹配失败未写入，读取核对后采用精确替换成功。新增测试因现有ignore显式加入；用户.gitignore保持原字节，不提交、不推送、不建PR。P4模型批次/预算/持久响应/候选、需求评审/矩阵/增量及P0—P5其余范围继续。
+
+## 单元模型调用与持久响应〔2026-10-04，基线3d184d5d，内部已验〕
+
+范围清单之后新增DocumentImpactCallService与组合式PostgresDocumentImpactCalls，按固定segment/difference/case准备一次明确单元的请求。它是自动协调器的基础：当前调用方须显式给定单元和固定读取，尚不自动分析全部范围或发布候选。完整用例JSON/说明与来源保留；续读保留全部原消息和完整响应，再追加固定范围。固定输入/清单哈希先核验，超容量拒绝，不删历史或替换旧依据。
+
+独立MySQL配置document.impact_invocation_settings冻结到新任务seed：逻辑调用额度、累计预留估算量、单调用超时、响应字节限制、内容计量方式及封装预留。历史seed保持invocation_snapshot=None，原Input/策略与历史canonical hash不改。默认UTF-8字节估算；显式tiktoken_content只证明选定编码的内容计数，总输入仍estimate，不能证明提供商模型映射/封装或计费。预留输出/封装与窗口核对；每个ready记录占预算，不退款；usage作为供应商回执独立保留。
+
+冻结所选模型实际运行参数：OpenAI原生只openai，LangChain OpenAI增加langchain-openai/core，Anthropic/Google只各自SDK；无关SDK变化不拒绝。复用ModelRuntimeService可选expected_runtime_parameters，既有调用不传时行为保持。调用服务预检和最终dispatch都核对模型、适配器、SDK与超时；已保存响应读取不需要当前模型，原任务deadline不重置。
+
+PG新增独立impact_calls表，task_id关联固定manifest，唯一(task_id,call_key)，记录完整请求/响应的RustFS引用/hash/大小和预算。准备及写入核对固定seed、项目、worker/attempt/token/活租约；任务行锁内预留预算。ready→invoking先提交意图，只有赢家可发送；同初始单元不允许换key悄悄重发。response_saved仅表示回执已持久化，不是validated。意图存在而无响应，新租约标outcome_unknown；超大响应标response_unavailable。显式重试使用新身份、关联旧未知调用、原固定请求与剩余原预算。
+
+PG回执或对象写入不确定传播ImpactCallCheckpointUnavailable，不能赋予发送权。确认拒绝/竞争丢失的请求对象仅在实际PG无引用查询后清理；未知提交保留对象。响应先保存再解析：供应商失败诊断可能含凭据，省略原错误body/message并保存允许元数据/原因；成功SDK原响应保留。截断、空正文、意外工具调用均分类，不执行工具，也不作为有效候选。Worker仍须维持任务租约；该组件没有独立心跳/生产impact Worker。
+
+实测新专项19项，最终11模块101通过0跳过187.90秒，实际MD/DOCX/PDF、MySQL/PG/RustFS和受控本地HTTP。覆盖6组文件×适配器、6协程竞争、完整续读、真实HTTP取消、PG实际提交后丢回执、响应对象失败、预算/历史兼容及失败回执。HTTP500沿用SDK重试，1逻辑意图实际3次HTTP，transport_attempts仍not_observed，生产物理发送追踪归P0。新Store恢复不是独立impact进程恢复；受控固定响应不是默认AI业务影响判断。
+
+下一步按固定清单实现自动协调/跨节读取请求协议、结构化候选与引用核验、覆盖记录与汇总结果；再接生产初始化/API/独立Worker/Outbox/前端及实际默认模型。需求身份/评审/矩阵/增量和环境证据仍待实施。上传无Git依赖及执行模板只生成的约定不变；没有生产迁移或新依赖。

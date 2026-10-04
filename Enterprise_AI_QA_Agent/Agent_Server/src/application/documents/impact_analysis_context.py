@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.metadata
 import json
 import logging
 
@@ -15,6 +16,7 @@ from src.schemas.document_impact_analysis import (
     DocumentImpactProjectSnapshot, DocumentImpactPromptSnapshot,
 )
 from src.schemas.model_config import ModelInvocationRequest, model_invocation_parameters
+from src.schemas.document_impact_calls import DocumentImpactInvocationSnapshot
 from src.application.documents.impact_sources import DocumentImpactSources
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,12 @@ class DocumentImpactAnalysisContexts:
 
     async def capture_batch_settings(self, project_id):
         return await self._configs.get_batch_settings(project_id)
+
+    async def capture_invocation_snapshot(self, project_id, model_key):
+        config = await self._configs.get_invocation_settings(project_id)
+        version = importlib.metadata.version("tiktoken") if config.payload.token_method == "tiktoken_content" else None
+        return DocumentImpactInvocationSnapshot(config=config, tokenizer_version=version,
+            runtime_parameters=await asyncio.to_thread(self._models.get_invocation_runtime_parameters, model_key))
 
     async def capture(self, project, request):
         config = await self._configs.get_analysis_settings(project.id)

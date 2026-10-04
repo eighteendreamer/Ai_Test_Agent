@@ -1950,3 +1950,32 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_202
 方案/原附件/Codex镜像同步；证据first/verified/final保留，未覆盖历史原件/失败。两次文档patch因段落匹配失败未写入，读取核对后采用精确替换成功。新增测试因现有ignore显式加入；用户.gitignore保持原字节，不提交、不推送、不建PR。P4模型批次/预算/持久响应/候选、需求评审/矩阵/增量及P0—P5其余范围继续。
 
 交付暂存复核：122份相关文件，110份原始证据/验证元数据与暂存字节相同；3份方案全文相同、20个本地链接存在、8份源码字节编译通过。旧三份固定输入canonical hash及旧规划CLI原件保持不变；凭据格式扫描无匹配。最终暂存diff检查通过；用户.gitignore原SHA-256保持不变且未暂存。测试会话均已结束，无生产迁移/默认模型/前端改动，完整目标仍未完成。
+
+## 固定单元调用、预算及持久响应（2026-10-04，研究基线3d184d5d）
+
+继续按目标附件研究ModelRuntimeService/原生与LangChain适配器、planning意图/响应、impact固定范围/租约/对象补偿及本地Agent协议课程。新增独立调用schema/service与组合式PG调用Store，MySQL独立策略document.impact_invocation_settings，RustFS存请求/完整成功SDK响应，PG存immutable引用/hash/大小/预算/状态。没有往旧Input或策略补默认字段，历史seed无快照保持None；新任务才冻结调用策略和实际SDK/适配器/超时。只固定实际使用的SDK，无关提供商依赖变化不阻断。原模型invoke可选运行参数核对，旧消费者兼容。
+
+固定segment/difference/case请求支持显式追加固定读及完整消息/响应续读，不截断完整JSON。计量默认字节估算，显式tiktoken只证明选定编码内容，封装/模型映射未证，总预算仍estimate。ready原子占预留和逻辑调用额度，输出/窗口/字节限制核对；不退款，不伪装精确计费。ready→invoking意图先存，唯一send赢家；response_saved先存回执再解析。未知提交/取消保留意图，新租约标未知，显式重试新身份引用旧调用且仍占预算，原deadline不变。当前没有自动协调/候选解析/独立影响Worker。
+
+实际PG准备/意图/响应提交后丢回执不再授权发送；RustFS响应写失败保留invoking，恢复标未知不重发。竞争丢失/确认拒绝的请求对象经PG无引用检查才清理，未知提交保留；错误留下结构化阶段日志。供应商失败诊断省略可能含凭据的原body/message，保留允许元数据；成功SDK原响应保留。截断/空/工具/超响应限制有明确分类，不执行工具或当候选成功。SDK重试沿用既有配置，HTTP500真实1逻辑意图3次HTTP；记录not_observed而非伪造物理发送计数。
+
+首轮30通过0跳过132.97秒，扩大11模块101通过0跳过181.62秒；扩大进程启动后有运行参数调整及最后测试新增，所以保留其证据但不将它作为最终源码验证。收紧仅实际模型SDK并补响应对象失败测试后的最终命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-calls-verified')
+$env:QA_DOCUMENT_IMPACT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-calls-sources-verified')
+$env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p4-calls-planning-verified')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_calls.py tests/test_document_impact_batches.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_case_planning_tasks.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_skill_registry_reload.py tests/test_skill_management_boundaries.py tests/test_test_case_generation_pipeline.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-calls-verified.xml *> ../docs/upgrade_2026-10-03/p4-calls-verified.log
+```
+
+最终101通过0跳过187.90秒。新增19项含MD/DOCX/PDF×两适配器6组HTTP/完整12步JSON、6路并发、完整跨节续读、真实在途HTTP取消/未知恢复/显式重试、PG实际提交回执丢失、失败/部分/超大回执、内容计数、模型/SDK/超时核对、累计额度/对象损坏/旧快照以及响应对象失败。相同单元不能用新key隐式重发；旧attempt写入和终态重领取拒绝。独立规划CLI真实kill/restart在相关回归内通过；impact恢复只是新Store/Service，同PG/RustFS，不冒充独立影响进程。受控HTTP固定文本不等于AI业务判断；没有默认模型、生产impact初始化/入口/Worker/前端或生产迁移验收，完整P0—P5仍未完成。
+
+按用户“那不更新这个方案”，补充PLAN最新状态、实际验证和待实施内容，并全文同步原附件与Codex镜像。复核上传代码仍直接对象存储/版本事务，不调用Git；上传不要求Git缓存的说明与V1/V2例子保留。查attributes最初误查项目根与父根，找到实际docs目录后只追加新证据raw-byte规则；Git源码路径误用git_document_service，实际为git_service，定位后复核。新测试显式force-add，不修改用户.gitignore。源码字节编译/历史hash/三份方案/本地引用/凭据格式与暂存原件字节结果见p4-calls-validation.json。无公开前后端契约改变，因此没有重复前端构建/浏览器；无推送或PR。
+
+凭据格式扫描首轮把历史工件名中的task-子串误判为sk-格式；脱敏上下文复核确认是文件名，增加前置字母数字边界后重新扫描。没有输出匹配原文或更改历史证据。
+
+最终交付核对：245份相关文件，230份原始证据逐份与暂存字节一致；验证元数据另核字节，不包含自引用哈希。三份方案全文一致、21个本地链接存在、10份Python源码/测试字节编译通过；旧三份输入canonical/object hash及旧规划CLI原件不变。最终暂存diff检查通过；用户.gitignore保持原SHA-256且未暂存。最终101项测试进程已退出，未进行生产迁移/默认模型/前端验收，完整目标仍在推进。

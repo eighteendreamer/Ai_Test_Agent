@@ -11,6 +11,7 @@ from src.schemas.document_differences import DocumentDifferenceResult, DocumentD
 from src.schemas.document_parsing import DocumentParseSnapshotView
 from src.schemas.document_impact_analysis import DocumentImpactAnalysisContext
 from src.schemas.document_impact_batches import DocumentImpactBatchSettings
+from src.schemas.document_impact_calls import DocumentImpactInvocationSnapshot
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -97,6 +98,7 @@ class DocumentImpactSourceSeed(BaseModel):
     cases: list[DocumentImpactCaseReference]
     analysis_context: DocumentImpactAnalysisContext | None = None
     batch_settings: DocumentImpactBatchSettings | None = None
+    invocation_snapshot: DocumentImpactInvocationSnapshot | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")

@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import contextvars
+import importlib.metadata
 import json
 import logging
 import os
@@ -66,6 +67,18 @@ class ModelRuntimeService:
         except KeyError:
             return None
 
+    def get_invocation_runtime_parameters(self, model_key: str) -> dict[str, Any]:
+        config = self.get_model_config(model_key)
+        if config is None:
+            raise ValueError("没有可用模型，不能固定调用运行参数")
+        adapter = config.transport == "openai_chat_completions" and bool(self._settings.model.langchain_model_adapter_enabled)
+        dependencies = (["openai", "langchain-openai", "langchain-core"] if adapter else ["openai"]) if config.transport in {
+            "openai_chat_completions", "openai_responses"} else ["anthropic"] if config.transport == "anthropic_messages" else ["google-genai"]
+        return {"langchain_model_adapter_enabled": adapter,
+            "llm_request_timeout_seconds": self._settings.model.llm_request_timeout_seconds,
+            "sdk_retry_policy": "existing_provider_defaults",
+            "dependency_versions": {name: importlib.metadata.version(name) for name in dependencies}}
+
     async def resolve_langchain_chat_model(self, model_key: str) -> Any:
         """Resolve a database-backed LangChain chat model for a harness.
 
@@ -93,7 +106,12 @@ class ModelRuntimeService:
         model_key: str,
         request: ModelInvocationRequest,
         *, expected_parameters: dict[str, Any] | None = None,
+        expected_runtime_parameters: dict[str, Any] | None = None,
     ) -> ModelInvocationResult:
+        if (expected_runtime_parameters is not None and
+            self.get_invocation_runtime_parameters(model_key) != expected_runtime_parameters):
+            logger.warning("model_invocation_runtime_changed", extra={"model_key": model_key})
+            raise ValueError("模型调用适配器、SDK或超时设置已变化，不能续写原任务")
         try:
             config = self._model_registry.get_runtime_config(model_key)
         except KeyError:

@@ -52,6 +52,7 @@ class DocumentImpactTaskService:
         try:
             context = await self._analysis_contexts.capture(project, request)
             batch_settings = await self._analysis_contexts.capture_batch_settings(project.id)
+            invocation_snapshot = await self._analysis_contexts.capture_invocation_snapshot(project.id, context.model.key)
         except (ValueError, KeyError, OSError, RuntimeError) as exc:
             logger.warning("document_impact_analysis_context_rejected", extra={"project_id": project_id,
                 "document_id": document_id, "error_type": type(exc).__name__})
@@ -59,6 +60,7 @@ class DocumentImpactTaskService:
         seed = await self._sources.capture(project_id, document_id, request.difference_snapshot_id, request)
         seed.analysis_context = context
         seed.batch_settings = batch_settings
+        seed.invocation_snapshot = invocation_snapshot
         return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)
 
     async def get(self, project_id, document_id, task_id):
