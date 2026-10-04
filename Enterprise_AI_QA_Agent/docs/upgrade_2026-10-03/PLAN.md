@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-05。本次方案核对基线：`d4a3d636`。本轮接入文档影响正式 API、共用依赖装配和独立 Worker，前端同步 API/类型；真实进程及存储验证见3.5.6和第六节。上传与可选 Git 的入口、版本归属及验收边界继续保留。最近实施已增加内部自动补读、规则候选到完整用例的传递、全范围结果快照及共享租约Handler；其验证记录在第六节，研究基线仍为当时的 `9be9bfd8`。正式 App/任务池、默认模型语义、需求评审/矩阵及完整P0—P5仍未完成。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
+修订日期：2026-10-05。本次方案核对基线：`70513c1c`。本次直接修订这份方案：在3.1.1补充上传独立于Git的可行性结论、代码位置及已有验证证据；同步用户粘贴原件、项目方案和Codex计划镜像。此前已接入文档影响正式 API、共用依赖装配和独立 Worker，前端同步 API/类型；真实进程及存储验证见3.5.6和第六节。上传与可选 Git 的入口、版本归属及验收边界继续保留。最近实施已增加内部自动补读、规则候选到完整用例的传递、全范围结果快照及共享租约Handler；其验证记录在第六节，研究基线仍为当时的 `9be9bfd8`。正式 App/任务池、默认模型语义、需求评审/矩阵及完整P0—P5仍未完成。本文同时更新用户粘贴的原方案与 Codex 计划镜像；三份正文保持一致。原始备份保留，此前方案另存 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史实施和失败证据见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“待实现”只表示当时状态，当前状态以本文第六节为准。
 
 方案中的目标行为与实际内部/公开能力分开。完整 P0—P5 尚未完成。
 
@@ -179,6 +179,20 @@ OpenAPI/Postman/HAR转Markdown及项目URL派生修改均不覆盖原件。旧�
 因此，可交替来源只是一项显式操作能力，不是每次上传必须走的流程，也不是自动绑定来源。来源信息属于各次提交/版本的记录；上传来源没有 commit/blob 时保持为空，不生成虚构 Git 元数据。
 
 本节验收按两个入口分别执行：未配置任何 Git 来源时完成 V1 上传、V2 追加、原件下载及快照比较；普通入口同名文件保持独立；同请求恢复与并发父版本冲突按已有提交机制核对。可选 Git 另验固定 commit、脏工作区和仓库移除后的历史读取。测试记录中的源码核对、隔离存储专项与正式 App 验收分别标明，不能以一种结果替代另一种。
+
+### 3.1.1 可行性结论与具体实现依据
+
+**可以做，普通上传及其新旧版本比较已经具有独立实现。** 新文件上传保存原件；在指定文档下上传修改后的文件追加版本；比较固定双方解析快照。这里的应用版本记录无需Git缓存。上传与Git的共同部分是取得文件后的保存、解析和比较服务；来源入口分别处理。
+
+| 已核对的代码位置 | 实际行为及方案采用方式 |
+|---|---|
+| [普通上传路由](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/api_docs.py:54) | 调用上传服务，不传Git来源或读取仓库；普通入口负责创建新文档 |
+| [新版本上传](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:423) | 依据明确document_id和预期父版本追加；与当前原件相同则返回当前版本；父版本变化返回冲突 |
+| [原件保存](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:550) | 原件按文档/版本路径保存对象存储；派生内容独立保存，不覆盖原件 |
+| [固定快照比较](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py:48) | 提交比较任务时固定双方依据，后续比较依赖系统已保存的版本及解析快照 |
+| [可选Git导入](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/git_service.py:101) | 这个独立入口才只读取得指定commit/blob的文件字节，然后调用上传/新版本服务 |
+
+此前[文档解析与比较验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-document-difference-final-delivery.xml)为57通过、0失败、0跳过，其中包含MD/DOCX/PDF真实上传版本及存储快照比较；[可选Git产品验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-git-full-product-final.xml)为2通过、0失败、0跳过。它们分别证明对应链路，不能把Git验证当成普通上传的前提。本次为方案修订，核对原记录，没有重新运行这些功能测试；生产历史数据迁移及未完成项仍按第六节跟踪。
 
 ### 3.2 Git 仅作独立可选来源
 
@@ -423,7 +437,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下是 `d4a3d636` 基线及本轮生产接入后的状态。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；本轮生产进程与相关回归另列，历史测试数量不累计成覆盖数。前端API/类型与公开影响API已同步，正式页面/任务池未接，未进行生产迁移。
+以下是截至 `70513c1c` 的状态；各历史专项保留原研究基线与实际运行记录。本次仅修订方案表述及依据，不新增功能验收结论。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；本轮生产进程与相关回归另列，历史测试数量不累计成覆盖数。前端API/类型与公开影响API已同步，正式页面/任务池未接，未进行生产迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
