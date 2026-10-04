@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.application.documents.api_docs_service import ApiDocsService
+from src.schemas.api_docs import ApiDocRecord
 from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
@@ -85,6 +86,15 @@ class ProjectTestCaseContextProvider:
             if limit <= 0:
                 break
             content = await self._api_docs.read_document_content(doc.id, max_chars=limit)
+            if content.get("read_error"):
+                raise ValueError("API document content cannot be read; preview cannot replace generation evidence")
+            doc = ApiDocRecord.model_validate(content.get("document"))
+            if doc.project_id != project.id:
+                raise ValueError("API document is no longer bound to the current project")
+            asset = content.get("content_asset") or {}
+            source_metadata = {"format_label": doc.format_label,
+                "content_asset_id": asset.get("id"), "content_sha256": content.get("content_sha256"),
+                "catalog_revision": doc.catalog_revision, "truncated": bool(content.get("truncated"))}
             text = str(content.get("content") or "")[:limit]
             remaining_chars -= len(text)
             api_documents.append(
@@ -95,6 +105,8 @@ class ProjectTestCaseContextProvider:
                     "project_url": doc.project_url,
                     "format_label": doc.format_label,
                     "updated_at": doc.updated_at.isoformat(),
+                    "version_id": doc.current_version_id,
+                    **source_metadata,
                     "content": text,
                     "truncated": bool(content.get("truncated")),
                 }
@@ -103,10 +115,10 @@ class ProjectTestCaseContextProvider:
                 {
                     "source_type": "api_doc",
                     "source_id": doc.id,
-                    "version": doc.updated_at.isoformat(),
+                    "version": doc.current_version_id or doc.updated_at.isoformat(),
                     "label": doc.title,
                     "uri": doc.storage_uri,
-                    "metadata": {"format_label": doc.format_label},
+                    "metadata": source_metadata,
                 }
             )
 

@@ -12,6 +12,8 @@ from src.schemas.api_docs import (
     ApiDocImportUrlRequest,
     ApiDocUpdateRequest,
     ApiDocUploadRequest,
+    ApiDocVersionUploadRequest,
+    ApiDocHistoryInitRequest,
 )
 
 router = APIRouter(prefix="/registry/api-docs", tags=["api-docs"])
@@ -52,6 +54,7 @@ async def get_api_doc(doc_id: str, request: Request):
 async def upload_api_doc(payload: ApiDocUploadRequest, request: Request):
     try:
         return await request.app.state.api_docs_service.upload_document(
+            request_id=payload.request_id,
             filename=payload.filename,
             content_base64=payload.content_base64,
             source=payload.source,
@@ -60,12 +63,110 @@ async def upload_api_doc(payload: ApiDocUploadRequest, request: Request):
             project_name=payload.project_name,
             project_url=payload.project_url,
         )
-    except KeyError as exc:
+    except (ApiDocNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ApiDocConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
     except Exception as exc:
         _raise_api_doc_internal_error(exc, operation="upload")
+
+
+@router.get("/{doc_id}/versions")
+async def list_api_doc_versions(doc_id: str, request: Request,
+    limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    try:
+        return await request.app.state.api_docs_service.list_versions(doc_id, limit, offset)
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="list_versions", doc_id=doc_id)
+
+
+@router.get("/upload-submissions/{request_id}")
+async def get_api_doc_upload_submission(request_id: str, request: Request, project_id: str | None = None):
+    try:
+        return await request.app.state.api_docs_service.get_upload_submission(request_id, project_id)
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="get_upload_submission")
+
+
+@router.get("/{doc_id}/submissions/{request_id}")
+async def get_api_doc_version_submission(doc_id: str, request_id: str, request: Request, project_id: str):
+    try:
+        return await request.app.state.api_docs_service.get_version_submission(doc_id, request_id, project_id)
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="get_version_submission", doc_id=doc_id)
+
+
+@router.post("/{doc_id}/versions")
+async def upload_api_doc_version(doc_id: str, payload: ApiDocVersionUploadRequest, request: Request):
+    try:
+        return await request.app.state.api_docs_service.upload_version(doc_id, payload)
+    except (ApiDocNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ApiDocConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="upload_version", doc_id=doc_id)
+
+
+@router.get("/{doc_id}/versions/{version_id}")
+async def get_api_doc_version(doc_id: str, version_id: str, request: Request):
+    try:
+        return await request.app.state.api_docs_service.get_version(doc_id, version_id)
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="get_version", doc_id=doc_id)
+
+
+@router.get("/{doc_id}/versions/{version_id}/original")
+async def download_api_doc_version_original(doc_id: str, version_id: str, request: Request):
+    try:
+        service = request.app.state.api_docs_service
+        version = await service.get_version(doc_id, version_id)
+        if version.snapshot.original_asset is None:
+            raise ApiDocNotFoundError("此版本的历史原件缺失")
+        asset, content = await service.read_asset(doc_id, version.snapshot.original_asset.id)
+        return Response(content=content, media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(asset.filename, safe='')}"})
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="read_version_original", doc_id=doc_id)
+
+
+@router.get("/{doc_id}/versions/{version_id}/content")
+async def read_api_doc_version_content(doc_id: str, version_id: str, request: Request,
+    max_chars: int = Query(default=20000, ge=1, le=200000)):
+    try:
+        return await request.app.state.api_docs_service.read_version_content(doc_id, version_id, max_chars=max_chars)
+    except ApiDocNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="read_version_content", doc_id=doc_id)
+
+
+@router.post("/{doc_id}/history-initialization")
+async def initialize_api_doc_history(doc_id: str, payload: ApiDocHistoryInitRequest, request: Request):
+    try:
+        return await request.app.state.api_docs_service.initialize_document_history(doc_id, payload)
+    except (ApiDocNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ApiDocConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409 if "archived" in str(exc) else 400, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_api_doc_internal_error(exc, operation="initialize_history", doc_id=doc_id)
 
 
 @router.get("/{doc_id}/original")

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useMessage, NSelect } from "naive-ui";
 
 import { api } from "../../../services/api";
+import { HttpError } from "../../../services/http";
 import { t } from "../../../services/i18n";
 import type {
   ApiDocRecord,
@@ -13,6 +14,8 @@ import type {
 } from "../../../types";
 import { formatServerDateTime } from "../../../utils/datetime";
 import ApiDocAssets from "./ApiDocAssets.vue";
+import ApiDocVersions from "./ApiDocVersions.vue";
+import { documentFileBase64, prepareDocumentRequest, readDocumentRequest, type PendingDocumentRequest } from "./documentUploadRequest";
 
 type ImportMode = "local" | "url" | "integration";
 
@@ -31,6 +34,9 @@ const deletingId = ref("");
 const uploadOpen = ref(false);
 const uploadLoading = ref(false);
 const uploadMode = ref<ImportMode>("local");
+const localRequestKey = "qa-agent:api-doc-upload";
+const pendingUpload = ref<PendingDocumentRequest | null>(null);
+const localRejected = ref(false);
 
 const uploadFile = ref<File | null>(null);
 const uploadTitle = ref("");
@@ -175,6 +181,16 @@ function upsertDoc(doc: ApiDocRecord) {
 function handleOpenUpload() {
   uploadOpen.value = true;
   resetUploadForm();
+  try {
+    pendingUpload.value = readDocumentRequest(localRequestKey);
+    if (pendingUpload.value) {
+      uploadProjectId.value = pendingUpload.value.project_id;
+      uploadTitle.value = pendingUpload.value.title || "";
+      uploadProjectUrl.value = pendingUpload.value.project_url || "";
+    }
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : t("apiDocs.pending_invalid"));
+  }
 }
 
 function handleExternalOpenUpload() {
@@ -197,16 +213,32 @@ function onUploadFileChange(event: Event) {
   uploadFile.value = input.files?.[0] ?? null;
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      resolve(result.includes(",") ? result.split(",")[1] : result);
-    };
-    reader.onerror = () => reject(reader.error || new Error(t("apiDocs.read_file_failed")));
-    reader.readAsDataURL(file);
-  });
+async function recoverLocalUpload(resetRejected = false) {
+  if (!pendingUpload.value || uploadLoading.value) return;
+  uploadLoading.value = true;
+  try {
+    const saved = await api.getApiDocUploadSubmission(pendingUpload.value.request_id, pendingUpload.value.project_id);
+    upsertDoc(await api.getApiDoc(saved.id));
+    sessionStorage.removeItem(localRequestKey);
+    pendingUpload.value = null;
+    await loadDocs();
+    closeUpload();
+    toast.success(t("apiDocs.imported_success"));
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404 && resetRejected && localRejected.value) {
+      sessionStorage.removeItem(localRequestKey);
+      pendingUpload.value = null;
+      localRejected.value = false;
+    } else {
+      toast.error(err instanceof Error ? err.message : t("apiDocs.import_failed"));
+    }
+  } finally { uploadLoading.value = false; }
+}
+
+function updateVersionDocument(doc: ApiDocRecord) {
+  selectedDoc.value = doc;
+  syncPreviewForm(doc);
+  upsertDoc(doc);
 }
 
 async function loadDocs() {
@@ -277,6 +309,7 @@ async function loadIntegrationImportCatalog(integrationId: string, workspaceId?:
 }
 
 async function submitUpload() {
+  if (uploadLoading.value) return;
   uploadLoading.value = true;
   try {
     let created: ApiDocRecord;
@@ -285,15 +318,21 @@ async function submitUpload() {
         toast.error(t("apiDocs.select_local_file"));
         return;
       }
-      const contentBase64 = await fileToBase64(uploadFile.value);
-      created = await api.uploadApiDoc({
+      const contentBase64 = await documentFileBase64(uploadFile.value);
+      const body = {
         filename: uploadFile.value.name,
         content_base64: contentBase64,
         source: "tools_api_docs_local",
         title: uploadTitle.value.trim() || null,
         project_id: uploadProjectId.value,
         project_url: uploadProjectUrl.value.trim() || null,
-      });
+      };
+      pendingUpload.value = await prepareDocumentRequest(localRequestKey, body, { operation: "upload",
+        project_id: body.project_id, filename: body.filename, title: body.title, project_url: body.project_url });
+      const submitted = await api.uploadApiDoc({ ...body, request_id: pendingUpload.value.request_id });
+      created = await api.getApiDoc(submitted.id);
+      sessionStorage.removeItem(localRequestKey);
+      pendingUpload.value = null;
     } else if (uploadMode.value === "url") {
       if (!remoteUrl.value.trim()) {
         toast.error(t("apiDocs.enter_doc_url"));
@@ -332,6 +371,7 @@ async function submitUpload() {
     toast.success(t("apiDocs.imported_success"), { duration: 2200 });
     setTimeout(() => closeUpload(), 280);
   } catch (err) {
+    if (err instanceof HttpError) localRejected.value = [400, 409, 422].includes(err.status);
     toast.error(err instanceof Error ? err.message : t("apiDocs.import_failed"));
   } finally {
     uploadLoading.value = false;
@@ -598,6 +638,9 @@ onBeforeUnmount(() => {
             </div>
 
             <ApiDocAssets :key="selectedDoc.id" :document="selectedDoc" />
+            <ApiDocVersions :key="selectedDoc.id" :document="selectedDoc"
+              :can-write="projects.some(project => project.id === selectedDoc?.project_id && project.status === 'active')"
+              @updated="updateVersionDocument" />
 
             <div v-if="selectedDoc.preview_error" class="preview-inline-error">{{ selectedDoc.preview_error }}</div>
             <div v-else class="preview-code-shell">
@@ -630,6 +673,11 @@ onBeforeUnmount(() => {
           </div>
 
           <template v-if="uploadMode === 'local'">
+            <div v-if="pendingUpload" class="pending-request">
+              <p>{{ t("apiDocs.pending_upload") }} {{ pendingUpload.filename }}</p>
+              <button class="secondary-btn" :disabled="uploadLoading" @click="recoverLocalUpload()">{{ t("apiDocs.find_submission") }}</button>
+              <button v-if="localRejected" class="secondary-btn" :disabled="uploadLoading" @click="recoverLocalUpload(true)">{{ t("apiDocs.reset_rejected_upload") }}</button>
+            </div>
             <label class="upload-drop">
               <i class="fa-solid fa-file-arrow-up"></i>
               <strong>{{ uploadFile?.name || t("apiDocs.select_local_file") }}</strong>

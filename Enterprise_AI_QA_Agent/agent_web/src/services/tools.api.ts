@@ -16,6 +16,11 @@ import type {
   ApiDocImportUrlRequest,
   ApiDocUploadRequest,
   ApiDocUpdateRequest,
+  ApiDocVersionRecord,
+  ApiDocVersionResult,
+  ApiDocVersionUploadRequest,
+  ApiDocHistoryInitRequest,
+  ApiDocContentResult,
   UploadedAttachmentRecord,
   IntegrationRecord,
   IntegrationCreateRequest,
@@ -124,6 +129,33 @@ export function uploadApiDoc(payload: ApiDocUploadRequest): Promise<ApiDocRecord
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function getApiDocUploadSubmission(requestId: string, projectId?: string | null): Promise<ApiDocRecord> {
+  const params = new URLSearchParams();
+  if (projectId) params.set("project_id", projectId);
+  return request(`/api/v1/registry/api-docs/upload-submissions/${encodeURIComponent(requestId)}?${params}`);
+}
+
+export function listApiDocVersions(docId: string, offset = 0): Promise<ApiDocVersionRecord[]> {
+  return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}/versions?limit=20&offset=${offset}`);
+}
+
+export function uploadApiDocVersion(docId: string, payload: ApiDocVersionUploadRequest): Promise<ApiDocVersionResult> {
+  return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}/versions`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function initializeApiDocHistory(docId: string, payload: ApiDocHistoryInitRequest): Promise<ApiDocVersionResult> {
+  return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}/history-initialization`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getApiDocVersionSubmission(docId: string, requestId: string, projectId: string): Promise<ApiDocVersionResult> {
+  const params = new URLSearchParams({ project_id: projectId });
+  return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}/submissions/${encodeURIComponent(requestId)}?${params}`);
+}
+
+export function readApiDocVersionContent(docId: string, versionId: string): Promise<ApiDocContentResult> {
+  return request(`/api/v1/registry/api-docs/${encodeURIComponent(docId)}/versions/${encodeURIComponent(versionId)}/content`);
 }
 
 export function importApiDocFromUrl(payload: ApiDocImportUrlRequest): Promise<ApiDocRecord> {

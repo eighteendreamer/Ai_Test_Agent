@@ -10,14 +10,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 import httpx
 
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.security.upload_security_service import UploadSecurityService
 from src.core.config import Settings
-from src.schemas.api_docs import ApiDocRecord, ApiDocumentAsset, UploadedAttachmentRecord
+from src.schemas.api_docs import (ApiDocRecord, ApiDocumentAsset, UploadedAttachmentRecord,
+    ApiDocVersionRecord, ApiDocSubmission, ApiDocVersionResult, ApiDocVersionUploadRequest, ApiDocHistoryInitRequest)
+from src.application.documents.api_doc_store import ApiDocConflictError
 from src.schemas.integration import IntegrationRecord
 from src.application.documents.api_doc_store import ApiDocStore, JsonApiDocStore
 from src.application.projects.project_service import ProjectService
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 # bound the number of URLs supplied by an untrusted documentation page.
 MAX_DISCOVERY_CANDIDATES = 64
 MAX_REMOTE_REDIRECTS = 20
+DOCUMENT_UPLOAD_NAMESPACE = UUID("b5d9e41a-59e6-46ec-a24a-b3d8a8d485c7")
 
 
 class ApiDocNotFoundError(ValueError):
@@ -83,20 +86,37 @@ class ApiDocsService:
 
     async def read_document_content(self, doc_id: str, *, max_chars: int | None = None) -> dict[str, Any]:
         record = await self.get_document(doc_id)
+        return await self._read_record_content(record, max_chars=max_chars)
+
+    async def read_version_content(self, doc_id: str, version_id: str, *, max_chars: int | None = None) -> dict[str, Any]:
+        version = await self.get_version(doc_id, version_id)
+        return await self._read_record_content(version.snapshot, max_chars=max_chars)
+
+    async def _read_record_content(self, record: ApiDocRecord, *, max_chars: int | None = None) -> dict[str, Any]:
         content = record.preview_text or ""
         read_error: str | None = None
+        content_asset = next((asset for asset in [*record.derived_assets,
+            *([record.original_asset] if record.original_asset else [])] if asset.storage_uri == record.storage_uri), None)
+        content_sha256 = None
         if record.storage_uri:
             try:
                 stored = await self._artifact_storage_service.read_object_uri(record.storage_uri)
-                decoded = self._decode_text(stored.get("content", b""))
-                if decoded:
-                    content = decoded
+                raw = stored["content"]
+                content_sha256 = hashlib.sha256(raw).hexdigest()
+                if content_asset and (content_sha256 != content_asset.sha256 or len(raw) != content_asset.size_bytes):
+                    raise RuntimeError("文档内容资产大小或哈希不一致")
+                content = self._decode_text(raw)
             except Exception as exc:
-                read_error = str(exc)
+                content_sha256 = None
+                read_error = "文档完整内容无法读取或资产校验失败"
+                logger.error("api_doc_content_read_failed", extra={"api_doc_id": record.id,
+                    "version_id": record.current_version_id, "error_type": type(exc).__name__})
+        else:
+            read_error = "文档完整内容地址缺失"
 
         full_length = len(content)
         limit = max_chars if isinstance(max_chars, int) and max_chars > 0 else None
-        truncated = bool(limit and full_length > limit)
+        truncated = bool((limit and full_length > limit) or (read_error and record.preview_truncated))
         if limit:
             content = content[:limit]
 
@@ -106,6 +126,8 @@ class ApiDocsService:
             "full_length": full_length,
             "truncated": truncated,
             "read_error": read_error,
+            "content_asset": content_asset.model_dump(mode="json") if content_asset else None,
+            "content_sha256": content_sha256,
         }
 
     async def search_documents(
@@ -282,9 +304,191 @@ class ApiDocsService:
             },
         }
 
-    async def upload_document(
+    async def upload_document(self, *, filename: str, content_base64: str,
+        source: str = "manual_upload", title: str | None = None, project_id: str | None = None,
+        project_name: str | None = None, project_url: str | None = None,
+        content_type: str | None = None, request_id: str | None = None) -> ApiDocRecord:
+        parameters = {"filename": filename, "content_base64": content_base64, "source": source,
+            "title": self._normalize_optional_text(title), "project_id": project_id,
+            "project_name": self._normalize_optional_text(project_name),
+            "project_url": self._normalize_optional_text(project_url),
+            "content_type": self._normalize_optional_text(content_type)}
+        # Existing callers without a request identity retain independent uploads.
+        identity = request_id or str(uuid4())
+        doc_id = str(uuid5(DOCUMENT_UPLOAD_NAMESPACE, f"{parameters.get('project_id') or 'unbound'}:{identity}"))
+        request_hash = self._upload_hash(parameters)
+        existing = await self._replay_submission(doc_id, identity, request_hash)
+        if existing:
+            return existing.result.document
+        record = await self._prepare_document_assets(doc_id=doc_id, **parameters)
+        version = self._version(record, None)
+        submission = ApiDocSubmission(document_id=doc_id, request_id=identity, request_hash=request_hash,
+            result=ApiDocVersionResult(document=record, version=version, created_new=True))
+        saved = await self._save_version_submission(record, version, submission, expected_revision=None)
+        return saved.result.document
+
+    @staticmethod
+    def _upload_hash(parameters: dict[str, Any]) -> str:
+        normalized = {**parameters}
+        content = ApiDocsService._decode_base64(str(normalized.pop("content_base64")))
+        normalized["content_hash"] = hashlib.sha256(content).hexdigest()
+        return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+    async def _replay_submission(self, doc_id: str, request_id: str, request_hash: str) -> ApiDocSubmission | None:
+        saved = await self._catalog_store.get_submission(doc_id, request_id)
+        if saved:
+            current = await self.get_document(doc_id)
+            if current.project_id != saved.result.document.project_id:
+                raise ApiDocNotFoundError("文档不属于提交时的项目")
+        if saved and saved.request_hash != request_hash:
+            raise ApiDocConflictError("同一提交身份不能使用不同的文档内容或参数")
+        return saved
+
+    async def get_upload_submission(self, request_id: str, project_id: str | None) -> ApiDocRecord:
+        doc_id = str(uuid5(DOCUMENT_UPLOAD_NAMESPACE, f"{project_id or 'unbound'}:{request_id}"))
+        return (await self.get_version_submission(doc_id, request_id, project_id)).document
+
+    async def get_version_submission(self, doc_id: str, request_id: str, project_id: str | None) -> ApiDocVersionResult:
+        current = await self.get_document(doc_id)
+        if current.project_id != project_id:
+            raise ApiDocNotFoundError("文档不属于当前项目")
+        saved = await self._catalog_store.get_submission(doc_id, request_id)
+        if saved is None or saved.result.document.project_id != project_id:
+            raise ApiDocNotFoundError("未找到此项目的文档提交记录")
+        return saved.result
+
+    @staticmethod
+    def _version(record: ApiDocRecord, parent: str | None) -> ApiDocVersionRecord:
+        return ApiDocVersionRecord(id=record.current_version_id, document_id=record.id,
+            version=record.version_number, parent_version_id=parent, created_at=record.updated_at,
+            snapshot=record.model_copy(deep=True))
+
+    async def upload_version(self, doc_id: str, payload: ApiDocVersionUploadRequest) -> ApiDocVersionResult:
+        current = await self.get_document(doc_id)
+        if current.project_id != payload.project_id:
+            raise ApiDocNotFoundError("文档不属于当前项目")
+        parameters = payload.model_dump(exclude={"request_id"})
+        request_hash = self._upload_hash(parameters)
+        existing = await self._replay_submission(doc_id, payload.request_id, request_hash)
+        if existing:
+            if existing.result.document.project_id != payload.project_id:
+                raise ApiDocNotFoundError("文档不属于当前项目")
+            return existing.result
+        await self._require_bindable_project(current.project_id)
+        if not current.current_version_id:
+            raise ApiDocConflictError("此历史文档尚未启用版本记录，请先初始化历史版本")
+        if current.current_version_id != payload.expected_parent_version_id:
+            raise ApiDocConflictError("文档父版本已变化，请刷新后重新选择")
+        raw_hash = hashlib.sha256(self._decode_base64(payload.content_base64)).hexdigest()
+        version = None
+        if current.original_asset and current.original_asset.sha256 == raw_hash:
+            record = current.model_copy(deep=True)
+            fixed = await self._catalog_store.get_version(doc_id, current.current_version_id)
+            if fixed is None:
+                raise RuntimeError("当前文档版本记录缺失")
+        else:
+            record = await self._prepare_document_assets(doc_id=doc_id, filename=payload.filename,
+                content_base64=payload.content_base64, project_id=current.project_id, title=current.title,
+                project_name=current.project_name, project_url=current.project_url, source=payload.source)
+            record.uploaded_at = current.uploaded_at
+            record.version_number = current.version_number + 1
+            record.catalog_revision = current.catalog_revision + 1
+            version = self._version(record, current.current_version_id)
+            fixed = version
+        submission = ApiDocSubmission(document_id=doc_id, request_id=payload.request_id, request_hash=request_hash,
+            result=ApiDocVersionResult(document=record, version=fixed, created_new=version is not None))
+        saved = await self._save_version_submission(record, version, submission, expected_revision=current.catalog_revision)
+        return saved.result
+
+    async def list_versions(self, doc_id: str, limit: int = 50, offset: int = 0) -> list[ApiDocVersionRecord]:
+        await self.get_document(doc_id)
+        return await self._catalog_store.list_versions(doc_id, limit, offset)
+
+    async def get_version(self, doc_id: str, version_id: str) -> ApiDocVersionRecord:
+        await self.get_document(doc_id)
+        version = await self._catalog_store.get_version(doc_id, version_id)
+        if version is None:
+            raise ApiDocNotFoundError("文档版本不存在或不属于此文档")
+        return version
+
+    async def initialize_document_history(self, doc_id: str, payload: ApiDocHistoryInitRequest) -> ApiDocVersionResult:
+        current = await self.get_document(doc_id)
+        if current.project_id != payload.project_id:
+            raise ApiDocNotFoundError("文档不属于当前项目")
+        request_hash = hashlib.sha256(json.dumps({"operation": "initialize_history", **payload.model_dump(exclude={"request_id"})},
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        previous = await self._replay_submission(doc_id, payload.request_id, request_hash)
+        if previous:
+            return previous.result
+        await self._require_bindable_project(current.project_id)
+        if current.catalog_revision != payload.expected_catalog_revision:
+            raise ApiDocConflictError("文档已被其他请求修改，请刷新后重试")
+        version = None
+        record = current.model_copy(deep=True)
+        if current.current_version_id:
+            fixed = await self.get_version(doc_id, current.current_version_id)
+        else:
+            record.current_version_id = str(uuid4())
+            record.version_number = 1
+            record.catalog_revision += 1
+            record.updated_at = datetime.now(timezone.utc)
+            assets = [*record.derived_assets, *([record.original_asset] if record.original_asset else [])]
+            for asset in assets:
+                await self.read_asset(doc_id, asset.id)
+                asset.version_id = record.current_version_id
+            if not record.storage_uri:
+                raise ValueError("历史完整内容地址缺失，不能由预览初始化文档版本")
+            if not any(asset.storage_uri == record.storage_uri for asset in assets):
+                stored = await self._artifact_storage_service.read_object_uri(record.storage_uri)
+                record.derived_assets.append(self._asset({**stored, "uri": record.storage_uri},
+                    content=stored["content"], filename=record.filename, kind="derived",
+                    reason="legacy_current_content", created_at=record.updated_at))
+                record.derived_assets[-1].version_id = record.current_version_id
+            version = self._version(record, None)
+            fixed = version
+        submission = ApiDocSubmission(document_id=doc_id, request_id=payload.request_id, request_hash=request_hash,
+            result=ApiDocVersionResult(document=record, version=fixed, created_new=version is not None))
+        return (await self._save_version_submission(record, version, submission,
+            expected_revision=current.catalog_revision)).result
+
+    async def _save_version_submission(self, record, version, submission, *, expected_revision):
+        owned = self._asset_uris(record) if version else set()
+        try:
+            if expected_revision is None:
+                await self._catalog_store.create(record, version=version, submission=submission)
+                saved = await self._catalog_store.get_submission(record.id, submission.request_id)
+                if saved is None:
+                    raise RuntimeError("文档提交记录缺失")
+            else:
+                saved = await self._catalog_store.commit_version(record, version, submission,
+                    expected_revision=expected_revision)
+        except Exception as exc:
+            logger.warning("api_doc_version_commit_unconfirmed", extra={"api_doc_id": record.id,
+                "request_id": submission.request_id, "error_type": type(exc).__name__})
+            try:
+                saved = await self._replay_submission(record.id, submission.request_id, submission.request_hash)
+            except ApiDocConflictError:
+                await self._cleanup_unreferenced_assets(record.id, list(owned))
+                raise
+            except Exception as read_exc:
+                logger.error("api_doc_version_recheck_failed", extra={"api_doc_id": record.id,
+                    "request_id": submission.request_id, "error_type": type(read_exc).__name__})
+                raise RuntimeError("文档提交结果尚无法确认，已保留原件和派生对象") from read_exc
+            if saved is None:
+                await self._cleanup_unreferenced_assets(record.id, list(owned))
+                raise
+        referenced = self._asset_uris(saved.result.document)
+        await self._cleanup_unreferenced_assets(record.id, list(owned - referenced))
+        logger.info("api_doc_version_saved", extra={"api_doc_id": record.id,
+            "version_id": saved.result.version.id, "version": saved.result.version.version,
+            "request_id": submission.request_id, "created_new": saved.result.created_new})
+        return saved
+
+    async def _prepare_document_assets(
         self,
         *,
+        doc_id: str,
         filename: str,
         content_base64: str,
         source: str = "manual_upload",
@@ -296,21 +500,23 @@ class ApiDocsService:
     ) -> ApiDocRecord:
         await self._require_bindable_project(project_id)
         content = self._decode_base64(content_base64)
-        doc_id = str(uuid4())
+        version_id = str(uuid4())
         now = datetime.now(timezone.utc)
         original_filename = filename
         original_size_bytes = len(content)
         declared_content_type = self._normalize_optional_text(content_type) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
         original_content_type = declared_content_type
         normalized_project_url = self._normalize_optional_text(project_url)
-        original_result = await self._store_upload(content=content, filename=filename,
-            object_prefix=f"api-docs/{doc_id}/original", profile="api_document", source=source,
-            content_type=declared_content_type)
-        original_asset = self._asset(original_result, content=content, filename=filename,
-            kind="original", reason="upload", created_at=now)
-        owned_uris = [original_asset.storage_uri]
-        derived_assets = []
+        owned_uris = []
         try:
+            original_result = await self._store_upload(content=content, filename=filename,
+                object_prefix=f"api-docs/{doc_id}/{version_id}/original", profile="api_document", source=source,
+                content_type=declared_content_type)
+            owned_uris.append(str(original_result["uri"]))
+            original_asset = self._asset(original_result, content=content, filename=filename,
+                kind="original", reason="upload", created_at=now)
+            original_asset.version_id = version_id
+            derived_assets = []
             converted = self._maybe_convert_api_document_to_markdown(
                 filename=filename, content=content, content_type=declared_content_type,
                 title=title, project_name=project_name, project_url=normalized_project_url)
@@ -320,73 +526,71 @@ class ApiDocsService:
                 content = converted["content"]  # type: ignore[assignment]
                 declared_content_type = "text/markdown"
                 storage_result = await self._store_upload(content=content, filename=filename,
-                    object_prefix=f"api-docs/{doc_id}/derived/{uuid4()}", profile="api_document",
+                    object_prefix=f"api-docs/{doc_id}/{version_id}/derived/{uuid4()}", profile="api_document",
                     source=source, content_type=declared_content_type)
                 owned_uris.append(str(storage_result["uri"]))
                 derived_assets.append(self._asset(storage_result, content=content, filename=filename,
                     kind="derived", reason="api_conversion", created_at=now))
+                derived_assets[-1].version_id = version_id
+            preview_text, preview_truncated, preview_error = self._build_preview(filename, content, declared_content_type)
+            if converted is not None:
+                format_label = str(converted["format_label"])
+                endpoint_count = converted.get("endpoint_count")  # type: ignore[assignment]
+            else:
+                format_label, endpoint_count = self._detect_format(filename, content, preview_text)
+            normalized_title = self._normalize_optional_text(title) or (
+                str(converted.get("title")) if converted and converted.get("title") else None
+            ) or Path(filename).stem or filename
+            normalized_project_name = self._normalize_optional_text(project_name)
+            content_type = str(storage_result.get("content_type") or declared_content_type)
+
+            record = ApiDocRecord(
+                id=doc_id,
+                current_version_id=version_id,
+                version_number=1,
+                title=normalized_title.strip(),
+                filename=filename,
+                project_id=project_id,
+                legacy_project_name=normalized_project_name,
+                project_name=normalized_project_name,
+                project_url=normalized_project_url,
+                source=source,
+                format_label=format_label,
+                content_type=content_type,
+                size_bytes=len(content),
+                storage_uri=str(storage_result["uri"]),
+                original_asset=original_asset,
+                derived_assets=derived_assets,
+                bucket=str(storage_result.get("bucket") or ""),
+                object_name=str(storage_result.get("object_name") or ""),
+                endpoint_count=endpoint_count,
+                preview_available=preview_text is not None,
+                preview_truncated=preview_truncated,
+                preview_text=preview_text,
+                preview_error=preview_error,
+                uploaded_at=now,
+                updated_at=now,
+                metadata={
+                    "original_filename": original_filename,
+                    "stored_filename": filename,
+                    "original_content_type": original_content_type,
+                    "stored_content_type": content_type,
+                    "original_size_bytes": original_size_bytes,
+                    "storage_backend": storage_result.get("storage_backend", "rustfs"),
+                    "size_bytes": len(content),
+                    "security": storage_result.get("security_report"),
+                    "project_name": normalized_project_name,
+                    "project_id": project_id,
+                    "project_url": normalized_project_url,
+                    "converted_to_markdown": converted is not None,
+                    "conversion": converted.get("metadata") if converted else None,
+                },
+            )
+
+            return record
         except Exception:
             await self._cleanup_unreferenced_assets(doc_id, owned_uris)
             raise
-        preview_text, preview_truncated, preview_error = self._build_preview(filename, content, declared_content_type)
-        if converted is not None:
-            format_label = str(converted["format_label"])
-            endpoint_count = converted.get("endpoint_count")  # type: ignore[assignment]
-        else:
-            format_label, endpoint_count = self._detect_format(filename, content, preview_text)
-        normalized_title = self._normalize_optional_text(title) or (
-            str(converted.get("title")) if converted and converted.get("title") else None
-        ) or Path(filename).stem or filename
-        normalized_project_name = self._normalize_optional_text(project_name)
-        content_type = str(storage_result.get("content_type") or declared_content_type)
-
-        record = ApiDocRecord(
-            id=doc_id,
-            title=normalized_title.strip(),
-            filename=filename,
-            project_id=project_id,
-            legacy_project_name=normalized_project_name,
-            project_name=normalized_project_name,
-            project_url=normalized_project_url,
-            source=source,
-            format_label=format_label,
-            content_type=content_type,
-            size_bytes=len(content),
-            storage_uri=str(storage_result["uri"]),
-            original_asset=original_asset,
-            derived_assets=derived_assets,
-            bucket=str(storage_result.get("bucket") or ""),
-            object_name=str(storage_result.get("object_name") or ""),
-            endpoint_count=endpoint_count,
-            preview_available=preview_text is not None,
-            preview_truncated=preview_truncated,
-            preview_text=preview_text,
-            preview_error=preview_error,
-            uploaded_at=now,
-            updated_at=now,
-            metadata={
-                "original_filename": original_filename,
-                "stored_filename": filename,
-                "original_content_type": original_content_type,
-                "stored_content_type": content_type,
-                "original_size_bytes": original_size_bytes,
-                "storage_backend": storage_result.get("storage_backend", "rustfs"),
-                "size_bytes": len(content),
-                "security": storage_result.get("security_report"),
-                "project_name": normalized_project_name,
-                "project_id": project_id,
-                "project_url": normalized_project_url,
-                "converted_to_markdown": converted is not None,
-                "conversion": converted.get("metadata") if converted else None,
-            },
-        )
-
-        created = await self._save_asset_record(record, owned_uris=owned_uris)
-        logger.info(
-            "api_document_created",
-            extra={"api_doc_id": created.id, "project_id": created.project_id, "source": created.source},
-        )
-        return created
 
     async def update_document(
         self,
@@ -444,11 +648,12 @@ class ApiDocsService:
     async def _cleanup_unreferenced_assets(self, doc_id: str, owned_uris: list[str]) -> None:
         try:
             current = await self._catalog_store.get(doc_id)
+            historical = await self._catalog_store.list_assets(doc_id)
         except Exception as exc:
             logger.error("api_doc_asset_cleanup_reference_unknown", extra={"api_doc_id": doc_id,
                 "error_type": type(exc).__name__, "asset_count": len(owned_uris)})
             return  # An uncertain commit can reference these objects; retain them.
-        referenced = self._asset_uris(current) if current else set()
+        referenced = (self._asset_uris(current) if current else set()) | {asset.storage_uri for asset in historical}
         for uri in set(owned_uris) - referenced:
             try:
                 await self._artifact_storage_service.delete_object_uri(uri)
@@ -479,7 +684,7 @@ class ApiDocsService:
     async def read_asset(self, doc_id: str, asset_id: str | None = None) -> tuple[ApiDocumentAsset, bytes]:
         record = await self.get_document(doc_id)
         asset = record.original_asset if asset_id is None else next((asset for asset in
-            [*record.derived_assets, *([record.original_asset] if record.original_asset else [])]
+            await self._catalog_store.list_assets(doc_id)
             if asset.id == asset_id), None)
         if asset is None:
             raise ApiDocNotFoundError("此文档没有保存指定资产；历史原件缺失时不能使用转换结果替代")
@@ -608,10 +813,11 @@ class ApiDocsService:
         )
 
     async def delete_document(self, doc_id: str) -> dict[str, Any]:
+        assets = await self._catalog_store.list_assets(doc_id)
         item = await self._catalog_store.delete(doc_id)
         if item is None:
             raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
-        for uri in self._asset_uris(item):
+        for uri in self._asset_uris(item) | {asset.storage_uri for asset in assets}:
             try:
                 await self._artifact_storage_service.delete_object_uri(uri)
             except Exception as exc:
@@ -651,6 +857,7 @@ class ApiDocsService:
             object_prefix=f"api-docs/{item['id']}/derived/{uuid4()}", content_type="text/markdown")
         asset = self._asset(storage_result, content=content, filename=filename or "api-document.md",
             kind="derived", reason="project_url", created_at=datetime.now(timezone.utc))
+        asset.version_id = item.get("current_version_id")
         item.setdefault("derived_assets", []).append(asset.model_dump(mode="python"))
 
         preview_text, preview_truncated, preview_error = self._build_preview(filename, content, "text/markdown")
@@ -735,7 +942,8 @@ class ApiDocsService:
             content_type=content_type,
         )
 
-    def _decode_base64(self, value: str) -> bytes:
+    @staticmethod
+    def _decode_base64(value: str) -> bytes:
         try:
             return base64.b64decode(value, validate=True)
         except Exception as exc:

@@ -82,8 +82,8 @@ async def test_actual_original_survives_committed_catalog_ack_loss(tmp_path, liv
         store = env.docs._catalog_store
         create = store.create
 
-        async def lose_ack(record):
-            await create(record)
+        async def lose_ack(record, **kwargs):
+            await create(record, **kwargs)
             raise RuntimeError("controlled lost acknowledgement after document commit")
 
         monkeypatch.setattr(store, "create", lose_ack)
@@ -106,7 +106,7 @@ async def test_catalog_rejection_cleans_only_unreferenced_new_objects(tmp_path, 
             stored_uris.append(result["uri"])
             return result
 
-        async def reject(record):
+        async def reject(record, **kwargs):
             raise RuntimeError("controlled catalog failure before commit")
 
         monkeypatch.setattr(env.objects, "store_uploaded_bytes", track)
@@ -180,14 +180,23 @@ async def test_missing_original_and_corrupt_bytes_are_not_presented_as_original(
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test/api/v1") as client:
             response = await client.get(f"/registry/api-docs/{document.id}/original")
             assert response.status_code == 404 and "历史原件缺失" in response.text
-            record.original_asset = document.original_asset
+            record.original_asset = document.original_asset.model_copy(deep=True)
             await env.docs._catalog_store.update(record)
-            # The actual saved hash is altered, reproducing an inconsistent catalog/storage pair.
+            # Normal catalog writes must not change an existing asset identity.
             record.original_asset.sha256 = "0" * 64
-            await env.docs._catalog_store.update(record)
+            with pytest.raises(ValueError, match="内容不一致"):
+                await env.docs._catalog_store.update(record)
+            assert (await env.docs._catalog_store.get(document.id)).original_asset.sha256 == document.original_asset.sha256
+            # Deliberately corrupt only the isolated test object's actual bytes.
+            if live:
+                asset = document.original_asset
+                await env.objects.store_uploaded_bytes(content=b"corrupt", filename=asset.filename,
+                    object_prefix="unused", bucket_name=asset.bucket, object_name=asset.object_name)
+            else:
+                env.objects.contents[original_uri] = b"corrupt"
             response = await client.get(f"/registry/api-docs/{document.id}/original")
             assert response.status_code == 500
-        assert (await env.objects.read_object_uri(original_uri))["content"] == b"history"
+        assert (await env.objects.read_object_uri(original_uri))["content"] == b"corrupt"
 
 
 @pytest.mark.asyncio

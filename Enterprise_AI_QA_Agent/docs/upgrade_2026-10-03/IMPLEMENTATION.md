@@ -1208,3 +1208,72 @@ $env:RUN_LIVE_CASE_PLANNING_TESTS='1'
 后续须完成并发/提交回执故障、全存储不可覆盖契约、默认参数请求归一、项目改绑重放归属、JSON 重启/失败回滚、历史初始化、生成/规划精确来源，以及前端类型/API/版本页面与真实浏览器验收。DOCX、受限解析、快照/差异、Git、P4/P5 保持未完成；完整 P0—P5 目标仍在进行。
 
 本次交付是方案同步和专项证据，版本后端及测试修改留在工作区继续验收，不纳入本次文档提交。不执行生产迁移、不发布新接口。本轮未重新运行前端构建或浏览器，因为版本前端尚未接通；上一轮原件下载页面的结果仅保留为历史证据。原方案上传章节与项目方案逐字一致，Codex 镜像与项目方案逐字节一致，原始备份保留；提交不包含用户 `.gitignore` 或其他开发中代码。
+
+## P3 独立上传版本、实际插件与精确来源（2026-10-04）
+
+承接 `dc90df3` 后的工作区实现，先核对上传路由/目录三个存储实现、历史资产、生成与规划读取、实际插件和文件导入同类实现。原方案中的上传独立于 Git、生成模板不参与执行、项目内选取→初排→补全→最终冻结保持不变。以下替代上节“开发中”的当前状态，原始过程记录保留。
+
+真实输入暴露的根因与修正：
+
+- 省略上传默认参数后，同请求重试误报 409：服务显式归一请求内容，不按调用形状计算身份。
+- 固定资产 ID 可挂到其他文档：内存/JSON 与 PostgreSQL 同步检查资产所属文档，PG 更新核对实际影响行数；版本 ID/序号也不可覆盖。
+- 生成/规划先取目录再读内容，会混用旧元数据与新文本；两次读取之间项目改绑也可泄露：消费者使用实际读取响应中的文档身份，校验项目并冻结版本、内容资产、全文哈希/地址及目录修订。旧来源保留 updated_at 兼容，历史计划不改写。
+- 历史目录初始化与兼容迁移缺失：旧目录显式初始化为 V1，保留旧 ID、对象和原上传时间。已知原件核对字节；无原件证据时保存现存派生内容及缺失状态，不伪造原件，不复制对象。
+- JSON→PG 迁移只复制当前目录，会丢历史版本/资产/提交；修复后最新测试仍复现 V1 缺失但 V2 引用它时错误报告 skipped。迁移在既有文档跳过前验证身份键、完整父链/序号、最新指针、资产版本及提交固定版本；损坏报告 invalid，已有 PG 历史不变。同一实际目录分别破坏 9 种引用已验证，未推断或补造缺失历史。
+
+实际修改范围：
+
+- `schemas/api_docs.py`、`api_doc_store.py`、`api_docs_service.py`、`api/routes/api_docs.py`：现有目录增加版本指针；生产 PG 增加按目录表派生的 `_versions`、`_assets`、`_submissions` 表。目录/版本/提交同事务；独立资产持续保存 URL 变更后的旧派生物。首次上传请求身份可选，旧调用仍独立；新版本必须正式项目、请求身份、预期父版本。同请求返回原提交，即使当前已有新版本；内容等于当前版本不增版本，恢复历史内容追加新版本。
+- 版本/原提交查询、历史全文和下载、历史初始化接口与前端类型/API 成对接通。下载验证实际大小/哈希，读错误显式返回；资产准备包含转换、预览及构造错误的引用核对/清理，提交结果未知时保留对象。并发同请求只提交一次，不同请求竞争同父版本返回冲突。
+- `generation_pipeline.py`、`planning_sources.py`：冻结实际读取的文档/资产来源，拒绝项目变化和读取失败。历史正文有独立查询，不以当前正文替代。
+- 实际 `ApiDocsPlugin.vue` 接入 `ApiDocVersions.vue` 和 `documentUploadRequest.ts`，同步中英文说明。sessionStorage 仅保留请求/签名/项目/父版本等，不存字节；首次/追加响应丢失可按原身份找回。重试保留原父版本，明确拒绝且查询原提交为 404 后才由用户显式刷新另建请求。重放旧快照后另取当前目录。未绑定项目先使用既有绑定操作。
+- 新增真实文件/存储/迁移和浏览器专项；现有故障替身、清理及旧文档读取 fixture 对齐实际新增契约。浏览器共用宿主加载真实插件与全局 styles.css，不复制产品页面实现。
+
+JSON 目录作为原有兼容存储，历史嵌入同一个目录数组原子写入，失败回滚与重启完整恢复已有专项。正常生产仍用 PostgreSQL/RustFS，可编辑配置用 MySQL；本步不引入依赖/配置域，不安装解析器。新表只在本次隔离存储中验收；没有执行生产数据迁移。兼容目录迁移沿用旧行为：当前归属设为未绑定，历史快照/提交原项目身份保持，显式绑定后才能重放原请求。
+
+| 证据 | 实际结果 | 说明 |
+|---|---|---|
+| `p3-doc-versions-boundaries-before.xml` / `boundaries-first.xml` | 2 失败、11 通过 → 13 通过 | 默认参数重试错误，修复后边界专项 |
+| `p3-doc-versions-sources-before.xml` / `sources-first.xml` | 6 失败 → 21 通过、1 失败 | 资产跨文档、旧元数据/新正文及项目改绑；剩余旧 fixture 未返回服务本来具有的 document envelope，修正测试契约 |
+| `p3-doc-history-before.xml` / `first.xml` | 4 失败 → 26 通过 | 显式旧目录初始化缺路由，补齐内存/JSON/真实 PG/RustFS |
+| `p3-doc-versions-backend.xml` | 67 通过、2 失败 | 预览故障输入使用空 paths，转换器正确不生成派生物；改用实际 GET 端点后纳入最终回归 |
+| `p3-doc-versions-regression.xml` / `regression-final.xml` | 157 通过、1 失败、3 跳过 → 158 通过、3 跳过 | read_error 分支先报告真实读错误再校验文档 envelope |
+| `p3-doc-history-catalog-before.xml` / `catalog-first.xml` | 1 失败 → 39 通过 | 原迁移丢版本/历史资产；真实迁移、旧派生下载及提交重放 |
+| `p3-doc-history-catalog-integrity-before.xml` | 1 失败，3.70 秒 | 缺 V1 的 V2 历史错误报告 skipped，实际期望 invalid=1，得到 0 |
+| `p3-doc-history-catalog-integrity-first.xml` / `integrity-final.xml` | 1 通过 → 39 通过，10.03 秒 | 补完整引用校验，9 种实际目录破坏均被拒绝，原 PG 历史不变 |
+| `p3-doc-versions-regression-migration-final.xml` | **159 通过、3 跳过，38.08 秒** | 最终文档/版本/迁移/来源/生成/规划/导入/绑定/存储回归；3 项默认外部模型未执行 |
+| `p3-doc-versions-regression-legacy-final.xml` | **160 通过、3 跳过，40.63 秒** | 补验只有原件资产、没有版本字段/history 的旧目录仍可迁移，保留身份/时间/实际下载；最终完整受影响回归 |
+| `p3-doc-versions-browser-first.xml` / `browser-final.xml` / `browser-styled.xml` | 2 通过 → 3 通过 → **3 通过，14.92 秒** | 增加陈旧父版本、历史初始化，并补宿主真实全局样式；最后为实际插件/生产路由/隔离真实存储验收 |
+| 前端三个文件专项 | **8 通过，1.85 秒** | 版本找回/历史内容、原件下载和既有导入源逻辑；unit 控制 crypto，Chromium 用真实 Web Crypto |
+| `npm run build` | **类型检查及构建通过，Vite 5.96 秒** | 初次测试导入 node:crypto 因未声明 Node 类型失败；按已有测试边界控制 crypto，没有新增类型或产品依赖 |
+| `p3-doc-versions-cli.xml` 与 `p3-doc-versions-cli/` | **1 通过，44.55 秒** | 完整生产 API lifespan/独立执行 CLI、真实隔离存储和 HTTP、受控模型、审批/创建后重启及终态重投；先于最后迁移校验修正 |
+
+浏览器 JSON/截图及 Vite 日志按 `p3-doc-versions-browser.*`、`p3-doc-history-browser.*`、`p3-doc-assets-version-regression-browser.*` 保存。用实际 BOM/CRLF Markdown 验证旧下载逐字节一致，首次/追加提交后切断响应并刷新找回，不重复创建；其他窗口创建 V3 后旧页面返回 409，明确刷新父版本再恢复旧内容为 V4。同字节新请求不增版本；缺原件旧目录初始化后只有派生物，实际下载和全文正确。截图已人工查看；页面错误为 0。宿主是隔离页面，**未验收完整产品启动后的文档页面**。
+
+最终命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_versions.py tests/test_api_doc_project_binding.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-doc-history-catalog-integrity-final.xml
+
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:RUN_LIVE_UPGRADE_STORAGE_TESTS='1'
+$env:RUN_LIVE_CASE_IMPORT_TESTS='1'
+$env:RUN_LIVE_PLAN_BINDING_PATHS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_versions.py tests/test_api_doc_original_assets.py tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_project_binding.py tests/test_api_docs_bom.py tests/test_api_docs_origin_security.py tests/test_api_doc_resolution.py tests/test_api_document_dependency_http.py tests/test_case_json_templates.py tests/test_case_planning.py tests/test_test_case_generation_pipeline.py tests/test_case_import_service.py tests/test_plan_binding_paths.py tests/test_artifact_storage_service.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p3-doc-versions-regression-migration-final.xml
+
+$env:RUN_LIVE_API_DOC_BROWSER='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_versions_browser.py tests/test_api_doc_assets_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-doc-versions-browser-styled.xml
+
+..\.venv\Scripts\python.exe -X utf8 -m py_compile src/schemas/api_docs.py src/application/documents/api_doc_store.py src/application/documents/api_docs_service.py src/api/routes/api_docs.py src/application/test_cases/generation_pipeline.py src/application/test_cases/planning_sources.py tests/test_api_doc_versions.py tests/test_api_doc_versions_browser.py tests/test_api_doc_assets_browser.py tests/document_plugin_browser.py
+```
+
+前端（agent_web）使用 `npm run test -- src/features/tools/plugins/ApiDocVersions.test.ts src/features/tools/plugins/ApiDocAssets.test.ts src/features/tools/plugins/ApiDocsPlugin.importSources.test.ts` 和 `npm run build`。完整 CLI 沿用已核对的执行专项入口，开启 `RUN_LIVE_EXECUTION_CLI_TESTS=1`，提前建立独立 `p3-doc-versions-cli/` 并设为 `QA_TEST_GATE_OUTPUT_DIR`，运行 `tests/test_execution_worker_cli.py`，不覆盖上一轮目录。3 个最终后端跳过明确是实际外部模型生成/规划/绑定，不是存储失败；不声称默认模型自主执行通过。
+
+10 个 Python 文件实际编译通过。原始失败 XML 留存。迁移首次失败清理已丢元数据引用的 2 个对象前，核对精确测试目录、提交集合、对象前缀及哈希；新夹具即使迁移失败也清理本次已登记资产。没有操作生产对象或无关数据。
+
+直接更新用户粘贴方案原文件、项目 PLAN 和所选 Codex 镜像，保留原始备份；正文首页、§3.1、接口、实施顺序、验收和第六节统一到以上实际状态。仅本轮源码/测试/方案/证据提交，用户 `.gitignore` 留在工作区。完整 P0—P5 尚未完成：DOCX 策略、受限解析/快照、差异、Git、P4/P5，P2 步骤归属/未知副作用/计划修订与默认模型，以及人工 UI 录制/Docker 仍需后续调研、实现和验收。
+
+最后兼容检查：新增真实 PG/RustFS 旧目录资产迁移专项后扩大回归 160 通过、3 个默认模型项跳过（40.63 秒）。严格历史校验只拒绝已有历史中的确定性坏引用；没有历史的旧目录仍按既有方式迁移，不自动生成版本。修复日志输出无效项的位置及安全原因，未输出外部正文。方案当前状态已更新到该结果，早一轮 159 项的原证据保留。
+
+交付检查：当前方案本地链接均可定位，粘贴方案上传章节与项目方案一致，所选 Codex PLAN 字节一致，原始备份保留。暂存的 69 个相关文件均经范围检查，`.gitignore` 未暂存；源码/测试/Markdown 的 diff 检查通过。完整 diff 检查有 2 处 `p3-doc-versions-sources-before.xml` 原始失败输出尾空白，保留真实证据，不改写该失败 XML。敏感格式检查初次将旧 task 文件名中的 sk 子串误匹配；核对位置并加词边界后没有真实匹配，未输出任何匹配值。

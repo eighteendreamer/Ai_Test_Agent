@@ -33,7 +33,8 @@ class _ApiDocs:
         return self.records
 
     async def read_document_content(self, doc_id: str, *, max_chars: int):
-        return {"content": "POST /orders\nGET /orders/{id}", "full_length": 33, "truncated": False}
+        return {"document": self.records[0].model_dump(mode="json"),
+            "content": "POST /orders\nGET /orders/{id}", "full_length": 33, "truncated": False}
 
 
 class _Graph:

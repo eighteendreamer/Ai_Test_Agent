@@ -70,6 +70,9 @@ async def _document_storage(tmp_path, live_storage):
                 assert re.fullmatch(r"up_[dp]_[0-9a-f]{12}", table)
                 cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
                 assert cursor.fetchone()["existing"] is None
+            for table in PostgresApiDocStore(settings).history_tables:
+                cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                assert cursor.fetchone()["existing"] is None
     objects = ArtifactStorageService(settings)
     try:
         yield settings, PostgresProjectStore(settings), objects, PostgresApiDocStore(settings)
@@ -77,7 +80,7 @@ async def _document_storage(tmp_path, live_storage):
         await objects.close()
         with postgres_connect(settings) as connection:
             with connection.cursor() as cursor:
-                for table in tables:
+                for table in [*PostgresApiDocStore(settings).history_tables, *tables]:
                     cursor.execute(f'DROP TABLE IF EXISTS "{table}"')
 
 

@@ -1155,6 +1155,7 @@ export interface InputAttachment {
 
 export interface ApiDocumentAsset {
   id: string;
+  version_id?: string | null;
   kind: "original" | "derived";
   filename: string;
   content_type: string;
@@ -1171,6 +1172,8 @@ export interface ApiDocumentAsset {
 export interface ApiDocRecord {
   id: string;
   catalog_revision?: number;
+  current_version_id?: string | null;
+  version_number?: number;
   title: string;
   filename: string;
   project_id?: string | null;
@@ -1197,6 +1200,7 @@ export interface ApiDocRecord {
 }
 
 export interface ApiDocUploadRequest {
+  request_id?: string | null;
   filename: string;
   content_base64: string;
   source?: string;
@@ -1204,6 +1208,43 @@ export interface ApiDocUploadRequest {
   project_id?: string | null;
   project_name?: string | null;
   project_url?: string | null;
+}
+
+export interface ApiDocVersionUploadRequest extends ApiDocUploadRequest {
+  project_id: string;
+  request_id: string;
+  expected_parent_version_id: string;
+}
+
+export interface ApiDocHistoryInitRequest {
+  project_id: string;
+  request_id: string;
+  expected_catalog_revision: number;
+}
+
+export interface ApiDocVersionRecord {
+  id: string;
+  document_id: string;
+  version: number;
+  parent_version_id?: string | null;
+  created_at: string;
+  snapshot: ApiDocRecord;
+}
+
+export interface ApiDocVersionResult {
+  document: ApiDocRecord;
+  version: ApiDocVersionRecord;
+  created_new: boolean;
+}
+
+export interface ApiDocContentResult {
+  document: ApiDocRecord;
+  content: string;
+  full_length: number;
+  truncated: boolean;
+  read_error?: string | null;
+  content_asset?: ApiDocumentAsset | null;
+  content_sha256?: string | null;
 }
 
 export interface ApiDocUpdateRequest {

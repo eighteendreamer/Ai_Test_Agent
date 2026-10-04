@@ -79,6 +79,7 @@ async def _stores(tmp_path, live):
     # Only fresh UUID-named tables are owned by this acceptance test.
     pg_tables = [f"up_jv_{suffix}", f"up_jc_{suffix}", f"up_jd_{suffix}", f"up_jp_{suffix}"]
     settings.database.postgres_test_case_version_table, settings.database.postgres_test_case_table, settings.database.postgres_api_doc_table, settings.database.postgres_project_table = pg_tables
+    pg_tables = [*PostgresApiDocStore(settings).history_tables, *pg_tables]
     mysql_table = f"up_jt_{suffix}"
     settings.database.application_config_table = mysql_table
     with postgres_connect(settings) as connection:

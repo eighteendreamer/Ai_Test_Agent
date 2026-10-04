@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class ApiDocumentAsset(BaseModel):
     id: str
+    version_id: str | None = None
     kind: Literal["original", "derived"]
     filename: str
     content_type: str
@@ -24,6 +25,8 @@ class ApiDocumentAsset(BaseModel):
 class ApiDocRecord(BaseModel):
     id: str
     catalog_revision: int = Field(default=0, ge=0)
+    current_version_id: str | None = None
+    version_number: int = Field(default=0, ge=0)
     title: str
     filename: str
     project_id: str | None = None
@@ -50,6 +53,7 @@ class ApiDocRecord(BaseModel):
 
 
 class ApiDocUploadRequest(BaseModel):
+    request_id: str | None = Field(default=None, min_length=1, max_length=120)
     filename: str
     content_base64: str
     source: str = "manual_upload"
@@ -57,6 +61,46 @@ class ApiDocUploadRequest(BaseModel):
     project_id: str | None = None
     project_name: str | None = None
     project_url: str | None = None
+
+
+class ApiDocVersionUploadRequest(ApiDocUploadRequest):
+    project_id: str
+    request_id: str = Field(min_length=1, max_length=120)
+    expected_parent_version_id: str
+
+
+class ApiDocHistoryInitRequest(BaseModel):
+    project_id: str
+    request_id: str = Field(min_length=1, max_length=120)
+    expected_catalog_revision: int = Field(ge=0)
+
+
+class ApiDocVersionRecord(BaseModel):
+    id: str
+    document_id: str
+    version: int = Field(ge=1)
+    parent_version_id: str | None = None
+    created_at: datetime
+    snapshot: ApiDocRecord
+
+
+class ApiDocVersionResult(BaseModel):
+    document: ApiDocRecord
+    version: ApiDocVersionRecord
+    created_new: bool
+
+
+class ApiDocSubmission(BaseModel):
+    document_id: str
+    request_id: str
+    request_hash: str
+    result: ApiDocVersionResult
+
+
+class ApiDocHistory(BaseModel):
+    versions: dict[str, ApiDocVersionRecord] = Field(default_factory=dict)
+    submissions: dict[str, ApiDocSubmission] = Field(default_factory=dict)
+    assets: dict[str, ApiDocumentAsset] = Field(default_factory=dict)
 
 
 class ApiDocUpdateRequest(BaseModel):

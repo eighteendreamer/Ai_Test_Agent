@@ -5,6 +5,7 @@ import hashlib
 import json
 
 from src.schemas.case_planning import PlanningEvidence, PlanningQuery
+from src.schemas.api_docs import ApiDocRecord
 
 
 def json_text(value):
@@ -74,14 +75,19 @@ class ProjectPlanningSources:
             result = await self._docs.read_document_content(doc.id)
             if result.get("read_error") or result.get("truncated"):
                 raise ValueError("文档原件无法完整读取，不能使用旧预览作为规划依据")
+            doc = ApiDocRecord.model_validate(result.get("document"))
+            if doc.project_id != project_id:
+                raise ValueError("文档不属于当前项目")
             lines = str(result["content"]).splitlines()
             end = min(len(lines), request.start_line - 1 + request.max_lines)
             text = "\n".join(lines[request.start_line - 1:end])
             if not text:
                 raise ValueError("文档指定范围没有内容")
             payload = {"title": doc.title, "content": text, "start_line": request.start_line, "end_line": end,
-                       "has_more": end < len(lines), "source_uri": doc.storage_uri}
-            version = doc.updated_at.isoformat()
+                       "has_more": end < len(lines), "source_uri": doc.storage_uri,
+                       "content_asset_id": (result.get("content_asset") or {}).get("id"),
+                       "content_sha256": result.get("content_sha256"), "catalog_revision": doc.catalog_revision}
+            version = doc.current_version_id or doc.updated_at.isoformat()
         else:
             if self._recordings is None or self._graphs is None:
                 raise ValueError("录制知识读取尚未配置")

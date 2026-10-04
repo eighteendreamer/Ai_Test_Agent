@@ -77,7 +77,8 @@ async def environment(tmp_path, live=False, model=None, embeddings=None):
         upload = docs.upload_document
         async def track_upload(**kwargs):
             document = await upload(**kwargs)
-            owned_documents.append(document.id)
+            if document.id not in owned_documents:
+                owned_documents.append(document.id)
             return document
         docs.upload_document = track_upload
         try:
@@ -85,10 +86,12 @@ async def environment(tmp_path, live=False, model=None, embeddings=None):
                 yield SimpleNamespace(settings=settings, projects=projects, cases=cases, configs=configs,
                     docs=docs, sources=sources, service=service, store=store, client=client, objects=objects)
         finally:
-            for doc_id in owned_documents: await docs.delete_document(doc_id)
-            if live:
-                with postgres_connect(settings) as connection, connection.cursor() as cursor:
-                    cursor.execute(f'DROP TABLE "{settings.database.postgres_case_plan_table}"')
+            try:
+                for doc_id in owned_documents: await docs.delete_document(doc_id)
+            finally:
+                if live:
+                    with postgres_connect(settings) as connection, connection.cursor() as cursor:
+                        cursor.execute(f'DROP TABLE "{settings.database.postgres_case_plan_table}"')
 
 
 async def active_case(env, project, key, content, mode="api_testing"):
