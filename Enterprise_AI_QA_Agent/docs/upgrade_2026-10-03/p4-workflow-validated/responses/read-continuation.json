@@ -1,0 +1,180 @@
+{
+  "read": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "2b2193ef-61f7-47e3-b1c0-bad981266a18",
+    "call_id": "302863c3-5fa6-41af-a172-11ca9bf510ce",
+    "request_sha256": "743fe37d6c7fc4ed47c561837261585b09551bfc54e46fb058148640d612ad1b",
+    "response_sha256": "f10e57c4d4444737b834de0c34a93d39d9904101f5696da0cb1b9ed7ec5d3f75",
+    "manifest_sha256": "fca37e4277fcc99cec2a0eb84506c184bb9347572cbee34212cd30e312efb437",
+    "status": "read_requested",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "case",
+        "id": "68276592-eaae-4e6b-b63e-d3e849f999cb"
+      },
+      "action": "read",
+      "summary": "需要固定新旧原文",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": [
+          {
+            "source_id": "parse:b79f23eb-d361-4d18-b033-ee5cf57824bb",
+            "start_char": 0,
+            "end_char": 20
+          },
+          {
+            "source_id": "parse:7f227f16-97e5-439d-8fea-bebeb2b83a37",
+            "start_char": 0,
+            "end_char": 20
+          }
+        ]
+      },
+      "unit_outcome": null,
+      "candidates": [],
+      "unresolved": []
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "finished": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "2b2193ef-61f7-47e3-b1c0-bad981266a18",
+    "call_id": "a47fa59a-e555-4006-b2e6-6961fd0de0b7",
+    "request_sha256": "1a9e85fabf290e0fdd0d6f5ba1a5246842802309840779e251e9fdebfcc02e5a",
+    "response_sha256": "b4d01219744472305f0cfbc2263493ec0aaaa36d9a490577a271ab73e8aadb3f",
+    "manifest_sha256": "fca37e4277fcc99cec2a0eb84506c184bb9347572cbee34212cd30e312efb437",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "case",
+        "id": "68276592-eaae-4e6b-b63e-d3e849f999cb"
+      },
+      "action": "finish",
+      "summary": "保留期限变化候选",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "retention-change",
+          "kind": "modified",
+          "summary": "订单保留7天调整为9天",
+          "reason": "固定新旧原文的期限不同",
+          "document_citations": [
+            {
+              "source_id": "parse:b79f23eb-d361-4d18-b033-ee5cf57824bb",
+              "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+            },
+            {
+              "source_id": "parse:7f227f16-97e5-439d-8fea-bebeb2b83a37",
+              "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+              "level": "major",
+              "reason": "用例仍预期7天",
+              "verification_points": [
+                "保留期限边界"
+              ],
+              "citations": [
+                {
+                  "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+                  "version_record_sha256": "baf8e6d525429d5957b9ac3de8763441095e15ee9f70faf56ddec43e55d96d56",
+                  "root": "content_json",
+                  "path": [
+                    "目标"
+                  ],
+                  "value": "验证订单保留7天"
+                },
+                {
+                  "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+                  "version_record_sha256": "baf8e6d525429d5957b9ac3de8763441095e15ee9f70faf56ddec43e55d96d56",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    11,
+                    "操作"
+                  ],
+                  "value": "完整步骤11"
+                },
+                {
+                  "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+                  "version_record_sha256": "baf8e6d525429d5957b9ac3de8763441095e15ee9f70faf56ddec43e55d96d56",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "布尔"
+                  ],
+                  "value": false
+                },
+                {
+                  "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+                  "version_record_sha256": "baf8e6d525429d5957b9ac3de8763441095e15ee9f70faf56ddec43e55d96d56",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "零"
+                  ],
+                  "value": 0
+                },
+                {
+                  "version_id": "68276592-eaae-4e6b-b63e-d3e849f999cb",
+                  "version_record_sha256": "baf8e6d525429d5957b9ac3de8763441095e15ee9f70faf56ddec43e55d96d56",
+                  "root": "content_json",
+                  "path": [
+                    "深层扩展",
+                    "空"
+                  ],
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "current",
+          "uncertainties": [
+            "部署生效状态未核实"
+          ]
+        }
+      ],
+      "unresolved": [
+        "仅为当前单元候选，尚未评审"
+      ]
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 2,
+  "auto_coordinator": false
+}

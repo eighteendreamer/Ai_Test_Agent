@@ -17,6 +17,14 @@ class ImpactCallCheckpointUnavailable(RuntimeError):
     """The last PG/object write is not confirmed; never infer permission to resend."""
 
 
+class ImpactCallBudgetExceeded(ValueError):
+    """An explicit frozen limit, without embedding input content in diagnostics."""
+
+    def __init__(self, message, *, kind):
+        super().__init__(message)
+        self.kind = kind
+
+
 async def store_impact_json(objects, claim, value, filename):
     encoded = await asyncio.to_thread(canonical_impact_json, value)
     saved = await objects.store_uploaded_bytes(content=encoded, filename=filename, content_type="application/json",

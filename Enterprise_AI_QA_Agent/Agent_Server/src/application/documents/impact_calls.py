@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from src.application.documents.impact_batches import DocumentImpactBatches
 from src.application.documents.impact_checkpoint_io import (
-    ImpactCallCheckpointUnavailable, confirmed_impact_write, store_impact_json,
+    ImpactCallBudgetExceeded, ImpactCallCheckpointUnavailable, confirmed_impact_write, store_impact_json,
 )
 from src.application.documents.impact_sources import canonical_impact_json, impact_record_hash
 from src.runtime.store import ContinuationLeaseLostError
@@ -23,6 +23,8 @@ from src.schemas.document_impact_calls import (
     DocumentImpactCallSelection, DocumentImpactTokenEstimate, DocumentImpactUnit,
 )
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
+from src.schemas.document_impact_responses import DocumentImpactResponseAssessment
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +66,11 @@ class DocumentImpactCallService:
             content_count = sum(len(content.encode("utf-8")) for content in contents)
         size = len(_json({"system_prompt": request.system_prompt, "messages": request.messages}).encode("utf-8"))
         if size > context.config.payload.max_input_bytes:
-            raise ValueError("完整影响批次请求超过字节预算，未截断")
+            raise ImpactCallBudgetExceeded("完整影响批次请求超过字节预算，未截断", kind="input_bytes")
         input_estimate = content_count + policy.framing_allowance_tokens
         reserved = input_estimate + context.model.max_output_tokens
         if reserved > context.model.context_window:
-            raise ValueError("影响批次内容估算与预留输出超过固定上下文窗口，未截断")
+            raise ImpactCallBudgetExceeded("影响批次内容估算与预留输出超过固定上下文窗口，未截断", kind="context_window")
         return DocumentImpactTokenEstimate(method=policy.token_method, encoding_name=policy.encoding_name,
             tokenizer_version=snapshot.tokenizer_version, content_tokens_or_estimate=content_count,
             framing_allowance_tokens=policy.framing_allowance_tokens, input_estimated_tokens=input_estimate,
@@ -83,7 +85,7 @@ class DocumentImpactCallService:
         return DocumentImpactBatches.read_difference(seed, envelope, manifest, kind, int(index))
 
     @classmethod
-    def build_request(cls, seed, envelope, manifest, selection, *, previous=None):
+    def build_request(cls, seed, envelope, manifest, selection, *, previous=None, coordination_context=None):
         DocumentImpactBatches.validate(seed, envelope, manifest)
         if seed.analysis_context is None or seed.invocation_snapshot is None:
             raise ValueError("历史影响任务未冻结模型调用策略，请创建新任务")
@@ -114,6 +116,11 @@ class DocumentImpactCallService:
             "source_gaps": [gap.model_dump(mode="json") for gap in manifest.source_gaps],
             "scope_counts": {"segments": len(manifest.segments), "differences": len(manifest.differences), "cases": len(manifest.cases)},
             "analysis_protocol": protocol.model_dump(mode="json")}
+        if coordination_context is not None:
+            context = DocumentImpactCoordinationContext.model_validate(coordination_context.model_dump(mode="json"))
+            if context.protocol != seed.workflow_protocol or ((selection.unit.kind == "case") != (context.stage == "case_impacts")):
+                raise ValueError("影响协调上下文不能替换固定协议或单元阶段")
+            payload["coordination_context"] = context.model_dump(mode="json")
         messages = []
         if previous is not None:
             old_input, old_response = previous
@@ -175,7 +182,24 @@ class DocumentImpactCallService:
             logger.error("document_impact_call_request_cleanup_unconfirmed", extra={"task_id": claim.task.id,
                 "request_sha256": reference.sha256, "error_type": type(exc).__name__})
 
-    async def prepare(self, claim, *, call_key, selection: DocumentImpactCallSelection):
+    async def _validate_coordination_origins(self, claim, context):
+        for rule in context.rules:
+            body = rule.candidate.model_dump(mode="json", exclude={"key"})
+            if hashlib.sha256(_json(body).encode("utf-8")).hexdigest() != rule.id:
+                raise ValueError("影响协调规则身份与完整候选不同")
+            for origin in rule.origins:
+                checkpoint = await self._store.responses.get(claim.task.project_id, claim.task.document_id,
+                    claim.task.id, origin.checkpoint.call_id)
+                if checkpoint != origin.checkpoint:
+                    raise ValueError("影响协调规则不能引用其他任务或未保存的核验")
+                assessment = await self._read_object(checkpoint.result, DocumentImpactResponseAssessment)
+                if assessment.status != "unit_finished" or assessment.decision is None:
+                    raise ValueError("影响协调规则需要已完成单元的候选")
+                candidate = next((item for item in assessment.decision.candidates if item.key == origin.local_key), None)
+                if candidate is None or candidate.model_dump(mode="json", exclude={"key"}) != body:
+                    raise ValueError("影响协调规则与原核验候选不同")
+
+    async def prepare(self, claim, *, call_key, selection: DocumentImpactCallSelection, coordination_context=None):
         if not isinstance(call_key, str) or not call_key.strip() or len(call_key) > 160:
             raise ValueError("影响调用身份不能为空或超过160字符")
         await self._tasks.get(claim.task.project_id, claim.task.document_id, claim.task.id)
@@ -183,7 +207,10 @@ class DocumentImpactCallService:
         prior = await self._store.calls.get(claim.task.project_id, claim.task.document_id, claim.task.id, call_key=call_key)
         if prior is not None:
             self._store.calls.check_identity(prior, digest)
-            await self.read_request(claim.task.project_id, claim.task.document_id, claim.task.id, prior.id)
+            _, saved = await self.read_request(claim.task.project_id, claim.task.document_id, claim.task.id, prior.id)
+            expected = coordination_context.model_dump(mode="json") if coordination_context is not None else None
+            if json.loads(saved.request.messages[-1]["content"]).get("coordination_context") != expected:
+                raise ValueError("已保存影响调用不能替换协调上下文")
             return prior
         task, envelope, checkpoint, manifest = await self.read_fixed_scope(claim)
         if claim.seed.invocation_snapshot is None:
@@ -192,6 +219,8 @@ class DocumentImpactCallService:
         if remaining <= 0:
             raise TimeoutError("影响调用原任务预算已耗尽")
         async with asyncio.timeout(remaining):
+            if coordination_context is not None:
+                await self._validate_coordination_origins(claim, coordination_context)
             previous = None
             if selection.previous_call_id:
                 old_record, old_input = await self.read_request(task.project_id, task.document_id, task.id, selection.previous_call_id)
@@ -206,9 +235,13 @@ class DocumentImpactCallService:
                 old_selection = old_input.selection.model_copy(update={"retry_of_call_id": None, "previous_call_id": None})
                 if old_selection != selection.model_copy(update={"retry_of_call_id": None}):
                     raise ValueError("未知结果重试不能改变原固定读取范围")
+                if coordination_context is not None and json.loads(old_input.request.messages[-1]["content"]).get(
+                    "coordination_context") != coordination_context.model_dump(mode="json"):
+                    raise ValueError("未知结果重试不能替换原协调上下文")
                 request = old_input.request
             else:
-                request = await asyncio.to_thread(self.build_request, claim.seed, envelope, manifest, selection, previous=previous)
+                request = await asyncio.to_thread(self.build_request, claim.seed, envelope, manifest, selection,
+                    previous=previous, coordination_context=coordination_context)
             budget = await asyncio.to_thread(self.estimate, claim.seed, request)
             payload = DocumentImpactCallInput(input_sha256=envelope.input_sha256, manifest_sha256=checkpoint.sha256,
                 selection=selection, request=request, budget=budget)

@@ -1,0 +1,175 @@
+{
+  "result": {
+    "implementation_version": "impact-coordinator-v1",
+    "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+    "input_sha256": "9c8fec57f6bbe2d63df93fd7b73158b234f12d19b80f38ea4f923a5eec793da8",
+    "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+    "protocol": {
+      "version": "impact-coordinator-v1",
+      "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
+      "case_instruction": "本阶段将rules中完整规则候选与当前完整固定用例及其编写来源比较。逐条返回candidate，key必须为对应rules.id，保留该规则的kind/summary及原文依据，case_impacts仅判断当前unit.id，每条说明none/minor/major/uncertain并引用当前用例实际字段。需要原文或来源时read补读。不得遗漏规则后声明analyzed；无法判断保留evidence_insufficient。discovery_units包含未完成范围时不能宣称完整或无变化。没有规则仍判断本用例来源是否充分。所有候选仍待评审，不能将模型建议当作部署事实或测试通过。",
+      "sha256": "76f3c582a070c4b136e1e629ecdea508f0f1fe814e4a8dbd917180ca9051f5b5"
+    },
+    "units": [
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:856bf059-2f9f-4e07-bfa7-7364fb7e74c3:0:20"
+        },
+        "status": "ineligible",
+        "calls": [
+          "67784e9c-6ed1-4ada-94dc-34d4256132f4"
+        ],
+        "final_check": {
+          "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+          "call_id": "67784e9c-6ed1-4ada-94dc-34d4256132f4",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "d25e45966234b59a10607c8df244229313a0bf4bda4e1742c608740e1ac4a0f6",
+          "response_sha256": "5c656378a43f2ffe36a610be59d7926ce38acd095115c4f66917483ffefe32bd",
+          "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/ff2f96cc-0a2b-4ac6-ade6-379752224a5d/c360e2ca-0bf8-4945-9456-e1895854a892/b0d248b1-e9b9-41d4-a996-e937ee7ca579/calls/2bd1aa59-d7d6-4a43-bbb2-5c39a89fd262/response-check.json",
+            "sha256": "398e8b2f489700f9889afb7fb54d1be3612836c5ab980781c06e4d52ba9ed7a2",
+            "size_bytes": 734
+          },
+          "created_at": "2026-10-04T16:38:37.898937Z"
+        },
+        "reason_codes": [
+          "response_not_eligible",
+          "response_tool_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:d626a004-623c-4a69-adec-95b062821684:0:20"
+        },
+        "status": "ineligible",
+        "calls": [
+          "db16d39f-e710-47b1-b7be-c18d335bb7ba"
+        ],
+        "final_check": {
+          "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+          "call_id": "db16d39f-e710-47b1-b7be-c18d335bb7ba",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "2b6f4fec7d8c86882c7a62396c9024ba4d18a1bdffaa2aed6082da2698320cb3",
+          "response_sha256": "4a9285edcd7a03f6961b0ef27c92d743274990e7d5aae0200de96d3f97c3ca2f",
+          "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/ff2f96cc-0a2b-4ac6-ade6-379752224a5d/c360e2ca-0bf8-4945-9456-e1895854a892/b0d248b1-e9b9-41d4-a996-e937ee7ca579/calls/cad37e1b-aaf7-4297-a573-02533029d9b2/response-check.json",
+            "sha256": "1121597b7f99989ba31ab34a84d35082cc4c2cf6df08dfc35121c9884d1c8b63",
+            "size_bytes": 734
+          },
+          "created_at": "2026-10-04T16:38:38.193203Z"
+        },
+        "reason_codes": [
+          "response_not_eligible",
+          "response_tool_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "raw:0"
+        },
+        "status": "ineligible",
+        "calls": [
+          "f50a9891-9aba-4868-8c16-a9db079a37d9"
+        ],
+        "final_check": {
+          "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+          "call_id": "f50a9891-9aba-4868-8c16-a9db079a37d9",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "fd89cb7d3327fdb7d0105aa3979384b52b6ae56be8e6755775b3ed300bcd6a2c",
+          "response_sha256": "358f091a091f3a8f4520661947ae8c23e4f408f576b5920aadc94ad319c72eb0",
+          "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/ff2f96cc-0a2b-4ac6-ade6-379752224a5d/c360e2ca-0bf8-4945-9456-e1895854a892/b0d248b1-e9b9-41d4-a996-e937ee7ca579/calls/b5ed45db-5ef6-4327-a559-96a872c76149/response-check.json",
+            "sha256": "2d927e8c7ab466a6ad83ca77ff1b70e3c330b0fac4dcb3e5c07d14188b53e085",
+            "size_bytes": 734
+          },
+          "created_at": "2026-10-04T16:38:38.487483Z"
+        },
+        "reason_codes": [
+          "response_not_eligible",
+          "response_tool_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "normalized:0"
+        },
+        "status": "ineligible",
+        "calls": [
+          "6b68b4f2-fed9-4c75-b1d8-d9658a208101"
+        ],
+        "final_check": {
+          "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+          "call_id": "6b68b4f2-fed9-4c75-b1d8-d9658a208101",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "1e17a436c0a33a837374d376aa3ee1333236c217629bf269305be22d28134ab8",
+          "response_sha256": "cc3f92f1dbb165ee3fd87cd763b31d3b580b7fd8b522ca85fe08f3d6c85c28c2",
+          "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/ff2f96cc-0a2b-4ac6-ade6-379752224a5d/c360e2ca-0bf8-4945-9456-e1895854a892/b0d248b1-e9b9-41d4-a996-e937ee7ca579/calls/11c1f972-e6c8-48ea-9cc2-a9b5a393fd26/response-check.json",
+            "sha256": "e93534f30b56122612646a0ae513629cd4b0b74c29c406ed08ba41925f81f548",
+            "size_bytes": 734
+          },
+          "created_at": "2026-10-04T16:38:38.774990Z"
+        },
+        "reason_codes": [
+          "response_not_eligible",
+          "response_tool_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "case",
+          "id": "940202aa-287f-46aa-ad82-660d2929497a"
+        },
+        "status": "ineligible",
+        "calls": [
+          "403c7485-0414-49d4-9c22-b66b1257c60e"
+        ],
+        "final_check": {
+          "task_id": "c360e2ca-0bf8-4945-9456-e1895854a892",
+          "call_id": "403c7485-0414-49d4-9c22-b66b1257c60e",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "0f8b28eb6da7890ca6f388c7702b6c5074dd4065c8b6b90e51f344b60abaf6d1",
+          "response_sha256": "364beb7a2350d394f305527503eb954ff2038820c475d4f3d5af3646d0121ba2",
+          "manifest_sha256": "d5f322e2ab175cea358d01ab9fa06b4399cab6e2de885b303b9ce973712e71af",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/ff2f96cc-0a2b-4ac6-ade6-379752224a5d/c360e2ca-0bf8-4945-9456-e1895854a892/b0d248b1-e9b9-41d4-a996-e937ee7ca579/calls/a997d15b-38f4-463e-8e6f-5136c969773c/response-check.json",
+            "sha256": "0cb4bdc50a9153e8a5c64ce7a0b6bfc39d1bef9ddab99d11081c26995e99cdd7",
+            "size_bytes": 734
+          },
+          "created_at": "2026-10-04T16:38:39.079063Z"
+        },
+        "reason_codes": [
+          "response_not_eligible",
+          "response_tool_calls"
+        ],
+        "unresolved": [],
+        "candidates": []
+      }
+    ],
+    "rules": [],
+    "overlaps": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "status": "partial",
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 5
+}

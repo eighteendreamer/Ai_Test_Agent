@@ -12,12 +12,13 @@ import logging
 import re
 
 from src.application.documents.impact_sources import impact_record_hash
-from src.runtime.postgres_document_operation_store import PostgresDocumentTaskStore
+from src.runtime.postgres_document_operation_store import PostgresDocumentOperationStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.case_management import TestCaseVersionRecord
 from src.schemas.document_impact import (
     DocumentImpactClaim, DocumentImpactCommand, DocumentImpactSourceSeed,
     DocumentImpactTaskPage, DocumentImpactTaskRecord,
+    DocumentImpactSnapshot, DocumentImpactSnapshotPage,
 )
 from src.schemas.document_impact_batches import DocumentImpactManifestCheckpoint
 from src.runtime.postgres_document_impact_calls import PostgresDocumentImpactCalls
@@ -26,7 +27,7 @@ from src.runtime.postgres_document_impact_responses import PostgresDocumentImpac
 logger = logging.getLogger(__name__)
 
 
-class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
+class PostgresDocumentImpactStore(PostgresDocumentOperationStore):
     _table_suffix = "impact"
     _working_phase = "preparing"
     _additional_phases = ("input_saved", "analyzing")
@@ -39,8 +40,10 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
     _command_type = DocumentImpactCommand
     _claim_type = DocumentImpactClaim
     _task_page_type = DocumentImpactTaskPage
+    _snapshot_type = DocumentImpactSnapshot
+    _snapshot_page_type = DocumentImpactSnapshotPage
     _extra_input_columns = ("difference_snapshot_id",)
-    _uuid_record_fields = (*PostgresDocumentTaskStore._uuid_record_fields, *_extra_input_columns)
+    _uuid_record_fields = (*PostgresDocumentOperationStore._uuid_record_fields, *_extra_input_columns)
 
     def __init__(self, settings, *, lease_seconds=30):
         super().__init__(settings, lease_seconds=lease_seconds)
@@ -55,9 +58,10 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
 
     @property
     def tables(self):
-        return [self.responses.table, self.calls.table, self._manifests, self._tasks]
+        return [self._snapshots, self.responses.table, self.calls.table, self._manifests, self._tasks]
 
     def _initialize_results(self, cur):
+        super()._initialize_results(cur)
         cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._manifests} (
             task_id UUID PRIMARY KEY REFERENCES {self._tasks}(id), record JSONB NOT NULL)""")
         self.calls.initialize(cur)
@@ -83,9 +87,28 @@ class PostgresDocumentImpactStore(PostgresDocumentTaskStore):
         return hashlib.sha256(encoded).hexdigest()
 
     def _claim_phase_sql(self):
-        return (f"CASE WHEN input_checkpoint IS NULL THEN 'preparing' WHEN EXISTS("
+        return (f"CASE WHEN checkpoint IS NOT NULL THEN 'result_saved' WHEN input_checkpoint IS NULL THEN 'preparing' WHEN EXISTS("
             f"SELECT 1 FROM {self._manifests} m WHERE m.task_id={self._tasks}.id) "
             "THEN 'analyzing' ELSE 'input_saved' END")
+
+    def _validate_snapshot(self, snapshot, seed):
+        if seed.workflow_protocol is None or snapshot.analyzed_count > snapshot.unit_count:
+            raise ValueError("影响结果需要固定工作流协议及真实范围统计")
+
+    async def save_snapshot_checkpoint(self, claim, snapshot):
+        manifest = await self.get_manifest_checkpoint(claim.task.project_id, claim.task.document_id, claim.task.id)
+        if manifest is None or snapshot.manifest_sha256 != manifest.sha256 or snapshot.input_sha256 != manifest.input_sha256:
+            raise ValueError("影响结果不能替换固定输入或范围检查点")
+        return await super().save_snapshot_checkpoint(claim, snapshot)
+
+    async def get_result_checkpoint(self, project_id, document_id, task_id):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT checkpoint FROM {self._tasks} WHERE project_id=%s AND document_id=%s AND id=%s",
+                    (project_id, document_id, task_id))
+                row = cur.fetchone()
+                return DocumentImpactSnapshot.model_validate(row["checkpoint"]) if row and row["checkpoint"] else None
+        return await asyncio.to_thread(read)
 
     def _validate_seed(self, cur, seed):
         cur.execute(f"SELECT record FROM {self._docs}_diff_snapshots WHERE project_id=%s AND document_id=%s AND id=%s",

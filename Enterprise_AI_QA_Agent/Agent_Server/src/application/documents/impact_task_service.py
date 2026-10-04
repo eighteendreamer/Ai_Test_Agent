@@ -15,6 +15,7 @@ from src.application.documents.impact_sources import canonical_impact_json
 from src.application.documents.impact_analysis_context import DocumentImpactAnalysisContexts
 from src.application.documents.impact_batches import DocumentImpactBatches
 from src.application.documents.impact_response_protocol import capture_impact_response_protocol
+from src.application.documents.impact_workflow import capture_impact_workflow_protocol
 from src.schemas.document_impact import DocumentImpactInputCheckpoint, DocumentImpactInputEnvelope
 from src.schemas.document_impact_batches import DocumentImpactBatchManifest, DocumentImpactManifestCheckpoint
 
@@ -63,6 +64,7 @@ class DocumentImpactTaskService:
         seed.batch_settings = batch_settings
         seed.invocation_snapshot = invocation_snapshot
         seed.response_protocol = capture_impact_response_protocol()
+        seed.workflow_protocol = capture_impact_workflow_protocol()
         logger.info("document_impact_response_protocol_captured", extra={"project_id": project_id,
             "protocol_version": seed.response_protocol.version, "protocol_sha256": seed.response_protocol.sha256})
         return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)
@@ -169,9 +171,12 @@ class DocumentImpactTaskService:
     async def prepare_input(self, claim):
         """Save exact content; do not mark AI analysis completed or invoke models."""
         await self._require_document(claim.task.project_id, claim.task.document_id)
-        if claim.task.input_checkpoint is not None:
-            await self._read_input(claim.seed, claim.task.input_checkpoint)
-            return claim.task
+        # A claim can precede a saved input. Durable state, not its old DTO,
+        # decides recovery; otherwise a second preparation rewrites the checkpoint.
+        current = await self.get(claim.task.project_id, claim.task.document_id, claim.task.id)
+        if current.input_checkpoint is not None:
+            await self._read_input(claim.seed, current.input_checkpoint)
+            return current
         if claim.remaining_seconds <= 0:
             return await self._store.finish_failed(claim, error_code="document_impact_deadline",
                 message="影响任务原输入准备预算已耗尽")

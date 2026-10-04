@@ -1,0 +1,244 @@
+FFFFFFFFFFFF                                                             [100%]
+================================== FAILURES ===================================
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[False-md] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[False-docx] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[False-pdf] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[True-md] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[True-docx] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_ test_actual_files_automatic_read_rules_to_complete_case_and_result[True-pdf] _
+tests\test_document_impact_workflow.py:77: in test_actual_files_automatic_read_rules_to_complete_case_and_result
+    claim, manifest, _, calls = await prepared(values, endpoint, adapter=adapter)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+____ test_incomplete_coverage_overlap_no_rules_and_frozen_budget[missing] _____
+tests\test_document_impact_workflow.py:127: in test_incomplete_coverage_overlap_no_rules_and_frozen_budget
+    claim, manifest, _, calls = await prepared(values, endpoint, policy=policy)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+____ test_incomplete_coverage_overlap_no_rules_and_frozen_budget[conflict] ____
+tests\test_document_impact_workflow.py:127: in test_incomplete_coverage_overlap_no_rules_and_frozen_budget
+    claim, manifest, _, calls = await prepared(values, endpoint, policy=policy)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+____ test_incomplete_coverage_overlap_no_rules_and_frozen_budget[no_rules] ____
+tests\test_document_impact_workflow.py:127: in test_incomplete_coverage_overlap_no_rules_and_frozen_budget
+    claim, manifest, _, calls = await prepared(values, endpoint, policy=policy)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+_____ test_incomplete_coverage_overlap_no_rules_and_frozen_budget[budget] _____
+tests\test_document_impact_workflow.py:127: in test_incomplete_coverage_overlap_no_rules_and_frozen_budget
+    claim, manifest, _, calls = await prepared(values, endpoint, policy=policy)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+____ test_actual_result_checkpoint_commit_lost_reply_recovers_without_http ____
+tests\test_document_impact_workflow.py:152: in test_actual_result_checkpoint_commit_lost_reply_recovers_without_http
+    claim, manifest, _, calls = await prepared(values, endpoint)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+___________ test_handler_uses_shared_lease_and_terminal_redelivery ____________
+tests\test_document_impact_workflow.py:188: in test_handler_uses_shared_lease_and_terminal_redelivery
+    claim, manifest, _, calls = await prepared(values, endpoint)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_impact_calls.py:91: in prepared
+    task = await tasks.submit(project.id, doc.id, DocumentImpactTaskRequest(
+src\application\documents\impact_task_service.py:67: in submit
+    seed.workflow_protocol = capture_impact_workflow_protocol()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_workflow.py:35: in capture_impact_workflow_protocol
+    return DocumentImpactWorkflowProtocol(**body, sha256=impact_record_hash(body))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:27: in impact_record_hash
+    return hashlib.sha256(canonical_impact_json(value)).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\impact_sources.py:22: in canonical_impact_json
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+                      ^^^^^^^^^^^^^^^^
+E   AttributeError: 'dict' object has no attribute 'model_dump'
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[False-md]
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[False-docx]
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[False-pdf]
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[True-md]
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[True-docx]
+FAILED tests/test_document_impact_workflow.py::test_actual_files_automatic_read_rules_to_complete_case_and_result[True-pdf]
+FAILED tests/test_document_impact_workflow.py::test_incomplete_coverage_overlap_no_rules_and_frozen_budget[missing]
+FAILED tests/test_document_impact_workflow.py::test_incomplete_coverage_overlap_no_rules_and_frozen_budget[conflict]
+FAILED tests/test_document_impact_workflow.py::test_incomplete_coverage_overlap_no_rules_and_frozen_budget[no_rules]
+FAILED tests/test_document_impact_workflow.py::test_incomplete_coverage_overlap_no_rules_and_frozen_budget[budget]
+FAILED tests/test_document_impact_workflow.py::test_actual_result_checkpoint_commit_lost_reply_recovers_without_http
+FAILED tests/test_document_impact_workflow.py::test_handler_uses_shared_lease_and_terminal_redelivery
+12 failed in 46.54s

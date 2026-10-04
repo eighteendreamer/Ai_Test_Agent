@@ -2024,3 +2024,23 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_202
 PLAN基线更新为已提交7f7fb743，纠正依据表中单元候选仍未实现的过时表述，保留全范围候选/生产API/独立影响Worker/页面未完成状态。补充自动补读、规则候选向用例传递、覆盖/冲突及不可变结果的待实施方案，明确具体跨层协议仍需研究，不能只遍历单元就宣称全范围影响成立。新版本协议不能重写历史输入/请求/响应。
 
 实际执行标准库文档核对脚本：三份方案字节一致、本地引用存在、此前287份原始证据大小/hash未变、历史最终JUnit141项且失败/错误/跳过为0；AST确认当前影响TaskService尚无execute流程。用户.gitignore原SHA-256保持不变。结果见plan-sync-7f7fb743-validation.json。历史141通过不是本次重跑；产品代码未改，未重跑后端功能测试、前端构建、浏览器、真实模型或生产迁移。全P0—P5目标仍未完成，不推送、不建PR。
+
+## 自动补读、规则传递与全范围候选快照（2026-10-05，基线9be9bfd8）
+
+先读目标原附件、当前状态、影响seed/范围/调用/核验、共享快照Store与Worker生命周期、本地Agent协议及评测工程化课程；设计先写P4_WORKFLOW_DESIGN.md。确认同单元续读不提供跨单元规则传递，采用固定规则集合加实际原文/完整用例输入，不能只for循环单元。实现impact-coordinator-v1指导/hash冻结、带原check来源的候选分组与潜在重叠、read/finish自动接续、当前用例逐规则覆盖及全范围未处理状态；规则来源核对实际PG核验/对象，最终读取再核对每个已存调用实际接收的集合。
+
+影响Store改为复用PostgresDocumentOperationStore已有checkpoint/result_saved/finish与新增快照表；输入/范围/调用/核验保持独立，旧Input/CallInput/CallSelection/响应Schema不改。新调用user payload可带coordination_context，旧不带字段。旧seed工作流None不补造；旧调用/检查点查询不变。预算用MySQL原策略，代码协议冻结PG，完整请求/结果RustFS；typed预算异常仍继承ValueError，旧消费方契约保持。新增薄型Handler复用实际领取/心跳/取消/终态重投，无新增任务平台、依赖或editable参数。
+
+真实测试首轮12失败46.54秒：把仅支持BaseModel的记录hash函数用于dict；改为既有json canonical方法。次轮11失败1通过50.14秒：第一次领取的旧claim不知道输入已保存，重复准备试图改写检查点；根因修正prepare_input读取权威当前记录，不能只在workflow绕过。两轮失败日志和XML保留。修正后12通过78.07秒。
+
+扩大13模块161通过414.12秒（1条测试类型导入收集警告）。最终改预算细分原因、测试类型别名及两项候选来源篡改拒绝，当前源码163通过0跳过422.81秒。新22项均为真实文件/HTTP/隔离MySQL/PG/RustFS。覆盖6个文件×适配器完整流程、漏规则/无规则/来源缺失/潜在冲突、逻辑预算及回执分类、结果实际PG提交后丢回执、新Store恢复、对象实际保存后丢回执、截止时间耗尽后重读已存请求/响应/核验、不重发实际在途取消的未知调用、共享Handler实际3秒租约心跳保持及数据库显式失效后的取消、篡改源check/候选拒绝且HTTP次数不增加。固定最终XML/log/原件和结果分别保存，161结果不是最终源码验证。
+
+最终命令在Agent_Server执行，设置RUN_LIVE_DOCUMENT_IMPACT_TASKS、RUN_LIVE_DOCUMENT_IMPACT_SOURCES、RUN_LIVE_CASE_PLANNING_TASKS、RUN_LIVE_CASE_JSON_TESTS为1，QA_IMPACT_TASK_EVIDENCE_DIR=p4-workflow-validated、QA_DOCUMENT_IMPACT_EVIDENCE_DIR=p4-workflow-sources-validated、QA_PLANNING_TASK_EVIDENCE_DIR=p4-workflow-planning-validated（均在docs/upgrade_2026-10-03）。
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_workflow.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_batches.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_document_impact_sources.py tests/test_case_planning_tasks.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_skill_registry_reload.py tests/test_skill_management_boundaries.py tests/test_test_case_generation_pipeline.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-workflow-validated.xml *> ../docs/upgrade_2026-10-03/p4-workflow-validated.log
+```
+
+方案三个正文同步，本轮源码/历史hash/引用/旧CLI/实际原件字节与凭据格式核对见p4-workflow-validation.json。修改属性只保留新原件和失败traceback原始空白，源码检查不放宽。最初查固定输入regression-final目录不存在，改按实际artifact/hash查找；未重跑、覆盖或生成历史记录。pytest最终进程已退出，没有默认外部模型、正式影响API/前端、独立影响进程或生产迁移验收；已有规划CLI仍属其他链路。生产初始化/API/独立Worker、真实模型及需求/评审/矩阵/增量和完整P0—P5尚需继续。用户.gitignore未改未提交，不推送/PR。
+
+最终交付核对：388份本轮相关文件，373份新原始证据与Git暂存字节逐份一致，验证元数据不自引用hash；旧287份响应证据未变，旧3份输入/6份请求canonical hash及旧规划CLI原字节一致。三份方案全文一致、26个本地链接存在、10份Python源码/测试字节编译通过；凭据格式扫描无匹配，最终cached diff检查通过。用户.gitignore原SHA-256保持且未暂存；所有pytest进程已退出，没有推送/PR或生产/默认模型验收。

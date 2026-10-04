@@ -13,6 +13,7 @@ from src.schemas.document_impact_analysis import DocumentImpactAnalysisContext
 from src.schemas.document_impact_batches import DocumentImpactBatchSettings
 from src.schemas.document_impact_calls import DocumentImpactInvocationSnapshot
 from src.schemas.document_impact_responses import DocumentImpactResponseProtocolSnapshot
+from src.schemas.document_impact_workflow import DocumentImpactWorkflowProtocol
 
 
 class DocumentImpactPolicy(BaseModel):
@@ -101,6 +102,7 @@ class DocumentImpactSourceSeed(BaseModel):
     batch_settings: DocumentImpactBatchSettings | None = None
     invocation_snapshot: DocumentImpactInvocationSnapshot | None = None
     response_protocol: DocumentImpactResponseProtocolSnapshot | None = None
+    workflow_protocol: DocumentImpactWorkflowProtocol | None = None
     implementation_version: Literal["impact-sources-v2"] = "impact-sources-v2"
 
     @model_validator(mode="after")
@@ -175,6 +177,31 @@ class DocumentImpactCommand(BaseModel):
     task_id: str
 
 
+class DocumentImpactSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=UUID_PATTERN)
+    task_id: str = Field(pattern=UUID_PATTERN)
+    seed: DocumentImpactSourceSeed
+    storage_uri: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["complete", "partial"]
+    unit_count: int = Field(ge=0)
+    analyzed_count: int = Field(ge=0)
+    rule_count: int = Field(ge=0)
+    created_at: datetime
+
+
+class DocumentImpactSnapshotPage(BaseModel):
+    items: list[DocumentImpactSnapshot]
+    has_more: bool
+    limit: int
+    offset: int
+
+
 class DocumentImpactClaim(BaseModel):
     task: DocumentImpactTaskRecord
     seed: DocumentImpactSourceSeed
@@ -182,3 +209,4 @@ class DocumentImpactClaim(BaseModel):
     worker_id: str
     lease_token: str
     remaining_seconds: float
+    snapshot: DocumentImpactSnapshot | None = None

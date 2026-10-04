@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.document_impact_calls import DocumentImpactCallRecord
+from src.application.documents.impact_checkpoint_io import ImpactCallBudgetExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +91,11 @@ class PostgresDocumentImpactCalls:
                 if len(records) >= policy.max_logical_calls:
                     logger.warning("document_impact_call_budget_rejected", extra={"task_id": claim.task.id,
                         "budget_kind": "logical_calls", "reserved_calls": len(records), "max_calls": policy.max_logical_calls})
-                    raise ValueError("影响逻辑调用额度已耗尽，未请求模型")
+                    raise ImpactCallBudgetExceeded("影响逻辑调用额度已耗尽，未请求模型", kind="logical_calls")
                 if sum(record.budget.reserved_estimated_tokens for record in records) + budget.reserved_estimated_tokens > policy.max_reserved_estimated_tokens:
                     logger.warning("document_impact_call_budget_rejected", extra={"task_id": claim.task.id,
                         "budget_kind": "estimated_tokens", "max_reserved_estimated_tokens": policy.max_reserved_estimated_tokens})
-                    raise ValueError("影响调用累计估算预算已耗尽，未请求模型")
+                    raise ImpactCallBudgetExceeded("影响调用累计估算预算已耗尽，未请求模型", kind="estimated_tokens")
                 predecessor_id = selection.previous_call_id or selection.retry_of_call_id
                 predecessor = self._read(cur, claim.task.id, call_id=predecessor_id) if predecessor_id else None
                 if predecessor_id and (predecessor is None or predecessor.selection.unit != selection.unit):
