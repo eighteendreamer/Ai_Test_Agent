@@ -1181,3 +1181,30 @@ npm run build
 最终后端命令沿用上文存储专项并增加 `tests/test_case_import_service.py`，设置 `RUN_LIVE_CASE_IMPORT_TESTS=1`，输出 `p3-original-assets-revision-final.xml`。浏览器命令输出 `p3-original-assets-browser-revision.xml`；CLI 提前创建独立 `p3-original-assets-cli-revision/` 并将其设为 `QA_TEST_GATE_OUTPUT_DIR`，输出 `p3-original-assets-cli-revision.xml`，保留旧轮次。7 个受影响 Python 源码/测试重新执行 py_compile。失败 CLI 的早期临时子进程目录已被 pytest 轮转回收，未虚称保存该轮全部日志；原 XML 保留，成功两轮完整日志分别保留在各自证据目录。HAR 与并发失败不计为通过，只有最后修复复验后记录最终状态。
 
 最终方案本地链接、原始备份、镜像字节一致性和 XML 数量已核对，敏感格式扫描没有匹配。代码、测试及 Markdown 的 `git diff --cached --check` 通过；完整检查提示 3 处 pytest 原始失败 XML 的尾部空白，保留原始证据，不改写失败输出。仅暂存本轮 70 个源码/测试/方案/证据文件，用户 `.gitignore` 未暂存。
+
+## P3 独立版本后端开发检查及方案同步（2026-10-04）
+
+本次直接更新用户粘贴方案原文件、项目 PLAN 和 Codex 镜像，将误放在 Git 章节下的“独立版本链的实施查证”移回上传章节。补充开发中接口、真实专项结果与剩余验收，修正“目前只有独立目录记录”的过时现状。上传章节明确不使用 Git 保存、缓存或比较上传文件；模板只参与生成，执行仍按项目选取、初排、AI 衔接判断、必要补全、最终冻结的流程。
+
+版本后端仍在开发：扩展现有目录并新增 PostgreSQL 版本、资产及请求记录，当前指针/版本/提交同事务；用实际 BOM/CRLF Markdown 大文件通过 HTTP 验证 V1→V2、旧原件下载、同请求返回原快照、当前内容相同不增版本、恢复旧内容形成 V3及同名独立上传。不能将这些专项当作前端完整功能交付。
+
+| 证据 | 实际结果 | 说明 |
+|---|---|---|
+| `p3-doc-versions-before.xml` | 2 失败 | 新版本字段缺失的原始功能样本 |
+| `p3-doc-versions-first.xml` | 2 失败 | 功能断言通过后，夹具重复清理同一文档导致失败，未计通过 |
+| `p3-doc-versions-contract.xml` | 24 通过、6 失败 | 旧故障替身不接受新增的版本/提交参数，以及直接改写资产哈希与不可覆盖约束冲突 |
+| `p3-doc-versions-contract-repaired.xml` | 22 通过、2 失败，9.19 秒 | 故障测试将同一个模型对象交给两处引用，修改后错误比较两个引用；目录实际拒绝修改并保留原哈希 |
+| `p3-doc-versions-contract-final.xml` | 24 通过，8.87 秒 | 修正故障替身参数、复制独立对象；正常修改旧资产哈希被拒绝，主动破坏隔离 RustFS 原件字节后 HTTP 返回 500；内存及真实 PG/RustFS 复验通过 |
+
+实际运行（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_doc_versions.py tests/test_api_doc_original_assets.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-doc-versions-contract-final.xml
+```
+
+故障注入仅写本轮隔离测试对象；未修改生产对象。首次夹具清理失败残留的 8 个 UUID 命名 PostgreSQL 表和 1 个 MySQL 配置表，已先核对精确名称、当前用户所有权及 `project_key=doc-versions`，再删除该目录登记的测试资产，并按依赖顺序清理明确测试表；未使用 CASCADE。新夹具对文档 ID 去重，清理计划表放入 finally，本次复验正常清理。
+
+后续须完成并发/提交回执故障、全存储不可覆盖契约、默认参数请求归一、项目改绑重放归属、JSON 重启/失败回滚、历史初始化、生成/规划精确来源，以及前端类型/API/版本页面与真实浏览器验收。DOCX、受限解析、快照/差异、Git、P4/P5 保持未完成；完整 P0—P5 目标仍在进行。
+
+本次交付是方案同步和专项证据，版本后端及测试修改留在工作区继续验收，不纳入本次文档提交。不执行生产迁移、不发布新接口。本轮未重新运行前端构建或浏览器，因为版本前端尚未接通；上一轮原件下载页面的结果仅保留为历史证据。原方案上传章节与项目方案逐字一致，Codex 镜像与项目方案逐字节一致，原始备份保留；提交不包含用户 `.gitignore` 或其他开发中代码。

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="4.335" timestamp="2026-10-04T09:17:24.344569+08:00" hostname="EIghteen"><testcase classname="tests.test_api_doc_versions" name="test_actual_files_version_chain_replays_and_current_content_dedup[False]" time="0.180"><failure message="src.application.documents.api_docs_service.ApiDocNotFoundError: 未找到 API 文档：b9c93cef-8ffc-5fd6-bbbd-7123e2db4b06">tests\test_api_doc_versions.py:29: in test_actual_files_version_chain_replays_and_current_content_dedup
+    async with environment(tmp_path, live) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_planning.py:88: in environment
+    for doc_id in owned_documents: await docs.delete_document(doc_id)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\api_docs_service.py:734: in delete_document
+    raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
+E   src.application.documents.api_docs_service.ApiDocNotFoundError: 未找到 API 文档：b9c93cef-8ffc-5fd6-bbbd-7123e2db4b06</failure></testcase><testcase classname="tests.test_api_doc_versions" name="test_actual_files_version_chain_replays_and_current_content_dedup[True]" time="1.150"><failure message="sqlalchemy.exc.InternalError: (psycopg.errors.DependentObjectsStillExist) cannot drop table up_jp_d70aa5cd3843 because other objects depend on it&#10;DETAIL:  constraint up_pl_b5c8f7ef9cec_project_id_fkey on table up_pl_b5c8f7ef9cec depends on table up_jp_d70aa5cd3843&#10;HINT:  Use DROP ... CASCADE to drop the dependent objects too.&#10;[SQL: DROP TABLE IF EXISTS &quot;up_jp_d70aa5cd3843&quot;]&#10;(Background on this error at: https://sqlalche.me/e/20/2j85)">tests\test_case_json_templates.py:98: in _stores
+    yield settings, PostgresProjectStore(settings), PostgresTestCaseStore(settings), configs, PostgresApiDocStore(settings), objects
+tests\test_case_planning.py:88: in environment
+    for doc_id in owned_documents: await docs.delete_document(doc_id)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\documents\api_docs_service.py:734: in delete_document
+    raise ApiDocNotFoundError(f"未找到 API 文档：{doc_id}")
+E   src.application.documents.api_docs_service.ApiDocNotFoundError: 未找到 API 文档：83e951e0-d625-5b4e-a8a8-1b908350905a
+
+During handling of the above exception, another exception occurred:
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DependentObjectsStillExist: cannot drop table up_jp_d70aa5cd3843 because other objects depend on it
+E   DETAIL:  constraint up_pl_b5c8f7ef9cec_project_id_fkey on table up_pl_b5c8f7ef9cec depends on table up_jp_d70aa5cd3843
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+
+The above exception was the direct cause of the following exception:
+tests\test_api_doc_versions.py:29: in test_actual_files_version_chain_replays_and_current_content_dedup
+    async with environment(tmp_path, live) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_planning.py:54: in environment
+    async with _stores(tmp_path, live) as (settings, project_store, case_store, configs, doc_store, objects):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:231: in __aexit__
+    await self.gen.athrow(typ, value, traceback)
+tests\test_case_json_templates.py:104: in _stores
+    cursor.execute(f'DROP TABLE IF EXISTS "{table}"')
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.InternalError: (psycopg.errors.DependentObjectsStillExist) cannot drop table up_jp_d70aa5cd3843 because other objects depend on it
+E   DETAIL:  constraint up_pl_b5c8f7ef9cec_project_id_fkey on table up_pl_b5c8f7ef9cec depends on table up_jp_d70aa5cd3843
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+E   [SQL: DROP TABLE IF EXISTS "up_jp_d70aa5cd3843"]
+E   (Background on this error at: https://sqlalche.me/e/20/2j85)</failure></testcase></testsuite></testsuites>
