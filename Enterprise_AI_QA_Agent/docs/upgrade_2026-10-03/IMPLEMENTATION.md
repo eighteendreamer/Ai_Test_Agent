@@ -2270,3 +2270,41 @@ AssertionError: 'length' == 'stop'
 官方中文主页抓取超时；由官方英文首页进入Step 5模型文档和Chat Completions API，查证reasoning_effort=low/medium/high；安装SDK签名也查得同字段。官方依据链接保存在设计记录，不依赖第三方参数表。实际low仍截断，不能声称网关已有效控制深度。当前问题有实际输出预算消耗证据，不能把过去所有超时一并判成此根因。
 
 方案3.5.11/6.7纠正“先接流式即可修复”的推断，明确证据清单与推理任务分别冻结、系统提供引用位置、规则再到完整用例、传输/预算契约及旧协议兼容；这些后续仍待验证实施。保留上传不经Git、模板只用于生成、项目隔离和原失败；三份方案全文同步。没有正式生产流式/effort改动、SQL迁移、依赖升级、前端字段变化或全范围语义成功；未重跑前端/浏览器/独立Worker或生产历史迁移。全目标继续active。
+
+## 2026-10-05：系统绑定实际原文引用，v5实测及方案同步
+
+研究基线1d42f7ce。先查固定read_range/read_segment、raw/章节/表格原文范围、响应事实核验、v4短引用、实际失败请求及前端seed消费，再写P4_TEXT_ANCHORS_DESIGN。实现impact_text_evidence只从实际user消息primary/additional读取累计T目录；模型选T，后端还原来源/位置/quote/hash，再走原事实核验。normalized/未读/空内容和case目录不作原文证据。局部解析块裁成实际读到的切片，续读稳定编号，同文字不同版本身份不合并。
+
+新capture为impact-call-v5/wire impact-response-v3；v2/v3/v4旧输入/终态保留。规范DocumentImpactDecision仍v1，公开API/前端结果及coordinator-v1不变。新增独立锚点schema与helper不形成循环导入，不增加SQL字段或可编辑配置。原生/LangChain受控响应助手按实际协议生成wire，只用于测试，不替换默认模型。
+
+实际命令在Agent_Server执行，输出同时Tee-Object保存同名.log：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-text-anchors-replay-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-text-anchors-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-text-anchors-live-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-text-anchors-production-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-text-anchors-production-first.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_text_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-text-anchors-edge-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-text-v5-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-text-v5-first.xml
+```
+
+不同命令独立exec进程；edge没有live开关，13通过/6跳过3.70秒，6个live场景已在132内通过，包含11旧检查及2新增边界，不算额外13覆盖。最初回放32通过/12跳过4.10秒；完整7模块132通过0跳过441.18秒。独立生产1通过0跳过59.26秒，6物理消息均等于原完整请求且v5；未杀Worker，实际正常场景不冒充故障恢复。源文件py_compile和diff检查通过；前端通用seed/规范结果消费者查证未变，没有重跑前端/浏览器。
+
+真实默认新任务实际失败：
+
+```text
+assert all(item.status == "analyzed" and not item.reason_codes and not item.unresolved for item in result.units)
+AssertionError: units contain unknown / unprocessed
+1 failed in 608.01s
+```
+
+Handler601.219秒、10逻辑调用/13物理POST。8份完整响应通过impact-text-bindings-v1，其中4补读、4结束；11单元为4 analyzed/2 unknown/5 unprocessed，三条完整8步用例实际调用0，最终partial/pending_review/deployment unknown。10候选（modified3/removed3/added4）含三类实际业务变化，但重复证据产生独立候选，不当作10条不同需求。未知/失败及未处理范围保留，终态查询/重投不发HTTP、不重建/上传，不重领；源模型前后参数相同。8192输出、SDK60秒、单调用120秒不变，600秒总期限只在隔离项目MySQL。
+
+实际请求与固定范围研究另存p4-text-anchors-request-sizing.json：126/139字符原文被分2原文+6差异发现单元；Skill三方读取、协调单元和wire指令需阶段对齐，不能仅凭此归因全部超时。新引用降低模型重复填写系统位置的职责，真实规则有进展，完整业务尚未通过。后续研究证据任务聚合/覆盖映射及阶段契约，不原样重发此任务、不复制一个答案标多个单元完成、不放宽事实核验。
+
+PLAN3.5.12/6.8、当前进度表及两个外部副本全文同步，上传不经Git、模板仅生成及全P0—P5范围保留。之前345份v4与85份流式原始证据SHA/大小核对相同、用户.gitignore哈希未变。原件/对象/冻结消息/引用目录、三份方案及限定凭据扫描详见p4-text-anchors-validation.json；.gitattributes按现有方式保留新证据原字节。本轮无SQL表/列、新依赖、生产历史迁移或正式stream/effort配置改动。完整目标继续active，不能宣称交付完成。

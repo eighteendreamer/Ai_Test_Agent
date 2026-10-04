@@ -1,0 +1,136 @@
+{
+  "checkpoint": {
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+    "validator_version": "impact-response-validator-v1",
+    "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+    "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/98b06f91-93a7-403a-89f1-b57e17d7d349/response-check.json",
+      "sha256": "04ca77e139bb56162b9def317a80beeeace74ab5582e6eca05c9d19b7ff98d8e",
+      "size_bytes": 4449
+    },
+    "created_at": "2026-10-04T21:31:34.766165Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "identity_binding": "impact-text-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+    "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+    "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "segment",
+        "id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32:0:139"
+      },
+      "action": "finish",
+      "summary": "Based on fixed old/new source text and raw differences, propose three reviewable rule-change candidates: order retention duration modified from 7 to 9 days, coupon PROMO5 reduction rule deleted, and new order export rule added. Deployment status remains unknown and all candidates require review.",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "order-retention-days",
+          "kind": "modified",
+          "summary": "订单保留期由7天修改为9天，超过保留期查询仍返回410",
+          "reason": "Old fixed text shows 已支付订单保留7天，超过保留期查询返回410; new fixed text shows 已支付订单保留9天，超过保留期查询返回410. Raw difference D1 records only the numeric replacement 7 to 9 in the same operation/condition context, so this is a modified operational retention deadline.",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "Deployment/effective status is unknown; no deployment evidence supplied."
+          ]
+        },
+        {
+          "key": "coupon-promo5-removed",
+          "kind": "removed",
+          "summary": "删除优惠码规则：提交有效优惠码PROMO5时订单金额减少5元",
+          "reason": "Old fixed text contains section 优惠码 and the PROMO5 amount-reduction rule; new fixed text no longer contains that section or rule content. Raw difference D1 deletes the old coupon block. This is only a stop/deactivation candidate and must be reviewed; it does not prove production removal.",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 56,
+              "quote": "## 优惠码\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 56,
+              "end_char": 81,
+              "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "Deletion is a review candidate only; deployment status unknown."
+          ]
+        },
+        {
+          "key": "order-export-added",
+          "kind": "added",
+          "summary": "新增订单导出规则：GET /orders/export 按创建时间倒序排列",
+          "reason": "New fixed text contains section 订单导出 with the new endpoint and sort requirement; old fixed text has no such section or rule. Raw difference D2 inserts this text at the end. Applicability is not inferred as live without deployment evidence.",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 102,
+              "quote": "## 订单导出\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 102,
+              "end_char": 139,
+              "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "No deployment evidence; effective applicability unknown."
+          ]
+        }
+      ],
+      "unresolved": []
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

@@ -1,0 +1,1061 @@
+{
+  "implementation_version": "impact-coordinator-v1",
+  "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+  "input_sha256": "563c96e1baea41425b849b0dfe3179e2a8473430b791d71808817f61b5f7dfa6",
+  "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+  "protocol": {
+    "version": "impact-coordinator-v1",
+    "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
+    "case_instruction": "本阶段将rules中完整规则候选与当前完整固定用例及其编写来源比较。逐条返回candidate，key必须为对应rules.id，保留该规则的kind/summary及原文依据，case_impacts仅判断当前unit.id，每条说明none/minor/major/uncertain并引用当前用例实际字段。需要原文或来源时read补读。不得遗漏规则后声明analyzed；无法判断保留evidence_insufficient。discovery_units包含未完成范围时不能宣称完整或无变化。没有规则仍判断本用例来源是否充分。所有候选仍待评审，不能将模型建议当作部署事实或测试通过。",
+    "sha256": "76f3c582a070c4b136e1e629ecdea508f0f1fe814e4a8dbd917180ca9051f5b5"
+  },
+  "units": [
+    {
+      "unit": {
+        "kind": "segment",
+        "id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed:0:126"
+      },
+      "status": "unknown",
+      "calls": [
+        "2e8d3846-7bf5-4474-b752-2ed1e65fc185"
+      ],
+      "final_check": null,
+      "reason_codes": [
+        "dispatch_TimeoutError"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "segment",
+        "id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32:0:139"
+      },
+      "status": "analyzed",
+      "calls": [
+        "988cf9f3-0c01-4ec3-b83f-4f2de9d06d77",
+        "a80b0106-a890-43d0-a60d-23df3832e8e6"
+      ],
+      "final_check": {
+        "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+        "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+        "validator_version": "impact-response-validator-v1",
+        "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+        "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+        "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/98b06f91-93a7-403a-89f1-b57e17d7d349/response-check.json",
+          "sha256": "04ca77e139bb56162b9def317a80beeeace74ab5582e6eca05c9d19b7ff98d8e",
+          "size_bytes": 4449
+        },
+        "created_at": "2026-10-04T21:31:34.766165Z"
+      },
+      "reason_codes": [],
+      "unresolved": [],
+      "candidates": [
+        {
+          "key": "order-retention-days",
+          "kind": "modified",
+          "summary": "订单保留期由7天修改为9天，超过保留期查询仍返回410",
+          "reason": "Old fixed text shows 已支付订单保留7天，超过保留期查询返回410; new fixed text shows 已支付订单保留9天，超过保留期查询返回410. Raw difference D1 records only the numeric replacement 7 to 9 in the same operation/condition context, so this is a modified operational retention deadline.",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "Deployment/effective status is unknown; no deployment evidence supplied."
+          ]
+        },
+        {
+          "key": "coupon-promo5-removed",
+          "kind": "removed",
+          "summary": "删除优惠码规则：提交有效优惠码PROMO5时订单金额减少5元",
+          "reason": "Old fixed text contains section 优惠码 and the PROMO5 amount-reduction rule; new fixed text no longer contains that section or rule content. Raw difference D1 deletes the old coupon block. This is only a stop/deactivation candidate and must be reviewed; it does not prove production removal.",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 56,
+              "quote": "## 优惠码\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 56,
+              "end_char": 81,
+              "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "Deletion is a review candidate only; deployment status unknown."
+          ]
+        },
+        {
+          "key": "order-export-added",
+          "kind": "added",
+          "summary": "新增订单导出规则：GET /orders/export 按创建时间倒序排列",
+          "reason": "New fixed text contains section 订单导出 with the new endpoint and sort requirement; old fixed text has no such section or rule. Raw difference D2 inserts this text at the end. Applicability is not inferred as live without deployment evidence.",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 102,
+              "quote": "## 订单导出\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 102,
+              "end_char": 139,
+              "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "No deployment evidence; effective applicability unknown."
+          ]
+        }
+      ]
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "raw:0"
+      },
+      "status": "analyzed",
+      "calls": [
+        "5f08e414-ee3d-477e-8dc2-1a8c3911a15b",
+        "f99dbdbb-0a94-4395-a96e-ac30778265ee"
+      ],
+      "final_check": {
+        "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+        "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+        "validator_version": "impact-response-validator-v1",
+        "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+        "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+        "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/e6a1ac6f-4128-4063-9b4b-9c2186180d15/response-check.json",
+          "sha256": "66c9766655a4f5ac655b5bd9248b84b3e0971269032f484fdad8556889e3ce8a",
+          "size_bytes": 3818
+        },
+        "created_at": "2026-10-04T21:34:29.899975Z"
+      },
+      "reason_codes": [],
+      "unresolved": [],
+      "candidates": [
+        {
+          "key": "order_retention_period",
+          "kind": "modified",
+          "summary": "已支付订单保留期由7天调整为9天，超过保留期查询仍返回410。",
+          "reason": "固定原文T1为“已支付订单保留7天，超过保留期查询返回410”，T2为“已支付订单保留9天，超过保留期查询返回410”，原始差异replace操作将订单保留天数由7改为9。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "promo_code_rule",
+          "kind": "removed",
+          "summary": "优惠码规则被移除（原规则：提交有效优惠码PROMO5时订单金额减少5元）。",
+          "reason": "T1包含优惠码规则原文，T2中订单保留规则之后不再出现该内容；固定差异old片段包含完整优惠码规则并标记delete，S2章节列表中也无“优惠码”节。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "order_export_rule",
+          "kind": "added",
+          "summary": "新增订单导出规则：GET /orders/export，导出订单按创建时间倒序排列。",
+          "reason": "S2新增二级章节“订单导出”，T3提供了该章节完整原文；S1中不存在对应章节或规则。",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 139,
+              "quote": "## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ]
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "raw:1"
+      },
+      "status": "analyzed",
+      "calls": [
+        "d71f6d00-a907-4c36-a685-a9bd5790b1ed"
+      ],
+      "final_check": {
+        "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+        "call_id": "d71f6d00-a907-4c36-a685-a9bd5790b1ed",
+        "validator_version": "impact-response-validator-v1",
+        "request_sha256": "dc73b5dc90088e579ffe0e4786e7b08285bf03d12d019216cbfa679185162a91",
+        "response_sha256": "b7d5feb9970a6e50343e5c05f36be4bbfb60b10ea646411d3d26d06fa4465f1a",
+        "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/273d452c-d6c7-4f31-a50d-7d108c2d544a/response-check.json",
+          "sha256": "82ace3b74568681a1e3e3921333a23a45d7dbc489a81559cbbfc586abde62323",
+          "size_bytes": 2260
+        },
+        "created_at": "2026-10-04T21:35:20.188906Z"
+      },
+      "reason_codes": [],
+      "unresolved": [
+        "本响应仅覆盖当前单元 raw:1；差异目录中的其他 raw、normalized 或 section 单元不在本单元范围内，未对其做完整覆盖或无变化声明。",
+        "项目环境、目标发布版本均为用户声明且无部署证据，实际生效状态未知，不据此推断该新增规则已经上线或停用其他项目。"
+      ],
+      "candidates": [
+        {
+          "key": "order-export-added",
+          "kind": "added",
+          "summary": "新增订单导出规则：要求支持 GET /orders/export，导出结果按创建时间倒序排列",
+          "reason": "固定原文差异显示，在原文档末尾之后插入了一节标题为「订单导出」的新内容，明确写出导出接口及排序规则；原始差异为插入操作，属于新增需求。",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 91,
+              "end_char": 139,
+              "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ]
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "normalized:0"
+      },
+      "status": "analyzed",
+      "calls": [
+        "15d2c3c2-0a03-4a73-baa3-ef0e83641993",
+        "37ce9a75-473a-4fb5-bddf-3a694446bc18"
+      ],
+      "final_check": {
+        "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+        "call_id": "37ce9a75-473a-4fb5-bddf-3a694446bc18",
+        "validator_version": "impact-response-validator-v1",
+        "request_sha256": "f2f4865126170af38761194e62d0a96cc56df2a9490fa34ce0d22927c5521775",
+        "response_sha256": "151ac1102feba6760e4f738cb2199c7b73e4dd4aae7b4185fd3b0c96ca663a06",
+        "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/c2ac0eb8-919e-4ab6-86af-ad7d0bccb4c5/response-check.json",
+          "sha256": "3abe3d5cd4c3227d4005ab39bc16cbe981a8c8d71e55c29b882c3d266ee3d747",
+          "size_bytes": 6416
+        },
+        "created_at": "2026-10-04T21:36:39.561115Z"
+      },
+      "reason_codes": [],
+      "unresolved": [
+        "当前发现阶段仅识别文档规则变化，尚未评估固定用例C1/C2/C3的受影响情况",
+        "订单导出规则新增部分的完整接口契约缺少进一步原文支撑",
+        "优惠码规则删除后，既有优惠码相关用例的处置需评审决定，本阶段不作覆盖性判断"
+      ],
+      "candidates": [
+        {
+          "key": "order_retention_days",
+          "kind": "modified",
+          "summary": "已支付订单保留天数由7天修改为9天，超过保留期查询返回410。",
+          "reason": "固定原文中旧条文为“已支付订单保留7天，超过保留期查询返回410。”，新条文为“已支付订单保留9天，超过保留期查询返回410。”；差异D1/D3明确记录该字符级替换，返回410条件未变。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "保留天数变化是否需要灰度或版本切换尚不明确",
+            "目标发布版本与环境的部署状态未知，不能推断规则已生效"
+          ]
+        },
+        {
+          "key": "promo_code_rule",
+          "kind": "removed",
+          "summary": "删除“优惠码”规则：原规定提交有效优惠码PROMO5时订单金额减少5元。",
+          "reason": "固定原文中旧版本在“订单服务需求”下包含独立“优惠码”章节及相关条文；新版本已删除该章节，差异D5明确标记删除该章节。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 83,
+              "quote": "## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 56,
+              "quote": "## 优惠码\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 56,
+              "end_char": 81,
+              "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "删除该需求是否立即停用全部既有优惠验证点，需人工评审确认",
+            "目标发布版本与环境的部署状态未知，不能推断规则已上线"
+          ]
+        },
+        {
+          "key": "order_export_rule",
+          "kind": "added",
+          "summary": "新增“订单导出”规则：新增GET /orders/export，导出订单按创建时间倒序排列。",
+          "reason": "新版本固定原文在“管理鉴权”之后新增“订单导出”章节，定义GET /orders/export及排序行为；旧版本无对应内容，差异D6明确标记新增。",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 0,
+              "end_char": 139,
+              "quote": "# 订单服务需求\r\n\r\n## 订单保留\r\n已支付订单保留9天，超过保留期查询返回410。\r\n\r\n## 管理鉴权\r\n未登录访问GET /admin必须返回401，不得创建登录前置。\r\n\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 102,
+              "quote": "## 订单导出\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 102,
+              "end_char": 139,
+              "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 91,
+              "end_char": 139,
+              "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": [
+            "新接口的鉴权、请求参数、错误码及数据范围未在提供的原文片段中完整定义",
+            "目标发布版本与环境的部署状态未知，不能推断规则已生效"
+          ]
+        }
+      ]
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "normalized:1"
+      },
+      "status": "unknown",
+      "calls": [
+        "7c08f54b-561a-41d7-ae9d-91c4f6aa809c",
+        "be9f39af-5c98-4fbe-a691-c1b69093e1ac"
+      ],
+      "final_check": {
+        "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+        "call_id": "7c08f54b-561a-41d7-ae9d-91c4f6aa809c",
+        "validator_version": "impact-response-validator-v1",
+        "request_sha256": "20e6ee4df71227ff9e2ab9d8abfd8bef1a947e39d4216bcf880d8fb7cceb6e80",
+        "response_sha256": "0277790d424e9188cfee4e39ecf98ea02afa4e9e7ddd9147f6105855ecd51e34",
+        "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/74764a3d-b355-4eaa-87c9-dc6829c9f553/response-check.json",
+          "sha256": "e1382c537426002c38f4e15e3a42502e06464e8a0045b42b00d5a89945c45a4e",
+          "size_bytes": 1275
+        },
+        "created_at": "2026-10-04T21:37:04.015417Z"
+      },
+      "reason_codes": [
+        "dispatch_TimeoutError"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "section:0"
+      },
+      "status": "unprocessed",
+      "calls": [],
+      "final_check": null,
+      "reason_codes": [
+        "task_deadline"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "difference",
+        "id": "section:1"
+      },
+      "status": "unprocessed",
+      "calls": [],
+      "final_check": null,
+      "reason_codes": [
+        "task_deadline"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "case",
+        "id": "12709291-91b0-4901-b5ca-522c5669459d"
+      },
+      "status": "unprocessed",
+      "calls": [],
+      "final_check": null,
+      "reason_codes": [
+        "task_deadline"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "case",
+        "id": "7916e5ed-a6aa-46a4-8d87-61d2b852ca78"
+      },
+      "status": "unprocessed",
+      "calls": [],
+      "final_check": null,
+      "reason_codes": [
+        "task_deadline"
+      ],
+      "unresolved": [],
+      "candidates": []
+    },
+    {
+      "unit": {
+        "kind": "case",
+        "id": "5d1624df-90eb-4e98-b587-0426bfe03a2b"
+      },
+      "status": "unprocessed",
+      "calls": [],
+      "final_check": null,
+      "reason_codes": [
+        "task_deadline"
+      ],
+      "unresolved": [],
+      "candidates": []
+    }
+  ],
+  "rules": [
+    {
+      "id": "2a1cbb198b2c364ca78e6d92457c696c4dd84804873a5029a0ef8c48f1abe53a",
+      "candidate": {
+        "key": "order-retention-days",
+        "kind": "modified",
+        "summary": "订单保留期由7天修改为9天，超过保留期查询仍返回410",
+        "reason": "Old fixed text shows 已支付订单保留7天，超过保留期查询返回410; new fixed text shows 已支付订单保留9天，超过保留期查询返回410. Raw difference D1 records only the numeric replacement 7 to 9 in the same operation/condition context, so this is a modified operational retention deadline.",
+        "document_citations": [
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "Deployment/effective status is unknown; no deployment evidence supplied."
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+            "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/98b06f91-93a7-403a-89f1-b57e17d7d349/response-check.json",
+              "sha256": "04ca77e139bb56162b9def317a80beeeace74ab5582e6eca05c9d19b7ff98d8e",
+              "size_bytes": 4449
+            },
+            "created_at": "2026-10-04T21:31:34.766165Z"
+          },
+          "local_key": "order-retention-days"
+        }
+      ]
+    },
+    {
+      "id": "2892233c31c3b297bda53e4debac12fd302f79713466164f2c256ea79685a9ae",
+      "candidate": {
+        "key": "coupon-promo5-removed",
+        "kind": "removed",
+        "summary": "删除优惠码规则：提交有效优惠码PROMO5时订单金额减少5元",
+        "reason": "Old fixed text contains section 优惠码 and the PROMO5 amount-reduction rule; new fixed text no longer contains that section or rule content. Raw difference D1 deletes the old coupon block. This is only a stop/deactivation candidate and must be reviewed; it does not prove production removal.",
+        "document_citations": [
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 48,
+            "end_char": 56,
+            "quote": "## 优惠码\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 56,
+            "end_char": 81,
+            "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "Deletion is a review candidate only; deployment status unknown."
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+            "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/98b06f91-93a7-403a-89f1-b57e17d7d349/response-check.json",
+              "sha256": "04ca77e139bb56162b9def317a80beeeace74ab5582e6eca05c9d19b7ff98d8e",
+              "size_bytes": 4449
+            },
+            "created_at": "2026-10-04T21:31:34.766165Z"
+          },
+          "local_key": "coupon-promo5-removed"
+        }
+      ]
+    },
+    {
+      "id": "cf93e25569834ecbe8b392992b48dbf4451e9576e8b641789a42a3412e6bddff",
+      "candidate": {
+        "key": "order-export-added",
+        "kind": "added",
+        "summary": "新增订单导出规则：GET /orders/export 按创建时间倒序排列",
+        "reason": "New fixed text contains section 订单导出 with the new endpoint and sort requirement; old fixed text has no such section or rule. Raw difference D2 inserts this text at the end. Applicability is not inferred as live without deployment evidence.",
+        "document_citations": [
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 93,
+            "end_char": 102,
+            "quote": "## 订单导出\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 102,
+            "end_char": 139,
+            "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "No deployment evidence; effective applicability unknown."
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "a80b0106-a890-43d0-a60d-23df3832e8e6",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "49da93b5883c3914fc5b3951b35abad159cf4e816cdc8431adc5c2b59e546b73",
+            "response_sha256": "8762b9c672605c0a0fcc70d30b6e7d8b3e7e0b2dd7673cda9576ee2c8884a641",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/98b06f91-93a7-403a-89f1-b57e17d7d349/response-check.json",
+              "sha256": "04ca77e139bb56162b9def317a80beeeace74ab5582e6eca05c9d19b7ff98d8e",
+              "size_bytes": 4449
+            },
+            "created_at": "2026-10-04T21:31:34.766165Z"
+          },
+          "local_key": "order-export-added"
+        }
+      ]
+    },
+    {
+      "id": "0987145f153e2f00f8caf06d6af5352ed9df0e3896c53fff951a173da279cd35",
+      "candidate": {
+        "key": "order_retention_period",
+        "kind": "modified",
+        "summary": "已支付订单保留期由7天调整为9天，超过保留期查询仍返回410。",
+        "reason": "固定原文T1为“已支付订单保留7天，超过保留期查询返回410”，T2为“已支付订单保留9天，超过保留期查询返回410”，原始差异replace操作将订单保留天数由7改为9。",
+        "document_citations": [
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 81,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": []
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+            "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/e6a1ac6f-4128-4063-9b4b-9c2186180d15/response-check.json",
+              "sha256": "66c9766655a4f5ac655b5bd9248b84b3e0971269032f484fdad8556889e3ce8a",
+              "size_bytes": 3818
+            },
+            "created_at": "2026-10-04T21:34:29.899975Z"
+          },
+          "local_key": "order_retention_period"
+        }
+      ]
+    },
+    {
+      "id": "847495d5ab679cb782b57e2be62eb23d681f4aac5352b71691b5ecd3a92e5c45",
+      "candidate": {
+        "key": "promo_code_rule",
+        "kind": "removed",
+        "summary": "优惠码规则被移除（原规则：提交有效优惠码PROMO5时订单金额减少5元）。",
+        "reason": "T1包含优惠码规则原文，T2中订单保留规则之后不再出现该内容；固定差异old片段包含完整优惠码规则并标记delete，S2章节列表中也无“优惠码”节。",
+        "document_citations": [
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 81,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": []
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+            "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/e6a1ac6f-4128-4063-9b4b-9c2186180d15/response-check.json",
+              "sha256": "66c9766655a4f5ac655b5bd9248b84b3e0971269032f484fdad8556889e3ce8a",
+              "size_bytes": 3818
+            },
+            "created_at": "2026-10-04T21:34:29.899975Z"
+          },
+          "local_key": "promo_code_rule"
+        }
+      ]
+    },
+    {
+      "id": "4a4e8205f12973644113f44c41b9dc11f85b0d4c5840d390e49a56cc4139fa9d",
+      "candidate": {
+        "key": "order_export_rule",
+        "kind": "added",
+        "summary": "新增订单导出规则：GET /orders/export，导出订单按创建时间倒序排列。",
+        "reason": "S2新增二级章节“订单导出”，T3提供了该章节完整原文；S1中不存在对应章节或规则。",
+        "document_citations": [
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 93,
+            "end_char": 139,
+            "quote": "## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": []
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+            "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/e6a1ac6f-4128-4063-9b4b-9c2186180d15/response-check.json",
+              "sha256": "66c9766655a4f5ac655b5bd9248b84b3e0971269032f484fdad8556889e3ce8a",
+              "size_bytes": 3818
+            },
+            "created_at": "2026-10-04T21:34:29.899975Z"
+          },
+          "local_key": "order_export_rule"
+        }
+      ]
+    },
+    {
+      "id": "3b437c177f51c5bfe16a498331906089b5efdead3f492ffb8dbde95f1da3f07c",
+      "candidate": {
+        "key": "order-export-added",
+        "kind": "added",
+        "summary": "新增订单导出规则：要求支持 GET /orders/export，导出结果按创建时间倒序排列",
+        "reason": "固定原文差异显示，在原文档末尾之后插入了一节标题为「订单导出」的新内容，明确写出导出接口及排序规则；原始差异为插入操作，属于新增需求。",
+        "document_citations": [
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 91,
+            "end_char": 139,
+            "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": []
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "d71f6d00-a907-4c36-a685-a9bd5790b1ed",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "dc73b5dc90088e579ffe0e4786e7b08285bf03d12d019216cbfa679185162a91",
+            "response_sha256": "b7d5feb9970a6e50343e5c05f36be4bbfb60b10ea646411d3d26d06fa4465f1a",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/273d452c-d6c7-4f31-a50d-7d108c2d544a/response-check.json",
+              "sha256": "82ace3b74568681a1e3e3921333a23a45d7dbc489a81559cbbfc586abde62323",
+              "size_bytes": 2260
+            },
+            "created_at": "2026-10-04T21:35:20.188906Z"
+          },
+          "local_key": "order-export-added"
+        }
+      ]
+    },
+    {
+      "id": "cc491c4b6e45f167bd09f3e9afa0951a97e4ed3bbdb14c3f49c3fd837d13293c",
+      "candidate": {
+        "key": "order_retention_days",
+        "kind": "modified",
+        "summary": "已支付订单保留天数由7天修改为9天，超过保留期查询返回410。",
+        "reason": "固定原文中旧条文为“已支付订单保留7天，超过保留期查询返回410。”，新条文为“已支付订单保留9天，超过保留期查询返回410。”；差异D1/D3明确记录该字符级替换，返回410条件未变。",
+        "document_citations": [
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 21,
+            "end_char": 46,
+            "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 81,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "保留天数变化是否需要灰度或版本切换尚不明确",
+          "目标发布版本与环境的部署状态未知，不能推断规则已生效"
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "37ce9a75-473a-4fb5-bddf-3a694446bc18",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "f2f4865126170af38761194e62d0a96cc56df2a9490fa34ce0d22927c5521775",
+            "response_sha256": "151ac1102feba6760e4f738cb2199c7b73e4dd4aae7b4185fd3b0c96ca663a06",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/c2ac0eb8-919e-4ab6-86af-ad7d0bccb4c5/response-check.json",
+              "sha256": "3abe3d5cd4c3227d4005ab39bc16cbe981a8c8d71e55c29b882c3d266ee3d747",
+              "size_bytes": 6416
+            },
+            "created_at": "2026-10-04T21:36:39.561115Z"
+          },
+          "local_key": "order_retention_days"
+        }
+      ]
+    },
+    {
+      "id": "a2a303dfcb4527ca2f9e2d1eca56095f36c201ae2031d4a5c96d8c8719051589",
+      "candidate": {
+        "key": "promo_code_rule",
+        "kind": "removed",
+        "summary": "删除“优惠码”规则：原规定提交有效优惠码PROMO5时订单金额减少5元。",
+        "reason": "固定原文中旧版本在“订单服务需求”下包含独立“优惠码”章节及相关条文；新版本已删除该章节，差异D5明确标记删除该章节。",
+        "document_citations": [
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 48,
+            "end_char": 83,
+            "quote": "## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 48,
+            "end_char": 56,
+            "quote": "## 优惠码\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 56,
+            "end_char": 81,
+            "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          },
+          {
+            "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+            "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+            "start_char": 21,
+            "end_char": 81,
+            "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "删除该需求是否立即停用全部既有优惠验证点，需人工评审确认",
+          "目标发布版本与环境的部署状态未知，不能推断规则已上线"
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "37ce9a75-473a-4fb5-bddf-3a694446bc18",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "f2f4865126170af38761194e62d0a96cc56df2a9490fa34ce0d22927c5521775",
+            "response_sha256": "151ac1102feba6760e4f738cb2199c7b73e4dd4aae7b4185fd3b0c96ca663a06",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/c2ac0eb8-919e-4ab6-86af-ad7d0bccb4c5/response-check.json",
+              "sha256": "3abe3d5cd4c3227d4005ab39bc16cbe981a8c8d71e55c29b882c3d266ee3d747",
+              "size_bytes": 6416
+            },
+            "created_at": "2026-10-04T21:36:39.561115Z"
+          },
+          "local_key": "promo_code_rule"
+        }
+      ]
+    },
+    {
+      "id": "a72dd9c3d303a9d5e3ced5645ebb7b963a59f346e8d00164d878c55ce728e1c4",
+      "candidate": {
+        "key": "order_export_rule",
+        "kind": "added",
+        "summary": "新增“订单导出”规则：新增GET /orders/export，导出订单按创建时间倒序排列。",
+        "reason": "新版本固定原文在“管理鉴权”之后新增“订单导出”章节，定义GET /orders/export及排序行为；旧版本无对应内容，差异D6明确标记新增。",
+        "document_citations": [
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 0,
+            "end_char": 139,
+            "quote": "# 订单服务需求\r\n\r\n## 订单保留\r\n已支付订单保留9天，超过保留期查询返回410。\r\n\r\n## 管理鉴权\r\n未登录访问GET /admin必须返回401，不得创建登录前置。\r\n\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 93,
+            "end_char": 102,
+            "quote": "## 订单导出\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 102,
+            "end_char": 139,
+            "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          },
+          {
+            "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+            "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+            "start_char": 91,
+            "end_char": 139,
+            "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "unknown",
+        "uncertainties": [
+          "新接口的鉴权、请求参数、错误码及数据范围未在提供的原文片段中完整定义",
+          "目标发布版本与环境的部署状态未知，不能推断规则已生效"
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+            "call_id": "37ce9a75-473a-4fb5-bddf-3a694446bc18",
+            "validator_version": "impact-response-validator-v1",
+            "request_sha256": "f2f4865126170af38761194e62d0a96cc56df2a9490fa34ce0d22927c5521775",
+            "response_sha256": "151ac1102feba6760e4f738cb2199c7b73e4dd4aae7b4185fd3b0c96ca663a06",
+            "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/c2ac0eb8-919e-4ab6-86af-ad7d0bccb4c5/response-check.json",
+              "sha256": "3abe3d5cd4c3227d4005ab39bc16cbe981a8c8d71e55c29b882c3d266ee3d747",
+              "size_bytes": 6416
+            },
+            "created_at": "2026-10-04T21:36:39.561115Z"
+          },
+          "local_key": "order_export_rule"
+        }
+      ]
+    }
+  ],
+  "overlaps": [
+    {
+      "rule_ids": [
+        "0987145f153e2f00f8caf06d6af5352ed9df0e3896c53fff951a173da279cd35",
+        "847495d5ab679cb782b57e2be62eb23d681f4aac5352b71691b5ecd3a92e5c45"
+      ],
+      "status": "possible_overlap_or_conflict"
+    }
+  ],
+  "basis_limitations": [
+    "difference_warning:extracted_text_positions"
+  ],
+  "status": "partial",
+  "semantic_status": "pending_review",
+  "deployment_status": "unknown"
+}

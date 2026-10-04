@@ -10,13 +10,14 @@ import sys
 from src.application.documents.impact_batches import DocumentImpactBatches
 from src.application.documents.impact_identity_bindings import ImpactFixedReferenceError, bind_impact_decision
 from src.schemas.document_impact_bound_responses import DocumentImpactBoundDecision
+from src.schemas.document_impact_anchored_responses import DocumentImpactAnchoredDecision
 from src.schemas.document_impact_responses import (
     DocumentImpactDecision, DocumentImpactResponseAssessment, DocumentImpactResponseIssue,
     DocumentImpactResponseProtocolSnapshot,
 )
 
 
-def capture_impact_response_protocol(*, version="impact-call-v4"):
+def capture_impact_response_protocol(*, version="impact-call-v5"):
     value = {"version": "impact-call-v3", "scope": "one declared unit only",
         "response_schema": DocumentImpactDecision.model_json_schema(),
         "instruction": "Read primary and fixed evidence. Request more fixed ranges when cross-section rules are needed. "
@@ -31,7 +32,7 @@ def capture_impact_response_protocol(*, version="impact-call-v4"):
             "the complete case. Copy text_sha256 from the supplied source and quote its exact original slice. "
             "Applicability is only a suggestion; deployment remains unknown and all candidates require review. "
             "Do not claim complete project coverage from this unit. Do not execute or change official records."}
-    if version == "impact-call-v4":
+    if version in {"impact-call-v4", "impact-call-v5"}:
         value.update(version=version, response_schema=DocumentImpactBoundDecision.model_json_schema(),
             instruction="Return one impact-response-v2 JSON object using this response_schema. "
                 "The saved call owns the current unit; do not output a unit, UUID or hash. "
@@ -49,8 +50,25 @@ def capture_impact_response_protocol(*, version="impact-call-v4"):
                 "Request fixed reads for cross-section/missing evidence. Keep intentional negative conditions. "
                 "Applicability is a suggestion, deployment unknown, all candidates pending review. "
                 "Do not claim full project coverage or execute/change official records.")
+        if version == "impact-call-v5":
+            value.update(response_schema=DocumentImpactAnchoredDecision.model_json_schema(),
+                instruction="Return one impact-response-v3 JSON object using this response_schema. "
+                    "The saved call owns the unit and formal identities. Use short S/P/C/D references for reads. "
+                    "In discovery, document_citations is a list of T references from fixed_text_evidence; "
+                    "select supplied original text, never calculate/copy offsets, quotes, UUIDs or hashes. "
+                    "The server binds each T to its exact original text/position/hash and verifies it. "
+                    "T entries are actual text evidence, other catalogs are retrieval metadata. "
+                    "For action=read supply reads with no final candidates/outcome; for finish provide "
+                    "unit_outcome/candidates/unresolved with no pending reads. "
+                    "During case_impacts return BoundRuleCaseAssessment: rule_ref R1 etc. plus case_impacts "
+                    "for every supplied fixed rule. The server retains each original rule and its citations. "
+                    "Case citations use literal JSON paths and actual values from a supplied complete case. "
+                    "Keep intentional negative conditions. Request fixed reads for missing/cross-section evidence. "
+                    "All candidates need review, deployment remains unknown; do not claim full coverage or "
+                    "execute/change official records. This schema defines the wire reply, canonical identities "
+                    "mentioned in coordination instructions belong to the server.")
     elif version != "impact-call-v3":
-        raise ValueError("新影响响应协议只支持v3兼容或v4")
+        raise ValueError("新影响响应协议只支持v3/v4兼容或v5")
     digest = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
         separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
     return DocumentImpactResponseProtocolSnapshot(**value, sha256=digest)
@@ -106,6 +124,10 @@ def parse_impact_decision(text):
 
 def parse_bound_impact_decision(text):
     return _parse_decision(text, DocumentImpactBoundDecision)
+
+
+def parse_anchored_impact_decision(text):
+    return _parse_decision(text, DocumentImpactAnchoredDecision)
 
 
 def _delivered(request):
@@ -165,9 +187,11 @@ class DocumentImpactResponseProtocol:
             return assessment
         issues = []
         try:
-            if seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v4":
-                decision = bind_impact_decision(parse_bound_impact_decision(response.text), seed, manifest, payload)
-                assessment.runtime_versions["identity_binding"] = "impact-bindings-v1"
+            if seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v4", "impact-call-v5"}:
+                anchored = seed.response_protocol.version == "impact-call-v5"
+                parser = parse_anchored_impact_decision if anchored else parse_bound_impact_decision
+                decision = bind_impact_decision(parser(response.text), seed, manifest, payload)
+                assessment.runtime_versions["identity_binding"] = "impact-text-bindings-v1" if anchored else "impact-bindings-v1"
             else:
                 decision = parse_impact_decision(response.text)
         except ImpactFixedReferenceError:

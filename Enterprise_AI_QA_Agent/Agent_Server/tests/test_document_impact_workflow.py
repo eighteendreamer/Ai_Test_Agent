@@ -71,7 +71,7 @@ def responder(holder, views, case, *, missing=False, conflict=False, no_rules=Fa
         return json.dumps(value, ensure_ascii=False)
     def wire_response(body):
         text = respond(body)
-        if json.loads(body["messages"][-1]["content"])["analysis_protocol"]["version"] == "impact-call-v4":
+        if json.loads(body["messages"][-1]["content"])["analysis_protocol"]["version"] in {"impact-call-v4", "impact-call-v5"}:
             from impact_bound_test_support import bound_fixture_response
             return bound_fixture_response(body, json.loads(text))
         return text

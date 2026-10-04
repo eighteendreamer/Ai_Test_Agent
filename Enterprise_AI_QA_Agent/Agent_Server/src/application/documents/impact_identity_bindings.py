@@ -6,6 +6,7 @@ import json
 from src.schemas.document_impact_bound_responses import BoundRuleCaseAssessment, BoundRuleCandidate
 from src.schemas.document_impact_responses import DocumentImpactDecision
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
+from src.application.documents.impact_text_evidence import fixed_impact_text_evidence, ImpactTextEvidenceError
 
 
 class ImpactFixedReferenceError(ValueError):
@@ -45,12 +46,22 @@ def bind_impact_decision(decision, seed, manifest, payload):
     if context and (context.protocol != seed.workflow_protocol or
         ((payload.selection.unit.kind == "case") != (context.stage == "case_impacts"))):
         raise ImpactFixedReferenceError("固定引用不能替换协调阶段或协议")
+    delivered, text_evidence = [], {}
+    anchored = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v5"
     for message in payload.request.messages:
         if message.get("role") == "user":
             value = json.loads(message["content"])
             if (value.get("fixed_references") != references or
                 value.get("primary_ref") != impact_primary_reference(payload.selection.unit, references)):
                 raise ImpactFixedReferenceError("固定引用目录不能替换原范围或当前单元")
+            if anchored:
+                delivered.append(value)
+                try:
+                    text_evidence = fixed_impact_text_evidence(manifest, delivered)
+                except ImpactTextEvidenceError as exc:
+                    raise ImpactFixedReferenceError("文本锚点目录与实际固定读取不同") from exc
+                if value.get("fixed_text_evidence") != text_evidence:
+                    raise ImpactFixedReferenceError("文本锚点目录不能替换实际已读范围")
 
     def lookup(group, ref):
         try:
@@ -59,6 +70,12 @@ def bind_impact_decision(decision, seed, manifest, payload):
             raise ImpactFixedReferenceError("模型引用没有对应的固定依据") from exc
 
     def text_citation(citation):
+        if anchored:
+            if citation not in text_evidence:
+                raise ImpactFixedReferenceError("引用没有对应的实际读取文本锚点")
+            citation = text_evidence[citation]
+            source = lookup("sources", citation["source_ref"])
+            return {**{key: value for key, value in citation.items() if key != "source_ref"}, **source}
         source = lookup("sources", citation.source_ref)
         return {**citation.model_dump(exclude={"source_ref"}), **source}
 

@@ -1,0 +1,76 @@
+{
+  "checkpoint": {
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "d71f6d00-a907-4c36-a685-a9bd5790b1ed",
+    "validator_version": "impact-response-validator-v1",
+    "request_sha256": "dc73b5dc90088e579ffe0e4786e7b08285bf03d12d019216cbfa679185162a91",
+    "response_sha256": "b7d5feb9970a6e50343e5c05f36be4bbfb60b10ea646411d3d26d06fa4465f1a",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/273d452c-d6c7-4f31-a50d-7d108c2d544a/response-check.json",
+      "sha256": "82ace3b74568681a1e3e3921333a23a45d7dbc489a81559cbbfc586abde62323",
+      "size_bytes": 2260
+    },
+    "created_at": "2026-10-04T21:35:20.188906Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "identity_binding": "impact-text-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "d71f6d00-a907-4c36-a685-a9bd5790b1ed",
+    "request_sha256": "dc73b5dc90088e579ffe0e4786e7b08285bf03d12d019216cbfa679185162a91",
+    "response_sha256": "b7d5feb9970a6e50343e5c05f36be4bbfb60b10ea646411d3d26d06fa4465f1a",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "difference",
+        "id": "raw:1"
+      },
+      "action": "finish",
+      "summary": "已分析当前单元 raw:1：根据固定原文差异识别到新增「订单导出」规则候选，仅用于评审。未执行测试，未修改任何正式记录；环境与发布信息为用户声明，部署状态仍未知。",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "order-export-added",
+          "kind": "added",
+          "summary": "新增订单导出规则：要求支持 GET /orders/export，导出结果按创建时间倒序排列",
+          "reason": "固定原文差异显示，在原文档末尾之后插入了一节标题为「订单导出」的新内容，明确写出导出接口及排序规则；原始差异为插入操作，属于新增需求。",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 91,
+              "end_char": 139,
+              "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ],
+      "unresolved": [
+        "本响应仅覆盖当前单元 raw:1；差异目录中的其他 raw、normalized 或 section 单元不在本单元范围内，未对其做完整覆盖或无变化声明。",
+        "项目环境、目标发布版本均为用户声明且无部署证据，实际生效状态未知，不据此推断该新增规则已经上线或停用其他项目。"
+      ]
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

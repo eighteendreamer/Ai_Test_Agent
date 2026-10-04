@@ -1,0 +1,330 @@
+{
+  "result": {
+    "implementation_version": "impact-coordinator-v1",
+    "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+    "input_sha256": "eb517254a8d1301bf59697825ef508d52384020d5e8096a6288d7c713a37765a",
+    "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+    "protocol": {
+      "version": "impact-coordinator-v1",
+      "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
+      "case_instruction": "本阶段将rules中完整规则候选与当前完整固定用例及其编写来源比较。逐条返回candidate，key必须为对应rules.id，保留该规则的kind/summary及原文依据，case_impacts仅判断当前unit.id，每条说明none/minor/major/uncertain并引用当前用例实际字段。需要原文或来源时read补读。不得遗漏规则后声明analyzed；无法判断保留evidence_insufficient。discovery_units包含未完成范围时不能宣称完整或无变化。没有规则仍判断本用例来源是否充分。所有候选仍待评审，不能将模型建议当作部署事实或测试通过。",
+      "sha256": "76f3c582a070c4b136e1e629ecdea508f0f1fe814e4a8dbd917180ca9051f5b5"
+    },
+    "units": [
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:0964c952-f278-40be-80f5-34ed668e85f8:0:20"
+        },
+        "status": "analyzed",
+        "calls": [
+          "d64f66e4-353a-4289-999a-4f4e6ce831f1",
+          "4bc66319-0d9c-4ea0-b851-49200f1a4c98"
+        ],
+        "final_check": {
+          "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+          "call_id": "4bc66319-0d9c-4ea0-b851-49200f1a4c98",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "713578bf205d0331b2bd16e426769130778c1909bcd2b10bd68823f711a8c8c0",
+          "response_sha256": "67ede1764816a803f6a6f3245ecf28ec38212ce79351e516a68d7f962525a286",
+          "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/48a7339c-4c9c-4d45-b836-97cf42e0fbfd/response-check.json",
+            "sha256": "230521baccc2ff9b9aa170666c4e908cd9456b2f62f94ab408bd7ef73acedc04",
+            "size_bytes": 1661
+          },
+          "created_at": "2026-10-04T21:25:52.513021Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": [
+          {
+            "key": "retention-change",
+            "kind": "modified",
+            "summary": "订单保留7天调整为9天",
+            "reason": "固定新旧原文的期限不同",
+            "document_citations": [
+              {
+                "source_id": "parse:0964c952-f278-40be-80f5-34ed668e85f8",
+                "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+                "start_char": 0,
+                "end_char": 20,
+                "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+              },
+              {
+                "source_id": "parse:8ebea6d3-8698-43fe-bc3f-9b308f412358",
+                "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+                "start_char": 0,
+                "end_char": 20,
+                "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+              }
+            ],
+            "case_impacts": [],
+            "applicability_suggestion": "current",
+            "uncertainties": [
+              "部署生效状态未核实"
+            ]
+          }
+        ]
+      },
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:8ebea6d3-8698-43fe-bc3f-9b308f412358:0:20"
+        },
+        "status": "analyzed",
+        "calls": [
+          "1b59c971-9354-422b-b1b7-c3db4b257d21"
+        ],
+        "final_check": {
+          "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+          "call_id": "1b59c971-9354-422b-b1b7-c3db4b257d21",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "5cae25f48a8d58db44d48fe39157f1712f21e749c52ba6032d39b0ab344bbf33",
+          "response_sha256": "1c9844b49c71c14d27b13dcefc5ae4bbbe29e9f7f2a89022a529737d194322ce",
+          "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/d8ddc001-52ff-4884-a39c-ed10de2c64a8/response-check.json",
+            "sha256": "b3f1cdb87a1dbd0d33249bc97ac5bd17a784cd5e1d7c5e98a577e05b9bcb70cd",
+            "size_bytes": 956
+          },
+          "created_at": "2026-10-04T21:25:52.910538Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "raw:0"
+        },
+        "status": "analyzed",
+        "calls": [
+          "1f82676f-4e07-407f-8f41-040652d8ec96"
+        ],
+        "final_check": {
+          "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+          "call_id": "1f82676f-4e07-407f-8f41-040652d8ec96",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "3141e712f29309299398b13a8358a30fae4910103036cc626412f0df4d8aca87",
+          "response_sha256": "02072793be37eb1f418c75407455176161c6f4a54ad49aa2c6ca891377c2b45e",
+          "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/a9e99632-d133-47cc-b2a4-a9f1b8f052bb/response-check.json",
+            "sha256": "b9941276691a9ec85f3e409b8b63156466ca385e896c8d7072e2f1bc75ee6e4b",
+            "size_bytes": 917
+          },
+          "created_at": "2026-10-04T21:25:53.299177Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "normalized:0"
+        },
+        "status": "analyzed",
+        "calls": [
+          "344ce3d5-d047-42ea-b655-f1db02d9fc4e"
+        ],
+        "final_check": {
+          "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+          "call_id": "344ce3d5-d047-42ea-b655-f1db02d9fc4e",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "d6eb6dfbce31a8adacf8f19be103092fc08a34c022ad47c7ab327449c7e30f4c",
+          "response_sha256": "2ab618eb8f2302a80cb93db4e0c41b34ac36d238eae8f313ef59fb2d0c5028fc",
+          "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/9fdc345c-7294-4378-85f8-96624c913cd9/response-check.json",
+            "sha256": "796005f0ac02c72bc35e0e8fc1c50344f25bd39669f43d318844f45d87486e69",
+            "size_bytes": 924
+          },
+          "created_at": "2026-10-04T21:25:53.649503Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "case",
+          "id": "56d4ef32-ae26-4537-8e2f-6927aca4a157"
+        },
+        "status": "analyzed",
+        "calls": [
+          "711b75cf-6f00-463a-bcd2-2d8b7632dd3d"
+        ],
+        "final_check": {
+          "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+          "call_id": "711b75cf-6f00-463a-bcd2-2d8b7632dd3d",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "97b764b7016ae17bf7f9c8393094f112d874c654f90981e98a0e874524609732",
+          "response_sha256": "7be3b75d52e44640561c1a43448ae028ace6388feba476fbf7af0338d8335b28",
+          "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/88099417-7e89-4e8b-b948-77be8c0fd609/response-check.json",
+            "sha256": "8f3f642c9c6b7dd34a92a0f628406e059e1f86585625476371b94acffa73d2ae",
+            "size_bytes": 2924
+          },
+          "created_at": "2026-10-04T21:25:53.971503Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": [
+          {
+            "key": "f94504de756ed9789d9dde89d93b7057dd916c7242a49a2719c43aa5cd83c536",
+            "kind": "modified",
+            "summary": "订单保留7天调整为9天",
+            "reason": "固定新旧原文的期限不同",
+            "document_citations": [
+              {
+                "source_id": "parse:0964c952-f278-40be-80f5-34ed668e85f8",
+                "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+                "start_char": 0,
+                "end_char": 20,
+                "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+              },
+              {
+                "source_id": "parse:8ebea6d3-8698-43fe-bc3f-9b308f412358",
+                "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+                "start_char": 0,
+                "end_char": 20,
+                "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+              }
+            ],
+            "case_impacts": [
+              {
+                "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                "level": "major",
+                "reason": "用例仍预期7天",
+                "verification_points": [
+                  "保留期限边界"
+                ],
+                "citations": [
+                  {
+                    "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                    "version_record_sha256": "0723e91a5d6078e9b053b57fa2d28ef8cb7f6395a280c39b7a9a4b46c499369f",
+                    "root": "content_json",
+                    "path": [
+                      "目标"
+                    ],
+                    "value": "验证订单保留7天"
+                  },
+                  {
+                    "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                    "version_record_sha256": "0723e91a5d6078e9b053b57fa2d28ef8cb7f6395a280c39b7a9a4b46c499369f",
+                    "root": "content_json",
+                    "path": [
+                      "steps",
+                      11,
+                      "操作"
+                    ],
+                    "value": "完整步骤11"
+                  },
+                  {
+                    "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                    "version_record_sha256": "0723e91a5d6078e9b053b57fa2d28ef8cb7f6395a280c39b7a9a4b46c499369f",
+                    "root": "content_json",
+                    "path": [
+                      "深层扩展",
+                      "布尔"
+                    ],
+                    "value": false
+                  },
+                  {
+                    "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                    "version_record_sha256": "0723e91a5d6078e9b053b57fa2d28ef8cb7f6395a280c39b7a9a4b46c499369f",
+                    "root": "content_json",
+                    "path": [
+                      "深层扩展",
+                      "零"
+                    ],
+                    "value": 0
+                  },
+                  {
+                    "version_id": "56d4ef32-ae26-4537-8e2f-6927aca4a157",
+                    "version_record_sha256": "0723e91a5d6078e9b053b57fa2d28ef8cb7f6395a280c39b7a9a4b46c499369f",
+                    "root": "content_json",
+                    "path": [
+                      "深层扩展",
+                      "空"
+                    ],
+                    "value": null
+                  }
+                ]
+              }
+            ],
+            "applicability_suggestion": "current",
+            "uncertainties": [
+              "部署生效状态未核实"
+            ]
+          }
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "id": "f94504de756ed9789d9dde89d93b7057dd916c7242a49a2719c43aa5cd83c536",
+        "candidate": {
+          "key": "retention-change",
+          "kind": "modified",
+          "summary": "订单保留7天调整为9天",
+          "reason": "固定新旧原文的期限不同",
+          "document_citations": [
+            {
+              "source_id": "parse:0964c952-f278-40be-80f5-34ed668e85f8",
+              "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+            },
+            {
+              "source_id": "parse:8ebea6d3-8698-43fe-bc3f-9b308f412358",
+              "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+              "start_char": 0,
+              "end_char": 20,
+              "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "current",
+          "uncertainties": [
+            "部署生效状态未核实"
+          ]
+        },
+        "origins": [
+          {
+            "checkpoint": {
+              "task_id": "460bc6be-d41c-4e7a-84c1-fe1b5a63df6d",
+              "call_id": "4bc66319-0d9c-4ea0-b851-49200f1a4c98",
+              "validator_version": "impact-response-validator-v1",
+              "request_sha256": "713578bf205d0331b2bd16e426769130778c1909bcd2b10bd68823f711a8c8c0",
+              "response_sha256": "67ede1764816a803f6a6f3245ecf28ec38212ce79351e516a68d7f962525a286",
+              "manifest_sha256": "2262e8e9eea2d915a4c7df839a6a4578adcb4e0152bff9083cd6f7de019c4c74",
+              "result": {
+                "storage_uri": "rustfs://qa-agent/document-impacts/e4dc416d-daf5-4349-8541-235aae07b391/460bc6be-d41c-4e7a-84c1-fe1b5a63df6d/9335ae1d-5886-46cd-8b78-cc9d7fd619c9/calls/48a7339c-4c9c-4d45-b836-97cf42e0fbfd/response-check.json",
+                "sha256": "230521baccc2ff9b9aa170666c4e908cd9456b2f62f94ab408bd7ef73acedc04",
+                "size_bytes": 1661
+              },
+              "created_at": "2026-10-04T21:25:52.513021Z"
+            },
+            "local_key": "retention-change"
+          }
+        ]
+      }
+    ],
+    "overlaps": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "status": "partial",
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 6,
+  "expired_deadline": true,
+  "unknown_object_retained": true
+}

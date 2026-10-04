@@ -1,0 +1,151 @@
+{
+  "result": {
+    "implementation_version": "impact-coordinator-v1",
+    "task_id": "450a31b9-14d0-4d32-8792-0259995f1eea",
+    "input_sha256": "f25e3ca1cb39a27a2ffe6932e5135fcbe1f3568a69d70db7e6ad7f284274cdcd",
+    "manifest_sha256": "5f0403c0cbab63c6127be9d7aab52f7d2a9550c2236d23178678b281346dba61",
+    "protocol": {
+      "version": "impact-coordinator-v1",
+      "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
+      "case_instruction": "本阶段将rules中完整规则候选与当前完整固定用例及其编写来源比较。逐条返回candidate，key必须为对应rules.id，保留该规则的kind/summary及原文依据，case_impacts仅判断当前unit.id，每条说明none/minor/major/uncertain并引用当前用例实际字段。需要原文或来源时read补读。不得遗漏规则后声明analyzed；无法判断保留evidence_insufficient。discovery_units包含未完成范围时不能宣称完整或无变化。没有规则仍判断本用例来源是否充分。所有候选仍待评审，不能将模型建议当作部署事实或测试通过。",
+      "sha256": "76f3c582a070c4b136e1e629ecdea508f0f1fe814e4a8dbd917180ca9051f5b5"
+    },
+    "units": [
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:d751a33a-451f-448e-8d1f-52cdc05c36f2:0:20"
+        },
+        "status": "unknown",
+        "calls": [
+          "3bb42b0b-7b5f-411b-967f-ba6f481a28ad"
+        ],
+        "final_check": null,
+        "reason_codes": [
+          "recovered_without_response"
+        ],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "segment",
+          "id": "parse:405bb22d-af8c-4425-af3a-ab372b7aee84:0:20"
+        },
+        "status": "analyzed",
+        "calls": [
+          "fa3d6772-d280-495b-b65a-b03089a7504b"
+        ],
+        "final_check": {
+          "task_id": "450a31b9-14d0-4d32-8792-0259995f1eea",
+          "call_id": "fa3d6772-d280-495b-b65a-b03089a7504b",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "100e7e943b29e0cd8e6f2224a50d0d8ef76eb741cc0fe129c72295892c6ee99b",
+          "response_sha256": "3fda11a4de4cfbdf28926d305c0d79de9554d8fc243970fd548990474f5022dc",
+          "manifest_sha256": "5f0403c0cbab63c6127be9d7aab52f7d2a9550c2236d23178678b281346dba61",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/d844ba90-838a-4d44-a32f-dc5151143c9f/450a31b9-14d0-4d32-8792-0259995f1eea/307d61e2-c8cd-41e5-9cb3-b41a529bd05c/calls/80dc3e5b-a559-4f48-953b-2127e2dcddfd/response-check.json",
+            "sha256": "701ca1ac9b7a185666c8e6390e7d6bb603e75fea757b2b1ee064c6728115f91f",
+            "size_bytes": 956
+          },
+          "created_at": "2026-10-04T21:25:46.406065Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "raw:0"
+        },
+        "status": "analyzed",
+        "calls": [
+          "35106acb-747f-4a6c-8637-939bf4165d66"
+        ],
+        "final_check": {
+          "task_id": "450a31b9-14d0-4d32-8792-0259995f1eea",
+          "call_id": "35106acb-747f-4a6c-8637-939bf4165d66",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "ab399670f252d0eca02e866917a769f43aab50eb926ba49ae96c52d93e2e60e1",
+          "response_sha256": "3b46fef52c54298c4cc5d7f4ee3b0d8e5f8be3c2be3664ba240b568002d27290",
+          "manifest_sha256": "5f0403c0cbab63c6127be9d7aab52f7d2a9550c2236d23178678b281346dba61",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/d844ba90-838a-4d44-a32f-dc5151143c9f/450a31b9-14d0-4d32-8792-0259995f1eea/307d61e2-c8cd-41e5-9cb3-b41a529bd05c/calls/97d67643-c77f-4424-bf78-3eb30c9f1dc3/response-check.json",
+            "sha256": "eacbf73378d8564aa161bc3ae7e320c8888d56be1a2077144e6d42c9bec08fd3",
+            "size_bytes": 917
+          },
+          "created_at": "2026-10-04T21:25:46.703847Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "difference",
+          "id": "normalized:0"
+        },
+        "status": "analyzed",
+        "calls": [
+          "30d810a2-0037-4452-aeea-50fa013ce3bd"
+        ],
+        "final_check": {
+          "task_id": "450a31b9-14d0-4d32-8792-0259995f1eea",
+          "call_id": "30d810a2-0037-4452-aeea-50fa013ce3bd",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "26c1a2c31be52f36d43c7a1b5126c4ac0b482e0dbf09efc68142fdc0aab9467a",
+          "response_sha256": "e5698de1ddffcd4e184227b817f7896955a306680f8e026113856b72a9155eaf",
+          "manifest_sha256": "5f0403c0cbab63c6127be9d7aab52f7d2a9550c2236d23178678b281346dba61",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/d844ba90-838a-4d44-a32f-dc5151143c9f/450a31b9-14d0-4d32-8792-0259995f1eea/307d61e2-c8cd-41e5-9cb3-b41a529bd05c/calls/7cb19789-6734-4f12-b9e3-3a67d1b7a716/response-check.json",
+            "sha256": "e422bdac9e82da0f8ca749b69d5d4c09cc3eaa174ab027ac62d05e5dc15a51b6",
+            "size_bytes": 924
+          },
+          "created_at": "2026-10-04T21:25:47.016420Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      },
+      {
+        "unit": {
+          "kind": "case",
+          "id": "7d4b5878-5814-4c3d-bcfd-290d6b706db9"
+        },
+        "status": "analyzed",
+        "calls": [
+          "188fd264-718e-4af2-aef0-3b51fd11c56f"
+        ],
+        "final_check": {
+          "task_id": "450a31b9-14d0-4d32-8792-0259995f1eea",
+          "call_id": "188fd264-718e-4af2-aef0-3b51fd11c56f",
+          "validator_version": "impact-response-validator-v1",
+          "request_sha256": "bcae7c61de9c03cc7822010ccd4ed7c1509fbedb864cdc8932caf20496d3c450",
+          "response_sha256": "6b53f0f4ee8007583f7c82f8791758f24a2b229029c2c56ea3375782defcb15a",
+          "manifest_sha256": "5f0403c0cbab63c6127be9d7aab52f7d2a9550c2236d23178678b281346dba61",
+          "result": {
+            "storage_uri": "rustfs://qa-agent/document-impacts/d844ba90-838a-4d44-a32f-dc5151143c9f/450a31b9-14d0-4d32-8792-0259995f1eea/307d61e2-c8cd-41e5-9cb3-b41a529bd05c/calls/43d3a943-9a10-4b7b-8a72-d5d3175019fc/response-check.json",
+            "sha256": "8bf7ecb07a137bc184ad4c0ce62fb6923f38a1a4a7c72064d0f6693c712fb25b",
+            "size_bytes": 942
+          },
+          "created_at": "2026-10-04T21:25:47.366692Z"
+        },
+        "reason_codes": [],
+        "unresolved": [],
+        "candidates": []
+      }
+    ],
+    "rules": [],
+    "overlaps": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "status": "partial",
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 5,
+  "original_request_not_resent": true,
+  "independent_process_restart": false
+}

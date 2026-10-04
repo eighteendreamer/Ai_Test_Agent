@@ -37,7 +37,7 @@ def actual_sample():
 
 def bound_input(*, complete=True, unit_kind="case"):
     seed, envelope, manifest, previous, response, record = actual_sample()
-    seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol()})
+    seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol(version="impact-call-v4")})
     unit = DocumentImpactUnit(kind="case", id=manifest.cases[0].version_id) if unit_kind == "case" else previous.selection.unit
     selection = DocumentImpactCallSelection(unit=unit, segment_ids=[item.id for item in manifest.segments] if complete else [])
     request = DocumentImpactCallService.build_request(seed, envelope, manifest, selection)
@@ -70,7 +70,7 @@ def test_actual_wrong_unit_is_rejected_unchanged_and_new_read_binds_saved_unit()
     context = DocumentImpactCoordinationContext.model_validate(old_payload["coordination_context"])
     assert DocumentImpactCallService.build_request(seed, envelope, manifest, request.selection,
         coordination_context=context) == request.request
-    new_seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol()})
+    new_seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol(version="impact-call-v4")})
     new_request = DocumentImpactCallService.build_request(new_seed, envelope, manifest, request.selection,
         coordination_context=context)
     payload = request.model_copy(update={"request": new_request})

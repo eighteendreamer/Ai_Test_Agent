@@ -1,0 +1,123 @@
+{
+  "checkpoint": {
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+    "validator_version": "impact-response-validator-v1",
+    "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+    "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/be20a377-f25b-4d72-af87-66323eb6e183/23f3a06f-b1f9-4876-a05b-d61826bb6190/e1e5cb27-1935-4bf4-a9a1-ed5f4f43c47e/calls/e6a1ac6f-4128-4063-9b4b-9c2186180d15/response-check.json",
+      "sha256": "66c9766655a4f5ac655b5bd9248b84b3e0971269032f484fdad8556889e3ce8a",
+      "size_bytes": 3818
+    },
+    "created_at": "2026-10-04T21:34:29.899975Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "identity_binding": "impact-text-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "23f3a06f-b1f9-4876-a05b-d61826bb6190",
+    "call_id": "f99dbdbb-0a94-4395-a96e-ac30778265ee",
+    "request_sha256": "fa834deed71448f286063f63a0dff488a1dc9dfab449d58ce0b3972e48537bf0",
+    "response_sha256": "4bb3254d57e6eea82d25a90934a78fe0a27f1838aa7d4f460d96185f3fa47011",
+    "manifest_sha256": "e0b10e0eff3e94e4c3abe9213e0c17052fd78a38f2b707c325547d09104d0e53",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "difference",
+        "id": "raw:0"
+      },
+      "action": "finish",
+      "summary": "Discovered three review candidates from fixed diff raw:0: retention period modified from 7 to 9 days, promo code rule removed, and a new order export rule added.",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "order_retention_period",
+          "kind": "modified",
+          "summary": "已支付订单保留期由7天调整为9天，超过保留期查询仍返回410。",
+          "reason": "固定原文T1为“已支付订单保留7天，超过保留期查询返回410”，T2为“已支付订单保留9天，超过保留期查询返回410”，原始差异replace操作将订单保留天数由7改为9。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "promo_code_rule",
+          "kind": "removed",
+          "summary": "优惠码规则被移除（原规则：提交有效优惠码PROMO5时订单金额减少5元）。",
+          "reason": "T1包含优惠码规则原文，T2中订单保留规则之后不再出现该内容；固定差异old片段包含完整优惠码规则并标记delete，S2章节列表中也无“优惠码”节。",
+          "document_citations": [
+            {
+              "source_id": "parse:75cd7d9b-84a4-43a8-98af-e4bee2c2a9ed",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 81,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n\r\n## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "order_export_rule",
+          "kind": "added",
+          "summary": "新增订单导出规则：GET /orders/export，导出订单按创建时间倒序排列。",
+          "reason": "S2新增二级章节“订单导出”，T3提供了该章节完整原文；S1中不存在对应章节或规则。",
+          "document_citations": [
+            {
+              "source_id": "parse:51a9af8f-492e-43cf-a793-688fdb61bc32",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 139,
+              "quote": "## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ],
+      "unresolved": []
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

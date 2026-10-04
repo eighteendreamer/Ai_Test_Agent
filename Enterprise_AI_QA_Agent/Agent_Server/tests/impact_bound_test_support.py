@@ -25,7 +25,8 @@ def bound_fixture_response(body, value):
             "case_ref": key, "citations": citations}
 
     converted = {field: item for field, item in value.items() if field not in {"unit", "protocol_version", "candidates", "reads"}}
-    converted["protocol_version"] = "impact-response-v2"
+    anchored = payload["analysis_protocol"]["version"] == "impact-call-v5"
+    converted["protocol_version"] = "impact-response-v3" if anchored else "impact-response-v2"
     reads = value.get("reads", {})
     converted["reads"] = {
         "segment_refs": [ref("segments", "segment_id", item) for item in reads.get("segment_ids", [])],
@@ -45,8 +46,10 @@ def bound_fixture_response(body, value):
             for citation in candidate["document_citations"]:
                 key = ref("sources", "source_id", citation["source_id"])
                 assert citation["text_sha256"] == refs["sources"][key]["text_sha256"]
-                citations.append({**{field: item for field, item in citation.items()
-                    if field not in {"source_id", "text_sha256"}}, "source_ref": key})
+                fixed = {**{field: item for field, item in citation.items()
+                    if field not in {"source_id", "text_sha256"}}, "source_ref": key}
+                citations.append(next(name for name, item in payload["fixed_text_evidence"].items() if item == fixed)
+                    if anchored else fixed)
             candidates.append({**{field: item for field, item in candidate.items()
                 if field not in {"document_citations", "case_impacts"}}, "document_citations": citations, "case_impacts": impacts})
     converted["candidates"] = candidates

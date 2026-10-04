@@ -18,6 +18,7 @@ from src.application.documents.impact_checkpoint_io import (
 )
 from src.application.documents.impact_sources import canonical_impact_json, impact_record_hash
 from src.application.documents.impact_identity_bindings import fixed_impact_references, impact_primary_reference
+from src.application.documents.impact_text_evidence import fixed_impact_text_evidence
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.document_impact_calls import (
     DocumentImpactCallInput, DocumentImpactCallResponse,
@@ -126,7 +127,7 @@ class DocumentImpactCallService:
             if context.protocol != seed.workflow_protocol or ((selection.unit.kind == "case") != (context.stage == "case_impacts")):
                 raise ValueError("影响协调上下文不能替换固定协议或单元阶段")
             payload["coordination_context"] = context.model_dump(mode="json")
-        if protocol.version == "impact-call-v4":
+        if protocol.version in {"impact-call-v4", "impact-call-v5"}:
             references = fixed_impact_references(manifest, coordination_context)
             payload["fixed_references"] = references
             payload["primary_ref"] = impact_primary_reference(selection.unit, references)
@@ -136,6 +137,9 @@ class DocumentImpactCallService:
             if old_input.selection.unit != selection.unit:
                 raise ValueError("影响续读不能更换固定单元")
             messages = [*old_input.request.messages, {"role": "assistant", "content": old_response.text}]
+        if protocol.version == "impact-call-v5":
+            prior = [json.loads(message["content"]) for message in messages if message.get("role") == "user"]
+            payload["fixed_text_evidence"] = fixed_impact_text_evidence(manifest, [*prior, payload])
         messages.append({"role": "user", "content": _json(payload)})
         request = ModelInvocationRequest(system_prompt=seed.analysis_context.prompt.system_prompt, messages=messages, tools=[])
         return request
