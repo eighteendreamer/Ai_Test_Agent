@@ -1170,6 +1170,71 @@ export interface ApiDocumentAsset {
   security_report: Record<string, unknown>;
 }
 
+export interface GitDocumentOrigin {
+  kind: "git";
+  repository_id: string;
+  repository_name: string;
+  repository_root: string;
+  config_revision: number;
+  commit: string;
+  blob: string;
+  path: string;
+  mode: "100644" | "100755";
+  sha256: string;
+  size_bytes: number;
+  git_version: string;
+  reader_policy: Record<string, number>;
+}
+
+export interface GitRepositorySource {
+  id: string;
+  name: string;
+  root_path: string;
+  enabled: boolean;
+}
+
+export interface GitDocumentPolicy {
+  timeout_seconds: number;
+  max_cpu_seconds: number;
+  max_memory_bytes: number;
+  max_output_bytes: number;
+  max_blob_bytes: number;
+}
+
+export interface GitDocumentSettings {
+  repositories: GitRepositorySource[];
+  policy: GitDocumentPolicy;
+}
+
+export interface GitDocumentSettingsRecord {
+  scope_key: string;
+  revision: number;
+  payload: GitDocumentSettings;
+}
+
+export interface GitDocumentResolveRequest {
+  repository_id: string;
+  reference: string;
+  path: string;
+}
+
+export interface GitDocumentResolution {
+  project_id: string;
+  origin: GitDocumentOrigin;
+}
+
+export interface GitDocumentImportRequest {
+  request_id: string;
+  repository_id: string;
+  config_revision: number;
+  commit: string;
+  blob: string;
+  path: string;
+  document_id?: string | null;
+  expected_parent_version_id?: string | null;
+  title?: string | null;
+}
+
 export interface ApiDocRecord {
   id: string;
   catalog_revision?: number;
@@ -1182,6 +1247,7 @@ export interface ApiDocRecord {
   project_name?: string | null;
   project_url?: string | null;
   source: string;
+  source_origin?: GitDocumentOrigin | null;
   format_label: string;
   content_type: string;
   size_bytes: number;
@@ -1236,6 +1302,7 @@ export interface ApiDocVersionResult {
   document: ApiDocRecord;
   version: ApiDocVersionRecord;
   created_new: boolean;
+  source_origin?: GitDocumentOrigin | null;
 }
 
 export interface ApiDocContentResult {

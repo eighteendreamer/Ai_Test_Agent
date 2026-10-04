@@ -12,6 +12,7 @@ from src.application.context.observation_runtime_service import ObservationRunti
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.documents.api_docs_service import ApiDocsService
+from src.application.documents.git_service import GitDocumentService
 from src.application.documents.parser_config_service import DocumentParserConfigService
 from src.application.documents.difference_config_service import DocumentDifferenceConfigService
 from src.application.docker_management_service import DockerManagementService
@@ -257,6 +258,10 @@ class AppContainer(containers.DeclarativeContainer):
         upload_security_service=upload_security_service,
         catalog_store=api_doc_store,
         project_service=project_service,
+    )
+    document_git_service = providers.Singleton(
+        GitDocumentService, config_store=application_config_store,
+        project_service=project_service, documents=api_docs_service,
     )
     integration_catalog_service = providers.Singleton(
         IntegrationCatalogService,

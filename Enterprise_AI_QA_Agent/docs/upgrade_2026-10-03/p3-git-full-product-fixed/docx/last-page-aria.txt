@@ -1,0 +1,85 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Tools
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - heading "Skills 与工具管理" [level=2]
+  - paragraph: 管理 Agent 增强知识、漏洞扫描引擎及后端已注册工具链
+  - button "+ 添加文档源"
+  - navigation:
+    - button " 增强技能 (Skills)"
+    - button " API 接口文档"
+    - button " 安全扫描引擎"
+    - button " 后端注册服务"
+    - button " 插件导入"
+  - heading "API 接口文档" [level=3]
+  - paragraph: 统一管理 OpenAPI、Swagger、Postman 和 Markdown 文档；结构化接口文档导入后会转成 Markdown 保存，便于预览、检索和后续接口测试复用。
+  - button "从 Git 导入文档"
+  - heading "Git 文档来源" [level=3]
+  - button "关闭 Git 导入": 
+  - text: 所属项目
+  - textbox "所属项目 生产 Git 来源 loading":
+    - /placeholder: ""
+  - text: 生产 Git 来源
+  - img "loading":
+    - img
+  - region "Git 文档导入":
+    - heading "从 Git 新建文档" [level=4]
+    - paragraph: 选择已登记仓库的文件版本。导入后可在文档详情解析和比较。
+    - group:
+      - text: 项目 Git 仓库设置 · 修订 0
+      - group:
+        - text: 仓库编号
+        - textbox "仓库编号": repo
+        - text: 仓库名称
+        - textbox "仓库名称": 真实本地仓库
+        - text: 服务器本地仓库路径
+        - textbox "服务器本地仓库路径": C:\Users\32734\AppData\Local\Temp\pytest-of-32734\pytest-625\test_production_fixed_git_impo1\真实仓库
+        - checkbox "启用" [checked]
+        - text: 启用
+        - button "移除仓库"
+        - button "添加仓库"
+        - text: Git 读取超时（秒）
+        - spinbutton "Git 读取超时（秒）": "30"
+        - text: Git CPU 上限（秒）
+        - spinbutton "Git CPU 上限（秒）": "20"
+        - text: Git 内存上限（字节）
+        - spinbutton "Git 内存上限（字节）": "536870912"
+        - text: Git 文件上限（字节）
+        - spinbutton "Git 文件上限（字节）": "20000000"
+        - text: Git 输出上限（字节）
+        - spinbutton "Git 输出上限（字节）": "40000000"
+        - button "保存项目 Git 设置"
+    - group:
+      - text: Git 仓库
+      - combobox "Git 仓库":
+        - option "选择仓库" [selected]
+      - text: Git 引用
+      - textbox "Git 引用": HEAD
+      - text: 仓库内文件路径
+      - textbox "仓库内文件路径"
+      - button "解析固定来源"
+  - text: 
+  - strong: 还没有导入任何 API 文档
+  - text: 支持本地文件、URL 地址，以及第三方接入源导入。 >_ 运行时事件控制台 idle 

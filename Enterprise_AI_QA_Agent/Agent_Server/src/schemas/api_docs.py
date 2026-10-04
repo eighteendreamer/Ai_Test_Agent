@@ -3,7 +3,25 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GitDocumentOrigin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["git"] = "git"
+    repository_id: str
+    repository_name: str
+    repository_root: str
+    config_revision: int = Field(ge=1)
+    commit: str = Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    blob: str = Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    path: str
+    mode: Literal["100644", "100755"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
+    git_version: str
+    reader_policy: dict[str, int | float]
 
 
 class ApiDocumentAsset(BaseModel):
@@ -34,6 +52,7 @@ class ApiDocRecord(BaseModel):
     project_name: str | None = None
     project_url: str | None = None
     source: str = "manual_upload"
+    source_origin: GitDocumentOrigin | None = None
     format_label: str = "其他文档"
     content_type: str = "application/octet-stream"
     size_bytes: int = 0
@@ -88,12 +107,14 @@ class ApiDocVersionResult(BaseModel):
     document: ApiDocRecord
     version: ApiDocVersionRecord
     created_new: bool
+    source_origin: GitDocumentOrigin | None = None
 
 
 class ApiDocSubmission(BaseModel):
     document_id: str
     request_id: str
     request_hash: str
+    source_request_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     result: ApiDocVersionResult
 
 

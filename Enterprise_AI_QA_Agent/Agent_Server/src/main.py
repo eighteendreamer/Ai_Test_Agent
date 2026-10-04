@@ -36,6 +36,7 @@ from src.api.routes.case_plans import router as case_plans_router
 from src.api.routes.case_planning_tasks import router as case_planning_tasks_router
 from src.api.routes.document_parsing import router as document_parsing_router
 from src.api.routes.document_differences import router as document_differences_router
+from src.api.routes.document_git import router as document_git_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
 from src.api.routes.security_bugs import router as security_bugs_router
@@ -349,6 +350,7 @@ async def _initialize_lifespan_resources(
     api_doc_store = container.api_doc_store()
     api_docs_service = container.api_docs_service()
     await api_docs_service.initialize()
+    app.state.document_git_service = container.document_git_service()
 
     integration_catalog_service = container.integration_catalog_service()
     mcp_server_store = container.mcp_server_store()
@@ -975,6 +977,7 @@ app.include_router(case_plans_router, prefix=settings.api_v1_prefix)
 app.include_router(case_planning_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(document_parsing_router, prefix=settings.api_v1_prefix)
 app.include_router(document_differences_router, prefix=settings.api_v1_prefix)
+app.include_router(document_git_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
 app.include_router(security_bugs_router, prefix=settings.api_v1_prefix)

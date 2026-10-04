@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="124.856" timestamp="2026-10-04T18:11:38.397064+08:00" hostname="EIghteen"><testcase classname="tests.test_document_git_production" name="test_production_fixed_git_import_lost_reply_parse_compare_and_restart[md]" time="60.735"><failure message="playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for get_by_text(&quot;生产 Git 来源&quot;, exact=True).last&#10;    - locator resolved to &lt;div class=&quot;n-base-select-option__content&quot;&gt;…&lt;/div&gt;&#10;  - attempting click action&#10;    2 × waiting for element to be visible, enabled and stable&#10;      - element is not stable&#10;    - retrying click action&#10;    - waiting 20ms&#10;    - waiting for element to be visible, enabled and stable&#10;    - element is not stable&#10;  2 × retrying click action&#10;      - waiting 100ms&#10;      - waiting for element to be visible, enabled and stable&#10;      - element is visible, enabled and stable&#10;      - scrolling into view if needed&#10;      - done scrolling&#10;      - &lt;div data-v-995e80af=&quot;&quot; class=&quot;tools-modal-backdrop&quot;&gt;…&lt;/div&gt; from &lt;div id=&quot;app&quot; data-v-app=&quot;&quot;&gt;…&lt;/div&gt; subtree intercepts pointer events&#10;  56 × retrying click action&#10;       - waiting 500ms&#10;       - waiting for element to be visible, enabled and stable&#10;       - element is visible, enabled and stable&#10;       - scrolling into view if needed&#10;       - done scrolling&#10;       - &lt;div data-v-995e80af=&quot;&quot; class=&quot;tools-modal-backdrop&quot;&gt;…&lt;/div&gt; from &lt;div id=&quot;app&quot; data-v-app=&quot;&quot;&gt;…&lt;/div&gt; subtree intercepts pointer events&#10;  - retrying click action&#10;    - waiting 500ms">tests\test_document_git_production.py:94: in test_production_fixed_git_import_lost_reply_parse_compare_and_restart
+    panel=await open_git()
+          ^^^^^^^^^^^^^^^^
+tests\test_document_git_production.py:90: in open_git
+    await page.get_by_text(project["name"],exact=True).last.click()
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:17894: in click
+    await self._impl_obj.click(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:165: in click
+    return await self._frame._click(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:593: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_text("生产 Git 来源", exact=True).last
+E       - locator resolved to &lt;div class="n-base-select-option__content"&gt;…&lt;/div&gt;
+E     - attempting click action
+E       2 × waiting for element to be visible, enabled and stable
+E         - element is not stable
+E       - retrying click action
+E       - waiting 20ms
+E       - waiting for element to be visible, enabled and stable
+E       - element is not stable
+E     2 × retrying click action
+E         - waiting 100ms
+E         - waiting for element to be visible, enabled and stable
+E         - element is visible, enabled and stable
+E         - scrolling into view if needed
+E         - done scrolling
+E         - &lt;div data-v-995e80af="" class="tools-modal-backdrop"&gt;…&lt;/div&gt; from &lt;div id="app" data-v-app=""&gt;…&lt;/div&gt; subtree intercepts pointer events
+E     56 × retrying click action
+E          - waiting 500ms
+E          - waiting for element to be visible, enabled and stable
+E          - element is visible, enabled and stable
+E          - scrolling into view if needed
+E          - done scrolling
+E          - &lt;div data-v-995e80af="" class="tools-modal-backdrop"&gt;…&lt;/div&gt; from &lt;div id="app" data-v-app=""&gt;…&lt;/div&gt; subtree intercepts pointer events
+E     - retrying click action
+E       - waiting 500ms</failure></testcase><testcase classname="tests.test_document_git_production" name="test_production_fixed_git_import_lost_reply_parse_compare_and_restart[docx]" time="60.152"><failure message="playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for get_by_text(&quot;生产 Git 来源&quot;, exact=True).last&#10;    - locator resolved to &lt;div class=&quot;n-base-select-option__content&quot;&gt;…&lt;/div&gt;&#10;  - attempting click action&#10;    2 × waiting for element to be visible, enabled and stable&#10;      - element is not stable&#10;    - retrying click action&#10;    - waiting 20ms&#10;    - waiting for element to be visible, enabled and stable&#10;    - element is not stable&#10;  2 × retrying click action&#10;      - waiting 100ms&#10;      - waiting for element to be visible, enabled and stable&#10;      - element is visible, enabled and stable&#10;      - scrolling into view if needed&#10;      - done scrolling&#10;      - &lt;div data-v-995e80af=&quot;&quot; class=&quot;tools-modal-backdrop&quot;&gt;…&lt;/div&gt; from &lt;div id=&quot;app&quot; data-v-app=&quot;&quot;&gt;…&lt;/div&gt; subtree intercepts pointer events&#10;  56 × retrying click action&#10;       - waiting 500ms&#10;       - waiting for element to be visible, enabled and stable&#10;       - element is visible, enabled and stable&#10;       - scrolling into view if needed&#10;       - done scrolling&#10;       - &lt;div data-v-995e80af=&quot;&quot; class=&quot;tools-modal-backdrop&quot;&gt;…&lt;/div&gt; from &lt;div id=&quot;app&quot; data-v-app=&quot;&quot;&gt;…&lt;/div&gt; subtree intercepts pointer events&#10;  - retrying click action&#10;    - waiting 500ms">tests\test_document_git_production.py:94: in test_production_fixed_git_import_lost_reply_parse_compare_and_restart
+    panel=await open_git()
+          ^^^^^^^^^^^^^^^^
+tests\test_document_git_production.py:90: in open_git
+    await page.get_by_text(project["name"],exact=True).last.click()
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:17894: in click
+    await self._impl_obj.click(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:165: in click
+    return await self._frame._click(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:593: in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_text("生产 Git 来源", exact=True).last
+E       - locator resolved to &lt;div class="n-base-select-option__content"&gt;…&lt;/div&gt;
+E     - attempting click action
+E       2 × waiting for element to be visible, enabled and stable
+E         - element is not stable
+E       - retrying click action
+E       - waiting 20ms
+E       - waiting for element to be visible, enabled and stable
+E       - element is not stable
+E     2 × retrying click action
+E         - waiting 100ms
+E         - waiting for element to be visible, enabled and stable
+E         - element is visible, enabled and stable
+E         - scrolling into view if needed
+E         - done scrolling
+E         - &lt;div data-v-995e80af="" class="tools-modal-backdrop"&gt;…&lt;/div&gt; from &lt;div id="app" data-v-app=""&gt;…&lt;/div&gt; subtree intercepts pointer events
+E     56 × retrying click action
+E          - waiting 500ms
+E          - waiting for element to be visible, enabled and stable
+E          - element is visible, enabled and stable
+E          - scrolling into view if needed
+E          - done scrolling
+E          - &lt;div data-v-995e80af="" class="tools-modal-backdrop"&gt;…&lt;/div&gt; from &lt;div id="app" data-v-app=""&gt;…&lt;/div&gt; subtree intercepts pointer events
+E     - retrying click action
+E       - waiting 500ms</failure></testcase></testsuite></testsuites>

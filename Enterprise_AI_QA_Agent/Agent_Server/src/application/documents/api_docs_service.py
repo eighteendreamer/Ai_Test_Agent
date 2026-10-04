@@ -17,7 +17,7 @@ import httpx
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.security.upload_security_service import UploadSecurityService
 from src.core.config import Settings
-from src.schemas.api_docs import (ApiDocRecord, ApiDocumentAsset, UploadedAttachmentRecord,
+from src.schemas.api_docs import (ApiDocRecord, ApiDocumentAsset, UploadedAttachmentRecord, GitDocumentOrigin,
     ApiDocVersionRecord, ApiDocSubmission, ApiDocVersionResult, ApiDocVersionUploadRequest, ApiDocHistoryInitRequest)
 from src.application.documents.api_doc_store import ApiDocConflictError
 from src.schemas.integration import IntegrationRecord
@@ -337,23 +337,27 @@ class ApiDocsService:
     async def upload_document(self, *, filename: str, content_base64: str,
         source: str = "manual_upload", title: str | None = None, project_id: str | None = None,
         project_name: str | None = None, project_url: str | None = None,
-        content_type: str | None = None, request_id: str | None = None) -> ApiDocRecord:
+        content_type: str | None = None, request_id: str | None = None,
+        source_origin: GitDocumentOrigin | None = None, source_request_hash: str | None = None) -> ApiDocRecord:
         parameters = {"filename": filename, "content_base64": content_base64, "source": source,
             "title": self._normalize_optional_text(title), "project_id": project_id,
             "project_name": self._normalize_optional_text(project_name),
             "project_url": self._normalize_optional_text(project_url),
             "content_type": self._normalize_optional_text(content_type)}
+        if source_origin is not None:
+            parameters["source_origin"] = source_origin
         # Existing callers without a request identity retain independent uploads.
         identity = request_id or str(uuid4())
         doc_id = str(uuid5(DOCUMENT_UPLOAD_NAMESPACE, f"{parameters.get('project_id') or 'unbound'}:{identity}"))
         request_hash = self._upload_hash(parameters)
-        existing = await self._replay_submission(doc_id, identity, request_hash)
+        existing = await self._replay_submission(doc_id, identity, request_hash, source_request_hash=source_request_hash)
         if existing:
             return existing.result.document
         record = await self._prepare_document_assets(doc_id=doc_id, **parameters)
         version = self._version(record, None)
         submission = ApiDocSubmission(document_id=doc_id, request_id=identity, request_hash=request_hash,
-            result=ApiDocVersionResult(document=record, version=version, created_new=True))
+            source_request_hash=source_request_hash,
+            result=ApiDocVersionResult(document=record, version=version, created_new=True, source_origin=source_origin))
         saved = await self._save_version_submission(record, version, submission, expected_revision=None)
         return saved.result.document
 
@@ -361,11 +365,14 @@ class ApiDocsService:
     def _upload_hash(parameters: dict[str, Any]) -> str:
         normalized = {**parameters}
         content = ApiDocsService._decode_base64(str(normalized.pop("content_base64")))
+        if normalized.get("source_origin") is not None:
+            normalized["source_origin"] = normalized["source_origin"].model_dump(mode="json")
         normalized["content_hash"] = hashlib.sha256(content).hexdigest()
         return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
-    async def _replay_submission(self, doc_id: str, request_id: str, request_hash: str) -> ApiDocSubmission | None:
+    async def _replay_submission(self, doc_id: str, request_id: str, request_hash: str, *,
+        source_request_hash: str | None = None) -> ApiDocSubmission | None:
         saved = await self._catalog_store.get_submission(doc_id, request_id)
         if saved:
             current = await self.get_document(doc_id)
@@ -373,11 +380,30 @@ class ApiDocsService:
                 raise ApiDocNotFoundError("文档不属于提交时的项目")
         if saved and saved.request_hash != request_hash:
             raise ApiDocConflictError("同一提交身份不能使用不同的文档内容或参数")
+        if saved and source_request_hash is not None and saved.source_request_hash != source_request_hash:
+            raise ApiDocConflictError("同一来源提交不能使用不同的参数或目标版本")
         return saved
 
     async def get_upload_submission(self, request_id: str, project_id: str | None) -> ApiDocRecord:
         doc_id = str(uuid5(DOCUMENT_UPLOAD_NAMESPACE, f"{project_id or 'unbound'}:{request_id}"))
         return (await self.get_version_submission(doc_id, request_id, project_id)).document
+
+    async def get_source_submission(self, project_id: str, request_id: str, *, document_id: str | None = None,
+        source_request_hash: str | None = None) -> ApiDocVersionResult | None:
+        """Internal source replay before reading a mutable external source or its configuration."""
+        doc_id = document_id or str(uuid5(DOCUMENT_UPLOAD_NAMESPACE, f"{project_id}:{request_id}"))
+        saved = await self._catalog_store.get_submission(doc_id, request_id)
+        if saved is None:
+            return None
+        current = await self.get_document(doc_id)
+        if current.project_id != project_id or saved.result.document.project_id != project_id:
+            raise ApiDocNotFoundError("文档不属于当前项目")
+        if not saved.source_request_hash or saved.result.source_origin is None:
+            raise ApiDocConflictError("该请求编号已经用于其他文档来源")
+        if source_request_hash is not None and saved.source_request_hash != source_request_hash:
+            raise ApiDocConflictError("同一来源提交不能使用不同的参数或目标版本")
+        logger.info("api_doc_source_submission_replayed", extra={"api_doc_id": doc_id, "request_id": request_id})
+        return saved.result
 
     async def get_version_submission(self, doc_id: str, request_id: str, project_id: str | None) -> ApiDocVersionResult:
         current = await self.get_document(doc_id)
@@ -394,13 +420,17 @@ class ApiDocsService:
             version=record.version_number, parent_version_id=parent, created_at=record.updated_at,
             snapshot=record.model_copy(deep=True))
 
-    async def upload_version(self, doc_id: str, payload: ApiDocVersionUploadRequest) -> ApiDocVersionResult:
+    async def upload_version(self, doc_id: str, payload: ApiDocVersionUploadRequest, *,
+        source_origin: GitDocumentOrigin | None = None, source_request_hash: str | None = None) -> ApiDocVersionResult:
         current = await self.get_document(doc_id)
         if current.project_id != payload.project_id:
             raise ApiDocNotFoundError("文档不属于当前项目")
         parameters = payload.model_dump(exclude={"request_id"})
+        if source_origin is not None:
+            parameters["source_origin"] = source_origin
         request_hash = self._upload_hash(parameters)
-        existing = await self._replay_submission(doc_id, payload.request_id, request_hash)
+        existing = await self._replay_submission(doc_id, payload.request_id, request_hash,
+            source_request_hash=source_request_hash)
         if existing:
             if existing.result.document.project_id != payload.project_id:
                 raise ApiDocNotFoundError("文档不属于当前项目")
@@ -420,14 +450,15 @@ class ApiDocsService:
         else:
             record = await self._prepare_document_assets(doc_id=doc_id, filename=payload.filename,
                 content_base64=payload.content_base64, project_id=current.project_id, title=current.title,
-                project_name=current.project_name, project_url=current.project_url, source=payload.source)
+                project_name=current.project_name, project_url=current.project_url, source=payload.source, source_origin=source_origin)
             record.uploaded_at = current.uploaded_at
             record.version_number = current.version_number + 1
             record.catalog_revision = current.catalog_revision + 1
             version = self._version(record, current.current_version_id)
             fixed = version
         submission = ApiDocSubmission(document_id=doc_id, request_id=payload.request_id, request_hash=request_hash,
-            result=ApiDocVersionResult(document=record, version=fixed, created_new=version is not None))
+            source_request_hash=source_request_hash,
+            result=ApiDocVersionResult(document=record, version=fixed, created_new=version is not None, source_origin=source_origin))
         saved = await self._save_version_submission(record, version, submission, expected_revision=current.catalog_revision)
         return saved.result
 
@@ -497,7 +528,8 @@ class ApiDocsService:
             logger.warning("api_doc_version_commit_unconfirmed", extra={"api_doc_id": record.id,
                 "request_id": submission.request_id, "error_type": type(exc).__name__})
             try:
-                saved = await self._replay_submission(record.id, submission.request_id, submission.request_hash)
+                saved = await self._replay_submission(record.id, submission.request_id, submission.request_hash,
+                    source_request_hash=submission.source_request_hash)
             except ApiDocConflictError:
                 await self._cleanup_unreferenced_assets(record.id, list(owned))
                 raise
@@ -527,6 +559,7 @@ class ApiDocsService:
         project_name: str | None = None,
         project_url: str | None = None,
         content_type: str | None = None,
+        source_origin: GitDocumentOrigin | None = None,
     ) -> ApiDocRecord:
         await self._require_bindable_project(project_id)
         content = self._decode_base64(content_base64)
@@ -586,6 +619,7 @@ class ApiDocsService:
                 project_name=normalized_project_name,
                 project_url=normalized_project_url,
                 source=source,
+                source_origin=source_origin,
                 format_label=format_label,
                 content_type=content_type,
                 size_bytes=len(content),

@@ -603,7 +603,7 @@ def _check_asset(previous: ApiDocumentAsset | None, asset: ApiDocumentAsset) -> 
 
 
 def _check_submission(previous: ApiDocSubmission, proposed: ApiDocSubmission) -> None:
-    if previous.request_hash != proposed.request_hash:
+    if previous.request_hash != proposed.request_hash or previous.source_request_hash != proposed.source_request_hash:
         raise ApiDocConflictError("同一提交身份不能使用不同的文档内容或参数")
 
 

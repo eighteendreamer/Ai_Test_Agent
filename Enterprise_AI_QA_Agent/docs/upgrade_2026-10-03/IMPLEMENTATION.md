@@ -1685,3 +1685,48 @@ PLAN、用户粘贴原文件和Codex镜像直接同步，原备份保留。本�
 结果 **37 通过、14 跳过，11.18 秒**。版本用真实文件/替代存储夹具；差异用实际 MD/DOCX/PDF 与受限进程。14 项为未启用的真实存储变体。stdout/stderr 保存在同名 log；本次没有运行真实三种存储部署、生产 API/CLI、完整浏览器、Git 读取或外部模型。此前 bf84f84 的前端 59/真实后端 27/完整产品 3 仅核对保存的最终 XML，不写成本次重新验收。
 
 本轮只提交方案、设计状态及本次验证记录；已有未验收 Git 产品草稿和用户 .gitignore 留在工作区，不纳入文档提交。不升级依赖、不迁移数据、不部署、不推送/建 PR。完整 P0—P5 仍未完成。
+
+
+## P3.5 Git 可选来源实际接入（2026-10-04，研究基线 5500367）
+
+先重读目标附件、版本/提交/补偿事务、配置接口、代码审查本地 Git、受限进程和正式页面/生产夹具；核对 Git 官方 rev-parse、ls-tree、cat-file、git、init、update-index、replace 文档。实际安装为 Git 2.54.0.windows.1。读取使用完整 commit/blob、精确字面路径、原字节校验、local-only flags；不执行 checkout/fetch/filter，不读脏工作区。
+
+新增 GitDocumentService、项目 MySQL 仓库/策略、resolve/import/submissions 路由与容器/main 接线。原件保存和版本/提交事务继续使用 ApiDocsService；来源请求签名参与普通重放和事务重放，回执未知先查同项目/文档/请求。GitDocumentOrigin 随现有 PG JSON 保存，原件存 RustFS，旧上传 hash 和 optional 字段兼容；没有新增版本表、数据库迁移、依赖、配置文件或第二套任务平台。
+
+前端完整类型/API 与 DocumentGitImport 接入 ApiDocsPlugin；分别提供新建和明确更新已有文档。五项策略可编辑；固定 commit/blob 才提交；浏览器保留固定原请求，不存原件/凭据。恢复原 V1 提交后另读当前目录，页面不会退回 V1。可查固定来源，归档项目仍能找回原提交。
+
+实际失败及纠正均保留原 XML/工件：
+
+- source-first：2 失败/7 通过/1 未启用真实存储。测试仓库受 autocrlf 影响，预期 CRLF 与实际已提交 LF 不同；将测试 add 显式使用 core.autocrlf=false，不改产品原字节读取。
+- source-final：3 失败/22 通过，分别是删除 Windows 只读 Git 对象、两种存储变体调用 update_document 时违反实际 keyword-only 签名。检查自有路径后调整夹具，source-fixed 为25通过；生产没有增加特判。
+- full-product-first：MD/DOCX 均失败，复现新菜单被 modal backdrop 遮挡。沿用旧上传 to=false 后，full-product-fixed 复现 min=0.000001 与默认 step=1 让默认30秒不合法，原生表单未发出 PUT。分开秒数 step=any 与字节 step=1/min=1，并补 native checkValidity 回归。
+- full-product-verified：两种文件均已走到重启后，重新进入的小 modal 裁剪菜单，定位器落到背景项目文本。改用原生项目选择及明确的项目ID选择，不 force click、不调遮罩/全局滚动。完整功能与验收范围保留。
+
+最终实际结果：
+
+| 证据 | 结果 | 范围 |
+|---|---|---|
+| p3-git-source-fixed.xml | 25通过，36.81秒 | 实际临时Git、普通/bare、SHA1/SHA256、replace、特殊文件类型、缺失blob、原字节/脏工作区、资源/取消；真实MySQL/PG/RustFS的并发、同字节来源、配置删除/归档/改绑恢复 |
+| p3-git-regression-final.xml | **132通过、0跳过，56.76秒** | 最后Git日志/返回路径后复验上述25项，并回归版本、项目绑定、目录原子性、原件/派生、受限解析及差异；真实存储开关已启用 |
+| p3-git-frontend-final-render.xml | **58通过、0失败** | 来源/API契约、原请求恢复、晚响应、只读、当前投影与原生数字有效性，以及已有上传/版本/解析/比较回归 |
+| p3-git-full-product-final.xml / p3-git-full-product-final/{md,docx} | **2通过、0跳过，109.00秒** | 正式App/真实Chromium、生产uvicorn、独立解析和比较CLI、隔离MySQL/PG/RustFS/Redis；页面登记/新建/明确追加、丢已提交回执、重启恢复、实际7→9、普通上传；模型调用均0，仓库字节不变，JS错误为空，构建含typecheck |
+
+生产来源 API/CLI 两种文件先前独立验收为2通过（67.56秒，p3-git-production-verified.xml）；这是独立后端范围，不与上述两个完整产品场景相加。最终完整产品后只补成功日志和当前来源文字展示，最后后端132与前端58重新运行；完整产品证据证明实际业务与恢复，最终独立构建另保存。
+
+关键命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_git.py tests/test_api_doc_versions.py tests/test_api_doc_project_binding.py tests/test_api_doc_catalog_atomicity.py tests/test_api_doc_original_assets.py tests/test_document_parser_process.py tests/test_document_differences.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-git-regression-final.xml
+$env:RUN_LIVE_DOCUMENT_GIT_PRODUCTION='1'
+$env:QA_DOCUMENT_GIT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03').Path 'p3-git-full-product-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_git_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p3-git-full-product-final.xml
+```
+
+前端运行8个相关测试文件（58项），实际typecheck和正式产品构建已通过；stdout/stderr、原件、网络、截图、来源/结果JSON和失败XML保存。原附件、项目PLAN、Codex镜像、P3_5_DESIGN已同步。只提交相关文件，用户.gitignore保留；不推送/建PR。
+
+本步已有专项并不等于P0—P5完成。生产历史迁移未执行，Git LFS/子模块/符号链接明确不作为原件，扫描PDF/OCR和Docling不扩张。下一步继续P4深度查证，再做影响/追踪/增量草稿；P2未知副作用/准备状态/计划修订/默认模型、模块化生成、其他完整产品流程、DeepSeek人工录制、Docker工具证据及P5保持原目标。
+
+收尾复核：最终独立 `npm run build` 含类型检查通过（Vite 5.85秒）。新增故障注入复现二进制 TimeoutExpired.stdout 被日志明文输出，`p3-git-timeout-diagnostic-before.xml` 为1失败；超时分支按既有二进制成功/失败诊断记录大小/SHA256，并保留stderr。最终后端132通过（56.76秒）。最后完整产品2项未因该诊断改动重跑，最终前端58项仍对应实际页面来源文字与数字约束。原方案中仍称Git待接入的当前状态已同步修正；历史阶段证据保留。
+
+交付检查：293份相关文件中268份文本进行了凭据格式扫描，URL凭据另核对，无匹配；271份原始证据工作区与暂存字节相同，源码/测试/方案diff检查通过。项目PLAN/Codex镜像字节一致，原附件Git小节正文一致，原附件备份存在。用户.gitignore未暂存；无生产数据迁移，无新依赖，未推送或创建PR。

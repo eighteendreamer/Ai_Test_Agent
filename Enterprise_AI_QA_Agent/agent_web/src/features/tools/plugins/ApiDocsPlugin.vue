@@ -17,6 +17,7 @@ import ApiDocAssets from "./ApiDocAssets.vue";
 import ApiDocVersions from "./ApiDocVersions.vue";
 import ApiDocParsing from "./ApiDocParsing.vue";
 import ApiDocDifferences from "./ApiDocDifferences.vue";
+import DocumentGitImport from "./DocumentGitImport.vue";
 import { documentFileBase64, prepareDocumentRequest, readDocumentRequest, type PendingDocumentRequest } from "./documentUploadRequest";
 
 type ImportMode = "local" | "url" | "integration";
@@ -36,6 +37,8 @@ const deletingId = ref("");
 const uploadOpen = ref(false);
 const uploadLoading = ref(false);
 const uploadMode = ref<ImportMode>("local");
+const gitOpen = ref(false);
+const gitProjectId = ref<string | null>(null);
 const localRequestKey = "qa-agent:api-doc-upload";
 const pendingUpload = ref<PendingDocumentRequest | null>(null);
 const localRejected = ref(false);
@@ -509,6 +512,21 @@ onBeforeUnmount(() => {
           {{ t("apiDocs.desc") }}
         </p>
       </div>
+      <button class="secondary-btn" @click="gitOpen = true">从 Git 导入文档</button>
+    </div>
+
+    <div v-if="gitOpen" class="tools-modal-backdrop" @click.self="gitOpen = false">
+      <section class="tools-modal upload-modal"><header class="tools-modal-head"><h3>Git 文档来源</h3>
+        <button class="icon-btn" aria-label="关闭 Git 导入" @click="gitOpen = false"><i class="fa-solid fa-xmark"></i></button></header>
+        <div class="tools-modal-body">
+        <label>所属项目<select v-model="gitProjectId" aria-label="Git 文档所属项目">
+          <option :value="null">选择项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
+        </select></label>
+        <DocumentGitImport v-if="gitProjectId" :key="gitProjectId" :project-id="gitProjectId"
+          :can-write="projects.some(project => project.id === gitProjectId && project.status === 'active')"
+          @updated="upsertDoc" />
+        </div>
+      </section>
     </div>
 
     <div v-if="loading && !hasDocs" class="api-doc-empty">
@@ -641,6 +659,9 @@ onBeforeUnmount(() => {
 
             <ApiDocAssets :key="selectedDoc.id" :document="selectedDoc" />
             <ApiDocVersions :key="selectedDoc.id" :document="selectedDoc"
+              :can-write="projects.some(project => project.id === selectedDoc?.project_id && project.status === 'active')"
+              @updated="updateVersionDocument" />
+            <DocumentGitImport v-if="selectedDoc.project_id" :project-id="selectedDoc.project_id" :document="selectedDoc"
               :can-write="projects.some(project => project.id === selectedDoc?.project_id && project.status === 'active')"
               @updated="updateVersionDocument" />
 
