@@ -2874,3 +2874,21 @@ $env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT="1"
 ```
 
 交付审计首轮把实际SQL映射行按JSON对象读取失败：原诊断使用default=str保留了UUID行的repr；改为仅识别UUID字面量并用ast.literal_eval读取原数据，不执行原文。随后直接重算浏览器JSON.stringify文本的hash失败：浏览器将30.0呈现为30，不能用展示文本重算Python固定版本hash。改为从实际API保存的完整版本核验canonical hash，再逐值核对页面JSON；没有修改历史hash、SQL记录或原证据。最终5953份旧证据与683份新原始文件核验通过，两种App实际请求分别6次及4次，三份方案和用户.gitignore同时核对。
+
+## 2026-10-06 更新原方案与执行证据接入边界
+
+源码核对基线12d2ebd4。本次响应用户“更新这个方案”，只更新文档；读取原目标、现有PLAN、上传/追加版本、项目规划、矩阵Schema/服务/前端类型及实际Agent核验。当前矩阵仍仅有execution_status=not_assessed、deployment_status=unknown；执行关联Schema/辅助/PG存储草稿未接入、未验证，不计作已实现。
+
+PLAN首页/当前状态更新为最新提交，新增3.6.12和5.2.2的固定结果与正文核验关联、实际ToolJob核对、追加历史/原请求恢复、部分核验边界和真实功能验收顺序；完整P0—P5、历史失败以及模板仅生成/上传无Git/轻量解析约定保留。研究设计同时注明未实现状态和部分检查通过不能代表整个验证点通过。
+
+实际命令（项目根目录）：
+
+```powershell
+.\.venv\Scripts\python.exe -Xutf8 docs/upgrade_2026-10-03/plan_sync_20261006_execution.py --sync
+git diff --check -- docs/upgrade_2026-10-03
+git diff --cached --check
+```
+
+同步首轮失败为AssertionError，链接为planning_service.py:245；校验器把行号当作文件名。去掉文件链接末尾行号后实际通过，最终文档再次同步。重复同步只接受原预期hash或上次审计hash，未知副本不覆盖。
+
+同步脚本核对三份计划字节、所有本地链接、18份历史审计的6636份原始文件hash/大小、四份原最终XML统计和用户.gitignore；保存p4-plan-execution-sync-validation.json。历史XML读取不算本次重新测试；未运行业务测试/构建/浏览器/模型/迁移。文档提交只包含PLAN、IMPLEMENTATION、研究设计、同步脚本和审计，工作区源码草稿和.gitignore保留，不推送或建PR。
