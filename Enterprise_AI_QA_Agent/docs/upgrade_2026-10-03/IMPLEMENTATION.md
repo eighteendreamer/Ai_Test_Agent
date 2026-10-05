@@ -2486,3 +2486,45 @@ $env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\
 随后把九项业务oracle接入未来默认集成验收，使用此次实际结果回放1通过4.68秒，0新增HTTP；最新默认XML在加入oracle函数前执行，实际结果的离线加强验证另记business-replay.xml，未原样重复外发。保留修改/删除的重大影响及未登录负向条件，新增导出未误认已覆盖，其他关系none。源默认模型/8192/globalSDK60/call120/task600前后相同，终态历史不发HTTP/重建/上传/领取。
 
 三份方案、原对象/版本hash/F路径和值、14条生产/正式App物理消息、8条默认消息、旧2260份原文件及用户.gitignore核对见p4-case-anchors-validation.json。没有生产历史迁移，完整P0—P5仍未完成；后续接稳定需求身份/评审/验证点/追踪/增量，并继续准备状态、未知副作用、正式生成导入、人工录制/Docker/报告。
+
+## 正式需求评审与设计矩阵API〔研究基线6abe525f〕
+
+实施前读取固定规则/逐用例响应、快照完整核验、case逐版本治理、PG事务/锁、正式API恢复和本地版本/证据课程。依据到做法见P4_REQUIREMENT_REVIEW_DESIGN.md。新增三张PG需求/版本/评审表，稳定需求/验证点、明确接受/拒绝/暂缓、原请求恢复、父版本与候选最新评审冲突、指定历史设计矩阵；生产runtime/main初始化与路由、前端DTO/客户端一起接入。没有新增依赖、MySQL配置或改写原影响/用例契约。
+
+实际命令（Agent_Server目录；各log/XML及目录独立保留）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-live-first.xml
+$env:QA_REQUIREMENT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-live-fixed')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews.py tests/test_document_impact_case_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-live-fixed.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-production')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-production.xml
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-api-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-api-final.xml
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-api-fixed')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-api-fixed.xml
+```
+
+首轮3失败/5通过37.69秒是测试误把current_version_id当历史不变量；修正后追加业务故障与并发，9项新需求+19项既有字段引用=28通过91.34秒，0跳过。真实MD/DOCX/PDF/MySQL/PG/RustFS/进程/HTTP/ASGI，固定rule/完整case判断及checkpoints保存，V1/V2/V3/验证点、历史关系、明确设计覆盖与待复核、原用例启用指针和原影响对象保留。丢真实PG提交回执503后四路恢复一个决定；首次四路提交也只产生一个版本，两个不同请求竞争同父版本仅一个成功。拒绝/暂缓不创建需求，移除后恢复验证点UUID；损坏真实PG正文被hash拒绝，原测试记录已恢复。归档后重放/历史禁止对象读取、上传、模型和配置；新请求409。
+
+独立API/三类CLI/真实存储原MD正常场景1通过71.37秒。新增生产HTTP评审测试首次因我漏写列表括号收集1错误0.33秒，无功能执行；修正后1通过61.59秒，真实HTTP提交/读取版本和矩阵、API停止再以关闭派发配置启动、按原请求找回/重放均验证，原物理模型仍2次，不读取进程内存恢复决定。
+
+agent_web目录执行`npm run test -- src/services/requirements.api.test.ts src/services/documentImpacts.api.test.ts`为6通过；`npm run build`含vue-tsc/Vite通过8.89秒。没有新需求页面或浏览器流程，未重复外部默认模型；受控响应/测试评审只验链路，不能冒充用户业务审批。design_covered只表达明确设计关联，execution_status=not_assessed、deployment_status=unknown；增量生成、环境适用、运行证据、完整App和P0—P5其他剩余项仍待完成。
+
+三表真实启动初始化已验，未自动回填历史需求，未修改原业务表/版本正文。相关原始证据、各次失败、hash/完整来源/消息、旧2974原文件、用户.gitignore及三份方案核对见p4-requirement-reviews-validation.json。后续先补正式评审/矩阵App和确认范围的增量生成，不把设计矩阵称为执行验证闭环。
+
+末尾为需求分页增加project/document/id索引，短标识名称从实际配置表名hash生成，避免超过项目既有63字节标识限制。最终源码实际复验：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-requirement-reviews-api-validated')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-reviews-api-validated.xml
+```
+
+新需求9通过39.44秒，独立生产评审/重启1通过56.39秒，均0跳过；初始化索引可重复，真实API重启/历史不丢失。此前28及第一次生产证据在索引前，不合计新覆盖。前端文件没再改，未重复前端构建。最终AST/编译和diff、raw bytes及方案一致性验收单独保留于validation。

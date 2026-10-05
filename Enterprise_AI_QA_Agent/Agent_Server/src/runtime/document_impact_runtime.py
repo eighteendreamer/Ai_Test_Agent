@@ -10,6 +10,8 @@ from src.application.documents.impact_sources import DocumentImpactSources
 from src.application.documents.impact_task_service import DocumentImpactTaskService
 from src.application.documents.impact_workflow import DocumentImpactWorkflow
 from src.runtime.postgres_document_impact_store import PostgresDocumentImpactStore
+from src.runtime.postgres_requirement_store import PostgresRequirementStore
+from src.application.documents.requirement_service import RequirementService
 
 DOCUMENT_IMPACT_STREAM = "qa:tasks:document_impact"
 
@@ -19,6 +21,7 @@ class DocumentImpactRuntime:
     tasks: DocumentImpactTaskService
     workflow: DocumentImpactWorkflow
     store: PostgresDocumentImpactStore
+    requirements: RequirementService
 
 
 def build_document_impact_runtime(settings, container, *, parsing, differences, stream):
@@ -35,4 +38,6 @@ def build_document_impact_runtime(settings, container, *, parsing, differences, 
         objects=objects, projects=projects)
     responses = DocumentImpactResponseService(calls=calls, store=store, objects=objects)
     workflow = DocumentImpactWorkflow(tasks=tasks, store=store, calls=calls, responses=responses, objects=objects)
-    return DocumentImpactRuntime(tasks=tasks, workflow=workflow, store=store)
+    requirements = RequirementService(store=PostgresRequirementStore(settings), workflow=workflow,
+        projects=projects, documents=documents)
+    return DocumentImpactRuntime(tasks=tasks, workflow=workflow, store=store, requirements=requirements)

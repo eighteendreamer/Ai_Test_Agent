@@ -65,7 +65,7 @@ def collect_objects(settings, owned):
     ("md", False, False), ("docx", False, False), ("pdf", False, False),
     ("docx", True, False), ("md", False, True),
 ])
-async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt):
+async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt, verify_requirements=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -270,6 +270,25 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         assert hashlib.sha256(stored).hexdigest() == typed.snapshot.sha256
                         assert json.loads(stored) == view["result"]
                         (evidence / "result.json").write_bytes(stored)
+                        requirement_review = None
+                        if verify_requirements:
+                            assert not interrupt and result.rules
+                            review_request = {"request_id": "production-requirement-review", "rule_id": result.rules[0].id,
+                                "decision": "accept", "note": "仅确认来源及设计关联，运行和部署另验",
+                                "change": "modified", "title": "订单保留期", "statement": "订单保留九天",
+                                "points": [{"key": "retention", "description": "验证九天保留期"}],
+                                "case_links": [{"case_version_id": case.version.id, "point_keys": ["retention"]}]}
+                            requirement_review = await post(base + f"/impact-snapshots/{task['snapshot_id']}/reviews", review_request, 201)
+                            requirement_id = requirement_review["requirement_version"]["requirement_id"]
+                            matrix = await get(base + f"/requirements/{requirement_id}/matrix")
+                            assert matrix["points"][0]["design_status"] == "design_covered"
+                            assert matrix["points"][0]["execution_status"] == "not_assessed"
+                            assert matrix["deployment_status"] == "unknown"
+                            assert requirement_review["source"]["snapshot_sha256"] == typed.snapshot.sha256
+                            assert len(requirement_review["source"]["case_checkpoints"]) == 1
+                            assert len(sends) == 2 and (await objects.read_object_uri(typed.snapshot.storage_uri))["content"] == stored
+                            (evidence / "requirement-review.json").write_text(json.dumps(requirement_review,ensure_ascii=False,indent=2),encoding="utf-8")
+                            (evidence / "requirement-matrix.json").write_text(json.dumps(matrix,ensure_ascii=False,indent=2),encoding="utf-8")
                         sent = len(sends)
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
@@ -286,6 +305,12 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         assert await post(base + "/impact-tasks", request, 202) == task
                         assert await get(base + f"/impact-tasks/{task['id']}/result") == view
                         assert (await client.post(base + "/impact-tasks", json={**request, "creation_key": "disabled-new"})).status_code == 503
+                        if requirement_review:
+                            assert await post(base + f"/impact-snapshots/{task['snapshot_id']}/reviews", review_request, 201) == requirement_review
+                            assert await get(base + "/requirement-reviews/by-request", request_id=review_request["request_id"]) == requirement_review
+                            assert await get(base + f"/requirements/{requirement_id}/matrix") == matrix
+                            assert (await get(base + "/requirements"))["items"][0]["version"] == requirement_review["requirement_version"]
+                            assert (await get(base + f"/requirements/{requirement_id}/versions")) == [requirement_review["requirement_version"]]
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

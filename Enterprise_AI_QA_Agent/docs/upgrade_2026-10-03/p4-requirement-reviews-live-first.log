@@ -1,0 +1,43 @@
+FFF.....                                                                 [100%]
+================================== FAILURES ===================================
+______ test_actual_api_reviews_versions_points_and_historical_matrix[md] ______
+tests\test_requirement_reviews.py:135: in test_actual_api_reviews_versions_points_and_historical_matrix
+    assert (await client.get(f"{base}/requirements/{rid}/matrix", params={"version_id": v1["id"]})).json() == old
+E   AssertionError: assert {'requirement...': False, ...} == {'requirement...': False, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'requirement': {'id': '09384e6c-efcc-47fc-8409-ad7170dbccc3', 'project_id': '81a6c38b-82f1-4d1f-8a91-afdb13cf0230', 'document_id': '0eae0cdf-132b-50e6-82da-3dcb91405ec0', 'current_version_id': '21095556-ebab-40f2-90a3-fd1a3158468a', ...}} != {'requirement': {'id': '09384e6c-efcc-47fc-8409-ad7170dbccc3', 'project_id': '81a6c38b-82f1-4d1f-8a91-afdb13cf0230', 'document_id': '0eae0cdf-132b-50e6-82da-3dcb91405ec0', 'current_version_id': 'e95a370f-b9fc-48e6-8b7a-f012df9d2fd6', ...}}
+E     Use -v to get more diff
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.requirement_service:requirement_service.py:53 requirement_review_write_failed
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 requirement_request_rejected
+_____ test_actual_api_reviews_versions_points_and_historical_matrix[docx] _____
+tests\test_requirement_reviews.py:135: in test_actual_api_reviews_versions_points_and_historical_matrix
+    assert (await client.get(f"{base}/requirements/{rid}/matrix", params={"version_id": v1["id"]})).json() == old
+E   AssertionError: assert {'requirement...': False, ...} == {'requirement...': False, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'requirement': {'id': 'c999a5b4-020e-4b25-9202-de5f7a521294', 'project_id': '74e768d6-8e28-446c-b7d7-fe278ca84efc', 'document_id': '1b10c0b3-d88a-5e92-9180-b349745d4a3a', 'current_version_id': 'c0004161-fdc2-4ab2-a9c2-f6a462c8b8fb', ...}} != {'requirement': {'id': 'c999a5b4-020e-4b25-9202-de5f7a521294', 'project_id': '74e768d6-8e28-446c-b7d7-fe278ca84efc', 'document_id': '1b10c0b3-d88a-5e92-9180-b349745d4a3a', 'current_version_id': 'ebf20f5e-6a07-41e3-bb30-e77c14f41319', ...}}
+E     Use -v to get more diff
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.requirement_service:requirement_service.py:53 requirement_review_write_failed
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 requirement_request_rejected
+_____ test_actual_api_reviews_versions_points_and_historical_matrix[pdf] ______
+tests\test_requirement_reviews.py:135: in test_actual_api_reviews_versions_points_and_historical_matrix
+    assert (await client.get(f"{base}/requirements/{rid}/matrix", params={"version_id": v1["id"]})).json() == old
+E   AssertionError: assert {'requirement...': False, ...} == {'requirement...': False, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'requirement': {'id': '846c8620-d3d4-4e07-a27c-59afad782d1e', 'project_id': 'ddaa845a-ea35-4d6e-9eb6-31c09b50bf73', 'document_id': 'd4655625-77cf-5143-8902-b6d3d3f9563d', 'current_version_id': 'e8445cf5-b1dc-4d48-a52a-547cd20cb30f', ...}} != {'requirement': {'id': '846c8620-d3d4-4e07-a27c-59afad782d1e', 'project_id': 'ddaa845a-ea35-4d6e-9eb6-31c09b50bf73', 'document_id': 'd4655625-77cf-5143-8902-b6d3d3f9563d', 'current_version_id': '138ddfea-4502-4a05-b887-419d75f4589d', ...}}
+E     Use -v to get more diff
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.requirement_service:requirement_service.py:53 requirement_review_write_failed
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 requirement_request_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_requirement_reviews.py::test_actual_api_reviews_versions_points_and_historical_matrix[md]
+FAILED tests/test_requirement_reviews.py::test_actual_api_reviews_versions_points_and_historical_matrix[docx]
+FAILED tests/test_requirement_reviews.py::test_actual_api_reviews_versions_points_and_historical_matrix[pdf]
+3 failed, 5 passed in 37.69s

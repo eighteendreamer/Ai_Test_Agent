@@ -1,0 +1,31 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { getRequirementReviewSubmission, listRequirementReviews, listRequirements, listRequirementVersions, readRequirementMatrix, submitRequirementReview } from "./requirements.api";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("preserves the explicit review and original request identity across encoded routes", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = { request_id: "原请求 ?/#", rule_id: "fixed", decision: "accept" as const, note: "已核对原文", change: "modified" as const,
+    title: "保留期", statement: "保留九天", points: [{ key: "days", description: "验证九天" }], case_links: [] };
+  await submitRequirementReview("p?#", "d/#", "s/?", payload);
+  await getRequirementReviewSubmission("p?#", "d/#", payload.request_id);
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects/p%3F%23/documents/d%2F%23/impact-snapshots/s%2F%3F/reviews");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+  expect(new URL(fetchMock.mock.calls[1][0], "http://localhost").searchParams.get("request_id")).toBe(payload.request_id);
+});
+
+it("selects explicit history and paginates reviews independently from requirements", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  await listRequirementReviews("p", "d", "s", 1, 2);
+  await listRequirements("p", "d", 3, 4);
+  await listRequirementVersions("p", "d", "r/#");
+  await readRequirementMatrix("p", "d", "r/#", "old ?/#");
+  expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+    "/api/v1/projects/p/documents/d/impact-snapshots/s/reviews?limit=1&offset=2",
+    "/api/v1/projects/p/documents/d/requirements?limit=3&offset=4",
+    "/api/v1/projects/p/documents/d/requirements/r%2F%23/versions",
+    "/api/v1/projects/p/documents/d/requirements/r%2F%23/matrix?version_id=old+%3F%2F%23",
+  ]);
+});

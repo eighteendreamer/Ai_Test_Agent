@@ -37,6 +37,7 @@ from src.api.routes.case_planning_tasks import router as case_planning_tasks_rou
 from src.api.routes.document_parsing import router as document_parsing_router
 from src.api.routes.document_differences import router as document_differences_router
 from src.api.routes.document_impacts import router as document_impacts_router
+from src.api.routes.requirements import router as requirements_router
 from src.api.routes.document_git import router as document_git_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
@@ -484,6 +485,8 @@ async def _initialize_lifespan_resources(
     app.state.document_impact_task_service = document_impact_runtime.tasks
     app.state.document_impact_workflow = document_impact_runtime.workflow
     app.state.document_impact_store = document_impact_runtime.store
+    await document_impact_runtime.requirements.initialize()
+    app.state.requirement_service = document_impact_runtime.requirements
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -991,6 +994,7 @@ app.include_router(case_planning_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(document_parsing_router, prefix=settings.api_v1_prefix)
 app.include_router(document_differences_router, prefix=settings.api_v1_prefix)
 app.include_router(document_impacts_router, prefix=settings.api_v1_prefix)
+app.include_router(requirements_router, prefix=settings.api_v1_prefix)
 app.include_router(document_git_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)
