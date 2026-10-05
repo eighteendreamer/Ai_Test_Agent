@@ -4,6 +4,8 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import actual from "../../../../../docs/upgrade_2026-10-03/p4-production-validated/md-native-finish/snapshot-view.json";
 import verification from "../../../../../docs/upgrade_2026-10-03/p4-production-validated/md-native-finish/verification.json";
 import interrupted from "../../../../../docs/upgrade_2026-10-03/p4-production-validated/md-native-restart/snapshot-view.json";
+import grouped from "../../../../../docs/upgrade_2026-10-03/p4-grouped-live-fixed/grouped/md-False/verification.json";
+import { assertImpactSnapshot } from "./documentImpactIdentity";
 import type { DocumentImpactSnapshotView, DocumentImpactTaskRecord } from "../../../services/documentImpacts.types";
 import DocumentImpactTask from "./DocumentImpactTask.vue";
 import DocumentImpactSnapshot from "./DocumentImpactSnapshot.vue";
@@ -17,6 +19,7 @@ const api = vi.hoisted(() => ({
   getDocumentImpactSettings: vi.fn(), getDocumentImpactAnalysisSettings: vi.fn(), getDocumentImpactBatchSettings: vi.fn(), getDocumentImpactInvocationSettings: vi.fn(),
   saveDocumentImpactSettings: vi.fn(), saveDocumentImpactAnalysisSettings: vi.fn(), saveDocumentImpactBatchSettings: vi.fn(), saveDocumentImpactInvocationSettings: vi.fn(),
   listTestCases: vi.fn(), listTestCaseVersions: vi.fn(),
+  getDocumentImpactReasoningSettings: vi.fn(), saveDocumentImpactReasoningSettings: vi.fn(),
 }));
 vi.mock("../../../services/api", () => ({ api }));
 const clone = <T,>(value: T): T => structuredClone(value);
@@ -46,8 +49,31 @@ beforeEach(() => {
   [api.getDocumentImpactSettings, api.getDocumentImpactAnalysisSettings, api.getDocumentImpactBatchSettings, api.getDocumentImpactInvocationSettings].forEach((fn, i) => fn.mockResolvedValue(clone(records[i])));
   [api.saveDocumentImpactSettings, api.saveDocumentImpactAnalysisSettings, api.saveDocumentImpactBatchSettings, api.saveDocumentImpactInvocationSettings]
     .forEach(fn => fn.mockImplementation((_project, payload) => Promise.resolve({ scope_key: identity.projectId, revision: 99, payload })));
+  api.getDocumentImpactReasoningSettings.mockResolvedValue({ scope_key: "global", revision: 1,
+    payload: { max_group_units: 64, max_group_read_bytes: 256000 } });
+  api.saveDocumentImpactReasoningSettings.mockImplementation((_project, payload) => Promise.resolve({
+    scope_key: identity.projectId, revision: 2, payload }));
 });
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it("renders actual grouped tasks separately from all evidence and retains individual reasons", () => {
+  const saved = clone({ snapshot: grouped.snapshot, result: grouped.result }) as unknown as DocumentImpactSnapshotView;
+  assertImpactSnapshot(saved, grouped.snapshot.seed.project_id, grouped.snapshot.seed.document_id);
+  const w = keep(mount(DocumentImpactSnapshot, { props: { view: saved } }));
+  expect(w.get('[aria-label="固定推理任务"]').text()).toContain("1 个文档发现任务 · 4 个证据项 · 1 个完整用例判断");
+  expect(w.text()).toContain("处理说明：已完整对照第1项");
+  expect(w.findAll(".impact-rule")).toHaveLength(1);
+  expect(saved.result.units.filter(unit => unit.unit.kind !== "case").every(unit => unit.candidates.length === 0)).toBe(true);
+});
+
+it("rejects a foreign grouped plan and copied evidence candidates before displaying a result", () => {
+  const saved = clone({ snapshot: grouped.snapshot, result: grouped.result }) as unknown as DocumentImpactSnapshotView;
+  saved.result.reasoning_checkpoint!.task_id = "foreign";
+  expect(() => assertImpactSnapshot(saved, grouped.snapshot.seed.project_id, grouped.snapshot.seed.document_id)).toThrow("不一致");
+  saved.result.reasoning_checkpoint!.task_id = saved.snapshot.task_id;
+  saved.result.units[0].candidates = [saved.result.rules[0].candidate];
+  expect(() => assertImpactSnapshot(saved, grouped.snapshot.seed.project_id, grouped.snapshot.seed.document_id)).toThrow("不一致");
+});
 
 it("renders actual partial results, rule citations and separate case-unit impacts including false/0/null", async () => {
   const w = keep(mount(DocumentImpactTask, { props: { ...identity, taskId: task().id } })); await flushPromises();
@@ -156,7 +182,7 @@ it("ignores an old project catalog that arrives after switching document identit
   expect(w.text()).not.toContain(task().creation_key); expect(w.text()).not.toContain("不一致");
 });
 
-it("edits all four actual configuration payloads and preserves the token method/encoding contract", async () => {
+it("edits all five configuration payloads and preserves token and grouping contracts", async () => {
   const w = keep(mount(DocumentImpactSettings, { props: { projectId: identity.projectId, canWrite: true } })); await flushPromises();
   await w.get('[aria-label="任务总超时（秒）"]').setValue(300); await w.get('form[aria-label="影响范围设置"]').trigger("submit"); await flushPromises();
   expect(api.saveDocumentImpactSettings.mock.calls[0][1].timeout_seconds).toBe(300);
@@ -169,6 +195,9 @@ it("edits all four actual configuration payloads and preserves the token method/
   expect(api.saveDocumentImpactInvocationSettings.mock.calls[0][1].encoding_name).toBe("o200k_base");
   await w.get('[aria-label="影响内容计量"]').setValue("utf8_bytes_estimate"); await w.get('form[aria-label="影响调用预算设置"]').trigger("submit"); await flushPromises();
   expect(api.saveDocumentImpactInvocationSettings.mock.calls[1][1].encoding_name).toBeNull();
+  await w.get('[aria-label="每组证据数量上限"]').setValue(2);
+  await w.get('form[aria-label="影响推理分组设置"]').trigger("submit"); await flushPromises();
+  expect(api.saveDocumentImpactReasoningSettings.mock.calls[0][1]).toEqual({ max_group_units: 2, max_group_read_bytes: 256000 });
 });
 
 it("shows configuration persistence failure and does not accept a foreign settings response", async () => {

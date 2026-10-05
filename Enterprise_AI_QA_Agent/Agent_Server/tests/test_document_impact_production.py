@@ -32,6 +32,7 @@ from test_document_differences import write_pair
 from test_document_impact_calls import provider
 from test_document_impact_sources import source
 from test_document_impact_workflow import responder
+from test_document_impact_grouped_workflow import grouped_responder
 from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION") != "1",
@@ -50,7 +51,8 @@ def collect_objects(settings, owned):
     with postgres_connect(settings) as conn, conn.cursor() as cur:
         for suffix, fields in [("assets", "record"), ("parse_tasks", "checkpoint,failure_artifact"),
             ("diff_tasks", "checkpoint,failure_artifact"), ("impact_tasks", "input_checkpoint,checkpoint,failure_artifact"),
-            ("impact_manifests", "record"), ("impact_calls", "record"), ("impact_response_checks", "record")]:
+            ("impact_manifests", "record"), ("impact_calls", "record"), ("impact_response_checks", "record"),
+            ("impact_reasoning_plans", "record")]:
             table = settings.database.postgres_api_doc_table + "_" + suffix
             cur.execute("SELECT to_regclass(%s) AS existing", (table,))
             if cur.fetchone()["existing"]:
@@ -74,7 +76,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
         payload = json.loads(body["messages"][-1]["content"])
         holder.setdefault("first", DocumentImpactUnit.model_validate(payload["unit"]))
         holder["manifest"] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload["fixed_source_catalog"]])
-        return responder(holder, views, holder["case"])(body)
+        factory = grouped_responder if payload["analysis_protocol"]["version"] == "impact-call-v6" else responder
+        return factory(holder, views, holder["case"])(body)
     try:
         with provider(gated=interrupt, responder=respond) as (endpoint, sends, arrived, release):
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
@@ -123,7 +126,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         settings_paths = [("document-impact-settings", "document.impact_settings"),
                             ("document-impact-analysis-settings", "document.impact_analysis_settings"),
                             ("document-impact-batch-settings", "document.impact_batch_settings"),
-                            ("document-impact-invocation-settings", "document.impact_invocation_settings")]
+                            ("document-impact-invocation-settings", "document.impact_invocation_settings"),
+                            ("document-impact-reasoning-settings", "document.impact_reasoning_settings")]
                         mysql, frozen = MySQLApplicationConfigStore(settings), {}
                         for suffix, key in settings_paths:
                             initial = await get(root + "/" + suffix)
@@ -189,13 +193,17 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             seed = cur.fetchone()["seed"]
                             assert [item["version_id"] for item in seed["cases"]] == [case.version.id]
                             assert seed["analysis_context"]["config"] == frozen["document-impact-analysis-settings"]
-                            assert seed["workflow_protocol"]["version"] == "impact-coordinator-v1"
+                            assert seed["workflow_protocol"]["version"] == "impact-coordinator-v2"
+                            assert seed["response_protocol"]["version"] == "impact-call-v6"
+                            assert seed["reasoning_settings"] == frozen["document-impact-reasoning-settings"]
                             cur.execute(f"SELECT count(*) AS n FROM {settings.database.postgres_task_outbox_table} WHERE event_key=%s",
                                 ("document-impact:" + submitted["id"],))
                             assert cur.fetchone()["n"] == 1
                         # Change current config and draft after submission; replay and Worker must retain the old facts.
                         assert (await client.put(root + "/document-impact-analysis-settings", json={
                             **frozen["document-impact-analysis-settings"]["payload"], "analysis_guidance": "后续配置不能替换旧提交"})).status_code == 200
+                        assert (await client.put(root + "/document-impact-reasoning-settings", json={
+                            **frozen["document-impact-reasoning-settings"]["payload"], "max_group_units": 1})).status_code == 200
                         later = await post(f"/test-cases/{case.case.id}/versions", {key: value for key, value in case_payload.items()
                             if key not in {"case_key", "title", "case_type", "mode_key"}}, 201)
                         await processes.stop(api)
@@ -244,8 +252,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             assert not result.rules
                         else:
                             assert all(item.status == "analyzed" and not item.reason_codes and not item.unresolved for item in result.units)
-                            assert len(result.rules) == 1 and len(first_sends) == 2
-                            assert len(sends) == len(result.units) + 1
+                            assert len(result.rules) == 1 and len(first_sends) == (1 if
+                                result.implementation_version == "impact-coordinator-v2" else 2)
+                            assert len(sends) == (len(result.discovery_tasks) + len([item for item in result.units if
+                                item.unit.kind == "case"]) if result.implementation_version == "impact-coordinator-v2" else len(result.units) + 1)
                             assert result.units[-1].candidates[0].case_impacts[0].citations[-1].value is None
                         assert await get(base + f"/impact-tasks/{task['id']}/result") == view
                         assert (await get(base + "/impact-snapshots", version_id=versions[1]))["items"] == [view["snapshot"]]
@@ -295,6 +305,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             "input_checkpoint": task["input_checkpoint"]}
                         (evidence / "checkpoints.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
                         refs = [task["input_checkpoint"], manifest, *[check["result"] for check in checks]]
+                        if result.implementation_version == "impact-coordinator-v2":
+                            record["reasoning_checkpoint"] = result.reasoning_checkpoint.model_dump(mode="json")
+                            refs.append(record["reasoning_checkpoint"])
+                            (evidence / "checkpoints.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
                         refs += [call[field] for call in call_records for field in ("request", "response") if call.get(field)]
                         for reference in refs:
                             raw = (await objects.read_object_uri(reference["storage_uri"]))["content"]

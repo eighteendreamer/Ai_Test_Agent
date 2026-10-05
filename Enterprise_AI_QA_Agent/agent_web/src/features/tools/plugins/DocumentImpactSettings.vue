@@ -2,14 +2,15 @@
 import { onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/api";
 import type { DocumentImpactPolicy, DocumentImpactAnalysisPolicy, DocumentImpactBatchPolicy,
-  DocumentImpactInvocationPolicy, DocumentImpactSettings } from "../../../services/documentImpacts.types";
+  DocumentImpactInvocationPolicy, DocumentImpactReasoningPolicy, DocumentImpactSettings } from "../../../services/documentImpacts.types";
 
 const props = defineProps<{ projectId: string; canWrite: boolean }>();
 const policy = ref<DocumentImpactSettings<DocumentImpactPolicy> | null>(null);
 const analysis = ref<DocumentImpactSettings<DocumentImpactAnalysisPolicy> | null>(null);
 const batch = ref<DocumentImpactSettings<DocumentImpactBatchPolicy> | null>(null);
 const invocation = ref<DocumentImpactSettings<DocumentImpactInvocationPolicy> | null>(null);
-type Kind = "policy" | "analysis" | "batch" | "invocation";
+const reasoning = ref<DocumentImpactSettings<DocumentImpactReasoningPolicy> | null>(null);
+type Kind = "policy" | "analysis" | "batch" | "invocation" | "reasoning";
 const busy = ref(false);
 const error = ref("");
 const notice = ref("");
@@ -37,7 +38,8 @@ const invocationFields: { key: NumericInvocation; label: string; min: number; ma
 async function load() {
   const generation = ++epoch; const projectId = props.projectId; busy.value = true; error.value = ""; notice.value = "";
   const values = await Promise.allSettled([api.getDocumentImpactSettings(projectId), api.getDocumentImpactAnalysisSettings(projectId),
-    api.getDocumentImpactBatchSettings(projectId), api.getDocumentImpactInvocationSettings(projectId)]);
+    api.getDocumentImpactBatchSettings(projectId), api.getDocumentImpactInvocationSettings(projectId),
+    api.getDocumentImpactReasoningSettings(projectId)]);
   if (disposed || generation !== epoch || projectId !== props.projectId) return;
   const errors: string[] = [];
   values.forEach(value => {
@@ -47,6 +49,7 @@ async function load() {
   const valid = <T,>(result: PromiseSettledResult<DocumentImpactSettings<T>>) => result.status === "fulfilled"
     && [projectId, "global"].includes(result.value.scope_key) ? result.value : null;
   policy.value = valid(values[0]); analysis.value = valid(values[1]); batch.value = valid(values[2]); invocation.value = valid(values[3]);
+  reasoning.value = valid(values[4]);
   error.value = errors.join("；"); busy.value = false;
 }
 async function save(kind: Kind) {
@@ -72,6 +75,9 @@ async function save(kind: Kind) {
     } else if (kind === "invocation" && invocation.value) {
       const value = await api.saveDocumentImpactInvocationSettings(projectId, clone(invocation.value.payload));
       if (current()) invocation.value = check(value);
+    } else if (kind === "reasoning" && reasoning.value) {
+      const value = await api.saveDocumentImpactReasoningSettings(projectId, clone(reasoning.value.payload));
+      if (current()) reasoning.value = check(value);
     } else throw new Error("请先读取对应影响设置");
     if (current()) notice.value = "项目影响设置已保存；新任务冻结提交时的实际配置，历史任务保持原依据。";
   } catch (err) { if (current()) error.value = err instanceof Error ? err.message : "影响设置保存失败"; }
@@ -81,7 +87,7 @@ function changeMethod() {
   if (invocation.value) invocation.value.payload.encoding_name = invocation.value.payload.token_method === "tiktoken_content" ? "cl100k_base" : null;
 }
 watch(() => props.projectId, () => {
-  policy.value = null; analysis.value = null; batch.value = null; invocation.value = null; void load();
+  policy.value = null; analysis.value = null; batch.value = null; invocation.value = null; reasoning.value = null; void load();
 }, { immediate: true });
 onBeforeUnmount(() => { disposed = true; ++epoch; });
 </script>
@@ -110,6 +116,14 @@ onBeforeUnmount(() => { disposed = true; ++epoch; });
       <fieldset :disabled="busy || !canWrite"><div class="settings-grid"><label v-for="field in batchFields" :key="field.key">{{ field.label }}
         <input v-model.number="batch.payload[field.key]" :aria-label="field.label" type="number" :min="field.min" :max="field.max" step="1" required>
       </label></div><button v-if="canWrite" class="secondary-btn" type="submit">保存影响分段设置</button></fieldset>
+    </form>
+    <form v-if="reasoning" aria-label="影响推理分组设置" @submit.prevent="save('reasoning')">
+      <p>证据分组 · {{ reasoning.scope_key === 'global' ? '全局默认' : '项目覆盖' }} · 修订 {{ reasoning.revision }}</p>
+      <fieldset :disabled="busy || !canWrite"><div class="settings-grid">
+        <label>每组证据数量上限<input v-model.number="reasoning.payload.max_group_units" aria-label="每组证据数量上限" type="number" min="1" max="100" step="1" required></label>
+        <label>每组完整读取字节上限<input v-model.number="reasoning.payload.max_group_read_bytes" aria-label="每组完整读取字节上限" type="number" min="1" max="10000000" step="1" required></label>
+      </div><p>超限证据保留并显示原因；实际模型请求仍受调用预算约束。</p>
+      <button v-if="canWrite" class="secondary-btn" type="submit">保存影响推理分组设置</button></fieldset>
     </form>
     <form v-if="invocation" aria-label="影响调用预算设置" @submit.prevent="save('invocation')">
       <p>调用预算 · {{ invocation.scope_key === 'global' ? '全局默认' : '项目覆盖' }} · 修订 {{ invocation.revision }}</p>

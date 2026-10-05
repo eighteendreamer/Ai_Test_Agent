@@ -2338,3 +2338,55 @@ $env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-
 源10文件py_compile和diff检查通过。公开路由/前端结果未改，未跑浏览器/前端构建，未执行生产历史迁移。三份方案3.5.13/6.9及当前进度同步；完整P0—P5仍未完成。p4-reasoning-plan-validation.json保存字节/原件/检查点/真实消息、旧345份v4+85份流式+328份v5证据、用户.gitignore及方案一致性检查。下一步为版本化分组协调与逐证据覆盖响应、阶段Skill、真实默认模型完整判断。
 
 证据验证脚本最初两次断言失败：误把request对象的impact-call-input-v1当分析协议版本，又漏算独立system_prompt。核对实际消息构造后按analysis_protocol.version及system_prompt+messages逐条计数匹配，最终257份新证据、758份历史证据、三份真实计划对象和6条生产消息均核对通过；没有修改业务结果或放宽事实核验。
+
+## 分组生产协调与逐证据覆盖〔研究基线f5705aef〕
+
+先阅读v1协调/结果原核验、固定推理计划、调用租约/补读/预算、response checkpoint版本、Skill及前端/API消费者，并参考本地Agent轨迹与协议、CI课程。设计见P4_GROUPED_COORDINATION_DESIGN.md。新增coordinator-v2任务结果和逐证据声明，消费现有PG/RustFS固定计划；复用共享_unit调用循环、unknown/恢复/发布，旧任务走原v1。v6 model-facing v4、canonical-v2和validator-v2绑定真实T/P/D/R，证据候选不复制；用例一次预读完整JSON/自身说明/原来源和规则引用。MySQL项目设置增加公开API/正式页面，提交冻结后不读当前配置替换依据。无依赖升级，无本轮新表或历史迁移。
+
+实际命令（工作目录Agent_Server，各轮独立证据目录，完整原命令输出见同名.log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-grouped-regression-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_grouped_workflow.py tests/test_document_impact_reasoning_plan.py tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py tests/test_document_impact_responses.py tests/test_document_impact_calls.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-grouped-regression-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-grouped-production-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-grouped-production-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-grouped-full-product-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-grouped-full-product-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-grouped-v6-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-grouped-v6-first.xml
+```
+
+回放首轮6失败/19通过/21跳过6.64秒，测试误拆CallInput；修正25通过/21跳过4.84秒，live开关未开。真实首轮7失败/7通过60.52秒，夹具把完整未知字段漏算，供应商断言导致真实SDK重试；按全部原JSON验证后14通过0跳过52.67秒。边界首轮1失败/3通过25.99秒，HTTP500是供应商失败ineligible，测试错认为unknown；另增加真正HTTP在途取消/过期恢复，原意图不重发。失败原件/XML/HTTP均保留，未改生产分类迁就夹具。
+
+九模块166通过0跳过576.99秒。6组MD/DOCX/PDF×两适配器保留全部证据、每成员reason、完整12步JSON/false/0/null/未知字段/原来源，正常发现1+用例1两次HTTP；多组、遗漏/重复/外项目/重排/未读、依据不足、超限单项、供应商失败、PG结果丢回执、unknown及终态恢复已验。分组没有把候选复制进成员，结果unit_count仍是完整范围。
+
+生产首轮1失败30.77秒为旧v1断言；次轮缩进收集错误0.26秒，修正独立MD1通过53.61秒。加入真实配置API/MySQL后，最终生产MD/DOCX正常与实际杀进程恢复3通过186.01秒，正常各2HTTP、unknown恢复不重发；完整App/Chromium/DOCX/API/独立CLI/真实数据库1通过86.35秒，配置保存、冻结、未知提交回执恢复、失败报告、任务池与关闭派发后的历史下载/实际API重启均验。模型为受控供应商，不是默认模型语义成功。
+
+agent_web实际命令`npm run test -- src/services/documentImpacts.api.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts`最后24通过；`npm run build`含vue-tsc/Vite通过，Vite3240模块7.61秒。正式App另构建并保存浏览器网络、页面错误、截图/布局、真实对象及MySQL配置。公开新设置、result union、validator版本、API和所有消费者已搜索核对。
+
+首次真实默认全流程1失败291.49秒，Handler284.390秒、4逻辑/6物理发送。发现响应三候选/八声明但unit_outcome=null，模型Schema/提示与canonical结束校验冲突；真实正文保存，未从声明代填，最终8rejected/1unknown/2insufficient、规则0、partial。三条完整8步用例均进入模型，但发现失败，无合法规则。此处是契约缺失，沿两侧动作校验/字段说明/冻结提示修正；旧响应/核验仍不改写。
+
+最终修正验证命令：
+
+```powershell
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-grouped-contract-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_grouped_workflow.py tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-grouped-contract-final.xml
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-grouped-contract-production')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-grouped-contract-production.xml
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-grouped-v6-contract')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-grouped-v6-contract.xml
+```
+
+测试入口最初误写bound_protocol文件及生产函数名，无测试运行；两条命令错误log保留，按实际文件/函数改正。另有工具诊断误用根目录的../.venv、Windows rg路径通配，改为已查到的工作区.venv及glob参数后执行，非功能通过依据。最终63通过174.49秒、独立生产MD1通过58.60秒；首次166回归/3生产/完整App发生在动作说明修正之前，最后63/1验证修正后源码，前端契约未再改。
+
+第二次默认任务仍1失败313.21秒，Handler306.656秒、4逻辑/6物理。发现60.156秒SDK超时，SDK重试59.016秒到逻辑120秒取消，unknown；三条完整用例都实际发送并返回依据不足，通过结构核验。最终8unknown/3insufficient、规则0、partial/pending_review/deployment unknown，不能宣称真实完整业务通过，也未取得发现响应来验证新说明的模型遵从。源step-5-preview、8192输出、SDK60秒/调用120秒不变，终态查询不发新HTTP、不可重领；不继续原样重复失败任务。
+
+源码18文件AST/字节compile、跨契约搜索及diff检查实际通过。三份方案3.5.14/6.10同步，p4-grouped-validation.json保存所有原件/证据SHA/大小、真实物理消息对固定请求、计划/范围/来源/状态、旧345+85+328+257证据及用户.gitignore。完整P0—P5、默认模型语义、需求评审/矩阵/增量、准备状态/未知副作用、模块生成/正式导入、人工录制/Docker/报告及生产迁移仍未完成；继续按原目标逐步查证实施。
+
+交付验证脚本首次把所有专项都当作保存了独立计划对象文件，在真实专项result.json断言失败。查证该专项实际由服务读计划并将完整plan保存于verification.json；按现有规范字典序列化重算hash/大小与检查点一致，明确区分服务读取元数据与另存原始对象字节。最终723份本轮原证据、1015份历史原证据、12条生产/正式App物理消息和12条默认模型物理消息、计划/完整范围及三份方案均核对通过；没有补造未保存的对象或更改模型答复。
+
+暂存检查首次报告四个原日志末尾空行；按原始证据保留规则在.gitattributes明确允许p4-grouped日志末尾空行，没有裁剪日志。最终754份相关文件范围核对、723份原证据暂存字节与SHA/大小核对、暂存diff检查通过，用户.gitignore未改动/未暂存。默认模型失败仍按失败交付，本提交不是完整升级完成。

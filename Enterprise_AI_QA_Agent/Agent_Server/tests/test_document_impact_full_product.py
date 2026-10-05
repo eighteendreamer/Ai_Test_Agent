@@ -36,6 +36,7 @@ from test_document_impact_calls import provider
 from test_document_impact_production import collect_objects
 from test_document_impact_sources import source
 from test_document_impact_workflow import responder
+from test_document_impact_grouped_workflow import grouped_responder
 from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT') != '1',
@@ -52,7 +53,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
         payload = json.loads(body['messages'][-1]['content'])
         holder.setdefault('first', DocumentImpactUnit.model_validate(payload['unit']))
         holder['manifest'] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload['fixed_source_catalog']])
-        return responder(holder, views, holder['case'])(body)
+        factory = grouped_responder if payload['analysis_protocol']['version'] == 'impact-call-v6' else responder
+        return factory(holder, views, holder['case'])(body)
     try:
         with provider(responder=respond) as (endpoint, sends, _, _):
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
@@ -133,14 +135,19 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             await panel.get_by_role('button', name='保存影响调用预算', exact=True).click()
                             await expect(panel.get_by_role('status')).to_contain_text('项目影响设置已保存')
                             mysql = MySQLApplicationConfigStore(settings)
-                            configuration = {suffix: await get(root + '/' + suffix) for suffix in ['document-impact-settings', 'document-impact-analysis-settings', 'document-impact-batch-settings', 'document-impact-invocation-settings']}
+                            await panel.get_by_label('每组证据数量上限', exact=True).fill('8')
+                            await panel.get_by_role('button', name='保存影响推理分组设置', exact=True).click()
+                            await expect(panel.get_by_role('status')).to_contain_text('项目影响设置已保存')
+                            configuration = {suffix: await get(root + '/' + suffix) for suffix in ['document-impact-settings', 'document-impact-analysis-settings', 'document-impact-batch-settings', 'document-impact-invocation-settings', 'document-impact-reasoning-settings']}
                             for suffix, key in [('document-impact-settings', 'document.impact_settings'), ('document-impact-analysis-settings', 'document.impact_analysis_settings'),
-                                ('document-impact-batch-settings', 'document.impact_batch_settings'), ('document-impact-invocation-settings', 'document.impact_invocation_settings')]:
+                                ('document-impact-batch-settings', 'document.impact_batch_settings'), ('document-impact-invocation-settings', 'document.impact_invocation_settings'),
+                                ('document-impact-reasoning-settings', 'document.impact_reasoning_settings')]:
                                 assert mysql.get(key, scope_key=project['id']).payload == configuration[suffix]['payload']
                             assert configuration['document-impact-settings']['payload']['timeout_seconds'] == 300
                             assert configuration['document-impact-analysis-settings']['payload']['model_key'] == model.key
                             assert configuration['document-impact-batch-settings']['payload']['boundary_context_chars'] == 0
                             assert configuration['document-impact-invocation-settings']['payload']['max_logical_calls'] == 250
+                            assert configuration['document-impact-reasoning-settings']['payload']['max_group_units'] == 8
                             await panel.get_by_label('影响分析用例范围', exact=True).select_option('explicit')
                             await panel.get_by_role('button', name='读取 retention 的完整版本', exact=True).click()
                             await panel.get_by_label('retention 版本 1', exact=True).check()
@@ -186,6 +193,10 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             assert saved_view['snapshot']['seed'] == frozen and saved_view['result']['status'] == 'partial'
                             assert all(unit['status'] == 'analyzed' for unit in saved_view['result']['units'])
                             assert saved_view['result']['units'][-1]['unit']['id'] == case.version.id
+                            assert saved_view['result']['implementation_version'] == 'impact-coordinator-v2'
+                            assert len(saved_view['result']['discovery_tasks']) == 1 and len(sends) == 2
+                            await expect(page.get_by_label('固定推理任务', exact=True)).to_contain_text('1 个文档发现任务')
+                            await expect(page.get_by_label('影响结果详情', exact=True)).to_contain_text('处理说明：已完整对照第1项')
                             await page.screenshot(path=str(evidence / 'submitted-result.png'), full_page=True)
                             count = len(sends)
                             # A genuine preparation rejection is displayed as a separate terminal failure.

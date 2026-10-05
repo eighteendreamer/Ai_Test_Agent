@@ -5,10 +5,22 @@ import {
   getDocumentImpactSettings, getDocumentImpactAnalysisSettings, getDocumentImpactBatchSettings,
   getDocumentImpactInvocationSettings, saveDocumentImpactSettings, saveDocumentImpactAnalysisSettings,
   saveDocumentImpactBatchSettings, saveDocumentImpactInvocationSettings,
+  getDocumentImpactReasoningSettings, saveDocumentImpactReasoningSettings,
 } from "./documentImpacts.api";
 
 describe("document impact HTTP boundary", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("uses the project reasoning policy route and preserves the complete payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = { max_group_units: 3, max_group_read_bytes: 20480 };
+    await getDocumentImpactReasoningSettings("p?#");
+    await saveDocumentImpactReasoningSettings("p?#", payload);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects/p%3F%23/document-impact-reasoning-settings");
+    expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(payload);
+  });
 
   it("keeps the fixed selection and original request identity through escaped paths", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({ id: "task" }) });

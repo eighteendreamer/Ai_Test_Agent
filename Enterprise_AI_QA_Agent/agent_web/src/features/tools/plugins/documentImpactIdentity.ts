@@ -22,4 +22,16 @@ export function assertImpactSnapshot(view: DocumentImpactSnapshotView, projectId
       || expected.version_id !== seed.version_id || difference?.id !== expected.difference_snapshot_id))) {
     throw new Error("影响结果与指定任务及固定输入不一致");
   }
+  if (result.implementation_version === "impact-coordinator-v2") {
+    const plan = result.reasoning_checkpoint;
+    const tasks = result.discovery_tasks;
+    if (!plan || !tasks || result.protocol.version !== "impact-coordinator-v2" || plan.task_id !== snapshot.task_id
+      || plan.input_sha256 !== result.input_sha256 || plan.manifest_sha256 !== result.manifest_sha256) {
+      throw new Error("影响分组计划与固定任务依据不一致");
+    }
+    const members = tasks.flatMap(task => task.evidence_outcomes.map(outcome => `${outcome.unit.kind}:${outcome.unit.id}`));
+    if (new Set(members).size !== members.length || result.units.some(unit => unit.unit.kind !== "case" && unit.candidates.length > 0)) {
+      throw new Error("影响分组结果包含重复声明或复制候选，与固定证据不一致");
+    }
+  }
 }

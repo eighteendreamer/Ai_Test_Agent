@@ -26,7 +26,20 @@ def _value_hash(value):
     return hashlib.sha256(raw).hexdigest()
 
 
-def capture_impact_workflow_protocol():
+def capture_impact_workflow_protocol(*, version=WORKFLOW_VERSION):
+    if version == "impact-coordinator-v2":
+        from src.schemas.document_impact_grouped import DocumentImpactGroupedProtocol
+        body = {"version": version,
+            "discovery_instruction": "从本次固定discovery_task组内全部原文与差异共同判断规则变化。"
+                "返回一组规则候选及按成员顺序的逐证据outcome/reason；normalized用于辅助，原文引用选择T。"
+                "本阶段不需要读取用例，不提前提交用例影响；组成功不能代替逐证据处理声明。",
+            "case_instruction": "对每条rules读取当前完整固定JSON、自身说明及已提供的编写来源。"
+                "逐R引用返回当前用例影响与真实字段值；保留负向条件。discovery_results保留未完成范围，"
+                "发现没有合法规则不能据此宣称无变化；没有规则也核对来源是否充分，缺少时保持依据不足。"
+                "所有候选待评审，部署未知；evidence_outcomes为空，不重新提交文档发现。"}
+        return DocumentImpactGroupedProtocol(**body, sha256=_value_hash(body))
+    if version != WORKFLOW_VERSION:
+        raise ValueError("未知文档影响协调版本")
     body = {"version": WORKFLOW_VERSION,
         "discovery_instruction": "本阶段从固定原文及差异提出规则变化候选。只处理当前单元，可read补读。"
             "候选引用实际读取的原文；不是需求评审。依据不足保留evidence_insufficient和unresolved。",
@@ -105,15 +118,16 @@ class DocumentImpactWorkflow:
             result += [DocumentImpactRangeRead(source_id=source_id, start_char=start, end_char=end) for start, end in merged]
         return result
 
-    async def _unit(self, claim, unit, context):
-        output = DocumentImpactUnitResult(unit=unit, status="unprocessed")
+    async def _unit(self, claim, unit, context, *, initial_selection=None, output=None, call_key=None):
+        output = output if output is not None else DocumentImpactUnitResult(unit=unit, status="unprocessed")
         try:
-            selection = DocumentImpactCallSelection(unit=unit,
+            selection = initial_selection if initial_selection is not None else DocumentImpactCallSelection(unit=unit,
                 ranges=self._rule_reads(context.rules) if context.stage == "case_impacts" else [])
             while True:
                 # Existing requests/responses/checks remain readable after the deadline.
                 # prepare/invoke/assess enforce budgets only for new work.
-                record = await self._calls.prepare(claim, call_key=self._key(unit, selection.previous_call_id),
+                record = await self._calls.prepare(claim, call_key=call_key(selection.previous_call_id) if call_key else (
+                    self._key(unit, selection.previous_call_id)),
                     selection=selection, coordination_context=context)
                 output.calls.append(record.id)
                 record = await self._calls.invoke(claim, record.id)
@@ -139,6 +153,8 @@ class DocumentImpactWorkflow:
                     continue
                 output.status = decision.unit_outcome
                 output.candidates, output.unresolved = decision.candidates, decision.unresolved
+                if hasattr(output, "evidence_outcomes"):
+                    output.evidence_outcomes = decision.evidence_outcomes
                 if context.stage == "case_impacts":
                     output.reason_codes += case_coverage_issues(output, context.rules)
                     if output.reason_codes and output.status == "analyzed":
@@ -167,6 +183,8 @@ class DocumentImpactWorkflow:
         return "partial" if limitations or any(item.status != "analyzed" or item.unresolved or item.reason_codes for item in units) else "complete"
 
     async def _read_result(self, snapshot):
+        if snapshot.seed.workflow_protocol is not None and snapshot.seed.workflow_protocol.version == "impact-coordinator-v2":
+            return await self._grouped()._read_result(snapshot)
         project, doc, task_id = snapshot.seed.project_id, snapshot.seed.document_id, snapshot.task_id
         fixed_seed = await self._store.get_seed(project, doc, task_id)
         self._store.validate_snapshot_metadata(snapshot, fixed_seed)
@@ -229,6 +247,8 @@ class DocumentImpactWorkflow:
 
     async def execute(self, claim):
         protocol = claim.seed.workflow_protocol
+        if protocol is not None and protocol.version == "impact-coordinator-v2":
+            return await self._grouped().execute(claim)
         if protocol is None:
             return await self._store.finish_failed(claim, error_code="impact_workflow_protocol_missing",
                 message="历史影响任务没有固定自动协调协议，请创建新任务；原调用仍可查询")
@@ -276,3 +296,8 @@ class DocumentImpactWorkflow:
         logger.info("document_impact_workflow_result_saved", extra={"task_id": claim.task.id,
             "snapshot_id": snapshot.id, "coverage_status": result.status, "unit_count": len(results), "rule_count": len(rules)})
         return saved
+
+    def _grouped(self):
+        from src.application.documents.impact_grouped_workflow import DocumentImpactGroupedWorkflow
+        return DocumentImpactGroupedWorkflow(tasks=self._tasks, store=self._store, calls=self._calls,
+            responses=self._responses, objects=self._objects)

@@ -27,6 +27,11 @@ export interface DocumentImpactInvocationPolicy {
   framing_allowance_tokens: number;
 }
 
+export interface DocumentImpactReasoningPolicy {
+  max_group_units: number;
+  max_group_read_bytes: number;
+}
+
 export interface DocumentImpactSettings<T> { scope_key: string; revision: number; payload: T }
 
 export interface DocumentImpactTaskRequest {
@@ -97,7 +102,7 @@ export interface DocumentImpactRuleCandidate {
 export interface DocumentImpactResponseCheckpoint {
   task_id: string;
   call_id: string;
-  validator_version: "impact-response-validator-v1";
+  validator_version: "impact-response-validator-v1" | "impact-response-validator-v2";
   request_sha256: string;
   response_sha256: string;
   manifest_sha256: string;
@@ -112,15 +117,16 @@ export interface DocumentImpactUnitResult {
   reason_codes: string[];
   unresolved: string[];
   candidates: DocumentImpactRuleCandidate[];
+  reason?: string;
 }
 export interface DocumentImpactWorkflowProtocol {
-  version: "impact-coordinator-v1";
+  version: "impact-coordinator-v1" | "impact-coordinator-v2";
   discovery_instruction: string;
   case_instruction: string;
   sha256: string;
 }
 export interface DocumentImpactWorkflowResult {
-  implementation_version: "impact-coordinator-v1";
+  implementation_version: "impact-coordinator-v1" | "impact-coordinator-v2";
   task_id: string;
   input_sha256: string;
   manifest_sha256: string;
@@ -132,6 +138,8 @@ export interface DocumentImpactWorkflowResult {
   status: "complete" | "partial";
   semantic_status: "pending_review";
   deployment_status: "unknown";
+  reasoning_checkpoint?: DocumentImpactObject & { task_id: string; input_sha256: string; manifest_sha256: string; config_sha256: string; created_at: string };
+  discovery_tasks?: (DocumentImpactUnitResult & { task_id: string; evidence_outcomes: { unit: DocumentImpactUnit; outcome: "analyzed" | "evidence_insufficient" | "unprocessed"; reason: string }[] })[];
 }
 export interface DocumentImpactSnapshot extends DocumentImpactObject {
   id: string;

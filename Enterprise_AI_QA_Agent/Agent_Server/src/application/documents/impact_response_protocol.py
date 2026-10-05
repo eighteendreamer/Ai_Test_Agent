@@ -11,13 +11,33 @@ from src.application.documents.impact_batches import DocumentImpactBatches
 from src.application.documents.impact_identity_bindings import ImpactFixedReferenceError, bind_impact_decision
 from src.schemas.document_impact_bound_responses import DocumentImpactBoundDecision
 from src.schemas.document_impact_anchored_responses import DocumentImpactAnchoredDecision
+from src.schemas.document_impact_grouped import DocumentImpactGroupedWireDecision, impact_coordination_context
 from src.schemas.document_impact_responses import (
     DocumentImpactDecision, DocumentImpactResponseAssessment, DocumentImpactResponseIssue,
     DocumentImpactResponseProtocolSnapshot,
 )
 
 
-def capture_impact_response_protocol(*, version="impact-call-v5"):
+def capture_impact_response_protocol(*, version="impact-call-v6"):
+    if version == "impact-call-v6":
+        value = {"version": version, "scope": "one frozen reasoning task only",
+            "response_schema": DocumentImpactGroupedWireDecision.model_json_schema(),
+            "instruction": "Return one impact-response-v4 JSON object. Follow the current coordination stage. "
+                "For every finish, unit_outcome is required and must be analyzed or evidence_insufficient, never null. "
+                "Use evidence_insufficient when missing evidence prevents completing the task; keep explicit member outcomes. "
+                "Discovery: read every frozen discovery_task member, propose one set of rule changes citing T refs "
+                "from fixed_text_evidence. For finish return evidence_outcomes in member order using P/D refs, "
+                "with outcome and a specific reason for each member. Declare analyzed only after its complete "
+                "evidence was supplied; insufficient/unprocessed must remain explicit. Never copy group success "
+                "to every member. Case stage: compare every R rule with complete case JSON, execution_notes and "
+                "its original sources; return rule_ref/case_impacts, literal paths and actual values; "
+                "evidence_outcomes is empty. All formal identities/positions/hashes belong to the server. "
+                "For read return only fixed P/S/C/D reads, no outcome, candidates or evidence_outcomes. "
+                "Keep negative conditions. Catalogs are metadata, not read evidence. All proposals pending review; "
+                "deployment unknown. No test execution or official-record changes."}
+        digest = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+        return DocumentImpactResponseProtocolSnapshot(**value, sha256=digest)
     value = {"version": "impact-call-v3", "scope": "one declared unit only",
         "response_schema": DocumentImpactDecision.model_json_schema(),
         "instruction": "Read primary and fixed evidence. Request more fixed ranges when cross-section rules are needed. "
@@ -183,13 +203,17 @@ class DocumentImpactResponseProtocol:
             manifest_sha256=payload.manifest_sha256, status="ineligible", decision=None,
             issues=[DocumentImpactResponseIssue(code="response_not_eligible", message="该回执不满足完整文本分析条件")],
             basis_limitations=limitations)
+        grouped = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v6"
+        if grouped:
+            assessment.validator_version = "impact-response-validator-v2"
         if record.response_disposition != "received":
             return assessment
         issues = []
         try:
-            if seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v4", "impact-call-v5"}:
-                anchored = seed.response_protocol.version == "impact-call-v5"
-                parser = parse_anchored_impact_decision if anchored else parse_bound_impact_decision
+            if seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6"}:
+                anchored = seed.response_protocol.version in {"impact-call-v5", "impact-call-v6"}
+                parser = (lambda text: _parse_decision(text, DocumentImpactGroupedWireDecision)) if grouped else (
+                    parse_anchored_impact_decision if anchored else parse_bound_impact_decision)
                 decision = bind_impact_decision(parser(response.text), seed, manifest, payload)
                 assessment.runtime_versions["identity_binding"] = "impact-text-bindings-v1" if anchored else "impact-bindings-v1"
             else:
@@ -224,6 +248,26 @@ class DocumentImpactResponseProtocol:
                 issues.append(DocumentImpactResponseIssue(code="invalid_fixed_read", message="请求补读不属于固定范围或超过既有读取限制"))
         else:
             delivered_ranges, delivered_cases = _delivered(payload.request)
+            if grouped:
+                context = impact_coordination_context(json.loads(payload.request.messages[-1]["content"])["coordination_context"])
+                delivered_segments, delivered_differences = set(), set()
+                for message in payload.request.messages:
+                    if message.get("role") != "user":
+                        continue
+                    value = json.loads(message["content"])
+                    for item in [value["primary"], *value["additional_fixed_reads"]]:
+                        if "segment" in item:
+                            delivered_segments.add(item["segment"]["id"])
+                        if "difference" in item:
+                            delivered_differences.add(f"{item['kind']}:{item['index']}")
+                for outcome in decision.evidence_outcomes:
+                    read_ids = delivered_segments if outcome.unit.kind == "segment" else delivered_differences
+                    if outcome.outcome == "analyzed" and outcome.unit.id not in read_ids:
+                        issues.append(DocumentImpactResponseIssue(code="unread_evidence_outcome",
+                            message="完整证据未向该调用实际提供，不能声明已分析"))
+                if context.stage == "discover_rules" and any(candidate.case_impacts for candidate in decision.candidates):
+                    issues.append(DocumentImpactResponseIssue(code="discovery_case_scope",
+                        message="规则发现阶段不提前提交用例判断"))
             for candidate in decision.candidates:
                 for citation in candidate.document_citations:
                     try:

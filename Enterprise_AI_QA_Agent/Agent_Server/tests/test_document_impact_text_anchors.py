@@ -28,7 +28,7 @@ def anchored_input():
     values = bound_input()
     canonical = assess_sample(values).decision.model_dump(mode="json")
     seed, envelope, manifest, payload, response, record, _ = values
-    seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol()})
+    seed = seed.model_copy(update={"response_protocol": capture_impact_response_protocol(version="impact-call-v5")})
     request = DocumentImpactCallService.build_request(seed, envelope, manifest, payload.selection)
     payload = payload.model_copy(update={"request": request})
     wire = json.loads(bound_fixture_response({"messages": request.messages}, canonical))

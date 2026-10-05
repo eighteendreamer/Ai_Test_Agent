@@ -28,6 +28,10 @@ function download() {
     <p>结果：{{ view.snapshot.id }} · SHA256：{{ view.snapshot.sha256 }}</p>
     <p>语义结论待评审 · 当前环境是否生效未知</p>
     <p>已分析 {{ view.snapshot.analyzed_count }} / {{ view.snapshot.unit_count }} 个单元 · {{ view.snapshot.rule_count }} 条规则候选</p>
+    <section v-if="view.result.discovery_tasks" aria-label="固定推理任务">
+      <p>{{ view.result.discovery_tasks.length }} 个文档发现任务 · {{ view.result.units.filter(item => item.unit.kind !== 'case').length }} 个证据项 · {{ view.result.units.filter(item => item.unit.kind === 'case').length }} 个完整用例判断</p>
+      <details><summary>固定分组、原始处理声明和计划依据</summary><pre>{{ JSON.stringify({ plan: view.result.reasoning_checkpoint, tasks: view.result.discovery_tasks }, null, 2) }}</pre></details>
+    </section>
     <p>固定输入：{{ view.result.input_sha256 }} · 固定范围：{{ view.result.manifest_sha256 }}</p>
     <section v-if="view.result.basis_limitations.length" aria-label="影响依据限制">
       <h4>依据限制</h4><ul><li v-for="code in view.result.basis_limitations" :key="code">{{ code }}</li></ul>
@@ -51,6 +55,7 @@ function download() {
     <section v-for="unit in units" :key="`${unit.unit.kind}:${unit.unit.id}`" class="impact-unit" :aria-label="`影响单元 ${unit.unit.id}`">
       <h5>{{ { case: '用例', segment: '文档分段', difference: '差异' }[unit.unit.kind] }} · {{ statuses[unit.status] }}</h5>
       <p>{{ unit.unit.id }}</p><p v-if="unit.reason_codes.length">原因：{{ unit.reason_codes.join('、') }}</p>
+      <p v-if="unit.reason">处理说明：{{ unit.reason }}</p>
       <ul><li v-for="(item, index) in unit.unresolved" :key="index">{{ item }}</li></ul>
       <section v-for="candidate in unit.candidates" :key="candidate.key">
         <p>规则 {{ candidate.key }} · {{ candidate.summary }}</p>

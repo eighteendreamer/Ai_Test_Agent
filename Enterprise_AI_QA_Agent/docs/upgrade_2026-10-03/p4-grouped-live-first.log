@@ -1,0 +1,604 @@
+......FFFFFF.F                                                           [100%]
+================================== FAILURES ===================================
+__ test_actual_group_discovery_complete_cases_and_terminal_restore[False-md] __
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:9daf705b-6e91-47e3-8029-8518a08bb2c5:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:9daf705b-6e91-47e3-8029-8518a08bb2c5:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='9fb335c0-24b0-44e7-8763-d75f11d81...eOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'role': 'system', 'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Lo..."unit":{"id":"7a07ebef-9702-425d-befd-a31be2e5151b","kind":"case"}}'}], 'model': 'impact-fixture', 'max_tokens': 1024}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56613)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56614)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56615)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+_ test_actual_group_discovery_complete_cases_and_terminal_restore[False-docx] _
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:7ed4f334-fb3c-4fde-8d47-7bab94cd5edf:...videnceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:7ed4f334-fb3c-4fde-8d47-7bab94cd5edf:...videnceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='a4631ba6-7a86-42c9-806d-bcfd0e8a0...idenceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'role': 'system', 'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Lo..."unit":{"id":"08d8ca22-06ea-49b6-83bc-e2738af6e191","kind":"case"}}'}], 'model': 'impact-fixture', 'max_tokens': 1024}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56627)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56634)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56638)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+_ test_actual_group_discovery_complete_cases_and_terminal_restore[False-pdf] __
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:955fe2b9-860a-4e49-a6b4-605580bc5029:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:955fe2b9-860a-4e49-a6b4-605580bc5029:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='81c9073c-61b0-4a5e-b6f0-ef88e9533...eOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'role': 'system', 'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Lo..."unit":{"id":"566e4cbf-1eb1-4f74-928b-ae70aa70e601","kind":"case"}}'}], 'model': 'impact-fixture', 'max_tokens': 1024}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56686)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56687)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56688)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+__ test_actual_group_discovery_complete_cases_and_terminal_restore[True-md] ___
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:4867ccb8-4e7a-4385-812b-d149d93b7e47:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:4867ccb8-4e7a-4385-812b-d149d93b7e47:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='d8a9f7a4-aa66-4eb7-a59e-96df5a9ef...eOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-...332d4f","kind":"case"}}', 'role': 'user'}], 'model': 'impact-fixture', 'max_completion_tokens': 1024, 'stream': False}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56713)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56714)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56726)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+_ test_actual_group_discovery_complete_cases_and_terminal_restore[True-docx] __
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:3ead765e-61d9-4e92-bde4-307add6aeb68:...videnceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:3ead765e-61d9-4e92-bde4-307add6aeb68:...videnceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='827e3b44-18d0-4a54-a638-28563dee6...idenceOutcome(unit=DocumentImpactUnit(kind='difference', id='table:0'), outcome='analyzed', reason='已完整对照第5项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-...5b3cda","kind":"case"}}', 'role': 'user'}], 'model': 'impact-fixture', 'max_completion_tokens': 1024, 'stream': False}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56750)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56751)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56762)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+__ test_actual_group_discovery_complete_cases_and_terminal_restore[True-pdf] __
+tests\test_document_impact_grouped_workflow.py:124: in test_actual_group_discovery_complete_cases_and_terminal_restore
+    assert len(result.discovery_tasks) == 1 and len(sends) == 2
+E   assert (1 == 1 and 4 == 2)
+E    +  where 1 = len([DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:8f82fc5a-ca42-4835-9249-5609e8afe131:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])])
+E    +    where [DocumentImpactDiscoveryResult(unit=DocumentImpactUnit(kind='segment', id='parse:8f82fc5a-ca42-4835-9249-5609e8afe131:...ceOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])] = DocumentImpactGroupedResult(implementation_version='impact-coordinator-v2', task_id='e4dbe807-a751-4cc8-b958-0e1b270db...eOutcome(unit=DocumentImpactUnit(kind='difference', id='normalized:0'), outcome='analyzed', reason='已完整对照第4项，仍需评审')])]).discovery_tasks
+E    +  and   4 = len([{'messages': [{'content': '## Skill: analyze-document-impact\nSource: C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-...564ff6","kind":"case"}}', 'role': 'user'}], 'model': 'impact-fixture', 'max_completion_tokens': 1024, 'stream': False}])
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56777)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56778)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56779)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+_ test_actual_group_missing_member_and_individual_insufficiency_are_visible[insufficient] _
+tests\test_document_impact_grouped_workflow.py:171: in test_actual_group_missing_member_and_individual_insufficiency_are_visible
+    assert all(item.status == "analyzed" for item in result.units[1:])
+E   assert False
+E    +  where False = all(<generator object test_actual_group_missing_member_and_individual_insufficiency_are_visible.<locals>.<genexpr> at 0x0000020B170A4450>)
+---------------------------- Captured stderr call -----------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56826)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56828)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56842)
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 440, in handle
+    self.handle_one_request()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\http\server.py", line 428, in handle_one_request
+    method()
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_calls.py", line 53, in do_POST
+    message["content"] = responder(body)
+                         ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_document_impact_grouped_workflow.py", line 94, in respond
+    assert current.version.content_json["深层扩展"] == {"布尔": False, "零": 0, "空": None}
+AssertionError: assert {'布尔': False,... None, '零': 0} == {'布尔': False,... 0, '空': None}
+  
+  Omitting 3 identical items, use -vv to show
+  Left contains 1 more item:
+  {'未知字段': '不能丢失'}
+  Use -v to get more diff
+----------------------------------------
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[False-md]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[False-docx]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[False-pdf]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[True-md]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[True-docx]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_discovery_complete_cases_and_terminal_restore[True-pdf]
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_missing_member_and_individual_insufficiency_are_visible[insufficient]
+7 failed, 7 passed in 60.52s (0:01:00)

@@ -13,6 +13,7 @@ from src.schemas.document_impact_analysis import DocumentImpactAnalysisPolicy, D
 from src.schemas.document_impact_batches import DocumentImpactBatchPolicy, DocumentImpactBatchSettings
 from src.schemas.document_impact_calls import DocumentImpactInvocationPolicy, DocumentImpactInvocationSettings
 from src.schemas.document_impact_views import DocumentImpactSnapshotView
+from src.schemas.document_impact_reasoning import DocumentImpactReasoningPolicy, DocumentImpactReasoningSettings
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["document-impacts"])
 
@@ -65,6 +66,16 @@ async def save_invocation_settings(project_id: UUID, payload: DocumentImpactInvo
 @router.post("/documents/{document_id}/impact-tasks", response_model=DocumentImpactTaskRecord, status_code=202)
 async def submit(project_id: UUID, document_id: UUID, payload: DocumentImpactTaskRequest, request: Request):
     return await _call(request, project_id, "document_impact_task_service", "submit", str(document_id), payload)
+
+
+@router.get("/document-impact-reasoning-settings", response_model=DocumentImpactReasoningSettings)
+async def get_reasoning_settings(project_id: UUID, request: Request):
+    return await _call(request, project_id, "document_impact_config_service", "get_reasoning_settings")
+
+
+@router.put("/document-impact-reasoning-settings", response_model=DocumentImpactReasoningSettings)
+async def save_reasoning_settings(project_id: UUID, payload: DocumentImpactReasoningPolicy, request: Request):
+    return await _call(request, project_id, "document_impact_config_service", "save_reasoning_settings", payload)
 
 
 @router.get("/documents/{document_id}/impact-tasks/by-request", response_model=DocumentImpactTaskRecord)

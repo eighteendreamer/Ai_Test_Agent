@@ -18,8 +18,9 @@ class DocumentImpactResponseService:
     def __init__(self, *, calls, store, objects):
         self._calls, self._store, self._objects = calls, store, objects
 
-    async def read(self, project_id, document_id, task_id, call_id):
-        checkpoint = await self._store.responses.get(project_id, document_id, task_id, call_id)
+    async def read(self, project_id, document_id, task_id, call_id, *, validator_version=None):
+        checkpoint = await self._store.responses.get(project_id, document_id, task_id, call_id,
+            validator_version=validator_version)
         if checkpoint is None:
             raise KeyError("当前项目文档没有该调用的响应核验记录")
         call, _ = await self._calls.read_response(project_id, document_id, task_id, call_id)
@@ -65,7 +66,7 @@ class DocumentImpactResponseService:
                 task_id=task.id, stage="response_check_object")
         saved = DocumentImpactResponseCheckpoint(task_id=task.id, call_id=call_id, request_sha256=record.request.sha256,
             response_sha256=record.response.sha256, manifest_sha256=checkpoint.sha256,
-            result=reference, created_at=datetime.now(timezone.utc))
+            validator_version=result.validator_version, result=reference, created_at=datetime.now(timezone.utc))
         try:
             recorded = await confirmed_impact_write(self._store.responses.save(claim, saved),
                 task_id=task.id, stage="response_check_checkpoint")

@@ -1,0 +1,60 @@
+{
+  "checkpoint": {
+    "task_id": "8184f8ab-2e59-4ecb-9289-3c9c689ba258",
+    "call_id": "04fe84de-1191-4aa1-9603-bf791e57e6b4",
+    "validator_version": "impact-response-validator-v2",
+    "request_sha256": "10d8820b8494043e4f0012eb02644b10b247438977d9d5b4fe6058162256eb2c",
+    "response_sha256": "3e5e6a64c7caca874c8c899d266f9646512295297c7c0e84332a04ebeededc50",
+    "manifest_sha256": "6a51bdb6e894762e75b1cd6d842018e42c1dae82f9a1b43c78fca70f7ed3a2f2",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/7aa65564-1840-4e59-95ed-5dad144b61b4/8184f8ab-2e59-4ecb-9289-3c9c689ba258/3e1f0919-3387-445d-ba83-126f066a8b78/calls/cf0f00cc-27c3-4c59-8fdf-bafccf0b826b/response-check.json",
+      "sha256": "19e7acb908cec99bf97ea4c9093d53649b3077a681d530c0bcbf3f48b181557a",
+      "size_bytes": 2336
+    },
+    "created_at": "2026-10-05T01:27:42.230230Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v2",
+    "runtime_versions": {
+      "identity_binding": "impact-text-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "8184f8ab-2e59-4ecb-9289-3c9c689ba258",
+    "call_id": "04fe84de-1191-4aa1-9603-bf791e57e6b4",
+    "request_sha256": "10d8820b8494043e4f0012eb02644b10b247438977d9d5b4fe6058162256eb2c",
+    "response_sha256": "3e5e6a64c7caca874c8c899d266f9646512295297c7c0e84332a04ebeededc50",
+    "manifest_sha256": "6a51bdb6e894762e75b1cd6d842018e42c1dae82f9a1b43c78fca70f7ed3a2f2",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-canonical-v2",
+      "unit": {
+        "kind": "case",
+        "id": "17824f19-c678-4d0a-b33e-a0e95ffb6d6a"
+      },
+      "action": "finish",
+      "summary": "Case impact stage cannot perform rule-versus-case comparisons because the frozen rules set is empty. The prior discovery stage was rejected with reason_codes [\"invalid_protocol\"], its candidates and evidence_outcomes are empty, and fixed_references.rules contains no R entries. Per the case-stage protocol, evidence_outcomes is empty and document discovery is not re-run. Because no valid rule candidates were supplied, this is treated as insufficient evidence rather than as proof of \"no change\"; the complete case C3 and its original source snapshot are present, but cannot be assessed against rule changes until valid R rules exist.",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "evidence_insufficient",
+      "candidates": [],
+      "unresolved": [
+        "Discovery stage for this unit was rejected with reason_codes [\"invalid_protocol\"]; no valid rule candidates were frozen, so rules is empty.",
+        "Fixed references contain no R rules, therefore no rule_ref is available for any BoundRuleCaseAssessment.",
+        "Case C3 version 17824f19-c678-4d0a-b33e-a0e95ffb6d6a, its execution_notes, and its original source parse snapshot 961d9110-a683-48ab-8484-3ae53eed09ef are fully supplied, but rule change impacts remain pending because discovery produced no reviewable rule identity.",
+        "Do not infer \"no impact\" from the absence of rules; per protocol, missing rule candidates mean evidence is insufficient and all impact candidates remain pending review."
+      ],
+      "evidence_outcomes": []
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

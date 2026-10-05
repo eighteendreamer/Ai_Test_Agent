@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import hashlib
 import json
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -90,9 +90,29 @@ class DocumentImpactDecision(ImpactBatchModel):
         return self
 
 
+class DocumentImpactEvidenceOutcome(ImpactBatchModel):
+    unit: DocumentImpactUnit
+    outcome: Literal["analyzed", "evidence_insufficient", "unprocessed"]
+    reason: str = Field(min_length=1)
+
+
+class DocumentImpactGroupedDecision(DocumentImpactDecision):
+    protocol_version: Literal["impact-canonical-v2"]
+    evidence_outcomes: list[DocumentImpactEvidenceOutcome] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_evidence(self):
+        if self.action == "read" and self.evidence_outcomes:
+            raise ValueError("补读不能提前声明证据已处理")
+        keys = [(item.unit.kind, item.unit.id) for item in self.evidence_outcomes]
+        if len(keys) != len(set(keys)):
+            raise ValueError("逐证据处理声明不能重复")
+        return self
+
+
 class DocumentImpactResponseProtocolSnapshot(ImpactBatchModel):
-    version: Literal["impact-call-v2", "impact-call-v3", "impact-call-v4", "impact-call-v5"] = "impact-call-v2"
-    scope: Literal["one declared unit only"] = "one declared unit only"
+    version: Literal["impact-call-v2", "impact-call-v3", "impact-call-v4", "impact-call-v5", "impact-call-v6"] = "impact-call-v2"
+    scope: Literal["one declared unit only", "one frozen reasoning task only"] = "one declared unit only"
     response_schema: dict[str, Any]
     instruction: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -112,7 +132,7 @@ class DocumentImpactResponseIssue(ImpactBatchModel):
 
 
 class DocumentImpactResponseAssessment(ImpactBatchModel):
-    validator_version: Literal["impact-response-validator-v1"] = VALIDATOR_VERSION
+    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2"] = VALIDATOR_VERSION
     runtime_versions: dict[str, str]
     task_id: str
     call_id: str
@@ -120,7 +140,7 @@ class DocumentImpactResponseAssessment(ImpactBatchModel):
     response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["read_requested", "unit_finished", "rejected", "ineligible"]
-    decision: DocumentImpactDecision | None
+    decision: Annotated[DocumentImpactDecision | DocumentImpactGroupedDecision, Field(discriminator="protocol_version")] | None
     issues: list[DocumentImpactResponseIssue]
     basis_limitations: list[str]
     # Position/structure validation never establishes meaning, deployment or test success.
@@ -141,7 +161,7 @@ class DocumentImpactResponseAssessment(ImpactBatchModel):
 class DocumentImpactResponseCheckpoint(ImpactBatchModel):
     task_id: str
     call_id: str
-    validator_version: Literal["impact-response-validator-v1"] = VALIDATOR_VERSION
+    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2"] = VALIDATOR_VERSION
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

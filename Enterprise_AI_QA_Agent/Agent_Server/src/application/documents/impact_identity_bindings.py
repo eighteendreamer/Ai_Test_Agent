@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 
 from src.schemas.document_impact_bound_responses import BoundRuleCaseAssessment, BoundRuleCandidate
-from src.schemas.document_impact_responses import DocumentImpactDecision
+from src.schemas.document_impact_responses import DocumentImpactDecision, DocumentImpactGroupedDecision
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
+from src.schemas.document_impact_grouped import impact_coordination_context
 from src.application.documents.impact_text_evidence import fixed_impact_text_evidence, ImpactTextEvidenceError
 
 
@@ -40,14 +41,14 @@ def impact_primary_reference(unit, references):
 
 def bind_impact_decision(decision, seed, manifest, payload):
     current = json.loads(payload.request.messages[-1]["content"])
-    context = DocumentImpactCoordinationContext.model_validate(current["coordination_context"]) if (
+    context = impact_coordination_context(current["coordination_context"]) if (
         "coordination_context" in current) else None
     references = fixed_impact_references(manifest, context)
     if context and (context.protocol != seed.workflow_protocol or
         ((payload.selection.unit.kind == "case") != (context.stage == "case_impacts"))):
         raise ImpactFixedReferenceError("固定引用不能替换协调阶段或协议")
     delivered, text_evidence = [], {}
-    anchored = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v5"
+    anchored = seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v5", "impact-call-v6"}
     for message in payload.request.messages:
         if message.get("role") == "user":
             value = json.loads(message["content"])
@@ -104,9 +105,22 @@ def bind_impact_decision(decision, seed, manifest, payload):
     reads = decision.reads
     # Canonical validators still reject duplicate reads, unfinished actions,
     # duplicate candidate/case keys and invalid literal paths after exact binding.
-    return DocumentImpactDecision(protocol_version="impact-response-v1", unit=payload.selection.unit,
+    grouped = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v6"
+    outcomes = []
+    if grouped:
+        if context is None or context.protocol.version != "impact-coordinator-v2":
+            raise ImpactFixedReferenceError("分组响应必须对应冻结协调计划")
+        members = context.discovery_task.members if context.discovery_task is not None else []
+        expected = [impact_primary_reference(unit, references) for unit in members]
+        actual = [item.member_ref for item in decision.evidence_outcomes]
+        if decision.action == "read" and actual or decision.action == "finish" and actual != expected:
+            raise ImpactFixedReferenceError("逐证据声明必须按固定组成员完整返回，补读不声明结束")
+        outcomes = [{"unit": unit, "outcome": item.outcome, "reason": item.reason}
+            for unit, item in zip(members, decision.evidence_outcomes)]
+    model = DocumentImpactGroupedDecision if grouped else DocumentImpactDecision
+    return model(protocol_version="impact-canonical-v2" if grouped else "impact-response-v1", unit=payload.selection.unit,
         action=decision.action, summary=decision.summary, unit_outcome=decision.unit_outcome,
-        candidates=candidates, unresolved=decision.unresolved, reads={
+        candidates=candidates, unresolved=decision.unresolved, **({"evidence_outcomes": outcomes} if grouped else {}), reads={
             "segment_ids": [lookup("segments", ref)["segment_id"] for ref in reads.segment_refs],
             "case_version_ids": [lookup("cases", ref)["version_id"] for ref in reads.case_refs],
             "difference_ids": [lookup("differences", ref)["difference_id"] for ref in reads.difference_refs],

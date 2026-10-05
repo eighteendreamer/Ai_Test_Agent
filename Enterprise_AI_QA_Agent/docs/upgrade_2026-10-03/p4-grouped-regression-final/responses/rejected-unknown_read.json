@@ -1,0 +1,56 @@
+{
+  "assessment": {
+    "validator_version": "impact-response-validator-v1",
+    "runtime_versions": {
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "879511eb-8574-4ff2-8028-635fb0df2b7c",
+    "call_id": "a8aa4430-6a4c-4eab-a79a-4951683fb26d",
+    "request_sha256": "2edf1855081174d47403872752afe2244ec54673c566c5db63953472d67bba50",
+    "response_sha256": "7fac99c00aa2f43666d3a4872816a4517d4926c6a18dd460ad3dc25f545a8972",
+    "manifest_sha256": "fbe374fc954571b56df1f5ffc2bbd869526250ee0fa2919220543e7dab641d95",
+    "status": "rejected",
+    "decision": {
+      "protocol_version": "impact-response-v1",
+      "unit": {
+        "kind": "case",
+        "id": "fa4245bf-5b05-4fc4-93cb-ead78bbb93f6"
+      },
+      "action": "read",
+      "summary": "需要固定新旧原文",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": [
+          {
+            "source_id": "foreign-project-source",
+            "start_char": 0,
+            "end_char": 20
+          },
+          {
+            "source_id": "parse:2901799d-ba27-40aa-b38c-d2ee361a69c5",
+            "start_char": 0,
+            "end_char": 20
+          }
+        ]
+      },
+      "unit_outcome": null,
+      "candidates": [],
+      "unresolved": []
+    },
+    "issues": [
+      {
+        "code": "invalid_fixed_read",
+        "message": "请求补读不属于固定范围或超过既有读取限制"
+      }
+    ],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  },
+  "actual_http_calls": 1
+}

@@ -1,5 +1,5 @@
 import type {
-  DocumentImpactAnalysisPolicy, DocumentImpactBatchPolicy, DocumentImpactInvocationPolicy,
+  DocumentImpactAnalysisPolicy, DocumentImpactBatchPolicy, DocumentImpactInvocationPolicy, DocumentImpactReasoningPolicy,
   DocumentImpactPage, DocumentImpactPolicy, DocumentImpactSettings, DocumentImpactSnapshot,
   DocumentImpactSnapshotView, DocumentImpactTaskRecord, DocumentImpactTaskRequest,
 } from "./documentImpacts.types";
@@ -34,6 +34,12 @@ export function saveDocumentImpactInvocationSettings(projectId: string, payload:
 }
 export function submitDocumentImpactTask(projectId: string, documentId: string, payload: DocumentImpactTaskRequest): Promise<DocumentImpactTaskRecord> {
   return request(`${documentPath(projectId, documentId)}/impact-tasks`, { method: "POST", body: JSON.stringify(payload) });
+}
+export function getDocumentImpactReasoningSettings(projectId: string): Promise<DocumentImpactSettings<DocumentImpactReasoningPolicy>> {
+  return request(`${projectPath(projectId)}/document-impact-reasoning-settings`);
+}
+export function saveDocumentImpactReasoningSettings(projectId: string, payload: DocumentImpactReasoningPolicy): Promise<DocumentImpactSettings<DocumentImpactReasoningPolicy>> {
+  return request(`${projectPath(projectId)}/document-impact-reasoning-settings`, { method: "PUT", body: JSON.stringify(payload) });
 }
 export function getDocumentImpactTask(projectId: string, documentId: string, taskId: string): Promise<DocumentImpactTaskRecord> {
   return request(`${documentPath(projectId, documentId)}/impact-tasks/${encodeURIComponent(taskId)}`);

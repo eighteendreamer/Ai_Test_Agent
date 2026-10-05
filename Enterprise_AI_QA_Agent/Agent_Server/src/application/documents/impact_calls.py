@@ -27,6 +27,7 @@ from src.schemas.document_impact_calls import (
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
 from src.schemas.document_impact_responses import DocumentImpactResponseAssessment
+from src.schemas.document_impact_grouped import impact_coordination_context
 
 logger = logging.getLogger(__name__)
 
@@ -123,21 +124,33 @@ class DocumentImpactCallService:
             "scope_counts": {"segments": len(manifest.segments), "differences": len(manifest.differences), "cases": len(manifest.cases)},
             "analysis_protocol": protocol.model_dump(mode="json")}
         if coordination_context is not None:
-            context = DocumentImpactCoordinationContext.model_validate(coordination_context.model_dump(mode="json"))
+            context = impact_coordination_context(coordination_context.model_dump(mode="json"))
             if context.protocol != seed.workflow_protocol or ((selection.unit.kind == "case") != (context.stage == "case_impacts")):
                 raise ValueError("影响协调上下文不能替换固定协议或单元阶段")
+            if protocol.version == "impact-call-v6":
+                if context.protocol.version != "impact-coordinator-v2":
+                    raise ValueError("分组调用必须使用冻结的v2协调协议")
+                if context.discovery_task is not None and (selection.unit != context.discovery_task.selection.unit or (
+                    selection.previous_call_id is None and selection.retry_of_call_id is None and
+                    selection != context.discovery_task.selection)):
+                    raise ValueError("分组初读不能更换计划成员或完整读取选择")
             payload["coordination_context"] = context.model_dump(mode="json")
-        if protocol.version in {"impact-call-v4", "impact-call-v5"}:
+        elif protocol.version == "impact-call-v6":
+            raise ValueError("分组调用缺少冻结协调计划")
+        if protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6"}:
             references = fixed_impact_references(manifest, coordination_context)
             payload["fixed_references"] = references
             payload["primary_ref"] = impact_primary_reference(selection.unit, references)
+            if protocol.version == "impact-call-v6":
+                payload["reasoning_members"] = [impact_primary_reference(unit, references)
+                    for unit in context.discovery_task.members] if context.discovery_task is not None else []
         messages = []
         if previous is not None:
             old_input, old_response = previous
             if old_input.selection.unit != selection.unit:
                 raise ValueError("影响续读不能更换固定单元")
             messages = [*old_input.request.messages, {"role": "assistant", "content": old_response.text}]
-        if protocol.version == "impact-call-v5":
+        if protocol.version in {"impact-call-v5", "impact-call-v6"}:
             prior = [json.loads(message["content"]) for message in messages if message.get("role") == "user"]
             payload["fixed_text_evidence"] = fixed_impact_text_evidence(manifest, [*prior, payload])
         messages.append({"role": "user", "content": _json(payload)})
@@ -196,13 +209,50 @@ class DocumentImpactCallService:
                 "request_sha256": reference.sha256, "error_type": type(exc).__name__})
 
     async def _validate_coordination_origins(self, claim, context):
+        if context.protocol.version == "impact-coordinator-v2":
+            from src.application.documents.impact_reasoning_plan_service import DocumentImpactReasoningPlanService
+            saved, plan = await DocumentImpactReasoningPlanService(
+                tasks=self._tasks, store=self._store, objects=self._objects).read(
+                claim.task.project_id, claim.task.document_id, claim.task.id)
+            if saved != context.reasoning_checkpoint or (context.discovery_task is not None and
+                context.discovery_task not in plan.discovery):
+                raise ValueError("分组协调不能替换已保存计划或成员")
+            if context.stage == "case_impacts":
+                from src.schemas.document_impact_grouped import DocumentImpactGroupedContext
+                if [item.task_id for item in context.discovery_results] != [item.id for item in plan.discovery]:
+                    raise ValueError("用例阶段不能隐去未完成的固定发现组")
+                for task, result in zip(plan.discovery, context.discovery_results):
+                    expected = DocumentImpactGroupedContext(protocol=context.protocol, stage="discover_rules",
+                        reasoning_checkpoint=saved, discovery_task=task).model_dump(mode="json")
+                    if result.unit != task.selection.unit:
+                        raise ValueError("用例阶段不能更换发现组锚点")
+                    for index, call_id in enumerate(result.calls):
+                        record, request = await self.read_request(claim.task.project_id, claim.task.document_id,
+                            claim.task.id, call_id)
+                        if (json.loads(request.request.messages[-1]["content"]).get("coordination_context") != expected or
+                            index == 0 and record.selection != task.selection):
+                            raise ValueError("用例阶段发现结果未对应固定组的实际调用")
+                    if result.final_check is not None:
+                        origin = result.final_check
+                        actual = await self._store.responses.get(claim.task.project_id, claim.task.document_id,
+                            claim.task.id, origin.call_id, validator_version=origin.validator_version)
+                        if actual != origin or origin.call_id not in result.calls:
+                            raise ValueError("发现结果不能替换原核验身份")
+                        checked = await self._read_object(origin.result, DocumentImpactResponseAssessment)
+                        if result.status in {"analyzed", "evidence_insufficient", "incomplete"} and (
+                            checked.status != "unit_finished" or checked.decision is None or
+                            checked.decision.candidates != result.candidates or
+                            checked.decision.evidence_outcomes != result.evidence_outcomes):
+                            raise ValueError("发现候选与证据状态未对应原响应声明")
+                    elif result.candidates or result.evidence_outcomes or result.status in {"analyzed", "evidence_insufficient"}:
+                        raise ValueError("未核验发现结果不能注入规则或已处理声明")
         for rule in context.rules:
             body = rule.candidate.model_dump(mode="json", exclude={"key"})
             if hashlib.sha256(_json(body).encode("utf-8")).hexdigest() != rule.id:
                 raise ValueError("影响协调规则身份与完整候选不同")
             for origin in rule.origins:
                 checkpoint = await self._store.responses.get(claim.task.project_id, claim.task.document_id,
-                    claim.task.id, origin.checkpoint.call_id)
+                    claim.task.id, origin.checkpoint.call_id, validator_version=origin.checkpoint.validator_version)
                 if checkpoint != origin.checkpoint:
                     raise ValueError("影响协调规则不能引用其他任务或未保存的核验")
                 assessment = await self._read_object(checkpoint.result, DocumentImpactResponseAssessment)

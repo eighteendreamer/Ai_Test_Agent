@@ -24,12 +24,14 @@ class PostgresDocumentImpactResponses:
             validator_version TEXT NOT NULL, record JSONB NOT NULL,
             PRIMARY KEY(call_id,validator_version))""")
 
-    async def get(self, project_id, document_id, task_id, call_id, *, validator_version=VALIDATOR_VERSION):
+    async def get(self, project_id, document_id, task_id, call_id, *, validator_version=None):
         def read():
             with postgres_connect(self._tasks._settings) as conn, conn.cursor() as cur:
                 cur.execute(f"SELECT r.record FROM {self.table} r JOIN {self._tasks.calls.table} c ON c.id=r.call_id "
                     f"JOIN {self._tasks._tasks} t ON t.id=c.task_id WHERE t.project_id=%s AND t.document_id=%s "
-                    "AND t.id=%s AND r.call_id=%s AND r.validator_version=%s",
+                    "AND t.id=%s AND r.call_id=%s AND r.validator_version=COALESCE(%s, "
+                    "CASE WHEN t.seed->'response_protocol'->>'version'='impact-call-v6' "
+                    "THEN 'impact-response-validator-v2' ELSE 'impact-response-validator-v1' END)",
                     (project_id, document_id, task_id, call_id, validator_version))
                 row = cur.fetchone()
                 return DocumentImpactResponseCheckpoint.model_validate(row["record"]) if row else None

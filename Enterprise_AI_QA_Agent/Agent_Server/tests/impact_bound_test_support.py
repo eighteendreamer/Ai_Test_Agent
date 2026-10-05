@@ -25,8 +25,14 @@ def bound_fixture_response(body, value):
             "case_ref": key, "citations": citations}
 
     converted = {field: item for field, item in value.items() if field not in {"unit", "protocol_version", "candidates", "reads"}}
-    anchored = payload["analysis_protocol"]["version"] == "impact-call-v5"
-    converted["protocol_version"] = "impact-response-v3" if anchored else "impact-response-v2"
+    grouped = payload["analysis_protocol"]["version"] == "impact-call-v6"
+    anchored = payload["analysis_protocol"]["version"] in {"impact-call-v5", "impact-call-v6"}
+    converted["protocol_version"] = "impact-response-v4" if grouped else "impact-response-v3" if anchored else "impact-response-v2"
+    if grouped:
+        converted["evidence_outcomes"] = [{"member_ref": ref(
+            "segments" if item["unit"]["kind"] == "segment" else "differences",
+            "segment_id" if item["unit"]["kind"] == "segment" else "difference_id", item["unit"]["id"]),
+            "outcome": item["outcome"], "reason": item["reason"]} for item in value.get("evidence_outcomes", [])]
     reads = value.get("reads", {})
     converted["reads"] = {
         "segment_refs": [ref("segments", "segment_id", item) for item in reads.get("segment_ids", [])],

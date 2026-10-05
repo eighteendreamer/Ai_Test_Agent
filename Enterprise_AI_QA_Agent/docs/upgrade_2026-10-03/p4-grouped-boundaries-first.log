@@ -1,0 +1,16 @@
+..F.                                                                     [100%]
+================================== FAILURES ===================================
+____ test_actual_group_budget_unknown_and_durable_result_recovery[unknown] ____
+tests\test_document_impact_grouped_workflow.py:229: in test_actual_group_budget_unknown_and_durable_result_recovery
+    assert result.discovery_tasks[0].status == "unknown" and not result.rules
+E   AssertionError: assert ('ineligible' == 'unknown'
+E     
+E     - unknown
+E     + ineligible)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:477 model_invocation_failed
+WARNING  src.runtime.postgres_document_impact_calls:postgres_document_impact_calls.py:92 document_impact_call_budget_rejected
+WARNING  src.application.documents.impact_workflow:impact_workflow.py:169 document_impact_workflow_unit_unprocessed
+=========================== short test summary info ===========================
+FAILED tests/test_document_impact_grouped_workflow.py::test_actual_group_budget_unknown_and_durable_result_recovery[unknown]
+1 failed, 3 passed in 25.99s
