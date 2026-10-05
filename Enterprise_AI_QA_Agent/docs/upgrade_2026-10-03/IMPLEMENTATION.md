@@ -2836,3 +2836,9 @@ $env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Age
 ```
 
 另实际py_compile三个测试文件。早期读取运行中的product-build.stdout提示不存在，该文件在harness finally才复制；随后以终态实际构建日志核对，不据观察缺失重启任务。5534份旧原始证据、当前原件/对象/完整version canonical hash/PG确认hash、物理消息与暂存blob通过coverage_product_delivery_20261006.py审计，三份方案逐字节一致，用户.gitignore保持；只提交相关文件，不推送/建PR。未验证外部默认模型业务质量、用户业务评审、任务池/运行环境/生产历史迁移及其余P0—P5，不报告全目标完成。
+
+## 2026-10-06 更新用户所贴方案与当前基线
+
+源码核对基线5966d833。本次仅更新PLAN正文及附件/选中计划两份副本，不继续实现功能。修正首页基线和5.1旧进度，区分普通文档生成与已验P4增量模块，按实际PG查询/生成组/模块/重试关系和前端路由补充待实施的任务池入口方案；模板、简单补全、上传独立于Git及轻量解析约定保留。
+
+实际执行plan_sync_20261006_current.py：三份计划逐字节一致、本地链接存在、五份历史XML计数与成功状态核对、用户.gitignore hash不变；另执行git diff --check及暂存范围检查。历史XML核对不算本次功能测试；未重新运行后端/前端/浏览器/模型，未迁移数据。历史证据不改写；审计保存在p4-plan-current-sync-validation.json，只提交本次方案/实施记录/审计，不推送或建PR。
