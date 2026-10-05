@@ -2657,3 +2657,35 @@ agent_web目录实际运行npm run test -- src/services/caseGeneration.api.test.
 下一步研究正式生成页面及原请求恢复，然后接失败模块显式新任务；保留原范围、父失败和未知发送，不重置完成/失败条目。运行/环境、生产历史迁移和其他P0—P5仍未完成。
 
 独立CLI未登记流实际启动退出1/ValueError，未进入资源初始化，原stdout/stderr保存。交付校验脚本两处误读（目标引用的version属性、构建命令文本）按实际Schema/package.json修正后全量核对通过；没有改生产逻辑或覆盖旧证据。
+
+## 正式增量App、历史下载与请求恢复〔研究基线51541987〕
+
+按3.6.6研究实际需求评审/固定生成契约、请求缓存、完整用例、模式注册表、设置表单和正式浏览器流程后实施6份前端源/测试文件，并将旧正式产品测试扩成默认关闭的可选增量场景。完整目标原附件重新读取；没有新后端生产修改、依赖、SQL表/配置键、实际.env或用户.gitignore改动。新增实际功能设计见P4_INCREMENTAL_PRODUCT_DESIGN.md。
+
+原失败保留：组件首轮1失败/51通过，原因是测试直接查找JSON转义后的文本，改为解析实际pre的完整对象。实际构建随后失败，暴露我使用了不存在的设置API导出名，宽松mock掩盖了错误；查实际客户端后修正并约束mock导出集合，类型检查/Vite通过12.33秒。最终独立浏览器每次重新构建最新App，不能用组件通过替代类型检查。
+
+完整浏览器首轮 **1失败（150.75秒）**：增量正常、容量失败及停用候选均已完成，但旧影响失败场景的预算还按原V1/V2计算，新生成V3和新case后在提交阶段就拒绝。修正测试从实际PG当前版本查询计算原预算，保留捕获通过/准备失败的本来场景。第二轮 **1失败（152.05秒）** 发现真实页面缺陷：切到正常历史组后读取尚未结束，下载却导出之前的停用候选范围。保存的错误下载SHA与候选组一致，和正常组不同。修正页面切换期间的下载/操作状态、控制器下载保护和晚响应隔离，组件回归使用这个实际错误样本。
+
+完整App第三轮 **1通过、0跳过（150.39秒）**，再复查本地请求边界：最大新建数量无效时旧控制器提前保存pending，虽然没有POST却显示未知；缺少crypto.randomUUID时无法提交。先以实际组件复现 **2失败/18通过（2.08秒）**，再改为校验通过后才保存pending、复用项目现有请求编号fallback。最终组件及旧需求/影响/生成客户端 **56通过、4文件（2.41秒）**；20项增量组件与旧36项回归，重叠轮次不累加。
+
+最新交付浏览器 **1通过、0跳过（135.15秒）**，真实App类型/Vite构建8.61秒，浏览器实际移除randomUUID后通过fallback提交。真实DOCX、生产API与独立生成CLI形成正常2模块、失败1模块、停用候选1模块，共3组/4模块；原影响2次HTTP、增量2次HTTP，物理消息逐条匹配原冻结请求。PG原收据/任务状态、RustFS原范围与完整响应SHA/大小、下载字节、完整12步JSON/False/0/null/扩展字段与自身说明均核对。V1仍启用，同case的V3及新case保持草稿。MySQL当前容量改成1字节后原组仍使用原256000字节策略；另一个新组在发送前明确失败，原正常组不变。完成模块独立CLI重投没有第5次发送；停用候选没有生成响应或自动停用。
+
+实际POST已提交再丢回执，刷新页面按原编号及完整原参数恢复同组；原scope/response下载一致。API重启并关闭派发、归档项目后正常/失败/停用历史可查，原请求可重放，新编号503。pageerror为空，1440宽无正文横向溢出，结果截图留存。另用默认关闭增量面板的旧正式需求App **1通过、0跳过（93.70秒）**，仍只有原影响2次HTTP，没有增量调用；共享失败预算和旧历史恢复继续通过。
+
+实际文件、原物理请求、完整范围/响应对象、原PG收据、草稿、MySQL策略、失败下载及各轮log/XML/截图保存于p4-generation-product-*；旧4043份原文件与新证据、用户.gitignore、三份方案及暂存字节按p4-generation-product-validation.json核对。失败轮原文件保留，未把未到达的后续断言称为通过。命令见IMPLEMENTATION.md。
+
+这些受控模型场景验证实际链路与固定依据，未调用外部默认生成模型，不代替用户业务评审；草稿生成成功不表示矩阵已正式关联、测试通过或需求已部署。失败显式新任务重试、任务池投影、草稿评审后的关系、精确Token、运行/环境、P2/P1/P0/P5剩余项及生产历史迁移仍未完成。完整目标继续保持未完成。
+
+实际命令（Agent_Server目录，stdout/stderr合并保存在对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-product-browser-delivery'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-product-browser-delivery.xml
+# 旧需求App兼容使用compatibility证据目录及XML：
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_requirement_reviews_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-product-compatibility.xml
+# agent_web目录：
+npm run test -- src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts src/services/caseGeneration.api.test.ts
+```
+
+首次和修正轮使用同一实际浏览器测试、不同证据目录，不重写旧结果；完整浏览器harness实际执行npm run build，包含vue-tsc检查。外部交付脚本generation_product_delivery_20261005.py核对原件/对象/消息、三份方案、旧证据及暂存范围，语法/diff检查是补充。没有自动推送或PR。

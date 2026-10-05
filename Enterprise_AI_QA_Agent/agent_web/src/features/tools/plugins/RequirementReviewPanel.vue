@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 import type { DocumentImpactSnapshotView } from "../../../services/documentImpacts.types";
 import RequirementMatrix from "./RequirementMatrix.vue";
+import CaseGenerationPanel from "./CaseGenerationPanel.vue";
 import { useRequirementReview } from "./useRequirementReview";
 
 const props = defineProps<{ projectId: string; documentId: string; view: DocumentImpactSnapshotView }>();
@@ -9,7 +10,8 @@ const { reviews, bundles, ruleId, requirementId, matrixId, revision, decision, c
   pending, confirmedFailure, canWrite, loading, busy, error, storageWarning, message, selectedRule, latest, ready, cases, draftParentVersionId,
   addPoint, submit, recover, resetFailed, loadHistory } = useRequirementReview(props);
 const visibleReviews = ref(20);
-watch(() => props.view.snapshot.id, () => { visibleReviews.value = 20; });
+const generationOpen = ref(false);
+watch(() => [props.projectId, props.documentId, props.view.snapshot.id], () => { visibleReviews.value = 20; generationOpen.value = false; });
 </script>
 
 <template>
@@ -75,6 +77,8 @@ watch(() => props.view.snapshot.id, () => { visibleReviews.value = 20; });
       <option v-for="bundle in bundles" :key="bundle.requirement.id" :value="bundle.requirement.id">{{ bundle.version.title }} · V{{ bundle.version.version }}</option>
     </select></label>
     <RequirementMatrix v-if="matrixId" :project-id="projectId" :document-id="documentId" :requirement-id="matrixId" :revision="revision" />
+    <button type="button" class="secondary-btn" @click="generationOpen = !generationOpen">{{ generationOpen ? '收起需求增量生成' : '打开需求增量生成' }}</button>
+    <CaseGenerationPanel v-if="generationOpen" :project-id="projectId" :document-id="documentId" :view="view" :reviews="reviews" :can-write="canWrite" />
   </section>
 </template>
 

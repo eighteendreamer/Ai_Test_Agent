@@ -1,0 +1,50 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/tools/plugins/CaseGenerationProduct.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/tools/plugins/CaseGenerationProduct.test.ts (20 tests | 2 failed) 375ms
+   × does not create a pending unknown submission when local validation fails before sending 23ms
+   × uses the existing request identity fallback when randomUUID is unavailable 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/tools/plugins/CaseGenerationProduct.test.ts > does not create a pending unknown submission when local validation fails before sending
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/features/tools/plugins/CaseGenerationProduct.test.ts:94:53
+     92|   await w.get("form:not(details form)").trigger("submit"); await flush…
+     93|   expect(service.submitCaseGeneration).not.toHaveBeenCalled();
+     94|   expect(w.find('[aria-label="原增量生成请求"]').exists()).toBe(false);
+       |                                                     ^
+     95| });
+     96|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/features/tools/plugins/CaseGenerationProduct.test.ts > uses the existing request identity fallback when randomUUID is unavailable
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ src/features/tools/plugins/CaseGenerationProduct.test.ts:100:40
+     98|   vi.stubGlobal("crypto", {}); service.submitCaseGeneration.mockReject…
+     99|   const w = panel(); await fill(w); await w.get("form:not(details form…
+    100|   expect(service.submitCaseGeneration).toHaveBeenCalledTimes(1);
+       |                                        ^
+    101|   const payload = service.submitCaseGeneration.mock.calls[0]![2];
+    102|   expect(payload.creation_key).toMatch(/^generation-/); expect(payload…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 18 passed (20)
+   Start at  17:17:56
+   Duration  2.08s (transform 414ms, setup 0ms, import 812ms, tests 375ms, environment 754ms)
+

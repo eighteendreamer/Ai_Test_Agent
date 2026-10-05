@@ -18,14 +18,15 @@ import pytest
 
 from src.application.documents.difference_service import DOCUMENT_DIFFERENCE_STREAM
 from src.application.documents.parsing_service import DOCUMENT_PARSE_STREAM
+from src.application.test_cases.case_store import PostgresTestCaseStore
 from src.infrastructure.application_config_store import MySQLApplicationConfigStore
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.document_impact_runtime import DOCUMENT_IMPACT_STREAM
+from src.runtime.generation_runtime import GENERATION_STREAM
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.case_management import TestCaseBundle as CaseBundle
-from src.schemas.case_management import TestCaseVersionRecord as CaseVersion
 from src.schemas.document_impact_calls import DocumentImpactUnit
 from src.schemas.document_parsing import DocumentParseSnapshotView
 from src.schemas.model_config import ModelCapabilitiesOverride
@@ -43,7 +44,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUME
     reason='built App, production API/independent CLI, isolated actual MySQL/PG/Redis/RustFS and installed Chromium')]
 
 
-async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False):
+async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False):
     evidence = Path(os.getenv('QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR', str(tmp_path / 'evidence')))
     evidence.mkdir(parents=True, exist_ok=True)
     paths = write_pair(tmp_path, 'docx')
@@ -51,6 +52,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
     holder, views = {}, []
     def respond(body):
         payload = json.loads(body['messages'][-1]['content'])
+        if verify_generation and 'incremental_generation' in payload.get('evidence_context', {}):
+            from test_incremental_generation_sources import responder as generation_responder
+            return generation_responder(body)
         holder.setdefault('first', DocumentImpactUnit.model_validate(payload['unit']))
         holder['manifest'] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload['fixed_source_catalog']])
         factory = grouped_responder if payload['analysis_protocol']['version'] in {'impact-call-v6', 'impact-call-v7'} else responder
@@ -58,7 +62,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
     try:
         with provider(responder=respond) as (endpoint, sends, _, _):
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
-                settings.orchestration.redis_task_outbox_streams = ','.join([DOCUMENT_PARSE_STREAM, DOCUMENT_DIFFERENCE_STREAM, DOCUMENT_IMPACT_STREAM])
+                settings.orchestration.redis_task_outbox_streams = ','.join([DOCUMENT_PARSE_STREAM, DOCUMENT_DIFFERENCE_STREAM, DOCUMENT_IMPACT_STREAM,
+                    *([GENERATION_STREAM] if verify_generation else [])])
                 models = MySQLModelConfigStore(settings); models.initialize()
                 model = models.upsert(ModelConfigUpdateRequest(model_name='controlled-impact-product', provider='openai',
                     transport='openai_chat_completions', base_url=endpoint, api_key=uuid4().hex, is_active=True,
@@ -69,7 +74,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                 api_process = processes.start('product-impact-api', *args)
                 queues = {kind: RedisTaskQueue(settings.database.redis_url, stream=stream,
                     group=settings.orchestration.redis_task_consumer_group + ':' + kind)
-                    for kind, stream in [('document_parsing', DOCUMENT_PARSE_STREAM), ('document_difference', DOCUMENT_DIFFERENCE_STREAM), ('document_impact', DOCUMENT_IMPACT_STREAM)]}
+                    for kind, stream in [('document_parsing', DOCUMENT_PARSE_STREAM), ('document_difference', DOCUMENT_DIFFERENCE_STREAM), ('document_impact', DOCUMENT_IMPACT_STREAM),
+                        *([('case_generation', GENERATION_STREAM)] if verify_generation else [])]}
                 for queue in queues.values(): await queue.connect()
                 try:
                     async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}/api/v1', timeout=50) as client:
@@ -82,7 +88,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             return response.json()
                         async def worker(kind, name):
                             assert await PostgresTaskOutbox(settings).relay_once(queues[kind], limit=1) == 1
-                            command = {'document_parsing': 'run_document_parse_worker', 'document_difference': 'run_document_difference_worker', 'document_impact': 'run_document_impact_worker'}[kind]
+                            command = {'document_parsing': 'run_document_parse_worker', 'document_difference': 'run_document_difference_worker',
+                                'document_impact': 'run_document_impact_worker', 'case_generation': 'run_case_generation_worker'}[kind]
                             child = processes.start(name, '-m', 'src.cli.' + command, '--once', '--worker-id', name)
                             assert await processes.wait(child) == 0
                             assert '_processed=1' in (tmp_path / (name + '.stdout')).read_text(encoding='utf-8')
@@ -111,6 +118,10 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             'execution_notes': '完整用例执行说明', 'source_refs': [source(SimpleNamespace(id=doc['id']), views[0])],
                             'model_key': 'manual', 'prompt_version': 'manual-v1', 'skill_versions': {'manual': 'v1'}}
                         case = CaseBundle.model_validate(await post(root + '/test-cases', case_payload, 201)); holder['case'] = case
+                        if verify_generation:
+                            await post('/test-cases/'+case.case.id+'/submit-review', {'version_id':case.version.id,'request_id':'product-submit-case-v1'})
+                            enabled = await post('/test-cases/'+case.case.id+'/activate', {'version_id':case.version.id,'request_id':'product-enable-case-v1'})
+                            case = CaseBundle(case=enabled,version=case.version); holder['case'] = case
                         async with product_browser(tmp_path, port, evidence) as (page, page_errors, network):
                             browser_url = urlsplit(page.url)
                             origin = f'{browser_url.scheme}://{browser_url.netloc}'
@@ -206,12 +217,27 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                 review_state = await review_from_product(page, base=base, view=saved_view, case=case,
                                     get=get, post=post, evidence=evidence, settings=settings)
                                 assert len(sends) == count
+                            generation_state = None
+                            if verify_generation:
+                                from generation_product_scenario import generation_from_product
+                                generation_state = await generation_from_product(page, base=base, state=review_state,
+                                    case=case, model_key=model.key, get=get, client=client, worker=worker,
+                                    queue=queues['case_generation'], processes=processes, objects=objects, evidence=evidence,
+                                    settings=settings, sends=sends)
+                                count = len(sends); assert count == 4
                             # A genuine preparation rejection is displayed as a separate terminal failure.
                             await page.get_by_text('项目影响分析设置', exact=True).click()
                             await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
                             # Capture checks only the case bodies. Preparation also reads
                             # both real document snapshots and the full input envelope.
-                            prepare_limit = len(case.version.model_dump_json()) + len(CaseVersion.model_validate(later).model_dump_json()) + 1
+                            pairs, has_more = await PostgresTestCaseStore(settings).list_project_current_versions(project['id'],
+                                configuration['document-impact-settings']['payload']['max_case_versions'])
+                            assert pairs and not has_more
+                            prepare_limit = sum(len(version.model_dump_json()) for _, version in pairs) + 1
+                            (evidence/'preparation-budget.json').write_text(json.dumps({'limit':prepare_limit,
+                                'actual_current_version_ids':[version.id for _,version in pairs],
+                                'body_chars':prepare_limit-1,'snapshot_count':2},indent=2),encoding='utf-8')
+                            await page.get_by_label('影响分析用例范围',exact=True).select_option('project_current')
                             await page.get_by_label('固定依据字符上限', exact=True).fill(str(prepare_limit))
                             await page.get_by_role('button', name='保存影响范围设置', exact=True).click()
                             await expect(page.get_by_role('button', name='提交固定影响分析', exact=True)).to_be_enabled()
@@ -250,6 +276,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             if verify_requirements:
                                 from requirement_product_scenario import review_after_restart
                                 await review_after_restart(page, base=base, state=review_state, client=client, evidence=evidence)
+                            if generation_state:
+                                from generation_product_scenario import generation_after_restart
+                                await generation_after_restart(page, state=generation_state, base=base, client=client, evidence=evidence)
                             assert len(sends) == count and not page_errors, page_errors
                             layout = await page.evaluate('''() => ({ viewport:innerWidth, bodyWidth:document.documentElement.scrollWidth,
                                 sidebarLeft:document.querySelector('.left-nav').getBoundingClientRect().left,
@@ -276,7 +305,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             for name, value in [('snapshot-view.json', saved_view), ('physical-requests.json', sends), ('calls.json', calls), ('pool.json', pool), ('configuration.json', configuration),
                                 ('verification.json', {'task': chosen, 'failed': failed, 'lost_response_submission': submitted_requests,
                                     'frozen_seed': frozen, 'http_calls': count, 'default_model_judgement': False,
-                                    'history_after_dispatch_disabled': True, 'actual_built_app': True})]:
+                                    'history_after_dispatch_disabled': True, 'actual_built_app': True,
+                                    'incremental_generation_product_used':verify_generation})]:
                                 (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                             await page.screenshot(path=str(evidence / 'history-after-restart.png'), full_page=True)
                 finally:
