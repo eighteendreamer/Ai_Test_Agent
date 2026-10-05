@@ -4,8 +4,9 @@ from __future__ import annotations
 import logging
 
 from src.runtime.postgres_requirement_store import review_request_hash
+from src.runtime.postgres_requirement_coverage_store import coverage_request_hash
 from src.schemas.requirements import (
-    RequirementMatrix, RequirementMatrixPoint, RequirementReviewSource,
+    RequirementCaseLink, RequirementMatrix, RequirementMatrixPoint, RequirementReviewSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,26 +94,75 @@ class RequirementService:
         await self._require_document(project_id, document_id)
         return await self._store.list_requirements(project_id, document_id, limit=limit, offset=offset)
 
-    async def read_matrix(self, project_id, document_id, requirement_id, *, version_id=None):
+    async def submit_coverage(self, project_id, document_id, requirement_id, version_id, request):
+        await self._require_document(project_id, document_id)
+        digest = coverage_request_hash(document_id, requirement_id, version_id, request)
+        prior = await self._store.coverage.get_by_request(project_id, request.request_id, digest=digest)
+        if prior:
+            logger.info("requirement_coverage_replayed", extra={"project_id": project_id, "coverage_id": prior.id})
+            return prior
+        await self._projects.require_active(project_id)
+        try:
+            saved = await self._store.coverage.save(project_id, document_id, requirement_id, version_id, request, digest)
+        except Exception as exc:
+            logger.warning("requirement_coverage_write_failed", extra={"project_id": project_id,
+                "document_id": document_id, "requirement_id": requirement_id, "request_id": request.request_id,
+                "error_type": type(exc).__name__})
+            raise
+        logger.info("requirement_coverage_saved", extra={"project_id": project_id,
+            "requirement_version_id": version_id, "coverage_id": saved.id, "revision": saved.revision,
+            "link_count": len(saved.case_links)})
+        return saved
+
+    async def get_coverage_by_request(self, project_id, document_id, request_id):
+        await self._require_document(project_id, document_id)
+        saved = await self._store.coverage.get_by_request(project_id, request_id)
+        if saved is None or saved.document_id != document_id:
+            raise KeyError("覆盖确认请求不属于当前项目文档")
+        return saved
+
+    async def list_coverage(self, project_id, document_id, requirement_id, version_id, *, limit=20, offset=0):
+        await self._require_document(project_id, document_id)
+        _, versions = await self._store.get_requirement(project_id, document_id, requirement_id)
+        if not any(version.id == version_id for version in versions):
+            raise KeyError("覆盖确认版本不属于指定需求")
+        return await self._store.coverage.list_reviews(project_id, document_id, requirement_id, version_id, limit=limit, offset=offset)
+
+    async def read_matrix(self, project_id, document_id, requirement_id, *, version_id=None, coverage_id=None):
         await self._require_document(project_id, document_id)
         record, versions = await self._store.get_requirement(project_id, document_id, requirement_id)
         selected = next((version for version in versions if version.id == (version_id or record.current_version_id)), None)
         if selected is None:
             raise KeyError("需求版本不属于当前需求")
+        coverage = None if coverage_id == "initial" else await self._store.coverage.get(
+            project_id, document_id, requirement_id, selected.id, coverage_id=coverage_id)
+        if coverage and coverage.requirement_version_sha256 != selected.content_sha256:
+            raise ValueError("覆盖确认与固定需求版本哈希不同")
+        prior_reviews = await self._store.coverage.previous(project_id, document_id, requirement_id,
+            at=coverage.created_at if coverage else selected.created_at)
+        def links_for(version, review):
+            if review is None:
+                return version.case_links
+            if review.requirement_version_sha256 != version.content_sha256:
+                raise ValueError("历史覆盖确认与固定需求版本哈希不同")
+            return [RequirementCaseLink(**link.model_dump(include={"case_id", "case_version_id", "point_keys", "version_record_sha256"}))
+                for link in review.case_links]
+        current_links = links_for(selected, coverage)
         previous = {}
         for version in versions:
             if version.version >= selected.version:
                 break
-            for link in version.case_links:
+            for link in links_for(version, prior_reviews.get(version.id)):
                 for key in link.point_keys:
                     previous.setdefault(key, {})[link.case_version_id] = link
         points = []
         for point in selected.points:
-            links = [link for link in selected.case_links if point.key in link.point_keys]
+            links = [link for link in current_links if point.key in link.point_keys]
             old = list(previous.get(point.key, {}).values())
             points.append(RequirementMatrixPoint(point=point, case_links=links, previous_case_links=old,
                 design_status="design_covered" if links else "needs_review" if old else "uncovered"))
-        return RequirementMatrix(requirement=record, version=selected, points=points, removed=selected.change == "removed")
+        return RequirementMatrix(requirement=record, version=selected, points=points,
+            removed=selected.change == "removed", coverage_review=coverage)
 
     async def list_versions(self, project_id, document_id, requirement_id):
         await self._require_document(project_id, document_id)

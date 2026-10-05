@@ -1,4 +1,6 @@
 import type { DocumentImpactResponseCheckpoint, DocumentImpactRuleCandidate, DocumentImpactWorkflowResult } from "./documentImpacts.types";
+import type { TestCaseVersionReview, TestCaseLifecycleStatus } from "../types";
+import type { GenerationReceipt } from "./caseGeneration.types";
 
 export interface RequirementPointInput { key: string; description: string }
 export interface RequirementPoint extends RequirementPointInput { id: string }
@@ -40,10 +42,31 @@ export interface RequirementReview {
   previous_review_id: string | null; review_number: number; requirement_version: RequirementVersion | null; created_at: string;
 }
 export interface RequirementPage<T> { items: T[]; has_more: boolean; limit: number; offset: number }
+export interface RequirementCoverageLinkInput extends RequirementCaseLinkInput {
+  content_hash: string; generation_task_id?: string | null;
+}
+export interface RequirementCoverageRequest {
+  request_id: string; expected_coverage_id?: string | null; note: string; case_links: RequirementCoverageLinkInput[];
+}
+export interface RequirementCoverageLink extends RequirementCaseLink {
+  content_hash: string; review_status: "draft" | "pending_review" | "approved" | "unavailable";
+  review: TestCaseVersionReview | null; lifecycle_status: TestCaseLifecycleStatus; active_version_id: string | null;
+  generation: {
+    task_id: string; source_document_id: string; group_id: string; group_sha256: string; module_sha256: string;
+    receipt: GenerationReceipt; retry: { id: string; sha256: string } | null; provenance: Record<string, unknown>;
+  } | null;
+}
+export interface RequirementCoverageReview {
+  implementation_version: "requirement-coverage-v1"; id: string; project_id: string; document_id: string;
+  requirement_id: string; requirement_version_id: string; requirement_version_sha256: string;
+  request: RequirementCoverageRequest; request_sha256: string; previous_coverage_id: string | null;
+  revision: number; case_links: RequirementCoverageLink[]; created_at: string; sha256: string;
+}
 export interface RequirementMatrix extends RequirementBundle {
   points: {
     point: RequirementPoint; case_links: RequirementCaseLink[]; previous_case_links: RequirementCaseLink[];
     design_status: "uncovered" | "design_covered" | "needs_review"; execution_status: "not_assessed";
   }[];
   removed: boolean; deployment_status: "unknown";
+  coverage_review?: RequirementCoverageReview | null;
 }

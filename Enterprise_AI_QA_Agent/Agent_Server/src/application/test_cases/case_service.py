@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -11,6 +9,7 @@ from src.application.projects.project_service import ProjectService
 from src.application.test_cases.case_store import TestCaseStore
 from src.application.test_cases.template_service import TestCaseTemplateService
 from src.application.test_cases.version_reviews import add_draft_review
+from src.application.test_cases.version_content import version_content, version_content_hash
 from src.core.request_context import get_request_context, new_id
 from src.schemas.case_management import (
     GeneratedTestCaseBatch,
@@ -419,31 +418,12 @@ class TestCaseService:
         payload: TestCaseDraftCreateRequest | TestCaseVersionCreateRequest,
         created_at: datetime,
     ) -> TestCaseVersionRecord:
-        content = {
-            "preconditions": payload.preconditions,
-            "steps": [item.model_dump(mode="json") for item in payload.steps],
-            "assertions": [item.model_dump(mode="json") for item in payload.assertions],
-            "test_data": payload.test_data,
-            "cleanup": payload.cleanup,
-            "source_refs": [item.model_dump(mode="json") for item in payload.source_refs],
-            "model_key": payload.model_key,
-            "prompt_version": payload.prompt_version,
-            "skill_versions": payload.skill_versions,
-        }
-        # Keep the exact legacy canonical shape for old-style draft requests.
-        # New JSON and its own instructions are frozen with the version.
-        if payload.content_json is not None:
-            content["content_json"] = payload.content_json
-        if payload.execution_notes:
-            content["execution_notes"] = payload.execution_notes
-        if payload.generation_metadata:
-            content["generation_metadata"] = payload.generation_metadata
-        canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        content = version_content(payload)
         return TestCaseVersionRecord(
             id=str(uuid4()),
             case_id=case_id,
             version=version_number,
-            content_hash=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            content_hash=version_content_hash(payload),
             created_at=created_at,
             content_format="json-v1" if payload.content_json is not None else "legacy-v1",
             **content,

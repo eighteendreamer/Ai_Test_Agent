@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.schemas.case_generation import GenerationSnapshot, IncrementalGenerationRequest
 from src.schemas.document_differences import UUID_PATTERN
 from src.schemas.model_config import ModelTransportOptions
+from src.schemas.generation_receipts import GenerationObject, GenerationReceipt, GenerationVersionReference
 
 
 class GenerationTaskPolicy(BaseModel):
@@ -43,13 +44,6 @@ class GenerationRetryReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=UUID_PATTERN)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-
-class GenerationObject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    storage_uri: str
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    size_bytes: int = Field(ge=1)
 
 
 class GenerationGroup(GenerationSnapshot):
@@ -162,22 +156,6 @@ class GenerationCommand(BaseModel):
     task_type: Literal["case_generation"] = "case_generation"
     project_id: str
     task_id: str
-
-
-class GenerationVersionReference(BaseModel):
-    case_id: str
-    version_id: str
-    version: int
-    content_hash: str
-
-
-class GenerationReceipt(BaseModel):
-    module_id: str
-    kind: Literal["update", "create", "retirement_candidate"]
-    scope_sha256: str
-    response: GenerationObject | None
-    versions: list[GenerationVersionReference]
-    retirement_target: dict | None
 
 
 class GenerationCheckpointView(GenerationModuleCheckpoint):

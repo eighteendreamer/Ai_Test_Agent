@@ -67,7 +67,7 @@ def collect_objects(settings, owned):
     ("docx", True, False), ("md", False, True),
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
-    verify_requirements=False, verify_generation=False, verify_retry=False):
+    verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -285,6 +285,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                                 "change": "modified", "title": "订单保留期", "statement": "订单保留九天",
                                 "points": [{"key": "retention", "description": "验证九天保留期"}],
                                 "case_links": [{"case_version_id": case.version.id, "point_keys": ["retention"]}]}
+                            if verify_coverage:
+                                review_request["points"].append({"key":"boundary","description":"验证九天保留边界"})
                             requirement_review = await post(base + f"/impact-snapshots/{task['snapshot_id']}/reviews", review_request, 201)
                             requirement_id = requirement_review["requirement_version"]["requirement_id"]
                             matrix = await get(base + f"/requirements/{requirement_id}/matrix")
@@ -357,6 +359,13 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             retry_state = await retry_from_production(base=base, root=root, request=generation_request,
                                 settings=settings, policy=generation_settings, get=get, post=post, client=client,
                                 worker=worker, queues=queues, processes=processes, objects=objects, evidence=evidence, sends=sends)
+                        coverage_state = None
+                        if verify_coverage:
+                            from requirement_coverage_production_scenario import coverage_from_production
+                            coverage_state = await coverage_from_production(base=base,review=requirement_review,
+                                generation=generation,retry_state=retry_state,get=get,post=post,client=client,
+                                settings=settings,evidence=evidence,sends=sends)
+                            matrix = coverage_state["matrix"]
                         sent = len(sends)
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
@@ -388,6 +397,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         if retry_state:
                             from generation_retry_production_scenario import retry_after_restart
                             await retry_after_restart(base=base,state=retry_state,get=get,post=post,client=client,evidence=evidence)
+                        if coverage_state:
+                            from requirement_coverage_production_scenario import coverage_after_restart
+                            await coverage_after_restart(state=coverage_state,get=get,post=post,client=client,
+                                evidence=evidence,project_id=project["id"])
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

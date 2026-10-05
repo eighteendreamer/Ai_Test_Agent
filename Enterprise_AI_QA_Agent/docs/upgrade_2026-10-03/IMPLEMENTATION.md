@@ -2762,3 +2762,45 @@ npm run typecheck
 完整产品harness每次实际npm run build，保存product-build.stdout/stderr。首次浏览器失败目录browser-first，最终browser-fixed和旧compatibility分别独立保存；没有重写失败原文件。外部generation_retry_product_delivery_20261005.py核对原件/对象/物理消息、实际SQL引用、真实下载、三份方案、旧证据和暂存字节。没有自动推送或PR；完整升级仍未完成。
 
 交付暂存检查首次报告设计文档EOF多余空行，移除后重新核对；该失败属于文档格式，不改变已验证业务源码或原始功能证据。
+
+## 独立需求覆盖确认（2026-10-05，研究基线c2db4a4）
+
+### 6.24 独立覆盖确认、真实文档与生产进程〔研究基线c2db4a4〕
+
+上一轮c2db4a4修订完整方案，属于文档进展。本轮重读目标原附件，核对需求评审固定范围、不可变版本/hash、逐版本评审与生成固定收据、共享装配和本地版本化评测/治理课程后实施3.6.9。新增PG覆盖表及append-only记录，复用项目锁和需求服务；原需求评审约束保留。抽出原用例canonical算法和共享GenerationObject/Receipt，保持旧hash与导入位置兼容，避免循环Schema依赖。没有新配置键、依赖或实际用户.env变更。
+
+新覆盖8项（1项输入校验、7项真实存储场景）与旧JSON/模板专项合计14通过、1跳过（74.15秒）；唯一跳过是未启用外部默认生成模型的旧测试。真实MD/DOCX/PDF上传、解析/比较进程、影响及两模块生成后，用公共ASGI路由确认更新/新建完整12步JSON及False/0/null/扩展字段，原需求/来源/hash不改写，未确认点仍未覆盖，执行not_assessed/部署unknown。实际提交评审后记录pending_review，显式启用后新确认记录approved，旧确认仍冻结原状态；initial/明确历史、分页/撤销与后续需求needs_review均核对。
+
+实际PG提交后丢回执503，四路原请求恢复同记录，归档后原请求仍返回，禁止读取当前case/配置/模型/对象仍通过；四路同编号首次提交只产生一条，不同编号竞争同预期确认一成功一409。跨项目、未知点/错误哈希/生成来源、移除版本、重复版本/点拒绝。实际修改孤立PG收据和case正文、覆盖正文分别拒绝并恢复原字节。saved_response重试草稿可确认，原失败保留，不新增HTTP；其他模式的人工版本可显式关联，缺失旧评审状态标unavailable，不伪造approved。
+
+旧需求评审、增量任务、失败重试、公开API及用例版本评审五模块53通过、0跳过（342.83秒）。前端客户端与旧需求/生成/重试组件52通过、4文件（2.91秒），vue-tsc/Vite构建通过10.82秒。没有新增覆盖编辑页面或浏览器功能验收；客户端与旧组件不是页面完成证据。
+
+三格式生产API及独立解析/比较/影响/生成CLI3通过、0跳过（347.41秒）。真实MySQL/PG/Redis/RustFS完成固定文档、生成、明确版本评审/启用、覆盖修订、原始与历史矩阵、SQL记录/hash核对；DOCX额外实际重试两种策略并确认原响应重试草稿，原父失败仍保留。API重启关闭派发，四路原POST恢复、按编号GET及历史矩阵仍相同，归档后原请求可读/重放、新确认409。MD/PDF各4次物理模型发送，DOCX6次；覆盖确认0次，终态重投不发送。旧正常增量生产流程单独1通过、0跳过（88.55秒），仍为原4次发送，没有启用新增覆盖场景。
+
+原件、完整scope/response、物理消息、SQL覆盖/需求/用例记录、版本hash、独立进程stdout/stderr及XML/log保存在p4-requirement-coverage-*，旧5062份原始证据不改写；三份方案、原件/对象/物理消息及暂存字节见p4-requirement-coverage-validation.json。没有调用外部默认生成模型、执行生产历史迁移或替代用户业务评审。正式覆盖确认页面、任务池投影、运行/环境及P2/P1/P0/P5剩余目标继续未完成，完整目标保持active。
+
+实际命令（Agent_Server目录，stdout/stderr均保留对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_GENERATION_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-coverage-first'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_requirement_coverage.py tests/test_case_json_templates.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-coverage-first.xml
+$env:RUN_LIVE_CASE_VERSION_REVIEWS='1'
+$env:QA_GENERATION_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-coverage-regression'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_requirement_reviews.py tests/test_generation_tasks.py tests/test_generation_retries.py tests/test_generation_api.py tests/test_case_version_reviews.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-coverage-regression.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-coverage-production-first'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_requirement_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-coverage-production-first.xml
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-coverage-compatibility'
+../.venv/Scripts/python.exe -Xutf8 -m pytest 'tests/test_generation_production.py::test_production_incremental_generation_drafts_and_disabled_recovery[md]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-coverage-compatibility.xml
+# agent_web目录：
+npm run test -- src/services/requirements.api.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/GenerationRetryProduct.test.ts
+npm run build
+```
+
+新生产/测试13个Python文件py_compile及受影响diff检查通过，作为上述真实流程的补充。源码在真实测试开始后未再修改；文档和原始证据验收后提交相关文件，不自动推送或建PR。
+
+交付暂存首轮一次传入全部证据文件，Windows CreateProcess在Git启动前返回WinError 206（文件名或扩展名太长）；没有执行该批暂存。改为每批不超过50项并逐批检查退出码，随后核对精确暂存范围与每份原始证据的Git blob字节。该错误属于交付命令长度，业务测试及源码不变，记录在p4-requirement-coverage-staging-first.log。
+
+暂存检查报告原始JSON的CRLF尾部空白：新证据目录的-text规则漏配已有证据规则使用的whitespace=cr-at-eol。检查的实际退出码为2，保存脚本误期待1导致自身断言失败；随后读取真实退出码，完整stdout/stderr压缩保存在p4-requirement-coverage-staging-check-first.log.gz。补齐目录属性后重查，原始文件字节不改写，业务源码和测试不变。

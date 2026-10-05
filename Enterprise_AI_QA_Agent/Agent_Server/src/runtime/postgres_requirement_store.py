@@ -45,13 +45,15 @@ class PostgresRequirementStore:
         self._versions = self._docs + "_requirement_versions"
         self._reviews = self._docs + "_requirement_reviews"
         self._snapshots = self._docs + "_impact_snapshots"
+        from src.runtime.postgres_requirement_coverage_store import PostgresRequirementCoverageStore
+        self.coverage = PostgresRequirementCoverageStore(self)
         for table in [self._docs, self._projects, self._cases, self._case_versions, self._snapshots, *self.tables]:
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid requirement table identifier")
 
     @property
     def tables(self):
-        return [self._reviews, self._versions, self._requirements]
+        return [self.coverage.table, self._reviews, self._versions, self._requirements]
 
     async def initialize(self):
         def create():
@@ -75,6 +77,7 @@ class PostgresRequirementStore:
                     created_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL,
                     UNIQUE(project_id,request_id), UNIQUE(snapshot_id,rule_id,review_number))""")
         await asyncio.to_thread(create)
+        await self.coverage.initialize()
 
     @staticmethod
     def _review(row):

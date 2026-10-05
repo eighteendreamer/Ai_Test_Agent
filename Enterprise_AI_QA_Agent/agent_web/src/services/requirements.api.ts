@@ -2,6 +2,7 @@ import { request } from "./http";
 import type {
   RequirementBundle, RequirementMatrix, RequirementPage, RequirementReview,
   RequirementReviewRequest, RequirementVersion,
+  RequirementCoverageRequest, RequirementCoverageReview,
 } from "./requirements.types";
 
 const documentPath = (projectId: string, documentId: string) =>
@@ -23,7 +24,21 @@ export function listRequirements(projectId: string, documentId: string, limit = 
 export function listRequirementVersions(projectId: string, documentId: string, requirementId: string): Promise<RequirementVersion[]> {
   return request(`${documentPath(projectId, documentId)}/requirements/${encodeURIComponent(requirementId)}/versions`);
 }
-export function readRequirementMatrix(projectId: string, documentId: string, requirementId: string, versionId?: string): Promise<RequirementMatrix> {
-  const query = versionId ? `?${new URLSearchParams({ version_id: versionId })}` : "";
+export function readRequirementMatrix(projectId: string, documentId: string, requirementId: string, versionId?: string, coverageId?: string): Promise<RequirementMatrix> {
+  const params = new URLSearchParams();
+  if (versionId) params.set("version_id", versionId);
+  if (coverageId) params.set("coverage_id", coverageId);
+  const query = params.size ? `?${params}` : "";
   return request(`${documentPath(projectId, documentId)}/requirements/${encodeURIComponent(requirementId)}/matrix${query}`);
+}
+const coveragePath = (projectId: string, documentId: string, requirementId: string, versionId: string) =>
+  `${documentPath(projectId, documentId)}/requirements/${encodeURIComponent(requirementId)}/versions/${encodeURIComponent(versionId)}/coverage-reviews`;
+export function submitRequirementCoverage(projectId: string, documentId: string, requirementId: string, versionId: string, payload: RequirementCoverageRequest): Promise<RequirementCoverageReview> {
+  return request(coveragePath(projectId, documentId, requirementId, versionId), { method: "POST", body: JSON.stringify(payload) });
+}
+export function listRequirementCoverage(projectId: string, documentId: string, requirementId: string, versionId: string, limit = 20, offset = 0): Promise<RequirementPage<RequirementCoverageReview>> {
+  return request(`${coveragePath(projectId, documentId, requirementId, versionId)}?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`);
+}
+export function getRequirementCoverageSubmission(projectId: string, documentId: string, requestId: string): Promise<RequirementCoverageReview> {
+  return request(`${documentPath(projectId, documentId)}/requirement-coverage-reviews/by-request?${new URLSearchParams({ request_id: requestId })}`);
 }

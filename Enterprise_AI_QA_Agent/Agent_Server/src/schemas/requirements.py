@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.schemas.document_differences import UUID_PATTERN
 from src.schemas.document_impact_responses import DocumentImpactRuleCandidate, DocumentImpactResponseCheckpoint
 from src.schemas.document_impact_workflow import DocumentImpactDiscoveredRule
+from src.schemas.case_management import TestCaseVersionReview
+from src.schemas.generation_receipts import GenerationReceipt
 
 
 class RequirementModel(BaseModel):
@@ -143,6 +145,73 @@ class RequirementPage(RequirementModel):
     offset: int
 
 
+class RequirementCoverageLinkInput(RequirementCaseLinkInput):
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generation_task_id: str | None = Field(default=None, pattern=UUID_PATTERN)
+
+
+class RequirementCoverageRequest(RequirementModel):
+    request_id: str = Field(min_length=1, max_length=160)
+    expected_coverage_id: str | None = Field(default=None, pattern=UUID_PATTERN)
+    note: str = Field(min_length=1, max_length=8000)
+    case_links: list[RequirementCoverageLinkInput] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_links(self):
+        versions = [link.case_version_id for link in self.case_links]
+        if len(versions) != len(set(versions)):
+            raise ValueError("覆盖确认不能重复关联同一用例版本")
+        for link in self.case_links:
+            if len(link.point_keys) != len(set(link.point_keys)):
+                raise ValueError("覆盖确认的验证点不能重复")
+        return self
+
+
+class RequirementCoverageGeneration(RequirementModel):
+    task_id: str = Field(pattern=UUID_PATTERN)
+    source_document_id: str = Field(pattern=UUID_PATTERN)
+    group_id: str = Field(pattern=UUID_PATTERN)
+    group_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    module_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    receipt: GenerationReceipt
+    retry: dict | None = None
+    # Original generation provenance is an origin, not a coverage decision.
+    provenance: dict
+
+
+class RequirementCoverageLink(RequirementCaseLink):
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    review_status: Literal["draft", "pending_review", "approved", "unavailable"]
+    review: TestCaseVersionReview | None
+    lifecycle_status: Literal["draft", "pending_review", "active", "disabled", "archived"]
+    active_version_id: str | None = Field(default=None, pattern=UUID_PATTERN)
+    generation: RequirementCoverageGeneration | None = None
+
+
+class RequirementCoverageReview(RequirementModel):
+    implementation_version: Literal["requirement-coverage-v1"] = "requirement-coverage-v1"
+    id: str = Field(pattern=UUID_PATTERN)
+    project_id: str = Field(pattern=UUID_PATTERN)
+    document_id: str = Field(pattern=UUID_PATTERN)
+    requirement_id: str = Field(pattern=UUID_PATTERN)
+    requirement_version_id: str = Field(pattern=UUID_PATTERN)
+    requirement_version_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    request: RequirementCoverageRequest
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    previous_coverage_id: str | None = Field(default=None, pattern=UUID_PATTERN)
+    revision: int = Field(ge=1)
+    case_links: list[RequirementCoverageLink]
+    created_at: datetime
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class RequirementCoveragePage(RequirementModel):
+    items: list[RequirementCoverageReview]
+    has_more: bool
+    limit: int
+    offset: int
+
+
 class RequirementMatrixPoint(RequirementModel):
     point: RequirementPoint
     case_links: list[RequirementCaseLink]
@@ -155,3 +224,4 @@ class RequirementMatrix(RequirementBundle):
     points: list[RequirementMatrixPoint]
     removed: bool
     deployment_status: Literal["unknown"] = "unknown"
+    coverage_review: RequirementCoverageReview | None = None
