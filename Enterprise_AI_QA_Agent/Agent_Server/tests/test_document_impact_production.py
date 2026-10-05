@@ -21,6 +21,7 @@ from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.document_impact_runtime import DOCUMENT_IMPACT_STREAM
+from src.runtime.generation_runtime import GENERATION_STREAM
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.case_management import TestCaseBundle as CaseBundle
 from src.schemas.document_impact_calls import DocumentImpactUnit
@@ -52,7 +53,7 @@ def collect_objects(settings, owned):
         for suffix, fields in [("assets", "record"), ("parse_tasks", "checkpoint,failure_artifact"),
             ("diff_tasks", "checkpoint,failure_artifact"), ("impact_tasks", "input_checkpoint,checkpoint,failure_artifact"),
             ("impact_manifests", "record"), ("impact_calls", "record"), ("impact_response_checks", "record"),
-            ("impact_reasoning_plans", "record")]:
+            ("impact_reasoning_plans", "record"), ("case_gen_groups", "record"), ("case_gen_tasks", "checkpoint")]:
             table = settings.database.postgres_api_doc_table + "_" + suffix
             cur.execute("SELECT to_regclass(%s) AS existing", (table,))
             if cur.fetchone()["existing"]:
@@ -65,7 +66,8 @@ def collect_objects(settings, owned):
     ("md", False, False), ("docx", False, False), ("pdf", False, False),
     ("docx", True, False), ("md", False, True),
 ])
-async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt, verify_requirements=False):
+async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
+    verify_requirements=False, verify_generation=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -74,6 +76,9 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
     holder, views = {}, []
     def respond(body):
         payload = json.loads(body["messages"][-1]["content"])
+        if verify_generation and "incremental_generation" in payload.get("evidence_context", {}):
+            from test_incremental_generation_sources import responder as generation_responder
+            return generation_responder(body)
         holder.setdefault("first", DocumentImpactUnit.model_validate(payload["unit"]))
         holder["manifest"] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload["fixed_source_catalog"]])
         factory = grouped_responder if payload["analysis_protocol"]["version"] in {"impact-call-v6", "impact-call-v7"} else responder
@@ -84,7 +89,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                 settings.model.langchain_model_adapter_enabled = adapter
                 settings.api_auth_token = SecretStr(uuid4().hex)
                 settings.orchestration.redis_task_outbox_streams = ",".join(
-                    [DOCUMENT_PARSE_STREAM, DOCUMENT_DIFFERENCE_STREAM, DOCUMENT_IMPACT_STREAM])
+                    [DOCUMENT_PARSE_STREAM, DOCUMENT_DIFFERENCE_STREAM, DOCUMENT_IMPACT_STREAM,
+                        *([GENERATION_STREAM] if verify_generation else [])])
                 settings.orchestration.task_outbox_lease_seconds = 6
                 models = MySQLModelConfigStore(settings); models.initialize()
                 model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-impact", provider="openai",
@@ -98,7 +104,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                 queues = {}
                 try:
                     for stream, task_type in [(DOCUMENT_PARSE_STREAM, "document_parsing"),
-                        (DOCUMENT_DIFFERENCE_STREAM, "document_difference"), (DOCUMENT_IMPACT_STREAM, "document_impact")]:
+                        (DOCUMENT_DIFFERENCE_STREAM, "document_difference"), (DOCUMENT_IMPACT_STREAM, "document_impact"),
+                        *([(GENERATION_STREAM, "case_generation")] if verify_generation else [])]:
                         queue = RedisTaskQueue(settings.database.redis_url, stream=stream,
                             group=settings.orchestration.redis_task_consumer_group + ":" + task_type)
                         await queue.connect(); queues[task_type] = queue
@@ -289,6 +296,61 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             assert len(sends) == 2 and (await objects.read_object_uri(typed.snapshot.storage_uri))["content"] == stored
                             (evidence / "requirement-review.json").write_text(json.dumps(requirement_review,ensure_ascii=False,indent=2),encoding="utf-8")
                             (evidence / "requirement-matrix.json").write_text(json.dumps(matrix,ensure_ascii=False,indent=2),encoding="utf-8")
+                        generation = None
+                        if verify_generation:
+                            assert requirement_review and not interrupt
+                            generation_settings = (await get(root+"/case-generation-settings"))["payload"]
+                            generation_settings.update(transport_policy="single_attempt",call_timeout_seconds=30)
+                            saved = await client.put(root+"/case-generation-settings",json=generation_settings)
+                            assert saved.status_code == 200
+                            assert mysql.get("test_case.incremental_generation_settings",scope_key=project["id"]).payload == generation_settings
+                            generation_request = {"creation_key":"production-incremental", "requirement_id":requirement_id,
+                                "requirement_version_id":requirement_review["requirement_version"]["id"],
+                                "target_case_version_ids":[case.version.id], "include_new_cases":True,
+                                "new_case_mode_key":"api_testing", "model_key":model.key}
+                            group = await post(base+"/case-generations",generation_request,202)
+                            assert await get(base+"/case-generations/by-request",creation_key=generation_request["creation_key"]) == group
+                            generation_scope = await get(base+f"/case-generations/{group['id']}/scope")
+                            queued = await get(base+f"/case-generations/{group['id']}")
+                            assert len(queued["modules"]) == 2 and all(t["status"] == "queued" for t in queued["modules"])
+                            changed = await client.put(root+"/case-generation-settings",json={**generation_settings,"max_input_bytes":1})
+                            assert changed.status_code == 200
+                            for i in range(2):
+                                await worker("run_case_generation_worker",f"generation-{i}","case_generation")
+                            generation = await get(base+f"/case-generations/{group['id']}")
+                            assert all(t["status"] == "completed" for t in generation["modules"]), generation
+                            assert len(sends) == 4
+                            update = generation["modules"][0]["checkpoint"]["receipt"]["versions"][0]
+                            created = generation["modules"][1]["checkpoint"]["receipt"]["versions"][0]
+                            assert update["case_id"] == case.case.id and update["version"] == later["version"]+1
+                            updated_case = await get(f"/test-cases/{case.case.id}")
+                            case_versions = await get(f"/test-cases/{case.case.id}/versions")
+                            draft = next(version for version in case_versions if version["id"] == update["version_id"])
+                            assert next(version for version in case_versions if version["id"] == case.version.id) == case.version.model_dump(mode="json")
+                            new_case = await get(f"/test-cases/{created['case_id']}")
+                            assert updated_case["active_version_id"] == case.case.active_version_id
+                            assert new_case["active_version_id"] is None and new_case["lifecycle_status"] == "draft"
+                            assert len(draft["content_json"]["steps"]) == 12 and draft["content_json"]["深层扩展"] == case.version.content_json["深层扩展"]
+                            assert draft["generation_metadata"]["incremental_generation"]["requirement_version_id"] == generation_request["requirement_version_id"]
+                            generation_responses=[]
+                            for module in generation["modules"]:
+                                response = await get(base+f"/case-generation-tasks/{module['id']}/response")
+                                generation_responses.append(response)
+                                assert await get(base+f"/case-generation-tasks/{module['id']}") == module
+                                await queues["case_generation"].enqueue({"task_type":"case_generation","project_id":project["id"],"task_id":module["id"]})
+                                terminal_gen = processes.start("generation-terminal-"+module["module_id"],"-m","src.cli.run_case_generation_worker",
+                                    "--once","--worker-id","generation-terminal")
+                                assert await processes.wait(terminal_gen) == 0
+                            assert len(sends) == 4 and await get(base+f"/case-generations/{group['id']}") == generation
+                            refs_gen=[group["scope"],*[t["checkpoint"]["response"] for t in generation["modules"]]]
+                            for reference in refs_gen:
+                                raw=(await objects.read_object_uri(reference["storage_uri"]))["content"]
+                                assert len(raw)==reference["size_bytes"] and hashlib.sha256(raw).hexdigest()==reference["sha256"]
+                                (evidence/(reference["sha256"]+".json")).write_bytes(raw)
+                            (evidence/"generation.json").write_text(json.dumps({"report":generation,"scope":generation_scope,
+                                "responses":generation_responses,"draft":draft,"case":updated_case,"new_case":new_case,
+                                "mysql_policy":saved.json(),"independent_generation_workers":True,"terminal_redelivery_no_send":True},
+                                ensure_ascii=False,indent=2),encoding="utf-8")
                         sent = len(sends)
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
@@ -311,6 +373,12 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             assert await get(base + f"/requirements/{requirement_id}/matrix") == matrix
                             assert (await get(base + "/requirements"))["items"][0]["version"] == requirement_review["requirement_version"]
                             assert (await get(base + f"/requirements/{requirement_id}/versions")) == [requirement_review["requirement_version"]]
+                        if generation:
+                            assert await post(base+"/case-generations",generation_request,202) == generation["group"]
+                            assert await get(base+"/case-generations/by-request",creation_key=generation_request["creation_key"]) == generation["group"]
+                            assert await get(base+f"/case-generations/{generation['group']['id']}") == generation
+                            assert await get(base+f"/case-generations/{generation['group']['id']}/scope") == generation_scope
+                            assert (await client.post(base+"/case-generations",json={**generation_request,"creation_key":"disabled-new"})).status_code == 503
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]
@@ -346,7 +414,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             "actual_process_killed": interrupt, "unknown_call_not_resent": interrupt,
                             "independent_outbox_relay": True, "bearer_denied": True,
                             "all_originals_unchanged": True, "default_model_judgement": False,
-                            "terminal_redelivery_no_send": True, "disabled_dispatch_history_readable": True}, ensure_ascii=False, indent=2), encoding="utf-8")
+                            "terminal_redelivery_no_send": True, "disabled_dispatch_history_readable": True,
+                            "production_incremental_generation_used": verify_generation}, ensure_ascii=False, indent=2), encoding="utf-8")
                 finally:
                     for queue in queues.values(): await queue.close()
                     collect_objects(settings, owned)

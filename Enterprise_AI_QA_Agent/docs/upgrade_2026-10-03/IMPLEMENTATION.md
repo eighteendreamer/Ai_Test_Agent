@@ -2629,3 +2629,31 @@ $env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
 共享四模块49通过107.73秒，独立生产API/三类CLI/需求评审与关闭派发历史恢复1通过120.66秒，原影响POST2。生产命令漏设置其实际证据变量QA_IMPACT_PRODUCTION_EVIDENCE_DIR，因此先写测试临时目录；终态后从该独占fixture复制原39份文件至p4-generation-tasks-production-compatibility/md-native-finish，未重写字节。这个兼容场景没有用新增生成模块，不能当作增量产品验收。
 
 原始失败及最终对象/文件/收据/HTTP证据在p4-generation-tasks-*。旧actual_module_worker标记只表示内部执行，当前证据已分清actual_leased_module/actual_redis_worker/independent_worker_process，旧字节保留。当前新增内部任务的配置键和两张业务表需正式启动入口接入；尚未接公开API、生产生成Worker/CLI、前端DTO/页面及失败显式新任务重试。未重复外部默认模型、前端构建/浏览器或生产历史迁移；本阶段没改公开/前端契约。下一步研究并接正式产品链路，再推进运行/环境、P2/P1/P0/P5和迁移，完整目标继续未完成。
+
+
+## 增量生成正式API、独立Worker与前端契约（研究基线80dc609b）
+
+研究及实现见P4_INCREMENTAL_ENTRY_DESIGN.md、PLAN3.6.5/6.18。正式生成router/main共用generation_runtime；独立generation_worker_runtime/CLI复用共享资源生命周期和Handler。新增项目MySQL设置、文档级提交/按原请求/分页组/模块报告、固定范围/原响应；公开typed receipt不改变内部冻结hash。模板.env.example登记qa:tasks:case_generation和CLI；不修改用户实际.env、不自动启用dispatch。生成completed仅表示草稿/候选待评审。
+
+实际命令（Agent_Server目录，各轮stdout/stderr存对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_GENERATION_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-entry-api-first')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_generation_api.py tests/test_generation_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-entry-api-first.xml
+$env:QA_GENERATION_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-entry-retirement')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_generation_api.py -q -k retirement --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-entry-retirement.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-entry-production-first')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_generation_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-entry-production-first.xml
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-entry-compatibility')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-entry-compatibility.xml
+```
+
+API+内部19通过178.72秒，补公共删除候选1通过/4 deselected13.75秒；独立正式增量三格式3通过253.67秒，每场景原影响2+生成2次POST，完整12步/扩展JSON与原固定策略验证。目标case V1保留、新增V3草稿、旧启用指针保留，新case待评审；终态重投没有新发送、API重启关闭派发后原请求/报告/范围仍可读。旧生产需求兼容1通过77.80秒、只有原影响2次。最初兼容命令用WindowsApps python别名启动失败StandardOutputEncoding，没有跑pytest；使用项目.venv后实际运行。新测试没有失败或skip，旧失败和原始证据不改写。
+
+agent_web目录实际运行npm run test -- src/services/caseGeneration.api.test.ts src/services/requirements.api.test.ts src/services/documentImpacts.api.test.ts，8通过/3文件326毫秒；npm run build的vue-tsc/Vite通过10.58秒。没有生成页面或浏览器验收，未重跑外部默认模型/历史迁移；前端客户端不冒充完整App。原scope/response对象、完整文件/草稿/收据、物理请求、独立worker日志及MySQL保留在p4-generation-entry-*；与3723份既有原始证据逐字节核对，方案三份同步。源AST/编译和diff作为补充验证，不能替代以上实际流程。
+
+下一步研究正式生成页面及原请求恢复，然后接失败模块显式新任务；保留原范围、父失败和未知发送，不重置完成/失败条目。运行/环境、生产历史迁移和其他P0—P5仍未完成。
+
+独立CLI未登记流实际启动退出1/ValueError，未进入资源初始化，原stdout/stderr保存。交付校验脚本两处误读（目标引用的version属性、构建命令文本）按实际Schema/package.json修正后全量核对通过；没有改生产逻辑或覆盖旧证据。

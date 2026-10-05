@@ -1,0 +1,66 @@
+import type { RequirementReview, RequirementVersion } from "./requirements.types";
+
+export interface GenerationTaskPolicy {
+  timeout_seconds: number;
+  call_timeout_seconds: number;
+  max_input_bytes: number;
+  max_response_bytes: number;
+  framing_allowance_tokens: number;
+  transport_policy: "provider_defaults" | "single_attempt";
+}
+export interface GenerationTaskSettings { scope_key: string; revision: number; payload: GenerationTaskPolicy }
+export interface GenerationTaskRequest {
+  creation_key: string;
+  requirement_id: string;
+  requirement_version_id: string;
+  target_case_version_ids?: string[];
+  include_new_cases?: boolean;
+  new_case_mode_key?: string | null;
+  max_new_cases?: number;
+  model_key?: string | null;
+}
+export interface GenerationObject { storage_uri: string; sha256: string; size_bytes: number }
+export interface GenerationGroup {
+  id: string; project_id: string; document_id: string; version_id: string;
+  creation_key: string; request_hash: string; scope: GenerationObject; scope_sha256: string;
+  module_ids: string[]; config: GenerationTaskSettings; created_at: string; sha256: string;
+}
+export type GenerationModuleKind = "update" | "create" | "retirement_candidate";
+export interface GenerationReceipt {
+  module_id: string; kind: GenerationModuleKind; scope_sha256: string;
+  response: GenerationObject | null;
+  versions: { case_id: string; version_id: string; version: number; content_hash: string }[];
+  retirement_target: Record<string, unknown> | null;
+}
+export interface GenerationTask {
+  id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string;
+  creation_key: string; status: "queued" | "running" | "completed" | "failed";
+  phase: "queued" | "generating" | "invoking" | "response_saved" | "result_saved" | "finished";
+  message: string; attempt_no: number; error_code: string | null;
+  created_at: string; updated_at: string; deadline_at: string | null; completed_at: string | null;
+  checkpoint: {
+    phase: "invoking" | "response_saved" | "result_saved";
+    invocation_attempt_id: string | null; budget: Record<string, unknown>;
+    response: GenerationObject | null; receipt: GenerationReceipt | null;
+  } | null;
+}
+export interface GenerationGroupView { group: GenerationGroup; modules: GenerationTask[] }
+export interface GenerationGroupPage { items: GenerationGroup[]; has_more: boolean; limit: number; offset: number }
+export interface GenerationScope {
+  implementation_version: "incremental-generation-scope-v1";
+  project_id: string; document_id: string;
+  request: Omit<GenerationTaskRequest, "creation_key">;
+  requirement: RequirementVersion; review: RequirementReview;
+  input_checkpoint: Record<string, unknown>;
+  template: Record<string, unknown> | null; authoring: Record<string, unknown> | null;
+  modules: {
+    id: string; kind: GenerationModuleKind; target: Record<string, unknown> | null;
+    expected_latest_version: number | null; generation: Record<string, unknown> | null; sha256: string;
+  }[];
+  basis_limitations: string[]; sha256: string;
+}
+export interface GenerationResponse {
+  text: string; tool_calls: Record<string, unknown>[];
+  request_payload: Record<string, unknown>; response_summary: Record<string, unknown>;
+  raw_response: Record<string, unknown>;
+}

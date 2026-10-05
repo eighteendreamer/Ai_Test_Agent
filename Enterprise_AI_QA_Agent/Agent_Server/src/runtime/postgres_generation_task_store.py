@@ -12,7 +12,7 @@ from src.runtime.postgres_requirement_store import PostgresRequirementStore, fix
 from src.schemas.case_generation import IncrementalGenerationModule, fixed_generation_snapshot
 from src.schemas.case_generation_tasks import (
     GenerationGroup, GenerationTaskSeed, GenerationTaskRecord, GenerationTaskPage,
-    GenerationTaskClaim, GenerationCommand, GenerationModuleCheckpoint,
+    GenerationTaskClaim, GenerationCommand, GenerationModuleCheckpoint, GenerationGroupPage,
 )
 from src.schemas.case_management import TestCaseVersionRecord
 
@@ -107,6 +107,17 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
 
     async def submit_group(self, scope, scope_object, config, *, creation_key, request_hash, stream):
         return await asyncio.to_thread(self._submit_group, scope, scope_object, config, creation_key, request_hash, stream)
+
+    async def list_groups(self, project_id, document_id, *, limit=20, offset=0):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT record FROM {self._groups} WHERE project_id=%s AND document_id=%s "
+                    "ORDER BY (record->>'created_at')::timestamptz DESC,id DESC LIMIT %s OFFSET %s",
+                    (project_id, document_id, limit+1, offset))
+                rows = cur.fetchall()
+            return GenerationGroupPage(items=[GenerationGroup.model_validate(row["record"]) for row in rows[:limit]],
+                has_more=len(rows)>limit, limit=limit, offset=offset)
+        return await asyncio.to_thread(read)
 
     def _submit_group(self, scope, scope_object, config, creation_key, request_hash, stream):
         # No upstream counterpart (checked: document operation submit, import commit,

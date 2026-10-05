@@ -38,6 +38,7 @@ from src.api.routes.document_parsing import router as document_parsing_router
 from src.api.routes.document_differences import router as document_differences_router
 from src.api.routes.document_impacts import router as document_impacts_router
 from src.api.routes.requirements import router as requirements_router
+from src.api.routes.case_generation_tasks import router as case_generation_tasks_router
 from src.api.routes.document_git import router as document_git_router
 from src.api.routes.suite_management import router as test_suites_router
 from src.api.routes.run_management import router as test_runs_router
@@ -64,6 +65,7 @@ from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.application.documents.difference_service import DocumentDifferenceService, DOCUMENT_DIFFERENCE_STREAM
 from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
 from src.runtime.document_impact_runtime import DOCUMENT_IMPACT_STREAM, build_document_impact_runtime
+from src.runtime.generation_runtime import GENERATION_STREAM, build_generation_runtime
 from src.application.documents.api_doc_store import PostgresApiDocStore
 from src.application.docker_management_service import DockerManagementService
 from src.application.integrations.integration_catalog_service import IntegrationCatalogService
@@ -487,6 +489,14 @@ async def _initialize_lifespan_resources(
     app.state.document_impact_store = document_impact_runtime.store
     await document_impact_runtime.requirements.initialize()
     app.state.requirement_service = document_impact_runtime.requirements
+    generation_runtime = build_generation_runtime(settings, container,
+        requirements=document_impact_runtime.requirements, impact_tasks=document_impact_runtime.tasks,
+        stream=(GENERATION_STREAM if settings.orchestration.redis_task_dispatch_enabled
+            and GENERATION_STREAM in settings.orchestration.task_stream_names else None))
+    await generation_runtime.service.initialize()
+    app.state.generation_task_service = generation_runtime.service
+    app.state.generation_task_store = generation_runtime.store
+    app.state.generation_task_config = generation_runtime.config
     embedding_stream = settings.orchestration.embedding_task_stream
     if embedding_stream in settings.orchestration.task_stream_names:
         test_case_service.set_embedding_task_outbox(
@@ -995,6 +1005,7 @@ app.include_router(document_parsing_router, prefix=settings.api_v1_prefix)
 app.include_router(document_differences_router, prefix=settings.api_v1_prefix)
 app.include_router(document_impacts_router, prefix=settings.api_v1_prefix)
 app.include_router(requirements_router, prefix=settings.api_v1_prefix)
+app.include_router(case_generation_tasks_router, prefix=settings.api_v1_prefix)
 app.include_router(document_git_router, prefix=settings.api_v1_prefix)
 app.include_router(test_suites_router, prefix=settings.api_v1_prefix)
 app.include_router(test_runs_router, prefix=settings.api_v1_prefix)

@@ -97,6 +97,31 @@ class GenerationTaskService:
             raise ValueError("生成组模块清单与持久任务不同")
         return group, [by_module[module_id] for module_id in group.module_ids]
 
+    async def get_by_request(self, project_id, document_id, creation_key):
+        await self._require_document(project_id, document_id)
+        group = await self._store.get_group(project_id, document_id, creation_key=creation_key)
+        if group is None: raise KeyError("当前文档没有该生成提交")
+        return group
+
+    async def list_groups(self, project_id, document_id, *, limit=20, offset=0):
+        await self._require_document(project_id, document_id)
+        return await self._store.list_groups(project_id, document_id, limit=limit, offset=offset)
+
+    async def get_task(self, project_id, document_id, task_id):
+        await self._require_document(project_id, document_id)
+        task = await self._store.get(project_id, task_id)
+        if task is None or task.document_id != document_id: raise KeyError("当前文档没有该生成模块任务")
+        return task
+
+    async def read_scope_by_group(self, project_id, document_id, group_id):
+        group, _ = await self.read_group(project_id, document_id, group_id)
+        return await self.read_scope(group)
+
+    async def read_response(self, project_id, document_id, task_id):
+        task = await self.get_task(project_id, document_id, task_id)
+        if task.checkpoint is None or task.checkpoint.response is None: raise KeyError("该模块尚未保存原响应")
+        return await self._read_object(task.checkpoint.response, ModelInvocationResult)
+
     async def read_scope(self, group):
         scope = await self._read_object(group.scope, IncrementalGenerationScope)
         if (scope.project_id != group.project_id or scope.document_id != group.document_id
