@@ -645,42 +645,31 @@ class PostgresTestCaseStore:
     ) -> tuple[TestCaseRecord, TestCaseVersionRecord]:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT record, latest_version FROM {self._case_table} WHERE id = %s FOR UPDATE",
-                    (case_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise KeyError(f"Test case not found: {case_id}")
-                current = self._case_from_value(row["record"])
-                if current.lifecycle_status == "archived":
-                    raise ValueError(f"Test case is archived: {case_id}")
-                current = ensure_reviews(current, self._locked_versions(cur, case_id), version.created_at)
-                next_number = int(row["latest_version"]) + 1
-                stored_version = version.model_copy(update={"version": next_number})
-                stored_case = current.model_copy(
-                    update={
-                        "latest_version": next_number,
-                        "updated_at": version.created_at,
-                    }
-                )
-                stored_case = add_draft_review(stored_case, stored_version)
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._version_table} (
-                        id, case_id, version, content_hash, created_at, record
-                    ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-                    """,
-                    (
-                        stored_version.id,
-                        case_id,
-                        next_number,
-                        stored_version.content_hash,
-                        stored_version.created_at,
-                        self._json(stored_version),
-                    ),
-                )
-                self._write_case(cur, stored_case)
+                return self.append_version_in_transaction(cur, case_id, version)
+
+    def append_version_in_transaction(self, cur, case_id, version, *, expected_project_id=None,
+                                      expected_latest_version=None):
+        """Reuse version/review SQL with caller-owned business receipt transaction."""
+        cur.execute(f"SELECT record, latest_version FROM {self._case_table} WHERE id = %s FOR UPDATE", (case_id,))
+        row = cur.fetchone()
+        if not row:
+            raise KeyError(f"Test case not found: {case_id}")
+        current = self._case_from_value(row["record"])
+        if expected_project_id is not None and current.project_id != expected_project_id:
+            raise ValueError("用例项目与固定模块不同")
+        if expected_latest_version is not None and int(row["latest_version"]) != expected_latest_version:
+            raise ValueError("用例最新版本已变化，原增量候选不能自动重定基线")
+        if current.lifecycle_status == "archived":
+            raise ValueError(f"Test case is archived: {case_id}")
+        current = ensure_reviews(current, self._locked_versions(cur, case_id), version.created_at)
+        next_number = int(row["latest_version"]) + 1
+        stored_version = version.model_copy(update={"version": next_number})
+        stored_case = add_draft_review(current.model_copy(update={
+            "latest_version": next_number, "updated_at": version.created_at}), stored_version)
+        cur.execute(f"""INSERT INTO {self._version_table} (id,case_id,version,content_hash,created_at,record)
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb)""", (stored_version.id, case_id, next_number,
+            stored_version.content_hash, stored_version.created_at, self._json(stored_version)))
+        self._write_case(cur, stored_case)
         return stored_case, stored_version
 
     def _replace_case_sync(

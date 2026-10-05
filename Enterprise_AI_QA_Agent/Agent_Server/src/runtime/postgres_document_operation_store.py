@@ -117,24 +117,29 @@ class PostgresDocumentTaskStore(ABC):
                 if not doc or str(doc["project_id"]) != seed.project_id:
                     raise ValueError("文档不属于当前项目")
                 self._validate_seed(cur, seed)
-                task_id = str(uuid4())
-                columns = "".join("," + name for name in self._extra_input_columns)
-                placeholders = ",%s" * len(self._extra_input_columns)
-                values = self._input_values(seed)
-                if len(values) != len(self._extra_input_columns):
-                    raise ValueError("固定输入列与参数数量不一致")
-                cur.execute(f"""INSERT INTO {self._tasks}(id,project_id,document_id,version_id,creation_key,request_hash,seed,created_at{columns})
-                    VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,clock_timestamp(){placeholders}) RETURNING *""",
-                    (task_id, seed.project_id, seed.document_id, seed.version_id, creation_key, request_hash, seed.model_dump_json(), *values))
-                row = cur.fetchone()
-                command = self._command_type(project_id=seed.project_id, task_id=task_id)
-                cur.execute(f"INSERT INTO {self._outbox}(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)",
-                    (f"{self._event_prefix}:{task_id}", stream, command.model_dump_json()))
-                return self._record(row)
+                return self.insert_task_in_transaction(cur, seed, creation_key=creation_key,
+                    request_hash=request_hash, stream=stream)
         saved = await asyncio.to_thread(insert)
         logger.info(f"{self._log_prefix}_task_saved", extra={"project_id": saved.project_id,
             "document_id": saved.document_id, "task_id": saved.id, "version_id": saved.version_id})
         return saved
+
+    def insert_task_in_transaction(self, cur, seed, *, creation_key, request_hash, stream):
+        """Caller has validated and locked scope; task and Outbox share its transaction."""
+        task_id = str(uuid4())
+        columns = "".join("," + name for name in self._extra_input_columns)
+        placeholders = ",%s" * len(self._extra_input_columns)
+        values = self._input_values(seed)
+        if len(values) != len(self._extra_input_columns):
+            raise ValueError("固定输入列与参数数量不一致")
+        cur.execute(f"""INSERT INTO {self._tasks}(id,project_id,document_id,version_id,creation_key,request_hash,seed,created_at{columns})
+            VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,clock_timestamp(){placeholders}) RETURNING *""",
+            (task_id, seed.project_id, seed.document_id, seed.version_id, creation_key, request_hash, seed.model_dump_json(), *values))
+        row = cur.fetchone()
+        command = self._command_type(project_id=seed.project_id, task_id=task_id)
+        cur.execute(f"INSERT INTO {self._outbox}(event_key,stream,payload) VALUES(%s,%s,%s::jsonb)",
+            (f"{self._event_prefix}:{task_id}", stream, command.model_dump_json()))
+        return self._record(row)
 
     async def get_by_request(self, project_id, document_id, creation_key, *, request_hash=None):
         def read():

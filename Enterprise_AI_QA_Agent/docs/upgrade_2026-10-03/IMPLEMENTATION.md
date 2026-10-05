@@ -2594,3 +2594,38 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/u
 独立生产API/三类CLI/Outbox/MySQL/PG/Redis/RustFS/HTTP需求评审与API重启/关闭派发恢复1通过102.20秒；原影响物理POST2，原消息/对象核对另见validation。证明现有生产兼容，没有调用新增增量任务，本轮未接生产模块检查点或提交草稿。无新依赖、配置键、SQL表/列、公开路由或前端契约；不重复前端构建/浏览器、外部默认模型和生产历史迁移。
 
 原失败/通过log/XML、文件、范围、响应/候选、PG需求及生产进程证据在p4-incremental-sources-*，SHA/完整来源/消息、旧3264原文件、用户.gitignore及三份方案核对见p4-incremental-sources-validation.json。下一步查证并实施持久模块/调用unknown/原响应恢复、同事务草稿收据/Worker/API/UI，再继续运行/环境及P2/P1/P0/P5；完整P0—P5未完成。
+
+## 2026-10-05 增量持久模块、原响应与同事务草稿〔研究基线5e6cf20f〕
+
+先读取用户目标原附件、工作区和新任务设计，核对现有文档TaskStore/Worker、导入事务、用例版本锁及原接受决定/影响输入。复用共享任务插入/Outbox和版本追加SQL，配置新增MySQL键test_case.incremental_generation_settings；业务组、模块任务、检查点、草稿和收据存PG，完整范围及原响应存RustFS。7份生产源文件、新增实际测试及设计已实现；没有新依赖，也没有把生成模板带入执行。
+
+任务组与所有模块/Outbox同事务；当前project_id、原需求版本/review、固定影响输入及原case版本再次核验。每模块单独领取；意图先存，收到响应保存原件后解析。已存响应的新租约只读恢复，只有意图没有响应标unknown不重发。草稿及收据/终态同事务，更新保持原case身份和启用指针；重复编号、并发父版本冲突、行锁导致租约/总期限过期整笔回滚。移除仅形成候选，不自动停用。
+
+原首轮6通过82.42秒；扩大后8通过/1失败104.76秒。失败是新测试SQL的LIKE字面百分号触发psycopg参数语法错误，按已有参数化写法修复，失败XML/log保留。进一步研究查到真正的期限缺口：_owned只查租约，草稿等待锁后未查原deadline。用真实原case行锁/1秒总期限/30秒租约，旧行为在到期后仍完成V2：1失败、9 deselected23.62秒。原收据、对象和case V2证据保存。随后恢复修正源，发送意图/草稿事务开始/写入后均查原数据库期限；最后的期限和租约fence保证事务回滚，失败终态和原响应保留。
+
+实际执行（Agent_Server目录，stdout/stderr分别通过Tee-Object保存对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:PYTHONUNBUFFERED='1'
+$env:QA_GENERATION_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-tasks-final')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_generation_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-tasks-final.xml
+# 后增加关闭派发验收：
+$env:QA_GENERATION_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-tasks-dispatch-final')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_generation_tasks.py -q -k disabled_dispatch --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-tasks-dispatch-final.xml
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:RUN_LIVE_DOCUMENT_DIFFERENCE_TASKS='1'
+$env:RUN_LIVE_CASE_VERSION_REVIEWS='1'
+$env:RUN_LIVE_CASE_IMPORT_TESTS='1'
+$env:QA_DOCUMENT_PARSE_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-tasks-shared/parse')
+$env:QA_DOCUMENT_DIFFERENCE_TASK_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-generation-tasks-shared/difference')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_document_parse_tasks.py tests/test_document_difference_tasks.py tests/test_case_version_reviews.py tests/test_case_import_service.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-tasks-shared.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-tasks-production-compatibility.xml
+```
+
+新模块14通过168.72秒；后增关闭派发1通过/14 deselected17.76秒。当前15项实际覆盖更新/新建/移除、PG提交回执丢失、响应恢复禁止重发、实际在途取消unknown、父版本冲突、四路提交/领取、独立模块失败、租约/原期限回滚、第二条编号冲突导致整批回滚、seed替换拒绝、模型配置变化与scope/response对象真实损坏后恢复。MD/DOCX/PDF正常场景发送完整12步JSON及False/0/null/未知字段，落库草稿保留旧启用指针；仅正常三场景用了同进程Redis Worker，其他是实际租约服务，未冒充独立生产CLI。
+
+共享四模块49通过107.73秒，独立生产API/三类CLI/需求评审与关闭派发历史恢复1通过120.66秒，原影响POST2。生产命令漏设置其实际证据变量QA_IMPACT_PRODUCTION_EVIDENCE_DIR，因此先写测试临时目录；终态后从该独占fixture复制原39份文件至p4-generation-tasks-production-compatibility/md-native-finish，未重写字节。这个兼容场景没有用新增生成模块，不能当作增量产品验收。
+
+原始失败及最终对象/文件/收据/HTTP证据在p4-generation-tasks-*。旧actual_module_worker标记只表示内部执行，当前证据已分清actual_leased_module/actual_redis_worker/independent_worker_process，旧字节保留。当前新增内部任务的配置键和两张业务表需正式启动入口接入；尚未接公开API、生产生成Worker/CLI、前端DTO/页面及失败显式新任务重试。未重复外部默认模型、前端构建/浏览器或生产历史迁移；本阶段没改公开/前端契约。下一步研究并接正式产品链路，再推进运行/环境、P2/P1/P0/P5和迁移，完整目标继续未完成。

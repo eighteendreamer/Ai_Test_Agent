@@ -1,0 +1,39 @@
+......F..                                                                [100%]
+================================== FAILURES ===================================
+_______ test_actual_concurrent_group_and_claim_and_independent_failure ________
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%''
+
+The above exception was the direct cause of the following exception:
+tests\test_generation_tasks.py:275: in test_actual_concurrent_group_and_claim_and_independent_failure
+    cur.execute(f"SELECT COUNT(*) AS count FROM {store._outbox} WHERE event_key LIKE 'case-generation:%'")
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.ProgrammingError) only '%s', '%b', '%t' are allowed as placeholders, got '%''
+E   [SQL: SELECT COUNT(*) AS count FROM up_dp_ob_577753bc2aa3 WHERE event_key LIKE 'case-generation:%']
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:203 case_generation_module_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_generation_tasks.py::test_actual_concurrent_group_and_claim_and_independent_failure
+1 failed, 8 passed in 104.76s (0:01:44)

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="9" time="104.728" timestamp="2026-10-05T13:26:42.702560+08:00" hostname="EIghteen"><testcase classname="tests.test_generation_tasks" name="test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts[md]" time="12.330" /><testcase classname="tests.test_generation_tasks" name="test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts[docx]" time="9.780" /><testcase classname="tests.test_generation_tasks" name="test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts[pdf]" time="9.796" /><testcase classname="tests.test_generation_tasks" name="test_actual_group_and_draft_commit_reply_loss_recover_without_new_send" time="8.801" /><testcase classname="tests.test_generation_tasks" name="test_actual_response_commit_loss_and_new_lease_use_saved_response" time="9.047" /><testcase classname="tests.test_generation_tasks" name="test_actual_inflight_cancel_unknown_not_resent_and_parent_conflict_keeps_response" time="10.622" /><testcase classname="tests.test_generation_tasks" name="test_actual_concurrent_group_and_claim_and_independent_failure" time="9.022"><failure message="sqlalchemy.exc.ProgrammingError: (psycopg.ProgrammingError) only '%s', '%b', '%t' are allowed as placeholders, got '%''&#10;[SQL: SELECT COUNT(*) AS count FROM up_dp_ob_577753bc2aa3 WHERE event_key LIKE 'case-generation:%']&#10;(Background on this error at: https://sqlalche.me/e/20/f405)">..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%''
+
+The above exception was the direct cause of the following exception:
+tests\test_generation_tasks.py:275: in test_actual_concurrent_group_and_claim_and_independent_failure
+    cur.execute(f"SELECT COUNT(*) AS count FROM {store._outbox} WHERE event_key LIKE 'case-generation:%'")
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.ProgrammingError) only '%s', '%b', '%t' are allowed as placeholders, got '%''
+E   [SQL: SELECT COUNT(*) AS count FROM up_dp_ob_577753bc2aa3 WHERE event_key LIKE 'case-generation:%']
+E   (Background on this error at: https://sqlalche.me/e/20/f405)</failure></testcase><testcase classname="tests.test_generation_tasks" name="test_actual_case_lock_wait_expires_lease_rolls_back_draft_then_recovers" time="10.978" /><testcase classname="tests.test_generation_tasks" name="test_actual_removed_candidate_and_input_budget_do_not_send_or_disable" time="16.544" /></testsuite></testsuites>
