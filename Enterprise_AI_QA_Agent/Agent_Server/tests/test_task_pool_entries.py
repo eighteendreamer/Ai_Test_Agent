@@ -29,6 +29,7 @@ from src.application.documents.difference_service import DocumentDifferenceServi
 from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.runtime.postgres_document_difference_store import PostgresDocumentDifferenceStore
 from src.runtime.postgres_document_impact_store import PostgresDocumentImpactStore
+from src.runtime.postgres_generation_task_store import PostgresGenerationTaskStore
 
 
 @asynccontextmanager
@@ -48,7 +49,8 @@ async def pool_environment(tmp_path):
         env.parse_store = PostgresDocumentParseStore(env.settings, lease_seconds=30)
         env.difference_store = PostgresDocumentDifferenceStore(env.settings, lease_seconds=30)
         env.impact_store = PostgresDocumentImpactStore(env.settings, lease_seconds=30)
-        document_tables = [*env.impact_store.tables, *env.difference_store.tables, *env.parse_store.tables]
+        env.generation_store = PostgresGenerationTaskStore(env.settings, env.cases._store)
+        document_tables = [*env.generation_store.tables, *env.impact_store.tables, *env.difference_store.tables, *env.parse_store.tables]
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             for table in document_tables:
                 cur.execute('SELECT to_regclass(%s) AS existing', (table,))
@@ -62,6 +64,7 @@ async def pool_environment(tmp_path):
         await env.parsing.initialize()
         await env.differences.initialize()
         await env.impact_store.initialize()
+        await env.generation_store.initialize()
         try:
             # Keep this fixture import lazy so the pre-implementation API failure is observable.
             from src.runtime.postgres_task_pool_store import PostgresTaskPoolStore

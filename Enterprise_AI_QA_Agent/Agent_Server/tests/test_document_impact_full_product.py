@@ -44,7 +44,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUME
     reason='built App, production API/independent CLI, isolated actual MySQL/PG/Redis/RustFS and installed Chromium')]
 
 
-async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False):
+async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_generation_pool=False):
     evidence = Path(os.getenv('QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR', str(tmp_path / 'evidence')))
     evidence.mkdir(parents=True, exist_ok=True)
     paths = write_pair(tmp_path, 'docx')
@@ -54,8 +54,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
         payload = json.loads(body['messages'][-1]['content'])
         if verify_generation and 'incremental_generation' in payload.get('evidence_context', {}):
             from test_incremental_generation_sources import responder as generation_responder
-            if verify_coverage and payload['evidence_context']['incremental_generation']['target_case'] is None:
-                # This full coverage scenario needs a nonempty arbitrary-JSON creation sample.
+            if (verify_coverage or verify_generation_pool) and payload['evidence_context']['incremental_generation']['target_case'] is None:
+                # Coverage and pool scenarios need a nonempty arbitrary-JSON creation sample.
                 # Preserve the older scenario's empty creation fixture when coverage is disabled.
                 answer = json.loads(generation_responder(body))
                 answer['cases'][0]['content_json']['steps'] = [{'操作':f'完整步骤{i}'} for i in range(12)]
@@ -241,6 +241,11 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                     objects=objects, evidence=evidence, settings=settings, sends=sends)
                                 count = len(sends); assert count == 6
                             coverage_state = None
+                            if verify_generation_pool:
+                                from generation_pool_product_scenario import generation_pool_from_product
+                                await generation_pool_from_product(page,base=base,generation=generation_state,retries=retry_state,
+                                    get=get,evidence=evidence,settings=settings,sends=sends)
+                                assert len(sends)==count
                             if verify_coverage:
                                 from requirement_coverage_product_scenario import coverage_from_product
                                 coverage_state = await coverage_from_product(page, base=base, reviews=review_state,
@@ -307,6 +312,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             if coverage_state:
                                 from requirement_coverage_product_scenario import coverage_after_restart
                                 await coverage_after_restart(page, base=base, state=coverage_state, client=client, evidence=evidence)
+                            if verify_generation_pool:
+                                await generation_pool_from_product(page,base=base,generation=generation_state,retries=retry_state,
+                                    get=get,evidence=evidence,settings=settings,sends=sends,archived=True)
                             assert len(sends) == count and not page_errors, page_errors
                             layout = await page.evaluate('''() => ({ viewport:innerWidth, bodyWidth:document.documentElement.scrollWidth,
                                 sidebarLeft:document.querySelector('.left-nav').getBoundingClientRect().left,
@@ -335,7 +343,7 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                     'frozen_seed': frozen, 'http_calls': count, 'default_model_judgement': False,
                                     'history_after_dispatch_disabled': True, 'actual_built_app': True,
                                     'incremental_generation_product_used':verify_generation, 'generation_retry_product_used':verify_retry,
-                                    'requirement_coverage_product_used':verify_coverage})]:
+                                    'requirement_coverage_product_used':verify_coverage, 'generation_pool_product_used':verify_generation_pool})]:
                                 (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                             await page.screenshot(path=str(evidence / 'history-after-restart.png'), full_page=True)
                 finally:

@@ -23,7 +23,7 @@ class TaskPoolPage(BaseModel):
     has_more: bool = False
 
 
-TaskPoolKind = Literal["all", "session", "case_planning", "document_difference", "document_impact"]
+TaskPoolKind = Literal["all", "session", "case_planning", "document_difference", "document_impact", "case_generation"]
 TaskPoolState = Literal["all", "active", "completed", "failed"]
 
 
@@ -73,8 +73,44 @@ class TaskPoolDocumentImpactEntry(BaseModel):
     task: TaskPoolDocumentImpactSummary
 
 
+class TaskPoolGenerationRetry(BaseModel):
+    id: str
+    parent_task_id: str
+    creation_key: str
+    strategy: Literal["frozen_request", "saved_response"]
+
+
+class TaskPoolGenerationSummary(BaseModel):
+    """Directory fields only; never expose a task checkpoint or object reference."""
+    id: str
+    project_id: str
+    document_id: str
+    version_id: str
+    group_id: str
+    module_id: str
+    creation_key: str
+    status: Literal["queued", "running", "completed", "failed"]
+    phase: Literal["queued", "generating", "invoking", "response_saved", "result_saved", "finished"]
+    message: str
+    attempt_no: int
+    error_code: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    deadline_at: datetime | None = None
+    completed_at: datetime | None = None
+    result_kind: Literal["update", "create", "retirement_candidate"] | None = None
+    retry: TaskPoolGenerationRetry | None = None
+
+
+class TaskPoolGenerationEntry(BaseModel):
+    kind: Literal["case_generation"] = "case_generation"
+    project_name: str | None = None
+    document_title: str | None = None
+    task: TaskPoolGenerationSummary
+
+
 TaskPoolEntry = Annotated[
-    TaskPoolSessionEntry | TaskPoolPlanningEntry | TaskPoolDocumentDifferenceEntry | TaskPoolDocumentImpactEntry,
+    TaskPoolSessionEntry | TaskPoolPlanningEntry | TaskPoolDocumentDifferenceEntry | TaskPoolDocumentImpactEntry | TaskPoolGenerationEntry,
     Field(discriminator="kind"),
 ]
 

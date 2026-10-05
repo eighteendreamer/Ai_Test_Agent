@@ -86,4 +86,17 @@ describe("mixed task-pool page", () => {
     await w.get("select").setValue("document_impact"); await flushPromises();
     expect(api.listTaskPoolEntries).toHaveBeenLastCalledWith(24, 0, { kind: "document_impact", state: "all", query: "" }); w.unmount();
   });
+
+  it("shows fixed generation/retry relations and routes using the actual user retry key", async () => {
+    api.listTaskPoolEntries.mockResolvedValue({items:[{kind:"case_generation",project_name:"需求项目",document_title:"订单需求",task:{
+      id:"child-task",project_id:"project",document_id:"document",group_id:"fixed-group",module_id:"fixed-module",status:"completed",
+      phase:"finished",attempt_no:1,updated_at:"2026-10-06T00:00:00Z",message:"草稿已保存",result_kind:"update",
+      retry:{id:"retry-id",parent_task_id:"failed-parent",creation_key:"user-key",strategy:"saved_response"}}}],has_more:false});
+    const w=mount(TaskPoolView);await flushPromises();expect(w.text()).toContain("生成模块重试");expect(w.text()).toContain("复用已保存响应");
+    expect(w.text()).toContain("草稿或候选已保存");await w.get('button[aria-label="查看生成任务"]').trigger("click");
+    expect(push).toHaveBeenCalledWith({name:"case-generation-task",params:{projectId:"project",documentId:"document",groupId:"fixed-group",taskId:"child-task"},
+      query:{parent_task_id:"failed-parent",retry_key:"user-key"}});
+    await w.get("select").setValue("case_generation");await flushPromises();
+    expect(api.listTaskPoolEntries).toHaveBeenLastCalledWith(24,0,{kind:"case_generation",state:"all",query:""});w.unmount();
+  });
 });

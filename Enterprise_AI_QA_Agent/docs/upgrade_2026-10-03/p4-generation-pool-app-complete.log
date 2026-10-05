@@ -1,0 +1,19 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_generation_pool_fixed_details_origins_json_and_archive_after_actual_restart _
+tests\test_generation_pool_full_product.py:11: in test_generation_pool_fixed_details_origins_json_and_archive_after_actual_restart
+    await scenario(tmp_path,verify_requirements=True,verify_generation=True,verify_retry=True,verify_generation_pool=True)
+tests\test_document_impact_full_product.py:246: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    await generation_pool_from_product(page,base=base,generation=generation_state,retries=retry_state,
+tests\generation_pool_product_scenario.py:30: in generation_pool_from_product
+    await expect(browser.locator(".data-table tbody tr")).to_have_count(len(expected))
+E   AssertionError: Locator expected to have count '8'
+E   Actual value: 7 
+E   Call log:
+E     - Expect "to_have_count" with timeout 5000ms
+E     - waiting for locator(".data-table tbody tr")
+E       14 × locator resolved to 7 elements
+E          - unexpected value "7"
+=========================== short test summary info ===========================
+FAILED tests/test_generation_pool_full_product.py::test_generation_pool_fixed_details_origins_json_and_archive_after_actual_restart
+1 failed in 143.90s (0:02:23)

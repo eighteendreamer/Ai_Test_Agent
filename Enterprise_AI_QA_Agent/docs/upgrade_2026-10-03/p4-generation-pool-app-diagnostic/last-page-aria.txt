@@ -1,0 +1,334 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Document Difference
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - heading "历史文档比较" [level=2]
+  - link "返回任务池":
+    - /url: /taskpool
+  - article "比较任务详情":
+    - paragraph: 项目：25ff3a14-ccca-4336-a352-ddb11d2794a6 · 文档：bf1bdf9a-386d-51d1-bf77-ba387c454fb8
+    - paragraph: 比较任务：d6cc7383-fa0a-4c11-9649-09dfbc7107ce
+    - button "刷新比较任务"
+    - status: 比较结果已保存 · 比较结果已保存 · 第 1 次领取
+    - paragraph: 旧侧解析快照：d0e7380c-ba4d-4c43-a74d-1053fbd58a81 → 新侧解析快照：a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0
+    - article "比较结果详情":
+      - heading "固定文档差异 · 比较已保存" [level=3]
+      - paragraph: 比较结果：ec827e74-001a-45c8-b070-a8afc7379c3e · SHA256：e54ac64c28b08eb8de80f4f204a9e357b6f3c1e379fad172e29934d7f3f16cf7
+      - region "旧侧固定来源":
+        - heading "旧侧" [level=4]
+        - paragraph: 原件版本：8c437a12-bcce-494b-b2cc-8424acc5b4fb
+        - paragraph: 解析快照：d0e7380c-ba4d-4c43-a74d-1053fbd58a81
+        - paragraph: 原件 SHA256：6bb4a6adad3e420906ed63d14b2ededfe8ed27b418c52c75aa360d991e8ef09e
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - region "新侧固定来源":
+        - heading "新侧" [level=4]
+        - paragraph: 原件版本：63cc835f-a522-4a71-a28d-73363956ec9f
+        - paragraph: 解析快照：a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0
+        - paragraph: 原件 SHA256：6fe458ae04179cfc90d50a5212cc2a80a88acf2712d677c542073a96ba4f63d9
+        - paragraph: 解析器：docx lightweight-v1
+        - group: 解析选项与依赖版本
+      - paragraph: 原始文本 1 · 换行归一文本 1 · 章节 0 · 表格 1
+      - list:
+        - listitem: 双方 · extracted_text_positions · 字符位置属于解析抽取文本；源行、DOCX路径及PDF页码沿用解析器，不表示原件字符坐标或完整格式差异
+        - listitem: 旧侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+        - listitem: 新侧 · docx_layout_scope · 仅提取正文段落与表格；页码、页眉页脚、脚注、批注及视觉布局不在本解析器能力内。
+      - text: 文本差异视图
+      - combobox "文本差异视图":
+        - option "原始抽取文本" [selected]
+        - option "仅归一换行"
+      - paragraph: 字符位置指向原始抽取文本；换行归一保留空格、缩进、数字和 Unicode。
+      - region "文本变化 1":
+        - heading "修改 1" [level=4]
+        - strong: 旧侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 7 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - strong: 新侧 · 抽取文本字符 [26, 34) · 第 4—4 行
+        - text: 有效期 9 天
+        - list:
+          - listitem: block-3 · word/document.xml · 正文/表格位置 2
+        - group: 字符变化（1）
+      - group: 章节变化（0）
+      - group: 表格变化（1）
+      - group: 固定比较策略与实际资源预算
+      - button "下载完整比较结果 JSON"
+    - region "文档影响分析入口":
+      - heading "分析文档变化对用例的影响" [level=4]
+      - paragraph: 当前固定比较结果：ec827e74-001a-45c8-b070-a8afc7379c3e
+      - paragraph: 分析完整用例、当时编写来源与新旧差异；保存候选供评审，不直接改变启用版本或执行测试。
+      - group:
+        - text: 影响分析用例范围
+        - combobox "影响分析用例范围":
+          - option "项目非归档用例的启用版本与最新草稿" [selected]
+          - option "选择具体用例版本"
+        - text: 本次模型配置编号（留空使用项目设置）
+        - textbox "本次影响模型"
+        - text: 环境声明
+        - textbox "影响环境声明"
+        - text: 目标发布版本声明
+        - textbox "影响发布版本声明"
+        - paragraph: 环境及发布版本仅为声明；当前环境是否生效仍需核实。
+        - button "提交固定影响分析"
+      - group: 项目影响分析设置
+      - paragraph: 影响请求编号：c3a40b58-ab26-4aab-b1ab-e92f35de2f06
+      - paragraph: 本请求固定比较：ec827e74-001a-45c8-b070-a8afc7379c3e
+      - button "查询上次影响提交"
+      - group: 影响任务历史（1）
+      - group: 已保存影响结果（1）
+      - article "影响任务详情":
+        - paragraph: 项目：25ff3a14-ccca-4336-a352-ddb11d2794a6 · 文档：bf1bdf9a-386d-51d1-bf77-ba387c454fb8
+        - paragraph: 影响任务：592862c5-4ef2-40bd-bafc-73f7e1aa1b14
+        - button "刷新影响任务"
+        - status: 影响结果已保存 · 分组影响候选已保存，业务判断待评审 · 第 1 次领取
+        - paragraph: 固定比较结果：ec827e74-001a-45c8-b070-a8afc7379c3e · 原件版本：63cc835f-a522-4a71-a28d-73363956ec9f
+        - article "影响结果详情":
+          - heading "固定影响结果 · 部分结果" [level=3]
+          - paragraph: 结果：fd94763d-5bde-4137-b179-0bc440ea8e35 · SHA256：684b8c188fe98a35740ac6d9f05dafe864c87d14dba69715ff8ca4e7a21bbf2c
+          - paragraph: 语义结论待评审 · 当前环境是否生效未知
+          - paragraph: 已分析 6 / 6 个单元 · 1 条规则候选
+          - region "固定推理任务":
+            - paragraph: 1 个文档发现任务 · 5 个证据项 · 1 个完整用例判断
+            - group: 固定分组、原始处理声明和计划依据
+          - paragraph: 固定输入：ec67ddf4091d3d61ab2adee674b04c2bccc97ff8a679d7e5e0a64adda5e8c93b · 固定范围：d39f8dc0196bfddf0d084aa4a4a9c99b37137fc7096fca82739a32382f04d3eb
+          - region "影响依据限制":
+            - heading "依据限制" [level=4]
+            - list:
+              - listitem: source_warning:parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:docx_layout_scope
+              - listitem: source_warning:parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:docx_layout_scope
+              - listitem: difference_warning:extracted_text_positions
+              - listitem: difference_warning:docx_layout_scope
+              - listitem: difference_warning:docx_layout_scope
+          - heading "文档规则变化候选" [level=4]
+          - region "规则候选 f6507f91095afe65d40e0b00b468b4497eb0b716509940d657fdb6b6d858863a":
+            - heading "修改候选 · 订单保留7天调整为9天" [level=5]
+            - paragraph: 固定新旧原文的期限不同
+            - paragraph: 候选编号：f6507f91095afe65d40e0b00b468b4497eb0b716509940d657fdb6b6d858863a · 来源 1 处
+            - paragraph: 适用性建议：当前环境（待核实）
+            - list:
+              - listitem:
+                - paragraph: 原文来源 parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81 · 字符 [0, 34) · 2f241c6ecc3fa46213448ed9be113bb078b270c307e6d7c77ed7bf39e2c19e6c
+                - blockquote: 订单查询 订单详情需要有效订单 ID。 字段 约束 有效期 7 天
+              - listitem:
+                - paragraph: 原文来源 parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0 · 字符 [0, 34) · ae4ea45b1ffe71a9e50b5214385a45244947d0c54be69720d72a8bb7f0c2576c
+                - blockquote: 订单查询 订单详情需要有效订单 ID。 字段 约束 有效期 9 天
+            - list:
+              - listitem: 部署生效状态未核实
+            - group: 候选原始记录与来源
+          - heading "用例判断与完整处理范围" [level=4]
+          - region "影响单元 parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:0:34":
+            - heading "文档分段 · 已分析" [level=5]
+            - paragraph: parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:0:34
+            - paragraph: 处理说明：已完整对照第1项，仍需评审
+            - list
+            - group: 本单元调用与核验记录
+          - region "影响单元 parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:0:34":
+            - heading "文档分段 · 已分析" [level=5]
+            - paragraph: parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:0:34
+            - paragraph: 处理说明：已完整对照第2项，仍需评审
+            - list
+            - group: 本单元调用与核验记录
+          - region "影响单元 raw:0":
+            - heading "差异 · 已分析" [level=5]
+            - paragraph: raw:0
+            - paragraph: 处理说明：已完整对照第3项，仍需评审
+            - list
+            - group: 本单元调用与核验记录
+          - region "影响单元 normalized:0":
+            - heading "差异 · 已分析" [level=5]
+            - paragraph: normalized:0
+            - paragraph: 处理说明：已完整对照第4项，仍需评审
+            - list
+            - group: 本单元调用与核验记录
+          - region "影响单元 table:0":
+            - heading "差异 · 已分析" [level=5]
+            - paragraph: table:0
+            - paragraph: 处理说明：已完整对照第5项，仍需评审
+            - list
+            - group: 本单元调用与核验记录
+          - region "影响单元 4d792346-689d-454b-a778-8f2332c2d4f4":
+            - heading "用例 · 已分析" [level=5]
+            - paragraph: 4d792346-689d-454b-a778-8f2332c2d4f4
+            - list
+            - paragraph: 规则 f6507f91095afe65d40e0b00b468b4497eb0b716509940d657fdb6b6d858863a · 订单保留7天调整为9天
+            - heading "重大影响候选 · 用例版本 4d792346-689d-454b-a778-8f2332c2d4f4" [level=5]
+            - paragraph: 用例仍预期7天
+            - list:
+              - listitem: 验证点：保留期限边界
+            - group:
+              - text: 固定用例字段引用
+              - paragraph: content_json · 路径 ["目标"] · 版本 4d792346-689d-454b-a778-8f2332c2d4f4
+              - text: "\"验证订单保留7天\""
+              - paragraph: content_json · 路径 ["steps",11,"操作"] · 版本 4d792346-689d-454b-a778-8f2332c2d4f4
+              - text: "\"完整步骤11\""
+              - paragraph: content_json · 路径 ["深层扩展","布尔"] · 版本 4d792346-689d-454b-a778-8f2332c2d4f4
+              - text: "false"
+              - paragraph: content_json · 路径 ["深层扩展","零"] · 版本 4d792346-689d-454b-a778-8f2332c2d4f4
+              - text: "0"
+              - paragraph: content_json · 路径 ["深层扩展","空"] · 版本 4d792346-689d-454b-a778-8f2332c2d4f4
+              - text: "null"
+            - group: 本单元调用与核验记录
+          - group: 冻结依据、配置与模型声明
+          - button "下载完整影响结果 JSON"
+          - button "收起需求评审与追踪"
+          - region "需求评审与追踪":
+            - heading "需求评审与追踪" [level=4]
+            - paragraph: 固定影响结果：fd94763d-5bde-4137-b179-0bc440ea8e35。评审保存需求与明确设计关联，不自动启用用例或执行测试。
+            - button "刷新需求与评审历史"
+            - group:
+              - text: 选择规则候选
+              - combobox "选择规则候选":
+                - option "订单保留7天调整为9天" [selected]
+              - region "所选规则依据":
+                - paragraph: 固定新旧原文的期限不同
+                - blockquote: 订单查询 订单详情需要有效订单 ID。 字段 约束 有效期 7 天
+                - blockquote: 订单查询 订单详情需要有效订单 ID。 字段 约束 有效期 9 天
+                - paragraph: 最新评审：第 6 次 · 4aec9b01-919b-4846-824c-adb1642b72a8 · accept
+                - paragraph: 依据限制：source_warning:parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:docx_layout_scope、source_warning:parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:docx_layout_scope、difference_warning:extracted_text_positions、difference_warning:docx_layout_scope、difference_warning:docx_layout_scope · 当前环境是否生效未知
+              - text: 评审决定
+              - combobox "评审决定":
+                - option "接受为正式需求" [selected]
+                - option "拒绝候选"
+                - option "暂缓评审"
+              - text: 关联需求
+              - combobox "关联需求":
+                - option "新建需求" [selected]
+                - option "正式订单保留期限 · V3 · d478add1-9b67-4fe4-8940-6fd32e5b824d"
+              - text: 需求变化分类
+              - combobox "需求变化分类":
+                - option "新增"
+                - option "修改" [selected]
+                - option "移除"
+              - text: 需求标题
+              - textbox "需求标题": 订单保留7天调整为9天
+              - text: 需求正文
+              - textbox "需求正文": 订单保留7天调整为9天
+              - region "验证点与用例关联":
+                - heading "验证点与明确用例关联" [level=5]
+                - paragraph: 旧版本关联不会自动复制。AI影响等级是建议；请核对具体用例是否能验证本版需求。
+                - button "添加验证点"
+              - text: 评审理由
+              - textbox "评审理由"
+              - button "保存需求评审"
+            - group: 该影响结果的评审历史（6）
+            - text: 查看需求矩阵
+            - combobox "查看需求矩阵":
+              - option "请选择需求" [selected]
+              - option "正式订单保留期限 · V3"
+            - button "收起需求增量生成"
+            - region "需求增量生成":
+              - heading "从确认需求增量生成" [level=4]
+              - paragraph: 选择固定需求版本及原用例基线。结果保存为待评审草稿或停用候选，当前启用版本继续保留。
+              - group "项目增量生成设置":
+                - text: 项目增量生成设置
+                - paragraph: 修改只影响新提交；原组继续使用固定策略。输入容量使用字节和估算量，不表示精确Token计量。
+                - group:
+                  - text: 生成任务总超时（秒）
+                  - spinbutton "生成任务总超时（秒）": "600"
+                  - text: 生成单次调用超时（秒）
+                  - spinbutton "生成单次调用超时（秒）": "30"
+                  - text: 生成完整输入字节上限
+                  - spinbutton "生成完整输入字节上限": "1"
+                  - text: 生成原响应字节上限
+                  - spinbutton "生成原响应字节上限": "8000000"
+                  - text: 生成消息封装预留估算量
+                  - spinbutton "生成消息封装预留估算量": "1024"
+                  - text: 生成请求发送策略
+                  - combobox "生成请求发送策略":
+                    - option "使用提供商默认策略"
+                    - option "单次发送（SDK不重试）" [selected]
+                  - paragraph: 配置来源：25ff3a14-ccca-4336-a352-ddb11d2794a6 · 修订 6
+                  - button "保存生成设置"
+                - status: 项目生成设置已保存，仅影响后续新提交。
+              - group:
+                - text: 生成依据需求版本
+                - combobox "生成依据需求版本":
+                  - option "请选择接受决定"
+                  - option "正式订单保留期限 · V1 · b37da13a-4037-4d28-9c22-27e1a75307a4" [selected]
+                  - option "正式订单保留期限 · V2 · 1a88a8dd-3440-491e-888a-01dcf75f8ed0"
+                  - option "正式订单保留期限 · V3 · 37752c98-a576-4be1-b9c3-d592477daea8"
+                - paragraph: 订单记录保留9天。
+                - paragraph: 固定需求：b37da13a-4037-4d28-9c22-27e1a75307a4 · 原评审：f4e06e03-22d0-4f3e-a74d-2751b77d1460
+                - paragraph: 依据限制：source_warning:parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:docx_layout_scope、source_warning:parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:docx_layout_scope、difference_warning:extracted_text_positions、difference_warning:docx_layout_scope、difference_warning:docx_layout_scope · 当前环境是否生效未知
+                - heading "原影响快照中的用例版本" [level=5]
+                - paragraph: 更新保留原用例身份；选择基线不按测试模式过滤。
+                - checkbox "生成基线 4d792346-689d-454b-a778-8f2332c2d4f4" [checked]
+                - text: retention · 验证保留期限 · 固定版本 4d792346-689d-454b-a778-8f2332c2d4f4
+                - button "读取生成基线 retention"
+                - checkbox "增量新建用例"
+                - text: 同时为新增覆盖生成用例草稿 生成模型配置编号（可选）
+                - textbox "生成模型配置编号":
+                  - /placeholder: 留空使用当前生成默认模型
+                  - text: controlled-impact-product
+                - button "提交固定增量生成"
+              - status: 生成提交已确认：23ee41fa-127a-40d5-8cc7-aa3553b2cf3e。模块结果与草稿评审分别查看。
+              - region "文档增量生成历史":
+                - heading "文档生成历史" [level=5]
+                - button "刷新生成历史"
+                - paragraph: 2026-10-05T17:18:55.252338Z · 23ee41fa-127a-40d5-8cc7-aa3553b2cf3e · 1 个模块
+                - button "查看生成组 23ee41fa-127a-40d5-8cc7-aa3553b2cf3e"
+                - paragraph: 2026-10-05T17:18:35.023338Z · eec2aa55-489d-4115-8dcf-8649e4fa9eb4 · 1 个模块
+                - button "查看生成组 eec2aa55-489d-4115-8dcf-8649e4fa9eb4"
+                - paragraph: 2026-10-05T17:18:29.780440Z · b0bcc992-3920-4b50-b32e-97a9c7d39330 · 1 个模块
+                - button "查看生成组 b0bcc992-3920-4b50-b32e-97a9c7d39330"
+                - paragraph: 2026-10-05T17:18:09.620692Z · 6763e96c-3df9-4e10-bf32-e8c1366c5ab6 · 2 个模块
+                - button "查看生成组 6763e96c-3df9-4e10-bf32-e8c1366c5ab6"
+              - region "固定增量生成结果":
+                - heading "固定生成组 23ee41fa-127a-40d5-8cc7-aa3553b2cf3e" [level=5]
+                - paragraph: 依据需求V1 · b37da13a-4037-4d28-9c22-27e1a75307a4 · 订单记录保留9天。
+                - paragraph: 固定范围SHA256：4df2b262f3f4d2890a7eafabbeec59edfee334e0eb533e667904253a015d3aa9 · 配置修订 5
+                - paragraph: source_warning:parse:d0e7380c-ba4d-4c43-a74d-1053fbd58a81:docx_layout_scope、source_warning:parse:a98d2f3a-1b1c-4ec8-be08-9d65b1add7c0:docx_layout_scope、difference_warning:extracted_text_positions、difference_warning:docx_layout_scope、difference_warning:docx_layout_scope · 当前环境是否生效未知
+                - button "刷新当前生成结果"
+                - region "生成模块 5c4a4cc7-e48f-4f13-a545-3a1037d8703e":
+                  - paragraph: 更新用例草稿 · 模块失败
+                  - paragraph: 模块未提交草稿：response_validation_rejected；固定输入和已存响应保留
+                  - paragraph: response_validation_rejected
+                  - group: 完整模块状态与提交收据
+                  - button "读取原生成响应 c2aa5f47-903c-4ca9-aa27-dac0788de5d4"
+                  - region "模块重试 c2aa5f47-903c-4ca9-aa27-dac0788de5d4":
+                    - heading "失败模块的新任务" [level=5]
+                    - paragraph: 原失败任务：c2aa5f47-903c-4ca9-aa27-dac0788de5d4。原记录与固定范围保留，新任务结果单独查看。
+                    - paragraph: 新任务将复用已保存响应，不再次调用模型。
+                    - button "为失败模块创建新任务 c2aa5f47-903c-4ca9-aa27-dac0788de5d4"
+                    - status: 重试提交已确认：80215cd9-3a29-4ef1-9dc9-401c2069a668。原失败任务继续保留。
+                    - button "刷新模块重试历史 c2aa5f47-903c-4ca9-aa27-dac0788de5d4"
+                    - region "重试任务 80215cd9-3a29-4ef1-9dc9-401c2069a668":
+                      - paragraph: 重试草稿或候选已保存 · 80215cd9-3a29-4ef1-9dc9-401c2069a668
+                      - paragraph: 草稿或停用候选已保存，待评审 ·
+                      - paragraph: 策略：复用原持久响应 · 配置修订 6
+                      - paragraph: 结果仍需评审，不表示测试通过或需求已部署。
+                      - button "刷新重试任务 80215cd9-3a29-4ef1-9dc9-401c2069a668"
+                      - paragraph: 重试草稿 50b53261-90fc-4735-809c-76c8e1c99a07 · V5 · e3ba62f0-3864-42ef-a1c1-fd7d25abd84a
+                      - button "读取完整重试草稿 e3ba62f0-3864-42ef-a1c1-fd7d25abd84a"
+                      - group: 完整重试草稿 JSON 与自身说明
+                      - button "下载重试草稿 e3ba62f0-3864-42ef-a1c1-fd7d25abd84a"
+                      - group: 完整重试关系、状态与收据
+                      - button "下载重试关系与结果 80215cd9-3a29-4ef1-9dc9-401c2069a668"
+                      - button "读取重试原响应 80215cd9-3a29-4ef1-9dc9-401c2069a668"
+                      - group: 完整重试原响应
+                      - button "下载重试原响应 80215cd9-3a29-4ef1-9dc9-401c2069a668"
+                - group: 完整固定生成范围与请求
+                - button "下载完整生成范围 JSON"
+  - text: ">_ 运行时事件控制台 idle "

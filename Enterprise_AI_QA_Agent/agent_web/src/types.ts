@@ -832,14 +832,19 @@ export interface TaskPoolPage {
   has_more: boolean;
 }
 
-export type TaskPoolKind = "all" | "session" | "case_planning" | "document_difference" | "document_impact";
+export type TaskPoolKind = "all" | "session" | "case_planning" | "document_difference" | "document_impact" | "case_generation";
 export type TaskPoolState = "all" | "active" | "completed" | "failed";
 export type TaskPoolEntry =
   | { kind: "session"; project_name: string | null; session: TaskPoolSessionSummary }
   | { kind: "case_planning"; project_name: string | null; task: CasePlanningTaskRecord }
   | { kind: "document_difference"; project_name: string | null; document_title: string | null; task: DocumentDifferenceTaskRecord }
   | { kind: "document_impact"; project_name: string | null; document_title: string | null;
-      task: Omit<import("./services/documentImpacts.types").DocumentImpactTaskRecord, "input_checkpoint" | "failure_artifact"> };
+      task: Omit<import("./services/documentImpacts.types").DocumentImpactTaskRecord, "input_checkpoint" | "failure_artifact"> }
+  | { kind: "case_generation"; project_name: string | null; document_title: string | null;
+      task: Omit<import("./services/caseGeneration.types").GenerationTask, "checkpoint"> & {
+        result_kind: import("./services/caseGeneration.types").GenerationModuleKind | null;
+        retry: { id: string; parent_task_id: string; creation_key: string; strategy: "frozen_request" | "saved_response" } | null;
+      } };
 export interface TaskPoolEntriesPage {
   items: TaskPoolEntry[];
   limit: number;

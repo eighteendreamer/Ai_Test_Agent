@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="143.898" timestamp="2026-10-06T01:06:23.362731+08:00" hostname="EIghteen"><testcase classname="tests.test_generation_pool_full_product" name="test_generation_pool_fixed_details_origins_json_and_archive_after_actual_restart" time="140.041"><failure message="AssertionError: Locator expected to have count '8'&#10;Actual value: 7 &#10;Call log:&#10;  - Expect &quot;to_have_count&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;.data-table tbody tr&quot;)&#10;    14 × locator resolved to 7 elements&#10;       - unexpected value &quot;7&quot;">tests\test_generation_pool_full_product.py:11: in test_generation_pool_fixed_details_origins_json_and_archive_after_actual_restart
+    await scenario(tmp_path,verify_requirements=True,verify_generation=True,verify_retry=True,verify_generation_pool=True)
+tests\test_document_impact_full_product.py:246: in test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download
+    await generation_pool_from_product(page,base=base,generation=generation_state,retries=retry_state,
+tests\generation_pool_product_scenario.py:30: in generation_pool_from_product
+    await expect(browser.locator(".data-table tbody tr")).to_have_count(len(expected))
+E   AssertionError: Locator expected to have count '8'
+E   Actual value: 7 
+E   Call log:
+E     - Expect "to_have_count" with timeout 5000ms
+E     - waiting for locator(".data-table tbody tr")
+E       14 × locator resolved to 7 elements
+E          - unexpected value "7"</failure></testcase></testsuite></testsuites>

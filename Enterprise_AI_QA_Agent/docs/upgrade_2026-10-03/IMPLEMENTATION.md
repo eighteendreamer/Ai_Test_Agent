@@ -2842,3 +2842,35 @@ $env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Age
 源码核对基线5966d833。本次仅更新PLAN正文及附件/选中计划两份副本，不继续实现功能。修正首页基线和5.1旧进度，区分普通文档生成与已验P4增量模块，按实际PG查询/生成组/模块/重试关系和前端路由补充待实施的任务池入口方案；模板、简单补全、上传独立于Git及轻量解析约定保留。
 
 实际执行plan_sync_20261006_current.py：三份计划逐字节一致、本地链接存在、五份历史XML计数与成功状态核对、用户.gitignore hash不变；另执行git diff --check及暂存范围检查。历史XML核对不算本次功能测试；未重新运行后端/前端/浏览器/模型，未迁移数据。历史证据不改写；审计保存在p4-plan-current-sync-validation.json，只提交本次方案/实施记录/审计，不推送或建PR。
+
+## 2026-10-06 增量生成任务池与固定详情
+
+
+重新读取目标附件，核对任务池联合分页、生成/重试权威表、固定读取及本地课程后实施。新增公开case_generation类型和白名单摘要，前后端消费方同步；固定详情复用现有生成/重试API和JSON树，不增加依赖、配置键或业务表。MySQL配置、PG业务和RustFS原件/大依据职责保持。
+
+真实MD/DOCX/PDF上传、解析/比较进程、影响及生成/重试形成实际记录。最终新目录专项和旧四类兼容 **10通过、0跳过（46.58秒）**；另外旧任务池首轮5通过。验证queued/running/completed/failed、字面量搜索、项目/状态筛选、稳定分页、两种重试关系、终态不重领、归档与重建读取。实际发送取消后租约恢复保留unknown，不创建新重试或额外发送。最终组件 **108通过、0跳过，9文件**，包括15项新固定详情场景、旧任务池/生成/重试/需求/覆盖/评审/API。
+
+失败原样保留：测试夹具将checkpoint赋空触发TS2322，改为正式类型；浏览器owned context不能新增page，改显式独立context。分页测试误改业务更新时间，改为创建同时间会话而不改冻结任务历史，最终10项通过。完整App先错误要求8条任务；转用真实存储的独立浏览器诊断（4及8条均通过），再保存正式App响应与DOM，确认同为7条，任务身份无遗漏。8份来源引用中原失败任务出现两次，验收按唯一身份计7；此前“API8条/DOM7条”判断已纠正。最后一次URL即时断言在异步导航完成前失败131.99秒，按项目已有expect.to_have_url等待实际路由，保留原失败。
+
+最终正式DOCX built App、独立生产API/解析/比较/影响/生成CLI及MySQL/PG/Redis/RustFS **1通过、0跳过（169.57秒）**。任务池读取7个唯一任务、8份来源引用；进入正常/失败/停用/两策略子任务六项详情，查看完整草稿/自身说明/原响应，再刷新URL。API重启关闭派发、归档后重复读取同一PG任务/关系及完整历史，禁新重试。全过程6次物理模型发送，列表/导航/恢复0次新发送；原失败与unknown不重写。截图、DOM、响应及SQL留存。
+
+旧正式增量App单独 **1通过、0跳过（111.36秒）**，池场景开关关闭，仍原4次发送，未采用新增完整创建夹具。实际构建由两次正式App harness完成，8个受影响Python文件py_compile及diff检查另作补充。所有失败/log/XML/原件/对象/消息/截图在p4-generation-pool-*；审计见p4-generation-pool-validation.json，5953份旧原始证据不改写，三份方案同步，用户.gitignore保持。
+
+受控模型验证流程和固定依据，未调用外部默认生成模型、执行生产历史迁移或代替用户业务评审。运行/环境/回归闭环及P2/P1/P0/P5剩余目标未完成，完整目标保持active。
+
+实际命令：
+
+```powershell
+# Agent_Server目录，输出分别保存同名前缀log：
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS="1"
+$env:RUN_LIVE_TASK_POOL="1"
+$env:QA_GENERATION_TASK_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-pool-live-delivery"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_task_pool_generations.py tests/test_task_pool_entries.py tests/test_task_pool_service.py tests/test_task_pool_document_differences.py tests/test_task_pool_document_impacts.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-pool-live-delivery.xml
+# 各完整App轮次使用独立QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR：
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT="1"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_generation_pool_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-pool-app-navigation.xml
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_generation_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-pool-app-compatibility.xml
+# agent_web组件命令完整保存在p4-generation-pool-components-verified.log。
+```
+
+交付审计首轮把实际SQL映射行按JSON对象读取失败：原诊断使用default=str保留了UUID行的repr；改为仅识别UUID字面量并用ast.literal_eval读取原数据，不执行原文。随后直接重算浏览器JSON.stringify文本的hash失败：浏览器将30.0呈现为30，不能用展示文本重算Python固定版本hash。改为从实际API保存的完整版本核验canonical hash，再逐值核对页面JSON；没有修改历史hash、SQL记录或原证据。最终5953份旧证据与683份新原始文件核验通过，两种App实际请求分别6次及4次，三份方案和用户.gitignore同时核对。

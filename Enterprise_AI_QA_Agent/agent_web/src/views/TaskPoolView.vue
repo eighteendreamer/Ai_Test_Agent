@@ -29,16 +29,20 @@ const tabs = computed(() => [
 ]);
 function data(row: TaskPoolEntry) { return row.kind === "session" ? row.session : row.task; }
 function title(row: TaskPoolEntry) {
+  if (row.kind === "case_generation") return row.document_title || t("taskpool.kind_generation");
   return row.kind === "session" ? row.session.title : row.kind === "document_difference" || row.kind === "document_impact"
     ? row.document_title || t(row.kind === "document_impact" ? "taskpool.kind_impact" : "taskpool.kind_difference") : t("taskpool.kind_planning");
 }
-function parent(row: TaskPoolEntry) { return row.kind === "session" ? row.session.parent_session_id : ""; }
+function parent(row: TaskPoolEntry) { return row.kind === "session" ? row.session.parent_session_id
+  : row.kind === "case_generation" ? row.task.retry?.parent_task_id || "" : ""; }
 function active(row: TaskPoolEntry) { return ["queued", "running", "waiting_approval"].includes(data(row).status); }
 function statusLabel(row: TaskPoolEntry): string {
   const status = data(row).status;
   if (row.kind === "case_planning" && status === "completed") return t("taskpool.status_planned");
   if (row.kind === "document_difference" && status === "completed") return t("taskpool.status_compared");
   if (row.kind === "document_impact" && status === "completed") return t("taskpool.status_impact_saved");
+  if (row.kind === "case_generation" && status === "completed") return t(row.task.result_kind === "retirement_candidate"
+    ? "taskpool.status_retirement_saved" : "taskpool.status_generation_saved");
   const keys: Record<string, string> = { queued: "queued", waiting_approval: "waiting_approval", completed: "completed",
     failed: "failed", running: "running", interrupted: "interrupted", idle: "idle" };
   return t(`taskpool.status_${keys[status] || "idle"}`);
@@ -47,11 +51,13 @@ function taskKind(row: TaskPoolEntry): string {
   if (row.kind === "case_planning") return t("taskpool.kind_planning");
   if (row.kind === "document_difference") return t("taskpool.kind_difference");
   if (row.kind === "document_impact") return t("taskpool.kind_impact");
+  if (row.kind === "case_generation") return t(row.task.retry ? "taskpool.kind_generation_retry" : "taskpool.kind_generation");
   return t(row.session.session_mode === "background_task" ? "taskpool.kind_child" : "taskpool.kind_parent");
 }
 function modeLabel(row: TaskPoolEntry): string {
   if (row.kind === "document_difference") return t(`taskpool.difference_phase_${row.task.phase}`);
   if (row.kind === "document_impact") return t(`taskpool.impact_phase_${row.task.phase}`);
+  if (row.kind === "case_generation") return t(`taskpool.generation_phase_${row.task.phase}`);
   if (row.kind === "case_planning") {
     const phases = ["retrieval", "ready", "invoking", "response", "query", "finished"];
     return phases.includes(row.task.phase) ? t(`taskpool.phase_${row.task.phase}`) : row.task.phase;
@@ -61,7 +67,7 @@ function modeLabel(row: TaskPoolEntry): string {
   return row.session.mode_key;
 }
 function workerStats(row: TaskPoolEntry): string {
-  if (row.kind === "document_difference" || row.kind === "document_impact") return `${t("taskpool.attempt_count")} ${row.task.attempt_no}`;
+  if (row.kind === "document_difference" || row.kind === "document_impact" || row.kind === "case_generation") return `${t("taskpool.attempt_count")} ${row.task.attempt_no}`;
   if (row.kind === "case_planning") return `${t("taskpool.round_count")} ${row.task.round_count}`;
   const workers = row.session.worker_dispatches;
   if (!workers.length) return t("taskpool.no_dispatch_records");
@@ -73,6 +79,10 @@ function workerStats(row: TaskPoolEntry): string {
 function openTask(row: TaskPoolEntry) {
   if (row.kind === "case_planning") {
     void router.push({ name: "project-detail", params: { projectId: row.task.project_id }, query: { planning_task_id: row.task.id } });
+  } else if (row.kind === "case_generation") {
+    void router.push({ name: "case-generation-task", params: { projectId: row.task.project_id,
+      documentId: row.task.document_id, groupId: row.task.group_id, taskId: row.task.id },
+      query: row.task.retry ? { parent_task_id: row.task.retry.parent_task_id, retry_key: row.task.retry.creation_key } : {} });
   } else if (row.kind === "document_difference" || row.kind === "document_impact") {
     void router.push({ name: row.kind === "document_impact" ? "document-impact" : "document-difference", params: {
       projectId: row.task.project_id, documentId: row.task.document_id, taskId: row.task.id,
@@ -83,6 +93,7 @@ function openTask(row: TaskPoolEntry) {
 }
 function actionLabel(row: TaskPoolEntry) {
   return t(row.kind === "session" ? "taskpool.open_report"
+    : row.kind === "case_generation" ? "taskpool.open_generation"
     : row.kind === "document_difference" ? "taskpool.open_difference"
       : row.kind === "document_impact" ? "taskpool.open_impact" : "taskpool.open_planning");
 }
@@ -128,7 +139,7 @@ onUnmounted(() => { disposed = true; generation++; if (searchTimer) clearTimeout
       <div class="task-toolbar">
         <div class="task-tabs"><button v-for="tab in tabs" :key="tab.id" class="tab-btn" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button></div>
         <div class="task-filters">
-          <select v-model="kind" :aria-label="t('taskpool.col_type')"><option value="all">{{ t("taskpool.kind_all") }}</option><option value="session">{{ t("taskpool.kind_session") }}</option><option value="case_planning">{{ t("taskpool.kind_planning") }}</option><option value="document_difference">{{ t("taskpool.kind_difference") }}</option><option value="document_impact">{{ t("taskpool.kind_impact") }}</option></select>
+          <select v-model="kind" :aria-label="t('taskpool.col_type')"><option value="all">{{ t("taskpool.kind_all") }}</option><option value="session">{{ t("taskpool.kind_session") }}</option><option value="case_planning">{{ t("taskpool.kind_planning") }}</option><option value="document_difference">{{ t("taskpool.kind_difference") }}</option><option value="document_impact">{{ t("taskpool.kind_impact") }}</option><option value="case_generation">{{ t("taskpool.kind_generation") }}</option></select>
           <span class="filter-pill">{{ t("taskpool.page_number", { number: String(offset / pageSize + 1) }) }}</span>
         </div>
       </div>
@@ -138,10 +149,10 @@ onUnmounted(() => { disposed = true; generation++; if (searchTimer) clearTimeout
         <table class="data-table">
           <thead><tr><th class="col-id">{{ t("taskpool.col_session") }}</th><th class="col-name">{{ t("taskpool.col_title") }}</th><th class="col-type">{{ t("taskpool.col_type") }}</th><th class="col-model">{{ t("taskpool.col_agent_mode") }}</th><th class="col-status">{{ t("taskpool.col_status") }}</th><th class="col-stats">{{ t("taskpool.col_stats") }}</th><th class="col-actions align-right">{{ t("taskpool.col_actions") }}</th></tr></thead>
           <tbody><tr v-for="row in rows" :key="`${row.kind}:${data(row).id}`" :data-task-id="data(row).id" :class="{ 'row-active': active(row), 'row-error': data(row).status === 'failed' }">
-            <td class="col-id mono strong" :title="data(row).id">{{ data(row).id.slice(0, 8) }}<div v-if="parent(row)" class="sub-meta">{{ t("taskpool.parent_session") }}={{ parent(row).slice(0, 8) }}</div></td>
+            <td class="col-id mono strong" :title="data(row).id">{{ data(row).id.slice(0, 8) }}<div v-if="parent(row)" class="sub-meta" :title="parent(row)">{{ t(row.kind === 'case_generation' ? 'taskpool.parent_task' : 'taskpool.parent_session') }}={{ parent(row).slice(0, 8) }}</div></td>
             <td class="col-name"><div class="strong task-title" :title="title(row)">{{ title(row) }}</div><div class="sub-meta">{{ row.project_name || '-' }} · {{ formatServerDateTime(data(row).updated_at, data(row).updated_at) }}</div></td>
             <td class="col-type"><span class="badge badge-gray">{{ taskKind(row) }}</span></td>
-            <td class="col-model"><div v-if="row.kind === 'session'" class="mono">{{ row.session.selected_agent || '-' }}</div><div class="sub-meta">{{ modeLabel(row) }}</div></td>
+            <td class="col-model"><div v-if="row.kind === 'session'" class="mono">{{ row.session.selected_agent || '-' }}</div><div class="sub-meta">{{ modeLabel(row) }}</div><div v-if="row.kind === 'case_generation'" class="sub-meta" :title="`${row.task.group_id} / ${row.task.module_id}`">{{ t('taskpool.generation_group') }} {{ row.task.group_id.slice(0, 8) }} · {{ row.task.module_id.slice(0, 8) }}<div v-if="row.task.retry">{{ t(`taskpool.retry_${row.task.retry.strategy}`) }}</div></div></td>
             <td class="col-status"><span class="status-indicator" :class="`status-${data(row).status}`"><span v-if="active(row)" class="pulse-dot"></span>{{ statusLabel(row) }}</span></td>
             <td class="col-stats"><div>{{ workerStats(row) }}</div><div v-if="row.kind !== 'session'" class="sub-meta">{{ row.task.message }}</div><div v-else class="sub-meta">{{ row.session.worker_dispatches.length }} {{ t("taskpool.dispatch_records") }}</div></td>
             <td class="col-actions align-right"><button class="action-btn" :aria-label="actionLabel(row)" :title="actionLabel(row)" @click="openTask(row)"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
