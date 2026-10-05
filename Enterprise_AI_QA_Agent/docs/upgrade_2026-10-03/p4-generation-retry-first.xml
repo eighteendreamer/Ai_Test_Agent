@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="9" time="77.635" timestamp="2026-10-05T17:44:42.470051+08:00" hostname="EIghteen"><testcase classname="tests.test_generation_retries" name="test_saved_legacy_group_hash_and_scope_are_not_rewritten_by_retry_schema" time="0.008" /><testcase classname="tests.test_generation_retries" name="test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[md]" time="10.664"><failure message="AssertionError: {&quot;detail&quot;:&quot;1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type&quot;}&#10;assert 409 == 202&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = &lt;Response [409 Conflict]&gt;.status_code</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[docx]" time="8.120"><failure message="AssertionError: {&quot;detail&quot;:&quot;1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type&quot;}&#10;assert 409 == 202&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = &lt;Response [409 Conflict]&gt;.status_code</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[pdf]" time="8.428"><failure message="AssertionError: {&quot;detail&quot;:&quot;1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type&quot;}&#10;assert 409 == 202&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = &lt;Response [409 Conflict]&gt;.status_code</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_saved_response_retry_never_resends_and_old_failure_remains" time="9.355"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView&#10;task&#10;  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/model_type">tests\test_generation_retries.py:122: in test_actual_saved_response_retry_never_resends_and_old_failure_remains
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="response-retry"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_inflight_unknown_and_nonfailed_modules_cannot_start_retry" time="8.859" /><testcase classname="tests.test_generation_retries" name="test_actual_same_request_race_lost_commit_reply_and_recovery_without_config" time="8.822"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView&#10;task&#10;  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/model_type">tests\test_generation_retries.py:174: in test_actual_same_request_race_lost_commit_reply_and_recovery_without_config
+    views=await asyncio.gather(*[service.retry(project.id,doc.id,parent.id,request) for _ in range(4)])
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_parent_version_conflict_reuses_response_and_preserves_both_failures" time="8.347"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView&#10;task&#10;  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/model_type">tests\test_generation_retries.py:218: in test_actual_parent_version_conflict_reuses_response_and_preserves_both_failures
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="conflict-retry"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type</failure></testcase><testcase classname="tests.test_generation_retries" name="test_actual_retry_project_isolation_archive_and_fixed_sdk_options" time="8.420"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView&#10;task&#10;  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/model_type">tests\test_generation_retries.py:237: in test_actual_retry_project_isolation_archive_and_fixed_sdk_options
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="original"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type</failure></testcase></testsuite></testsuites>

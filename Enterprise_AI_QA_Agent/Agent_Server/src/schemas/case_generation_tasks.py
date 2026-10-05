@@ -34,6 +34,17 @@ class GenerationTaskRequest(IncrementalGenerationRequest):
     creation_key: str = Field(min_length=1, max_length=160)
 
 
+class GenerationRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    creation_key: str = Field(min_length=1, max_length=160)
+
+
+class GenerationRetryReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=UUID_PATTERN)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class GenerationObject(BaseModel):
     model_config = ConfigDict(extra="forbid")
     storage_uri: str
@@ -70,6 +81,34 @@ class GenerationTaskSeed(BaseModel):
     module_id: str
     module_sha256: str
     config: GenerationTaskSettings
+    retry: GenerationRetryReference | None = None
+
+
+class GenerationRetry(GenerationSnapshot):
+    implementation_version: Literal["generation-retry-v1"] = "generation-retry-v1"
+    id: str = Field(pattern=UUID_PATTERN)
+    task_id: str = Field(pattern=UUID_PATTERN)
+    parent_task_id: str = Field(pattern=UUID_PATTERN)
+    parent_task_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    project_id: str = Field(pattern=UUID_PATTERN)
+    document_id: str = Field(pattern=UUID_PATTERN)
+    group_id: str = Field(pattern=UUID_PATTERN)
+    group_sha256: str
+    scope_sha256: str
+    module_id: str = Field(pattern=UUID_PATTERN)
+    module_sha256: str
+    creation_key: str
+    config: GenerationTaskSettings
+    strategy: Literal["frozen_request", "saved_response"]
+    response: GenerationObject | None
+    created_at: datetime
+    sha256: str
+
+    @model_validator(mode="after")
+    def validate_fixed(self):
+        if (self.strategy == "saved_response") != (self.response is not None):
+            raise ValueError("重试策略与原持久响应不同")
+        return self.check_hash("sha256")
 
 
 class GenerationModuleCheckpoint(BaseModel):
@@ -156,6 +195,18 @@ class GenerationGroupView(BaseModel):
 
 class GenerationGroupPage(BaseModel):
     items: list[GenerationGroup]
+    has_more: bool
+    limit: int
+    offset: int
+
+
+class GenerationRetryView(BaseModel):
+    retry: GenerationRetry
+    task: GenerationTaskView
+
+
+class GenerationRetryPage(BaseModel):
+    items: list[GenerationRetryView]
     has_more: bool
     limit: int
     offset: int

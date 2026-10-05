@@ -64,3 +64,15 @@ export interface GenerationResponse {
   request_payload: Record<string, unknown>; response_summary: Record<string, unknown>;
   raw_response: Record<string, unknown>;
 }
+export interface GenerationRetryRequest { creation_key: string }
+export interface GenerationRetry {
+  implementation_version: "generation-retry-v1";
+  id: string; task_id: string; parent_task_id: string; parent_task_sha256: string;
+  project_id: string; document_id: string; group_id: string; group_sha256: string;
+  scope_sha256: string; module_id: string; module_sha256: string;
+  creation_key: string; config: GenerationTaskSettings;
+  strategy: "frozen_request" | "saved_response"; response: GenerationObject | null;
+  created_at: string; sha256: string;
+}
+export interface GenerationRetryView { retry: GenerationRetry; task: GenerationTask }
+export interface GenerationRetryPage { items: GenerationRetryView[]; has_more: boolean; limit: number; offset: number }

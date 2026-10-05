@@ -1,0 +1,2398 @@
+{
+  "research_baseline": "12481ef2",
+  "plans_byte_identical": true,
+  "plan_sha256": "c0a45593a0b994007e115b1ac7d263a8af3bfc408a8a3fa68aa87ad45ad6a19f",
+  "previous_raw_evidence_verified": {
+    "p4-bound-protocol-validation.json": 345,
+    "p4-stream-research-validation.json": 85,
+    "p4-text-anchors-validation.json": 328,
+    "p4-reasoning-plan-validation.json": 257,
+    "p4-grouped-validation.json": 723,
+    "p4-transport-validation.json": 522,
+    "p4-case-anchors-validation.json": 714,
+    "p4-requirement-reviews-validation.json": 164,
+    "p4-requirement-product-validation.json": 126,
+    "p4-incremental-sources-validation.json": 193,
+    "p4-generation-tasks-validation.json": 266,
+    "p4-generation-entry-validation.json": 320,
+    "p4-generation-product-validation.json": 351
+  },
+  "sources": [
+    "Agent_Server/src/api/routes/case_generation_tasks.py",
+    "Agent_Server/src/application/test_cases/generation_task_service.py",
+    "Agent_Server/src/application/test_cases/generation_retry.py",
+    "Agent_Server/src/runtime/postgres_generation_task_store.py",
+    "Agent_Server/src/schemas/case_generation_tasks.py",
+    "Agent_Server/tests/test_generation_retries.py",
+    "Agent_Server/tests/test_generation_retries_production.py",
+    "Agent_Server/tests/generation_retry_production_scenario.py",
+    "Agent_Server/tests/test_document_impact_production.py",
+    "agent_web/src/services/caseGeneration.types.ts",
+    "agent_web/src/services/caseGeneration.api.ts",
+    "agent_web/src/services/caseGeneration.api.test.ts",
+    "agent_web/src/features/tools/plugins/CaseGenerationProduct.test.ts",
+    "docs/upgrade_2026-10-03/PLAN.md",
+    "docs/upgrade_2026-10-03/IMPLEMENTATION.md",
+    "docs/upgrade_2026-10-03/P4_GENERATION_RETRY_DESIGN.md",
+    "docs/upgrade_2026-10-03/.gitattributes"
+  ],
+  "raw_files": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-archive-isolation/507d6a7d778b7c2526cecd52e3bfff8928e5f2c6ab8ced8c9fb174f9ba25b632.json",
+      "sha256": "507d6a7d778b7c2526cecd52e3bfff8928e5f2c6ab8ced8c9fb174f9ba25b632",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-archive-isolation/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-archive-isolation/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-archive-isolation/retry.json",
+      "sha256": "c90480807d0e6f62f82fee1665a14b7dbbd572140ed233dd39939f178578653f",
+      "size_bytes": 4944
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-archive-isolation/verification.json",
+      "sha256": "aa8aafdf7904acf674c7e4bcacf2f348965f2ed4b5d6ac8b58a2a07e119cdeb2",
+      "size_bytes": 2717
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-and-model-guard/ac39ced554aa9487deb3d6cdf7e5bb40f2310c94a97780ba5585469f4ae3cce3.json",
+      "sha256": "ac39ced554aa9487deb3d6cdf7e5bb40f2310c94a97780ba5585469f4ae3cce3",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-and-model-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-and-model-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-and-model-guard/retry.json",
+      "sha256": "f9abc0de3137955fe5b05b6dfbc4b75d8dbed052cf9987f86f43a94262292c5f",
+      "size_bytes": 5095
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-and-model-guard/verification.json",
+      "sha256": "88aaff7b640dd1790beee0b40694e4b91eab1adfdbbc2130a09a7e471e83c71d",
+      "size_bytes": 2711
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/042eddea21c54d9dd4deabf19427d0720dbe3a7e90b00e6e44d1635ab9b27545.json",
+      "sha256": "042eddea21c54d9dd4deabf19427d0720dbe3a7e90b00e6e44d1635ab9b27545",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/b6f9e07cd35e53c8a505d255795599c8029cf4ec821fc9c8bbfc66ecfb248700.json",
+      "sha256": "b6f9e07cd35e53c8a505d255795599c8029cf4ec821fc9c8bbfc66ecfb248700",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/retry.json",
+      "sha256": "669e512ba344dbdc3e11ecfa201a86ec04050093b44a1e0c3b650dbfa74e856b",
+      "size_bytes": 7476
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-parent-conflict/verification.json",
+      "sha256": "a5f52951a8c21d486556d18701c7b491b48ab807b2bb9d2dc15732d195077471",
+      "size_bytes": 51912
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/28437228aec10002bc51f55cc5b794a17313b80a87cf587e5090182b4082eea6.json",
+      "sha256": "28437228aec10002bc51f55cc5b794a17313b80a87cf587e5090182b4082eea6",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/34393c074e511353b461652b4d189c5f87946e448a2bdbd88d8496e07ffef2c0.json",
+      "sha256": "34393c074e511353b461652b4d189c5f87946e448a2bdbd88d8496e07ffef2c0",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/retry.json",
+      "sha256": "5b779bbd84e15aebba42a53d3adb27d84eff7c931ed073e3d1ab4ffecbab0058",
+      "size_bytes": 8404
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-race-lost-reply/verification.json",
+      "sha256": "31e11e959aa89da91f98df8e04db345037c0cf7fc38ae113940ff541187e263d",
+      "size_bytes": 53394
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/9c45e2a9da90bfe91708973ef2273506350ce6434c46792ae008b7cc1006b4a1.json",
+      "sha256": "9c45e2a9da90bfe91708973ef2273506350ce6434c46792ae008b7cc1006b4a1",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/f04f273de55d8c8b082fdbaff1896e93a4b868aea9d3d49afebe3baa71988c0a.json",
+      "sha256": "f04f273de55d8c8b082fdbaff1896e93a4b868aea9d3d49afebe3baa71988c0a",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/retry.json",
+      "sha256": "b196faa63cc4c5cc95f21d3085db75d92f8376f8f1ea2c25e1230bbd1a93dcb8",
+      "size_bytes": 9120
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-copy-guard/verification.json",
+      "sha256": "bd9ec34e57dedd5c5f18d6c6d18a411baef2f1e0899957ff6e24e4ea44aca694",
+      "size_bytes": 51952
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/04bdef4c493d5f4c5505db79d7e8d0b1eab9226c753e7cb164b6a04f2375c92b.json",
+      "sha256": "04bdef4c493d5f4c5505db79d7e8d0b1eab9226c753e7cb164b6a04f2375c92b",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/3f20eb9321d2e7aa5f0b7e9f727e29b9aa8eb216f0dab9ec663ffdf264a453c0.json",
+      "sha256": "3f20eb9321d2e7aa5f0b7e9f727e29b9aa8eb216f0dab9ec663ffdf264a453c0",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/retry.json",
+      "sha256": "ee1b89c09281c1d0fc1d1f2551bf938909648de3c120b27cb1488d1e79b20b7f",
+      "size_bytes": 9134
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-response-object-guard/verification.json",
+      "sha256": "270c745172af3e49b321d68a88c65155aeb534a396c8ef52da998ed47ae18c03",
+      "size_bytes": 51957
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retirement-retry/2f013d2161f39b40acb60b1483be327886e24cf46206811bd6317230c132e47b.json",
+      "sha256": "2f013d2161f39b40acb60b1483be327886e24cf46206811bd6317230c132e47b",
+      "size_bytes": 9023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retirement-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retirement-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retirement-retry/retry.json",
+      "sha256": "531e96201dde05e3222d11de325e29737d3cea384b3cad3e6c3f5e6f434f3069",
+      "size_bytes": 9008
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retirement-retry/verification.json",
+      "sha256": "643f89802eedf9ac6e68354cd1e779ae629bf927b3239883f28ba9be3d1e5b2e",
+      "size_bytes": 2628
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/713c84d85b291309f4effa3be57f31a13be19fd122fb07cec09130b62e2a096c.json",
+      "sha256": "713c84d85b291309f4effa3be57f31a13be19fd122fb07cec09130b62e2a096c",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/7d5f562e8b169d350fb35d7b57102f5aa67ca74e1f65beff706aaf4269efacd8.json",
+      "sha256": "7d5f562e8b169d350fb35d7b57102f5aa67ca74e1f65beff706aaf4269efacd8",
+      "size_bytes": 125326
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/requirements-v1.docx",
+      "sha256": "b56069ad97c862d8557394e55d18ec3e1a9cbb09297e17d77b4540c57a2bbdee",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/requirements-v2.docx",
+      "sha256": "82e2e0cd2ec1c8b905c57af317765eb1567886348d6db7261364770d56ad2dfb",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/retry.json",
+      "sha256": "8c7a7b55fbdb21c2f9ba2c4c97aeb1283aaeb6cf86691dae0b658e375bf3d886",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-docx/verification.json",
+      "sha256": "47b3b9a715a3a61a44b9cda1794d9eee989078124eeb915caceca352e93b10d1",
+      "size_bytes": 70530
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/65c5c77c53d6be88de9498eded5f027984b6fb59cada03f23f9deeb6019a5dee.json",
+      "sha256": "65c5c77c53d6be88de9498eded5f027984b6fb59cada03f23f9deeb6019a5dee",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/7750bbe95f45bfea00cb080db908c02505ec3127aba2675ab6c0eb7fc4affba4.json",
+      "sha256": "7750bbe95f45bfea00cb080db908c02505ec3127aba2675ab6c0eb7fc4affba4",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/retry.json",
+      "sha256": "b5567596c8ab06cf1eb4d5fdaacbb1a6dfcd3ef1ec83a722d02a46852de7386c",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-md/verification.json",
+      "sha256": "c765b363ae18ddf6082ed3a9e6b8db4c1427eaf67e075ef9a9f6e8062ef99666",
+      "size_bytes": 61459
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/99d72c6ff5f8ce11a2f12ce5267c14e65b1276e3b3a03b1db87963cac2f165b1.json",
+      "sha256": "99d72c6ff5f8ce11a2f12ce5267c14e65b1276e3b3a03b1db87963cac2f165b1",
+      "size_bytes": 111704
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/d97e2ffcad85c369f9b914220bece3b272bc7ed637e85c14e91f7b3a71552f7e.json",
+      "sha256": "d97e2ffcad85c369f9b914220bece3b272bc7ed637e85c14e91f7b3a71552f7e",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/retry.json",
+      "sha256": "acf877be81fe786d4997b43372a2c28faaa73924d64ca25c63b5d34fca172a28",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-retry-pdf/verification.json",
+      "sha256": "e724c8a09bfdbcf504a81542dfbbffe81d6688668d203605ee4049fa412d3649",
+      "size_bytes": 63600
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/bbfb913e144f4faac73ef79076e4bdc9e8713c09513387c672171953096b0236.json",
+      "sha256": "bbfb913e144f4faac73ef79076e4bdc9e8713c09513387c672171953096b0236",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/e33f7804a008854b56b6b33f598567aec80b4169e7162bd62e853df282cd73d1.json",
+      "sha256": "e33f7804a008854b56b6b33f598567aec80b4169e7162bd62e853df282cd73d1",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/retry.json",
+      "sha256": "2a334beef656581d5e7bfa8be6dee0c4dcf9d8f3609bc0e71574dee41c9a8c76",
+      "size_bytes": 9113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/retry-acceptance-saved-response/verification.json",
+      "sha256": "901de1b2a942859f9fb56ea2fe863a1eeb32dcfbde0cb42b69929f2e40d41fba",
+      "size_bytes": 51925
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/unknown-retry/d10e512d6f1e440c7cbe377acc343db1083de129af38dcb59a9bf25a640bca5d.json",
+      "sha256": "d10e512d6f1e440c7cbe377acc343db1083de129af38dcb59a9bf25a640bca5d",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/unknown-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/unknown-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance/unknown-retry/verification.json",
+      "sha256": "5dc2480587d04c83a3e5a913d28401a57f8bdaa232f48c4d18946967dd0d6a00",
+      "size_bytes": 51514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance.log",
+      "sha256": "178f10db0fecb639616febc41d4e865c5c72f2bd087098cc2aa52082cd0a4db8",
+      "size_bytes": 113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-acceptance.xml",
+      "sha256": "93a829e6484e72b16c9dab7b4189f68a5e2d23654cddab6a1065cc82214a169f",
+      "size_bytes": 2246
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-build.log",
+      "sha256": "4ca838cc6a53b53483c1aa2cea6e204f45ce4ad36275e1419c767ef01390caf4",
+      "size_bytes": 9427
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-archive-isolation/775a65b9326a70ca0336ee6eba49c87984e1ae7281307adecafa9da519e917dd.json",
+      "sha256": "775a65b9326a70ca0336ee6eba49c87984e1ae7281307adecafa9da519e917dd",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-archive-isolation/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-archive-isolation/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-archive-isolation/retry.json",
+      "sha256": "d8030eaedb86cb00124ff662526b9cc0ed7f1326683485dd62c42eff677de35f",
+      "size_bytes": 5220
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-archive-isolation/verification.json",
+      "sha256": "151d6590208f45159fdf4626c3fc77aa4f5c92569c46e43da8205f62c76ae189",
+      "size_bytes": 2717
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-and-model-guard/957a41f5aa7ad0d79ca25b0a25b92e7345f6f75f332418fad97d92eaa63ad87a.json",
+      "sha256": "957a41f5aa7ad0d79ca25b0a25b92e7345f6f75f332418fad97d92eaa63ad87a",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-and-model-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-and-model-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-and-model-guard/retry.json",
+      "sha256": "0878cc0af1aab322f3e2499a582b9ed4848bb8a45cd0738a7d1494f503c0b8ff",
+      "size_bytes": 5371
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-and-model-guard/verification.json",
+      "sha256": "7f6e3e1df09b8cbcdd1f81090f63d3337d4c145c3887fa3c2795ebd441738f46",
+      "size_bytes": 2711
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/0de1fadd4834c3adbe30ea0ea4aa2b6aa656ae00658619a273798486751bfb44.json",
+      "sha256": "0de1fadd4834c3adbe30ea0ea4aa2b6aa656ae00658619a273798486751bfb44",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/35fd063778f4259bd8a2b9756bb7dbfa3268c7e0182213ddd0c3693d0dbbc27f.json",
+      "sha256": "35fd063778f4259bd8a2b9756bb7dbfa3268c7e0182213ddd0c3693d0dbbc27f",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/retry.json",
+      "sha256": "2a19dbc371effb5a593d08ac73ba328245bfad0f8aad2a246b63107813bc3174",
+      "size_bytes": 7911
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-parent-conflict/verification.json",
+      "sha256": "c7b58c77c36e64ccd7748054c2cf01d6591025c9fab5bde0ea99234857985253",
+      "size_bytes": 51912
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/5ddc9e2f49f83aec343755abb6f84b6ac482ab45b695a052da1f3ba3b6da9931.json",
+      "sha256": "5ddc9e2f49f83aec343755abb6f84b6ac482ab45b695a052da1f3ba3b6da9931",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/9fe937463d671e8fba6a95aecc17ee908e82bd5d6d6b18553d88f18fc5699c33.json",
+      "sha256": "9fe937463d671e8fba6a95aecc17ee908e82bd5d6d6b18553d88f18fc5699c33",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/retry.json",
+      "sha256": "a79dc99a13b1f9892f26f5f80090bc3654b39d1219863ea79ecd44ae5efd1ba0",
+      "size_bytes": 9033
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-race-lost-reply/verification.json",
+      "sha256": "80bd2e90535e8de66c9c06b4b38544f065ff76abb240726340053f74e9e962d7",
+      "size_bytes": 53395
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/58df637ced724736bcdb2acbe2c7c5f8535174f0dd515f73137205cbd6e10c2b.json",
+      "sha256": "58df637ced724736bcdb2acbe2c7c5f8535174f0dd515f73137205cbd6e10c2b",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/ca004a0290b221e2a49f643679eb78491af00093e508ce0280560ffcd14c9f9c.json",
+      "sha256": "ca004a0290b221e2a49f643679eb78491af00093e508ce0280560ffcd14c9f9c",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/retry.json",
+      "sha256": "0aca12a76560e9a08001e35f6044987af0d96953022313a08971f64749dfede5",
+      "size_bytes": 9749
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-copy-guard/verification.json",
+      "sha256": "12c82f2fe51eca8c08b20b4189fb971e17ee075140d29b4ea1882d8ab754e441",
+      "size_bytes": 51951
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/6995d1ae2df437eeb7133d7b63504dc1d78fafddb4b74def78187d125f45c7ae.json",
+      "sha256": "6995d1ae2df437eeb7133d7b63504dc1d78fafddb4b74def78187d125f45c7ae",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/f14ae007153752c9fad16c51dae3d5bb324a27a90c7201d3d31f334eba21b8d2.json",
+      "sha256": "f14ae007153752c9fad16c51dae3d5bb324a27a90c7201d3d31f334eba21b8d2",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/retry.json",
+      "sha256": "45f349dfc76dc75a42360a65fbac7e0f640415c20668857ce25326462937667c",
+      "size_bytes": 9763
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-response-object-guard/verification.json",
+      "sha256": "2b5618dc898b6e901ba896521b25fd770f9a136be2fff501350e1edbc72a06e1",
+      "size_bytes": 51957
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retirement-retry/af18c397e0d45b595d373c88133c9cccb4e9d30900a1f11a24b4d1f76bce3400.json",
+      "sha256": "af18c397e0d45b595d373c88133c9cccb4e9d30900a1f11a24b4d1f76bce3400",
+      "size_bytes": 9023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retirement-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retirement-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retirement-retry/retry.json",
+      "sha256": "c78e22bf716abab6aa863164c27054ceb2aca98c5ad107a84edcd25ec8bc5879",
+      "size_bytes": 10051
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retirement-retry/verification.json",
+      "sha256": "734b907bcf1be145b883a04ad9cf7852fdf9db72d8887b24f942e3514a05f1c8",
+      "size_bytes": 2628
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/e07f1e84a3e6b00de93b25b9e6a67dd70ed6f322d685cdb8d7238efb79399b43.json",
+      "sha256": "e07f1e84a3e6b00de93b25b9e6a67dd70ed6f322d685cdb8d7238efb79399b43",
+      "size_bytes": 125326
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/e9bee9665e365adf56f22e614b51c80c4013a335777d49d9aaf4c9cf1558e155.json",
+      "sha256": "e9bee9665e365adf56f22e614b51c80c4013a335777d49d9aaf4c9cf1558e155",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/requirements-v1.docx",
+      "sha256": "d347ebc2cc4d9f48f944305232ce65ebb70166240811e79baf284680a247f577",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/requirements-v2.docx",
+      "sha256": "5cf1305eb4d3cd22f025500bbcbe6549fa151888e02bebfde2d44e26c9728a56",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/retry.json",
+      "sha256": "68b940afd5d74e80b3281a86112106e98fa9afa5a968a564d80fd71bdedc40bf",
+      "size_bytes": 9045
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-docx/verification.json",
+      "sha256": "5c9283b045a8e2e6f35e50d2b299f7f220f645a577d232c2a71c6e88285c122e",
+      "size_bytes": 70530
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/42a6c4d57360cbc154f9a9f571a330a372d3d48dab2f892fa1200c1ed0be245d.json",
+      "sha256": "42a6c4d57360cbc154f9a9f571a330a372d3d48dab2f892fa1200c1ed0be245d",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/430f258fe50a20e6aa55ddf41738ec18a1bad3bda8d08ccc15671fca46e6290d.json",
+      "sha256": "430f258fe50a20e6aa55ddf41738ec18a1bad3bda8d08ccc15671fca46e6290d",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/retry.json",
+      "sha256": "9f911be07c3a526d1391d6953180a3502097d76f3f692b92649b23c31270b08a",
+      "size_bytes": 9045
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-md/verification.json",
+      "sha256": "27445025aacbd03407b4adcdd3a80e0e80f3f8b0a657a021c63af703a0e9e951",
+      "size_bytes": 61459
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/3a86eef488a5bd261231516571db6152f04c12257e6bd4e31b0fccdaa8976958.json",
+      "sha256": "3a86eef488a5bd261231516571db6152f04c12257e6bd4e31b0fccdaa8976958",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/afb1db6a9d47fb537fc868c6cc790e56a40d150925d0edebc913d2fbad43ca95.json",
+      "sha256": "afb1db6a9d47fb537fc868c6cc790e56a40d150925d0edebc913d2fbad43ca95",
+      "size_bytes": 111704
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/retry.json",
+      "sha256": "64df8eda3c44285e307e9d5aef949ebcd3c4a3d0a724b57fd5ce982938760857",
+      "size_bytes": 9045
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-retry-pdf/verification.json",
+      "sha256": "0767f13a4b7f793745b6e55bc425e776f94848f10d86c5b78dc1d5abefa7f936",
+      "size_bytes": 63600
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/08b7cbdd8f1c5627e7c09b6ed6e3d82bcc3f0942fa4e747f4d6097679303f977.json",
+      "sha256": "08b7cbdd8f1c5627e7c09b6ed6e3d82bcc3f0942fa4e747f4d6097679303f977",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/c95b74eb01b190360a109c86bbfaa3210edcbf22e3cf7fb9f0425490b47304bd.json",
+      "sha256": "c95b74eb01b190360a109c86bbfaa3210edcbf22e3cf7fb9f0425490b47304bd",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/retry.json",
+      "sha256": "2d46677cda2ec386979e9f6184231634f6aad9b0e7f59f93dba6d0cc934be096",
+      "size_bytes": 9742
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/retry-acceptance-saved-response/verification.json",
+      "sha256": "7d0d19bd701fb76c2b3876c81ad0d17f20dbbc86678886b9f2c83485f5537269",
+      "size_bytes": 51925
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/unknown-retry/ee8e2784ba0d01613a44357396748f0ab465d388c05e531ad38167c7ecf62ad1.json",
+      "sha256": "ee8e2784ba0d01613a44357396748f0ab465d388c05e531ad38167c7ecf62ad1",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/unknown-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/unknown-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery/unknown-retry/verification.json",
+      "sha256": "bd3eaec4adea1c555a0e3e95d12f5f85a886a02f4f0f43fb7e0e0af0cea6c120",
+      "size_bytes": 51514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery.log",
+      "sha256": "691119f27ca2753eeae97aabab519bf7a3eef780820e129a81748d28861c81c0",
+      "size_bytes": 113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-delivery.xml",
+      "sha256": "987fb6f9503216c7292f88c516e1abde0b8abc54db7427f2afe94b102adbc217",
+      "size_bytes": 2247
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/5f54d09062d248027c7b8e3990dd4a7d6b28879a2d4ba8a20b72150a19be2a12.json",
+      "sha256": "5f54d09062d248027c7b8e3990dd4a7d6b28879a2d4ba8a20b72150a19be2a12",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/6b1a71a97fdb3e06444f50a8a2cfad57b64b40ab0469a17106e676f96ca43b61.json",
+      "sha256": "6b1a71a97fdb3e06444f50a8a2cfad57b64b40ab0469a17106e676f96ca43b61",
+      "size_bytes": 197676
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/f75d68f49fa7cf3d36c73cca10dcabd2cc57a432175baae9d2295f58d76d73a5.json",
+      "sha256": "f75d68f49fa7cf3d36c73cca10dcabd2cc57a432175baae9d2295f58d76d73a5",
+      "size_bytes": 3766
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/requirements-v1.docx",
+      "sha256": "23e938a1d0dba40a67b90546699958275e40ea021a98ec84c7a7f54d7035cb25",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/requirements-v2.docx",
+      "sha256": "fff4920daf44836335126543bedfe2eead21004a75c8d87f60c01fbd0694a7b9",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-docx/verification.json",
+      "sha256": "a966daca74226a6469d9f0961e5d06334973cf7f03a7603e1c30059d84d1f982",
+      "size_bytes": 317650
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-lost-reply/6e1b8d69f11514edbf8eda9f69f20b47de56ab6bef829940909fc6cf709ad8c9.json",
+      "sha256": "6e1b8d69f11514edbf8eda9f69f20b47de56ab6bef829940909fc6cf709ad8c9",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-lost-reply/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-lost-reply/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-lost-reply/verification.json",
+      "sha256": "a33d2cebb636c6008075e1d0ea4a3d54d5b2ef793927c0d045f955a3b29c17c3",
+      "size_bytes": 2481
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/3b9c3049c7dd2efa13cf978faf67e6e26e55fa2ecfd98ca0be284a909fa47335.json",
+      "sha256": "3b9c3049c7dd2efa13cf978faf67e6e26e55fa2ecfd98ca0be284a909fa47335",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/6ed2587d5bd3460df277c61ebd693b202a171b86af7a9bb4f2e464b9d16aace0.json",
+      "sha256": "6ed2587d5bd3460df277c61ebd693b202a171b86af7a9bb4f2e464b9d16aace0",
+      "size_bytes": 167114
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/8fe897cebc8903d297259b0dfa3372ccfaf17e8d939ad3567f2f4fbe1b235e4c.json",
+      "sha256": "8fe897cebc8903d297259b0dfa3372ccfaf17e8d939ad3567f2f4fbe1b235e4c",
+      "size_bytes": 3274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-md/verification.json",
+      "sha256": "ce7c658e8ed9a5221c1750c7ce51f7e8682b81bca2a9872ee10ceea4a8127fcc",
+      "size_bytes": 272045
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/3330489bce71fea2727259e2449fa4e1bbfb152a7d82eee62ad1a508d9ca559b.json",
+      "sha256": "3330489bce71fea2727259e2449fa4e1bbfb152a7d82eee62ad1a508d9ca559b",
+      "size_bytes": 174136
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/620d92227522e8ba587d3fd4d0e0c88cac208bde9ffa7e0976bf7db6777ca8dd.json",
+      "sha256": "620d92227522e8ba587d3fd4d0e0c88cac208bde9ffa7e0976bf7db6777ca8dd",
+      "size_bytes": 3830
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/9ca01dd46fd1ab3b525cbcd8d60438ba9b68210ee610f57feb1261b62919fa57.json",
+      "sha256": "9ca01dd46fd1ab3b525cbcd8d60438ba9b68210ee610f57feb1261b62919fa57",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-pdf/verification.json",
+      "sha256": "d0ede58379b3e8ff116218cfca1171e5808dadd3677b032878a278a0673f09db",
+      "size_bytes": 282368
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-retirement/b77d5763c1d831cd61438bb5179e8e73573914a1087b2ec68325fdd78d1add2b.json",
+      "sha256": "b77d5763c1d831cd61438bb5179e8e73573914a1087b2ec68325fdd78d1add2b",
+      "size_bytes": 9023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-retirement/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-retirement/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/api-retirement/verification.json",
+      "sha256": "274a921de1fb27416673a1c0cf04f664441a3e50196eb780fd221530465a2504",
+      "size_bytes": 23411
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/archive-isolation/08b37b81df6730f507c51c7d2059d903d3e27c0ba244bd15c989cffbc368a449.json",
+      "sha256": "08b37b81df6730f507c51c7d2059d903d3e27c0ba244bd15c989cffbc368a449",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/archive-isolation/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/archive-isolation/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/archive-isolation/retry.json",
+      "sha256": "6d3b81ffa8ad32a3e1cd14e9e344fc85b83aabcbad6681b80ef2a9fe1cbc50bb",
+      "size_bytes": 4944
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/archive-isolation/verification.json",
+      "sha256": "c34b2e5c2047a589d49b82b350adb85b730e7b50fe194ad98e98fb2bbd25d8b9",
+      "size_bytes": 2716
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/budget/197189ef185b21ae03e766016314347bbe0a3c35fa1466671a2f849bdbc87cfd.json",
+      "sha256": "197189ef185b21ae03e766016314347bbe0a3c35fa1466671a2f849bdbc87cfd",
+      "size_bytes": 107128
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/budget/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/budget/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/budget/verification.json",
+      "sha256": "5b514e9cdb925109647f83e8839661b979893b80a04c6a7613f78c09a2d3f3cd",
+      "size_bytes": 2590
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/2b2e2bd7e79535808b4c67102bafe9e2429c39c6b03482290002f0df9b5d885d.json",
+      "sha256": "2b2e2bd7e79535808b4c67102bafe9e2429c39c6b03482290002f0df9b5d885d",
+      "size_bytes": 1914
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/401356b059f14155e762b682d4748afb55b26eea8f3f1c63b4f96017adebd92b.json",
+      "sha256": "401356b059f14155e762b682d4748afb55b26eea8f3f1c63b4f96017adebd92b",
+      "size_bytes": 167114
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/945d1b0549ecb22e7c6b37027a7f58417aca743a9de1d4d10677f50bd5abb508.json",
+      "sha256": "945d1b0549ecb22e7c6b37027a7f58417aca743a9de1d4d10677f50bd5abb508",
+      "size_bytes": 3274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/concurrency-independent/verification.json",
+      "sha256": "1b95f37e551e95753653c90e4f1f7f5f1b92dc9da106231f95bd96bb62f68ef3",
+      "size_bytes": 86690
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-observed/491455eb9a15ba26405eaf5e07672331113cb8b9081c60af8a5cddb438b8bfd5.json",
+      "sha256": "491455eb9a15ba26405eaf5e07672331113cb8b9081c60af8a5cddb438b8bfd5",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-observed/548e70110bf7e060d46523eb249a9a83c9cccb3ada226703de714b9b412d2a7a.json",
+      "sha256": "548e70110bf7e060d46523eb249a9a83c9cccb3ada226703de714b9b412d2a7a",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-observed/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-observed/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-observed/verification.json",
+      "sha256": "60c3c4a6198bcd5b517c09cdf4162e559a5a3d72b96275cb64324909675c3816",
+      "size_bytes": 53155
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-rollback/491455eb9a15ba26405eaf5e07672331113cb8b9081c60af8a5cddb438b8bfd5.json",
+      "sha256": "491455eb9a15ba26405eaf5e07672331113cb8b9081c60af8a5cddb438b8bfd5",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-rollback/548e70110bf7e060d46523eb249a9a83c9cccb3ada226703de714b9b412d2a7a.json",
+      "sha256": "548e70110bf7e060d46523eb249a9a83c9cccb3ada226703de714b9b412d2a7a",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-rollback/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-rollback/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/deadline-rollback/verification.json",
+      "sha256": "e5dff98b1665a29eb90af67cf5d574c634842c761adf88b848370afe4279c7f4",
+      "size_bytes": 51982
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/disabled-dispatch/4ec60ffae7d15e5a89a13836da7f9e2960108a3b6e1e979a02926806cee7a1fd.json",
+      "sha256": "4ec60ffae7d15e5a89a13836da7f9e2960108a3b6e1e979a02926806cee7a1fd",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/disabled-dispatch/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/disabled-dispatch/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/disabled-dispatch/verification.json",
+      "sha256": "6449241632726982da567648bcc343a241e4bfedb79fa7da2cb23d84731c0e40",
+      "size_bytes": 2509
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/12ad899f4cb81c0a76c6f09c365c9f1063077e8e611bd137d2beeba6dee9641d.json",
+      "sha256": "12ad899f4cb81c0a76c6f09c365c9f1063077e8e611bd137d2beeba6dee9641d",
+      "size_bytes": 3766
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/755895099a29154d3f93054d59d82eb94dd3e1cedc82830ede9aeb7324752a57.json",
+      "sha256": "755895099a29154d3f93054d59d82eb94dd3e1cedc82830ede9aeb7324752a57",
+      "size_bytes": 197676
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/8d4dbeef4b8fdd061bf93627d8688cea5e7439ebfcab6ca23f0579cfe07fa95c.json",
+      "sha256": "8d4dbeef4b8fdd061bf93627d8688cea5e7439ebfcab6ca23f0579cfe07fa95c",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/requirements-v1.docx",
+      "sha256": "0c78555f50ca61447b0b2a46504f4cbc7ad17ee5e25c796fd3243500ef34762b",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/requirements-v2.docx",
+      "sha256": "7d26f5fa0e720091e067b294f7e9c96cc4e5c79b362379fced87e9c896e39efb",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/docx/verification.json",
+      "sha256": "6930316cb167ced38112fdd264152efa7f176cc4444d817cc30718a88ac76463",
+      "size_bytes": 113884
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/06b1c57425ab1cbca757de882763e83f0618ae134a0c45fcfb99b223bc1754bd.json",
+      "sha256": "06b1c57425ab1cbca757de882763e83f0618ae134a0c45fcfb99b223bc1754bd",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/6183e580439d61c7d65600cf0207e989cb1f2a5843552cdce8b63bca10049b33.json",
+      "sha256": "6183e580439d61c7d65600cf0207e989cb1f2a5843552cdce8b63bca10049b33",
+      "size_bytes": 167114
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/d67a72c00a28b49be03572dae5daac841574a824dda20369836363d127635ca7.json",
+      "sha256": "d67a72c00a28b49be03572dae5daac841574a824dda20369836363d127635ca7",
+      "size_bytes": 4290
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/duplicate-rollback/verification.json",
+      "sha256": "689790a6ad685de6f4e7e3d551f2745ebccc8ecc0fd75698ecf5b3bc3e02931a",
+      "size_bytes": 86658
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lease-rollback/5e35a7aea688e6959acb622154a9562c52b9803f050aed3a0e865d7d06a1eea5.json",
+      "sha256": "5e35a7aea688e6959acb622154a9562c52b9803f050aed3a0e865d7d06a1eea5",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lease-rollback/766b45f3215b553062c9a6941abc34ff039599432df323164fed7cdfb77995f7.json",
+      "sha256": "766b45f3215b553062c9a6941abc34ff039599432df323164fed7cdfb77995f7",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lease-rollback/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lease-rollback/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lease-rollback/verification.json",
+      "sha256": "1c658bd6e133ba349440aca52b2f33b791fec7fe665ecc685275747d4a40e7c1",
+      "size_bytes": 52887
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lost-replies/a41946242bdfc26159a988e05b8bda216f2dc64b2d7a800ba7c7f00519bbc4d0.json",
+      "sha256": "a41946242bdfc26159a988e05b8bda216f2dc64b2d7a800ba7c7f00519bbc4d0",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lost-replies/cf70e13a9e1c00d757e2695852d0103f824478eb3ebc6e3d40cc757a1f26b2a4.json",
+      "sha256": "cf70e13a9e1c00d757e2695852d0103f824478eb3ebc6e3d40cc757a1f26b2a4",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lost-replies/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lost-replies/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/lost-replies/verification.json",
+      "sha256": "6298ef995816cc51976a1715271f1202592cb57b2e10fe7dfa07dd66ee592b64",
+      "size_bytes": 52794
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/2fb8834607f0e944e5f4e6b9e467e27b62b753c94a0f81353d3ed062822e4689.json",
+      "sha256": "2fb8834607f0e944e5f4e6b9e467e27b62b753c94a0f81353d3ed062822e4689",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/5c6bfe5c0a77e471ab7b577e221e7cb9fe7c9b34a10db4b6c8360cc53c98e109.json",
+      "sha256": "5c6bfe5c0a77e471ab7b577e221e7cb9fe7c9b34a10db4b6c8360cc53c98e109",
+      "size_bytes": 3274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/dea19acc7475431aa768a5769af5789623e36f42bb91fe3e3293983263618209.json",
+      "sha256": "dea19acc7475431aa768a5769af5789623e36f42bb91fe3e3293983263618209",
+      "size_bytes": 167114
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/md/verification.json",
+      "sha256": "05daad39f9b18c6bd800a4d28534e759829f23b62b718be9d54ff507fb2381e2",
+      "size_bytes": 98546
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-and-model-guard/d6cb6c44a6d628b7f2e870a6fcf1fabfcfc882bbb29328f016879834057c7409.json",
+      "sha256": "d6cb6c44a6d628b7f2e870a6fcf1fabfcfc882bbb29328f016879834057c7409",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-and-model-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-and-model-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-and-model-guard/retry.json",
+      "sha256": "93838ee23332f06beacb65ff115f3578eaab4db527d9cea148f0300817cb6e28",
+      "size_bytes": 5095
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-and-model-guard/verification.json",
+      "sha256": "c18e57f8faa2a47d43d5a32b570d7b4f2bfc2f0d86d89c1f222c237f064c1d65",
+      "size_bytes": 2710
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/07f35ff69e08489892694d61ec4703d46ae841a10124c37eded52d65adbc49cb.json",
+      "sha256": "07f35ff69e08489892694d61ec4703d46ae841a10124c37eded52d65adbc49cb",
+      "size_bytes": 107296
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/1d86fbc90c2523ba21b34322066ac72aadea6e7095583679a7d2d126c88aa36c.json",
+      "sha256": "1d86fbc90c2523ba21b34322066ac72aadea6e7095583679a7d2d126c88aa36c",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/80f7b6acd862edba40f8cdc141343b71fedd5b3d6b3bdfd4e5b0232b92171a85.json",
+      "sha256": "80f7b6acd862edba40f8cdc141343b71fedd5b3d6b3bdfd4e5b0232b92171a85",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/e19af4a776ce89d9235aeb2c26cb9afa589c326e2056ed98b23eda409ac6d2c1.json",
+      "sha256": "e19af4a776ce89d9235aeb2c26cb9afa589c326e2056ed98b23eda409ac6d2c1",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/retry.json",
+      "sha256": "3d15f230b8be40d7557a01446231625c0957896bfa138b7f2d3a188c677f8e82",
+      "size_bytes": 7476
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/parent-conflict/verification.json",
+      "sha256": "3dcc8af3417c9e2ee75f8f6cd9ca2862941c9534d6e8f2552f11fa60cbf44f39",
+      "size_bytes": 51875
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/143e0d41426d06809913589f9b0e276cdc4762fafcd8e8ad12364237c8f8c2e7.json",
+      "sha256": "143e0d41426d06809913589f9b0e276cdc4762fafcd8e8ad12364237c8f8c2e7",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/1869258d88da0c92b35c5140bdae5c5763b0fdffd1f281b5b7089c3d359c06b0.json",
+      "sha256": "1869258d88da0c92b35c5140bdae5c5763b0fdffd1f281b5b7089c3d359c06b0",
+      "size_bytes": 174136
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/28959976c90596c6776085150fd2dea91a05491aabe6e1f0529d9b9c6759988d.json",
+      "sha256": "28959976c90596c6776085150fd2dea91a05491aabe6e1f0529d9b9c6759988d",
+      "size_bytes": 3830
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/pdf/verification.json",
+      "sha256": "b558866cbe9dae00ee6d3c7179bb0e0001c64befa1a9cc637d80f0140caeadc3",
+      "size_bytes": 101995
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/0f1090b89c1cc3e79877ae373e177242f68fd1befc2bec42688141b64ff0762d.json",
+      "sha256": "0f1090b89c1cc3e79877ae373e177242f68fd1befc2bec42688141b64ff0762d",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/1c3bac8d65b3b4a67d8292690b71042671454c664196e26b071e27841a075abb.json",
+      "sha256": "1c3bac8d65b3b4a67d8292690b71042671454c664196e26b071e27841a075abb",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/retry.json",
+      "sha256": "e7f6f7600d0c108387a5e06b154ad4a578936eae1477cfc3edd37e6aed922fc4",
+      "size_bytes": 8404
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/race-lost-reply/verification.json",
+      "sha256": "e73ca611efaeafebe5cebd79da6036570213facbb293888d25180657a0bbccc0",
+      "size_bytes": 53395
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/c388ca029f327394263f1a40357f820f698e5b72e3fb638facd63ed080c70ca8.json",
+      "sha256": "c388ca029f327394263f1a40357f820f698e5b72e3fb638facd63ed080c70ca8",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/c958b80ba428c6f7bf46dd31d09513334981da291443a8d6b3089bbf343721b1.json",
+      "sha256": "c958b80ba428c6f7bf46dd31d09513334981da291443a8d6b3089bbf343721b1",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/retry.json",
+      "sha256": "6c6eab6c59488965ca6a4cf06ac23a102174bb1fd742c35eb808361b7e9917e8",
+      "size_bytes": 9120
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-copy-guard/verification.json",
+      "sha256": "adecad93725aef523faedc827fd0a3252b23a6b6065055b57e468412ff4a3aa1",
+      "size_bytes": 51951
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-corruption/16f3baa9955ebf64ada7835dfd6573ac20eab9360b6456d9e9987a728f46f44b.json",
+      "sha256": "16f3baa9955ebf64ada7835dfd6573ac20eab9360b6456d9e9987a728f46f44b",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-corruption/989c27edc63623fc1cc02b2c02cf328f0b07d6f9bcefe3dace9019b0c33e1b0c.json",
+      "sha256": "989c27edc63623fc1cc02b2c02cf328f0b07d6f9bcefe3dace9019b0c33e1b0c",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-corruption/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-corruption/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-corruption/verification.json",
+      "sha256": "8c09d5154fc57ab49a162d4e12edf0829786891647adf5c8262a7616e1051450",
+      "size_bytes": 51908
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/69c7e4e1f85c98551982f53675eb4eff681acde591e5790f91acfacaa21a28cb.json",
+      "sha256": "69c7e4e1f85c98551982f53675eb4eff681acde591e5790f91acfacaa21a28cb",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/f822112ecced9a566b70850ab1d004bcc88c3cf35ea5aa4c5925e97b989e56d2.json",
+      "sha256": "f822112ecced9a566b70850ab1d004bcc88c3cf35ea5aa4c5925e97b989e56d2",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/retry.json",
+      "sha256": "a73d363ecbd819cff4b370cbbed067a300396313a8e96254dcdd8e104d793e7c",
+      "size_bytes": 9134
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-object-guard/verification.json",
+      "sha256": "a4a60d2f5883baadc0f8d8e0f9c528fe69cdcd481c535235221e480686c39d96",
+      "size_bytes": 51956
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-recovery/083557a8831680423a00981f627a8e99d4504cddbce09555165552541e8b717f.json",
+      "sha256": "083557a8831680423a00981f627a8e99d4504cddbce09555165552541e8b717f",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-recovery/4eac64dc12ecaf47af26932d248cc7c0a6eb0fbea054d282a0857da5823b0bd6.json",
+      "sha256": "4eac64dc12ecaf47af26932d248cc7c0a6eb0fbea054d282a0857da5823b0bd6",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-recovery/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-recovery/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/response-recovery/verification.json",
+      "sha256": "f2379b3bb76306b5855bb4381026dd60101a064325c82a70d839289ccad0fd9e",
+      "size_bytes": 52851
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement/04219c6f7ed6cf9ae69cbffd73635266714d46338916798ae7e70e72bd61ba17.json",
+      "sha256": "04219c6f7ed6cf9ae69cbffd73635266714d46338916798ae7e70e72bd61ba17",
+      "size_bytes": 9023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement/verification.json",
+      "sha256": "913628dd3b64adcd2607ae24278869d543ea984aef8d07407cea5b6413d48de5",
+      "size_bytes": 4976
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement-retry/0587dbdeaed06a25bb2bc24d10b786bc6ba05a87ef6ffc339040e446d2cf7737.json",
+      "sha256": "0587dbdeaed06a25bb2bc24d10b786bc6ba05a87ef6ffc339040e446d2cf7737",
+      "size_bytes": 9023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement-retry/retry.json",
+      "sha256": "3891c4deeab86acb8733ee68feaa083b3e13a19b629d7fee44c5768fd75decd2",
+      "size_bytes": 9008
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retirement-retry/verification.json",
+      "sha256": "581d11352be472be7a6d6edf0c1f9a4a98a4658fead64e21f8b34c1b57a95026",
+      "size_bytes": 2627
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/cdfd5f6a9255c170963abc8bc9747e356c5f82a475494bc4d4b7d2dcf6e73115.json",
+      "sha256": "cdfd5f6a9255c170963abc8bc9747e356c5f82a475494bc4d4b7d2dcf6e73115",
+      "size_bytes": 125324
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/d7345ed2729df301b328e6f84480c2f6129dda378e9096d122c6121f7159792b.json",
+      "sha256": "d7345ed2729df301b328e6f84480c2f6129dda378e9096d122c6121f7159792b",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/requirements-v1.docx",
+      "sha256": "4d040e1e84bcde90d2b61c0d4a44a193d73a04458964bd0623106e702629a816",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/requirements-v2.docx",
+      "sha256": "5f958a4c33471e451cd9732135f835c291b083294e0a064f4852eb7653e4457d",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/retry.json",
+      "sha256": "d46dbbcae26e814eca08ece245b152b41d0fd08cd38b5fcc9e6538146cf01992",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-docx/verification.json",
+      "sha256": "f2b82739194c9a94328e093d67ce8f2d01a61fa98a3c0b958de9ec4199e5bdcb",
+      "size_bytes": 70529
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/c56561956a78a91e1680bd25f9c635a19db0c6dd8d3039a71ad3b7e519d797c9.json",
+      "sha256": "c56561956a78a91e1680bd25f9c635a19db0c6dd8d3039a71ad3b7e519d797c9",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/cd7d537c1f38bff3d7e38496e2455b09b8d8cef9cc1892d1daac5dd3de7c8a34.json",
+      "sha256": "cd7d537c1f38bff3d7e38496e2455b09b8d8cef9cc1892d1daac5dd3de7c8a34",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/retry.json",
+      "sha256": "eeaca6b3f0b1968d1d9ad80a77d338395adc8b901f8b7cdfe93548fafd25c2df",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-md/verification.json",
+      "sha256": "7bc9e5175e774c48754b7226e442f6b34248f555a7b55814c6c31f1c7047163c",
+      "size_bytes": 61459
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/0751b685e0ca232965dc87df8b784f537fdc2fb0644a3ed0ac9d326c57236b1c.json",
+      "sha256": "0751b685e0ca232965dc87df8b784f537fdc2fb0644a3ed0ac9d326c57236b1c",
+      "size_bytes": 111704
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/c4a3e6a497910ad687ecd066b495fd146e668cbbf438f0de04094ac7eaecff52.json",
+      "sha256": "c4a3e6a497910ad687ecd066b495fd146e668cbbf438f0de04094ac7eaecff52",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/retry.json",
+      "sha256": "947f94d3ab1c4a1131ccd3dba9c86623b0a3a28daac18996eabecd0fbec54ee9",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/retry-pdf/verification.json",
+      "sha256": "cde84f4f67f764aa2e483ab65a4c0c1a06834f57f1019e7663ced236454f3b46",
+      "size_bytes": 63600
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/89638165c5659a0d12652a74c0a6b6e75fad6b5fa5dfdc4b968192ee897ef952.json",
+      "sha256": "89638165c5659a0d12652a74c0a6b6e75fad6b5fa5dfdc4b968192ee897ef952",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/af7778676efd5c803b53933a63c1ee5c37bde0d078c370f0061f59d194e2b21f.json",
+      "sha256": "af7778676efd5c803b53933a63c1ee5c37bde0d078c370f0061f59d194e2b21f",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/retry.json",
+      "sha256": "85afeef153020b1bda285713de37c66ca84fe299a59c4f1c2c9c233a111d4c42",
+      "size_bytes": 9113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/saved-response/verification.json",
+      "sha256": "3147892de09cadf42b48f2bd5232b02cc1efa450393db9bf1b0a2aeab0587358",
+      "size_bytes": 51924
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/scope-corruption/aa27f37b50eb10fb98816c23686dcacc63f9d756eab822644fafe45538947802.json",
+      "sha256": "aa27f37b50eb10fb98816c23686dcacc63f9d756eab822644fafe45538947802",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/scope-corruption/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/scope-corruption/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/scope-corruption/verification.json",
+      "sha256": "adb38f93613028e438e48b9182f5dbfcb124bd5dc75609090dacbe36e09794cb",
+      "size_bytes": 2611
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/seed-config-guard/e3be3efd64c524484b4e5b859f528f7923b7362e7dbfceb57e6b6253281937c3.json",
+      "sha256": "e3be3efd64c524484b4e5b859f528f7923b7362e7dbfceb57e6b6253281937c3",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/seed-config-guard/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/seed-config-guard/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/seed-config-guard/verification.json",
+      "sha256": "3fceb0b76c651156081fc35669b634361206e38a2a4cb376e4a2a82a4c522660",
+      "size_bytes": 2664
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown/d0b94ee9e894f133babb25991346a75d9fc5482837668f693aa7fd6619bf7be5.json",
+      "sha256": "d0b94ee9e894f133babb25991346a75d9fc5482837668f693aa7fd6619bf7be5",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown/verification.json",
+      "sha256": "757c42e253c011cc628ed91d77120c04cebfd777122540cdb0d93d834a537fde",
+      "size_bytes": 51505
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown-retry/0eb2107581bc79621cacfd505e4740426bb96ddc8efd277ceea58af99a600760.json",
+      "sha256": "0eb2107581bc79621cacfd505e4740426bb96ddc8efd277ceea58af99a600760",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final/unknown-retry/verification.json",
+      "sha256": "14cdcd6606c3c0f6a8c48b880169ac6aad33719f143bef8e51803cea1ae787fb",
+      "size_bytes": 51514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final.log",
+      "sha256": "962d0d8fe2da3108d0bedc6b9d37497eda3f60f6e48fadfa2241482da85c987d",
+      "size_bytes": 113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-final.xml",
+      "sha256": "b20b3e96712eb6c314f28d0ca42df0b893fd539083093579bf573b92e65a2c3e",
+      "size_bytes": 5140
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first/unknown-retry/ab924fe07db261794511d875264239b79ba5cf81aaedb961996ba4e7cf0fc20b.json",
+      "sha256": "ab924fe07db261794511d875264239b79ba5cf81aaedb961996ba4e7cf0fc20b",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first/unknown-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first/unknown-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first/unknown-retry/verification.json",
+      "sha256": "8239831b0a231bc1fc565ad1fcc8061f02136da323e87b46918ef317487066e8",
+      "size_bytes": 51514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first.log",
+      "sha256": "8ab96699482fc3f88de0c6063e583dc5e090c0432e98793bbd7e52b48e58f972",
+      "size_bytes": 9519
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-first.xml",
+      "sha256": "a0abe3f2e4c9c772afb794f286ce944febbffc3ffb6c281d10427ff11c62850c",
+      "size_bytes": 10768
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/archive-isolation/2f7656313fdff200345edd1d256401b0900c82711cf5c243fb39a44f90faa85c.json",
+      "sha256": "2f7656313fdff200345edd1d256401b0900c82711cf5c243fb39a44f90faa85c",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/archive-isolation/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/archive-isolation/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/archive-isolation/retry.json",
+      "sha256": "35d0de242a7a395a66b7fe295a352f7402b348c0b51feea76d58ffba1fee4a6f",
+      "size_bytes": 4944
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/archive-isolation/verification.json",
+      "sha256": "7e7f4896bd76edc5f1e14a98d025fbe7feb2ba29e78dd42311feb803adf7dd40",
+      "size_bytes": 2716
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/4c0a3977a99ff58f5ffeb4bcf98906b0a2971f6578476062474ba00a10bf7a12.json",
+      "sha256": "4c0a3977a99ff58f5ffeb4bcf98906b0a2971f6578476062474ba00a10bf7a12",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/bc5e1507f24b96eb3e6eefd19a29bd7a92bdaa2bf2b18aa3bfab152a79f61750.json",
+      "sha256": "bc5e1507f24b96eb3e6eefd19a29bd7a92bdaa2bf2b18aa3bfab152a79f61750",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/retry.json",
+      "sha256": "c7471e3cd4af48da8e1120e082ac8c285f18c218bccb382f9dc244100f240a5c",
+      "size_bytes": 7476
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/parent-conflict/verification.json",
+      "sha256": "ccd513c82dea197016f3f429307aa7cd3052f210f3ab105b6de6aab909691ba3",
+      "size_bytes": 51911
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/4ff28caf143764049bf82d6c690ec39b4dbb828ddb150c8a4a811e5fa0189c09.json",
+      "sha256": "4ff28caf143764049bf82d6c690ec39b4dbb828ddb150c8a4a811e5fa0189c09",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/d75ae8fdb4c1253d66053d3d848f755251131a22f080675b21f55bede37cf76f.json",
+      "sha256": "d75ae8fdb4c1253d66053d3d848f755251131a22f080675b21f55bede37cf76f",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/retry.json",
+      "sha256": "ace5f7e8c52080562ad4c58ecfebada1cbf5ed1a2826643c5edd0246467f15ad",
+      "size_bytes": 8404
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/race-lost-reply/verification.json",
+      "sha256": "7d5a6f882956550e9d8939325d8fe6602f1416a091112be6179142e8f382ee39",
+      "size_bytes": 53395
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/6cb35ff600f0c83652cabf1c341bebc5bd70fad0924605988e284e089f1462bb.json",
+      "sha256": "6cb35ff600f0c83652cabf1c341bebc5bd70fad0924605988e284e089f1462bb",
+      "size_bytes": 4761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/bd73a231bf130cb2efe1729f59b220019ac259184f765e68ae8c0483ef93576a.json",
+      "sha256": "bd73a231bf130cb2efe1729f59b220019ac259184f765e68ae8c0483ef93576a",
+      "size_bytes": 125326
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/requirements-v1.docx",
+      "sha256": "32e37310fbbf6d25198f6b149e53f8d65da9db212216472482e830329f91f41a",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/requirements-v2.docx",
+      "sha256": "3a6f2ec5cfeb81de341a45cf875ba1a2ee251a2b9970e45ff64677e66625c5ac",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/retry.json",
+      "sha256": "692c44c18f2f66eff9942b3d2354ca2d7e5e52d618cdaf2f48347182495de646",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-docx/verification.json",
+      "sha256": "26f3a8a6454568cbaf1c5aa0f6ee42a66c2d7c6d66183fa86ba668257a92f6da",
+      "size_bytes": 70530
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/3d409770fcf9392dcbad565d25361fc6670873d6d421ceae6114d38c9677825f.json",
+      "sha256": "3d409770fcf9392dcbad565d25361fc6670873d6d421ceae6114d38c9677825f",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/f4a1f21bef71ea8ffb326e3534482f7a6391bee1568f7e2802c7e97d40046492.json",
+      "sha256": "f4a1f21bef71ea8ffb326e3534482f7a6391bee1568f7e2802c7e97d40046492",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/retry.json",
+      "sha256": "df3663b46ff572094a7f96b07b8ed8409bfd81e23c84501aadff988df4df221a",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-md/verification.json",
+      "sha256": "891d4f2b0f1da711de8b10b7b3bf6fc73403499928a809b33f5839fdbeb545f9",
+      "size_bytes": 61459
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/51a28462defc1ea0b7a866a4df8d389776908ea6a1d69533e74f5db70a26eb67.json",
+      "sha256": "51a28462defc1ea0b7a866a4df8d389776908ea6a1d69533e74f5db70a26eb67",
+      "size_bytes": 111704
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/ebbdc964e7ec9d361268cadc6ee0b300e09aac20fa225400f7dbe54282d4289a.json",
+      "sha256": "ebbdc964e7ec9d361268cadc6ee0b300e09aac20fa225400f7dbe54282d4289a",
+      "size_bytes": 4825
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/retry.json",
+      "sha256": "24f7d716f8954280b2e91ff603656fb40b1f1255c6bef7d1c5033b7ca7312d7d",
+      "size_bytes": 8416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/retry-pdf/verification.json",
+      "sha256": "4c40bb279ac807fba78ab502c812c261f0381266b332b9b8f5342cf40ede4f11",
+      "size_bytes": 63600
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/84b9273549908283dc07a970a96d90922d28292ace97758a9b78fd6dd6d5ac6b.json",
+      "sha256": "84b9273549908283dc07a970a96d90922d28292ace97758a9b78fd6dd6d5ac6b",
+      "size_bytes": 4269
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/ae1ac37e5672ccf52edd882f9c520b4d2177b54c425df1a94af9ebfd4c213552.json",
+      "sha256": "ae1ac37e5672ccf52edd882f9c520b4d2177b54c425df1a94af9ebfd4c213552",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/retry.json",
+      "sha256": "d25dc263331e18d2823e1c3048a8120a39ea535084ffaf4a6fef42197de691ae",
+      "size_bytes": 9113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/saved-response/verification.json",
+      "sha256": "df87ac3935cad4ce9db9261bcde2f37e340b4cbfb62e5e6787f751a3c8f3438f",
+      "size_bytes": 51924
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/unknown-retry/34308023f21e928b1932cab680917f72b6b891bb2beeba01d4c6e72678545efd.json",
+      "sha256": "34308023f21e928b1932cab680917f72b6b891bb2beeba01d4c6e72678545efd",
+      "size_bytes": 107298
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/unknown-retry/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/unknown-retry/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed/unknown-retry/verification.json",
+      "sha256": "682b5c3646ebb9d05ab0de853a375f33927aa34171ae5b9dda164cee628afb95",
+      "size_bytes": 51514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed.log",
+      "sha256": "98f6fa73cd90d74400bb112c0b08bbcb047ac808d982bae35e96b878042de35c",
+      "size_bytes": 111
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-fixed.xml",
+      "sha256": "5f9546b49356fb1b495c8e279295fe54a51ecde81781508e27efac9685ad2481",
+      "size_bytes": 1605
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-frontend.log",
+      "sha256": "c82c4cd9111c13c62c1c97be7d9005dc910f47aaeb215931d24bf2a3628cf498",
+      "size_bytes": 529
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/050f80590b8a652653402b367e8bc580bce767e95931c5a4cd66ad9432414b1e.json",
+      "sha256": "050f80590b8a652653402b367e8bc580bce767e95931c5a4cd66ad9432414b1e",
+      "size_bytes": 1992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/06afd7ffb4642dbfb2d4f4791cdeb6553551f8124a8d90b4b123c7f79907e7a7.json",
+      "sha256": "06afd7ffb4642dbfb2d4f4791cdeb6553551f8124a8d90b4b123c7f79907e7a7",
+      "size_bytes": 3595
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/3ecd2f60e0855f95b8103c17e593fa8c01782950b7a752435c7f8f2125783a6e.json",
+      "sha256": "3ecd2f60e0855f95b8103c17e593fa8c01782950b7a752435c7f8f2125783a6e",
+      "size_bytes": 3222
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/45c154abeb4d42004ae6d18d49daf44b7a95abf14fb4900525564ca5fad5417e.json",
+      "sha256": "45c154abeb4d42004ae6d18d49daf44b7a95abf14fb4900525564ca5fad5417e",
+      "size_bytes": 3315
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/4e4097d33b7ce7b596c00bf57e4c48d21ba40ed59baa3cd3845330d29642ac4d.json",
+      "sha256": "4e4097d33b7ce7b596c00bf57e4c48d21ba40ed59baa3cd3845330d29642ac4d",
+      "size_bytes": 3534
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/587c925cde13bc658d9d199e630ed8964acc605dc68d5cc49cabb5b5ee0d7248.json",
+      "sha256": "587c925cde13bc658d9d199e630ed8964acc605dc68d5cc49cabb5b5ee0d7248",
+      "size_bytes": 2708
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/7d67e8e951f5441d1b0b6d993287d50de0c4cfa768f2d53466f76838db94ef09.json",
+      "sha256": "7d67e8e951f5441d1b0b6d993287d50de0c4cfa768f2d53466f76838db94ef09",
+      "size_bytes": 56913
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/84ff5a062a7179292624c2f57889b39311d3e101a98b9b24c91dcd57b1c1683c.json",
+      "sha256": "84ff5a062a7179292624c2f57889b39311d3e101a98b9b24c91dcd57b1c1683c",
+      "size_bytes": 202798
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/8daf03a1595c2d8134522305fc690f0337c97dbf34c8f488e61d0e67454af91c.json",
+      "sha256": "8daf03a1595c2d8134522305fc690f0337c97dbf34c8f488e61d0e67454af91c",
+      "size_bytes": 83304
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/9facadbe34d05487505f3e0be747854787e2d16ac5a5cf72ca307321ddbae8fa.json",
+      "sha256": "9facadbe34d05487505f3e0be747854787e2d16ac5a5cf72ca307321ddbae8fa",
+      "size_bytes": 41043
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/a1b68bf07cebfd1756b4566699fb1ca16e474ab6cf8c3376180bb35d2812f6df.json",
+      "sha256": "a1b68bf07cebfd1756b4566699fb1ca16e474ab6cf8c3376180bb35d2812f6df",
+      "size_bytes": 4502
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/c13b6555b36711f22b89922b50157e64292e17b35ca5e7011ec4aeb6c3a6379a.json",
+      "sha256": "c13b6555b36711f22b89922b50157e64292e17b35ca5e7011ec4aeb6c3a6379a",
+      "size_bytes": 129218
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/checkpoints.json",
+      "sha256": "9f73f099bf65402dfbe7ddf3fda1d52d946bd976a7c9342d9ad6ae1fc50c699d",
+      "size_bytes": 8760
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/comparison.stderr",
+      "sha256": "a85e3bc831b55852b78df4f6d4437460cf6960e054a07734a52aae6faf6298ce",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/docker.json",
+      "sha256": "ed2db89a28e76be2d0cdc4de2922c0896454e90b6ad8a9611ab0b045d9221af1",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/e3c25fd0498a11a690c7bc60db172ded548e9b12dba001fa1f80826b3bb1cae5.json",
+      "sha256": "e3c25fd0498a11a690c7bc60db172ded548e9b12dba001fa1f80826b3bb1cae5",
+      "size_bytes": 1235
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/e5b0f380f63f84df050dc4b542d0725352b5178265e7e156253f6a6b10a9ec6f.json",
+      "sha256": "e5b0f380f63f84df050dc4b542d0725352b5178265e7e156253f6a6b10a9ec6f",
+      "size_bytes": 129218
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/explicit-retry-frozen_request.stderr",
+      "sha256": "f4af98a76e65dcfa94ca600de61766151c42ac45037c5fba31185e817d81956a",
+      "size_bytes": 8401
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/explicit-retry-frozen_request.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/explicit-retry-saved_response.stderr",
+      "sha256": "fcb1549a57a9929aa285f7042f910fe23682602a79c6526d66f3f1872cceb14d",
+      "size_bytes": 6685
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/explicit-retry-saved_response.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/failed-parent-frozen_request.stderr",
+      "sha256": "cebb0edfcb275f352e381d4dff86f247e62a3566483cf54e780f3f7c39e1670e",
+      "size_bytes": 6469
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/failed-parent-frozen_request.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/failed-parent-saved_response.stderr",
+      "sha256": "736ad62e114338e3395c189523492e38e65b23cf9b9c6ca5bb0eaafce9bab3d3",
+      "size_bytes": 8698
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/failed-parent-saved_response.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-0.stderr",
+      "sha256": "ec45274ac888ff6dfa835baaaa31498fc577f56377280d1de3637435e8b10e31",
+      "size_bytes": 8214
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-0.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-1.stderr",
+      "sha256": "de2a22e0004b184c70ed081bed12dad8e8f16d348c6dcb2e00d9cdf412062fe8",
+      "size_bytes": 8214
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-1.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-retries.json",
+      "sha256": "25273f09aafb4f4a8de006326d48f1f385d6b41c073325ba28efb5a272ba0aa3",
+      "size_bytes": 333746
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-terminal-71e52522-0efa-47f3-8379-9add5d7aaa2a.stderr",
+      "sha256": "ab46cf3f350b897a0db4a2a5de26b34cc6ec43159a59886cee4de480413d42aa",
+      "size_bytes": 5262
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-terminal-71e52522-0efa-47f3-8379-9add5d7aaa2a.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-terminal-74e9a378-c9c5-401d-a009-b6c961bd943f.stderr",
+      "sha256": "5a1b2bc67d75e2ffa0f72654ec504347c00d58d8f5a1d3a99a9f8655349f26f5",
+      "size_bytes": 5262
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation-terminal-74e9a378-c9c5-401d-a009-b6c961bd943f.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/generation.json",
+      "sha256": "8ff786bc1e94f6b495ffaa1169c38b9670a422e845a8da3045d0f4f55b3c2f0c",
+      "size_bytes": 242885
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-disabled.stderr",
+      "sha256": "be4bfc799afbed234d6224cb6abdea65f16ef47fec27a76eeae5ebae21f9957b",
+      "size_bytes": 22830
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-disabled.stdout",
+      "sha256": "e3e26f66ed446c2acf742558b2c3a9774c41936832a2d131a5e5d378dbe2c76a",
+      "size_bytes": 5701
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-first.stderr",
+      "sha256": "2b1c183b821de6ec041d50c1243c1ffb96ffa832cf62cda9b7eeae3999342120",
+      "size_bytes": 25770
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-first.stdout",
+      "sha256": "5103f7df8f6af46025798165ed87fc6ffc8459a65f0fb1ea28608a4e999adcd0",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-restarted.stderr",
+      "sha256": "b5dd58cfa24e7a116f8d1690f127f466b2b4e59de0733219a87997a39db21bf9",
+      "size_bytes": 86667
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-api-restarted.stdout",
+      "sha256": "4a635aaebecc78581da7cba757ace351b37f3eb880d70b287fcdb2fefa486b13",
+      "size_bytes": 10514
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-worker-first.stderr",
+      "sha256": "425d49a0e8132e75dd57645fc3ca74d47f734c85681eca30942020f80a94c30c",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-worker-terminal.stderr",
+      "sha256": "95324ce09de05c0432844b20e8ee20cbb57652ba7cd7ae52406543dee6754f50",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/parse-1.stderr",
+      "sha256": "57c183fcf1d7663eb5bd72302c7242b30a2f550447f3e6003c2fe0a8a3fb4667",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/parse-2.stderr",
+      "sha256": "9f44d4e882cfdd31bc0b8e597a00ec61d984d632c9eb2ceb4893976f2d6cfd67",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/physical-requests.json",
+      "sha256": "043e05fb6a311f801971ee2c37755318b880b1d56396753d31893d576c36f7b2",
+      "size_bytes": 288072
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/requirement-matrix.json",
+      "sha256": "c811bced3d40b13dadc31bb492b281388bd65b9694da4160e776f48eecd32440",
+      "size_bytes": 2112
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/requirement-review.json",
+      "sha256": "26ebd676f4701660b3ffcb47db05c1b543a9a0c5adef5637195e9c6fe6733426",
+      "size_bytes": 9761
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/requirements-v1.docx",
+      "sha256": "c48ca4572d02fe2f1f5a7badd8602ade82d4d06b18078008f26ecfc856dbfa4f",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/requirements-v2.docx",
+      "sha256": "3d528ebfefc5de2640c85bae101edafd9c587bc18fb800626918da4eefadba42",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/result.json",
+      "sha256": "bc8aef43525fbe9ff6aef4d73e9c0c005ade3df95c67fd24442ca90a30b2bd3e",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-frozen_request-bd6c87d0-ed8e-40c8-b867-c98c23b6279f.stderr",
+      "sha256": "98475ce7507e351a0e8b2894e9db9cec1d65cda5d0d08cbda6b8a613231983e3",
+      "size_bytes": 5244
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-frozen_request-bd6c87d0-ed8e-40c8-b867-c98c23b6279f.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-frozen_request-ee31dac6-a817-4d00-a7a4-f0e5095cd7e1.stderr",
+      "sha256": "977586f9c5dc0b4195e57a269cd9ccf257aa98b525f1137df979546345327cfe",
+      "size_bytes": 5247
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-frozen_request-ee31dac6-a817-4d00-a7a4-f0e5095cd7e1.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-saved_response-30b42a0e-4f87-4192-9c9f-5b6563c5cf8c.stderr",
+      "sha256": "c8c0b09a1215e6cfac78fa9ab9a1e3ee7883d10f2e2b9a74867e639da1bc9109",
+      "size_bytes": 5247
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-saved_response-30b42a0e-4f87-4192-9c9f-5b6563c5cf8c.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-saved_response-67a23fe3-6cac-4686-ad77-37e54169140a.stderr",
+      "sha256": "3d7bb9232d30e99593c190a2fc133595563867871688c90834f65aebdedc7ad2",
+      "size_bytes": 5244
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/retry-terminal-saved_response-67a23fe3-6cac-4686-ad77-37e54169140a.stdout",
+      "sha256": "063a5522cda4682d05e227f0750fafa2b6206b3e2588eeb9030395b9b5a5e64b",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/snapshot-view.json",
+      "sha256": "8c23b61477254c71697860b45b18983305013dd747f49f1ce55a1e555852177b",
+      "size_bytes": 60219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/source-1.json",
+      "sha256": "16dc85284977dea777112765ef925dbf8fb813cc40202a5e753a9209f6b01f88",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/source-2.json",
+      "sha256": "12cd00cfad020527c6d6b2976fd31cb92a83f42c5a00c72910fc295adc517f5a",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first/docx-native-finish/verification.json",
+      "sha256": "abc79ee915ff3cdd96e360791cf370a368c354bfce94f58c0760eafb8a21af6e",
+      "size_bytes": 41226
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first.log",
+      "sha256": "718907d039c387ba819f19684576af9a5a09c89e768dfcd321f77e13ba0f4ad2",
+      "size_bytes": 112
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-generation-retry-production-first.xml",
+      "sha256": "2476272872ee9f5ad60609724402b00301ad5883b974bca7a8b03c0264136c23",
+      "size_bytes": 405
+    }
+  ],
+  "xml": {
+    "first": {
+      "passed": 2,
+      "failed": 7,
+      "skipped": 0,
+      "seconds": 77.635
+    },
+    "fixed": {
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 74.185
+    },
+    "final": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 267.304
+    },
+    "acceptance": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 104.699
+    },
+    "delivery": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 111.911
+    },
+    "production-first": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 135.1
+    }
+  },
+  "actual_retry_cases": [
+    {
+      "name": "retry-acceptance-archive-isolation",
+      "retry_id": "c6751fb7-1f72-439c-9237-cfef7fd27b32",
+      "strategy": "frozen_request",
+      "status": "queued",
+      "http_calls": 0
+    },
+    {
+      "name": "retry-acceptance-parent-and-model-guard",
+      "retry_id": "7be50325-074c-45d3-a457-7dea65d2d440",
+      "strategy": "frozen_request",
+      "status": "failed",
+      "http_calls": 0
+    },
+    {
+      "name": "retry-acceptance-parent-conflict",
+      "retry_id": "deca0e6a-0c9b-42b2-8bfc-8e4df9d21909",
+      "strategy": "saved_response",
+      "status": "failed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-race-lost-reply",
+      "retry_id": "6c55db5a-c2fa-4c1d-a8e5-10a8199c9861",
+      "strategy": "frozen_request",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-response-copy-guard",
+      "retry_id": "7431edcc-e9eb-447c-a13b-bff1e1002d0e",
+      "strategy": "saved_response",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-response-object-guard",
+      "retry_id": "5b176632-81f6-44d9-affd-c230ecb9c110",
+      "strategy": "saved_response",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-retirement-retry",
+      "retry_id": "f6612d41-22a0-46a1-b493-bb883d9a8e67",
+      "strategy": "frozen_request",
+      "status": "completed",
+      "http_calls": 0
+    },
+    {
+      "name": "retry-acceptance-retry-docx",
+      "retry_id": "762f464b-9a2c-4e10-90bd-09ac367f0da1",
+      "strategy": "frozen_request",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-retry-md",
+      "retry_id": "3fcac411-80cc-400c-ba6c-59021397da24",
+      "strategy": "frozen_request",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-retry-pdf",
+      "retry_id": "da7e889d-8ae4-4e97-9ff7-8e861aa2c7bc",
+      "strategy": "frozen_request",
+      "status": "completed",
+      "http_calls": 1
+    },
+    {
+      "name": "retry-acceptance-saved-response",
+      "retry_id": "5250a256-7943-4dab-9027-01960710315b",
+      "strategy": "saved_response",
+      "status": "completed",
+      "http_calls": 1
+    }
+  ],
+  "actual_production_physical_calls": 6,
+  "production_incremental_http_calls": 4,
+  "frontend_tests": 57,
+  "frontend_type_build_passed": true,
+  "formal_retry_page_connected": false,
+  "external_default_model_repeated": false,
+  "production_historical_migration_run": false,
+  "full_P0_P5_complete": false,
+  "staged_related_files_checked": 464,
+  "staged_raw_bytes_checked": 446
+}

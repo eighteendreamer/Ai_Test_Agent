@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { getCaseGenerationSubmission, getCaseGenerationTask, getGenerationSettings, listCaseGenerations,
-  readCaseGeneration, readCaseGenerationResponse, readCaseGenerationScope, saveGenerationSettings, submitCaseGeneration } from "./caseGeneration.api";
+  readCaseGeneration, readCaseGenerationResponse, readCaseGenerationScope, saveGenerationSettings, submitCaseGeneration,
+  retryCaseGeneration, getCaseGenerationRetrySubmission, listCaseGenerationRetries } from "./caseGeneration.api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,4 +38,17 @@ it("reads fixed groups, modules and raw evidence and saves the full project poli
     "/api/v1/projects/p/documents/d/case-generation-tasks/t%2F%3F/response",
   ]);
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(policy);
+});
+
+it("submits an explicit new task for one parent and retains its request identity for recovery", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = { creation_key: "原重试 ?/#" };
+  await retryCaseGeneration("p", "d/#", "parent/?", payload);
+  await getCaseGenerationRetrySubmission("p", "d/#", "parent/?", payload.creation_key);
+  await listCaseGenerationRetries("p", "d/#", "parent/?", 1, 2);
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects/p/documents/d%2F%23/case-generation-tasks/parent%2F%3F/retries");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+  expect(new URL(fetchMock.mock.calls[1][0], "http://localhost").searchParams.get("creation_key")).toBe(payload.creation_key);
+  expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/projects/p/documents/d%2F%23/case-generation-tasks/parent%2F%3F/retries?limit=1&offset=2");
 });

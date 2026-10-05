@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_generation import IncrementalGenerationRequest, IncrementalGenerationScope, generation_hash
 from src.schemas.case_generation_tasks import GenerationObject, GenerationTaskRequest
+from src.schemas.case_generation_tasks import GenerationRetryRequest, GenerationRetryView
+from src.application.test_cases.generation_retry import generation_retry_strategy
 from src.schemas.case_management import TestCaseDraftCreateRequest, TestCaseVersionCreateRequest
 from src.schemas.model_config import ModelInvocationResult, model_invocation_parameters
 
@@ -117,6 +119,42 @@ class GenerationTaskService:
         group, _ = await self.read_group(project_id, document_id, group_id)
         return await self.read_scope(group)
 
+    async def _retry_view(self, retry):
+        task = await self.get_task(retry.project_id, retry.document_id, retry.task_id)
+        if task.group_id != retry.group_id or task.module_id != retry.module_id:
+            raise ValueError("重试关系与子任务不同")
+        return GenerationRetryView(retry=retry, task=task.model_dump(mode="json"))
+
+    async def retry(self, project_id, document_id, parent_task_id, request):
+        request = GenerationRetryRequest.model_validate_json(request.model_dump_json())
+        await self._require_document(project_id, document_id)
+        prior = await self._store.get_retry(project_id, document_id, creation_key=request.creation_key, parent_task_id=parent_task_id)
+        if prior: return await self._retry_view(prior)
+        if not self._stream: raise RuntimeError("持久生成的派发流尚未启用")
+        parent = await self.get_task(project_id, document_id, parent_task_id)
+        strategy = generation_retry_strategy(parent)
+        group, _ = await self.read_group(project_id, document_id, parent.group_id)
+        scope = await self.read_scope(group)
+        module = next((item for item in scope.modules if item.id == parent.module_id), None)
+        if module is None: raise ValueError("原失败任务没有固定模块")
+        config = await self._config.get(project_id)
+        if strategy == "frozen_request" and module.generation and module.generation.authoring.transport_options != config.payload.transport_options:
+            raise ValueError("新重试策略不能替换固定请求的SDK选项，请使用新的生成范围")
+        if strategy == "saved_response": await self._read_object(parent.checkpoint.response, ModelInvocationResult)
+        saved = await confirmed_generation_write(self._store.submit_retry(parent, group, module, config,
+            creation_key=request.creation_key, stream=self._stream), stage="retry_submit", identity=request.creation_key)
+        return await self._retry_view(saved)
+
+    async def get_retry_by_request(self, project_id, document_id, parent_task_id, creation_key):
+        await self._require_document(project_id, document_id)
+        saved = await self._store.get_retry(project_id, document_id, creation_key=creation_key, parent_task_id=parent_task_id)
+        if saved is None: raise KeyError("当前文档没有该重试提交")
+        return await self._retry_view(saved)
+
+    async def list_retries(self, project_id, document_id, parent_task_id, *, limit=20, offset=0):
+        await self.get_task(project_id, document_id, parent_task_id)
+        return await self._store.list_retries(project_id, document_id, parent_task_id, limit=limit, offset=offset)
+
     async def read_response(self, project_id, document_id, task_id):
         task = await self.get_task(project_id, document_id, task_id)
         if task.checkpoint is None or task.checkpoint.response is None: raise KeyError("该模块尚未保存原响应")
@@ -160,7 +198,7 @@ class GenerationTaskService:
             **({"transport_options": prepared.authoring.transport_options} if prepared.authoring.transport_options else {}))
         if runtime != prepared.authoring.runtime_parameters: raise ValueError("模型SDK/runtime已变化，不能续写原模块")
 
-    async def _draft_entries(self, scope, group, module, response, batch):
+    async def _draft_entries(self, scope, group, module, response, batch, *, retry=None):
         context = json.loads(module.generation.invocation.messages[0]["content"])["evidence_context"]
         provenance = {"group_id": group.id, "module_id": module.id, "scope_sha256": scope.sha256,
             "request_sha256": module.generation.sha256, "response": response.model_dump(mode="json"),
@@ -168,6 +206,7 @@ class GenerationTaskService:
             "review_id": scope.review.id, "point_ids": [point.id for point in scope.requirement.points],
             "target_case_version_id": module.target.version_id if module.target else None,
             "deployment_status": "unknown"}
+        if retry: provenance["retry"] = retry.model_dump(mode="json")
         payloads = []
         for case in batch.cases:
             content = case.model_dump(exclude={"case_key", "title", "priority", "case_type"})
@@ -195,6 +234,7 @@ class GenerationTaskService:
             module = next((item for item in scope.modules if item.id == claim.seed.module_id), None)
             if module is None or module.sha256 != claim.seed.module_sha256: raise ValueError("任务模块依据不同")
             checkpoint = current.checkpoint
+            policy = claim.seed.config.payload
             if module.kind == "retirement_candidate":
                 return await confirmed_generation_write(self._store.commit_module(claim, module, [], scope_sha256=scope.sha256), stage="retirement", identity=current.id)
             if checkpoint and checkpoint.phase == "invoking":
@@ -202,7 +242,7 @@ class GenerationTaskService:
             if checkpoint is None:
                 await self._projects.require_active(current.project_id)
                 stage = "input_budget_or_configuration_rejected"
-                budget = self.budget(module, group.config.payload)
+                budget = self.budget(module, policy)
                 await self._preflight(module.generation)
                 remaining = await self._store.remaining_seconds(claim)
                 if remaining <= 0: raise TimeoutError("原模块总期限已到")
@@ -210,18 +250,18 @@ class GenerationTaskService:
                 stage = "call_outcome_unknown"
                 logger.info("case_generation_invoking", extra={"task_id": current.id, "module_id": module.id,
                     "attempt_id": claim.attempt_id, "request_sha256": module.generation.sha256, "budget": budget})
-                async with asyncio.timeout(min(remaining, group.config.payload.call_timeout_seconds)):
+                async with asyncio.timeout(min(remaining, policy.call_timeout_seconds)):
                     result = await self._generator.invoke_frozen(module.generation)
                 reference = await self._object(result, f"{current.project_id}/{current.id}/{claim.attempt_id}/responses", "response.json")
                 checkpoint = await confirmed_generation_write(self._store.save_response(claim, reference), stage="response", identity=current.id)
             stage = "response_validation_rejected"
             if checkpoint is None or checkpoint.response is None: raise ValueError("模块没有持久原响应")
             result = await self._read_object(checkpoint.response, ModelInvocationResult)
-            if checkpoint.response.size_bytes > group.config.payload.max_response_bytes:
+            if checkpoint.response.size_bytes > policy.max_response_bytes:
                 raise GenerationBudgetExceeded("原响应超过固定大小，已保存但未提交草稿")
             batch = self._sources.parse_module_response(module, result)
             stage = "draft_commit_rejected"
-            entries = await self._draft_entries(scope, group, module, checkpoint.response, batch)
+            entries = await self._draft_entries(scope, group, module, checkpoint.response, batch, retry=claim.seed.retry)
             return await confirmed_generation_write(self._store.commit_module(claim, module, entries,
                 scope_sha256=scope.sha256), stage="draft_commit", identity=current.id)
         except (GenerationCheckpointUnavailable, ContinuationLeaseLostError, asyncio.CancelledError):

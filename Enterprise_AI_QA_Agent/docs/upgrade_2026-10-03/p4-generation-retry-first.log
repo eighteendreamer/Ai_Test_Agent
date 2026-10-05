@@ -1,0 +1,102 @@
+.FFFF.FFF                                                                [100%]
+================================== FAILURES ===================================
+_ test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[md] _
+tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = <Response [409 Conflict]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 case_generation_request_rejected
+_ test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[docx] _
+tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = <Response [409 Conflict]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 case_generation_request_rejected
+_ test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[pdf] _
+tests\test_generation_retries.py:83: in test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent
+    assert reply.status_code==202,reply.text
+E   AssertionError: {"detail":"1 validation error for GenerationRetryView\ntask\n  Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]\n    For further information visit https://errors.pydantic.dev/2.13/v/model_type"}
+E   assert 409 == 202
+E    +  where 409 = <Response [409 Conflict]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 case_generation_request_rejected
+___ test_actual_saved_response_retry_never_resends_and_old_failure_remains ____
+tests\test_generation_retries.py:122: in test_actual_saved_response_retry_never_resends_and_old_failure_remains
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="response-retry"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+_ test_actual_same_request_race_lost_commit_reply_and_recovery_without_config _
+tests\test_generation_retries.py:174: in test_actual_same_request_race_lost_commit_reply_and_recovery_without_config
+    views=await asyncio.gather(*[service.retry(project.id,doc.id,parent.id,request) for _ in range(4)])
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+_ test_actual_parent_version_conflict_reuses_response_and_preserves_both_failures _
+tests\test_generation_retries.py:218: in test_actual_parent_version_conflict_reuses_response_and_preserves_both_failures
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="conflict-retry"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+______ test_actual_retry_project_isolation_archive_and_fixed_sdk_options ______
+tests\test_generation_retries.py:237: in test_actual_retry_project_isolation_archive_and_fixed_sdk_options
+    view=await service.retry(project.id,doc.id,parent.id,GenerationRetryRequest(creation_key="original"))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:146: in retry
+    return await self._retry_view(saved)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\generation_task_service.py:126: in _retry_view
+    return GenerationRetryView(retry=retry, task=task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for GenerationRetryView
+E   task
+E     Input should be a valid dictionary or instance of GenerationTaskView [type=model_type, input_value=GenerationTaskRecord(id='...None, completed_at=None), input_type=GenerationTaskRecord]
+E       For further information visit https://errors.pydantic.dev/2.13/v/model_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.generation_task_service:generation_task_service.py:270 case_generation_module_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_generation_retries.py::test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[md]
+FAILED tests/test_generation_retries.py::test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[docx]
+FAILED tests/test_generation_retries.py::test_actual_public_retry_new_policy_uses_exact_old_full_request_and_keeps_parent[pdf]
+FAILED tests/test_generation_retries.py::test_actual_saved_response_retry_never_resends_and_old_failure_remains
+FAILED tests/test_generation_retries.py::test_actual_same_request_race_lost_commit_reply_and_recovery_without_config
+FAILED tests/test_generation_retries.py::test_actual_parent_version_conflict_reuses_response_and_preserves_both_failures
+FAILED tests/test_generation_retries.py::test_actual_retry_project_isolation_archive_and_fixed_sdk_options
+7 failed, 2 passed in 77.65s (0:01:17)

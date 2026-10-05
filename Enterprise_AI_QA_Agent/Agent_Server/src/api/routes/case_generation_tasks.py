@@ -9,6 +9,7 @@ from src.schemas.case_generation import IncrementalGenerationScope
 from src.schemas.case_generation_tasks import (
     GenerationGroup, GenerationGroupPage, GenerationGroupView, GenerationTaskPolicy,
     GenerationTaskRequest, GenerationTaskSettings, GenerationTaskView,
+    GenerationRetryRequest, GenerationRetryView, GenerationRetryPage,
 )
 from src.schemas.model_config import ModelInvocationResult
 
@@ -66,3 +67,20 @@ async def get_task(project_id: UUID, document_id: UUID, task_id: UUID, request: 
 @router.get("/documents/{document_id}/case-generation-tasks/{task_id}/response", response_model=ModelInvocationResult)
 async def read_response(project_id: UUID, document_id: UUID, task_id: UUID, request: Request):
     return await _call(request, project_id, "read_response", str(document_id), str(task_id))
+
+
+@router.post("/documents/{document_id}/case-generation-tasks/{task_id}/retries", response_model=GenerationRetryView, status_code=202)
+async def retry(project_id: UUID, document_id: UUID, task_id: UUID, payload: GenerationRetryRequest, request: Request):
+    return await _call(request, project_id, "retry", str(document_id), str(task_id), payload)
+
+
+@router.get("/documents/{document_id}/case-generation-tasks/{task_id}/retries/by-request", response_model=GenerationRetryView)
+async def get_retry_by_request(project_id: UUID, document_id: UUID, task_id: UUID, request: Request,
+    creation_key: str = Query(min_length=1, max_length=160)):
+    return await _call(request, project_id, "get_retry_by_request", str(document_id), str(task_id), creation_key)
+
+
+@router.get("/documents/{document_id}/case-generation-tasks/{task_id}/retries", response_model=GenerationRetryPage)
+async def list_retries(project_id: UUID, document_id: UUID, task_id: UUID, request: Request,
+    limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)):
+    return await _call(request, project_id, "list_retries", str(document_id), str(task_id), limit=limit, offset=offset)

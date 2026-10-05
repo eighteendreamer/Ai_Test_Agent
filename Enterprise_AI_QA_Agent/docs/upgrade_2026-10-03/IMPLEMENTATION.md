@@ -2689,3 +2689,41 @@ npm run test -- src/features/tools/plugins/CaseGenerationProduct.test.ts src/fea
 ```
 
 首次和修正轮使用同一实际浏览器测试、不同证据目录，不重写旧结果；完整浏览器harness实际执行npm run build，包含vue-tsc检查。外部交付脚本generation_product_delivery_20261005.py核对原件/对象/消息、三份方案、旧证据及暂存范围，语法/diff检查是补充。没有自动推送或PR。
+
+## 失败模块新任务与原响应复用〔研究基线12481ef2〕
+
+上一轮12481ef2属于实际进展：正式增量页面、真实DOCX完整App和旧需求App兼容已验证。本轮重新读目标原附件、当前源文件、固定hash、共享租约/Outbox、Agent新回归和本地Agent课程幂等段，研究后采用3.6.7。修改5份后端生产文件、同步前端类型/客户端/现有mock及新客户端测试，并增加实际模块/API与独立生产流程；没有新依赖/MySQL配置键、实际.env或用户.gitignore改动。
+
+首次真实新增模块 **7失败/2通过（77.65秒）**：我漏了内部GenerationTaskRecord到公开GenerationTaskView的显式转换，7项在新任务已保存后结果转换失败；不是未提交。原日志/XML保留，unknown拒绝路径与旧组hash读取通过。按既有公开结果方式转换完整model_dump后 **9通过、0跳过（74.21秒）**，实际MD/DOCX/PDF及MySQL/PG/RustFS/受控HTTP。之后新增真实父任务编号/模型改变、PG响应引用替换、RustFS原响应损坏与停用候选期限失败场景。
+
+新增模块、原持久模块和公共API三模块回归 **33通过、0跳过（267.30秒）**，其中新增13项和旧20项。复查证据发现新helper把直接服务场景泛标为公共API，并与旧父冲突保存目录重名；原文件保留，旧混合目录不作为新增父冲突的完整依据。修正测试标记与独立目录，并将真实数据库重试提交回执丢失通过公共POST实际验证503，再按原编号恢复。标记/目录修正轮新增模块 **13通过、0跳过（104.70秒）**，与上述13项重叠，不累加。交付校验随后发现SQLAlchemy RowMapping被default=str写成字符串：测试中的SQL核对已通过，但保存文件不便按JSON验证。将SQL行明确转为dict并移除这份文件的字符串兜底后，最新交付轮 **13通过、0跳过（111.91秒）**，原旧文件保留；最新SQL字段/Outbox证据使用delivery目录。
+
+最新范围包括旧组hash、3格式发送前预算失败/新策略/原完整消息/草稿，持久响应超过原预算后无新HTTP完成，实际在途取消unknown的公共409，四路同编号提交/四路领取、PG提交回执丢失503、分页、同编号改父任务409、当前模型变化发送前失败、原用例父冲突继续失败、PG子响应引用替换拒绝后恢复、实际RustFS损坏拒绝后恢复、项目越界404/归档/关闭派发历史，以及原停用候选期限失败后仅形成候选。原失败/终态/原group/scope保持；完整12步JSON及False/0/null/扩展字段、自身说明实际送达，草稿记录新retry引用。实际新task/不可变retry/Outbox同事务并通过SQL对照，原版本继续启用。
+
+独立生产API/解析、比较、影响及生成CLI，真实DOCX、MySQL/PG/Redis/RustFS流程 **1通过、0跳过（135.10秒）**。原影响2次HTTP、原正常生成2次HTTP，另验证发送前失败后执行原请求1次和响应预算失败时原发送1次，总计6个物理POST。复用原响应的新任务没有第7次调用；两类原失败继续在原组显示。子任务完成后连同原父任务分别由独立CLI终态重投，没有新发送。API重启关闭派发后两类原请求/新task/原响应可读可重放，新编号503。所有物理消息按完整冻结请求核对；内容相同的明确新任务仍保留各自身份，不按文本误去重。
+
+前端实际客户端与旧增量/需求/影响组件 **57通过、4文件（3.16秒）**；vue-tsc/Vite构建通过10.77秒。本轮没有正式重试按钮/缓存恢复页面的浏览器验收，没有调用外部默认生成模型、执行生产历史迁移或证明用户业务评审。受控模型证明链路及固定依据，不能证明需求已部署或测试通过。
+
+原件、scope/response、PG重试关系/seed/收据/Outbox、实际物理消息、独立进程、首轮失败和各轮日志/XML在p4-generation-retry-*；最新功能依据使用delivery独立目录与production-first，旧4394份原文件及新证据、三份方案、用户.gitignore和暂存字节由p4-generation-retry-validation.json核对。具体命令见IMPLEMENTATION.md。
+
+下一步实施正式重试页面与完整App恢复，继续任务池投影、草稿评审后精确关联、运行/环境适用性及P2/P1/P0/P5剩余项；完整P0—P5未完成，目标保持active。
+
+实际命令（Agent_Server目录，stdout/stderr保存对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_GENERATION_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-retry-final'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_retries.py tests/test_generation_tasks.py tests/test_generation_api.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-retry-final.xml
+# 校正证据标记/目录及公共503后，使用acceptance目录：
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_retries.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-retry-acceptance.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-retry-production-first'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_retries_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-retry-production-first.xml
+# agent_web目录：
+npm run test -- src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts src/services/caseGeneration.api.test.ts
+npm run build
+```
+
+首轮/修正轮同新增模块、独立不同证据目录；父版本/响应故障使用实际文件与存储、完成后恢复独占测试数据。旧20项没有重新定义成功。外部generation_retry_delivery_20261005.py核对原件/对象/物理消息、SQL收据、三份方案、旧证据及暂存；源码py_compile/diff为补充。没有推送或PR，正式重试页面及全目标保持未完成。
+
+最终证据序列化修正轮使用p4-generation-retry-delivery目录和对应XML，仍执行tests/test_generation_retries.py，13项实际功能及结构化SQL证据全部通过。首次交付校验失败为RowMapping字符串索引TypeError；原acceptance文件不改写，不将字符串当结构化SQL字典。后端生产源码在33项回归/独立生产之后没有变动，仅测试证据序列化改动。

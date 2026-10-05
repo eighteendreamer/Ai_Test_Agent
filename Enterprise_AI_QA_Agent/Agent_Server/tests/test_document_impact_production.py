@@ -67,7 +67,7 @@ def collect_objects(settings, owned):
     ("docx", True, False), ("md", False, True),
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
-    verify_requirements=False, verify_generation=False):
+    verify_requirements=False, verify_generation=False, verify_retry=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -351,6 +351,12 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                                 "responses":generation_responses,"draft":draft,"case":updated_case,"new_case":new_case,
                                 "mysql_policy":saved.json(),"independent_generation_workers":True,"terminal_redelivery_no_send":True},
                                 ensure_ascii=False,indent=2),encoding="utf-8")
+                        retry_state = None
+                        if verify_retry:
+                            from generation_retry_production_scenario import retry_from_production
+                            retry_state = await retry_from_production(base=base, root=root, request=generation_request,
+                                settings=settings, policy=generation_settings, get=get, post=post, client=client,
+                                worker=worker, queues=queues, processes=processes, objects=objects, evidence=evidence, sends=sends)
                         sent = len(sends)
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
@@ -379,6 +385,9 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             assert await get(base+f"/case-generations/{generation['group']['id']}") == generation
                             assert await get(base+f"/case-generations/{generation['group']['id']}/scope") == generation_scope
                             assert (await client.post(base+"/case-generations",json={**generation_request,"creation_key":"disabled-new"})).status_code == 503
+                        if retry_state:
+                            from generation_retry_production_scenario import retry_after_restart
+                            await retry_after_restart(base=base,state=retry_state,get=get,post=post,client=client,evidence=evidence)
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

@@ -2,6 +2,7 @@ import { request } from "./http";
 import type {
   GenerationGroup, GenerationGroupPage, GenerationGroupView, GenerationResponse,
   GenerationScope, GenerationTask, GenerationTaskPolicy, GenerationTaskRequest, GenerationTaskSettings,
+  GenerationRetryRequest, GenerationRetryView, GenerationRetryPage,
 } from "./caseGeneration.types";
 
 const projectPath = (projectId: string) => `/api/v1/projects/${encodeURIComponent(projectId)}`;
@@ -34,4 +35,13 @@ export function getCaseGenerationTask(projectId: string, documentId: string, tas
 }
 export function readCaseGenerationResponse(projectId: string, documentId: string, taskId: string): Promise<GenerationResponse> {
   return request(`${documentPath(projectId, documentId)}/case-generation-tasks/${encodeURIComponent(taskId)}/response`);
+}
+export function retryCaseGeneration(projectId: string, documentId: string, parentTaskId: string, payload: GenerationRetryRequest): Promise<GenerationRetryView> {
+  return request(`${documentPath(projectId, documentId)}/case-generation-tasks/${encodeURIComponent(parentTaskId)}/retries`, { method: "POST", body: JSON.stringify(payload) });
+}
+export function getCaseGenerationRetrySubmission(projectId: string, documentId: string, parentTaskId: string, creationKey: string): Promise<GenerationRetryView> {
+  return request(`${documentPath(projectId, documentId)}/case-generation-tasks/${encodeURIComponent(parentTaskId)}/retries/by-request?${new URLSearchParams({ creation_key: creationKey })}`);
+}
+export function listCaseGenerationRetries(projectId: string, documentId: string, parentTaskId: string, limit = 20, offset = 0): Promise<GenerationRetryPage> {
+  return request(`${documentPath(projectId, documentId)}/case-generation-tasks/${encodeURIComponent(parentTaskId)}/retries?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`);
 }
