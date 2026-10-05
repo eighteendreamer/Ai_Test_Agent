@@ -69,7 +69,7 @@ class DocumentImpactTaskService:
         seed.reasoning_settings = reasoning_settings
         seed.response_protocol = self._response_protocol_factory()
         seed.workflow_protocol = capture_impact_workflow_protocol(version="impact-coordinator-v2" if
-            seed.response_protocol.version == "impact-call-v6" else "impact-coordinator-v1")
+            seed.response_protocol.version in {"impact-call-v6", "impact-call-v7"} else "impact-coordinator-v1")
         logger.info("document_impact_response_protocol_captured", extra={"project_id": project_id,
             "protocol_version": seed.response_protocol.version, "protocol_sha256": seed.response_protocol.sha256})
         return await self._store.submit(seed, creation_key=request.creation_key, request_hash=digest, stream=self._stream)

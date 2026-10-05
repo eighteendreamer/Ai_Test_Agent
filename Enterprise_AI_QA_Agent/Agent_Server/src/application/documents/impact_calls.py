@@ -19,6 +19,7 @@ from src.application.documents.impact_checkpoint_io import (
 from src.application.documents.impact_sources import canonical_impact_json, impact_record_hash
 from src.application.documents.impact_identity_bindings import fixed_impact_references, impact_primary_reference
 from src.application.documents.impact_text_evidence import fixed_impact_text_evidence
+from src.application.documents.impact_case_evidence import fixed_impact_case_evidence, case_evidence_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.document_impact_calls import (
     DocumentImpactCallInput, DocumentImpactCallResponse,
@@ -127,7 +128,7 @@ class DocumentImpactCallService:
             context = impact_coordination_context(coordination_context.model_dump(mode="json"))
             if context.protocol != seed.workflow_protocol or ((selection.unit.kind == "case") != (context.stage == "case_impacts")):
                 raise ValueError("影响协调上下文不能替换固定协议或单元阶段")
-            if protocol.version == "impact-call-v6":
+            if protocol.version in {"impact-call-v6", "impact-call-v7"}:
                 if context.protocol.version != "impact-coordinator-v2":
                     raise ValueError("分组调用必须使用冻结的v2协调协议")
                 if context.discovery_task is not None and (selection.unit != context.discovery_task.selection.unit or (
@@ -135,13 +136,13 @@ class DocumentImpactCallService:
                     selection != context.discovery_task.selection)):
                     raise ValueError("分组初读不能更换计划成员或完整读取选择")
             payload["coordination_context"] = context.model_dump(mode="json")
-        elif protocol.version == "impact-call-v6":
+        elif protocol.version in {"impact-call-v6", "impact-call-v7"}:
             raise ValueError("分组调用缺少冻结协调计划")
-        if protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6"}:
+        if protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6", "impact-call-v7"}:
             references = fixed_impact_references(manifest, coordination_context)
             payload["fixed_references"] = references
             payload["primary_ref"] = impact_primary_reference(selection.unit, references)
-            if protocol.version == "impact-call-v6":
+            if protocol.version in {"impact-call-v6", "impact-call-v7"}:
                 payload["reasoning_members"] = [impact_primary_reference(unit, references)
                     for unit in context.discovery_task.members] if context.discovery_task is not None else []
         messages = []
@@ -150,9 +151,11 @@ class DocumentImpactCallService:
             if old_input.selection.unit != selection.unit:
                 raise ValueError("影响续读不能更换固定单元")
             messages = [*old_input.request.messages, {"role": "assistant", "content": old_response.text}]
-        if protocol.version in {"impact-call-v5", "impact-call-v6"}:
+        if protocol.version in {"impact-call-v5", "impact-call-v6", "impact-call-v7"}:
             prior = [json.loads(message["content"]) for message in messages if message.get("role") == "user"]
             payload["fixed_text_evidence"] = fixed_impact_text_evidence(manifest, [*prior, payload])
+            if protocol.version == "impact-call-v7":
+                payload["fixed_case_evidence"] = case_evidence_catalog(fixed_impact_case_evidence(manifest, [*prior, payload]))
         messages.append({"role": "user", "content": _json(payload)})
         request = ModelInvocationRequest(system_prompt=seed.analysis_context.prompt.system_prompt, messages=messages, tools=[])
         return request

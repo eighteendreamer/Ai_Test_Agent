@@ -1,0 +1,4181 @@
+{
+  "research_baseline": "6f4bb0ea",
+  "scope": "full case field binding and current-stage gap contract; full P0-P5 unfinished",
+  "plans_byte_identical": true,
+  "plan_sha256": "1bac4869c7cff04b53a0857c240738b0a192b1d1adfa8bd1311de0ba6e69f42a",
+  "local_link_occurrences": 46,
+  "user_gitignore_sha256": "d604cb2eb1e5da2b92ec113f2e14d05889963ae0fe9492760670f3a1c5c8b241",
+  "previous_raw_evidence_verified": {
+    "p4-bound-protocol-validation.json": 345,
+    "p4-stream-research-validation.json": 85,
+    "p4-text-anchors-validation.json": 328,
+    "p4-reasoning-plan-validation.json": 257,
+    "p4-grouped-validation.json": 723,
+    "p4-transport-validation.json": 522
+  },
+  "source_ast_and_byte_compile_passed": 13,
+  "diff_check_passed": true,
+  "suites": {
+    "p4-case-anchors-business-replay": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 4.678
+    },
+    "p4-case-anchors-full-product-final": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 88.494
+    },
+    "p4-case-anchors-live-first": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 43.448
+    },
+    "p4-case-anchors-production-final": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 288.033
+    },
+    "p4-case-anchors-regression-final": {
+      "tests": 200,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 683.62
+    },
+    "p4-case-anchors-replay-first": {
+      "tests": 55,
+      "failures": 8,
+      "errors": 0,
+      "skipped": 25,
+      "time": 9.494
+    },
+    "p4-case-anchors-replay-fixed": {
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 25,
+      "time": 4.995
+    },
+    "p4-case-anchors-stage-final": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 43.958
+    },
+    "p4-case-anchors-stage-production": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 58.858
+    },
+    "p4-default-model-case-v7-first": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "time": 207.389
+    },
+    "p4-default-model-case-v7-stage": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "time": 329.874
+    }
+  },
+  "named_objects_verified": {
+    "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final": 15,
+    "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish": 9,
+    "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish": 9,
+    "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish": 9,
+    "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart": 7,
+    "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish": 9,
+    "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish": 9,
+    "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects": 16,
+    "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects": 16
+  },
+  "production_and_product_physical_messages": [
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish",
+      "physical_messages_verified": 2
+    },
+    {
+      "directory": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish",
+      "physical_messages_verified": 2
+    }
+  ],
+  "actual_full_case_field_indexes": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-False/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-True/verification.json",
+      "full_case_steps": 12,
+      "field_refs": 33,
+      "version_record_hash_verified": true,
+      "actual_http_calls": 2,
+      "default_model_judgement": false
+    }
+  ],
+  "group_plans_and_evidence_membership": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "unknown": 4,
+        "analyzed": 1
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "unknown": 4,
+        "analyzed": 1
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-False/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-True/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 5,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 6
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-False/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-True/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-False/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-True/result.json",
+      "plan_basis": "actual service-read metadata; canonical bytes equal checkpoint",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/snapshot-view.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 4,
+      "case_tasks": 1,
+      "unit_statuses": {
+        "analyzed": 5
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 8,
+      "case_tasks": 3,
+      "unit_statuses": {
+        "analyzed": 11
+      },
+      "coverage_status": "partial"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/result.json",
+      "plan_basis": "actual saved object bytes",
+      "groups": 1,
+      "evidence_units": 8,
+      "case_tasks": 3,
+      "unit_statuses": {
+        "analyzed": 11
+      },
+      "coverage_status": "partial"
+    }
+  ],
+  "actual_default_workflows": [
+    {
+      "directory": "p4-default-model-case-v7-first",
+      "elapsed_seconds": 200.015,
+      "logical_calls": 4,
+      "physical_sends": 4,
+      "task_status": "completed",
+      "independent_worker_process": false,
+      "production_historical_migration": false,
+      "source_default_configuration_changed": false,
+      "frozen_runtime": {
+        "sdk_retry_policy": "explicit_transport_options",
+        "transport_options": {
+          "max_retries": 0,
+          "timeout_seconds": 120.0
+        },
+        "dependency_versions": {
+          "openai": "3.14.0"
+        },
+        "llm_request_timeout_seconds": 60.0,
+        "langchain_model_adapter_enabled": false
+      },
+      "rule_count": 3,
+      "unit_statuses": {
+        "analyzed": 11
+      },
+      "coverage_status": "partial",
+      "basis_limitations": [
+        "difference_warning:extracted_text_positions"
+      ],
+      "unresolved_units": 11,
+      "phase_counts": {
+        "response_saved": 4
+      },
+      "complete_case_stage_sends": 3,
+      "source_default_configuration_unchanged": true,
+      "protocol_sha256": "4cbde9ee4fa46e375f6952f42a898999a9a0f8fea66fdb6f45e0c777b2e69dc5",
+      "semantic_approval": false,
+      "full_workflow_assertion_passed": false
+    },
+    {
+      "directory": "p4-default-model-case-v7-stage",
+      "elapsed_seconds": 322.734,
+      "logical_calls": 4,
+      "physical_sends": 4,
+      "task_status": "completed",
+      "independent_worker_process": false,
+      "production_historical_migration": false,
+      "source_default_configuration_changed": false,
+      "frozen_runtime": {
+        "sdk_retry_policy": "explicit_transport_options",
+        "transport_options": {
+          "max_retries": 0,
+          "timeout_seconds": 120.0
+        },
+        "dependency_versions": {
+          "openai": "3.14.0"
+        },
+        "llm_request_timeout_seconds": 60.0,
+        "langchain_model_adapter_enabled": false
+      },
+      "rule_count": 3,
+      "unit_statuses": {
+        "analyzed": 11
+      },
+      "coverage_status": "partial",
+      "basis_limitations": [
+        "difference_warning:extracted_text_positions"
+      ],
+      "unresolved_units": 0,
+      "phase_counts": {
+        "response_saved": 4
+      },
+      "complete_case_stage_sends": 3,
+      "source_default_configuration_unchanged": true,
+      "protocol_sha256": "ecec8f8ec6bfca67b6ce856479eff401ef7df777847217381961ce6368a3ce38",
+      "semantic_approval": false,
+      "full_workflow_assertion_passed": true
+    }
+  ],
+  "frontend_tests_passed": 24,
+  "frontend_build_passed": true,
+  "actual_full_product_browser": true,
+  "semantic_approval": false,
+  "production_historical_migration": false,
+  "initial_replay_failure": "8 failed: index initially omitted non-empty container paths; restored existing canonical ability to cite full expected objects. Original failed evidence preserved.",
+  "limited_credential_patterns_no_matches": true,
+  "raw_files": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-build.log",
+      "sha256": "7405255b19a11cace178a3ce74596f3d2021157c6d2b0f2cc3c325a683c5f4f5",
+      "size_bytes": 9426
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-business-replay.log",
+      "sha256": "ed900f4f9bb8de8df31cbf511a58615db79243e6ee3ecffc9d2e8a2b6e70d597",
+      "size_bytes": 100
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-business-replay.xml",
+      "sha256": "25fe5ce7eb9c7fe4b8b0340e87e1c416bc3fc496ef5a991be08b9a02e782b266",
+      "size_bytes": 414
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-frontend.log",
+      "sha256": "8bb58269ead9ae73d0ae9a6e556dfe0fa7a98d30d70acabda016cb0052164b81",
+      "size_bytes": 419
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/0931b6e3e9ea6bee2dfa2bd695e3ef53d065bd24987bf7c7878d0ebb36e1ffdc.object",
+      "sha256": "0931b6e3e9ea6bee2dfa2bd695e3ef53d065bd24987bf7c7878d0ebb36e1ffdc",
+      "size_bytes": 3593
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/0a51ac430a9f045f4029bb7bdf04a9ce3f9ed5152e36907a7b30653d3ececc63.object",
+      "sha256": "0a51ac430a9f045f4029bb7bdf04a9ce3f9ed5152e36907a7b30653d3ececc63",
+      "size_bytes": 2708
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/0c9e28ab5cfec52ee63d1cebaf34e5a9dec8a583909db8b218aaa0e21f0ca2f3.object",
+      "sha256": "0c9e28ab5cfec52ee63d1cebaf34e5a9dec8a583909db8b218aaa0e21f0ca2f3",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/1be0d01be8df967512f1db78cdfa1f52be2f12b17bc99c98e47e1f9a782ea925.object",
+      "sha256": "1be0d01be8df967512f1db78cdfa1f52be2f12b17bc99c98e47e1f9a782ea925",
+      "size_bytes": 2288
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/1e54ef27668f2d9081a3e398d1aab3351662f47197c43170f344c3f70f9eed62.object",
+      "sha256": "1e54ef27668f2d9081a3e398d1aab3351662f47197c43170f344c3f70f9eed62",
+      "size_bytes": 3230
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/1fac94a366b5f5587e892b925ca96031d221aa5dc49899548e717730f1110773.object",
+      "sha256": "1fac94a366b5f5587e892b925ca96031d221aa5dc49899548e717730f1110773",
+      "size_bytes": 55096
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/22bd8988251ff7719042a50c8239e76e11e680bea6bf707092e01e3e8b49611e.object",
+      "sha256": "22bd8988251ff7719042a50c8239e76e11e680bea6bf707092e01e3e8b49611e",
+      "size_bytes": 81487
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/283f806837a41fb0b30a3689c4e7652b8ca5b2ed0e1159fd3d47b67f2c698e94.object",
+      "sha256": "283f806837a41fb0b30a3689c4e7652b8ca5b2ed0e1159fd3d47b67f2c698e94",
+      "size_bytes": 6424
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/33d58902e589f78a7fcd8efa6865430b0cc67a127d394e1e5d9e605e2a2927a0.object",
+      "sha256": "33d58902e589f78a7fcd8efa6865430b0cc67a127d394e1e5d9e605e2a2927a0",
+      "size_bytes": 1234
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/480bfca643f5394dddac7c6d12d0862cea23c6df237fc536f2c3f6a0e6993704.object",
+      "sha256": "480bfca643f5394dddac7c6d12d0862cea23c6df237fc536f2c3f6a0e6993704",
+      "size_bytes": 2000
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/69be4cd6376b1e2e520a4da4eaa684e312838815c6fff118e276679b7cb09074.object",
+      "sha256": "69be4cd6376b1e2e520a4da4eaa684e312838815c6fff118e276679b7cb09074",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/bba0a984fb8dea4546484965bbd91a88995ccf3524b8b5d162a88df78ad6793b.object",
+      "sha256": "bba0a984fb8dea4546484965bbd91a88995ccf3524b8b5d162a88df78ad6793b",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/calls.json",
+      "sha256": "38dc84223ee62e422c43742d6e64e80ad6f0da729b1b62ae5cd645b041dfb327",
+      "size_bytes": 4823
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/configuration.json",
+      "sha256": "0916cfa72a467ad21b9989cb4e4732f714de830f51d8e18729a853a12d363f9f",
+      "size_bytes": 1528
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/dcc363cfe525fa8576d6b138f048ea61234efa1b33251637df9165f37b1f3fdb.object",
+      "sha256": "dcc363cfe525fa8576d6b138f048ea61234efa1b33251637df9165f37b1f3fdb",
+      "size_bytes": 2288
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/docker.json",
+      "sha256": "20e1a008da0e615b3c704aaff32ce63b0d465871ef86d57bd4c13552d0e4afd3",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/downloaded-history.json",
+      "sha256": "48727804a5f5e6025efb99a22c05e052511ec208a2664c25b5ea84ad41f7af41",
+      "size_bytes": 58040
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/f80dabdfb2e6fee162d9a47b7ebfa6e6199fdbb23ebd6f2e17a44e13d455afbc.object",
+      "sha256": "f80dabdfb2e6fee162d9a47b7ebfa6e6199fdbb23ebd6f2e17a44e13d455afbc",
+      "size_bytes": 3315
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/failure-result.png",
+      "sha256": "515cc215bb1f4653ce9ef5261584de7c0f35363ae3c903a9d47a98a18728d157",
+      "size_bytes": 82066
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/fea77a99484c79976cf4b01337058e4c88da49066e2c9e6e3ff4c609a758782b.object",
+      "sha256": "fea77a99484c79976cf4b01337058e4c88da49066e2c9e6e3ff4c609a758782b",
+      "size_bytes": 41036
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/history-after-restart.png",
+      "sha256": "400103e3b91410202995fc4d7a619b2acbc9501cd68aa6c973d9c4e1104904e3",
+      "size_bytes": 79727
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/last-page-aria.txt",
+      "sha256": "86f78a921c2e0625b9ba26af97dd2cbca0f1c9a1684896f79e590fe043a83a5d",
+      "size_bytes": 6674
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/last-page.png",
+      "sha256": "400103e3b91410202995fc4d7a619b2acbc9501cd68aa6c973d9c4e1104904e3",
+      "size_bytes": 79727
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/last-page.txt",
+      "sha256": "271b08cafbbe13224d2fcf317193fcc2719ace578b7748cb48ed76dfc220b7b4",
+      "size_bytes": 3875
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/layout.json",
+      "sha256": "124bbd0f37697206f603742eda678aad1c430253f0035ffc0f35e029a95f271e",
+      "size_bytes": 87
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/network.json",
+      "sha256": "6a9b175c0b6f1e62919f1590ed1541f545734c32b2205d5ac83e58f7e2c253f7",
+      "size_bytes": 30110
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/page-errors.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "size_bytes": 2
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/parse-1.json",
+      "sha256": "4cc991908ad9d8bfa9b56c72bd60115a351331b03e9b83db85483baba733444c",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/parse-2.json",
+      "sha256": "9fb1f9b8b66bf62f824dcb272ef962ce00b8f61daeb1f77b599c965140983f77",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/physical-requests.json",
+      "sha256": "8dcc3df058db2d464bd5ffd820a11bdeb3ffa32e3c9d5395b0b8f277875e6be7",
+      "size_bytes": 70042
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/pool.json",
+      "sha256": "e6ba005dc3f7af55fcf90e3be3196962314c6cef24961240504864419553fc4b",
+      "size_bytes": 2117
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-build.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-build.stdout",
+      "sha256": "ded4287f75a6440d25dca1aa0aa64a34a4156591bb553e10fdbb98242646de82",
+      "size_bytes": 9291
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-comparison.stderr",
+      "sha256": "6a551da80b7402642fb4b4c1954026c7d2d634e57102669bb8ba168155dc0a75",
+      "size_bytes": 5823
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-api-restarted.stderr",
+      "sha256": "e0ac405af8c849a3d86595b09890af674c138ccb68192ffeadf5494fccca9b58",
+      "size_bytes": 19409
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-api-restarted.stdout",
+      "sha256": "d62fea34a51082e1cb04393dc10238ad45a9eaa8eda4ced849f128e897e9d1f5",
+      "size_bytes": 2365
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-api.stderr",
+      "sha256": "17ac09a6d775ba2084b9723f77ac823388f912a45bc6e7856fdbe8d0ffa233f7",
+      "size_bytes": 79713
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-api.stdout",
+      "sha256": "2c6b76418851a782fbefd34118ea0c0115d32216c7e58b831d613737c76531ed",
+      "size_bytes": 17924
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-failed-worker.stderr",
+      "sha256": "e07b94278021c2376afcd3c0eee0e478b684bb11e75dc779c33d3a2445c04d1f",
+      "size_bytes": 7341
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-failed-worker.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-worker.stderr",
+      "sha256": "5f76ce8a04313b69a0c13f8f07924af35538b0b9bd93284c92cb3d8d3effa9c6",
+      "size_bytes": 58159
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-impact-worker.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-parser-1.stderr",
+      "sha256": "0244734d84849a40bbc313bb162215ebb5e148b50dd55af567c50816fe8eac71",
+      "size_bytes": 4687
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-parser-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-parser-2.stderr",
+      "sha256": "68f4f41d33495a47604ebcd3e90172734d3b1a15951fce59280c6be1a5d9dc2c",
+      "size_bytes": 4687
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-parser-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-preview.stderr",
+      "sha256": "a2cf3ae239b9895cfb851e75ebaaa137e15689037142422e701a8eaf0f63835f",
+      "size_bytes": 387
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/product-preview.stdout",
+      "sha256": "00881428b252932c171161762cc81e63567c4e2e2df8d76bf0d1183b9bcf9949",
+      "size_bytes": 40
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/requirements-v1.docx",
+      "sha256": "0c9e28ab5cfec52ee63d1cebaf34e5a9dec8a583909db8b218aaa0e21f0ca2f3",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/requirements-v2.docx",
+      "sha256": "bba0a984fb8dea4546484965bbd91a88995ccf3524b8b5d162a88df78ad6793b",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/snapshot-view.json",
+      "sha256": "da9aef4217348a23edc89231f252f91663206cf45d605eb5a518df820186c5fe",
+      "size_bytes": 59334
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/submitted-result.png",
+      "sha256": "7e03743fc5bacc5c0edc01ab6b8eb8a94e7ba1336ba4787004176cd0c9ff9a92",
+      "size_bytes": 110614
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final/verification.json",
+      "sha256": "7a2b1b1d3371b6cda07013525e63bde94e8b1e5fbff3eee0d8b2713204864582",
+      "size_bytes": 39734
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final.log",
+      "sha256": "71b651bacdd7f742fd27731b5280aed3f3e27694c085e4a998b026c10e45e428",
+      "size_bytes": 111
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-full-product-final.xml",
+      "sha256": "62d0726a43b28b333dcb2373da58c627f9b858e3b380de11c684fece1960a40b",
+      "size_bytes": 414
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-False/requirements-v1.docx",
+      "sha256": "74f498be7d6c4e0ac1af77cf27fb779b16bbf6146729cfe3b291fd35a6138496",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-False/requirements-v2.docx",
+      "sha256": "595c7b1a68b38a2e430e198cd27d3a659d082df16f827f56bb001a18d19c433f",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-False/verification.json",
+      "sha256": "f13ae6119e194f0dce5278cd3b471177182dbb2b80bb3f5c08706f20d6ebaa0a",
+      "size_bytes": 191748
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-True/requirements-v1.docx",
+      "sha256": "6e9838f964a3b923b222e18c6525a52fb99e0c0e9d71d2393eaf5400d40c747f",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-True/requirements-v2.docx",
+      "sha256": "8e011cfc3d97171371e2eaae4d9259c9c205cfcf263d852822b1cfabc5b2a3fc",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/docx-True/verification.json",
+      "sha256": "f609e878da646bf52c4aec54dab56d10adee9c1be56913acec1d22701446842b",
+      "size_bytes": 191899
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-False/verification.json",
+      "sha256": "8f6f9c5e42b64ce603e0371276cf1da44bd359ccee70a83c780a6cabe9bc2e42",
+      "size_bytes": 166322
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/md-True/verification.json",
+      "sha256": "adb151104722a091b194e6b03c5eba5d17212061f98f760d1a15294291d4f897",
+      "size_bytes": 166473
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-False/verification.json",
+      "sha256": "980e2d401f69b71dd0fa22870be07a5bf5e69dcd055d3f1c08c07a2f06e64f91",
+      "size_bytes": 168832
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first/case-anchors/pdf-True/verification.json",
+      "sha256": "4e841437699f9d913394a29d21046d1f1ea13c56832aa70c5e472521697bb410",
+      "size_bytes": 168983
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first.log",
+      "sha256": "bd062354dbe4d52daaf89ea7a605af80cad04ca18ddafb8d43917c8ec33d4a1f",
+      "size_bytes": 102
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-live-first.xml",
+      "sha256": "9a3d3368d2e2ae8797a18e90493ae893918295f87bca4cbd9c68761a7a9d6259",
+      "size_bytes": 2812
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/1197efdd7867b3c5931e36273d28a55686d77f9165946fe05f82594a3417ccd4.json",
+      "sha256": "1197efdd7867b3c5931e36273d28a55686d77f9165946fe05f82594a3417ccd4",
+      "size_bytes": 41043
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/2947a9ae1feafd35ec871abcc6393780fe20b644ce7e9c3d1e7eb30eef04a3c8.json",
+      "sha256": "2947a9ae1feafd35ec871abcc6393780fe20b644ce7e9c3d1e7eb30eef04a3c8",
+      "size_bytes": 1235
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/37810b8f53a414e6a176df995d00cef199e9f4798528d950e521cb81e815fa56.json",
+      "sha256": "37810b8f53a414e6a176df995d00cef199e9f4798528d950e521cb81e815fa56",
+      "size_bytes": 1253
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/3eb0a7fd109386a14f981be0e73452ab3be904b946f724614a222dad27c39779.json",
+      "sha256": "3eb0a7fd109386a14f981be0e73452ab3be904b946f724614a222dad27c39779",
+      "size_bytes": 3595
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/3f5e4b4f39958bb4f3262cc6b4347ed82f89428c6528365e1f0d1078a5782d1d.json",
+      "sha256": "3f5e4b4f39958bb4f3262cc6b4347ed82f89428c6528365e1f0d1078a5782d1d",
+      "size_bytes": 3315
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/4c330f04efebe65168e99d5d00f287757c6ca0c623c7d5ec773d3b01f27abb5a.json",
+      "sha256": "4c330f04efebe65168e99d5d00f287757c6ca0c623c7d5ec773d3b01f27abb5a",
+      "size_bytes": 81438
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/56f717970038ad8ac855d9d4fda05a08a612a1d5554e22623dd76b981f1d4612.json",
+      "sha256": "56f717970038ad8ac855d9d4fda05a08a612a1d5554e22623dd76b981f1d4612",
+      "size_bytes": 2708
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/checkpoints.json",
+      "sha256": "b8a3595f88a62ee2729ddf19f7d01b5c3d590bb18778dc54169ba7487ea654d7",
+      "size_bytes": 8760
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/comparison.stderr",
+      "sha256": "c136061955b8d2ee477cf94834a6171840167d5c70c3e6d3bea544cacd70d435",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/docker.json",
+      "sha256": "93c3391b493cd8835401c98cee326904b9286a47747c6d68e94cf73e79c24626",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/f7df657ce6b5120bd99ac5b4aeac62f79ed4a764c9b184a0d3dd202200245f9e.json",
+      "sha256": "f7df657ce6b5120bd99ac5b4aeac62f79ed4a764c9b184a0d3dd202200245f9e",
+      "size_bytes": 55047
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/faa9c820bc44135dfa819f6f8abdd83f491f9f1c6e061c527b867128078942e0.json",
+      "sha256": "faa9c820bc44135dfa819f6f8abdd83f491f9f1c6e061c527b867128078942e0",
+      "size_bytes": 1868
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-disabled.stderr",
+      "sha256": "3493820b81f76e746d659fc12e7170e9d000167a47a6f25edac1fb2001ce25fd",
+      "size_bytes": 13941
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-disabled.stdout",
+      "sha256": "9d41062767a0a659425565b375d0045a86904278c102b065ef6a843b9b94ddcf",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-first.stderr",
+      "sha256": "122ddccd5d6b17f9d58b9403b43ab233e94f61b4520fabd073f8414cf523d5e4",
+      "size_bytes": 25660
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-first.stdout",
+      "sha256": "2895db21904aa33282f0b5cc06300f089bd96fd7c707410d57973f95ed0ee3a5",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-restarted.stderr",
+      "sha256": "a9cf6a1ae09dbeec107134d124069633d016956497621b1433e7e5272ae2e1da",
+      "size_bytes": 30903
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-api-restarted.stdout",
+      "sha256": "686a68411484d4b60e74bec1e6ec71f39f3b2415e00bd63556be4ca758fa9737",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-worker-first.stderr",
+      "sha256": "c76ff3a80819d39fb9abbd4b5120a410c9066c9bc16959b3fdae98a534cb43b7",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-worker-terminal.stderr",
+      "sha256": "a76867e7ae55a00388d1f3901e1a8add0c57caf0a9a2e4b18b37e91f9ab68c17",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/parse-1.stderr",
+      "sha256": "b2ef48dbd5185581b7cf30f7c769d153e6e72deb82bc47a0cd352fc023569da1",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/parse-2.stderr",
+      "sha256": "2931d700e9270ddb1810d62615e065b8124597b193e3ef11ea631dcfd145428a",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/physical-requests.json",
+      "sha256": "1a0815cfe8175a9e1770283c15a59391561f87174925902b09852e72834279dd",
+      "size_bytes": 70028
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/requirements-v1.docx",
+      "sha256": "eedecab8b3376e6ff4ef545cd24c73d9c9265d3348f18e2d206e5d7cda75e0c3",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/requirements-v2.docx",
+      "sha256": "2e8286a9beecfebe5b4def475ab14d9fe57cb7a482157ceabd8aa970c8eebb7b",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/result.json",
+      "sha256": "e8b55bc720b2ef08ee740c2be73a63a0e89d451551edf95529316d52ee466f7b",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/snapshot-view.json",
+      "sha256": "42112cc26136dcf7efb7c69711f3da4c77e2034ab6c4249a89a1fc181cc87e8c",
+      "size_bytes": 59354
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/source-1.json",
+      "sha256": "83cbd4cacc44a0f3e1c78bbba78cb018fbfe0775374b0cc7add2e4a502fdfd6c",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/source-2.json",
+      "sha256": "7c3a0e3c0a38faa5e8ebf1ccbc02741b246bff839e3b3403a328c9b0f73f904f",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-langchain-finish/verification.json",
+      "sha256": "537613a1cd85dd60e8f439dc2145c73e222b084afbb00f0a073b97e18e0cfa41",
+      "size_bytes": 40309
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/065153c1e33fc5279ff40da6f4915314903f5d5406ad96bd8f7e186c65ff201e.json",
+      "sha256": "065153c1e33fc5279ff40da6f4915314903f5d5406ad96bd8f7e186c65ff201e",
+      "size_bytes": 3315
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/26ad3ac1fcdd787a4ba4122e6ff07314e669c0312ea2380589f951472d6dad7b.json",
+      "sha256": "26ad3ac1fcdd787a4ba4122e6ff07314e669c0312ea2380589f951472d6dad7b",
+      "size_bytes": 1235
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/2a0749e17c492a6a1414850859bc38218c0832aa771ec5f1de5e36774645cc02.json",
+      "sha256": "2a0749e17c492a6a1414850859bc38218c0832aa771ec5f1de5e36774645cc02",
+      "size_bytes": 1992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/485ce2dfc9e4801e8df64535047d2bee5a6461c589cb685dfd31c5aa7e112aae.json",
+      "sha256": "485ce2dfc9e4801e8df64535047d2bee5a6461c589cb685dfd31c5aa7e112aae",
+      "size_bytes": 55047
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/71d3d8ce85a5f3c0fdee2b710d2fd75e7364e1df01d88397de13b0b73bc267a7.json",
+      "sha256": "71d3d8ce85a5f3c0fdee2b710d2fd75e7364e1df01d88397de13b0b73bc267a7",
+      "size_bytes": 41043
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/85b5458c3c5ea4745870f053a9ce1ad0a5d0117107d70c7d7797aea63a4264d2.json",
+      "sha256": "85b5458c3c5ea4745870f053a9ce1ad0a5d0117107d70c7d7797aea63a4264d2",
+      "size_bytes": 2708
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/93c2ea3c27407700a74de18ef7d63e5b64a8b5f0552fa9d0c08986ba5e65def5.json",
+      "sha256": "93c2ea3c27407700a74de18ef7d63e5b64a8b5f0552fa9d0c08986ba5e65def5",
+      "size_bytes": 3222
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/9d82fc53736bfc0bc2a04a0e9bbe31e47ab11c5a87c60a5ed28a5cab99ef3326.json",
+      "sha256": "9d82fc53736bfc0bc2a04a0e9bbe31e47ab11c5a87c60a5ed28a5cab99ef3326",
+      "size_bytes": 3595
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/checkpoints.json",
+      "sha256": "df66b26330f99875ac0e1634903480d8590ee6d9e4669184cef9c6f70a77ba24",
+      "size_bytes": 8760
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/comparison.stderr",
+      "sha256": "c24e346fa494164ac43f426ae3593812376ad859856b5fb44d00dbfb443c526b",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/docker.json",
+      "sha256": "abc45bad86800ac0e43206e5bdc0d219c3369b9ea954644151ed5d29e982d44c",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/fdd74cea994f3e5466e07f301e47504e1b987db3b0a0813f58b64cc492c671e3.json",
+      "sha256": "fdd74cea994f3e5466e07f301e47504e1b987db3b0a0813f58b64cc492c671e3",
+      "size_bytes": 81438
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-disabled.stderr",
+      "sha256": "fd601d315682330bbbe3acc6ac3047215f3170ee49fb4edc3ba1315831240175",
+      "size_bytes": 13941
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-disabled.stdout",
+      "sha256": "fbcf7075cef604190595e516e618f44bb6ee25485153bae911c2778f87db0652",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-first.stderr",
+      "sha256": "2319ad020aa4e63bfb2772eecd1891dee71b09c612c1b6e79f6b87c7035ee8f7",
+      "size_bytes": 25659
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-first.stdout",
+      "sha256": "818ae3d680faa3884836b9ca6ad42ea03a1583b38874a5e08d560b4213d99182",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-restarted.stderr",
+      "sha256": "7f31e71f2f13ba94777d0a1775fd33fafad158fdddad18a1ac54d476dbf06ee6",
+      "size_bytes": 30903
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-api-restarted.stdout",
+      "sha256": "c2c47ca652ccfd69787d161f3e65b154eb9cebcb1603bd3ee332226cc9d52df4",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-worker-first.stderr",
+      "sha256": "67edb2ffc3315295b1780a1b129ed51e48b27163d9e06e674a7bfed741d50607",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-worker-terminal.stderr",
+      "sha256": "5c7442b8537d79e96b9a7249965b743560a31b4167dbd004b22021d4c0f30382",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/parse-1.stderr",
+      "sha256": "a3facf3ffd7ba7a6cb942da0ec9a764a5f246f9dd1e9f5a03284096ca1756853",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/parse-2.stderr",
+      "sha256": "829a41b5f0eb69d61541d0b0549a36da6f38099019893b18af0a90fece1bacbf",
+      "size_bytes": 4615
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/physical-requests.json",
+      "sha256": "efc1d1cca6d1660c557728d15f16f8972aad3c86003d566ffb18bf7b9becfaeb",
+      "size_bytes": 69962
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/requirements-v1.docx",
+      "sha256": "95dd58f93554f822dfdecb6f7fbc36cf93a28b89f7061d423bd44a96194092db",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/requirements-v2.docx",
+      "sha256": "2592ba29ecca98121da8a94f1fe5a73ea600d99dbe999ba3765eade0b93d59f7",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/result.json",
+      "sha256": "4aa7391a1b681cbea284dfacd8b2caa89aba7d2093d72913570b02fa587a0d0f",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/snapshot-view.json",
+      "sha256": "7f07d98bf15278d1cee1433a467f9f792215752709e09bd4875abe146e4f1a9c",
+      "size_bytes": 59273
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/source-1.json",
+      "sha256": "0d33747d754a7ba02fe945fe0d727730b90e69e190f66b7615eaccf26f045e23",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/source-2.json",
+      "sha256": "4071705f1ba28375b6e8fc7fd01ffe92e5c269dbcc9dc043535d106f678bdd27",
+      "size_bytes": 8881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/docx-native-finish/verification.json",
+      "sha256": "bcb30961f4ee1084ac17d95a05f6efeae12041a274f55499956adfd6aefb8a2c",
+      "size_bytes": 40229
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/31c73203d0b39748a9fa1b9f49203c8c80c4f20b41e247363357d12f00cb83ca.json",
+      "sha256": "31c73203d0b39748a9fa1b9f49203c8c80c4f20b41e247363357d12f00cb83ca",
+      "size_bytes": 32138
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/635256eadab6e48f8e122ae3ce60535d0ae37a93ec0979f57c4a5aeff943d111.json",
+      "sha256": "635256eadab6e48f8e122ae3ce60535d0ae37a93ec0979f57c4a5aeff943d111",
+      "size_bytes": 1992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/76d18f4a014f547ea904db3bcdd3eb008890591876189ca7a0ed9cfbbcda0c13.json",
+      "sha256": "76d18f4a014f547ea904db3bcdd3eb008890591876189ca7a0ed9cfbbcda0c13",
+      "size_bytes": 2997
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/7b51957b4aebc498382d3c59c892f2b54c6d6f88f2f475a1c38b18f69dbaaead.json",
+      "sha256": "7b51957b4aebc498382d3c59c892f2b54c6d6f88f2f475a1c38b18f69dbaaead",
+      "size_bytes": 70518
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/a353c96d897e442f3af7e8e68e4beb486d66d51810394d13423577d5c379028c.json",
+      "sha256": "a353c96d897e442f3af7e8e68e4beb486d66d51810394d13423577d5c379028c",
+      "size_bytes": 2274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/b6684aac74ab502381694903d1461c863ad52c6db4e28ea8f6a41b13c0d16b5c.json",
+      "sha256": "b6684aac74ab502381694903d1461c863ad52c6db4e28ea8f6a41b13c0d16b5c",
+      "size_bytes": 3128
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/bc4c16a0bc865c1f1e090ac3551cbf5ab5cdc4ebd005bcfaef42c6c6c1a4898e.json",
+      "sha256": "bc4c16a0bc865c1f1e090ac3551cbf5ab5cdc4ebd005bcfaef42c6c6c1a4898e",
+      "size_bytes": 3006
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/checkpoints.json",
+      "sha256": "00e33e24790830fdb13bcbc659d8e308cf78b1bae34ef64cae57868d4172f516",
+      "size_bytes": 8738
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/comparison.stderr",
+      "sha256": "4b74379f0ffb3d0601dcde6405924c0999a41e44a3806babe65433e002e8013f",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/d9f876b8135e554f45de07160342d9314003036c31e05c9299d950c40e8739b5.json",
+      "sha256": "d9f876b8135e554f45de07160342d9314003036c31e05c9299d950c40e8739b5",
+      "size_bytes": 1188
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/docker.json",
+      "sha256": "8f48c1eb4f616572a5d4ffc84249f05d35fbf1158b289e51b4e4767bec5a3103",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/f0eace8769adb8639771b9022384fa24389a62c4906b5397245d95ff8dac3fc7.json",
+      "sha256": "f0eace8769adb8639771b9022384fa24389a62c4906b5397245d95ff8dac3fc7",
+      "size_bytes": 43529
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-disabled.stderr",
+      "sha256": "bed6a9ac9ea9006e94c392e8e85ff1728b62747cfd232c2d68c8c077d2253ec1",
+      "size_bytes": 13941
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-disabled.stdout",
+      "sha256": "cc44a46e66a7bf6914f01d9c290b893fdefa7fc4f28b6f6b9704a48b915af63c",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-first.stderr",
+      "sha256": "585fb7794732717a58f37275aeb6e47c96545c11d43c92f60e733a3249759c96",
+      "size_bytes": 25626
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-first.stdout",
+      "sha256": "f0a812568aef4a592c3a7c1695b43351407cf5838b3b8a1b213500741f1b8435",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-restarted.stderr",
+      "sha256": "6c16be2e1fb6cbdc4b7cd44bad10b19847693e99e4ea361da4a112c2ddd906c7",
+      "size_bytes": 30903
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-api-restarted.stdout",
+      "sha256": "03d90d3378369317476e974f319a649089f17afee9be09241dcd2d3dd2b82780",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-worker-first.stderr",
+      "sha256": "f6a9ca3b391d43f8529cb9d6e85849ee200fd265083ce5593226793493c24201",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-worker-terminal.stderr",
+      "sha256": "c7d3d127ca25100d252bb421ba585b0a2fa57a82152bcbf558c9af2058d3de40",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/parse-1.stderr",
+      "sha256": "54202f7f9d63a7a8d3d619dbff19e465b810bbdf5be7fbbc735b0cedb734e64b",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/parse-2.stderr",
+      "sha256": "7cc0cf412025974701b994144ed654bc9edcbee18ba327cff0a20efa56182c18",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/physical-requests.json",
+      "sha256": "b0ba8b077a2db85f897f5a13355f396859cfed32299415a11453b01076c3589c",
+      "size_bytes": 58748
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/result.json",
+      "sha256": "53c33ecd896df8802c5b68e8ce940b03b91e9a19cc8e5603e76c5eb7596907a1",
+      "size_bytes": 13094
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/snapshot-view.json",
+      "sha256": "ccd9f4f09e8f872f1dd1fadd86ab3d989b026ea349adbeb482dddfd171bcdaa2",
+      "size_bytes": 55619
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/source-1.json",
+      "sha256": "c6fd1db84a0e9236d32679cd02c2a93265b6cf03e4d4fcc97e99ffbb1d4cc119",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/source-2.json",
+      "sha256": "0ea6a181730b92040ef91fb83e95d66517e4b928d8308e794a291b6f190280c1",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-finish/verification.json",
+      "sha256": "0d81a8132d00bacff0d6bc345c5246e2601c4b8fa65eb3a0c7aff0bc9f7217b1",
+      "size_bytes": 38665
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/05f012bdc2f536c42aa0047c0335de6b6e7db67122b742e91bfae4ff5dc9d4fb.json",
+      "sha256": "05f012bdc2f536c42aa0047c0335de6b6e7db67122b742e91bfae4ff5dc9d4fb",
+      "size_bytes": 1015
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/18d1a086ea0bef383945f7f12e3dd278d40d64b75a2ea461345accd5a51c7bb6.json",
+      "sha256": "18d1a086ea0bef383945f7f12e3dd278d40d64b75a2ea461345accd5a51c7bb6",
+      "size_bytes": 3128
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/309dc8a9aca1abbbefc111010e9ee3225a86fc1010cc09f66816cb9ea581355e.json",
+      "sha256": "309dc8a9aca1abbbefc111010e9ee3225a86fc1010cc09f66816cb9ea581355e",
+      "size_bytes": 1516
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/42805902b25076c1171025f4c7aabaaee1ffef1de0f35fa461bdc2b041c8d5fb.json",
+      "sha256": "42805902b25076c1171025f4c7aabaaee1ffef1de0f35fa461bdc2b041c8d5fb",
+      "size_bytes": 56439
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/788eacb6ce76ec4f42f207374350fb08b18a6d9f41950e400ad3d65216f6199e.json",
+      "sha256": "788eacb6ce76ec4f42f207374350fb08b18a6d9f41950e400ad3d65216f6199e",
+      "size_bytes": 32138
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/926789eb8aa3fb400cd3dd43b79442b99831024e12f51fd7a23d235c33a3c648.json",
+      "sha256": "926789eb8aa3fb400cd3dd43b79442b99831024e12f51fd7a23d235c33a3c648",
+      "size_bytes": 1188
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/checkpoints.json",
+      "sha256": "fb748d6a6bd5db6a3a479e4d799db2684a2e307e925bfd9431e5a2e94fa397ea",
+      "size_bytes": 7180
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/comparison.stderr",
+      "sha256": "7eff4a3839cfaf056d807af6baee2654f50da90acc83988271c29688b3a214de",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/d5501f7b53dcc64a9be8a297b71b921129a2ac08c85ada1e8ffc06d8e51aa20b.json",
+      "sha256": "d5501f7b53dcc64a9be8a297b71b921129a2ac08c85ada1e8ffc06d8e51aa20b",
+      "size_bytes": 43529
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/docker.json",
+      "sha256": "1c644cd69698f27a1ac83e7dcfb661ce2cf290f05de2214f1bdbac061c7b5943",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-disabled.stderr",
+      "sha256": "a6f32bee1a3b1bd801ff719abbb6592af49b7b09f644670fb32ca8944130e3e6",
+      "size_bytes": 12692
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-disabled.stdout",
+      "sha256": "53a0aca0f740b3885e120add1e12a1a2f12e8035a4f4955a5472ced28083b10e",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-first.stderr",
+      "sha256": "842a186240636b0e9a6d0db1676d9cfd4c263d2c2315c432271ecfd8f6dc9fd5",
+      "size_bytes": 25626
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-first.stdout",
+      "sha256": "77e203367222f8e72d23f2626669b59d840d1ff13addc50229dc0146396fcec5",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-restarted.stderr",
+      "sha256": "b6558f1508e93a5af567e61cb252ba2402ed0ec22a06900d8d9bf13da351b06b",
+      "size_bytes": 27155
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-api-restarted.stdout",
+      "sha256": "a91ad88192262f70ede7dc9f7fcdb93b158af280aa770590874ea28d10973dfd",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-first.stderr",
+      "sha256": "50434f7974d77abe4a90838ad150b57ff9bc2cf5f26cdbc1e74a12bbd62412de",
+      "size_bytes": 23063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-first.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-restarted.stderr",
+      "sha256": "e31b1337f4420acc71e51fd0e818156895d73d6ea68735c0276bce01e64e6aff",
+      "size_bytes": 36254
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-restarted.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-terminal.stderr",
+      "sha256": "91ec95d624f9caa51aba85d3b7536a5602d89dc3005edbd56e0d070c4def09a8",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/parse-1.stderr",
+      "sha256": "8aa6b16a411c122ab6e693c591bd54217feb69afe67fc0a907dc83d61f604c9e",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/parse-2.stderr",
+      "sha256": "5ad8e12eba2ffed02ae86e5821a37ac9946caf69c1bf13f9d03fafed80b5b914",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/physical-requests.json",
+      "sha256": "4bab9b474d9674238cdfeb088329bba118b0509220db015b720c7cb47dbba720",
+      "size_bytes": 51796
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/result.json",
+      "sha256": "c22d945eaa4204269d4c11083eb01df1154877aad29bdc98d422840d58f24d8a",
+      "size_bytes": 4578
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/snapshot-view.json",
+      "sha256": "677384978802c7a504adf2e95aee8765e7ab6ab1f01b71397826203a7550575a",
+      "size_bytes": 42933
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/source-1.json",
+      "sha256": "1c79972a64a497cd02a9e436b91431db4d562d48a0a3dd873d0e8e196ab69406",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/source-2.json",
+      "sha256": "1025d8bf7174a8c7229ca0d88cf1f53f48075717a8f3dd03a3bda75c8d0b098b",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/md-native-restart/verification.json",
+      "sha256": "395cfcede06d9a6b29974576d5e3a59ec08fb1846347a006d069344f9cdc41d2",
+      "size_bytes": 38662
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/086d00e0747a20ac28effe307104943d5d549969a7f14f2d26f4b0971085e196.json",
+      "sha256": "086d00e0747a20ac28effe307104943d5d549969a7f14f2d26f4b0971085e196",
+      "size_bytes": 44141
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/2c2fe249d46c9d2cce4dac761bc6ea0833c8724318a86ac9f02e70f560559b3d.json",
+      "sha256": "2c2fe249d46c9d2cce4dac761bc6ea0833c8724318a86ac9f02e70f560559b3d",
+      "size_bytes": 3287
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/59b75efe0c319b9507482bac1ea36832953bea9956483f4b698f57f321533d0b.json",
+      "sha256": "59b75efe0c319b9507482bac1ea36832953bea9956483f4b698f57f321533d0b",
+      "size_bytes": 71444
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/9c84a65e52d892cae27427034ebd459321a694f965d1b485fe21284815d8ddde.json",
+      "sha256": "9c84a65e52d892cae27427034ebd459321a694f965d1b485fe21284815d8ddde",
+      "size_bytes": 3006
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/ae8802864f1640158b786b17c779c604fea282e4c9a0cff6b11c80d0d41da7e2.json",
+      "sha256": "ae8802864f1640158b786b17c779c604fea282e4c9a0cff6b11c80d0d41da7e2",
+      "size_bytes": 2564
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/b6a974e97cd26c4b5509ef00e73d780afe435e3a95e768b842273369ca4ffc30.json",
+      "sha256": "b6a974e97cd26c4b5509ef00e73d780afe435e3a95e768b842273369ca4ffc30",
+      "size_bytes": 1992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/checkpoints.json",
+      "sha256": "21bf444a06f0166b82fa925c256b269cef677515c12535a360673202f142cd0e",
+      "size_bytes": 8738
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/comparison.stderr",
+      "sha256": "85aa0f1d5ebd2ddde77566c0de8acda9297e7f0971493fe023a00a2e10829d98",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/d3716fec647ee5ac331d24bb1e12a4db403006f88f4278155d5e51e50612178b.json",
+      "sha256": "d3716fec647ee5ac331d24bb1e12a4db403006f88f4278155d5e51e50612178b",
+      "size_bytes": 3142
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/df0d839c2545a93b5936129947f4a0c5fb373a96950e628094626c8a71f386d3.json",
+      "sha256": "df0d839c2545a93b5936129947f4a0c5fb373a96950e628094626c8a71f386d3",
+      "size_bytes": 1188
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/docker.json",
+      "sha256": "5a8416e40345481307bc09f088e8dde80787f9eb77a341f08611190a5ad4f4ba",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/f42a013f2a8beca23fc17c34ead252a24c3351be5e53e713e1704225cd5c6b61.json",
+      "sha256": "f42a013f2a8beca23fc17c34ead252a24c3351be5e53e713e1704225cd5c6b61",
+      "size_bytes": 33975
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-disabled.stderr",
+      "sha256": "f31167ac5c4b651ff583f616fb026a42f08c43a61a5a81aa7d6ebd7ff7b4b839",
+      "size_bytes": 13940
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-disabled.stdout",
+      "sha256": "07e132921db04e6a17c5fa658cb80df5ad9f1f6599fd1c13d906f511087d6392",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-first.stderr",
+      "sha256": "1ef64bff93068da24659f89dc61623f1504eb1ff75879784cc31971b3f6e26a3",
+      "size_bytes": 25640
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-first.stdout",
+      "sha256": "03469b257abc68c48bd240199409a0fa8dd95ba922719a514865fc07f8b4ed5a",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-restarted.stderr",
+      "sha256": "2fe80120b24353456eb1ac7f7ebbf2d4537f7770ffd48b742dca0ab8976f73f3",
+      "size_bytes": 30903
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-api-restarted.stdout",
+      "sha256": "ed5a8fae93c44242a7e8af2e6b23b5e8f95251a3dcc786a98d303a265a11305b",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-worker-first.stderr",
+      "sha256": "2e42c92bf3f4d13728bef3c572866f320dfcc5f87883b0fd4f16f910414fb2f5",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-worker-terminal.stderr",
+      "sha256": "c400ca3c3650921575328a57357f4fe089b946762c546898c254fcb5cb1652c2",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/parse-1.stderr",
+      "sha256": "5d1c3d2e038742d6f2d7e7337a4d80d1508cd187a42c0fd5697679fc979a64bc",
+      "size_bytes": 4612
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/parse-2.stderr",
+      "sha256": "3f2de7b03ae4998c19da2298aa12c4ef9501865d0846e09114cbe190470d8773",
+      "size_bytes": 4612
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/physical-requests.json",
+      "sha256": "c5b64fb600b6aab02ee19b2c4b791e20254ec96c72739169f50cbbdcade6de67",
+      "size_bytes": 59517
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/result.json",
+      "sha256": "76be4bde2b4b9940e2dd54bf438644e5ea879fbd3db7f01370fad2c2c775e31c",
+      "size_bytes": 13432
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/snapshot-view.json",
+      "sha256": "39868ef38b291d7ffe9e3b0f2fad01e75a1b16e62e6bc9c54ecd6d7f4e96e51e",
+      "size_bytes": 56954
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/source-1.json",
+      "sha256": "40395b1cba4619ce25e9cd4e424985400607e9e56b51059a5dd896e648f9ea8c",
+      "size_bytes": 6048
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/source-2.json",
+      "sha256": "5d28dbfc04d97c6f207c9779ad0e5861720680cf305a72c2955c0c8f74617f37",
+      "size_bytes": 6048
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final/pdf-native-finish/verification.json",
+      "sha256": "bd15dd18752568e043b62f26b6c4da751222827968f76545fd3d378e9608ec36",
+      "size_bytes": 39630
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final.log",
+      "sha256": "f6034253712636b4e078d7ec8d2e7d8cf5280492b7857daea6d5945065818f26",
+      "size_bytes": 112
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-production-final.xml",
+      "sha256": "4188fdf5c38e42cc6d16a0da2d83532bb102b77d786b056b79adf3cf19de19e2",
+      "size_bytes": 1044
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-False/requirements-v1.docx",
+      "sha256": "e3711f9c38626869f0ab0aed6f869ac77383c0d19f66dc1acb05d13a06b8b76f",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-False/requirements-v2.docx",
+      "sha256": "15d15f0f3697b9d2d312d7f1fa10a24462875f3ed5a32f6f62ec4bae1039edd9",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-False/result.json",
+      "sha256": "5c5e664f627a02e652d1f4460f52974149d1d6ec639bef223267eafcfaa4c3d4",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-False/verification.json",
+      "sha256": "2f3f871a00c1644718fec7bde71ed69706a7d61ce393b8e8df3218a4cd833946",
+      "size_bytes": 37065
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-True/requirements-v1.docx",
+      "sha256": "80cdf57e9376799aa7015b4a22e65d0cf2a42700e876031d1892d2f92402a89e",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-True/requirements-v2.docx",
+      "sha256": "e10ddebd0d3422586872545aef10c2214e806a245aeeed14e16f4c1da4ed5dbd",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-True/result.json",
+      "sha256": "62f50073079d7551a5857bffee2a535e4071e586f376dd7542007e23a5b8fe78",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/docx-True/verification.json",
+      "sha256": "a5fe213a3400aea445ccab23d44504f4a9bb11e4e76277c674e742c0423c5086",
+      "size_bytes": 37146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-False/result.json",
+      "sha256": "c3971fc9762c4c8fa85d0eda1e14b9005de62d62d04c6237681394b81759c5c2",
+      "size_bytes": 10701
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-False/verification.json",
+      "sha256": "a64af9e478657d85f737415e16202010de5cf7dbd525dc0e4f0bcd71b3dfa65d",
+      "size_bytes": 35775
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-True/result.json",
+      "sha256": "84b96253e531c9286a48f20a1f04a0b61c9e9a5b88f19900d283093f7797ad4d",
+      "size_bytes": 10701
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/md-True/verification.json",
+      "sha256": "6ab70cc009a3c36af6bb575362ba2d5e62cb4f96d3a310082e8bf1532bafecca",
+      "size_bytes": 35856
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-False/result.json",
+      "sha256": "8345118911bf6fcbeec3ecc2835905c67ec9fee20365cf60611664fa49032ec5",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-False/verification.json",
+      "sha256": "233df46be3cc51b021f8ce3059bba89356d3d1e78aae42116c36135c9af1beb0",
+      "size_bytes": 36715
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-True/result.json",
+      "sha256": "03ef31c528b398f78344edb0ac869070ec8d71d2f383ab66d81094f1ef99a974",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/anchors/pdf-True/verification.json",
+      "sha256": "c0159bf0188bd74b5f98a7fc27766fb54e47c155eefaa0adcc766b1724e8738a",
+      "size_bytes": 36795
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-False/requirements-v1.docx",
+      "sha256": "95553632ac15a1fffb9b22d4527a99974b31b27ef7f7d3865ed29048725de5c9",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-False/requirements-v2.docx",
+      "sha256": "c2edd3e867e4fdf38d60e4029f9135c62a4319742b5e5edd59684fba33ecb956",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-False/result.json",
+      "sha256": "31aeb6d14c35a2cd3526e77c0261e7979747922e6f3a6ed288f56978d2d997b4",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-False/verification.json",
+      "sha256": "eb6cf0ac26be04840943a44c1d959646c4441c833277dfb1a262750dae17d2b9",
+      "size_bytes": 55480
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-True/requirements-v1.docx",
+      "sha256": "5339fae4d77a72b6e68fd54081a282e435974f8ba00257bcfff8611e9859b728",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-True/requirements-v2.docx",
+      "sha256": "78f10cacadbab3a9fa70d01ae2fd4154c0661c1666fe1bfb515eef73cc561d99",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-True/result.json",
+      "sha256": "6651e8c0335fa96feff2f5c9ed83a36b6d2921521d6162819dcb5189d10fb377",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/docx-True/verification.json",
+      "sha256": "08c60c5db7030be7a1cdf3fc404679261aee84cbf91105f0a141d3fcfcff3667",
+      "size_bytes": 55561
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-False/result.json",
+      "sha256": "b130b28e099effa25b051ce268d7295af4da313bbc5eba9cbc1b14179a1ce1a7",
+      "size_bytes": 10700
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-False/verification.json",
+      "sha256": "47d1868911b0df811b65af3aa091014537ba1d18a347ea040abdc387ea124c42",
+      "size_bytes": 52390
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-True/result.json",
+      "sha256": "28cd19a7707f9c93cc9e1a7147d01b5574da080f38b48d47ecc03de6f8bcc23f",
+      "size_bytes": 10700
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/md-True/verification.json",
+      "sha256": "75b661432cc1b76aa30769220180d434b834ac62cb0fe673adb94bdc1c61d753",
+      "size_bytes": 52471
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-False/result.json",
+      "sha256": "587706bef9021d03ff200925ae55f7b1e3d38830e82ca458fc388040486a7ccf",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-False/verification.json",
+      "sha256": "0be9f58fd58ea0a8e0148b7eac4030b4795c148f5d25f169ba363cefc7df780b",
+      "size_bytes": 53702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-True/result.json",
+      "sha256": "e39b278e27f2864a4ce8fb49a0139f09da68f9f8c6d6a60d21a6a764a1eca150",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/bound/pdf-True/verification.json",
+      "sha256": "663c75d636e3984a77b166f9f2d4c91fed965d6071875536bc32d915e23288e6",
+      "size_bytes": 53784
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/boundaries.json",
+      "sha256": "f05d771fee7e9021efee67ff86e740d78bacf51a07846821ff6343c7a705ca33",
+      "size_bytes": 136
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/budget.json",
+      "sha256": "370c41588263d575f3b16397479f5c4dbb9a3d8f2a7396db3497ea35fda19865",
+      "size_bytes": 53248
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/concurrency.json",
+      "sha256": "b96d1f1d85df593b9eabb525ebe4178e2b6f6208d1920ea3a3974d38d4e7f44a",
+      "size_bytes": 93031
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-False/requirements-v1.docx",
+      "sha256": "e782363b82796fda69865663a0e1d76153545d9e42425a552883f51f044aa483",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-False/requirements-v2.docx",
+      "sha256": "8464cd28162eaad3c554830692a59410e410f6aa9cc415151848b3ba7751b1e3",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-False/response.json",
+      "sha256": "ce356d38fc443cbcc9ccfd1f3bfab25f27265bea81c221707c52ebb5e1f9b306",
+      "size_bytes": 999
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-False/verification.json",
+      "sha256": "be359192ccbfceb82af894029c80d79e4ff019bf9206775ca2412779f73fe4c3",
+      "size_bytes": 66750
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-True/requirements-v1.docx",
+      "sha256": "380e9a543e23f7e3fe6bc941ce9951dd33517a50773a0cdf5afca64f0a2a7f93",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-True/requirements-v2.docx",
+      "sha256": "177c79a474c1d3b77c1ed1c9a868ed384033bef9c1812de57259730cf28b9815",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-True/response.json",
+      "sha256": "8fc15dfff1679f7c65e38249b704d2591f3a16472eed85cc4a7b8361d3305c03",
+      "size_bytes": 755
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/docx-True/verification.json",
+      "sha256": "ca763cb87d460c7af1e3bcb4082249696d7f5a7c196bd8deab82f91c87d7bd1a",
+      "size_bytes": 66749
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/lost-intent.json",
+      "sha256": "a53f363cc7408ca3c032f2736e32e0cba2d384d390a74bb211d4c10e9ca43acd",
+      "size_bytes": 1981
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/lost-prepare.json",
+      "sha256": "6ff20d26f14e847c7744cac642c0c9584352d91f0fe95eb5641e496477f9ea6d",
+      "size_bytes": 2304
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/lost-response_checkpoint.json",
+      "sha256": "9341dfacebcbc8ef7f531c04ee2c4dfefd3a1671f029cc3a691745427324bbb8",
+      "size_bytes": 2304
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-False/response.json",
+      "sha256": "9fd985d5c4920c0f7c106c7cf229e1a8110aef17fb9938a3e4b2f1055be9b3be",
+      "size_bytes": 999
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-False/verification.json",
+      "sha256": "91fcfd4a1d712ebc3b4fb88ac98a2a556eb22f22598089b31e15075d4e4a3e0c",
+      "size_bytes": 55342
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-True/response.json",
+      "sha256": "25331fddb02ac918a038ca57ee04b800550f2368adba0a4e2e8063e2b5997245",
+      "size_bytes": 755
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/md-True/verification.json",
+      "sha256": "b34360d7b7ad1ee61a355c56e18b90f65f13b21b7ce2d0fa8b03376517d9991c",
+      "size_bytes": 55341
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-False/response.json",
+      "sha256": "3b0db9213b0dfbcc2f4eec9f2ac41a450ec5643e7eb44fbfdcf0d00b71d6fada",
+      "size_bytes": 999
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-False/verification.json",
+      "sha256": "b5935c6adab11a52e652a98524496cb47a849bc95ecf8f8b1fb85e1f970c479c",
+      "size_bytes": 56034
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-True/response.json",
+      "sha256": "d0ec77b7edb7eb742e32d2b7eec4f668b0de7e1b1b6988d65abe61b2fc8cfea9",
+      "size_bytes": 755
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/pdf-True/verification.json",
+      "sha256": "73ce50cc0ac5e153dda5650e01276071d46f80f901dbbc09f30c876c785019fb",
+      "size_bytes": 56033
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-empty.json",
+      "sha256": "d3381da6b80d684944df921aa853c2bdb2ef4879140353c8a18dfa6f07fd3977",
+      "size_bytes": 2349
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-http_failure.json",
+      "sha256": "5a1324e20c0a24e7fe0906db0c7a538798cbb280672d9fb1581589b490e6787f",
+      "size_bytes": 2367
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-large.json",
+      "sha256": "1dea7e67f82168fe8cb970b07fa8a761c51782824bf85dc78ecfc5de9a536cfb",
+      "size_bytes": 2032
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-length.json",
+      "sha256": "b7e9140b26ff81fbcaf49234e571657b9c18db0d8c32dab8b02851150ec6ad90",
+      "size_bytes": 2354
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-object-failure.json",
+      "sha256": "00434f275974423463c413373ad7f6fa62e9393d6a501f8910941972e1be674d",
+      "size_bytes": 2042
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/response-tool.json",
+      "sha256": "2c38154ead4b7dce7a683df7ce78dad5da36bca62c5d0314af2a3c3f59b7370a",
+      "size_bytes": 2354
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/calls/unknown.json",
+      "sha256": "7a5f965bee5b01909f6d6eede730331cb903b42974c26fb3b3bdad7b6ff63c57",
+      "size_bytes": 4534
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-False/requirements-v1.docx",
+      "sha256": "0a3df2d01f315436746bc5091d73ed27f0156309992c0391af056444daa44e38",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-False/requirements-v2.docx",
+      "sha256": "6a0da8983fcd06181df670ba6cf1d7cd7ae8a9bfd879d6887b01e04a6141900f",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-False/verification.json",
+      "sha256": "645d579036a8d66ecf5e3b7a2345ca5f9cb7473ec6401a1a8c2efd9215354692",
+      "size_bytes": 191748
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-True/requirements-v1.docx",
+      "sha256": "d3a29fbceb20ced40846bec61b004a6438ef0f32c4fb369cccbac910b22569b9",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-True/requirements-v2.docx",
+      "sha256": "75beef1d275fa8a02bc784045411d90b407312fcb67e6d44000f49886753c743",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/docx-True/verification.json",
+      "sha256": "cdadff5bf5a7d2ffca132078da5ef479ee1fbae6b8b9f136af63d12a1c61ab11",
+      "size_bytes": 191899
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-False/verification.json",
+      "sha256": "5c35616713f85d0c3f5245937a214946edf0dd916fcf14c205204d1407bd05c5",
+      "size_bytes": 166322
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/md-True/verification.json",
+      "sha256": "c2a99919aa932acff5b7ca1308f29a61331ba0b26a18535223611780e5986637",
+      "size_bytes": 166473
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-False/verification.json",
+      "sha256": "910c49ccd58ad19f47e4c1ff3d6ba4a8a324ed2b22e6f2f4e16ec8ebc5c6475d",
+      "size_bytes": 168832
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/case-anchors/pdf-True/verification.json",
+      "sha256": "dd1e7fea186ed7c662cfd931b6186762790674465bafeffe727ff37a41baa04a",
+      "size_bytes": 168983
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/concurrent.json",
+      "sha256": "4954ba74c454830cec55a8664f85402eebd6e1010a071b7c90d412bc3a59d646",
+      "size_bytes": 119
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/docx/input.json",
+      "sha256": "efc57e01e15e4b502f65c1ea2663e37fde98160cf5fefcc876cbe3d2d02f528a",
+      "size_bytes": 38463
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/docx/requirements-v1.docx",
+      "sha256": "3fcbd93d28aa6384162c47da9437d078e7a28bc68d588d1fbed84462fd05dd8c",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/docx/requirements-v2.docx",
+      "sha256": "c59bac103037930bdde77a3f5621cc2f5d689935f99010dd66e4ebe26a2f5d2e",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/docx/result.json",
+      "sha256": "c0af48fa0c1da6bc4e4a871cbe708f6ce6711ac6fd5ab6de87a376b7f074c1f4",
+      "size_bytes": 37406
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-False/requirements-v1.docx",
+      "sha256": "eeca46fd91d55235a74f3d66711281abe763b1d27114cb77a19bff8d238f6269",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-False/requirements-v2.docx",
+      "sha256": "a6e1de3ecf8e4c1c714ba6c24fe7dc37eb2b851c0a23322ba03037cae688fe87",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-False/result.json",
+      "sha256": "034190392a80899cfd8078747899df2e9e6950e5930e2eb4b0dcf2febf05a7e0",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-False/verification.json",
+      "sha256": "f77c5c8a1a23a62ed4ca121e0c944c67cb14ad0996652961ee4db133463b3ea4",
+      "size_bytes": 127809
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-True/requirements-v1.docx",
+      "sha256": "79d4b2acc504474a4ea8385c964f973c24b3441f36fa022cb682843bc1782350",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-True/requirements-v2.docx",
+      "sha256": "22160f05d94aa0157bf7f5242d2e4cd6697fa4ae2ff52eb19a39a22e9f44d853",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-True/result.json",
+      "sha256": "ecc8b7799eb9787fb99015c403a74879dec969575ce3f8d7659307122e6cba62",
+      "size_bytes": 14702
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/docx-True/verification.json",
+      "sha256": "19f88dae7c98df3e5378738157e814c5af6f48bec3b53f09a6ff410fe8749524",
+      "size_bytes": 127960
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/insufficient.json",
+      "sha256": "3344b42a698ca7fa6b31dcb553bb8a8521052f09fec78a64c4e41039a69de5b9",
+      "size_bytes": 18837
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/lost_result.json",
+      "sha256": "cbdd95ad0103a69d23718c7dc1bba2857c43ba16863e19f85813865d792a8368",
+      "size_bytes": 74574
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-False/result.json",
+      "sha256": "6252dfaaea1659931f3c461c4a99875c653891917b9f1d761a51471b29ab73bd",
+      "size_bytes": 13094
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-False/verification.json",
+      "sha256": "996a541936509de98ac2ce15d064a0cb1fa06fa4cd69354afb9e9aa356ae5676",
+      "size_bytes": 113374
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-True/result.json",
+      "sha256": "1c23fbdd83abc46f942c8340f547ed86d9cfe2d15579c6cc76428e319a84d569",
+      "size_bytes": 13094
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/md-True/verification.json",
+      "sha256": "d34a90e876fd50f4411810dda4641735c5464ceb139350b5fa9ea87d832a1570",
+      "size_bytes": 113525
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/multi.json",
+      "sha256": "e737e94488798a823a9e9b9f6e4720623ad93378bc2a29dc35a6b7b1108e36f2",
+      "size_bytes": 133290
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/omit.json",
+      "sha256": "76b4fa57ecb9f60eb30829c9baae36470c882fb948be986752bb85a035be67eb",
+      "size_bytes": 10831
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/oversize.json",
+      "sha256": "77d1cd6e6c54aaddd859effcd8e38c83bf894e3242b2cde3cffb1d8b4a363e2d",
+      "size_bytes": 34347
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-False/result.json",
+      "sha256": "b2a81e9cf999a63846dac608533a9e51b8f98a3feff400980ac05faeec1ce4aa",
+      "size_bytes": 13432
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-False/verification.json",
+      "sha256": "99a89c84938f49ea424e82f5b58958de52cdc240fab3455964013932a8e0d855",
+      "size_bytes": 115427
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-True/result.json",
+      "sha256": "5d13036932ee40a503633e9bf4de97737f70b37dbd761b8fa851a9f29f6ead0d",
+      "size_bytes": 13432
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/pdf-True/verification.json",
+      "sha256": "d5b1d5d5f6b087c0160b398dc21cc47696b9b7344b238748b05c728bc6946d7c",
+      "size_bytes": 115577
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/provider_failure.json",
+      "sha256": "257b925f68cfa94163489b0deeb283a6c3946565f20647d16111890302ede691",
+      "size_bytes": 77896
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/grouped/unknown-http.json",
+      "sha256": "5834913f52eec961a393c05ac3d483aef78cef5069cdeda276de47d14b2f0d53",
+      "size_bytes": 54981
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/md/input.json",
+      "sha256": "280770e50d3fdaa6453dc3779ad93ce1455c05e7ed0ea9c23ea9f83ae9956c5f",
+      "size_bytes": 30654
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/md/result.json",
+      "sha256": "8c84cf897091698b6f1cd26443c2dd21b5cd5e147497b3735d986040f2235afd",
+      "size_bytes": 36168
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/pdf/input.json",
+      "sha256": "a1842ce3ae968f57b473c1259f9bc03cd1ffb2f4db92f1c73f9b19cf5ae09d6f",
+      "size_bytes": 32387
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/pdf/result.json",
+      "sha256": "67bc90befb96aa111c4e1bfbdcd1fc2c8ec8f70f0c886e6446b3cd2e1097ff94",
+      "size_bytes": 37059
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/concurrent-create.json",
+      "sha256": "e36426a138be338e76606bebfee5c8828be542afddcb0e1e568efe0c0cfd5a3b",
+      "size_bytes": 827
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/docx/reasoning-plan.json",
+      "sha256": "45955caf67a4e2c58aae1a40eeaa0e294949fe0b5b13e7a342b1b17a8d67bc64",
+      "size_bytes": 1812
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/docx/requirements-v1.docx",
+      "sha256": "ecca2afaa14c47da5111f218e9ed845ccdd28ba1d200cf61db30b86dbe87dfc9",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/docx/requirements-v2.docx",
+      "sha256": "d3d5b3d9500dc108b9d2ddea5a899d2d1ec209b0022d3e1743448a68e87c4f0a",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/docx/verification.json",
+      "sha256": "28b1220758d950b8dcb6854744053a7f9c980269834c3114042eb5244afbf0ad",
+      "size_bytes": 38491
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/lost-reply.json",
+      "sha256": "efe160f92f69acc7c502c2e1f6215711e055e01a2c7f012f27d9a8011c706087",
+      "size_bytes": 850
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/md/reasoning-plan.json",
+      "sha256": "9ac95d69917ac470b6aa3ffb50a0bec3a72dc891dceaaaed1d6c89898b4d3459",
+      "size_bytes": 1476
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/md/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/md/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/md/verification.json",
+      "sha256": "f2601fd69909a446e83f39004d5abd7aedd4a1bfe60fa59f64d0cdd4412625e2",
+      "size_bytes": 36639
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/pdf/reasoning-plan.json",
+      "sha256": "d62dca1fd08afb3d87358bf5dbe1bf44691be7b4bd5b730108ba1a52f4d77538",
+      "size_bytes": 1476
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/pdf/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/pdf/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/pdf/verification.json",
+      "sha256": "679e0fe5339c5175a79d2a1bf09292d8781714984063580ab55c0d4ddcdab654",
+      "size_bytes": 37530
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/scope-lease.json",
+      "sha256": "a8efb94c6e2b6aa226f234dbcc878db4768e1e3fb58c296d26eaf545cf316ea3",
+      "size_bytes": 138
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/reasoning/segments-source-gap.json",
+      "sha256": "f58698b47d27a8457561bc4e82d9d061210d664d21e13b2f40eef2ccbf6e15cc",
+      "size_bytes": 4583
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/recovery.json",
+      "sha256": "7813fadda1b5837777ddcfc73c89d7c74ca85817a7c4f2dcfc0ef9c5a668bd18",
+      "size_bytes": 1570
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/check-race-recovery.json",
+      "sha256": "a6fb1a70265497cf7be7dc60c9e5e202e219ce6104c2eba4da1f2e2b0e2ea32d",
+      "size_bytes": 1031
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-False/assessment.json",
+      "sha256": "0d6b6df1829d05d761b9a6df49efd3f817a3212595a5b1c841d1935fd45ce14f",
+      "size_bytes": 3302
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-False/requirements-v1.docx",
+      "sha256": "ef320bedfbd8912046f117ac2d657b677b90a5d22772b811702d3ff18b6890a6",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-False/requirements-v2.docx",
+      "sha256": "5ecbef13b9ddea7e44c88684ee5d5234392b8d4bd388852e3b91c34fa780a63c",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-False/verification.json",
+      "sha256": "14a296aa764c82732746031a3aabab3c48a201db6420c3afa801b09804ad8c03",
+      "size_bytes": 6311
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-True/assessment.json",
+      "sha256": "e3be57dd483c0edfcff9317d1a521df3da86e21fbe28cb7dbc86fb99d17c7146",
+      "size_bytes": 3302
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-True/requirements-v1.docx",
+      "sha256": "e34d5d46dacc30fd201ce6f111a705fbff4b24ff37feb261fed5b7aeba8dfab0",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-True/requirements-v2.docx",
+      "sha256": "49709e94c37b9290dd41d4d99a390774d3998c3d2fe5d72b07bb29c44408dabf",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/docx-True/verification.json",
+      "sha256": "9d29d1d2bc4a9affcc6a7306531f3726f209b400e0d5c82e18ab1967c9d073b2",
+      "size_bytes": 6311
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/ineligible-empty.json",
+      "sha256": "f8dbc2f3c3d6f2678e05c47c84934e4cf4c12d6391f214bec8e2e4bf142a5205",
+      "size_bytes": 962
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/ineligible-length.json",
+      "sha256": "48290d7d719a780f7164fd11e864e80ff2f6da4887fdf02a3d24b8131c5b9c52",
+      "size_bytes": 962
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/ineligible-tool.json",
+      "sha256": "552eda482a6e7601baad54398ca40fb334763c34e019f3c91b0163643f597e28",
+      "size_bytes": 962
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-False/assessment.json",
+      "sha256": "55c4336139849580f82daee71cb6977bcd8b50441ffe53c2016b66380d5a55cf",
+      "size_bytes": 2984
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-False/verification.json",
+      "sha256": "a1772e7290a02bc9e9a027aa581088a736e5ab9ef78eca1069875e7d46263317",
+      "size_bytes": 5961
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-True/assessment.json",
+      "sha256": "55195c1ab029ebb1152aee0c36c6f7e70f092877c05fac28968242c21630e9ff",
+      "size_bytes": 2984
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/md-True/verification.json",
+      "sha256": "4e0e38aa3307a24042793bc7a8da091f2c52b13dbd45d5828aa6a5cfbda80fa2",
+      "size_bytes": 5961
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/outcome-analyzed.json",
+      "sha256": "c15fbe4fd2c57d1112dbc0d462756317505b80d3db22b8c2fbbeac60a96ea789",
+      "size_bytes": 1335
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/outcome-evidence_insufficient.json",
+      "sha256": "0dc6be42f15ada272fc468eca0a0f02d419bcca5312c7c2163a72ae0848b20d8",
+      "size_bytes": 1401
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-False/assessment.json",
+      "sha256": "eeb0818d94c52c0139fc6d8191fd2b0e404eaa8de066c91fbd7de640d5e56e45",
+      "size_bytes": 3274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-False/verification.json",
+      "sha256": "86246b0b1af51ae713a4e02a1ac54f5849ffd925a10833dcf13d44c556d3e0b9",
+      "size_bytes": 6283
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-True/assessment.json",
+      "sha256": "a925e1910d96bd95531c2e142e1a26c783488c9d5768840bffa595e01823c911",
+      "size_bytes": 3274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/pdf-True/verification.json",
+      "sha256": "9fac8e399aa7a77e84dd84ed517141205517ca022af8894587aa86ee2d03ea67",
+      "size_bytes": 6283
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/read-continuation.json",
+      "sha256": "008d387fb194a35134f68d06784a1aeb81fd6be117f6015195c22c724072c484",
+      "size_bytes": 6479
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-duplicate.json",
+      "sha256": "310471da3b1924435258dc4d5a9627e7059b9c50ab4d2bc113ee5abbae80c8cc",
+      "size_bytes": 965
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-foreign_case.json",
+      "sha256": "f1557f79d279f8f2ccfb8098a3da45f8ec0bbfa68f343131266d41b29e7a615f",
+      "size_bytes": 5729
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-multiple.json",
+      "sha256": "cf5589d28100b207434f7137cbce70976f03afbc6bd6512bd42a62aadd4263d4",
+      "size_bytes": 965
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-normalized.json",
+      "sha256": "6fa7b6017314cb7b3f3afd4ba97fefbda5432d6a48300c2a61921f57f7f12a48",
+      "size_bytes": 5155
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-path.json",
+      "sha256": "f971bccebeb825ebd1f136ce5c5144b3303c32ec0858decf8dee66ad2fde6ac5",
+      "size_bytes": 5049
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-quote.json",
+      "sha256": "6fd31a333972014c10852a30f30c1fe2580a15ebd0dfac180bcd0007e96798ef",
+      "size_bytes": 4988
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-unit.json",
+      "sha256": "cc35f3856a29ea0a5a9fe58e1e752c5edb869ba6b12b6640f7977e7f8d492445",
+      "size_bytes": 5005
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-unknown_read.json",
+      "sha256": "f65a8a8508c17355c224cd8b2e2684e5ecc611037821e03024667bdb1162bd6f",
+      "size_bytes": 1728
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-unread_case.json",
+      "sha256": "6a8e7eb34660f5c379e4d34ec1e6ba34fe103622bf00b499c49cdfa187a223af",
+      "size_bytes": 5023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/rejected-unread_text.json",
+      "sha256": "3d88f31147c473f6148963137e8981389747d56fe34e320a13401ef46de23967",
+      "size_bytes": 5173
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/responses/unknown-check-object.json",
+      "sha256": "97fcbd79b9b1170400c0033bd800dff36311bde0c758c12f7b623ae3bb5f84b8",
+      "size_bytes": 1207
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/connection_closed-False.json",
+      "sha256": "d40e5a6498090dc864133b067eed854499fb8dfd8c1e41accf15c0caa0581042",
+      "size_bytes": 29988
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/connection_closed-True.json",
+      "sha256": "2c768950ec4fbf4e8771eeef13a56941f153f3d8683135e0e7ebdceb3f4b2e02",
+      "size_bytes": 30096
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/deadline-False.json",
+      "sha256": "0fb9e89e6842346b74355dc9472afdd241d654341ce00213f185ba198efdf68e",
+      "size_bytes": 29972
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/deadline-True.json",
+      "sha256": "856c03c9343c4c172869e0755b584f8661c9546718c9d2dad034fb824f8e5634",
+      "size_bytes": 30080
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-False/requirements-v1.docx",
+      "sha256": "4fc9f29bd2af481a3a67704872732149bdbc7e80e3fdc96638e3e622227a9d75",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-False/requirements-v2.docx",
+      "sha256": "0074245359f7100bf247b6a33798cda1834605dc46c67573b1faf042dac28524",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-False/verification.json",
+      "sha256": "025c54e7246141d0015019c60fb5c0f51c86de67c2e3f2cb53cf30602e9e6681",
+      "size_bytes": 127047
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-True/requirements-v1.docx",
+      "sha256": "88900e06eb47cfb02ad18e725441c2f769d87c0a44c0540d5953a1654afc6fe2",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-True/requirements-v2.docx",
+      "sha256": "3b21ffb457cc834aca46415cc101f85b3ebde71846804e748b918be968b4466c",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/docx-True/verification.json",
+      "sha256": "ab44b2f76d8ee36234ff9a998a027977b1632bd3fb0082f5ca87f763c351964a",
+      "size_bytes": 127271
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/http_failure-False.json",
+      "sha256": "66bbc2fa9cd223dc28f2627a97a243bbaf0a7365f9dbb0b78308c2f1278867ff",
+      "size_bytes": 30308
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/http_failure-True.json",
+      "sha256": "8bb836e34b1333da6ab00e875c3443472ee801dba43eaaee6279ebe01e63b836",
+      "size_bytes": 30416
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-False/verification.json",
+      "sha256": "00817683ae2ffbae2e0e4c83ee0e0c79d2cd5c1ad4e2c961cdcc297a09f7ad67",
+      "size_bytes": 112727
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/md-True/verification.json",
+      "sha256": "af24b519d1060133377f947f8f9ae1597dfdffe7058b0c55df3f44fb60eae3b0",
+      "size_bytes": 112951
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-False/verification.json",
+      "sha256": "fcd8620d97d11a67ce2fa8ad2e796289de8932acf925f74d7fd2e447ac2e9f48",
+      "size_bytes": 114780
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/transport/pdf-True/verification.json",
+      "sha256": "7fbc9616063d29f20a3d33f76fb42cfce3c33b665993ce1f426ece63e9f9151c",
+      "size_bytes": 115004
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/budget.json",
+      "sha256": "eef3b71c2d86af6bf6d059160649660fa9eb3575e581d013b24644247c940359",
+      "size_bytes": 4401
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/conflict.json",
+      "sha256": "d9e794cf43f267218e14c476f2ed9a60ca44b3dd7a5e38edcf5f0e710ce24c74",
+      "size_bytes": 25379
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-False/requirements-v1.docx",
+      "sha256": "a87230388c2191d07b1a3ef04d91b1e1b410390bf078d6d4e0b17ee69d133be4",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-False/requirements-v2.docx",
+      "sha256": "229b6466fc22d12f8dbcaddc1d2fd1b729b1f0d95a1cc1e5498079e4a386249e",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-False/result.json",
+      "sha256": "ad3e7b2258a00b0ed2da8bff6773c6f4ee6ccdd3aefbf30ccc9f5acad4aa497a",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-False/verification.json",
+      "sha256": "ed05c0863afc3c110be9a078dbccee7939dac85b1c918d96aabcc8d554db11a3",
+      "size_bytes": 50367
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-True/requirements-v1.docx",
+      "sha256": "bd04ea2665e406e3fd2d99f2ad2f948771bb7d37122b7719255d191e0e17cf61",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-True/requirements-v2.docx",
+      "sha256": "b62c6e1cac50763071922cc1e01e04c210baf2599db3f4d0dacc8d52b45ee3f1",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-True/result.json",
+      "sha256": "be6bbab50b02f02cf095fc9b579c1847507aa01f76ae5dac745d9efe25881679",
+      "size_bytes": 12146
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/docx-True/verification.json",
+      "sha256": "5e5135df0ab16eb251dbdf728c5fa6dac11d8aeb132277b1119a33ea91c07c4d",
+      "size_bytes": 50448
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/handler.json",
+      "sha256": "6b8d591cff5b94860ad9c0923054aaa768cb65fa6053dc42558a9323fef43dc2",
+      "size_bytes": 93
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/heartbeat-False.json",
+      "sha256": "a249a7903cd97f92abf2e1226007758ee0f1030316d3707fa3f0e34780b431e2",
+      "size_bytes": 119
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/heartbeat-True.json",
+      "sha256": "9f8594f015a6f1f027a4487553e0be64bb1745ced0ff1db4fdf8915343c03692",
+      "size_bytes": 119
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/ineligible-empty.json",
+      "sha256": "e39c96d9db4bded89ae97975f2c8c20262a7081d768f74d4cb7290b0aa3a5085",
+      "size_bytes": 8532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/ineligible-length.json",
+      "sha256": "eeab4ac91f070e897508fb14051ba19089255a6c7935f023aa27022b8e03ddf8",
+      "size_bytes": 8552
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/ineligible-tool.json",
+      "sha256": "6cd0d272127bbb5270a210aaa610bbe3b62b304a17f0e9a90edbeabb06591e33",
+      "size_bytes": 8557
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-False/result.json",
+      "sha256": "12551b85ba2449d1abaddfe5f14f0bb216a8f2c64f0292cbbdcf6751a2aea47d",
+      "size_bytes": 10700
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-False/verification.json",
+      "sha256": "c4c7dc9ec21ed87b5712dbb02a5a1609fbbc60a4ae7575b14839b80148d2d34d",
+      "size_bytes": 47572
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-True/result.json",
+      "sha256": "09d0912ca2a7cea24bc58002e6a70f3105a0a6fd96befac0e24ad635ba6ec912",
+      "size_bytes": 10700
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/md-True/verification.json",
+      "sha256": "05467dd78997c603474e805efd1ed01d175e5cbbf9e3162493c66ee1df0b8a06",
+      "size_bytes": 47654
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/missing.json",
+      "sha256": "e1feaeb5128039a2272ac9231e95926cd17b6f0729d26d9ed3b4314d0980be3a",
+      "size_bytes": 11763
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/no_rules.json",
+      "sha256": "21cfc0853d25e826fa2e8d0cc4613350d9b02098b4130abfaa1e606da8f98486",
+      "size_bytes": 8152
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/object-deadline-recovery.json",
+      "sha256": "aed4448bcaca89376769c82d8898cde1788df234b51678fcde572a2430dd4956",
+      "size_bytes": 15530
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-False/result.json",
+      "sha256": "be6b194a3d1c45c016f206d01b5519f6cb4ffbd6fb2995ff8a36a9c79daacac4",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-False/verification.json",
+      "sha256": "4b8c72955e4ef147bc44d46a215491b8be622ffb2bfc39b2c81fd6e1f548425c",
+      "size_bytes": 48564
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-True/result.json",
+      "sha256": "09f5f95eddbde4fa502d05120265b16d34b955135d128f798e8c207ed7017c35",
+      "size_bytes": 11041
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/pdf-True/verification.json",
+      "sha256": "7fd8eef68974e588803619418e36070fbb78a28184a41d8d312909b736d7c94a",
+      "size_bytes": 48645
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/rejected-origin-changed_candidate.json",
+      "sha256": "0595c8f9d3b54360049c3d09dc92f10a3b8e5bb7049eea3ceac4012021e9b6e2",
+      "size_bytes": 60
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/rejected-origin-foreign_checkpoint.json",
+      "sha256": "0595c8f9d3b54360049c3d09dc92f10a3b8e5bb7049eea3ceac4012021e9b6e2",
+      "size_bytes": 60
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/result-recovery.json",
+      "sha256": "8390cb7073a9d990ce60aecc1c741375acb97301848f5cb6dfaa828ab3bbcd03",
+      "size_bytes": 37195
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/source-gap.json",
+      "sha256": "157e7de27d807e7c225e06ff95a825355b5c4c30ac4f264bf5c99cf701a94293",
+      "size_bytes": 20593
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final/workflow/unknown-http.json",
+      "sha256": "37847f0fa977c60e5f78c76026ddef695c37ed33f3f26af31dd1ff9ca015d398",
+      "size_bytes": 7339
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final.log",
+      "sha256": "48af31ec60207231f7361a49493684c6464963b873d2ab2e8d2cd67e7c0e3d92",
+      "size_bytes": 276
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-regression-final.xml",
+      "sha256": "9070d07a415ca441e90d467643ed2cccbf98b9a2998850320cd2534de8eea882",
+      "size_bytes": 31585
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-replay-first.log",
+      "sha256": "5a4c371fbaf66dceb914544184b9a6093ef72a2d8070898acd86754dee4306b9",
+      "size_bytes": 9978
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-replay-first.xml",
+      "sha256": "eb5f9970a5b78f07780f4a0fb7466ec6d9686fc3dac94023393d5d090d6ffee8",
+      "size_bytes": 23470
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-replay-fixed.log",
+      "sha256": "9b1b916dfc2e8018d4dc628928bf666bf1be862fda617fe3e7bf4059796fdf2d",
+      "size_bytes": 113
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-replay-fixed.xml",
+      "sha256": "e185e14b7e74156f9cc306f989b950bda481792b09a4a920ddb2777e52c27380",
+      "size_bytes": 15109
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-semantic-first.json",
+      "sha256": "6cb823d50a1e176d2384d8da821d957b94b435ef4a0eba5f838016ef4983f9b2",
+      "size_bytes": 12879
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-semantic-stage.json",
+      "sha256": "b04151d43a7e41f6fc6157790035d0eb84ce94e4802cd56cf5e7fcc1885a58cc",
+      "size_bytes": 6205
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-False/requirements-v1.docx",
+      "sha256": "7fb8c8b347af28a9f5ffbe179774d88ab695b9b0560f26fbb3acaefce53f0c00",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-False/requirements-v2.docx",
+      "sha256": "3046f51005a02ea9013aa49e3a06e9e601504c55ce53a23c714efac1ef8cf54a",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-False/verification.json",
+      "sha256": "eaf2c9f8680b6e2e58be761fe367a5a604c1a9fc3b66516cc17ecc5db90e0b1c",
+      "size_bytes": 195504
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-True/requirements-v1.docx",
+      "sha256": "c6b333e47e2e5c8ab2d4706096c188b284a3fbb5b36eb47884122cb0a7845eed",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-True/requirements-v2.docx",
+      "sha256": "2279bea65b6dca827bad4aa3e16ce2951ac3eea65ef8c5d08b1ef933d2acb5df",
+      "size_bytes": 36839
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/docx-True/verification.json",
+      "sha256": "03cda11d9d12bee03bea80bbd519cdb424b80f8212b8652a15d76c01bf1111b6",
+      "size_bytes": 195655
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-False/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-False/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-False/verification.json",
+      "sha256": "5bdec87bec75890fe96ae78e117ef5c906d92f9aab55eee834cffea366d78264",
+      "size_bytes": 170078
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-True/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-True/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/md-True/verification.json",
+      "sha256": "dfa3b558a53e86e21ac55b21f7a93a78fa3a85db687782e7d199958bd569c887",
+      "size_bytes": 170229
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-False/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-False/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-False/verification.json",
+      "sha256": "2b09c6d9d4c42327534bba5b9f9c16bc1a8d7568ab0b9edf552b20a82a00424a",
+      "size_bytes": 172588
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-True/requirements-v1.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-True/requirements-v2.pdf",
+      "sha256": "6972e07d25aab87bc48a9a5e2884013987de3759a8b7a0f5af7c0f22fe7bd14d",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final/case-anchors/pdf-True/verification.json",
+      "sha256": "e724f289933a0bac015ac8d9fc78f7ef9197381c459cacf8652a52d24b8cf5f7",
+      "size_bytes": 172739
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final.log",
+      "sha256": "965fe5ca9ccede47ab3617c820f7ab6df28b38ac245b2615683a799f918d8828",
+      "size_bytes": 102
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-final.xml",
+      "sha256": "e54babd782ec1b6cea15477b749ed01e68fbda1bfa3c5fb8c0dfc01b0851620f",
+      "size_bytes": 3126
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/096af8f4961d03dfc0458f1726fd6b32e184aa0b07f93190b81e83104b0c2a8d.json",
+      "sha256": "096af8f4961d03dfc0458f1726fd6b32e184aa0b07f93190b81e83104b0c2a8d",
+      "size_bytes": 3006
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/52a8bd30b865c9d7453380ec3b519ba4434f6b61e65ddf172a9c969459a9a96d.json",
+      "sha256": "52a8bd30b865c9d7453380ec3b519ba4434f6b61e65ddf172a9c969459a9a96d",
+      "size_bytes": 2274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/63478e5658e251623dd8753e17845bb51f090db153110d611ab70c8f5dc5c465.json",
+      "sha256": "63478e5658e251623dd8753e17845bb51f090db153110d611ab70c8f5dc5c465",
+      "size_bytes": 72384
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/84fa8ba0a23a31e6c5632dc33c65b9ba48d836737107072926f152a746f84ce6.json",
+      "sha256": "84fa8ba0a23a31e6c5632dc33c65b9ba48d836737107072926f152a746f84ce6",
+      "size_bytes": 1992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/9bed8538edd6b37708e1a28c5797745e2b18431c60669490613f0c1cbfe58272.json",
+      "sha256": "9bed8538edd6b37708e1a28c5797745e2b18431c60669490613f0c1cbfe58272",
+      "size_bytes": 3128
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/a62b8f938266a5ea93d576f9b4348a53a71a0ac6494b42c30275db2e2cd58d40.json",
+      "sha256": "a62b8f938266a5ea93d576f9b4348a53a71a0ac6494b42c30275db2e2cd58d40",
+      "size_bytes": 1188
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/b010a78e3ebdd6a203fc3d356ad316f6dd20246ad8b09c14de8d93f2c78f29b7.json",
+      "sha256": "b010a78e3ebdd6a203fc3d356ad316f6dd20246ad8b09c14de8d93f2c78f29b7",
+      "size_bytes": 32138
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/checkpoints.json",
+      "sha256": "af804b34cf4a0bdd5799470c8aa53a7a3625fe29e8ec7c4f36c7681bc9e0b4fb",
+      "size_bytes": 8738
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/comparison.stderr",
+      "sha256": "8792a09b508c77c0f5d4addfde699490aa8d12265dff48252a40452de6f4a103",
+      "size_bytes": 5751
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/comparison.stdout",
+      "sha256": "d4d56f50a36b57ef0da7d960db5be9be9511a5ebc121bc88940abccc34a209c0",
+      "size_bytes": 33
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/docker.json",
+      "sha256": "b08c241da940a396750636218e068d5e762ef2af971921981a26395462ab00c1",
+      "size_bytes": 977
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/e1439d3f9af1b1d5e885ba21747cc94b92b7e465f54d420825a700fa529d002f.json",
+      "sha256": "e1439d3f9af1b1d5e885ba21747cc94b92b7e465f54d420825a700fa529d002f",
+      "size_bytes": 2997
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/ffe4a6bd78595f8031fc81603882180ebf7fc4d3e5e581ae4afc1d677d761995.json",
+      "sha256": "ffe4a6bd78595f8031fc81603882180ebf7fc4d3e5e581ae4afc1d677d761995",
+      "size_bytes": 45395
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-disabled.stderr",
+      "sha256": "5d921ceebd7b240b030f2bbb1044cb5e2ff4c6f88f4f11693fc97d5189916234",
+      "size_bytes": 13939
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-disabled.stdout",
+      "sha256": "5836da4329cafe8937d9b6527adce64f8dd3dd09ce7f121947f12fac7ff9c837",
+      "size_bytes": 1321
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-first.stderr",
+      "sha256": "15143c4f10f7e1f3f474123d04d3d253190664fcf04eb97f33c178dc8d99d8c3",
+      "size_bytes": 25626
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-first.stdout",
+      "sha256": "0030a4f3a1260ea3c3272be42d6389341930d0b4103cf01dd8ef541ef0da6d01",
+      "size_bytes": 5804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-restarted.stderr",
+      "sha256": "3973ebecae4c696613c81ccf1f1e090a93e0d1e0e3e1890b52f8589955163562",
+      "size_bytes": 30902
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-api-restarted.stdout",
+      "sha256": "a8a0c2f246079ffe798f984b4b5987d57af7d37166796be3a40ab92c93266a95",
+      "size_bytes": 3063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-outbox-relay.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-outbox-relay.stdout",
+      "sha256": "57469c9d1aca6a76f6038b569594ab72a2fd1a842ce303bba6048a16caa8f7d3",
+      "size_bytes": 25
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-worker-first.stderr",
+      "sha256": "5c108a4461fc9fd3f081e7855d4b3a68b5690d24e24d581f978af3590e553817",
+      "size_bytes": 56998
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-worker-first.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-worker-terminal.stderr",
+      "sha256": "36b9dc005ebc7eaa63582871d1c4d5a1b007f9a2a43bcfa92217d20673cb4d7b",
+      "size_bytes": 4532
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/impact-worker-terminal.stdout",
+      "sha256": "b054e954a20d0f07ef7b66d24e8a862a9b10d1c9a74ea799962fb01f78c00e12",
+      "size_bytes": 29
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/parse-1.stderr",
+      "sha256": "a6477fd02b6bd04e0d816aa2e8b17363ce050df490424a226da3703ba87e114d",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/parse-1.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/parse-2.stderr",
+      "sha256": "6811bddfc20a5825b2c57fe43486d78fa2a84987543663ea5da69954f558165d",
+      "size_bytes": 4610
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/parse-2.stdout",
+      "sha256": "9ce92d9a810f2eab5a53626263b5a2ff1935550c41dc1c5d5d16203eba26a055",
+      "size_bytes": 28
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/physical-requests.json",
+      "sha256": "9ff20d4bc4eed314d915e130f0e4762ac31c59b5a4845f9281d1023166e1d9ac",
+      "size_bytes": 60614
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/requirements-v1.md",
+      "sha256": "92c09b68ad0cc2ff778e7765089653643c1c29556b21313d63bc2c0ba3da0e1f",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/requirements-v2.md",
+      "sha256": "407d0567868bf182ad329e65b0b8753a7857ce00b8aafa2dd7688e8e12c25899",
+      "size_bytes": 43
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/result.json",
+      "sha256": "8050918b46805b30543c79d36d23edeb8ae2fbabec3685ce9da3619920656a27",
+      "size_bytes": 13094
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/snapshot-view.json",
+      "sha256": "d26ca327c682a2e55c9cbbf9981c12f46a167f1048a7c63216cf8142355d940e",
+      "size_bytes": 56565
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/source-1.json",
+      "sha256": "4327ad0e0f07310f68b54319eaa2d74fa6b98e7f3f0637ef082c4ee211a9a13f",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/source-2.json",
+      "sha256": "618598fa3a4ab89c84e5f9d4b62305be543a6b8e88fca7502a831dcc601b7674",
+      "size_bytes": 5846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production/md-native-finish/verification.json",
+      "sha256": "3d96419727a97535edc7c4a106ceb158698aebc09b8f357ae4b2edb543505554",
+      "size_bytes": 39611
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production.log",
+      "sha256": "2851ec1a5517ab03ef928b45534d3e3299d369f10721655b1b6e20fed88919d4",
+      "size_bytes": 101
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-case-anchors-stage-production.xml",
+      "sha256": "8493e44d3e4aa483ce5ea637195f931b8d14808eeb0b0bc23505a39885bd36d3",
+      "size_bytes": 404
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/acceptance.json",
+      "sha256": "c8ea5776bc31dbc73beedac10c298893a1e9fedf82595595f3dfa4c14e644051",
+      "size_bytes": 431
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/calls.json",
+      "sha256": "b9b0df1cf0788023add65a47838d8481c343607759ee2b5eb1535e572e3d3f76",
+      "size_bytes": 10411
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/cases.json",
+      "sha256": "bc695a15386e057e5f9b10fde76072ad054dba40ac972d7df7fee8b5e3f44eae",
+      "size_bytes": 22520
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/difference.json",
+      "sha256": "22ac3ea78fe7f2d0dee71cac15a5498601081b3482a1df1a86f99cb3e421f740",
+      "size_bytes": 20274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/http-request-1.json",
+      "sha256": "6787483f2b9330a2d0d6614108564d20fd2baf8cb6d56967e94e5ce7e83e7458",
+      "size_bytes": 38574
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/http-request-2.json",
+      "sha256": "bd375f1286ca43dd9dbd31910e1980b5675a3657d7548b59fd9db9bd1b5656a0",
+      "size_bytes": 53282
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/http-request-3.json",
+      "sha256": "09b4e4084d1a60f554612ad8963417f4280b0f91e9ac4da233c897b025a1f4c0",
+      "size_bytes": 53413
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/http-request-4.json",
+      "sha256": "843f1fe7a83c518b922217f997ac1809b681e7a3d33d31f8f85da4f5e0fb44b0",
+      "size_bytes": 53418
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/http-transport.json",
+      "sha256": "3b79bd4db63bb1b58f663c342edd0baf7729f6d58c778c1f8c0e41e0ea88f651",
+      "size_bytes": 144
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-assessment-1.json",
+      "sha256": "4921180eb65a92cbe5d94560a16f039263709c8439b2e5a67fe2e2857ac41d8f",
+      "size_bytes": 10828
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-assessment-2.json",
+      "sha256": "02e4de967a8a8a5c59542ec4dd1d8c1320218f497390e56837644aaa96ff7974",
+      "size_bytes": 13626
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-assessment-3.json",
+      "sha256": "3a2bb6bf13f32d4e48bcb847074a6422b605cc61a95b6abb7459b944b974aff1",
+      "size_bytes": 21706
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-assessment-4.json",
+      "sha256": "42b4b7d7726cee15d9a5d371abe9ecdbd2840e0a0b554dcd0ad26fc1c6ce4370",
+      "size_bytes": 17895
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-request-1.json",
+      "sha256": "f56c86e15df79f460ae72e67e33bb1ac28194d30810baa3723ed568d6de0911a",
+      "size_bytes": 76265
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-request-2.json",
+      "sha256": "9ec0c2a15394ee296ed820b35b51d9fa4eefb1af8e60d796beaae23a7921a830",
+      "size_bytes": 105963
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-request-3.json",
+      "sha256": "e54d699510bac09f9c096b99419f304eda3a17823f6745c51e69e07220ae6623",
+      "size_bytes": 106225
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-request-4.json",
+      "sha256": "8a89db2b5a405519b8de6320f85f777df974380d16f6113be776276168f2c377",
+      "size_bytes": 106235
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-response-1.json",
+      "sha256": "40bd9cafb9493bbdb2a64a1533730b659489ade59599f1c7f2fd06bb1c1e65a6",
+      "size_bytes": 13698
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-response-2.json",
+      "sha256": "19ebfd7a80efc6656533e73b36c36120e53be7907c3d71d9283c8fbe6d55e3c4",
+      "size_bytes": 31738
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-response-3.json",
+      "sha256": "7a2e6896ecbd233cb46908b0dc4ecd4ad924a55e22103bd74b66fd059cf497cf",
+      "size_bytes": 41546
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/logical-response-4.json",
+      "sha256": "479ad1a46d5ca9b71210d2c9792723a6b229fdcdecbf174984bd3f15dde5222e",
+      "size_bytes": 36430
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/manifest.json",
+      "sha256": "62c3012dcb7bda104b9a3a7a5f667e07ba9887c47d2d9de9fd1c691d32ed964a",
+      "size_bytes": 7236
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/model-provenance.json",
+      "sha256": "3920f17aad45667c59acce58bf7eeee8d04e9ca2f2339b30243d5a5c5b0a5ecc",
+      "size_bytes": 1197
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/object-references.json",
+      "sha256": "cfc8a7096c18233c7b8feee51154bbc009f56324c2a8d47d04de734fb5c33f9f",
+      "size_bytes": 6063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/0060492b54689fecba30069574c01be40f9208d0ee1e77d47eb276610b0d342f.object",
+      "sha256": "0060492b54689fecba30069574c01be40f9208d0ee1e77d47eb276610b0d342f",
+      "size_bytes": 8541
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/1937b92a55ec177a19707937888eeb565a87927947854095dfb7bd75af1d2f1a.object",
+      "sha256": "1937b92a55ec177a19707937888eeb565a87927947854095dfb7bd75af1d2f1a",
+      "size_bytes": 12992
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/2056f1c38cbe049f82644af91da93d150912d2f50e7b1e7572d6451bb50b8506.object",
+      "sha256": "2056f1c38cbe049f82644af91da93d150912d2f50e7b1e7572d6451bb50b8506",
+      "size_bytes": 105289
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/2bad0419bdd34d8da18b54dbe522be3b3dc0448d42fa252660c220b2cf290d92.object",
+      "sha256": "2bad0419bdd34d8da18b54dbe522be3b3dc0448d42fa252660c220b2cf290d92",
+      "size_bytes": 105561
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/3df1f34bda5fe5cd48a99128a1f912df232ad298c617b8588a54f954e9d14dce.object",
+      "sha256": "3df1f34bda5fe5cd48a99128a1f912df232ad298c617b8588a54f954e9d14dce",
+      "size_bytes": 10149
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/4c613d7aa1b8a5161bfb29da061a56a1408fd0707a87abea0622c115395f1ea8.object",
+      "sha256": "4c613d7aa1b8a5161bfb29da061a56a1408fd0707a87abea0622c115395f1ea8",
+      "size_bytes": 40822
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/4e3b25ae5b95341fc82754b96e1ab92ede7509eaf65a3d1dad5fbab8ad33385f.object",
+      "sha256": "4e3b25ae5b95341fc82754b96e1ab92ede7509eaf65a3d1dad5fbab8ad33385f",
+      "size_bytes": 12444
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/659c66d4fbcc968f87be37cc149c5d0d861eebb87a03f9c354d5fabe9a01373f.object",
+      "sha256": "659c66d4fbcc968f87be37cc149c5d0d861eebb87a03f9c354d5fabe9a01373f",
+      "size_bytes": 31014
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/686493aebfba5cd34cffb690daad7580c5e2b3f5693ba7ecf0f12a0657b73451.object",
+      "sha256": "686493aebfba5cd34cffb690daad7580c5e2b3f5693ba7ecf0f12a0657b73451",
+      "size_bytes": 5072
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/6cc940faa418886f58d314e48a1fd62249140c4c1e94bde38147c7461c6240fe.object",
+      "sha256": "6cc940faa418886f58d314e48a1fd62249140c4c1e94bde38147c7461c6240fe",
+      "size_bytes": 105551
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/9b51a10d02eba3d9be4ec1eedc2fd86b7f265032d0897c25a63a308dc93ac02f.object",
+      "sha256": "9b51a10d02eba3d9be4ec1eedc2fd86b7f265032d0897c25a63a308dc93ac02f",
+      "size_bytes": 7206
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/a878c6c50c925c60ba2421541f5ceb1452c3758b69a94e0421ae3c7a1da164de.object",
+      "sha256": "a878c6c50c925c60ba2421541f5ceb1452c3758b69a94e0421ae3c7a1da164de",
+      "size_bytes": 35706
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/b7dd8557771eba6a7f42e5ff130d314449e7c6a6f40a2d1cd82f73f0b14699b6.object",
+      "sha256": "b7dd8557771eba6a7f42e5ff130d314449e7c6a6f40a2d1cd82f73f0b14699b6",
+      "size_bytes": 1652
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/cf698013125baa7685cfdf42ddd4c7f39f92674d8d1a58a7e0ed7aa5b8aea95c.object",
+      "sha256": "cf698013125baa7685cfdf42ddd4c7f39f92674d8d1a58a7e0ed7aa5b8aea95c",
+      "size_bytes": 56023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/d7d32db944ebd91dab8fa1da41ff581085b365c1f075479cb7fd857b4239ce01.object",
+      "sha256": "d7d32db944ebd91dab8fa1da41ff581085b365c1f075479cb7fd857b4239ce01",
+      "size_bytes": 58217
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/objects/f62c864d0e83d19b646059fb24d107cd45b70a5a6f279d969a5739e9c620b03d.object",
+      "sha256": "f62c864d0e83d19b646059fb24d107cd45b70a5a6f279d969a5739e9c620b03d",
+      "size_bytes": 75690
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/observation.json",
+      "sha256": "5fde041e029d484d0cfc54a2c84278e520ba40b4990f1c6ac8ddbe237d7ff104",
+      "size_bytes": 247
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/parse-v1.json",
+      "sha256": "8115d3b96c0bedc936ff310cbcb63fbc1f56ff131b7c97f34b54b6190bff78c3",
+      "size_bytes": 8464
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/parse-v2.json",
+      "sha256": "bbdd70afed77c52908282675cd9da8cea0f0821d8ae2bea7643df9925902cb32",
+      "size_bytes": 8503
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/physical-http.json",
+      "sha256": "c73fb5923a9c7a44c4a335b6fb8b616eb7f9371d4f0ae5adf66634f2a51b3272",
+      "size_bytes": 2036
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/requirements-v1.md",
+      "sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+      "size_bytes": 268
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/requirements-v2.md",
+      "sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+      "size_bytes": 285
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/result.json",
+      "sha256": "f647a62f0fbe85da0b26d03a8647e3ec1a5bfe5ed9e126eb4512900940e86cb7",
+      "size_bytes": 85016
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/seed.json",
+      "sha256": "132410f4e181f66d8ef6b77cb96508b16fb9e3531cb8c1ea570941d707653b1b",
+      "size_bytes": 34219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/semantic-baseline.json",
+      "sha256": "9d06d1411cea330a158db7c60dd8a3ded05ed97b770b4e29f13091c19669a59c",
+      "size_bytes": 414
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/snapshot.json",
+      "sha256": "1e4ce99486af2ec0ce78deae38b2d4a1fcdfffeadcc65334007a5b8495d05c91",
+      "size_bytes": 36644
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/source-model-after.json",
+      "sha256": "1d7f9ed69c78c2a85dbbbe3f2b6df7e0391132faff88fbb46c35e858603a8164",
+      "size_bytes": 846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/task.json",
+      "sha256": "bc9484006725e22563e03bd6e95053dc3149a6ed2818db05b12a469a1828f54c",
+      "size_bytes": 1350
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first/transport-policy.json",
+      "sha256": "dcb0d51491176ccccbdcd86edd819ac5c5a493f5ef30259038a5b3c96c6dcde8",
+      "size_bytes": 402
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first.log",
+      "sha256": "6d9cd193c55049055619cf83dc588d3af5712b32acc61bd8ed5ac827578ac087",
+      "size_bytes": 4274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-first.xml",
+      "sha256": "dee7e8da17dc82af5bc31f1d598d43dc49dc42db338703f19e2acca03359cc9c",
+      "size_bytes": 1562
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/acceptance.json",
+      "sha256": "c8ea5776bc31dbc73beedac10c298893a1e9fedf82595595f3dfa4c14e644051",
+      "size_bytes": 431
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/calls.json",
+      "sha256": "eea59be4031d4f2a0baea456077803683c4de2f17a423fb4f09d896028e93f75",
+      "size_bytes": 10855
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/cases.json",
+      "sha256": "d4d67a82368765bc2d68d85784c625fb1240e66939176b7ff00a36c751947521",
+      "size_bytes": 22520
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/difference.json",
+      "sha256": "849f196757a2b50ae3d3928d330968f7991b6c2e7133c3be55055de9ff695781",
+      "size_bytes": 20274
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/http-request-1.json",
+      "sha256": "a400af5d96b233b1d1d962587053176b6f12bc2193df592980056ea59693622b",
+      "size_bytes": 39507
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/http-request-2.json",
+      "sha256": "115ce61ce844c4269376c54487f0e64e0010f0ef8b46f77025e1ebc835708606",
+      "size_bytes": 52611
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/http-request-3.json",
+      "sha256": "b6199ae4ff2caf8886cdbd611cfca3e3ccecda94dc629cc7c7ef41c4d3402368",
+      "size_bytes": 52606
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/http-request-4.json",
+      "sha256": "f9ee8436c043c413a7f2c7c7ec631c2c94f2dd11a62536a8156f6e41fc6cab1b",
+      "size_bytes": 52475
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/http-transport.json",
+      "sha256": "3b79bd4db63bb1b58f663c342edd0baf7729f6d58c778c1f8c0e41e0ea88f651",
+      "size_bytes": 144
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-assessment-1.json",
+      "sha256": "c0ce45fd18f69e7736726f05324db67221559cc3a7175e4156b807547e392af4",
+      "size_bytes": 8902
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-assessment-2.json",
+      "sha256": "b92453e11c3ef539f7f0eb6608f2402e0e6c4faf5bd3ebf782a18044954a0363",
+      "size_bytes": 20843
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-assessment-3.json",
+      "sha256": "4c4943dd5634d865bc70003ffefde20919e244d2c011617c2dd8721f208d0140",
+      "size_bytes": 18573
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-assessment-4.json",
+      "sha256": "f455cb24d9eaf9df7bfc8c9aa6788e698ded77875d1b0c2c6d06112add840762",
+      "size_bytes": 12954
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-request-1.json",
+      "sha256": "1c4948c38b33b3fd3feee6f926a0ae6652b55577dfccc8184d8c1fa5b509cf08",
+      "size_bytes": 78131
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-request-2.json",
+      "sha256": "2b538e5bd6bc3db05e0aac954599daa88a3ab6a3248f3d492a051c1d6800243a",
+      "size_bytes": 104759
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-request-3.json",
+      "sha256": "300287d98d33c1587295f01c0e521174e70b152ea72f0e7c48a549ad174f325f",
+      "size_bytes": 104749
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-request-4.json",
+      "sha256": "ca47ac65764ff76c8ef48d5c4b8d725a4b26d5fd461bcba393f61fbb23ffb1b6",
+      "size_bytes": 104487
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-response-1.json",
+      "sha256": "c6258d0eb250c5046a4b34e14afd9d0634c1d400eefdef805fa92ca71d8ca81e",
+      "size_bytes": 45966
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-response-2.json",
+      "sha256": "442bb6218c4c2aa15e0c63ee977863fcf09f29c541746653e89e04a5c7901865",
+      "size_bytes": 53028
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-response-3.json",
+      "sha256": "7876b93e13fbff7fd0476ce1e18406f4240bb068113708467d72d239dba79610",
+      "size_bytes": 70868
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/logical-response-4.json",
+      "sha256": "b03308f2491121a78754a80c9a4ac3866a19cac310039d7118780cbf818a1144",
+      "size_bytes": 24164
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/manifest.json",
+      "sha256": "fe2122a7735735a69b1903abd835037c30a33139d925c0da047a7362876ecccd",
+      "size_bytes": 7236
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/model-provenance.json",
+      "sha256": "3920f17aad45667c59acce58bf7eeee8d04e9ca2f2339b30243d5a5c5b0a5ecc",
+      "size_bytes": 1197
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/object-references.json",
+      "sha256": "ac5ad6ad6dae822af52a607c5cb765c930453757f63faf825a2eb287263dfc45",
+      "size_bytes": 6063
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/227305347a27337a50c5d73f0f397ad2ed8a7c264e9dbf6e3fffc7445eef6d66.object",
+      "sha256": "227305347a27337a50c5d73f0f397ad2ed8a7c264e9dbf6e3fffc7445eef6d66",
+      "size_bytes": 104036
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/2d361cbafb653ab842e27ac62a30e1a613a2a3e6692d6d1c1ac1ec803cab5887.object",
+      "sha256": "2d361cbafb653ab842e27ac62a30e1a613a2a3e6692d6d1c1ac1ec803cab5887",
+      "size_bytes": 5072
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/37d12facb609c1fe4d9694fff0dd6c2c7670367baf5879044a389e17e027d66c.object",
+      "sha256": "37d12facb609c1fe4d9694fff0dd6c2c7670367baf5879044a389e17e027d66c",
+      "size_bytes": 103764
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/39cabc9f0bf9b60c218c1920a964272f4ba202d479fe40cee325a018b20e8d34.object",
+      "sha256": "39cabc9f0bf9b60c218c1920a964272f4ba202d479fe40cee325a018b20e8d34",
+      "size_bytes": 1652
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/4535c82fac5142e1a803968b141b4ea7cf2bc5342b57bef5ab5359ed3108705f.object",
+      "sha256": "4535c82fac5142e1a803968b141b4ea7cf2bc5342b57bef5ab5359ed3108705f",
+      "size_bytes": 11236
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/4a2b7b629ef41ce0cbca0212ba72e443e0f7f2340c74f5edc9249d63e49386a5.object",
+      "sha256": "4a2b7b629ef41ce0cbca0212ba72e443e0f7f2340c74f5edc9249d63e49386a5",
+      "size_bytes": 23440
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/4eb34c67882a6dae1eb4285823ae0361d880cd276f598cf4491db8b4c2216a7d.object",
+      "sha256": "4eb34c67882a6dae1eb4285823ae0361d880cd276f598cf4491db8b4c2216a7d",
+      "size_bytes": 77556
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/6a1f045d6c80155d8a9405db13f4f815f93e55b51fc2163f1dcff091d800e1d3.object",
+      "sha256": "6a1f045d6c80155d8a9405db13f4f815f93e55b51fc2163f1dcff091d800e1d3",
+      "size_bytes": 70144
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/6d165bfab75103b0991e1849bd1bdc2e4dd0d762b20ddacb2f90e0f01a54ee11.object",
+      "sha256": "6d165bfab75103b0991e1849bd1bdc2e4dd0d762b20ddacb2f90e0f01a54ee11",
+      "size_bytes": 56023
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/b02f308351cef84e57c954e6ba9536cecd5375f4c548947f1b7707ccd5431ebd.object",
+      "sha256": "b02f308351cef84e57c954e6ba9536cecd5375f4c548947f1b7707ccd5431ebd",
+      "size_bytes": 10665
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/ce7d3a176e12ff1ef223712c2cddc2e4b723f796569f798878de58da40162bf1.object",
+      "sha256": "ce7d3a176e12ff1ef223712c2cddc2e4b723f796569f798878de58da40162bf1",
+      "size_bytes": 5657
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/d3c833c2dec83dd9d86ed322a744d90c70bd562f2ff4d85d1f872540360da4e6.object",
+      "sha256": "d3c833c2dec83dd9d86ed322a744d90c70bd562f2ff4d85d1f872540360da4e6",
+      "size_bytes": 104026
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/dc40d8dc9bedf892e159b9377750f18e7f35d405331725d2007810841d1d1216.object",
+      "sha256": "dc40d8dc9bedf892e159b9377750f18e7f35d405331725d2007810841d1d1216",
+      "size_bytes": 52304
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/eb05b1bfafb5f93fd2911a4b9b5421b47905ae281fe63e5f7bce33442a90f534.object",
+      "sha256": "eb05b1bfafb5f93fd2911a4b9b5421b47905ae281fe63e5f7bce33442a90f534",
+      "size_bytes": 45260
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/f386906b49fefe1856a14b19f5140dca0278590a311b09b9353663b9de9391d7.object",
+      "sha256": "f386906b49fefe1856a14b19f5140dca0278590a311b09b9353663b9de9391d7",
+      "size_bytes": 7715
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/objects/fd5d71bec527f3bf1a9106a84a7a30a8f5e393e90e710a725ab2f7d1142086be.object",
+      "sha256": "fd5d71bec527f3bf1a9106a84a7a30a8f5e393e90e710a725ab2f7d1142086be",
+      "size_bytes": 50211
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/observation.json",
+      "sha256": "2cc9715e1de3e201d574bafdf9e47f0c0839ad1a13ed42a564613e9b7e15c3f5",
+      "size_bytes": 247
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/parse-v1.json",
+      "sha256": "a03a524581a05c95edb526b05a7b1a7801fa819702b1fc13ae99b639517fb5b9",
+      "size_bytes": 8464
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/parse-v2.json",
+      "sha256": "da3efafbffa727bec5615a95e4436898967cb64de0cc00fe7a7176d02c2f34a3",
+      "size_bytes": 8503
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/physical-http.json",
+      "sha256": "b0c906daf147218ba8ad3d066342a55116655bc0f0a410b56add4c3abebeb00c",
+      "size_bytes": 2038
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/requirements-v1.md",
+      "sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+      "size_bytes": 268
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/requirements-v2.md",
+      "sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+      "size_bytes": 285
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/result.json",
+      "sha256": "293ba1ccdf889e183863a600b2ba833dcd8a6fd97cf0d6483eabddf33bbd7493",
+      "size_bytes": 76693
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/seed.json",
+      "sha256": "cd7e24381c5d208ba186ca0d8bc46db0ae33dd93134d56f6ba96fa5c1766ce50",
+      "size_bytes": 35161
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/semantic-baseline.json",
+      "sha256": "9d06d1411cea330a158db7c60dd8a3ded05ed97b770b4e29f13091c19669a59c",
+      "size_bytes": 414
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/snapshot.json",
+      "sha256": "b0a9e0b5f877057b33644f2652d990aabdb87eaebe7c6a9d81cd7cb822564217",
+      "size_bytes": 37588
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/source-model-after.json",
+      "sha256": "1d7f9ed69c78c2a85dbbbe3f2b6df7e0391132faff88fbb46c35e858603a8164",
+      "size_bytes": 846
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/task.json",
+      "sha256": "866519b5d17f0bc41acdaa2f4d2c62beec6c0b7aa25cd750bd9da6c9f5902b18",
+      "size_bytes": 1350
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/transport-policy.json",
+      "sha256": "03e2c830d7517995d1c366df409571dffd32978c7a8186c5babce7a52b305848",
+      "size_bytes": 402
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage.log",
+      "sha256": "94c5851e89f93989df634998a3d0da8b1fd28ae26bd403544f9851a39cfd36f0",
+      "size_bytes": 3246
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage.xml",
+      "sha256": "74323ad772620c4afd05f4cbb625875a1855422c2c8a4be8a1ffe3a8f88504b4",
+      "size_bytes": 398
+    }
+  ],
+  "staged_scope_verified": true,
+  "staged_related_files": 733,
+  "staged_raw_bytes_verified": 714
+}

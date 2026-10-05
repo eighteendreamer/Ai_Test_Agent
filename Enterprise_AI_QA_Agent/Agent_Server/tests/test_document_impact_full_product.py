@@ -53,7 +53,7 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
         payload = json.loads(body['messages'][-1]['content'])
         holder.setdefault('first', DocumentImpactUnit.model_validate(payload['unit']))
         holder['manifest'] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload['fixed_source_catalog']])
-        factory = grouped_responder if payload['analysis_protocol']['version'] == 'impact-call-v6' else responder
+        factory = grouped_responder if payload['analysis_protocol']['version'] in {'impact-call-v6', 'impact-call-v7'} else responder
         return factory(holder, views, holder['case'])(body)
     try:
         with provider(responder=respond) as (endpoint, sends, _, _):

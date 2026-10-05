@@ -1,0 +1,226 @@
+{
+  "scope": "fixed generated fixture only; independent reading of actual canonical responses, not user review approval",
+  "cells": [
+    {
+      "case_key": "promotion",
+      "case_version_id": "287dd358-f2a5-4afe-84fe-7a44bc123177",
+      "rule_kind": "modified",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该用例的验证目标与执行步骤均不涉及订单保留期或超期查询返回码；保留期参数变化对此用例无直接影响。",
+      "verification_points": [],
+      "citation_count": 2
+    },
+    {
+      "case_key": "promotion",
+      "case_version_id": "287dd358-f2a5-4afe-84fe-7a44bc123177",
+      "rule_kind": "removed",
+      "expected_level": "major",
+      "actual_level": "major",
+      "reason": "该用例的核心目标与关键执行步骤均围绕被删除的优惠码规则展开，并包含对应折扣预期；新版文档整节删除后，该用例失去需求依据，仅作为停用候选提交评审。",
+      "verification_points": [
+        "确认优惠码折扣行为是否由替代规则覆盖",
+        "如确认删除，按停用候选提交评审，不直接推断已生效或全面停用"
+      ],
+      "citation_count": 5
+    },
+    {
+      "case_key": "promotion",
+      "case_version_id": "287dd358-f2a5-4afe-84fe-7a44bc123177",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "新增订单导出接口规则与该用例现有验证目标及步骤无关，不产生直接影响。",
+      "verification_points": [],
+      "citation_count": 2
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "f0cd424c-4267-435d-a26b-16206af47e20",
+      "rule_kind": "modified",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "用例 objective 为“验证未登录拒绝管理访问”，steps 中步骤1-7为受控环境记录，唯一定位步骤保持未登录请求 GET /admin，期望 login=false、status=401；全文无“保留7天/9天”或“超过保留期查询返回410”的条件或操作，未触及保留期阈值验证点。保留期由7天改为9天不影响本用例。",
+      "verification_points": [],
+      "citation_count": 6
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "f0cd424c-4267-435d-a26b-16206af47e20",
+      "rule_kind": "removed",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "用例步骤中不存在优惠码 PROMO5 提交、订单金额减少5元或相关断言；目标与唯一定位步骤均围绕未登录访问 GET /admin 返回 401，未覆盖被删除的优惠码规则，故删除候选对本用例无影响。优惠码删除仍为待评审停用候选，未断言替代或生效状态。",
+      "verification_points": [],
+      "citation_count": 5
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "f0cd424c-4267-435d-a26b-16206af47e20",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "新增 GET /orders/export 及“按创建时间倒序排列”的约束未在本用例中出现；用例仅覆盖 GET /admin 的未登录 401 负向条件，没有导出接口调用、响应或排序验证点。该接口覆盖缺口需由其他用例承担，本用例不受影响。",
+      "verification_points": [],
+      "citation_count": 6
+    },
+    {
+      "case_key": "retention",
+      "case_version_id": "9d35d5dd-35bf-4de3-a242-f21fd5c49175",
+      "rule_kind": "modified",
+      "expected_level": "major",
+      "actual_level": "major",
+      "reason": "C3的目标是验证已支付订单超过7天不可查，其步骤查询8天前已支付订单并预期返回410；修改后的规则将保留期延长至9天，使得“8天前订单已超过保留期”这一前提不再成立，用例的预期结果与阈值假设需要随规则变化重新评估。",
+      "verification_points": [
+        "确认8天前已支付订单在9天保留期下是否仍应返回410",
+        "核对预期阈值是否需要从7天调整为9天"
+      ],
+      "citation_count": 7
+    },
+    {
+      "case_key": "retention",
+      "case_version_id": "9d35d5dd-35bf-4de3-a242-f21fd5c49175",
+      "rule_kind": "removed",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "C3仅涉及已支付订单保留期查询，未提交优惠码、未校验订单金额减少，也不存在相关前置或后置操作，因此删除优惠码规则不会改变该用例的操作、条件与预期。",
+      "verification_points": [],
+      "citation_count": 2
+    },
+    {
+      "case_key": "retention",
+      "case_version_id": "9d35d5dd-35bf-4de3-a242-f21fd5c49175",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "C3验证的是历史已支付订单查询，未调用GET /orders/export，也未校验导出排序，新增订单导出规则对该用例无影响。",
+      "verification_points": [],
+      "citation_count": 2
+    }
+  ],
+  "matrix_matches_fixture": true,
+  "full_workflow_assertion_passed": false,
+  "result_status": "partial",
+  "basis_limitations": [
+    "difference_warning:extracted_text_positions"
+  ],
+  "unresolved_by_unit": [
+    {
+      "kind": "segment",
+      "id": "parse:e3fd5441-b263-46a7-825a-ef5cffe23210:0:126",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "segment",
+      "id": "parse:7b5cea92-46d4-4832-935d-c65f79841f93:0:139",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "raw:0",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "raw:1",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "normalized:0",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "normalized:1",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "section:0",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "difference",
+      "id": "section:1",
+      "unresolved": [
+        "Target release/deployment status is user-declared only; no evidence confirms the changes are live. Do not infer effective rollout from environment labels.",
+        "The deleted 优惠码 rule may still be covered by existing validation, but current evidence is insufficient to declare any replacement or active status; treat deletion as a candidate to disable pending review.",
+        "The 管理鉴权 rule text is unchanged between versions; no diff candidate generated, but behavior may still be verified in later case stage."
+      ]
+    },
+    {
+      "kind": "case",
+      "id": "287dd358-f2a5-4afe-84fe-7a44bc123177",
+      "unresolved": [
+        "目标发布/部署状态仅有用户声明，缺少部署证据；R2/R3的实际生效状态未知。",
+        "R2删除后未提供替代规则；仅提出停用候选，不做全面停用项目推断。",
+        "用例执行说明提示存在刻意缺失的负向条件，现有证据不足以推断其具体内容，需保留待评审确认。"
+      ]
+    },
+    {
+      "kind": "case",
+      "id": "f0cd424c-4267-435d-a26b-16206af47e20",
+      "unresolved": [
+        "目标发布/部署状态为用户声明且无部署证据；不据此推断 R1/R2/R3 已生效，R3 新增接口适用性仍 unknown。",
+        "执行说明要求保留刻意缺失的负向条件；已保留 expected.login=false 与 extension 的 false/null/zero 表示，未将缺失字段当作已实现。",
+        "本次仅处理 primary_ref C2；C1/C3 各有自身分析任务，未在本次范围，不宣称覆盖整个项目。",
+        "R2 删除的优惠码规则是否仍可能存在历史校验，证据不足；仅作为待评审停用候选保留，不据此宣称无变化。"
+      ]
+    },
+    {
+      "kind": "case",
+      "id": "9d35d5dd-35bf-4de3-a242-f21fd5c49175",
+      "unresolved": [
+        "部署状态仍为用户声明，缺少证据确认新规则已生效；所有候选均待评审，且删除类规则仅作为停用候选。"
+      ]
+    }
+  ],
+  "semantic_approval": false,
+  "deployment_status": "unknown",
+  "input_artifacts": [
+    {
+      "path": "docs\\upgrade_2026-10-03\\p4-default-model-case-v7-first\\result.json",
+      "sha256": "f647a62f0fbe85da0b26d03a8647e3ec1a5bfe5ed9e126eb4512900940e86cb7",
+      "size_bytes": 85016
+    },
+    {
+      "path": "docs\\upgrade_2026-10-03\\p4-default-model-case-v7-first\\cases.json",
+      "sha256": "bc695a15386e057e5f9b10fde76072ad054dba40ac972d7df7fee8b5e3f44eae",
+      "size_bytes": 22520
+    },
+    {
+      "path": "docs\\upgrade_2026-10-03\\p4-default-model-case-v7-first\\semantic-baseline.json",
+      "sha256": "9d06d1411cea330a158db7c60dd8a3ded05ed97b770b4e29f13091c19669a59c",
+      "size_bytes": 414
+    }
+  ]
+}

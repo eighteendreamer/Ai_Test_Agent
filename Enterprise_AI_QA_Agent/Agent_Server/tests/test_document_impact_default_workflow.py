@@ -28,6 +28,25 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(
 )]
 
 
+def assert_default_fixture_impacts(result, cases):
+    """Business oracle from the real_scenario document/cases, not wire structure."""
+    identities = {bundle.version.id: bundle.case.case_key for bundle in cases}
+    expected = {"retention": {"modified": "major", "removed": "none", "added": "none"},
+        "promotion": {"modified": "none", "removed": "major", "added": "none"},
+        "unauth": {"modified": "none", "removed": "none", "added": "none"}}
+    matched = 0
+    for unit in result.units:
+        if unit.unit.kind != "case": continue
+        key = identities[unit.unit.id]
+        assert {candidate.kind for candidate in unit.candidates} == set(expected[key])
+        for candidate in unit.candidates:
+            impacts = [impact for impact in candidate.case_impacts if impact.version_id == unit.unit.id]
+            assert len(impacts) == 1
+            assert impacts[0].level == expected[key][candidate.kind], (key, candidate.kind, impacts[0].level)
+            matched += 1
+    assert matched == 9
+
+
 async def test_default_model_automatic_fixed_scope_and_terminal_history(tmp_path, monkeypatch):
     directory = Path(os.environ.get("QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR", str(tmp_path / "evidence")))
     directory.mkdir(parents=True, exist_ok=False)
@@ -148,3 +167,4 @@ async def test_default_model_automatic_fixed_scope_and_terminal_history(tmp_path
                 "reason_codes": item.reason_codes, "unresolved": item.unresolved} for item in result.units]}
         assert {rule.candidate.kind for rule in result.rules} >= {"modified", "removed", "added"}
         assert len([item for item in result.units if item.unit.kind == "case"]) == len(cases)
+        assert_default_fixture_impacts(result, cases)

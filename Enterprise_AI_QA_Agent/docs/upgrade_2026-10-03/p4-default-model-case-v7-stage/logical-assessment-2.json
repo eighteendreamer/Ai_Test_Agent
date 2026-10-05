@@ -1,0 +1,468 @@
+{
+  "checkpoint": {
+    "task_id": "79926ac9-442e-4116-8f16-dcab9b910dd2",
+    "call_id": "49a2af0d-018b-4ac5-a001-511c8c469558",
+    "validator_version": "impact-response-validator-v3",
+    "request_sha256": "227305347a27337a50c5d73f0f397ad2ed8a7c264e9dbf6e3fffc7445eef6d66",
+    "response_sha256": "dc40d8dc9bedf892e159b9377750f18e7f35d405331725d2007810841d1d1216",
+    "manifest_sha256": "2d361cbafb653ab842e27ac62a30e1a613a2a3e6692d6d1c1ac1ec803cab5887",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/8608241b-3824-4ee6-8572-9e89d0f1007a/79926ac9-442e-4116-8f16-dcab9b910dd2/ce544293-cc70-46eb-b662-6ab0cc640950/calls/1afcc135-e6fb-4c58-9ef5-72f91dd6c117/response-check.json",
+      "sha256": "4535c82fac5142e1a803968b141b4ea7cf2bc5342b57bef5ab5359ed3108705f",
+      "size_bytes": 11236
+    },
+    "created_at": "2026-10-05T02:54:00.339236Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v3",
+    "runtime_versions": {
+      "identity_binding": "impact-case-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "79926ac9-442e-4116-8f16-dcab9b910dd2",
+    "call_id": "49a2af0d-018b-4ac5-a001-511c8c469558",
+    "request_sha256": "227305347a27337a50c5d73f0f397ad2ed8a7c264e9dbf6e3fffc7445eef6d66",
+    "response_sha256": "dc40d8dc9bedf892e159b9377750f18e7f35d405331725d2007810841d1d1216",
+    "manifest_sha256": "2d361cbafb653ab842e27ac62a30e1a613a2a3e6692d6d1c1ac1ec803cab5887",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-canonical-v2",
+      "unit": {
+        "kind": "case",
+        "id": "5673a7ac-4cec-4146-9134-144c07e8f17f"
+      },
+      "action": "finish",
+      "summary": "当前用例阶段已完成 C1 的规则影响分析：R1 对现有保留期查询断言存在主要影响；R2、R3 对当前用例无影响。分析基于完整用例内容、执行说明及当时来源，未按标题或前六步推断；所有候选待评审，部署状态未知，未执行测试或修改正式记录。C2、C3 属于各自独立分析任务，未在本呼叫中处理。",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "83fc8b3de50ba5941f7ea6715f8b055dfc39d54c09dc73eebfe2c2a260d15fbc",
+          "kind": "modified",
+          "summary": "订单保留天数由7天调整为9天",
+          "reason": "固定旧文本“订单保留”段落要求已支付订单超过保留期查询返回410且保留期为7天；固定新文本相同段落保留期变更为9天。原始差异、规范化差异均记录该数值替换。",
+          "document_citations": [
+            {
+              "source_id": "parse:57e86e2c-7895-4c13-b622-9f0a4d6eceb8",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:34a7bd29-5f24-4177-9c5d-02670da18245",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+              "level": "major",
+              "reason": "当前用例的目标与最后一步围绕已支付订单保留期查询，其预期仍锚定旧保留期规则；文档规则调整保留期后，该验证点的查询前提与预期需要重新评审，否则可能形成失效断言。已阅读全部步骤，并保留执行说明中要求保留的刻意缺失负向条件。",
+              "verification_points": [
+                "确认查询订单的已支付天数与文档新保留期之间的边界关系是否仍然成立。",
+                "重新评估原预期状态和保留天数断言是否继续有效。",
+                "如需继续覆盖保留边界，补充新保留期内与超过新保留期两种情形的验证点。"
+              ],
+              "citations": [
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "objective"
+                  ],
+                  "value": "验证已支付订单超过7天不可查"
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps"
+                  ],
+                  "value": [
+                    {
+                      "action": "记录受控环境信息1"
+                    },
+                    {
+                      "action": "记录受控环境信息2"
+                    },
+                    {
+                      "action": "记录受控环境信息3"
+                    },
+                    {
+                      "action": "记录受控环境信息4"
+                    },
+                    {
+                      "action": "记录受控环境信息5"
+                    },
+                    {
+                      "action": "记录受控环境信息6"
+                    },
+                    {
+                      "action": "记录受控环境信息7"
+                    },
+                    {
+                      "action": "查询8天前已支付订单",
+                      "expected": {
+                        "days": 7,
+                        "status": 410
+                      }
+                    }
+                  ]
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    7,
+                    "action"
+                  ],
+                  "value": "查询8天前已支付订单"
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    7,
+                    "expected"
+                  ],
+                  "value": {
+                    "days": 7,
+                    "status": 410
+                  }
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    7,
+                    "expected",
+                    "days"
+                  ],
+                  "value": 7
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps",
+                    7,
+                    "expected",
+                    "status"
+                  ],
+                  "value": 410
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "execution_notes",
+                  "path": [],
+                  "value": "阅读所有步骤，保留刻意缺失的负向条件。"
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "24063fa5a6d5371573e3c83e6b7eb98a797ff9f4a97a66a67ede4532ea0bcc60",
+          "kind": "removed",
+          "summary": "删除提交有效优惠码PROMO5时订单金额减少5元的需求",
+          "reason": "固定旧文本包含“优惠码”章节及正文，规定PROMO5优惠逻辑；固定新文本不再包含该章节与内容。原始差异、规范化差异及章节差异均记录该节被删除。",
+          "document_citations": [
+            {
+              "source_id": "parse:57e86e2c-7895-4c13-b622-9f0a4d6eceb8",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 56,
+              "end_char": 81,
+              "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:57e86e2c-7895-4c13-b622-9f0a4d6eceb8",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 83,
+              "quote": "## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n\r\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+              "level": "none",
+              "reason": "当前完整用例内容、目标、步骤及执行说明均未涉及被删除的优惠码规则相关操作或条件；删除该规则不会使用例现有验证点失效。停用候选需另行评审，部署状态未知。",
+              "verification_points": [],
+              "citations": [
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [],
+                  "value": {
+                    "extension": {
+                      "false": false,
+                      "null": null,
+                      "zero": 0
+                    },
+                    "objective": "验证已支付订单超过7天不可查",
+                    "steps": [
+                      {
+                        "action": "记录受控环境信息1"
+                      },
+                      {
+                        "action": "记录受控环境信息2"
+                      },
+                      {
+                        "action": "记录受控环境信息3"
+                      },
+                      {
+                        "action": "记录受控环境信息4"
+                      },
+                      {
+                        "action": "记录受控环境信息5"
+                      },
+                      {
+                        "action": "记录受控环境信息6"
+                      },
+                      {
+                        "action": "记录受控环境信息7"
+                      },
+                      {
+                        "action": "查询8天前已支付订单",
+                        "expected": {
+                          "days": 7,
+                          "status": 410
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "objective"
+                  ],
+                  "value": "验证已支付订单超过7天不可查"
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps"
+                  ],
+                  "value": [
+                    {
+                      "action": "记录受控环境信息1"
+                    },
+                    {
+                      "action": "记录受控环境信息2"
+                    },
+                    {
+                      "action": "记录受控环境信息3"
+                    },
+                    {
+                      "action": "记录受控环境信息4"
+                    },
+                    {
+                      "action": "记录受控环境信息5"
+                    },
+                    {
+                      "action": "记录受控环境信息6"
+                    },
+                    {
+                      "action": "记录受控环境信息7"
+                    },
+                    {
+                      "action": "查询8天前已支付订单",
+                      "expected": {
+                        "days": 7,
+                        "status": 410
+                      }
+                    }
+                  ]
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "execution_notes",
+                  "path": [],
+                  "value": "阅读所有步骤，保留刻意缺失的负向条件。"
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "3c539db6ee2db0eb21ffd684a0e4816a9dc5395927fbc510bdac9c50dc6e5479",
+          "kind": "added",
+          "summary": "新增GET /orders/export接口，导出订单按创建时间倒序排列",
+          "reason": "固定旧文本无“订单导出”章节；固定新文本新增该章节，包含GET /orders/export接口及按创建时间倒序排列的要求。原始差异、规范化差异及章节差异均记录该节被插入。",
+          "document_citations": [
+            {
+              "source_id": "parse:34a7bd29-5f24-4177-9c5d-02670da18245",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 102,
+              "quote": "## 订单导出\r\n"
+            },
+            {
+              "source_id": "parse:34a7bd29-5f24-4177-9c5d-02670da18245",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 102,
+              "end_char": 139,
+              "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            },
+            {
+              "source_id": "parse:34a7bd29-5f24-4177-9c5d-02670da18245",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 139,
+              "quote": "## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [
+            {
+              "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+              "level": "none",
+              "reason": "当前用例目标、步骤、附加字段与执行说明均未涉及新增导出接口或导出排序规则；新增规则需要另行覆盖，但不改变当前用例的现有验证点。",
+              "verification_points": [],
+              "citations": [
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [],
+                  "value": {
+                    "extension": {
+                      "false": false,
+                      "null": null,
+                      "zero": 0
+                    },
+                    "objective": "验证已支付订单超过7天不可查",
+                    "steps": [
+                      {
+                        "action": "记录受控环境信息1"
+                      },
+                      {
+                        "action": "记录受控环境信息2"
+                      },
+                      {
+                        "action": "记录受控环境信息3"
+                      },
+                      {
+                        "action": "记录受控环境信息4"
+                      },
+                      {
+                        "action": "记录受控环境信息5"
+                      },
+                      {
+                        "action": "记录受控环境信息6"
+                      },
+                      {
+                        "action": "记录受控环境信息7"
+                      },
+                      {
+                        "action": "查询8天前已支付订单",
+                        "expected": {
+                          "days": 7,
+                          "status": 410
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "objective"
+                  ],
+                  "value": "验证已支付订单超过7天不可查"
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "content_json",
+                  "path": [
+                    "steps"
+                  ],
+                  "value": [
+                    {
+                      "action": "记录受控环境信息1"
+                    },
+                    {
+                      "action": "记录受控环境信息2"
+                    },
+                    {
+                      "action": "记录受控环境信息3"
+                    },
+                    {
+                      "action": "记录受控环境信息4"
+                    },
+                    {
+                      "action": "记录受控环境信息5"
+                    },
+                    {
+                      "action": "记录受控环境信息6"
+                    },
+                    {
+                      "action": "记录受控环境信息7"
+                    },
+                    {
+                      "action": "查询8天前已支付订单",
+                      "expected": {
+                        "days": 7,
+                        "status": 410
+                      }
+                    }
+                  ]
+                },
+                {
+                  "version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+                  "version_record_sha256": "e6e1c99a14579956c5f9d3e254982d0b8448d171563ed84fd05dd080f2a4b176",
+                  "root": "execution_notes",
+                  "path": [],
+                  "value": "阅读所有步骤，保留刻意缺失的负向条件。"
+                }
+              ]
+            }
+          ],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ],
+      "unresolved": [],
+      "evidence_outcomes": []
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

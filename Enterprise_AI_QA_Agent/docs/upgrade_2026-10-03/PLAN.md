@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-05。当前研究基线：`845287bb`。固定推理计划、分组生产协调、逐证据声明和设置页面已接入；本轮进一步核验SDK超时/重试错位，增加按项目冻结的可选单次发送策略，见3.5.15、6.11。源码/真实存储、独立API/Worker、完整App和真实默认模型业务验证分别记录，不能相互替代。默认模型仍有引用错误和未知响应，完整P0—P5未完成；上传不经过Git，模板只用于生成。历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，实际命令、失败和局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史记录中的“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。
+修订日期：2026-10-05。当前研究基线：`6f4bb0ea`。固定计划、分组协调和项目发送策略已接；本轮增加完整用例字段F引用并澄清阶段缺口，见3.5.16、6.12。真实默认模型最新三规则/三条完整用例/九项判断已通过本场景实测，但原文位置警告、pending_review与部署unknown仍保留，不能代替用户评审或实际测试执行。源码/真实存储、独立API/Worker、正式App和默认模型分别验收；完整P0—P5未完成，上传不经过Git，模板只用于生成。历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，命令、失败和局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。
 
 此前流式/分阶段/low诊断及v5默认模型全流程仍失败，原证据和3.5.11/6.7、3.5.12/6.8结论保留。固定计划基础见3.5.13/6.9，分组生产协调和新的真实默认模型结果见3.5.14/6.10。协议通过、证据覆盖声明、业务语义评审和实际测试成功分别验收。
 
@@ -32,7 +32,7 @@
 | [固定计划创建运行](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_run_service.py)、[执行上下文](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) | 复用正式套件、RunItem、原子领取及完整上下文，不创建替代执行平台 |
 | [Agent 适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py)、[回执核验](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_assessment.py) | 新 Agent 策略已接既有图/审批/证据；继续补准备状态、未知副作用和真实模型验收，保留旧运行策略恢复 |
 | [文档服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py)、[对象存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/artifacts/artifact_storage_service.py) | 原件与派生内容已分存；复用稳定文档身份、版本事务、哈希和原提交查询，上传不调用 Git |
-| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；影响提交、单元调用/核验、自动补读和全范围候选已有实现；生产API/独立Worker见3.5.6，正式App/任务池见3.5.7；真实默认模型语义、需求评审和矩阵仍待验收 |
+| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；影响提交、单元调用/核验、自动补读和全范围候选已有实现；生产API/独立Worker见3.5.6，正式App/任务池见3.5.7；最新默认模型固定场景已验九项业务判断，见6.12；用户评审、更多业务场景和矩阵仍待验收 |
 | [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 现已抽出共享任务/Outbox/租约职责；解析与比较子类保留最终快照语义，影响任务另存输入检查点。规划保存调用意图和响应，P4 后续批次检查点参考该做法 |
 
 测试设计继续参考项目本地课程：用例生成与数据治理、线上流量闭环、评测工程化、Agent 轨迹与协议鲁棒性。采用来源、版本、轨迹和评审原则；其中依赖版本、统计比例、阈值不是本产品的实测事实。
@@ -232,7 +232,7 @@ OpenAPI/Postman/HAR转Markdown及项目URL派生修改均不覆盖原件。旧�
 
 AI分析同时使用：**固定新旧差异 + 完整现有用例版本 + 当时编写来源**。来源缺失、错误、部分解析和原生成上下文截断逐引用留痕；不得读取当前/latest文本冒充旧来源。默认范围是项目非归档用例的启用版本及最新草稿，历史版本可显式选择；不按历史测试模式过滤。默认范围只是当前分析范围，不代表扫描了所有历史用例。
 
-固定提交与输入准备已接：元数据捕获不下载RustFS正文，固定配置、比较及用例版本/全记录hash；PG影响任务与Outbox同事务，后续固定内容另存RustFS并保存不可改输入检查点。重读只用已存输入，不重新选择当前用例/配置，输入准备不标分析完成。新提交已冻结非敏感模型参数、完整Prompt/Skill及环境声明；模型配置和分析指导在MySQL，固定依据随PG seed保存。正式API/独立影响Worker见3.5.6，正式App/任务池见3.5.7，均已有受控HTTP功能证据。真实默认模型已有实际调用诊断，全范围业务语义尚未通过。单元候选与响应核验见3.5.4，自动协调与全范围结果见3.5.5，当前模型实测与后续修正见3.5.8—3.5.12。现有 `max_context_chars` 是证据准备容量，不是模型Token预算。超过容量当前明确拒绝，不能截断后宣称完成。
+固定提交与输入准备已接：元数据捕获不下载RustFS正文，固定配置、比较及用例版本/全记录hash；PG影响任务与Outbox同事务，后续固定内容另存RustFS并保存不可改输入检查点。重读只用已存输入，不重新选择当前用例/配置，输入准备不标分析完成。新提交已冻结非敏感模型参数、完整Prompt/Skill及环境声明；模型配置和分析指导在MySQL，固定依据随PG seed保存。正式API/独立影响Worker见3.5.6，正式App/任务池见3.5.7，均已有受控HTTP功能证据。最新真实默认模型在固定三规则、三条完整用例场景通过严格分析及九项业务判断，原文位置警告仍使快照partial，用户评审与更多场景未完成，见6.12。单元候选与响应核验见3.5.4，自动协调与全范围结果见3.5.5，模型实测与后续修正见3.5.8—3.5.16。现有 `max_context_chars` 是证据准备容量，不是模型Token预算。超过容量当前明确拒绝，不能截断后宣称完成。
 
 P4接入分以下小步；详细查证见 [P4_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DESIGN.md)：
 
@@ -465,6 +465,23 @@ MD/DOCX/PDF×原生/LangChain、实际HTTP/MySQL/PG/RustFS回归、终态历史�
 
 下一步依据实际失败正文查证用例元数据与content_json的引用边界、当前用例阶段的补读范围和后续输入规模。原响应将content_json.title作为依据，但该字段不存在，标题实际位于case元数据；不代填路径、不放宽核验。另一用例请求读取其他两条用例，形成109708字节的独立续读后超时，不能归因为原请求重复拼接或SDK重试。是否需要字段引用锚点、阶段说明或可追溯修正轮次，要先查现有协议与真实样本后设计；不改写原失败或原unknown。
 
+### 3.5.16 完整用例字段引用及阶段缺口〔已接，默认模型业务结果另列〕
+
+依据来源 → 采用做法见 [P4_CASE_FIELD_REFERENCES_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_CASE_FIELD_REFERENCES_DESIGN.md)。真实v6响应把case元数据标题写成不存在的content_json.title；沿用原文T引用的职责，新增实际已读完整用例的F引用。模型选引用编号，系统绑定固定case/version/hash/root/字面路径/实际值，继续走原事实核验，不代修错误路径或改写旧结果。
+
+| 新任务契约 | 实际行为 |
+|---|---|
+| impact-call-v7 / impact-response-v5 | 仍使用coordinator-v2固定计划和canonical-v2；新增validator-v3，API/前端类型及PG按冻结协议读取原核验版本同步 |
+| 完整字段 | 索引覆盖content_json与execution_notes全部节点，包括非空容器、任意键和完整数组；false/0/null/空字符串/空容器保留。不存在的title不会生成引用，JSON中真实存在的title等任意字段照常可用 |
+| 实际读取 | 只给完整已交付版本登记引用，目录只保存case_ref/root/path，不重复字段值；服务器重算完整版本hash和目录，再绑定实际值。外用例编号、未知编号、伪造目录/正文继续拒绝 |
+| 补读与预算 | 同一版本重复读取复用编号，后续完整版本只追加；完整JSON不缩成摘要，索引也进入既有输入预算，不截断。当前用例逐R判断，其他用例仍可补读作依据，各自任务负责其正式判断 |
+| 阶段与状态 | unresolved仅表示阻止当前阶段判断的具体缺失证据，并指出受影响规则/成员；确实缺失仍按evidence_insufficient/uncertain保留。部署unknown、评审pending_review及后续任务等说明保留在summary/reason/候选uncertainties，不自动清洗模型字符串 |
+| 历史与存储 | 原v3/v4/v5/v6及首轮v7的请求、Schema/指引/hash和核验原样恢复；描述澄清由新提交冻结新的协议hash。沿用MySQL设置、PG业务检查点、RustFS对象，无新依赖/表/复制配置 |
+
+首次v7真实默认任务4逻辑/4物理，11项均analyzed，三规则及九用例判断符合固定样本；但模型将部署/评审等说明写入unresolved，严格验收仍失败，原结果保留。新增字段描述与阶段指引后再建新任务验证，不直接删除这些说明；全部真实文件/进程/App与最终业务结论见6.12。
+
+字段存在、模型声明已分析、样本判断吻合、用户评审、环境已生效和实际测试通过分别验收。完整P0—P5、需求身份/评审/矩阵/增量、准备状态/未知副作用、正式生成导入、人工录制/Docker/报告及生产迁移继续保留。
+
 ### 3.6 需求评审、增量草稿与环境适用性
 
 保存项目/文档下稳定需求身份、不可变需求版本及验证点。章节标题、块ID和哈希不是跨版本业务身份；AI提出匹配候选，人工可接受/拒绝/重新关联，所有决定追加记录原文依据和固定输入。删除只提出停用候选，保留历史。
@@ -573,7 +590,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下以 `845287bb` 研究基线及本轮项目发送策略为当前依据，各历史专项保留原基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；历史测试数量不累计成覆盖数。公开影响API、前端正式页面与任务池已接；正式App及默认模型本轮证据见6.11，历史见6.3—6.10，固定计划基础见6.9。新任务已消费分组计划；本轮单次策略实际5逻辑/5物理发送，完整默认模型业务验收仍未完成，未进行生产迁移。
+以下以 `6f4bb0ea` 研究基线及本轮字段引用/阶段缺口为当前依据，各历史专项保留原基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；历史测试数量不累计成覆盖数。公开影响API、前端正式页面与任务池已接；正式App及默认模型本轮证据见6.12，历史见6.3—6.11，固定计划基础见6.9。新任务已消费分组计划；本轮最新默认任务4逻辑/4物理发送，三规则/三用例/九判断本场景已验；用户评审、部署适用性及更广业务场景仍待验，未进行生产迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -582,7 +599,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P2规划/执行/回归 | 持久规划、任务池、固定计划创建运行、原子依赖领取、完整上下文、工具返回检查点、审批和新回归已有专项；生产API/独立执行CLI的受控API场景已验 | 真实默认模型、完整产品/其他模式、准备状态、未知副作用、执行中修订 |
 | P3上传/解析/比较 | 原件/派生分存、版本/历史、工厂/受限进程、持久API/独立CLI、DOCX正式App及比较提交/历史/恢复已有产品证据 | 生产历史迁移、其他格式完整产品及更多故障组合 |
 | P3可选Git | `4a02ae2`；真实Git专项25通过，MD/DOCX正式App与生产API/CLI/真实存储两场景通过 | 生产迁移及其他格式完整产品；上传无需Git约定不变 |
-| P4三方读取/固定提交 | 固定提交/输入/范围、模型及Prompt/Skill冻结、持久响应/unknown、自动补读/规则传递及候选快照已有专项；本轮分组计划生产消费、阶段协议/逐证据声明、设置API/页面、真实文件/存储/独立进程及完整App见6.10；本轮SDK策略/默认模型发现成功和用例阶段失败见6.11 | 真实默认模型完整规则与全部用例业务判断、精确Token、部署证据、需求/评审/矩阵/增量草稿及生产历史迁移 |
+| P4三方读取/固定提交 | 固定提交/输入/范围、模型及Prompt/Skill冻结、持久响应/unknown、自动补读/规则传递及候选快照已有专项；本轮分组计划生产消费、阶段协议/逐证据声明、设置API/页面、真实文件/存储/独立进程及完整App见6.10；SDK策略与此前失败见6.11；完整字段绑定/阶段缺口、正式进程/App及默认模型本场景三规则/三用例/九判断见6.12 | 更广真实业务与用户评审、精确Token、部署证据、稳定需求身份/评审/矩阵/增量草稿及生产历史迁移 |
 | P4逐版本治理 | `918cdace`；后端106通过/2默认模型跳过、前端37通过、构建通过；正式App/生产API/隔离真实存储1场景通过，模型调用0 | 生产历史迁移、运维入口/投影重建、旧套件和原失败完整迁移；不代表影响AI完成 |
 | P0/P5录制与Docker/报告 | 现有实现可以作为实测入口 | 人工录制→清洗→数据库→AI、Docker真实工具结果及场景/报告尚未闭环验收 |
 
@@ -748,3 +765,23 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 发现73.063秒取得响应，通过核验的三项规则为保留期7→9天、删除促销条款、新增导出倒序；八条证据声明已接受，业务仍pending_review。保留期用例119.906秒取得响应但invalid_case_citation拒绝；原引用content_json路径title不存在，标题实际是case元数据，不能自动把错误路径修正为真实依据。促销用例23.437秒请求补读其他两条固定用例，后续独立请求109708字节/4消息，120秒取消unknown；未鉴权用例52429字节/2消息120秒取消unknown。三条完整8步用例均实际发送；最终11项 **8 analyzed、1 rejected、2 unknown**，规则3，partial/pending_review/deployment unknown。结构接受不等于业务评审通过，任务completed不等于所有分析成功。
 
 终态读取/重投不发送、不重建输入、不上传、不可重领；源模型前后参数相同。新原件、HTTP、请求/响应/核验、PG检查点、RustFS对象、构建失败及XML/log保存于p4-transport-*和p4-default-model-single-attempt-first*。原345+85+328+257+723份证据不改写，三份方案和消息/对象字节核对见p4-transport-validation.json。未执行生产历史迁移；完整P0—P5、需求评审/矩阵/增量、准备状态/未知副作用、正式生成导入、人工录制/Docker/报告继续保持未完成。下一步查证真实引用与补读阶段边界，不原样重跑已失败默认任务。
+
+### 6.12 完整用例字段引用、阶段缺口与真实模型〔研究基线6f4bb0ea〕
+
+先读取实际invalid_case_citation响应及完整JSON/元数据边界、原T绑定、literal路径/value核验、固定读取/补读、PG核验版本选择及所有API/前端消费方，再新增F完整节点索引、wire v5/call v7、validator v3和版本化读取。仍使用coordinator-v2/canonical-v2，不增加SQL表或依赖；MySQL设置/PG业务检查点/RustFS对象职责不变。依据见3.5.16及P4_CASE_FIELD_REFERENCES_DESIGN.md。
+
+最初离线 **8失败、22通过、25跳过（9.50秒）**，原因是F索引漏掉真实响应已使用的合法expected容器引用。保留原canonical全部节点能力后 **30通过、25跳过（5.00秒）**；跳过为真实环境开关未开启，首失败不抹去。新实际专项 **16通过、0跳过（43.61秒）**，覆盖真实v6错误仍拒绝/原请求不变、F路径/值/说明绑定、未知/外用例/伪造目录或正文拒绝、任意路径/false/0/null/空值/重复与补读编号、MD/DOCX/PDF×两适配器完整12步JSON、原来源、两次真实HTTP和终态历史不重发。
+
+描述澄清前11模块回归 **200通过、0跳过（683.65秒）**。独立生产API/解析/比较/影响CLI及真实MySQL/PG/Redis/RustFS/HTTP **5通过、0跳过（288.04秒）**，包含MD/DOCX/PDF原生、DOCX LangChain及MD实际杀进程恢复。正式App/Chromium/DOCX/API/独立CLI/真实存储 **1通过、0跳过（88.67秒）**；前端专项 **24通过**，vue-tsc/Vite构建通过（8.43秒）。这些受控供应商结果与真实默认模型分别记录。
+
+首次v7实际默认新任务严格断言 **1失败、0跳过（207.39秒）**，Handler200.015秒，4逻辑/4物理，全部四条HTTP200。发现19.656秒、三用例51.531/68.579/56.187秒；11项均analyzed，3规则/9判断与样本吻合，旧title错误未再出现。但模型把部署未知/仅停用候选/其他任务等说明写入unresolved，严格完整验收仍失败；另有系统原文位置警告，快照partial。原响应/unresolved/失败XML和九判断核对p4-case-anchors-semantic-first.json保留，不删除说明或放宽断言。
+
+查证unresolved缺少字段职责描述，按新提交冻结字段描述与阶段指引：仅记录阻止当前阶段判断的具体缺失证据，部署/评审等仍在既有状态及summary/reason/uncertainties中保存，真缺口照常报告。原Schema/指引/hash保留在首轮seed，不原地替换。最终受影响v7专项 **18通过、0跳过（44.19秒）**，包括首轮v7全部请求按原冻结指引重建及实际九判断回放；最终独立生产MD **1通过（58.86秒）**。前述200/5/正式App在描述澄清前，最后18/1及后述新默认任务验证澄清后源码；公开字段结构及前端未再改。
+
+最新真实默认模型新任务严格验收 **1通过、0跳过（329.88秒）**，Handler322.734秒、**4逻辑/4物理POST**，SDK实际120秒/重试0。发现61.797秒、三用例100.687/116.813/38.844秒；未补读其他用例，全部三条完整8步JSON实际送达。八证据与三用例共11项analyzed，reason_codes/unresolved均空，三规则为7→9天、删除优惠码、新增倒序导出。独立读取原件和canonical结果核对9判断：保留期变更使retention重大影响，优惠码删除使promotion重大影响，未登录401保持负向条件，导出规则没有被误判为三个现有用例已覆盖，其余既有用例关系none。
+
+随后将九项固定样本业务基线加入以后默认集成验收，使用这次实际保存的完整结果运行加强基线回放 **1通过（4.68秒）、0新增HTTP**；没有原样重复发送模型。最新默认XML是在新增该业务函数前执行，实际结果的独立核对及回放另记p4-case-anchors-semantic-stage.json和p4-case-anchors-business-replay.xml。样本符合不代表用户正式评审已通过。
+
+系统仍保存difference_warning:extracted_text_positions，因此快照status为partial，semantic_status=pending_review、deployment_status=unknown；不隐藏警告、不断言已经上线或执行测试。终态读取/重投不调用HTTP/重建输入/上传，不可重领。源默认step-5-preview/8192/globalSDK60/call120/isolatedTask600前后一致，新项目单次选项是原策略，未继续调整全局参数。
+
+全部原始原件/对象/HTTP/响应/核验/失败XML及日志保留于p4-case-anchors-*和p4-default-model-case-v7-*；三份方案、原始字节、版本hash/F映射、实际物理消息对冻结请求、旧2260份证据及用户.gitignore核对见p4-case-anchors-validation.json。无生产历史迁移；完整P0—P5、稳定需求身份/评审/矩阵/增量与部署适用、P2准备/未知副作用、P1正式生成导入、人工录制/Docker/报告继续未完成。下一步以这些可评审候选接稳定需求身份、确认关系、验证点和追踪，不把文档来源数量直接当需求覆盖。

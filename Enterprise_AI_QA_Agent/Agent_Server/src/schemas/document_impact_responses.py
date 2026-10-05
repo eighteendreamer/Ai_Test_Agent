@@ -111,7 +111,7 @@ class DocumentImpactGroupedDecision(DocumentImpactDecision):
 
 
 class DocumentImpactResponseProtocolSnapshot(ImpactBatchModel):
-    version: Literal["impact-call-v2", "impact-call-v3", "impact-call-v4", "impact-call-v5", "impact-call-v6"] = "impact-call-v2"
+    version: Literal["impact-call-v2", "impact-call-v3", "impact-call-v4", "impact-call-v5", "impact-call-v6", "impact-call-v7"] = "impact-call-v2"
     scope: Literal["one declared unit only", "one frozen reasoning task only"] = "one declared unit only"
     response_schema: dict[str, Any]
     instruction: str = Field(min_length=1)
@@ -132,7 +132,7 @@ class DocumentImpactResponseIssue(ImpactBatchModel):
 
 
 class DocumentImpactResponseAssessment(ImpactBatchModel):
-    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2"] = VALIDATOR_VERSION
+    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2", "impact-response-validator-v3"] = VALIDATOR_VERSION
     runtime_versions: dict[str, str]
     task_id: str
     call_id: str
@@ -161,7 +161,7 @@ class DocumentImpactResponseAssessment(ImpactBatchModel):
 class DocumentImpactResponseCheckpoint(ImpactBatchModel):
     task_id: str
     call_id: str
-    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2"] = VALIDATOR_VERSION
+    validator_version: Literal["impact-response-validator-v1", "impact-response-validator-v2", "impact-response-validator-v3"] = VALIDATOR_VERSION
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

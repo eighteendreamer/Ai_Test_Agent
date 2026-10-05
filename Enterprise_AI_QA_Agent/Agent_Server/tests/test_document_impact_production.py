@@ -76,7 +76,7 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
         payload = json.loads(body["messages"][-1]["content"])
         holder.setdefault("first", DocumentImpactUnit.model_validate(payload["unit"]))
         holder["manifest"] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload["fixed_source_catalog"]])
-        factory = grouped_responder if payload["analysis_protocol"]["version"] == "impact-call-v6" else responder
+        factory = grouped_responder if payload["analysis_protocol"]["version"] in {"impact-call-v6", "impact-call-v7"} else responder
         return factory(holder, views, holder["case"])(body)
     try:
         with provider(gated=interrupt, responder=respond) as (endpoint, sends, arrived, release):
@@ -196,7 +196,7 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             assert [item["version_id"] for item in seed["cases"]] == [case.version.id]
                             assert seed["analysis_context"]["config"] == frozen["document-impact-analysis-settings"]
                             assert seed["workflow_protocol"]["version"] == "impact-coordinator-v2"
-                            assert seed["response_protocol"]["version"] == "impact-call-v6"
+                            assert seed["response_protocol"]["version"] == "impact-call-v7"
                             assert seed["reasoning_settings"] == frozen["document-impact-reasoning-settings"]
                             cur.execute(f"SELECT count(*) AS n FROM {settings.database.postgres_task_outbox_table} WHERE event_key=%s",
                                 ("document-impact:" + submitted["id"],))

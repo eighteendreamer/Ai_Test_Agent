@@ -1,0 +1,126 @@
+{
+  "scope": "fixed generated fixture only; independent reading of actual canonical responses, not user review approval",
+  "cells": [
+    {
+      "case_key": "retention",
+      "case_version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+      "rule_kind": "modified",
+      "expected_level": "major",
+      "actual_level": "major",
+      "reason": "当前用例的目标与最后一步围绕已支付订单保留期查询，其预期仍锚定旧保留期规则；文档规则调整保留期后，该验证点的查询前提与预期需要重新评审，否则可能形成失效断言。已阅读全部步骤，并保留执行说明中要求保留的刻意缺失负向条件。",
+      "verification_points": [
+        "确认查询订单的已支付天数与文档新保留期之间的边界关系是否仍然成立。",
+        "重新评估原预期状态和保留天数断言是否继续有效。",
+        "如需继续覆盖保留边界，补充新保留期内与超过新保留期两种情形的验证点。"
+      ],
+      "citation_count": 7
+    },
+    {
+      "case_key": "retention",
+      "case_version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+      "rule_kind": "removed",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "当前完整用例内容、目标、步骤及执行说明均未涉及被删除的优惠码规则相关操作或条件；删除该规则不会使用例现有验证点失效。停用候选需另行评审，部署状态未知。",
+      "verification_points": [],
+      "citation_count": 4
+    },
+    {
+      "case_key": "retention",
+      "case_version_id": "5673a7ac-4cec-4146-9134-144c07e8f17f",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "当前用例目标、步骤、附加字段与执行说明均未涉及新增导出接口或导出排序规则；新增规则需要另行覆盖，但不改变当前用例的现有验证点。",
+      "verification_points": [],
+      "citation_count": 4
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "7b4d92fc-e4b8-408f-b24b-9a18077d41be",
+      "rule_kind": "modified",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该规则属于订单保留期调整；当前用例目标、步骤与预期均针对未登录管理访问拒绝，且执行说明要求通读全部步骤并保留负向条件，固定内容中无保留期、过期查询或相关拒绝预期，因此对该用例无影响。",
+      "verification_points": [],
+      "citation_count": 7
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "7b4d92fc-e4b8-408f-b24b-9a18077d41be",
+      "rule_kind": "removed",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该规则删除优惠码相关需求；当前用例无优惠码提交、订单金额扣减或优惠结果校验，固定 JSON 与执行说明中也不存在对应待验证点，因此对该用例无影响。",
+      "verification_points": [],
+      "citation_count": 7
+    },
+    {
+      "case_key": "unauth",
+      "case_version_id": "7b4d92fc-e4b8-408f-b24b-9a18077d41be",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该规则新增订单导出能力；当前用例无导出请求、排序条件或导出结果预期，因此对该用例无影响。新增规则所需的独立覆盖范围不属于当前用例影响结论。",
+      "verification_points": [],
+      "citation_count": 7
+    },
+    {
+      "case_key": "promotion",
+      "case_version_id": "816806d7-c0e0-438f-ba15-163733d158e7",
+      "rule_kind": "modified",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该用例目标与全部步骤仅围绕 PROMO5 折扣验证和环境记录，不包含订单保留期查询或返回 410 的操作、条件与预期；保留天数由 7 调整为 9 不影响其现有验证点。",
+      "verification_points": [],
+      "citation_count": 2
+    },
+    {
+      "case_key": "promotion",
+      "case_version_id": "816806d7-c0e0-438f-ba15-163733d158e7",
+      "rule_kind": "removed",
+      "expected_level": "major",
+      "actual_level": "major",
+      "reason": "该用例目标明确为验证有效优惠码减 5 元，最后一步操作为使用 PROMO5 创建订单并预期折扣为 5；规则显示对应 PROMO5 优惠需求已被删除，核心验证点所依据的需求不复存在。",
+      "verification_points": [
+        "提出该用例的停用或修订候选，因其目标、操作与预期均直接依赖已删除的 PROMO5 优惠规则。"
+      ],
+      "citation_count": 4
+    },
+    {
+      "case_key": "promotion",
+      "case_version_id": "816806d7-c0e0-438f-ba15-163733d158e7",
+      "rule_kind": "added",
+      "expected_level": "none",
+      "actual_level": "none",
+      "reason": "该用例目标与所有步骤均只覆盖 PROMO5 折扣验证，没有任何操作、条件或预期涉及新增的 GET /orders/export 接口或导出排序；新增导出需求对该用例无影响。",
+      "verification_points": [],
+      "citation_count": 2
+    }
+  ],
+  "matrix_matches_fixture": true,
+  "full_workflow_assertion_passed": true,
+  "result_status": "partial",
+  "basis_limitations": [
+    "difference_warning:extracted_text_positions"
+  ],
+  "semantic_approval": false,
+  "deployment_status": "unknown",
+  "input_artifacts": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/result.json",
+      "sha256": "293ba1ccdf889e183863a600b2ba833dcd8a6fd97cf0d6483eabddf33bbd7493",
+      "size_bytes": 76693
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/cases.json",
+      "sha256": "d4d67a82368765bc2d68d85784c625fb1240e66939176b7ff00a36c751947521",
+      "size_bytes": 22520
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-default-model-case-v7-stage/semantic-baseline.json",
+      "sha256": "9d06d1411cea330a158db7c60dd8a3ded05ed97b770b4e29f13091c19669a59c",
+      "size_bytes": 414
+    }
+  ]
+}

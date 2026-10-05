@@ -12,13 +12,43 @@ from src.application.documents.impact_identity_bindings import ImpactFixedRefere
 from src.schemas.document_impact_bound_responses import DocumentImpactBoundDecision
 from src.schemas.document_impact_anchored_responses import DocumentImpactAnchoredDecision
 from src.schemas.document_impact_grouped import DocumentImpactGroupedWireDecision, impact_coordination_context
+from src.schemas.document_impact_case_anchored import DocumentImpactCaseAnchoredDecision
 from src.schemas.document_impact_responses import (
     DocumentImpactDecision, DocumentImpactResponseAssessment, DocumentImpactResponseIssue,
     DocumentImpactResponseProtocolSnapshot,
 )
 
 
-def capture_impact_response_protocol(*, version="impact-call-v6"):
+def capture_impact_response_protocol(*, version="impact-call-v7"):
+    if version == "impact-call-v7":
+        value = capture_impact_response_protocol(version="impact-call-v6").model_dump(mode="json", exclude={"sha256"})
+        value.update(version=version, response_schema=DocumentImpactCaseAnchoredDecision.model_json_schema(),
+            instruction="Return one impact-response-v5 JSON object. Follow the current coordination stage. "
+                "For finish, unit_outcome must be analyzed or evidence_insufficient, never null, and reads empty. "
+                "Discovery: read every frozen discovery_task member, propose one set of rule changes with T refs "
+                "from fixed_text_evidence; return evidence_outcomes in fixed P/D member order with a specific "
+                "outcome/reason for every member. Never infer unread evidence was analyzed. Discovery has no case impacts. "
+                "Case stage: assess every R rule for the current complete case identified by primary_ref, using "
+                "its entire JSON, execution_notes, original sources and rule evidence. Return rule_ref/case_impacts "
+                "for that current case; evidence_outcomes is empty. Other cases may be read as supplementary evidence, "
+                "but each has its own analysis task; do not turn this call into whole-project coverage. "
+                "Case citations are F strings from fixed_case_evidence for the stated case_ref. Each F selects a "
+                "literal field path in the complete JSON or execution_notes; values are already in those complete reads. "
+                "Do not output paths, values, UUIDs or hashes. Case metadata titles are not content_json fields. "
+                "The server binds T/F selections to exact original positions/versions/paths/values and verifies them. "
+                "For read request only needed fixed P/S/C/D reads with no candidates, evidence_outcomes or outcome. "
+                "Other catalogs are retrieval metadata, not supplied evidence. Preserve deliberate negative conditions. "
+                "unresolved contains only specific missing evidence that prevents CURRENT stage judgments, "
+                "naming affected rules or members; use evidence_insufficient/uncertain where that evidence is needed. "
+                "When the current analysis is complete, unresolved is empty. Do not put deployment unknown, "
+                "pending review, preserved negative conditions, unchanged rules or separately assigned later "
+                "tasks there just to restate their status. Keep those statements in summary, reasons and rule "
+                "uncertainties. Existing source warnings remain explicit; never hide a gap affecting a judgment. "
+                "All proposals pending review, deployment unknown. "
+                "Do not execute tests or change official records.")
+        digest = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+        return DocumentImpactResponseProtocolSnapshot(**value, sha256=digest)
     if version == "impact-call-v6":
         value = {"version": version, "scope": "one frozen reasoning task only",
             "response_schema": DocumentImpactGroupedWireDecision.model_json_schema(),
@@ -203,19 +233,23 @@ class DocumentImpactResponseProtocol:
             manifest_sha256=payload.manifest_sha256, status="ineligible", decision=None,
             issues=[DocumentImpactResponseIssue(code="response_not_eligible", message="该回执不满足完整文本分析条件")],
             basis_limitations=limitations)
-        grouped = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v6"
+        case_anchored = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v7"
+        grouped = seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v6", "impact-call-v7"}
         if grouped:
-            assessment.validator_version = "impact-response-validator-v2"
+            assessment.validator_version = "impact-response-validator-v3" if case_anchored else "impact-response-validator-v2"
         if record.response_disposition != "received":
             return assessment
         issues = []
         try:
-            if seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6"}:
-                anchored = seed.response_protocol.version in {"impact-call-v5", "impact-call-v6"}
-                parser = (lambda text: _parse_decision(text, DocumentImpactGroupedWireDecision)) if grouped else (
+            if seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v4", "impact-call-v5", "impact-call-v6", "impact-call-v7"}:
+                anchored = seed.response_protocol.version in {"impact-call-v5", "impact-call-v6", "impact-call-v7"}
+                parser = (lambda text: _parse_decision(text, DocumentImpactCaseAnchoredDecision)) if case_anchored else (
+                    (lambda text: _parse_decision(text, DocumentImpactGroupedWireDecision)) if grouped else (
                     parse_anchored_impact_decision if anchored else parse_bound_impact_decision)
+                )
                 decision = bind_impact_decision(parser(response.text), seed, manifest, payload)
-                assessment.runtime_versions["identity_binding"] = "impact-text-bindings-v1" if anchored else "impact-bindings-v1"
+                assessment.runtime_versions["identity_binding"] = "impact-case-bindings-v1" if case_anchored else (
+                    "impact-text-bindings-v1" if anchored else "impact-bindings-v1")
             else:
                 decision = parse_impact_decision(response.text)
         except ImpactFixedReferenceError:

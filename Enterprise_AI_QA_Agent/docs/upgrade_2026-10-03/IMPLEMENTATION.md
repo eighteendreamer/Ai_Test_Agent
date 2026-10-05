@@ -2429,3 +2429,60 @@ npm run build
 交付核对已实际完成：11份Python源码/测试AST与字节编译、跨层引用及diff检查通过；522份本轮原文件、1738份历史原文件、12条生产/正式App消息和5条默认消息逐字节/固定请求核对，三份方案一致。首次验证脚本把调用phase的outcome_unknown错当结果单元status；读取真实Schema后使用unknown，原业务记录和源码未改，核对脚本复验通过。方案正文最初多留文件末尾空行，去除后diff检查通过；未裁剪原始日志。
 
 最终暂存541份相关文件，522份原始证据暂存字节与记录SHA/大小相同，暂存diff检查通过，用户.gitignore未改/未暂存。首次一次性暂存参数超过Windows命令行长度（WinError 206），改为顺序分批暂存，范围不变；没有删除或裁剪证据。
+
+
+## 完整用例字段引用及当前阶段缺口〔研究基线6f4bb0ea〕
+
+先查真实v6错误title引用、case metadata/version边界、现有T绑定/字面路径核验、补读与PG核验版本/API/前端消费方，再新增F完整节点索引、v7/v5/v3及固定读取；复用v2协调/结果。没有新表、依赖或配置副本，MySQL可编辑设置/PG检查点/RustFS对象沿原职责。完整调研见P4_CASE_FIELD_REFERENCES_DESIGN.md；功能、失败及验收边界见PLAN.md 3.5.16/6.12。
+
+实际命令（后端目录Agent_Server，输出重定向同名前缀.log；前端目录agent_web）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py tests/test_document_impact_text_anchors.py tests/test_document_impact_grouped_workflow.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-replay-first.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py tests/test_document_impact_text_anchors.py tests/test_document_impact_grouped_workflow.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-replay-fixed.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-live-first.xml
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-regression-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py tests/test_document_impact_text_anchors.py tests/test_document_impact_bound_responses.py tests/test_document_impact_grouped_workflow.py tests/test_document_impact_calls.py tests/test_document_impact_responses.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_transport.py tests/test_document_impact_reasoning_plan.py tests/test_document_impact_citation_basis.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-regression-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-production-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-production-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-full-product-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-full-product-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_SINGLE_ATTEMPT='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-case-v7-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-case-v7-first.xml
+npm run test -- src/services/documentImpacts.api.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts
+npm run build
+```
+
+第一次回放8失败/22通过/25跳过9.50秒，漏索引已有合法expected容器路径；按原契约补全部节点后30通过/25跳过5.00秒，live未开。真实专项16通过43.61秒，11模块200通过683.65秒，独立生产5通过288.04秒，正式App1通过88.67秒，前端24通过及vue-tsc/Vite8.43秒通过，真实轮均0跳过。保存原件、实际HTTP、PG/RustFS结果和终态恢复；受控供应商与真实默认模型分别说明，未裁剪失败记录。
+
+首次默认任务1失败207.39秒，Handler200.015秒、4逻辑/4物理，11项analyzed，规则3及九判断均符合固定样本。但unresolved包含部署/评审/其他任务说明，严格断言仍失败，位置警告及snapshot.partial保留。读取实际Skill和Schema后确认字段语义缺失；新提交冻结当前阶段描述与指引，真正缺失证据仍保留，不清洗旧字符串或抹去warning，不改全局Skill。首轮原Schema/hash/响应/结果仍可按固定seed恢复。
+
+澄清后实际命令：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-stage-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-stage-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-case-anchors-stage-production')
+..\.venv\Scripts\python.exe -X utf8 -m pytest 'tests/test_document_impact_production.py::test_production_fixed_analysis_history_and_process_recovery[md-False-False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-stage-production.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_SINGLE_ATTEMPT='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-case-v7-stage')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-case-v7-stage.xml
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_case_anchors.py::test_actual_successful_v7_stage_matches_strengthened_business_oracle_without_new_http -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-anchors-business-replay.xml
+```
+
+最新专项18通过44.19秒（含首轮v7原请求重建与九判断实际回放），独立MD1通过58.86秒，均0跳过。首次200/5/正式App在指引澄清前，后18/1和新默认任务验证澄清后源码，前端及wire字段结构未再改。
+
+新默认严格验收1通过329.88秒，Handler322.734秒，4逻辑/4物理，四条200，发现61.797秒/三用例100.687、116.813、38.844秒，无补读或重复。11项analyzed、无reason_codes/unresolved，三规则7→9天/删除优惠码/新增倒序导出，三条完整8步用例均发送。九关系独立读取与样本基线吻合，保存semantic-stage.json；pending_review、deploymentunknown、extracted_text_positions警告和snapshot.partial保留，不把模型分析当实际执行成功。
+
+随后把九项业务oracle接入未来默认集成验收，使用此次实际结果回放1通过4.68秒，0新增HTTP；最新默认XML在加入oracle函数前执行，实际结果的离线加强验证另记business-replay.xml，未原样重复外发。保留修改/删除的重大影响及未登录负向条件，新增导出未误认已覆盖，其他关系none。源默认模型/8192/globalSDK60/call120/task600前后相同，终态历史不发HTTP/重建/上传/领取。
+
+三份方案、原对象/版本hash/F路径和值、14条生产/正式App物理消息、8条默认消息、旧2260份原文件及用户.gitignore核对见p4-case-anchors-validation.json。没有生产历史迁移，完整P0—P5仍未完成；后续接稳定需求身份/评审/验证点/追踪/增量，并继续准备状态、未知副作用、正式生成导入、人工录制/Docker/报告。

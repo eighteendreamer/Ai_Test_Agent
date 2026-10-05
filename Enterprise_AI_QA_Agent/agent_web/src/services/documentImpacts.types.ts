@@ -103,7 +103,7 @@ export interface DocumentImpactRuleCandidate {
 export interface DocumentImpactResponseCheckpoint {
   task_id: string;
   call_id: string;
-  validator_version: "impact-response-validator-v1" | "impact-response-validator-v2";
+  validator_version: "impact-response-validator-v1" | "impact-response-validator-v2" | "impact-response-validator-v3";
   request_sha256: string;
   response_sha256: string;
   manifest_sha256: string;

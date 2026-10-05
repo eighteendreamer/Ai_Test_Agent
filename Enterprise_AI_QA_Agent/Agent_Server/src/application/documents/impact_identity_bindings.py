@@ -8,6 +8,9 @@ from src.schemas.document_impact_responses import DocumentImpactDecision, Docume
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
 from src.schemas.document_impact_grouped import impact_coordination_context
 from src.application.documents.impact_text_evidence import fixed_impact_text_evidence, ImpactTextEvidenceError
+from src.application.documents.impact_case_evidence import (
+    fixed_impact_case_evidence, case_evidence_catalog, ImpactCaseEvidenceError,
+)
 
 
 class ImpactFixedReferenceError(ValueError):
@@ -47,8 +50,9 @@ def bind_impact_decision(decision, seed, manifest, payload):
     if context and (context.protocol != seed.workflow_protocol or
         ((payload.selection.unit.kind == "case") != (context.stage == "case_impacts"))):
         raise ImpactFixedReferenceError("固定引用不能替换协调阶段或协议")
-    delivered, text_evidence = [], {}
-    anchored = seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v5", "impact-call-v6"}
+    delivered, text_evidence, case_evidence = [], {}, {}
+    case_anchored = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v7"
+    anchored = seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v5", "impact-call-v6", "impact-call-v7"}
     for message in payload.request.messages:
         if message.get("role") == "user":
             value = json.loads(message["content"])
@@ -63,6 +67,13 @@ def bind_impact_decision(decision, seed, manifest, payload):
                     raise ImpactFixedReferenceError("文本锚点目录与实际固定读取不同") from exc
                 if value.get("fixed_text_evidence") != text_evidence:
                     raise ImpactFixedReferenceError("文本锚点目录不能替换实际已读范围")
+            if case_anchored:
+                try:
+                    case_evidence = fixed_impact_case_evidence(manifest, delivered)
+                except ImpactCaseEvidenceError as exc:
+                    raise ImpactFixedReferenceError("字段引用与实际完整用例不同") from exc
+                if value.get("fixed_case_evidence") != case_evidence_catalog(case_evidence):
+                    raise ImpactFixedReferenceError("字段目录不能替换实际已读版本或路径")
 
     def lookup(group, ref):
         try:
@@ -82,8 +93,17 @@ def bind_impact_decision(decision, seed, manifest, payload):
 
     def case_impact(impact):
         fixed = lookup("cases", impact.case_ref)
+        if case_anchored:
+            citations = []
+            for ref in impact.citations:
+                item = case_evidence.get(ref)
+                if item is None or item["case_ref"] != impact.case_ref:
+                    raise ImpactFixedReferenceError("字段引用没有对应的完整用例或属于其他用例")
+                citations.append({**{key: value for key, value in item.items() if key != "case_ref"}, **fixed})
+        else:
+            citations = [{**citation.model_dump(), **fixed} for citation in impact.citations]
         return {**impact.model_dump(exclude={"case_ref", "citations"}), "version_id": fixed["version_id"],
-            "citations": [{**citation.model_dump(), **fixed} for citation in impact.citations]}
+            "citations": citations}
 
     candidates = []
     case_stage = context is not None and context.stage == "case_impacts"
@@ -105,7 +125,7 @@ def bind_impact_decision(decision, seed, manifest, payload):
     reads = decision.reads
     # Canonical validators still reject duplicate reads, unfinished actions,
     # duplicate candidate/case keys and invalid literal paths after exact binding.
-    grouped = seed.response_protocol is not None and seed.response_protocol.version == "impact-call-v6"
+    grouped = seed.response_protocol is not None and seed.response_protocol.version in {"impact-call-v6", "impact-call-v7"}
     outcomes = []
     if grouped:
         if context is None or context.protocol.version != "impact-coordinator-v2":
