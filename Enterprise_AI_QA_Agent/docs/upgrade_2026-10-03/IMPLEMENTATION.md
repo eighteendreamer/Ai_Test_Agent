@@ -2560,3 +2560,37 @@ $env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '../d
 首次1通过96.96秒、最终1通过107.54秒，均0跳过，各自真实构建9.51/10.49秒。真实DOCX/独立API及解析/比较/影响CLI/MySQL/PG/RustFS/Redis/Chromium正式App完整操作：接受后已提交响应丢失，刷新原请求恢复；V2不继承覆盖，V1正文/关系固定；拒绝/暂缓不产生版本；移除后历史保留；API重启/派发关闭与归档原请求恢复。最终加入真实API竞争决定后旧表单409，无自动重发或版本覆盖，显式读取后再评审。最终6评审/3需求版本与原PG一致，模型仍仅原影响2个物理POST，无新外部默认请求。原失败任务、任务池、下载和原影响全文也核验，pageerror为空、1440宽无正文横向溢出。
 
 全部原件/请求/PG决定/版本/矩阵、HTTP、对象、日志/XML及截图在p4-requirement-product-*；hash/历史证据/方案/暂存原始字节核对见p4-requirement-product-validation.json。测试评审不是用户业务审批，设计覆盖不证明执行通过，deployment未知/执行未关联仍显示。无生产历史迁移，增量草稿/环境适用/运行证据及其他P0—P5仍未完成。下一步研究确认范围进入现有生成任务和不可变用例版本的契约，再实施增量更新。
+
+## 确认范围与冻结生成基础〔研究基线e88add3a〕
+
+先读原目标附件、当前生成/模板/Skill捕获、模型白名单及runtime guard、固定影响输入、需求决定/版本、导入事务/持久规划和本地课程，研究结论见P4_INCREMENTAL_GENERATION_DESIGN.md。旧generate不能承担固定需求更新/恢复：它重读当前预览/Skill，只create_many新case。抽出共用请求构造保留旧行为，新增明确范围、每case基线模块、一次模板/authoring快照、固定生成及原响应解析；按review_id读取原接受决定并核对来源/hash。
+
+Agent_Server目录的实际命令：
+
+```powershell
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_test_case_generation_pipeline.py tests/test_case_json_templates.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-incremental-sources-legacy-first.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_INCREMENTAL_SOURCES_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-incremental-sources-live-first')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_incremental_generation_sources.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-incremental-sources-live-first.xml
+# 修正首次测试错误后，同模块结果分别保存到live-fixed.log/xml与live-fixed目录。
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+$env:QA_INCREMENTAL_SOURCES_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-incremental-sources-live-final')
+$env:QA_REQUIREMENT_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-incremental-sources-reviews-final')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_incremental_generation_sources.py tests/test_requirement_reviews.py tests/test_test_case_generation_pipeline.py tests/test_case_json_templates.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-incremental-sources-live-final.xml
+# 增加实际LangChain和PG/RustFS损坏后再验最终新增模块：
+$env:QA_INCREMENTAL_SOURCES_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-incremental-sources-boundaries-final')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_incremental_generation_sources.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-incremental-sources-boundaries-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Get-Location).Path '../docs/upgrade_2026-10-03/p4-incremental-sources-production')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_requirement_reviews_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-incremental-sources-production.xml
+```
+
+各命令stdout/stderr通过Tee-Object保存同名前缀log；以实际保存XML/log为准，最终测试文件包含后增加的两项，不把旧收集数量描述为当前全模块数量。旧生成首轮7通过/3跳过7.89秒；新增首轮5失败/4通过58.63秒是我漏传上传父版本、用了不生效温度字段并误比较启用前case。按实际DTO/DB/启用记录修正后3失败/6通过59.54秒，误把create_version返回的版本记录当bundle；改为版本记录的version。两次失败保留，没有把原场景跳过。
+
+四模块回归31通过/1跳过152.89秒，唯一跳过需要外部当前默认模型的旧生成场景。新增模块最终15通过/0跳过107.77秒；11实际场景和4请求校验，与前述13重叠不累加。真实MD/DOCX/PDF原件/解析比较进程/受控影响HTTP/PG需求接受/完整固定输入/MySQL模板及模型，范围与整个原响应存RustFS后重读。三原生格式及MD LangChain每模块一POST，完整12步JSON/False/0/null/未知字段、自身说明、确认点、旧新原文/差异及当时来源实际到达。修改模板/Skill文件/当前文档、新case草稿及新需求版本不改原请求；旧启用指针和原case版本保留。
+
+真实模型max_tokens/SDK适配器变更在HTTP前拒绝；项目/版本范围/hash拒绝。PG原评审请求或来源的实际损坏被hash/固定影响核验拒绝并恢复；独占测试任务的实际RustFS输入改字节被size/SHA拒绝，随后恢复原字节并核对。移除候选无authoring/模板读取、无生成、不停用。真实HTTP工具调用、length、空响应及500每种1POST，返回整个ModelInvocationResult先存RustFS再解析拒绝；补实际保存响应的越界/错误case_key/终止标记检查。最终11场景生成13POST，受控结果不冒充默认模型语义评审。
+
+独立生产API/三类CLI/Outbox/MySQL/PG/Redis/RustFS/HTTP需求评审与API重启/关闭派发恢复1通过102.20秒；原影响物理POST2，原消息/对象核对另见validation。证明现有生产兼容，没有调用新增增量任务，本轮未接生产模块检查点或提交草稿。无新依赖、配置键、SQL表/列、公开路由或前端契约；不重复前端构建/浏览器、外部默认模型和生产历史迁移。
+
+原失败/通过log/XML、文件、范围、响应/候选、PG需求及生产进程证据在p4-incremental-sources-*，SHA/完整来源/消息、旧3264原文件、用户.gitignore及三份方案核对见p4-incremental-sources-validation.json。下一步查证并实施持久模块/调用unknown/原响应恢复、同事务草稿收据/Worker/API/UI，再继续运行/环境及P2/P1/P0/P5；完整P0—P5未完成。

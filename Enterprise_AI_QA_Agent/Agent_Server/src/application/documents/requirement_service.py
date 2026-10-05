@@ -34,19 +34,7 @@ class RequirementService:
             return prior
         await self._projects.require_active(project_id)
         snapshot, result = await self._workflow.read_snapshot(project_id, document_id, snapshot_id)
-        rule = next((rule for rule in result.rules if rule.id == request.rule_id), None)
-        if rule is None:
-            raise ValueError("评审规则不在该固定影响结果中")
-        assessments = [candidate for unit in result.units if unit.unit.kind == "case" and
-            unit.status in {"analyzed", "evidence_insufficient"} and unit.final_check is not None
-            for candidate in unit.candidates if candidate.key == rule.id]
-        source = RequirementReviewSource(snapshot_id=snapshot.id, task_id=snapshot.task_id,
-            snapshot_sha256=snapshot.sha256, input_sha256=result.input_sha256,
-            manifest_sha256=result.manifest_sha256, rule=rule, case_assessments=assessments,
-            case_checkpoints=[unit.final_check for unit in result.units if unit.unit.kind == "case" and
-                unit.status in {"analyzed", "evidence_insufficient"} and unit.final_check is not None and
-                any(candidate.key == rule.id for candidate in unit.candidates)],
-            basis_limitations=result.basis_limitations, analysis_status=result.status)
+        source = self._review_source(snapshot, result, request.rule_id)
         try:
             saved = await self._store.save_review(project_id, document_id, request, source, digest)
         except Exception as exc:
@@ -57,6 +45,38 @@ class RequirementService:
             "review_id": saved.id, "decision": saved.request.decision,
             "requirement_version_id": saved.requirement_version.id if saved.requirement_version else None})
         return saved
+
+    @staticmethod
+    def _review_source(snapshot, result, rule_id):
+        rule = next((rule for rule in result.rules if rule.id == rule_id), None)
+        if rule is None:
+            raise ValueError("评审规则不在该固定影响结果中")
+        assessments = [candidate for unit in result.units if unit.unit.kind == "case" and
+            unit.status in {"analyzed", "evidence_insufficient"} and unit.final_check is not None
+            for candidate in unit.candidates if candidate.key == rule.id]
+        return RequirementReviewSource(snapshot_id=snapshot.id, task_id=snapshot.task_id,
+            snapshot_sha256=snapshot.sha256, input_sha256=result.input_sha256,
+            manifest_sha256=result.manifest_sha256, rule=rule, case_assessments=assessments,
+            case_checkpoints=[unit.final_check for unit in result.units if unit.unit.kind == "case" and
+                unit.status in {"analyzed", "evidence_insufficient"} and unit.final_check is not None and
+                any(candidate.key == rule.id for candidate in unit.candidates)],
+            basis_limitations=result.basis_limitations, analysis_status=result.status)
+
+    async def read_generation_basis(self, project_id, document_id, requirement_id, version_id):
+        await self._require_document(project_id, document_id)
+        _, versions = await self._store.get_requirement(project_id, document_id, requirement_id)
+        version = next((item for item in versions if item.id == version_id), None)
+        if version is None:
+            raise KeyError("生成依据版本不属于指定需求")
+        review = await self._store.get_review(project_id, document_id, version.review_id)
+        if review is None or review.request.decision != "accept" or review.requirement_version != version:
+            raise ValueError("生成依据没有匹配的明确接受决定")
+        snapshot, result = await self._workflow.read_snapshot(project_id, document_id, review.source.snapshot_id)
+        if review.source != self._review_source(snapshot, result, review.request.rule_id):
+            raise ValueError("需求评审来源与固定影响结果不同")
+        logger.info("requirement_generation_basis_read", extra={"project_id": project_id,
+            "requirement_version_id": version.id, "review_id": review.id, "snapshot_id": snapshot.id})
+        return version, review
 
     async def get_by_request(self, project_id, document_id, request_id):
         await self._require_document(project_id, document_id)

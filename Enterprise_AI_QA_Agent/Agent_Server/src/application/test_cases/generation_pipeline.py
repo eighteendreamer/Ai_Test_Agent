@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
+import logging
 import re
 from typing import Any
 
@@ -13,7 +15,8 @@ from src.application.knowledge.knowledge_graph_service import KnowledgeGraphServ
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.runtime.store import SessionStore
-from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.case_generation import CaseGenerationAuthoringSnapshot, PreparedCaseGeneration, fixed_generation_snapshot
 from src.schemas.project import ProjectRecord
 from src.schemas.case_management import (
     GeneratedTestCaseBatch,
@@ -24,6 +27,7 @@ from src.schemas.case_management import (
 
 PROMPT_VERSION = "test-case-generation-v1"
 GENERATION_SKILL_KEY = "generate-test-cases"
+logger = logging.getLogger(__name__)
 
 
 class _ModelGeneratedPayload(BaseModel):
@@ -212,8 +216,20 @@ class ModelTestCaseGenerator:
         )
         if not skill_blocks:
             raise RuntimeError(f"Required Skill is unavailable: {GENERATION_SKILL_KEY}")
+        model_request = self._build_request(request, context, skill_blocks)
+        result = await self._models.invoke(model_key, model_request)
+        payload = self._parse_payload(str(result.text or ""))
+        template = context.get("generation_template")
+        if isinstance(template, dict) and any(case.content_json is None for case in payload.cases):
+            raise ValueError("Model did not return content_json required by the project generation template")
+        skill_hash = hashlib.sha256("\n\n".join(skill_blocks).encode("utf-8")).hexdigest()[:16]
+        return GeneratedTestCaseBatch(model_key=model_key,
+            prompt_version="test-case-generation-json-v2" if isinstance(template, dict) else PROMPT_VERSION,
+            skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"}, cases=payload.cases[:request.max_cases], warnings=payload.warnings)
+
+    @staticmethod
+    def _build_request(request, context, skill_blocks):
         skill_content = "\n\n".join(skill_blocks)
-        skill_hash = hashlib.sha256(skill_content.encode("utf-8")).hexdigest()[:16]
         output_schema = json.dumps(
             _ModelGeneratedPayload.model_json_schema(),
             ensure_ascii=False,
@@ -237,7 +253,15 @@ class ModelTestCaseGenerator:
                   "Keep case_key/title/case_type/priority in the outer governance envelope. "
                   "Include execution_notes that make the case understandable independently of the template."
             )
-        model_request = ModelInvocationRequest(
+        if isinstance(context.get("incremental_generation"), dict):
+            system_prompt += (
+                "\nGenerate only the explicitly confirmed requirement version and verification points. "
+                "For an update, return exactly one case with the existing case_key; read the complete fixed "
+                "business JSON and execution_notes, preserve relevant unknown nested fields and negative conditions. "
+                "For creation, generate only the specified new coverage. Never activate, disable or execute cases. "
+                "Do not infer deployment from requirement approval. Missing sources remain warnings."
+            )
+        return ModelInvocationRequest(
             system_prompt=system_prompt,
             messages=[
                 {
@@ -256,17 +280,60 @@ class ModelTestCaseGenerator:
             ],
             tools=[],
         )
-        result = await self._models.invoke(model_key, model_request)
+
+    async def capture_authoring(self, model_key=None, *, transport_options=None):
+        model = await asyncio.to_thread(self._models.get_model_config, model_key) if model_key else await asyncio.to_thread(
+            self._models.get_default_model_config)
+        if model is None:
+            raise ValueError("没有可用的生成模型配置")
+        skills = await asyncio.to_thread(self._skills.capture_prompt_blocks, [GENERATION_SKILL_KEY])
+        runtime = await asyncio.to_thread(self._models.get_invocation_runtime_parameters, model.key,
+            **({"transport_options": transport_options} if transport_options is not None else {}))
+        fixed = fixed_generation_snapshot(CaseGenerationAuthoringSnapshot, model_key=model.key,
+            model_parameters=model_invocation_parameters(model), runtime_parameters=runtime,
+            transport_options=transport_options, skills=skills)
+        logger.info("case_generation_authoring_captured", extra={"model_key": model.key, "snapshot_sha256": fixed.sha256})
+        return fixed
+
+    async def prepare_frozen(self, *, request, context, authoring=None):
+        fixed = authoring or await self.capture_authoring(request.model_key)
+        # Revalidate nested hashes even when a caller passes mutable Pydantic instances.
+        fixed = CaseGenerationAuthoringSnapshot.model_validate_json(fixed.model_dump_json())
+        invocation = self._build_request(request, context, [skill.prompt_block for skill in fixed.skills])
+        incremental = isinstance(context.get("incremental_generation"), dict)
+        prepared = fixed_generation_snapshot(PreparedCaseGeneration, authoring=fixed, request=request,
+            invocation=invocation, prompt_version="test-case-generation-incremental-v1" if incremental else "test-case-generation-frozen-v1",
+            requires_content_json=incremental or isinstance(context.get("generation_template"), dict))
+        logger.info("case_generation_request_prepared", extra={"model_key": fixed.model_key,
+            "request_sha256": prepared.sha256, "max_cases": request.max_cases})
+        return prepared
+
+    def parse_frozen(self, prepared, result):
+        fixed = PreparedCaseGeneration.model_validate_json(prepared.model_dump_json())
+        summary = result.response_summary
+        if summary.get("mode") in MODEL_FAILURE_MODES or result.tool_calls:
+            raise ValueError("生成调用失败或返回工具操作，未创建草稿")
+        if summary.get("finish_reason") in {"length", "max_tokens"} or summary.get("stop_reason") == "max_tokens":
+            raise ValueError("生成响应被截断，未把部分输出当完整候选")
         payload = self._parse_payload(str(result.text or ""))
-        if isinstance(template, dict) and any(case.content_json is None for case in payload.cases):
-            raise ValueError("Model did not return content_json required by the project generation template")
-        return GeneratedTestCaseBatch(
-            model_key=model_key,
-            prompt_version="test-case-generation-json-v2" if isinstance(template, dict) else PROMPT_VERSION,
-            skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"},
-            cases=payload.cases[: request.max_cases],
-            warnings=payload.warnings,
-        )
+        if len(payload.cases) > fixed.request.max_cases:
+            raise ValueError("生成输出超过固定范围，未截取或丢弃额外候选")
+        if fixed.requires_content_json and any(case.content_json is None for case in payload.cases):
+            raise ValueError("固定生成请求要求完整content_json，未创建替代用例")
+        return GeneratedTestCaseBatch(model_key=fixed.authoring.model_key, prompt_version=fixed.prompt_version,
+            skill_versions={skill.key: f"sha256:{skill.sha256}" for skill in fixed.authoring.skills},
+            cases=payload.cases, warnings=payload.warnings)
+
+    async def invoke_frozen(self, prepared):
+        """Caller must persist invocation intent and returned response; never auto-retry here."""
+        fixed = PreparedCaseGeneration.model_validate_json(prepared.model_dump_json())
+        result = await self._models.invoke(fixed.authoring.model_key, fixed.invocation,
+            expected_parameters=fixed.authoring.model_parameters,
+            expected_runtime_parameters=fixed.authoring.runtime_parameters,
+            **({"transport_options": fixed.authoring.transport_options} if fixed.authoring.transport_options is not None else {}))
+        logger.info("case_generation_response_received", extra={"request_sha256": fixed.sha256,
+            "mode": result.response_summary.get("mode"), "tool_call_count": len(result.tool_calls)})
+        return result
 
     def _resolve_model_key(self, requested: str | None) -> str:
         requested_key = str(requested or "").strip()

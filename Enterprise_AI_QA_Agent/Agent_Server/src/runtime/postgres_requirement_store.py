@@ -79,6 +79,8 @@ class PostgresRequirementStore:
     @staticmethod
     def _review(row):
         result = RequirementReview.model_validate(row["record"])
+        if review_request_hash(result.document_id, result.source.snapshot_id, result.request) != result.request_sha256:
+            raise ValueError("需求评审请求正文与固定哈希不同")
         if result.requirement_version:
             fixed_requirement_version(result.requirement_version)
         return result
@@ -97,6 +99,15 @@ class PostgresRequirementStore:
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 return self._prior(cur, project_id, request_id, digest)
+        return await asyncio.to_thread(read)
+
+    async def get_review(self, project_id, document_id, review_id):
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT record FROM {self._reviews} WHERE project_id=%s AND document_id=%s AND id=%s",
+                    (project_id, document_id, review_id))
+                row = cur.fetchone()
+                return self._review(row) if row else None
         return await asyncio.to_thread(read)
 
     async def save_review(self, project_id, document_id, request, source, digest):
