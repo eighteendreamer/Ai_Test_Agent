@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="40" failures="1" errors="0" time="1.0226279">
+    <testsuite name="src/features/projects/TestCaseAuthoring.test.ts" timestamp="2026-10-05T15:53:34.126Z" hostname="EIghteen" tests="6" failures="0" errors="0" skipped="0" time="0.1704424">
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; renders nested unknown fields and escapes source markup" time="0.0385111">
+        </testcase>
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; copies the default into project configuration and rejects malformed JSON" time="0.0234363">
+        </testcase>
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; shows full versions, steps and raw JSON without loading a template" time="0.0216652">
+        </testcase>
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; saves edits as another version and retains the old content and source" time="0.0307672">
+        </testcase>
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; reviews the selected draft and enables it even when a newer draft exists" time="0.0259577">
+        </testcase>
+        <testcase classname="src/features/projects/TestCaseAuthoring.test.ts" name="project case authoring &gt; queries a lost reply after reopening and keeps the later active version" time="0.0279751">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/tools/plugins/RequirementCoverageProduct.test.ts" timestamp="2026-10-05T15:53:34.132Z" hostname="EIghteen" tests="20" failures="1" errors="0" skipped="0" time="0.5746295">
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="selects actual project versions and preserves all 12 steps, JSON values, notes and provenance" time="0.1304139">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="keeps an unknown POST and recovers the original GET after reopening without another send" time="0.0649784">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="retains the original request after a 404 recovery result" time="0.007414">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="retains the original request after a 503 recovery result" time="0.0100959">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="rejects a mismatched recovery response and keeps all original parameters" time="0.0088377">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="uses an explicit same-request retry after a transport failure" time="0.0517621">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="requires an explicit refresh after a real 409 and uses the new expected confirmation" time="0.0536781">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="shows latest, initial and fixed confirmation histories without changing the edit baseline" time="0.022072">
+            <failure message="expected { requirement: { …(7) }, …(5) } to deeply equal { requirement: { …(7) }, …(5) }" type="AssertionError">
+AssertionError: expected { requirement: { …(7) }, …(5) } to deeply equal { requirement: { …(7) }, …(5) }
+
+- Expected
++ Received
+
+@@ -2,126 +2,207 @@
+    &quot;coverage_review&quot;: {
+      &quot;case_links&quot;: [
+        {
+          &quot;active_version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
+          &quot;case_id&quot;: &quot;7ebc4910-9bef-424f-9db9-0f42bde26d1d&quot;,
+-         &quot;case_version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
+-         &quot;content_hash&quot;: &quot;3b85fb4b5b4182a7ad20d265b73de04b958d274ccd05d38ed36ba5293a8fc8ea&quot;,
++         &quot;case_version_id&quot;: &quot;af444c84-0de3-4416-b103-8db0fcbf3432&quot;,
++         &quot;content_hash&quot;: &quot;b69529f8f5001e2e78aa5c65c494226f11e9fcd3a8cfa35ce9c76b8f5622097f&quot;,
+          &quot;generation&quot;: {
+-           &quot;group_id&quot;: &quot;cc322436-dd9e-449d-abc8-24fcb250cc23&quot;,
+-           &quot;group_sha256&quot;: &quot;c3a0271ab1afb3faec55043b37eb40d75e519bf4295c3040a9c04348c339b283&quot;,
+-           &quot;module_sha256&quot;: &quot;2ddedbdb15704f80de9b9c12dec0a08f830adef8fde2f9fec9bca270212d2037&quot;,
++           &quot;group_id&quot;: &quot;43ef2cec-4610-49f0-92eb-15168a9cfe98&quot;,
++           &quot;group_sha256&quot;: &quot;5fa603f4ee3454d36eaf3f36c33f26707d48f3fad5053e55331975d5d51c0757&quot;,
++           &quot;module_sha256&quot;: &quot;2a1c5a624798b22aa639ffe1575824e8a442930d5d4b4154d4ac3dc2f0ff10e2&quot;,
+            &quot;provenance&quot;: {
+              &quot;deployment_status&quot;: &quot;unknown&quot;,
+-             &quot;group_id&quot;: &quot;cc322436-dd9e-449d-abc8-24fcb250cc23&quot;,
+-             &quot;module_id&quot;: &quot;45d5a7a3-f798-4766-b2c6-0c9603de1226&quot;,
++             &quot;group_id&quot;: &quot;43ef2cec-4610-49f0-92eb-15168a9cfe98&quot;,
++             &quot;module_id&quot;: &quot;af72a9cd-9d6d-4f31-9df8-6dd032488879&quot;,
+              &quot;point_ids&quot;: [
+                &quot;35cc3550-4297-4261-8151-bbe4acdea4d3&quot;,
+                &quot;5151d04e-677e-494b-83bc-e52b57dbe882&quot;,
+              ],
+              &quot;request_sha256&quot;: &quot;564e1688fc8911e0624e3088f1de257f45c940acf57da32212f2a0376bb0bea6&quot;,
+              &quot;requirement_id&quot;: &quot;d106493c-e2f3-4ff7-9c8a-3e8323af5a84&quot;,
+              &quot;requirement_version_id&quot;: &quot;bb4205d5-83a5-45cb-a0f0-97a70e975f96&quot;,
+              &quot;response&quot;: {
+                &quot;sha256&quot;: &quot;fe7900aae37a66a419480bdc094c64fd6c517ed2c90a90655b8957d2da8fba76&quot;,
+                &quot;size_bytes&quot;: 4746,
+-               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/6cc440f4-f5eb-4096-ae75-8d53a2ff50f9/a7a40e52-1f82-4320-8c8f-7f31233a179f/responses/c21e5d87-a194-4922-bfa9-de0986ef3a76/response.json&quot;,
++               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/163c4b46-d112-43ff-bbea-d5fae9fb4e14/08433221-bb20-41d7-a425-0790488cb11a/responses/c798e9a2-3feb-4632-b8d4-e20f7928d89c/response.json&quot;,
++             },
++             &quot;retry&quot;: {
++               &quot;id&quot;: &quot;689ec3cc-a699-48e4-b9db-08683aa0902c&quot;,
++               &quot;sha256&quot;: &quot;afcf3faef9c7349c2c97f96b4ef2bd86ff035f02af3c309436e3d710f6bb18da&quot;,
+              },
+              &quot;review_id&quot;: &quot;cc27e7d0-a87a-4ff9-9561-96e15fb3c8ab&quot;,
+-             &quot;scope_sha256&quot;: &quot;292da38629a4bc1ac9d32d114da853a45bcdbc0309ccb4422018a40669c48b5c&quot;,
++             &quot;scope_sha256&quot;: &quot;855ba1527f5e1110935de63bea1a4c200a0d516333c3c72937f4a6db2b748088&quot;,
+              &quot;target_case_version_id&quot;: &quot;8e979ce7-dd7c-406f-bcaf-7e31c1431aa5&quot;,
+            },
+            &quot;receipt&quot;: {
+              &quot;kind&quot;: &quot;update&quot;,
+-             &quot;module_id&quot;: &quot;45d5a7a3-f798-4766-b2c6-0c9603de1226&quot;,
++             &quot;module_id&quot;: &quot;af72a9cd-9d6d-4f31-9df8-6dd032488879&quot;,
+              &quot;response&quot;: {
+                &quot;sha256&quot;: &quot;fe7900aae37a66a419480bdc094c64fd6c517ed2c90a90655b8957d2da8fba76&quot;,
+                &quot;size_bytes&quot;: 4746,
+-               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/6cc440f4-f5eb-4096-ae75-8d53a2ff50f9/a7a40e52-1f82-4320-8c8f-7f31233a179f/responses/c21e5d87-a194-4922-bfa9-de0986ef3a76/response.json&quot;,
++               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/163c4b46-d112-43ff-bbea-d5fae9fb4e14/08433221-bb20-41d7-a425-0790488cb11a/responses/c798e9a2-3feb-4632-b8d4-e20f7928d89c/response.json&quot;,
+              },
+              &quot;retirement_target&quot;: null,
+-             &quot;scope_sha256&quot;: &quot;292da38629a4bc1ac9d32d114da853a45bcdbc0309ccb4422018a40669c48b5c&quot;,
++             &quot;scope_sha256&quot;: &quot;855ba1527f5e1110935de63bea1a4c200a0d516333c3c72937f4a6db2b748088&quot;,
+              &quot;versions&quot;: [
+                {
+                  &quot;case_id&quot;: &quot;7ebc4910-9bef-424f-9db9-0f42bde26d1d&quot;,
+-                 &quot;content_hash&quot;: &quot;3b85fb4b5b4182a7ad20d265b73de04b958d274ccd05d38ed36ba5293a8fc8ea&quot;,
+-                 &quot;version&quot;: 3,
+-                 &quot;version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
++                 &quot;content_hash&quot;: &quot;b69529f8f5001e2e78aa5c65c494226f11e9fcd3a8cfa35ce9c76b8f5622097f&quot;,
++                 &quot;version&quot;: 5,
++                 &quot;version_id&quot;: &quot;af444c84-0de3-4416-b103-8db0fcbf3432&quot;,
+                },
+              ],
+            },
+-           &quot;retry&quot;: null,
++           &quot;retry&quot;: {
++             &quot;id&quot;: &quot;689ec3cc-a699-48e4-b9db-08683aa0902c&quot;,
++             &quot;sha256&quot;: &quot;afcf3faef9c7349c2c97f96b4ef2bd86ff035f02af3c309436e3d710f6bb18da&quot;,
++           },
+            &quot;source_document_id&quot;: &quot;ef917908-2dda-509e-9b49-0e3278b73bcf&quot;,
+-           &quot;task_id&quot;: &quot;6cc440f4-f5eb-4096-ae75-8d53a2ff50f9&quot;,
++           &quot;task_id&quot;: &quot;1e710fe2-2a11-4928-87e4-cb485a29f1d1&quot;,
+          },
+          &quot;lifecycle_status&quot;: &quot;active&quot;,
+          &quot;point_keys&quot;: [
+            &quot;retention&quot;,
++         ],
++         &quot;review&quot;: {
++           &quot;events&quot;: [],
++           &quot;origin&quot;: &quot;native&quot;,
++           &quot;status&quot;: &quot;draft&quot;,
++           &quot;version&quot;: 5,
++           &quot;version_id&quot;: &quot;af444c84-0de3-4416-b103-8db0fcbf3432&quot;,
++         },
++         &quot;review_status&quot;: &quot;draft&quot;,
++         &quot;version_record_sha256&quot;: &quot;fe997a274648c148963f4f370a7df93e1630f206cfb6268ba60950730f9401d9&quot;,
++       },
++       {
++         &quot;active_version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
++         &quot;case_id&quot;: &quot;9424fe79-c30c-4abf-be03-9f3d21702d0d&quot;,
++         &quot;case_version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
++         &quot;content_hash&quot;: &quot;6af6b22fde5bb2eb2ed631833b5c48f9e563cd93bd774e7c435e4518d466e849&quot;,
++         &quot;generation&quot;: {
++           &quot;group_id&quot;: &quot;cc322436-dd9e-449d-abc8-24fcb250cc23&quot;,
++           &quot;group_sha256&quot;: &quot;c3a0271ab1afb3faec55043b37eb40d75e519bf4295c3040a9c04348c339b283&quot;,
++           &quot;module_sha256&quot;: &quot;55cc043fd8930932ae6dadf911de6cb64f340fde38c09f9890d1650231f11e33&quot;,
++           &quot;provenance&quot;: {
++             &quot;deployment_status&quot;: &quot;unknown&quot;,
++             &quot;group_id&quot;: &quot;cc322436-dd9e-449d-abc8-24fcb250cc23&quot;,
++             &quot;module_id&quot;: &quot;eb8141df-bd1b-4d93-a3cf-c4a53ef18238&quot;,
++             &quot;point_ids&quot;: [
++               &quot;35cc3550-4297-4261-8151-bbe4acdea4d3&quot;,
++               &quot;5151d04e-677e-494b-83bc-e52b57dbe882&quot;,
++             ],
++             &quot;request_sha256&quot;: &quot;92b79ccce6903ef085eeea6a8c40c08bd9b6034c2cf712dd50097837d56c130a&quot;,
++             &quot;requirement_id&quot;: &quot;d106493c-e2f3-4ff7-9c8a-3e8323af5a84&quot;,
++             &quot;requirement_version_id&quot;: &quot;bb4205d5-83a5-45cb-a0f0-97a70e975f96&quot;,
++             &quot;response&quot;: {
++               &quot;sha256&quot;: &quot;617fd07e327a76d41ffb5919993c5ec1fd5f92fb9bfb2e10bbb4c0563bd6bb25&quot;,
++               &quot;size_bytes&quot;: 3778,
++               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/839de179-38fd-4265-bf3d-57d1db014a65/70f5af16-6c3e-4437-8018-2f75ee4955e7/responses/e2ec03bd-9475-4253-9403-945dd1e68785/response.json&quot;,
++             },
++             &quot;review_id&quot;: &quot;cc27e7d0-a87a-4ff9-9561-96e15fb3c8ab&quot;,
++             &quot;scope_sha256&quot;: &quot;292da38629a4bc1ac9d32d114da853a45bcdbc0309ccb4422018a40669c48b5c&quot;,
++             &quot;target_case_version_id&quot;: null,
++           },
++           &quot;receipt&quot;: {
++             &quot;kind&quot;: &quot;create&quot;,
++             &quot;module_id&quot;: &quot;eb8141df-bd1b-4d93-a3cf-c4a53ef18238&quot;,
++             &quot;response&quot;: {
++               &quot;sha256&quot;: &quot;617fd07e327a76d41ffb5919993c5ec1fd5f92fb9bfb2e10bbb4c0563bd6bb25&quot;,
++               &quot;size_bytes&quot;: 3778,
++               &quot;storage_uri&quot;: &quot;rustfs://qa-agent/case-generation/f9b7af52-5d8d-4371-b5a9-606583d62614/839de179-38fd-4265-bf3d-57d1db014a65/70f5af16-6c3e-4437-8018-2f75ee4955e7/responses/e2ec03bd-9475-4253-9403-945dd1e68785/response.json&quot;,
++             },
++             &quot;retirement_target&quot;: null,
++             &quot;scope_sha256&quot;: &quot;292da38629a4bc1ac9d32d114da853a45bcdbc0309ccb4422018a40669c48b5c&quot;,
++             &quot;versions&quot;: [
++               {
++                 &quot;case_id&quot;: &quot;9424fe79-c30c-4abf-be03-9f3d21702d0d&quot;,
++                 &quot;content_hash&quot;: &quot;6af6b22fde5bb2eb2ed631833b5c48f9e563cd93bd774e7c435e4518d466e849&quot;,
++                 &quot;version&quot;: 1,
++                 &quot;version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
++               },
++             ],
++           },
++           &quot;retry&quot;: null,
++           &quot;source_document_id&quot;: &quot;ef917908-2dda-509e-9b49-0e3278b73bcf&quot;,
++           &quot;task_id&quot;: &quot;839de179-38fd-4265-bf3d-57d1db014a65&quot;,
++         },
++         &quot;lifecycle_status&quot;: &quot;active&quot;,
++         &quot;point_keys&quot;: [
++           &quot;boundary&quot;,
+          ],
+          &quot;review&quot;: {
+            &quot;events&quot;: [
+              {
+                &quot;action&quot;: &quot;submitted&quot;,
+-               &quot;at&quot;: &quot;2026-10-05T11:25:48.819232Z&quot;,
+-               &quot;request_hash&quot;: &quot;6e93d4ffa643906b997bb84c7ebfa6794cb10a8d4aaa8d1a51b6f4b3d670f72c&quot;,
++               &quot;at&quot;: &quot;2026-10-05T11:25:48.880020Z&quot;,
++               &quot;request_hash&quot;: &quot;f3ba03a27822a81284e7f28adb1def7ddb852ff39d1da19b8fe45583994e26d5&quot;,
+                &quot;request_id&quot;: &quot;production-coverage-review&quot;,
+              },
+              {
+                &quot;action&quot;: &quot;activated&quot;,
+-               &quot;at&quot;: &quot;2026-10-05T11:25:48.844961Z&quot;,
+-               &quot;request_hash&quot;: &quot;52be6ada976a6c1110216ff920d51c0857ecfcce401cf410ea4488bf059f26ef&quot;,
++               &quot;at&quot;: &quot;2026-10-05T11:25:48.912601Z&quot;,
++               &quot;request_hash&quot;: &quot;7d489c109ae28d605a14193d5687ee1580fcade6fb7fe55cea26b91d63e934ac&quot;,
+                &quot;request_id&quot;: &quot;production-coverage-activate&quot;,
+              },
+            ],
+            &quot;origin&quot;: &quot;native&quot;,
+            &quot;status&quot;: &quot;approved&quot;,
+-           &quot;version&quot;: 3,
+-           &quot;version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
++           &quot;version&quot;: 1,
++           &quot;version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
+          },
+          &quot;review_status&quot;: &quot;approved&quot;,
+-         &quot;version_record_sha256&quot;: &quot;4826bd8a9e05dae974205b34e12e0a60b7c00c696cc829c497a18dcf75f5d5b2&quot;,
++         &quot;version_record_sha256&quot;: &quot;26952fa06def9ae36e838813db9ad5309376a6243e1c518ebd81e2a07fd93720&quot;,
+        },
+      ],
+-     &quot;created_at&quot;: &quot;2026-10-05T11:25:48.951472Z&quot;,
++     &quot;created_at&quot;: &quot;2026-10-05T11:25:49.176812Z&quot;,
+      &quot;document_id&quot;: &quot;ef917908-2dda-509e-9b49-0e3278b73bcf&quot;,
+-     &quot;id&quot;: &quot;ead519b6-00ed-4db9-9c5c-889771324999&quot;,
++     &quot;id&quot;: &quot;da2d852c-e98f-4524-9200-3581b65a8055&quot;,
+      &quot;implementation_version&quot;: &quot;requirement-coverage-v1&quot;,
+-     &quot;previous_coverage_id&quot;: null,
++     &quot;previous_coverage_id&quot;: &quot;c360a3fc-a2b4-48cc-9506-d6c1d7ddaa67&quot;,
+      &quot;project_id&quot;: &quot;f9b7af52-5d8d-4371-b5a9-606583d62614&quot;,
+      &quot;request&quot;: {
+        &quot;case_links&quot;: [
+          {
+-           &quot;case_version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
+-           &quot;content_hash&quot;: &quot;3b85fb4b5b4182a7ad20d265b73de04b958d274ccd05d38ed36ba5293a8fc8ea&quot;,
+-           &quot;generation_task_id&quot;: &quot;6cc440f4-f5eb-4096-ae75-8d53a2ff50f9&quot;,
++           &quot;case_version_id&quot;: &quot;af444c84-0de3-4416-b103-8db0fcbf3432&quot;,
++           &quot;content_hash&quot;: &quot;b69529f8f5001e2e78aa5c65c494226f11e9fcd3a8cfa35ce9c76b8f5622097f&quot;,
++           &quot;generation_task_id&quot;: &quot;1e710fe2-2a11-4928-87e4-cb485a29f1d1&quot;,
+            &quot;point_keys&quot;: [
+              &quot;retention&quot;,
++           ],
++         },
++         {
++           &quot;case_version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
++           &quot;content_hash&quot;: &quot;6af6b22fde5bb2eb2ed631833b5c48f9e563cd93bd774e7c435e4518d466e849&quot;,
++           &quot;generation_task_id&quot;: &quot;839de179-38fd-4265-bf3d-57d1db014a65&quot;,
++           &quot;point_keys&quot;: [
++             &quot;boundary&quot;,
+            ],
+          },
+        ],
+-       &quot;expected_coverage_id&quot;: null,
+-       &quot;note&quot;: &quot;已逐字段核对更新用例，边界尚未确认&quot;,
+-       &quot;request_id&quot;: &quot;production-coverage-first&quot;,
++       &quot;expected_coverage_id&quot;: &quot;c360a3fc-a2b4-48cc-9506-d6c1d7ddaa67&quot;,
++       &quot;note&quot;: &quot;确认实际原响应重试草稿；不替换原生成与失败记录&quot;,
++       &quot;request_id&quot;: &quot;production-coverage-retry&quot;,
+      },
+-     &quot;request_sha256&quot;: &quot;5221445c03137cae53051dd7d1bebf7eca89dcf3dcbc7d3ce581c659f2c9b545&quot;,
++     &quot;request_sha256&quot;: &quot;df26a99289ca87a9a81e4c29cd1bcb4691a27a39e4cf072bc4f65a19a369fe33&quot;,
+      &quot;requirement_id&quot;: &quot;d106493c-e2f3-4ff7-9c8a-3e8323af5a84&quot;,
+      &quot;requirement_version_id&quot;: &quot;bb4205d5-83a5-45cb-a0f0-97a70e975f96&quot;,
+      &quot;requirement_version_sha256&quot;: &quot;8f4d0c4aa3b91924d2c68fb93f88105b557af4e8b3da70d1d2236080fbd4b687&quot;,
+-     &quot;revision&quot;: 1,
+-     &quot;sha256&quot;: &quot;72cdea8bdc9876f2d5fb9aa29b2850871444c43538fed6ed7ce27467bd43ecdd&quot;,
++     &quot;revision&quot;: 3,
++     &quot;sha256&quot;: &quot;7a807e3ffb4118fedddf826c910bcca0c8494a083241abdcbd2acfbbbc768711&quot;,
+    },
+    &quot;deployment_status&quot;: &quot;unknown&quot;,
+    &quot;points&quot;: [
+      {
+        &quot;case_links&quot;: [
+          {
+            &quot;case_id&quot;: &quot;7ebc4910-9bef-424f-9db9-0f42bde26d1d&quot;,
+-           &quot;case_version_id&quot;: &quot;80532c38-c237-4bbe-8cd8-75431e4eb6ee&quot;,
++           &quot;case_version_id&quot;: &quot;af444c84-0de3-4416-b103-8db0fcbf3432&quot;,
+            &quot;point_keys&quot;: [
+              &quot;retention&quot;,
+            ],
+-           &quot;version_record_sha256&quot;: &quot;4826bd8a9e05dae974205b34e12e0a60b7c00c696cc829c497a18dcf75f5d5b2&quot;,
++           &quot;version_record_sha256&quot;: &quot;fe997a274648c148963f4f370a7df93e1630f206cfb6268ba60950730f9401d9&quot;,
+          },
+        ],
+        &quot;design_status&quot;: &quot;design_covered&quot;,
+        &quot;execution_status&quot;: &quot;not_assessed&quot;,
+        &quot;point&quot;: {
+@@ -130,12 +211,21 @@
+          &quot;key&quot;: &quot;retention&quot;,
+        },
+        &quot;previous_case_links&quot;: [],
+      },
+      {
+-       &quot;case_links&quot;: [],
+-       &quot;design_status&quot;: &quot;uncovered&quot;,
++       &quot;case_links&quot;: [
++         {
++           &quot;case_id&quot;: &quot;9424fe79-c30c-4abf-be03-9f3d21702d0d&quot;,
++           &quot;case_version_id&quot;: &quot;96bf4804-4522-492e-a7dd-93218e49a0b2&quot;,
++           &quot;point_keys&quot;: [
++             &quot;boundary&quot;,
++           ],
++           &quot;version_record_sha256&quot;: &quot;26952fa06def9ae36e838813db9ad5309376a6243e1c518ebd81e2a07fd93720&quot;,
++         },
++       ],
++       &quot;design_status&quot;: &quot;design_covered&quot;,
+        &quot;execution_status&quot;: &quot;not_assessed&quot;,
+        &quot;point&quot;: {
+          &quot;description&quot;: &quot;验证九天保留边界&quot;,
+          &quot;id&quot;: &quot;5151d04e-677e-494b-83bc-e52b57dbe882&quot;,
+          &quot;key&quot;: &quot;boundary&quot;,
+
+ ❯ src/features/tools/plugins/RequirementCoverageProduct.test.ts:112:25
+            </failure>
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="explicitly clears the complete association set using the latest confirmation identity" time="0.0113379">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="does not enable writing when catalog lookup returns a foreign project" time="0.0059417">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="rejects foreign full versions and requires every existing association to be read completely" time="0.0099912">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="does not discard malformed pending storage or submit a fresh request" time="0.0372718">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="keeps a readable pending request when browser persistence is unavailable" time="0.0466513">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="recovers the original result for an archived project without enabling a new write" time="0.0123858">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="detects stalled or duplicate history pages" time="0.0156465">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="keeps query pagination tied to the submitted query rather than edited text" time="0.0095777">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="fences a late original recovery when the selected requirement version changes" time="0.0099419">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="waits for parent reads before initializing and starts without crypto.randomUUID" time="0.0484304">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="keeps the existing passive matrix read and explicitly opens coverage management" time="0.0138655">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementCoverageProduct.test.ts" name="validates actual confirmations while rejecting changed sources and unknown points" time="0.0017606">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/tools/plugins/RequirementProduct.test.ts" timestamp="2026-10-05T15:53:34.141Z" hostname="EIghteen" tests="14" failures="0" errors="0" skipped="0" time="0.277556">
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="accepts explicit points and fixed case relations while preserving the actual snapshot" time="0.1037504">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="reads later history pages for the latest decision and never automatically inherits design links" time="0.0317282">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="recovers an actually saved original fixture on refresh, including on an archived project" time="0.0193642">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="preserves every original request field after unknown response/404 and retries unchanged" time="0.0196415">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="keeps a new unknown submission pending and never exposes a new request while it is unresolved" time="0.0122504">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="handles a known conflict by explicit reread without silently rebasing or resending" time="0.0136843">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="refreshing the catalog does not silently rebase an existing draft onto a newer parent" time="0.0235325">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="refuses incomplete pagination and foreign reviews rather than using a partial latest decision" time="0.0075879">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="drops delayed original-project history after changing the document context" time="0.0097241">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="shows actual saved V1 and V2 matrices separately, preserving each captured pointer and unknown execution" time="0.0072334">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="does not show a foreign matrix or use external statements as markup" time="0.006091">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="ignores an old matrix response after a new revision was loaded" time="0.0031041">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="keeps the existing impact renderer read-only until the formal review entry is opened" time="0.0176474">
+        </testcase>
+        <testcase classname="src/features/tools/plugins/RequirementProduct.test.ts" name="stops reading pages when their context is no longer current" time="0.0004593">
+        </testcase>
+    </testsuite>
+</testsuites>

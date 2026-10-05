@@ -1,0 +1,39 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/tools/plugins/RequirementCoverageProduct.test.ts -t shows latest
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/tools/plugins/RequirementCoverageProduct.test.ts (20 tests | 1 failed | 19 skipped) 51ms
+   × shows latest, initial and fixed confirmation histories without changing the edit baseline 50ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/tools/plugins/RequirementCoverageProduct.test.ts > shows latest, initial and fixed confirmation histories without changing the edit baseline
+AssertionError: expected [ '最新矩阵与覆盖历史不一致，请重新读取' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "最新矩阵与覆盖历史不一致，请重新读取",
++ ]
+
+ ❯ src/features/tools/plugins/RequirementCoverageProduct.test.ts:111:64
+    109|   current = clone(saved.matrix) as unknown as Matrix; history = [secon…
+    110|   const w = panel(); await flushPromises();
+    111|   expect(w.findAll('[role="alert"]').map(item => item.text())).toEqual…
+       |                                                                ^
+    112|   await w.get('[aria-label="覆盖确认历史"]').setValue(saved.first.id); await…
+    113|   expect(lastMatrix(w)).toEqual(saved.first_matrix);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 skipped (20)
+   Start at  23:54:33
+   Duration  2.08s (transform 483ms, setup 0ms, import 810ms, tests 51ms, environment 1.05s)
+

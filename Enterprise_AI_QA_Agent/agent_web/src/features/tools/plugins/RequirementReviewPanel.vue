@@ -76,7 +76,7 @@ watch(() => [props.projectId, props.documentId, props.view.snapshot.id], () => {
     <label>查看需求矩阵<select v-model="matrixId" aria-label="查看需求矩阵"><option value="">请选择需求</option>
       <option v-for="bundle in bundles" :key="bundle.requirement.id" :value="bundle.requirement.id">{{ bundle.version.title }} · V{{ bundle.version.version }}</option>
     </select></label>
-    <RequirementMatrix v-if="matrixId" :project-id="projectId" :document-id="documentId" :requirement-id="matrixId" :revision="revision" />
+    <RequirementMatrix v-if="matrixId" :project-id="projectId" :document-id="documentId" :requirement-id="matrixId" :revision="revision" :can-write="canWrite" :disabled="busy || loading" />
     <button type="button" class="secondary-btn" @click="generationOpen = !generationOpen">{{ generationOpen ? '收起需求增量生成' : '打开需求增量生成' }}</button>
     <CaseGenerationPanel v-if="generationOpen" :project-id="projectId" :document-id="documentId" :view="view" :reviews="reviews" :can-write="canWrite" />
   </section>

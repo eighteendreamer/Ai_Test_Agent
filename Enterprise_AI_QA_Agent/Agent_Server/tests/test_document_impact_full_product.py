@@ -44,7 +44,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUME
     reason='built App, production API/independent CLI, isolated actual MySQL/PG/Redis/RustFS and installed Chromium')]
 
 
-async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False, verify_retry=False):
+async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False):
     evidence = Path(os.getenv('QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR', str(tmp_path / 'evidence')))
     evidence.mkdir(parents=True, exist_ok=True)
     paths = write_pair(tmp_path, 'docx')
@@ -54,6 +54,14 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
         payload = json.loads(body['messages'][-1]['content'])
         if verify_generation and 'incremental_generation' in payload.get('evidence_context', {}):
             from test_incremental_generation_sources import responder as generation_responder
+            if verify_coverage and payload['evidence_context']['incremental_generation']['target_case'] is None:
+                # This full coverage scenario needs a nonempty arbitrary-JSON creation sample.
+                # Preserve the older scenario's empty creation fixture when coverage is disabled.
+                answer = json.loads(generation_responder(body))
+                answer['cases'][0]['content_json']['steps'] = [{'操作':f'完整步骤{i}'} for i in range(12)]
+                answer['cases'][0]['content_json']['深层扩展'] = dict(holder['case'].version.content_json['深层扩展'])
+                answer['cases'][0]['execution_notes'] = '完整用例执行说明'
+                return json.dumps(answer, ensure_ascii=False)
             return generation_responder(body)
         holder.setdefault('first', DocumentImpactUnit.model_validate(payload['unit']))
         holder['manifest'] = SimpleNamespace(sources=[SimpleNamespace(**item) for item in payload['fixed_source_catalog']])
@@ -232,6 +240,13 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                     client=client, worker=worker, queue=queues['case_generation'], processes=processes,
                                     objects=objects, evidence=evidence, settings=settings, sends=sends)
                                 count = len(sends); assert count == 6
+                            coverage_state = None
+                            if verify_coverage:
+                                from requirement_coverage_product_scenario import coverage_from_product
+                                coverage_state = await coverage_from_product(page, base=base, reviews=review_state,
+                                    generation=generation_state, retry_state=retry_state, get=get, post=post,
+                                    client=client, evidence=evidence, settings=settings, sends=sends)
+                                assert len(sends) == count
                             # A genuine preparation rejection is displayed as a separate terminal failure.
                             await page.get_by_text('项目影响分析设置', exact=True).click()
                             await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
@@ -289,6 +304,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             if retry_state:
                                 from generation_retry_product_scenario import retry_product_after_restart
                                 await retry_product_after_restart(page, base=base, state=retry_state, client=client, evidence=evidence)
+                            if coverage_state:
+                                from requirement_coverage_product_scenario import coverage_after_restart
+                                await coverage_after_restart(page, base=base, state=coverage_state, client=client, evidence=evidence)
                             assert len(sends) == count and not page_errors, page_errors
                             layout = await page.evaluate('''() => ({ viewport:innerWidth, bodyWidth:document.documentElement.scrollWidth,
                                 sidebarLeft:document.querySelector('.left-nav').getBoundingClientRect().left,
@@ -316,7 +334,8 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                 ('verification.json', {'task': chosen, 'failed': failed, 'lost_response_submission': submitted_requests,
                                     'frozen_seed': frozen, 'http_calls': count, 'default_model_judgement': False,
                                     'history_after_dispatch_disabled': True, 'actual_built_app': True,
-                                    'incremental_generation_product_used':verify_generation, 'generation_retry_product_used':verify_retry})]:
+                                    'incremental_generation_product_used':verify_generation, 'generation_retry_product_used':verify_retry,
+                                    'requirement_coverage_product_used':verify_coverage})]:
                                 (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                             await page.screenshot(path=str(evidence / 'history-after-restart.png'), full_page=True)
                 finally:

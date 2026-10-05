@@ -2812,3 +2812,27 @@ npm run build
 PLAN首页和5.2/第六节同步最新进度，将独立覆盖确认API/历史矩阵列入已验证范围；补3.6.10正式覆盖管理页面的接入、未知回执恢复、历史选择及真实DOCX浏览器验收方案，明确尚未实施。历史P0—P5范围、失败和原始证据保留。
 
 实际执行update_upgrade_plan_20261005_current.py：三份方案逐字节同步；本地引用文件存在；6.24审计列出的472份原始文件大小/SHA逐项一致；读取上传比较、Git及覆盖确认历史XML统计。文档diff检查另执行git diff --check。没有重新运行业务测试、前端构建、浏览器、外部模型或迁移；历史测试不记为本轮运行。用户.gitignore原字节保持，提交仅包含PLAN和本实施记录，不推送、不建PR。
+
+## 2026-10-06 正式用例覆盖确认页面与真实产品验证
+
+研究基线028dfca8，用户原目标与实际调用链重新读取后，按P4_REQUIREMENT_COVERAGE_PRODUCT_DESIGN.md实施独立页面/控制器/身份核对及矩阵入口，复用JSON树/评审对话框。初始版本和只读属性为可选默认兼容，不新增API、配置或业务表；MySQL配置、PG业务、RustFS原件/范围职责保持。
+
+实际失败：ES2020的Array.at不支持；矩阵回写触发数组watch反复初始化，原组件进程中断exit1，按稳定身份字符串修复；40项中1项真实第三次历史夹具漏列；真实App首轮176.80秒失败为旧创建夹具空步骤与新场景要求冲突，只在覆盖开关下提供完整创建样本。全部日志/失败XML保留，没有改写原失败。
+
+最终组件84通过/0跳过，1.91秒；真实DOCX完整App最终1通过/0跳过，206.41秒，构建/实际独立API和Workers、MySQL/PG/Redis/RustFS全部运行。五条覆盖记录、4份完整草稿版本/hash和真实发送消息核对，覆盖0次模型调用；6次物理发送分别为影响/正常生成/重试各2。最终新增归档完整关联读取实测，保留写禁用。旧正常增量App单独1通过/0跳过，147.24秒，原4次发送；覆盖关闭时不使用新受控夹具，旧页面不加载覆盖管理。
+
+实际命令（stdout/stderr保存对应log，原件/对象/截图/SQL在同前缀目录）：
+
+```powershell
+# agent_web目录：
+npm run test -- src/features/tools/plugins/RequirementCoverageProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/projects/TestCaseAuthoring.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/GenerationRetryProduct.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-coverage-product-components-verified.xml
+npm run build
+# Agent_Server目录：每轮使用独立QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR。
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-coverage-product-app-verified'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_coverage_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-coverage-product-app-verified.xml
+# 旧App回归使用p4-coverage-product-app-compatibility目录：
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_generation_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-coverage-product-app-compatibility.xml
+```
+
+另实际py_compile三个测试文件。早期读取运行中的product-build.stdout提示不存在，该文件在harness finally才复制；随后以终态实际构建日志核对，不据观察缺失重启任务。5534份旧原始证据、当前原件/对象/完整version canonical hash/PG确认hash、物理消息与暂存blob通过coverage_product_delivery_20261006.py审计，三份方案逐字节一致，用户.gitignore保持；只提交相关文件，不推送/建PR。未验证外部默认模型业务质量、用户业务评审、任务池/运行环境/生产历史迁移及其余P0—P5，不报告全目标完成。

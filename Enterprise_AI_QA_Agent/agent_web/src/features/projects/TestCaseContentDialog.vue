@@ -5,7 +5,7 @@ import { HttpError } from "../../services/http";
 import type { TestCaseRecord, TestCaseVersionRecord } from "../../types";
 import JsonContentTree from "./JsonContentTree.vue";
 
-const props = defineProps<{ testCase: TestCaseRecord }>();
+const props = withDefaults(defineProps<{ testCase: TestCaseRecord; initialVersionId?: string; canWrite?: boolean }>(), { canWrite: true });
 const emit = defineEmits<{ close: []; saved: [] }>();
 const versions = ref<TestCaseVersionRecord[]>([]);
 const versionId = ref("");
@@ -72,7 +72,8 @@ async function load() {
     const [fresh, values] = await Promise.all([api.getTestCase(props.testCase.id), api.listTestCaseVersions(props.testCase.id)]);
     record.value = fresh;
     versions.value = values.sort((a, b) => b.version - a.version);
-    versionId.value = pending.value?.versionId ?? versions.value[0]?.id ?? "";
+    versionId.value = pending.value?.versionId ?? props.initialVersionId ?? versions.value[0]?.id ?? "";
+    if (props.initialVersionId && !values.some(value => value.id === props.initialVersionId)) throw new Error("所选固定版本不存在，请重新读取用例");
     resolveOperation();
   } catch (err) { error.value = err instanceof Error ? err.message : "用例版本加载失败"; }
   finally { loading.value = false; }
@@ -82,7 +83,7 @@ watch(current, version => {
   notes.value = version?.execution_notes ?? "";
 });
 async function review(action?: ReviewOperation["action"]) {
-  if (reviewing.value || !current.value) return;
+  if (reviewing.value || !current.value || !props.canWrite) return;
   reviewing.value = true;
   error.value = "";
   rejected.value = false;
@@ -116,7 +117,7 @@ function clearRejectedOperation() {
 }
 async function save() {
   const version = current.value;
-  if (!version) return;
+  if (!version || !props.canWrite) return;
   saving.value = true;
   error.value = "";
   try {
@@ -153,12 +154,12 @@ onMounted(() => { restoreOperation(); return load(); });
       <template v-else-if="current">
         <label>版本<select v-model="versionId" :disabled="reviewing"><option v-for="version in versions" :key="version.id" :value="version.id">v{{ version.version }} · {{ labels[reviewStatus(version)] }}{{ record.active_version_id === version.id ? "（已启用）" : "" }}</option></select></label>
         <p>当前版本：{{ labels[reviewStatus(current)] }}{{ record.active_version_id === current.id ? " · 当前启用" : "" }}<span v-if="!record.version_reviews?.[current.id] || record.version_reviews[current.id].origin === 'legacy_state'"> · 历史状态推导</span></p>
-        <nav v-if="record.lifecycle_status !== 'archived'">
+        <nav v-if="canWrite && record.lifecycle_status !== 'archived'">
           <button v-if="reviewStatus(current) === 'draft'" :disabled="reviewing || !!pending || saving" @click="review('submitted')">提交当前版本评审</button>
           <button v-if="reviewStatus(current) !== 'draft'" :disabled="reviewing || !!pending || saving || (record.active_version_id === current.id && record.lifecycle_status === 'active' && reviewStatus(current) === 'approved')" @click="review('activated')">启用当前版本</button>
         </nav>
         <p v-if="current.execution_notes" class="notes">{{ current.execution_notes }}</p>
-        <nav><button @click="tab = 'steps'">步骤</button><button @click="tab = 'tree'">JSON 树</button><button @click="tab = 'raw'">JSON 原文</button><button :disabled="record.lifecycle_status === 'archived' || reviewing" @click="tab = 'edit'">编辑新版本</button></nav>
+        <nav><button @click="tab = 'steps'">步骤</button><button @click="tab = 'tree'">JSON 树</button><button @click="tab = 'raw'">JSON 原文</button><button :disabled="!canWrite || record.lifecycle_status === 'archived' || reviewing" @click="tab = 'edit'">编辑新版本</button></nav>
         <div v-if="tab === 'steps'"><JsonContentTree v-for="(step, index) in steps" :key="index" :label="`步骤 ${index + 1}`" :value="step" /><p v-if="!steps.length">当前结构没有通用步骤数组，请使用 JSON 树查看完整内容。</p></div>
         <JsonContentTree v-else-if="tab === 'tree'" label="用例" :value="content" />
         <pre v-else-if="tab === 'raw'">{{ JSON.stringify(content, null, 2) }}</pre>

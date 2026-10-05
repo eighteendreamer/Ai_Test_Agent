@@ -34,6 +34,27 @@ describe("project case authoring", () => {
     api.createTestCaseVersion.mockImplementation(async (_id, payload) => ({ ...version, ...payload, id: "version-two", version: 2 }));
   });
 
+  it("opens the explicitly selected version rather than a later draft", async () => {
+    const later = { ...version, id: "later-version", version: 2 };
+    api.listTestCaseVersions.mockResolvedValue([version, later]);
+    const wrapper = mount(TestCaseContentDialog, { props: { testCase, initialVersionId: version.id } });
+    await flushPromises();
+    expect((wrapper.find("select").element as HTMLSelectElement).value).toBe(version.id);
+    expect(wrapper.text()).toContain("完整内容是执行依据");
+    wrapper.unmount();
+  });
+
+  it("keeps complete fixed contents readable without exposing write actions", async () => {
+    const wrapper = mount(TestCaseContentDialog, { props: { testCase, initialVersionId: version.id, canWrite: false } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("未知字段");
+    expect(wrapper.findAll("button").some(button => ["提交当前版本评审", "启用当前版本"].includes(button.text()))).toBe(false);
+    expect(wrapper.findAll("button").find(button => button.text() === "编辑新版本")!.attributes("disabled")).toBeDefined();
+    expect(api.submitTestCaseReview).not.toHaveBeenCalled();
+    expect(api.activateTestCase).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("renders nested unknown fields and escapes source markup", () => {
     const wrapper = mount(JsonContentTree, { props: { label: "用例", value: { "扩展": [0, false, null, "<img src=x onerror=alert(1)>", { "深层": "中文😀" }] } } });
     expect(wrapper.text()).toContain("深层");

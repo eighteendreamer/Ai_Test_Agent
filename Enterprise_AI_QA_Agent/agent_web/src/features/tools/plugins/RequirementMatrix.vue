@@ -3,8 +3,10 @@ import { onBeforeUnmount, ref, watch } from "vue";
 import { listRequirementVersions, readRequirementMatrix } from "../../../services/requirements.api";
 import type { RequirementMatrix, RequirementVersion } from "../../../services/requirements.types";
 import { assertRequirement, assertVersions } from "./requirementProduct";
+import RequirementCoveragePanel from "./RequirementCoveragePanel.vue";
 
-const props = defineProps<{ projectId: string; documentId: string; requirementId: string; revision: number }>();
+const props = withDefaults(defineProps<{ projectId: string; documentId: string; requirementId: string; revision: number; canWrite?: boolean; disabled?: boolean }>(), { canWrite: false, disabled: false });
+const coverageOpen = ref(false); const coverageBusy = ref(false);
 const versions = ref<RequirementVersion[]>([]);
 const versionId = ref(""); const matrix = ref<RequirementMatrix | null>(null);
 const busy = ref(false); const error = ref("");
@@ -32,17 +34,17 @@ async function load(reset = false) {
   } catch (err) { if (current()) error.value = err instanceof Error ? err.message : "需求矩阵读取失败"; }
   finally { if (current()) busy.value = false; }
 }
-watch(() => [props.projectId, props.documentId, props.requirementId, props.revision], () => { void load(true); }, { immediate: true });
+watch(() => [props.projectId, props.documentId, props.requirementId, props.revision], () => { coverageOpen.value = false; coverageBusy.value = false; void load(true); }, { immediate: true });
 onBeforeUnmount(() => { disposed = true; ++epoch; });
 </script>
 
 <template>
   <section aria-label="需求追踪矩阵" class="requirement-matrix">
     <h4>需求版本与设计追踪</h4>
-    <label>需求历史版本<select v-model="versionId" aria-label="需求历史版本" :disabled="busy" @change="load()">
+    <label>需求历史版本<select v-model="versionId" aria-label="需求历史版本" :disabled="busy || coverageBusy || disabled" @change="load()">
       <option v-for="version in versions" :key="version.id" :value="version.id">V{{ version.version }} · {{ version.title }}</option>
     </select></label>
-    <button type="button" class="secondary-btn" :disabled="busy" @click="load(true)">刷新需求版本与矩阵</button>
+    <button type="button" class="secondary-btn" :disabled="busy || coverageBusy || disabled" @click="load(true)">刷新需求版本与矩阵</button>
     <p v-if="busy" role="status">正在读取固定需求版本…</p><p v-if="error" role="alert">{{ error }}</p>
     <template v-if="matrix">
       <h5>V{{ matrix.version.version }} · {{ matrix.version.title }}</h5><p class="statement">{{ matrix.version.statement }}</p>
@@ -57,6 +59,9 @@ onBeforeUnmount(() => { disposed = true; ++epoch; });
         </details>
       </section>
       <details><summary>需求身份、固定版本与完整矩阵依据</summary><pre>{{ JSON.stringify(matrix, null, 2) }}</pre></details>
+      <button type="button" class="secondary-btn" :disabled="busy || coverageBusy || disabled" @click="coverageOpen = !coverageOpen">{{ coverageOpen ? '收起用例覆盖管理' : '管理用例覆盖' }}</button>
+      <RequirementCoveragePanel v-if="coverageOpen" :matrix="matrix" :can-write="canWrite" :disabled="disabled"
+        @matrix="matrix = $event" @busy="coverageBusy = $event" />
     </template>
   </section>
 </template>
