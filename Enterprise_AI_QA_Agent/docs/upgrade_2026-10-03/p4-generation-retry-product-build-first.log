@@ -1,0 +1,34 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 build
+> npm run typecheck && vite build
+
+
+> enterprise-ai-qa-agent-web@0.1.0 typecheck
+> vue-tsc --noEmit -p tsconfig.json
+
+src/features/tools/plugins/GenerationRetryProduct.test.ts(30,84): error TS2345: Argument of type '"parent"' is not assignable to parameter of type 'never'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(30,94): error TS2339: Property 'id' does not exist on type 'never'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(123,41): error TS2322: Type '{ id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string; creation_key: string; status: string; phase: string; message: string; attempt_no: number; ... 5 more ...; completed_at: string; } | { ...; }' is not assignable to type 'GenerationTask | undefined'.
+  Type '{ id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string; creation_key: string; status: string; phase: string; message: string; attempt_no: number; ... 5 more ...; completed_at: string; }' is not assignable to type 'GenerationTask'.
+    Types of property 'status' are incompatible.
+      Type 'string' is not assignable to type '"queued" | "running" | "completed" | "failed"'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(123,88): error TS2322: Type '{ id: string; project_id: string; document_id: string; version_id: string; creation_key: string; request_hash: string; scope: { storage_uri: string; sha256: string; size_bytes: number; }; scope_sha256: string; module_ids: string[]; config: { ...; }; created_at: string; sha256: string; } | { ...; }' is not assignable to type 'GenerationGroup | undefined'.
+  Type '{ id: string; project_id: string; document_id: string; version_id: string; creation_key: string; request_hash: string; scope: { storage_uri: string; sha256: string; size_bytes: number; }; scope_sha256: string; module_ids: string[]; config: { ...; }; created_at: string; sha256: string; }' is not assignable to type 'GenerationGroup'.
+    The types of 'config.payload.transport_policy' are incompatible between these types.
+      Type 'string' is not assignable to type '"provider_defaults" | "single_attempt"'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(123,129): error TS2322: Type '{ implementation_version: string; project_id: string; document_id: string; request: { requirement_id: string; requirement_version_id: string; target_case_version_ids: string[]; include_new_cases: boolean; new_case_mode_key: null; max_new_cases: number; model_key: string; }; ... 7 more ...; sha256: string; } | { ...; }' is not assignable to type 'GenerationScope | undefined'.
+  Type '{ implementation_version: string; project_id: string; document_id: string; request: { requirement_id: string; requirement_version_id: string; target_case_version_ids: string[]; include_new_cases: boolean; new_case_mode_key: null; max_new_cases: number; model_key: string; }; ... 7 more ...; sha256: string; }' is not assignable to type 'GenerationScope'.
+    Types of property 'implementation_version' are incompatible.
+      Type 'string' is not assignable to type '"incremental-generation-scope-v1"'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(134,22): error TS2322: Type '{ id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string; creation_key: string; status: string; phase: string; message: string; attempt_no: number; ... 5 more ...; completed_at: string; } | { ...; }' is not assignable to type 'GenerationTask | undefined'.
+  Type '{ id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string; creation_key: string; status: string; phase: string; message: string; attempt_no: number; ... 5 more ...; completed_at: string; }' is not assignable to type 'GenerationTask'.
+    Types of property 'status' are incompatible.
+      Type 'string' is not assignable to type '"queued" | "running" | "completed" | "failed"'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(134,69): error TS2322: Type '{ id: string; project_id: string; document_id: string; version_id: string; creation_key: string; request_hash: string; scope: { storage_uri: string; sha256: string; size_bytes: number; }; scope_sha256: string; module_ids: string[]; config: { ...; }; created_at: string; sha256: string; } | { ...; }' is not assignable to type 'GenerationGroup | undefined'.
+  Type '{ id: string; project_id: string; document_id: string; version_id: string; creation_key: string; request_hash: string; scope: { storage_uri: string; sha256: string; size_bytes: number; }; scope_sha256: string; module_ids: string[]; config: { ...; }; created_at: string; sha256: string; }' is not assignable to type 'GenerationGroup'.
+    The types of 'config.payload.transport_policy' are incompatible between these types.
+      Type 'string' is not assignable to type '"provider_defaults" | "single_attempt"'.
+src/features/tools/plugins/GenerationRetryProduct.test.ts(134,110): error TS2322: Type '{ implementation_version: string; project_id: string; document_id: string; request: { requirement_id: string; requirement_version_id: string; target_case_version_ids: string[]; include_new_cases: boolean; new_case_mode_key: null; max_new_cases: number; model_key: string; }; ... 7 more ...; sha256: string; } | { ...; }' is not assignable to type 'GenerationScope | undefined'.
+  Type '{ implementation_version: string; project_id: string; document_id: string; request: { requirement_id: string; requirement_version_id: string; target_case_version_ids: string[]; include_new_cases: boolean; new_case_mode_key: null; max_new_cases: number; model_key: string; }; ... 7 more ...; sha256: string; }' is not assignable to type 'GenerationScope'.
+    Types of property 'implementation_version' are incompatible.
+      Type 'string' is not assignable to type '"incremental-generation-scope-v1"'.

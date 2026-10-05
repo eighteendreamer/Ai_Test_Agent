@@ -1,0 +1,37 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/tools/plugins/GenerationRetryProduct.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/services/caseGeneration.api.test.ts src/services/documentImpacts.api.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/tools/plugins/GenerationRetryProduct.test.ts (15 tests | 1 failed) 161ms
+   × persists explicit failed-child expansion and restores its pending query without submitting 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/tools/plugins/GenerationRetryProduct.test.ts > persists explicit failed-child expansion and restores its pending query without submitting
+AssertionError: expected [ DOMWrapper{ …(3) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ src/features/tools/plugins/GenerationRetryProduct.test.ts:166:46
+    164|   const w = panel(); await flushPromises(); await button(w, `查看失败子任务的重…
+    165|   expect(JSON.parse(sessionStorage.getItem(key())!).expanded).toEqual(…
+    166|   expect(w.findAll('[aria-label^="模块重试 "]')).toHaveLength(1); expect(s…
+       |                                              ^
+    167| });
+    168|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 55 passed (56)
+   Start at  18:29:11
+   Duration  3.43s (transform 1.71s, setup 0ms, import 3.16s, tests 1.10s, environment 5.04s)
+

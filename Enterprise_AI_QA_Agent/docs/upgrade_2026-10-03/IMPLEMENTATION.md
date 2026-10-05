@@ -2727,3 +2727,38 @@ npm run build
 首轮/修正轮同新增模块、独立不同证据目录；父版本/响应故障使用实际文件与存储、完成后恢复独占测试数据。旧20项没有重新定义成功。外部generation_retry_delivery_20261005.py核对原件/对象/物理消息、SQL收据、三份方案、旧证据及暂存；源码py_compile/diff为补充。没有推送或PR，正式重试页面及全目标保持未完成。
 
 最终证据序列化修正轮使用p4-generation-retry-delivery目录和对应XML，仍执行tests/test_generation_retries.py，13项实际功能及结构化SQL证据全部通过。首次交付校验失败为RowMapping字符串索引TypeError；原acceptance文件不改写，不将字符串当结构化SQL字典。后端生产源码在33项回归/独立生产之后没有变动，仅测试证据序列化改动。
+
+### 6.22 正式重试App与完整历史恢复〔研究基线7d560c73〕
+
+上一轮7d560c73仅修订完整方案及附件，属于文档进展。本轮重新读取目标原附件及当前源码，按3.6.8研究后实施：新增独立重试组件/控制器/契约核对和实际样本组件测试，原生成页面接入；新增实际浏览器流程，将共享完整产品测试扩成默认关闭的可选重试场景。没有修改后端生产实现、依赖、数据库/配置键、实际.env或用户.gitignore。
+
+原失败保留：组件首轮1失败/55通过，选择器同时匹配父/子两个面板，测试误期待1；修正断言并补子缓存重开回查。首轮类型构建失败为测试JSON样本过宽的状态/策略类型；明确类型转换后，完整浏览器首轮又在构建阶段失败1项（51.66秒），暴露泛型mount辅助函数读取props时类型为never。改为实际按钮选择，类型检查通过；该轮未进入重试功能，不能算功能验证。首轮日志/XML与原件、API/解析进程输出均保留。
+
+最终新重试15项与旧增量/需求/影响/客户端合计 **72通过、5文件（2.91秒）**。新项覆盖真实失败/unknown/响应/完整草稿、只提交原编号、丢回执重开、404保留/同编号重放、父/范围/module/key错误、saved_response替换拒绝、草稿hash拒绝、明确拒绝后结束编号、项目切换晚返回、下载等待、非法缓存/跨项目、分页停滞/重复、父组读取等待、失败子面板展开及独立pending恢复、无randomUUID与存储不可用。前一56项轮次重叠，不累计。
+
+真实DOCX、built App、生产API和独立解析/比较/影响/生成CLI，实际MySQL/PG/Redis/RustFS流程 **1通过、0跳过（175.24秒）**；其vue-tsc/Vite构建通过9.09秒。页面先完成原正常生成、失败与停用候选，再从原输入预算失败模块显式创建子任务，POST已持久后故意丢回执；刷新按原父和编号恢复同task，没有再次POST。改当前MySQL策略为1字节后原子task仍使用已冻结256000字节策略，原完整请求生成V4草稿，原组失败不变。另通过正式页面制造响应预算失败，扩大响应容量、输入保持1字节，新task复用同RustFS原响应形成V5，不调用模型。旧V1仍启用，完整12步JSON/False/0/null/扩展字段和自身说明保留，草稿retry引用与收据一致。
+
+两类retry关系与实际PG record/task seed/checkpoint一致；原scope/response对象SHA及大小、原固定消息和实际下载逐项核对。原失败父task和完成子task分别独立CLI终态重投，没有新发送。总6个物理HTTP：原影响2、原正常生成2、执行原请求1、响应预算失败的原发送1；响应复用没有第7次。API重启并关闭派发、归档项目后，两类原pending缓存恢复同关系/结果，历史下载一致，原POST可重放，新编号503。pageerror为空，1440宽页面无正文横向溢出，结果截图留存。
+
+旧正式增量完整App **1通过、0跳过（136.10秒）**，最新App类型/Vite构建8.43秒；未启用新增测试重试流程，仍为原4次物理调用。原生成/需求历史、unknown提交恢复、停用候选、原预算失败、重启关闭派发/归档与下载继续通过。没有因为新功能已通过而跳过旧产品验收。
+
+原件、scope/response、PG关系/seed/收据、实际物理消息、下载、截图和各轮失败/log/XML在p4-generation-retry-product-*。旧4840份原始证据与新文件、三份方案、用户.gitignore及暂存字节按p4-generation-retry-product-validation.json核对。命令见IMPLEMENTATION.md。受控模型验证链路和固定依据，没有调用外部默认生成模型、执行生产历史迁移或代替用户业务评审；草稿不直接成为矩阵覆盖、测试通过或已部署需求。
+
+继续研究生成草稿评审后的精确需求/验证点关联，再接任务池投影、运行/环境适用性和P2/P1/P0/P5剩余项。完整P0—P5未完成，目标保持active。
+
+实际命令（Agent_Server目录，完整stdout/stderr保留对应log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-retry-product-browser-fixed'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_retries_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-retry-product-browser-fixed.xml
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-generation-retry-product-compatibility'
+../.venv/Scripts/python.exe -Xutf8 -m pytest tests/test_generation_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-generation-retry-product-compatibility.xml
+# agent_web目录：
+npm run test -- src/features/tools/plugins/GenerationRetryProduct.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts src/services/caseGeneration.api.test.ts
+npm run typecheck
+```
+
+完整产品harness每次实际npm run build，保存product-build.stdout/stderr。首次浏览器失败目录browser-first，最终browser-fixed和旧compatibility分别独立保存；没有重写失败原文件。外部generation_retry_product_delivery_20261005.py核对原件/对象/物理消息、实际SQL引用、真实下载、三份方案、旧证据和暂存字节。没有自动推送或PR；完整升级仍未完成。
+
+交付暂存检查首次报告设计文档EOF多余空行，移除后重新核对；该失败属于文档格式，不改变已验证业务源码或原始功能证据。

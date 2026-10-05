@@ -51,6 +51,7 @@ beforeEach(() => {
   service.readCaseGeneration.mockResolvedValue(clone(saved.report)); service.readCaseGenerationScope.mockResolvedValue(clone(saved.scope));
   service.readCaseGenerationResponse.mockResolvedValue(clone(saved.responses[0]));
   service.getGenerationSettings.mockResolvedValue(clone(group.config));
+  service.listCaseGenerationRetries.mockResolvedValue({ items: [], has_more: false, limit: 20, offset: 0 });
   service.saveGenerationSettings.mockImplementation((_p, payload) => Promise.resolve({ ...clone(group.config), revision: 2, payload }));
 });
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.unstubAllGlobals(); });

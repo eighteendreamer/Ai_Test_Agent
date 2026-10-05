@@ -2,6 +2,7 @@
 import type { DocumentImpactSnapshotView } from "../../../services/documentImpacts.types";
 import type { RequirementReview } from "../../../services/requirements.types";
 import CaseGenerationSettings from "./CaseGenerationSettings.vue";
+import GenerationRetryPanel from "./GenerationRetryPanel.vue";
 import { useCaseGeneration } from "./useCaseGeneration";
 const props = defineProps<{ projectId: string; documentId: string; view: DocumentImpactSnapshotView; reviews: RequirementReview[]; canWrite: boolean }>();
 const { reviewId, targets, includeNew, modeKey, maxNew, modelKey, modes, acceptedReviews, selectedReview, removed, cases, ready,
@@ -83,6 +84,7 @@ const kinds = { update: "更新用例草稿", create: "新建用例草稿", reti
         <template v-if="responses[task.id]"><details><summary>完整原生成响应</summary><pre>{{ JSON.stringify(responses[task.id], null, 2) }}</pre></details>
           <button type="button" class="secondary-btn" :disabled="busy" @click="download(responses[task.id], `generation-response-${task.id}.json`)">下载原生成响应 {{ task.id }}</button>
         </template>
+        <GenerationRetryPanel v-if="task.status === 'failed'" :parent="task" :group="report.group" :scope="scope" :can-write="canWrite" :disabled="busy" />
       </section>
       <details><summary>完整固定生成范围与请求</summary><pre>{{ JSON.stringify(scope, null, 2) }}</pre></details>
       <button type="button" class="secondary-btn" :disabled="busy" @click="download(scope, `generation-scope-${report.group.id}.json`)">下载完整生成范围 JSON</button>

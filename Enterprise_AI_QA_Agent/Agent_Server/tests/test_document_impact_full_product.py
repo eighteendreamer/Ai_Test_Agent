@@ -44,7 +44,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUME
     reason='built App, production API/independent CLI, isolated actual MySQL/PG/Redis/RustFS and installed Chromium')]
 
 
-async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False):
+async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False, verify_generation=False, verify_retry=False):
     evidence = Path(os.getenv('QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR', str(tmp_path / 'evidence')))
     evidence.mkdir(parents=True, exist_ok=True)
     paths = write_pair(tmp_path, 'docx')
@@ -225,6 +225,13 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                     queue=queues['case_generation'], processes=processes, objects=objects, evidence=evidence,
                                     settings=settings, sends=sends)
                                 count = len(sends); assert count == 4
+                            retry_state = None
+                            if verify_retry:
+                                from generation_retry_product_scenario import retry_from_product
+                                retry_state = await retry_from_product(page, base=base, state=generation_state, get=get,
+                                    client=client, worker=worker, queue=queues['case_generation'], processes=processes,
+                                    objects=objects, evidence=evidence, settings=settings, sends=sends)
+                                count = len(sends); assert count == 6
                             # A genuine preparation rejection is displayed as a separate terminal failure.
                             await page.get_by_text('项目影响分析设置', exact=True).click()
                             await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
@@ -279,6 +286,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             if generation_state:
                                 from generation_product_scenario import generation_after_restart
                                 await generation_after_restart(page, state=generation_state, base=base, client=client, evidence=evidence)
+                            if retry_state:
+                                from generation_retry_product_scenario import retry_product_after_restart
+                                await retry_product_after_restart(page, base=base, state=retry_state, client=client, evidence=evidence)
                             assert len(sends) == count and not page_errors, page_errors
                             layout = await page.evaluate('''() => ({ viewport:innerWidth, bodyWidth:document.documentElement.scrollWidth,
                                 sidebarLeft:document.querySelector('.left-nav').getBoundingClientRect().left,
@@ -306,7 +316,7 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                 ('verification.json', {'task': chosen, 'failed': failed, 'lost_response_submission': submitted_requests,
                                     'frozen_seed': frozen, 'http_calls': count, 'default_model_judgement': False,
                                     'history_after_dispatch_disabled': True, 'actual_built_app': True,
-                                    'incremental_generation_product_used':verify_generation})]:
+                                    'incremental_generation_product_used':verify_generation, 'generation_retry_product_used':verify_retry})]:
                                 (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                             await page.screenshot(path=str(evidence / 'history-after-restart.png'), full_page=True)
                 finally:
