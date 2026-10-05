@@ -2528,3 +2528,35 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade
 ```
 
 新需求9通过39.44秒，独立生产评审/重启1通过56.39秒，均0跳过；初始化索引可重复，真实API重启/历史不丢失。此前28及第一次生产证据在索引前，不合计新覆盖。前端文件没再改，未重复前端构建。最终AST/编译和diff、raw bytes及方案一致性验收单独保留于validation。
+
+## 正式需求评审与矩阵App〔研究基线fbf8bffb〕
+
+先读原目标附件、当前代码/计划、固定快照展示与任务身份、sessionStorage原提交恢复、HttpError分类、需求API/DTO/PG最新决定与分页排序、不可变版本/稳定点及本地课程，再实施；设计与采用依据见P4_REQUIREMENT_PRODUCT_DESIGN.md。新增RequirementReviewPanel、useRequirementReview、RequirementMatrix及小型身份/分页辅助，显式打开原影响结果的正式入口后才调用需求API。没有新依赖/配置/表、没有改原影响响应协议；原可编辑设置在MySQL、评审/版本仍PG、大对象仍RustFS。
+
+表单接受/拒绝/暂缓，明确新建/已有需求、验证点key/说明及固定用例版本关系，不从AI等级推导覆盖，不复制旧关联。完整分页读取后核对最新决定；冻结原请求、查询/原参数重试、明确冲突重读、归档历史和晚响应均实测。复查修正为捕获表单编辑父版本，刷新目录不自动把旧正文改挂新父版本；显式重读或成功保存后才初始化新编辑依据。
+
+实际前端命令（agent_web目录）：
+
+```powershell
+npm run build *> ../docs/upgrade_2026-10-03/p4-requirement-product-build-first.log
+npm run test -- src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts src/services/requirements.api.test.ts src/services/documentImpacts.api.test.ts *> ../docs/upgrade_2026-10-03/p4-requirement-product-frontend-first.log
+# 按真实保存时点修正V1指针断言后，同一命令保存到frontend-fixed.log。
+# 补编辑父版本和矩阵晚响应后，同一命令保存到frontend-final.log。
+```
+
+构建通过8.58秒；初次1失败/37通过2.40秒，为我误读V2创建前V1矩阵指针的测试断言。原失败保存，不改原fixture；修正38通过1.86秒，最终40通过2.06秒（新增14项，含既有影响/客户端回归，不累计三轮为覆盖数）。
+
+实际产品命令（Agent_Server目录）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '../docs/upgrade_2026-10-03') 'p4-requirement-product-browser-first')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_requirement_reviews_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-product-browser-first.xml
+# 首次完整流程通过后，补真实竞争评审与编辑父版本冻结：
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '../docs/upgrade_2026-10-03') 'p4-requirement-product-browser-final')
+../.venv/Scripts/python.exe -X utf8 -m pytest tests/test_requirement_reviews_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-product-browser-final.xml
+```
+
+首次1通过96.96秒、最终1通过107.54秒，均0跳过，各自真实构建9.51/10.49秒。真实DOCX/独立API及解析/比较/影响CLI/MySQL/PG/RustFS/Redis/Chromium正式App完整操作：接受后已提交响应丢失，刷新原请求恢复；V2不继承覆盖，V1正文/关系固定；拒绝/暂缓不产生版本；移除后历史保留；API重启/派发关闭与归档原请求恢复。最终加入真实API竞争决定后旧表单409，无自动重发或版本覆盖，显式读取后再评审。最终6评审/3需求版本与原PG一致，模型仍仅原影响2个物理POST，无新外部默认请求。原失败任务、任务池、下载和原影响全文也核验，pageerror为空、1440宽无正文横向溢出。
+
+全部原件/请求/PG决定/版本/矩阵、HTTP、对象、日志/XML及截图在p4-requirement-product-*；hash/历史证据/方案/暂存原始字节核对见p4-requirement-product-validation.json。测试评审不是用户业务审批，设计覆盖不证明执行通过，deployment未知/执行未关联仍显示。无生产历史迁移，增量草稿/环境适用/运行证据及其他P0—P5仍未完成。下一步研究确认范围进入现有生成任务和不可变用例版本的契约，再实施增量更新。

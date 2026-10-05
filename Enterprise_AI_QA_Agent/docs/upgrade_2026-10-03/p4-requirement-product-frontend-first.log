@@ -1,0 +1,116 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts src/services/requirements.api.test.ts src/services/documentImpacts.api.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/tools/plugins/RequirementProduct.test.ts (12 tests | 1 failed) 179ms
+   × shows actual old and new matrices separately, preserving the current pointer and unknown execution 15ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/tools/plugins/RequirementProduct.test.ts > shows actual old and new matrices separately, preserving the current pointer and unknown execution
+AssertionError: expected '需求版本与设计追踪需求历史版本V1 · 订单保留期V2 · 订单保留期刷新…' to contain '正在查看历史版本'
+
+- Expected
++ Received
+
+- 正在查看历史版本
++ 需求版本与设计追踪需求历史版本V1 · 订单保留期V2 · 订单保留期刷新需求版本与矩阵V1 · 订单保留期订单保留九天执行结果尚未关联 · 当前环境是否生效未知retention · 已有设计覆盖验证九天保留期明确覆盖：用例 ce186527-769b-4862-9090-cc3e5eb7cbb1 · 版本 7d43652d-dce1-4af2-b463-2d9f1d412bedboundary · 未覆盖验证保留期边界需求身份、固定版本与完整矩阵依据{
++   "requirement": {
++     "id": "583608c7-64cb-4cac-88e3-45067e509aa2",
++     "project_id": "fb6d3220-2e40-48a0-8b3e-efeea8f35d3f",
++     "document_id": "37f40ae0-a423-56a0-9510-0e7378386d2f",
++     "current_version_id": "df0e2d95-13a6-4e5b-90dd-bc4afbc95a84",
++     "latest_version": 1,
++     "created_at": "2026-10-05T03:40:10.492526Z",
++     "updated_at": "2026-10-05T03:40:10.492526Z"
++   },
++   "version": {
++     "id": "df0e2d95-13a6-4e5b-90dd-bc4afbc95a84",
++     "requirement_id": "583608c7-64cb-4cac-88e3-45067e509aa2",
++     "version": 1,
++     "parent_version_id": null,
++     "review_id": "20fabb65-e890-407c-a346-384db7e37c66",
++     "change": "modified",
++     "title": "订单保留期",
++     "statement": "订单保留九天",
++     "points": [
++       {
++         "key": "retention",
++         "description": "验证九天保留期",
++         "id": "d90a10b1-dc7f-4afb-98f7-3c18d917c3e8"
++       },
++       {
++         "key": "boundary",
++         "description": "验证保留期边界",
++         "id": "59cc7839-0849-4943-8327-efb3017f7cab"
++       }
++     ],
++     "case_links": [
++       {
++         "case_version_id": "7d43652d-dce1-4af2-b463-2d9f1d412bed",
++         "point_keys": [
++           "retention"
++         ],
++         "case_id": "ce186527-769b-4862-9090-cc3e5eb7cbb1",
++         "version_record_sha256": "d469a6b2680cb8d714fdcfedb4ab8b8420d3add782addb5d6628f8b6db445f7d"
++       }
++     ],
++     "content_sha256": "521a3db5e1a46edf589af5ca98720c32f4841d9561f7fc792c4481bf3f1a5f1a",
++     "created_at": "2026-10-05T03:40:10.492526Z"
++   },
++   "points": [
++     {
++       "point": {
++         "key": "retention",
++         "description": "验证九天保留期",
++         "id": "d90a10b1-dc7f-4afb-98f7-3c18d917c3e8"
++       },
++       "case_links": [
++         {
++           "case_version_id": "7d43652d-dce1-4af2-b463-2d9f1d412bed",
++           "point_keys": [
++             "retention"
++           ],
++           "case_id": "ce186527-769b-4862-9090-cc3e5eb7cbb1",
++           "version_record_sha256": "d469a6b2680cb8d714fdcfedb4ab8b8420d3add782addb5d6628f8b6db445f7d"
++         }
++       ],
++       "previous_case_links": [],
++       "design_status": "design_covered",
++       "execution_status": "not_assessed"
++     },
++     {
++       "point": {
++         "key": "boundary",
++         "description": "验证保留期边界",
++         "id": "59cc7839-0849-4943-8327-efb3017f7cab"
++       },
++       "case_links": [],
++       "previous_case_links": [],
++       "design_status": "uncovered",
++       "execution_status": "not_assessed"
++     }
++   ],
++   "removed": false,
++   "deployment_status": "unknown"
++ }
+
+ ❯ src/features/tools/plugins/RequirementProduct.test.ts:143:58
+    141|   expect(w.text()).toContain("关联用例待复核"); expect(w.text()).toContain("执…
+    142|   await w.get('[aria-label="需求历史版本"]').setValue(saved.matrix_v1.versio…
+    143|   expect(w.text()).toContain("已有设计覆盖"); expect(w.text()).toContain("正在…
+       |                                                          ^
+    144|   expect(w.text()).toContain(saved.matrix_v1.points[0]!.case_links[0]!…
+    145| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 37 passed (38)
+   Start at  12:04:12
+   Duration  2.40s (transform 593ms, setup 0ms, import 1.47s, tests 402ms, environment 2.64s)
+

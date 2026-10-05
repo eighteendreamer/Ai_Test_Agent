@@ -59,7 +59,7 @@ onBeforeUnmount(() => { disposed = true; ++epoch; stop(); });
       <p v-if="task.error_code">失败代码：{{ task.error_code }}</p>
       <p v-if="task.status === 'failed'">原任务和已保存的证据保留。新分析需另建请求，不能重置本任务。</p>
     </template>
-    <DocumentImpactSnapshot v-if="view" :view="view" />
+    <DocumentImpactSnapshot v-if="view" :view="view" :project-id="projectId" :document-id="documentId" />
   </article>
 </template>
 

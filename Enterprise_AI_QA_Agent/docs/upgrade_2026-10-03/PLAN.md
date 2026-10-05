@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-05。当前代码基线：`8676bf5a`。固定计划、分组协调、项目发送策略和完整字段引用已接；正式需求评审API、稳定身份/版本/验证点与设计矩阵已提交，见3.6.1、6.13。真实默认模型三规则/三条完整用例/九项判断已有本场景实测，但原文位置警告、pending_review与部署unknown仍保留，不能代替用户评审或实际测试执行。源码/真实存储、独立API/Worker、正式App和默认模型分别验收；完整P0—P5未完成，上传不经过Git，模板只用于生成。历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，命令、失败和局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。本次更新方案及三份副本，不新增功能实现；后续产品闭环见3.6.2。
+修订日期：2026-10-05。当前研究基线：`fbf8bffb`，其功能基线为`8676bf5a`。固定计划、分组协调、项目发送策略和完整字段引用已接；正式需求评审API、稳定身份/版本/验证点与设计矩阵已提交，见3.6.1、6.13。真实默认模型三规则/三条完整用例/九项判断已有本场景实测，但原文位置警告、pending_review与部署unknown仍保留，不能代替用户评审或实际测试执行。源码/真实存储、独立API/Worker、正式App和默认模型分别验收；完整P0—P5未完成，上传不经过Git，模板只用于生成。历史方案保留于 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)，命令、失败和局限见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史“本轮”“未实现”仅表示当时状态，当前进度以第六节为准。本轮正式需求评审/矩阵页面已接并通过真实DOCX、独立API/Worker、数据库及浏览器验收，见3.6.2、6.14；增量草稿、运行证据和环境适用闭环仍待实施。
 
 此前流式/分阶段/low诊断及v5默认模型全流程仍失败，原证据和3.5.11/6.7、3.5.12/6.8结论保留。固定计划基础见3.5.13/6.9，分组生产协调和新的真实默认模型结果见3.5.14/6.10。协议通过、证据覆盖声明、业务语义评审和实际测试成功分别验收。
 
@@ -32,7 +32,7 @@
 | [固定计划创建运行](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_run_service.py)、[执行上下文](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_context.py) | 复用正式套件、RunItem、原子领取及完整上下文，不创建替代执行平台 |
 | [Agent 适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_execution.py)、[回执核验](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_assessment.py) | 新 Agent 策略已接既有图/审批/证据；继续补准备状态、未知副作用和真实模型验收，保留旧运行策略恢复 |
 | [文档服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py)、[对象存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/artifacts/artifact_storage_service.py) | 原件与派生内容已分存；复用稳定文档身份、版本事务、哈希和原提交查询，上传不调用 Git |
-| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；影响提交、单元调用/核验、自动补读和全范围候选已有实现；生产API/独立Worker见3.5.6，正式App/任务池见3.5.7；最新默认模型固定场景已验九项业务判断，见6.12；正式需求评审/设计矩阵API已验，见6.13，需求页面、用户业务评审和执行证据仍待验收 |
+| [比较服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py)、[三方读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/impact_sources.py) | 固定双方快照、完整用例及当时来源已有专项；影响提交、单元调用/核验、自动补读和全范围候选已有实现；生产API/独立Worker见3.5.6，正式App/任务池见3.5.7；最新默认模型固定场景已验九项业务判断，见6.12；正式需求评审/设计矩阵API已验，见6.13，页面及真实恢复/冲突/历史验收见6.14；用户业务评审和执行证据仍待验收 |
 | [文档任务存储](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_document_operation_store.py)、[规划工作流](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_workflow.py) | 现已抽出共享任务/Outbox/租约职责；解析与比较子类保留最终快照语义，影响任务另存输入检查点。规划保存调用意图和响应，P4 后续批次检查点参考该做法 |
 
 测试设计继续参考项目本地课程：用例生成与数据治理、线上流量闭环、评测工程化、Agent 轨迹与协议鲁棒性。采用来源、版本、轨迹和评审原则；其中依赖版本、统计比例、阈值不是本产品的实测事实。
@@ -507,11 +507,11 @@ MD/DOCX/PDF×原生/LangChain、实际HTTP/MySQL/PG/RustFS回归、终态历史�
 
 [正式API](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/requirements.py)提供文档下固定影响快照评审、原请求查询、分页评审/需求、需求版本及指定版本矩阵；生产生命周期初始化和前端DTO/客户端同步。评审保留partial、依据限制和deployment unknown，不修改原AI结果、用例启用指针或历史用例正文；删除仅追加removed需求版本。
 
-矩阵由明确评审关联产生设计覆盖，不由来源数量或AI影响等级推导。更新需求不复制旧覆盖；旧验证点关系在新版本显示needs_review，未关联点显示uncovered。指定旧版本仍返回旧正文/验证点/关系，但身份的current_version_id如实指向当前版本。执行证据尚未关联，execution_status明确not_assessed；正式评审/矩阵页面、增量草稿、环境适用和运行证据仍待实施，不能宣称完整P4已完成。
+矩阵由明确评审关联产生设计覆盖，不由来源数量或AI影响等级推导。更新需求不复制旧覆盖；旧验证点关系在新版本显示needs_review，未关联点显示uncovered。指定旧版本仍返回旧正文/验证点/关系，但身份的current_version_id如实指向当前版本。执行证据尚未关联，execution_status明确not_assessed；正式评审/矩阵页面本轮已接，见3.6.2/6.14；增量草稿、环境适用和运行证据仍待实施，不能宣称完整P4已完成。
 
-### 3.6.2 后续需求评审页面与变更闭环交付
+### 3.6.2 已接需求评审页面与后续变更闭环
 
-本节是待实施方案。依据是现有[影响结果组件](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/DocumentImpactSnapshot.vue)、[影响提交与恢复组件](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/DocumentImpactPanel.vue)、[需求评审API](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/requirements.py)和[需求服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/requirement_service.py)。沿用文档详情和固定影响结果入口，不另建一套文档身份或任务系统。
+本节的评审、设计关联、恢复、并发和历史矩阵页面现已实现；增量草稿和运行/环境闭环仍待实施。实施前研究见 [P4_REQUIREMENT_PRODUCT_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_REQUIREMENT_PRODUCT_DESIGN.md)，真实验收见6.14。依据是现有[影响结果组件](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/DocumentImpactSnapshot.vue)、[影响提交与恢复组件](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/DocumentImpactPanel.vue)、[需求评审API](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/requirements.py)和[需求服务](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/requirement_service.py)。沿用文档详情和固定影响结果入口，不另建一套文档身份或任务系统。
 
 | 交付项 | 具体做法 | 验收依据 |
 |---|---|---|
@@ -523,7 +523,7 @@ MD/DOCX/PDF×原生/LangChain、实际HTTP/MySQL/PG/RustFS回归、终态历史�
 | 确认范围增量草稿 | 评审确认后固定需求版本、差异、完整相关用例和当时来源，再调用既有生成管线；新增生成新case草稿，修改追加原case的新版本，删除提出停用候选 | 记录实际模型/Prompt/Skill/模板版本及未处理范围；失败独立恢复；旧启用版本、原运行和失败证据保留 |
 | 运行证据与环境适用性 | 在设计关联上接具体RunItem/attempt/工具证据及明确环境事实；与选择、冻结、启动运行的核对保持一致 | 关联数不当作通过数，旧需求通过不能证明新版本通过；没有生效证据不全面阻断项目 |
 
-页面先补既有API的产品入口，随后实施增量草稿和运行/环境闭环。后两项的新增任务、表和接口要先核对现有生成/运行调用链再定契约，本方案不把尚未实现的接口写成已可调用。页面验收使用真实DOCX、独立API/Worker、MySQL/PG/RustFS及实际浏览器；组件测试用于晚响应、分页、冻结请求和冲突等边界，不能替代完整产品验证。
+页面已经补上既有API的产品入口：[评审面板](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/RequirementReviewPanel.vue)、[恢复控制](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/useRequirementReview.ts)、[矩阵组件](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/RequirementMatrix.vue)。刷新目录不改变表单捕获的父版本，冲突后的显式重新评审才读取新编辑依据；成功提交后重新初始化表单。随后实施增量草稿和运行/环境闭环。后两项的新增任务、表和接口要先核对现有生成/运行调用链再定契约，本方案不把尚未实现的接口写成已可调用。页面验收使用真实DOCX、独立API/Worker、MySQL/PG/RustFS及实际浏览器；组件测试用于晚响应、分页、冻结请求和冲突等边界，不能替代完整产品验证。
 
 ### 3.7 需求追踪矩阵
 
@@ -571,7 +571,7 @@ MD/DOCX/PDF×原生/LangChain、实际HTTP/MySQL/PG/RustFS回归、终态历史�
 
 扩展现有入口和消费者：生成模板/完整JSON/导入预览；规划提交与原请求查询；保存计划启动；运行依赖、准备状态/修订；文档版本/解析/比较；P4影响任务/候选评审/需求/矩阵/增量草稿。耗时分析复用任务基础设施，不用API内BackgroundTasks代替持久执行。
 
-API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试成对更新。现有同步/异步规划、文档版本/解析/比较及Git入口已接，不重复建设。P4影响任务/设置/结果路由与前端API/DTO已按实际服务接入，见3.5.6；正式影响页面/任务池接入与实测见3.5.7；需求评审/版本/设计矩阵API和前端DTO/客户端已接，见3.6.1。正式需求页面及增量/执行证据/环境契约仍待实施，见3.6.2。
+API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试成对更新。现有同步/异步规划、文档版本/解析/比较及Git入口已接，不重复建设。P4影响任务/设置/结果路由与前端API/DTO已按实际服务接入，见3.5.6；正式影响页面/任务池接入与实测见3.5.7；需求评审/版本/设计矩阵API和前端DTO/客户端已接，见3.6.1。正式需求页面及原请求/冲突/历史恢复本轮已接，见3.6.2/6.14；增量/执行证据/环境契约仍待实施。
 
 按项目启用新策略，关闭入口保留已存数据；旧运行按原策略恢复。增量迁移先预演，检查旧正文/hash、原件缺失、父链、套件/运行和失败引用；只记录可证明的历史事实。投影重建不改业务记录，终态任务不重置复用。生产迁移没有在当前环境执行。
 
@@ -583,10 +583,10 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程、模块任务和恢复 |
 | P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归 | 准备拥有者/状态、未知副作用、计划修订、默认模型、其他模式及完整产品流程 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
-| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 影响生产API/Worker/正式页面及固定版本治理已接；默认模型固定场景九判断见6.12；需求身份/版本/验证点、明确评审及设计矩阵API本轮已验，见3.6.1/6.13；正式需求页面、运行证据、增量、部署适用和更广业务待实施 |
+| P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 影响生产API/Worker/正式页面及固定版本治理已接；默认模型固定场景九判断见6.12；需求身份/版本/验证点、明确评审及设计矩阵API已验，见3.6.1/6.13；正式需求页面及真实产品验收见6.14；运行证据、增量、部署适用和更广业务待实施 |
 | P5 | 录制场景、步骤/别名、知识查询、失败定位、结果报告 | 先证明录制链可用，再按实际缺口实施 |
 
-当前依赖顺序为：**固定影响输入/范围/调用/响应及分组协调〔专项已验〕→ 生产API/独立Worker及正式影响App〔已验〕→ 默认模型固定场景语义判断〔已验，更多业务场景待验〕→ 需求评审/身份/版本/设计矩阵API〔已验〕→ 正式需求评审与矩阵App〔待实施〕→ 确认范围增量草稿〔待实施〕→ 运行证据/环境适用性/回归闭环〔待实施〕→ 用户业务评审及完整产品验收**。随后继续上述P2/P1/P0/P5及迁移剩余项；阶段编号不代表前一阶段已经全部完成。
+当前依赖顺序为：**固定影响输入/范围/调用/响应及分组协调〔专项已验〕→ 生产API/独立Worker及正式影响App〔已验〕→ 默认模型固定场景语义判断〔已验，更多业务场景待验〕→ 需求评审/身份/版本/设计矩阵API〔已验〕→ 正式需求评审与矩阵App〔DOCX真实存储/进程/浏览器已验〕→ 确认范围增量草稿〔待实施〕→ 运行证据/环境适用性/回归闭环〔待实施〕→ 用户业务评审及完整产品验收**。随后继续上述P2/P1/P0/P5及迁移剩余项；阶段编号不代表前一阶段已经全部完成。
 
 每一步按“查实际调用链/参考 → 真实输入验证现状 → 修正方案 → 实施 → 功能/相关回归 → 同步状态/相关中文commit”推进。用户 `.gitignore` 修改保持不动、不提交；不自动推送或建PR。不把局部里程碑重新定义成整个目标完成。
 
@@ -618,7 +618,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 ## 六、当前实施状态与历史验证
 
-以下以 `8676bf5a` 已提交实现为当前依据，各历史专项保留原研究基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；历史测试数量不累计成覆盖数。公开影响API、前端正式影响页面与任务池已接；正式App及默认模型证据见6.12，历史见6.3—6.11，固定计划基础见6.9。默认固定场景4逻辑/4物理、三规则/三用例/九判断已验；真实文件/PG/HTTP需求评审专项及独立API进程见6.13。本次仅更新方案，没有重跑功能测试或新增外部模型请求。用户正式业务评审、需求页面、增量、部署适用性及更广场景仍待验，未进行生产历史迁移。
+以下以 `fbf8bffb` 研究基线和本轮正式需求评审/矩阵页面实测为当前依据，各历史专项保留原研究基线与实际运行记录。模型依据76项、范围清单82项、响应专项141项及内部协调163项均属此前实际运行；历史测试数量不累计成覆盖数。公开影响API、前端正式影响页面与任务池已接；正式App及默认模型证据见6.12，历史见6.3—6.11，固定计划基础见6.9。默认固定场景4逻辑/4物理、三规则/三用例/九判断已验；真实文件/PG/HTTP需求评审专项及独立API进程见6.13。本轮真实DOCX/独立进程/数据库/浏览器需求页面及原请求恢复见6.14，没有新增外部默认模型请求。用户正式业务评审、增量、部署适用性及更广场景仍待验，未进行生产历史迁移。
 
 | 模块 | 已提交/已验证范围 | 尚未完成 |
 |---|---|---|
@@ -627,7 +627,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 | P2规划/执行/回归 | 持久规划、任务池、固定计划创建运行、原子依赖领取、完整上下文、工具返回检查点、审批和新回归已有专项；生产API/独立执行CLI的受控API场景已验 | 真实默认模型、完整产品/其他模式、准备状态、未知副作用、执行中修订 |
 | P3上传/解析/比较 | 原件/派生分存、版本/历史、工厂/受限进程、持久API/独立CLI、DOCX正式App及比较提交/历史/恢复已有产品证据 | 生产历史迁移、其他格式完整产品及更多故障组合 |
 | P3可选Git | `4a02ae2`；真实Git专项25通过，MD/DOCX正式App与生产API/CLI/真实存储两场景通过 | 生产迁移及其他格式完整产品；上传无需Git约定不变 |
-| P4三方读取/固定提交 | 固定提交/输入/范围、模型/Prompt/Skill及unknown历史已有专项；分组生产和正式App见6.10，SDK策略见6.11，完整字段/默认模型固定场景九判断见6.12；本轮稳定需求身份、不可变版本/验证点、明确评审及设计矩阵API、真实三格式与独立进程恢复见6.13 | 正式需求评审/矩阵App、更广真实业务与用户评审、精确Token、部署适用/执行证据、增量草稿及生产历史迁移 |
+| P4三方读取/固定提交 | 固定提交/输入/范围、模型/Prompt/Skill及unknown历史已有专项；分组生产和正式App见6.10，SDK策略见6.11，完整字段/默认模型固定场景九判断见6.12；稳定需求身份、不可变版本/验证点、明确评审及设计矩阵API、真实三格式与独立进程恢复见6.13；本轮正式需求App真实DOCX/原请求/冲突/重启/归档恢复见6.14 | 更广真实业务与用户评审、精确Token、部署适用/执行证据、增量草稿及生产历史迁移 |
 | P4逐版本治理 | `918cdace`；后端106通过/2默认模型跳过、前端37通过、构建通过；正式App/生产API/隔离真实存储1场景通过，模型调用0 | 生产历史迁移、运维入口/投影重建、旧套件和原失败完整迁移；不代表影响AI完成 |
 | P0/P5录制与Docker/报告 | 现有实现可以作为实测入口 | 人工录制→清洗→数据库→AI、Docker真实工具结果及场景/报告尚未闭环验收 |
 
@@ -829,3 +829,17 @@ MD/DOCX/PDF实际上传、解析/比较进程、两次受控HTTP影响、真实M
 末尾补需求分页的project/document/id索引，使用短表名hash避免配置长标识截断。最终源码新增需求模块 **9通过、0跳过（39.44秒）**，独立生产HTTP评审/重启恢复 **1通过、0跳过（56.39秒）**；前述28与首生产记录在索引加入前，重叠结果不累计为新覆盖。最终源文件AST/编译、diff与证据hash另记validation；不是只用编译代替这些功能实测。
 
 原始XML/log、实际文件、决定/版本/矩阵、物理请求、独立进程和对象证据见p4-requirement-reviews-*，hash/原请求/来源/历史证据/三份方案核对见p4-requirement-reviews-validation.json。三表启动初始化实测，未自动迁移/回填历史需求，无既有表/版本正文改写。完整P0—P5继续未完成；下一步完成正式评审/矩阵App和确认范围增量生成，再接运行证据、部署适用与其执行约束，并继续P2/P1/P0/P5剩余项。
+
+### 6.14 正式需求评审与矩阵App〔研究基线fbf8bffb〕
+
+先核对需求API/不可变版本/稳定点、评审分页升序与锁内最新决定、原影响展示组件和既有sessionStorage恢复机制，再实施页面。依据见P4_REQUIREMENT_PRODUCT_DESIGN.md。正式影响结果显式打开评审后才读取需求服务，旧纯展示调用不产生网络请求；前端只提交明确规则、正文/点/关联和预期父版本，继续使用原MySQL配置、PG业务及RustFS对象，没有新增依赖、配置、表或模型调用。
+
+新增接受/拒绝/暂缓、已有需求/新建、验证点与固定用例版本多选、完整评审历史、指定版本矩阵；设计覆盖/未覆盖/待复核、执行未关联/部署未知分别展示。请求先冻结再提交，网络/503及404查询保留原编号/参数；实际提交丢响应刷新可找回。后端明确409时保留失败请求，用户显式重新读取才开始新评审，不自动重定父版本重发。复查进一步固定表单编辑父版本，普通目录刷新不把旧正文自动改挂最新父版本；项目/文档/快照晚响应与矩阵修订晚响应均不显示。
+
+组件与既有影响/API客户端首轮 **1失败、37通过（2.40秒）**：我把创建V2前保存的V1矩阵当成创建V2后的历史读取。纠正断言，保持真实记录当时的current_version_id，再运行 **38通过（1.86秒）**；不是生产逻辑失败或改写旧证据。补刷新不自动重定父版本和迟到矩阵回归后，最终 **40通过（2.06秒）**。初次vue-tsc/Vite构建通过（8.58秒）；实际浏览器流程各自重新构建，首次9.51秒，最终10.49秒。
+
+首次完整正式App **1通过、0跳过（96.96秒）**，真实DOCX原件/解析/差异、独立API/三类Worker、MySQL/PG/RustFS/Redis后实际操作接受、丢已提交响应、刷新按原请求恢复、V2不复制旧覆盖、V1历史、拒绝/暂缓、移除以及API重启/关闭派发/归档后的原请求与历史。保存5份评审、3份需求版本；模型物理POST仍仅原影响2次。V1正文/验证点/关联固定，身份当前指针正确更新。
+
+固定编辑父版本后增加真实竞争API评审，最终完整App **1通过、0跳过（107.54秒）**。竞争决定保存后，旧表单实际提交409；页面没有自动重发，需求仍2个版本，明确重读并确认后再评审。最终6份评审/3份版本与PG原记录逐项一致；稳定验证点保留，新版本无继承关联显示待复核，旧版本查询及归档原请求恢复均成功。原影响全文和下载、终态任务保留，页面无pageerror，1440视口正文宽1440。该最终流程包括原影响失败任务/任务池/下载/重启场景，未缩减成组件或ASGI验收。
+
+实际原件、请求、决定/版本/矩阵、PG、对象、调用消息、截图、失败/通过log/XML在p4-requirement-product-*。历史原始证据不改写，三份方案同步及hash核对见p4-requirement-product-validation.json。只使用受控HTTP及测试评审，不冒充真实用户业务审批或新的外部默认模型语义验证。大量历史记录的生产规模、生产历史迁移、增量草稿、运行证据和环境生效仍待验；完整P0—P5保持未完成。下一步先研究确认需求范围如何进入现有生成任务与版本治理，再实现增量草稿，继续其余P2/P1/P0/P5及迁移范围。

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { DocumentImpactSnapshotView } from "../../../services/documentImpacts.types";
+import RequirementReviewPanel from "./RequirementReviewPanel.vue";
 
-const props = defineProps<{ view: DocumentImpactSnapshotView }>();
+const props = defineProps<{ view: DocumentImpactSnapshotView; projectId?: string; documentId?: string }>();
 const visible = ref(20);
+const reviewsOpen = ref(false);
 const error = ref("");
 const units = computed(() => props.view.result.units.slice(0, visible.value));
 const levels = { none: "无影响", minor: "轻微影响", major: "重大影响候选", uncertain: "影响不确定" };
 const kinds = { added: "新增候选", modified: "修改候选", removed: "删除候选", uncertain: "变化不确定" };
 const statuses = { analyzed: "已分析", evidence_insufficient: "依据不足", rejected: "响应未通过核验", ineligible: "不满足分析条件",
   unknown: "调用结果未知", unprocessed: "尚未处理", incomplete: "分析未完整" };
-watch(() => props.view.snapshot.id, () => { visible.value = 20; error.value = ""; });
+watch(() => [props.projectId, props.documentId, props.view.snapshot.id], () => { visible.value = 20; error.value = ""; reviewsOpen.value = false; });
 function download() {
   error.value = "";
   try {
@@ -73,6 +75,10 @@ function download() {
     <button v-if="visible < Math.max(view.result.units.length, view.result.rules.length)" class="secondary-btn" @click="visible += 20">显示更多影响记录</button>
     <details><summary>冻结依据、配置与模型声明</summary><pre>{{ JSON.stringify(view.snapshot.seed, null, 2) }}</pre></details>
     <button class="secondary-btn" @click="download">下载完整影响结果 JSON</button><p v-if="error" role="alert">{{ error }}</p>
+    <template v-if="projectId && documentId">
+      <button type="button" class="secondary-btn" @click="reviewsOpen = !reviewsOpen">{{ reviewsOpen ? '收起需求评审与追踪' : '打开需求评审与追踪' }}</button>
+      <RequirementReviewPanel v-if="reviewsOpen" :project-id="projectId" :document-id="documentId" :view="view" />
+    </template>
   </article>
 </template>
 

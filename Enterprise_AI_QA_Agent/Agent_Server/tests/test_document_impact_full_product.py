@@ -43,7 +43,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv('RUN_LIVE_DOCUME
     reason='built App, production API/independent CLI, isolated actual MySQL/PG/Redis/RustFS and installed Chromium')]
 
 
-async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path):
+async def test_full_product_submit_lost_reply_exact_history_settings_failure_restart_download(tmp_path, verify_requirements=False):
     evidence = Path(os.getenv('QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR', str(tmp_path / 'evidence')))
     evidence.mkdir(parents=True, exist_ok=True)
     paths = write_pair(tmp_path, 'docx')
@@ -201,6 +201,11 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             await expect(page.get_by_label('影响结果详情', exact=True)).to_contain_text('处理说明：已完整对照第1项')
                             await page.screenshot(path=str(evidence / 'submitted-result.png'), full_page=True)
                             count = len(sends)
+                            if verify_requirements:
+                                from requirement_product_scenario import review_from_product
+                                review_state = await review_from_product(page, base=base, view=saved_view, case=case,
+                                    get=get, post=post, evidence=evidence, settings=settings)
+                                assert len(sends) == count
                             # A genuine preparation rejection is displayed as a separate terminal failure.
                             await page.get_by_text('项目影响分析设置', exact=True).click()
                             await page.get_by_label('任务总超时（秒）', exact=True).fill('300')
@@ -242,6 +247,9 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                 await page.get_by_role('button', name='下载完整影响结果 JSON', exact=True).click()
                             target = evidence / 'downloaded-history.json'; await (await downloaded.value).save_as(target)
                             assert json.loads(target.read_text(encoding='utf-8')) == saved_view
+                            if verify_requirements:
+                                from requirement_product_scenario import review_after_restart
+                                await review_after_restart(page, base=base, state=review_state, client=client, evidence=evidence)
                             assert len(sends) == count and not page_errors, page_errors
                             layout = await page.evaluate('''() => ({ viewport:innerWidth, bodyWidth:document.documentElement.scrollWidth,
                                 sidebarLeft:document.querySelector('.left-nav').getBoundingClientRect().left,
