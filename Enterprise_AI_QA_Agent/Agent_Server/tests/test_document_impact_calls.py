@@ -42,6 +42,10 @@ def provider(*, mode="ok", gated=False, responder=None):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             calls.append(body)
             arrived.set()
+            if mode == "connection_closed":
+                self.close_connection = True
+                self.connection.close()
+                return
             if not release.wait(20):
                 return
             if mode == "http_failure":

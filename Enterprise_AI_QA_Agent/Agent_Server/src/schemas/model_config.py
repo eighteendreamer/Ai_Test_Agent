@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.prompting import PromptSection
 from src.schemas.tool_runtime import ModelToolCall
@@ -182,6 +182,13 @@ class ModelConfigPublic(BaseModel):
     applications: list[ModelApplication] = Field(
         default_factory=lambda: ["task_execution"]
     )
+
+
+class ModelTransportOptions(BaseModel):
+    """Nonsecret per-invocation SDK settings; never model message content."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    timeout_seconds: float = Field(gt=0, le=600)
+    max_retries: int = Field(ge=0, le=10)
 
 
 class ModelInvocationRequest(BaseModel):

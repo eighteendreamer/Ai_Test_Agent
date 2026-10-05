@@ -25,6 +25,7 @@ from src.schemas.model_config import (
     ModelConfigRecord,
     ModelInvocationRequest,
     ModelInvocationResult,
+    ModelTransportOptions,
     UnifiedMessage,
     model_invocation_parameters,
 )
@@ -67,17 +68,24 @@ class ModelRuntimeService:
         except KeyError:
             return None
 
-    def get_invocation_runtime_parameters(self, model_key: str) -> dict[str, Any]:
+    def get_invocation_runtime_parameters(self, model_key: str, *,
+        transport_options: ModelTransportOptions | None = None) -> dict[str, Any]:
         config = self.get_model_config(model_key)
         if config is None:
             raise ValueError("没有可用模型，不能固定调用运行参数")
         adapter = config.transport == "openai_chat_completions" and bool(self._settings.model.langchain_model_adapter_enabled)
         dependencies = (["openai", "langchain-openai", "langchain-core"] if adapter else ["openai"]) if config.transport in {
             "openai_chat_completions", "openai_responses"} else ["anthropic"] if config.transport == "anthropic_messages" else ["google-genai"]
-        return {"langchain_model_adapter_enabled": adapter,
+        parameters = {"langchain_model_adapter_enabled": adapter,
             "llm_request_timeout_seconds": self._settings.model.llm_request_timeout_seconds,
             "sdk_retry_policy": "existing_provider_defaults",
             "dependency_versions": {name: importlib.metadata.version(name) for name in dependencies}}
+        if transport_options is not None:
+            if config.transport not in {"openai_chat_completions", "openai_responses", "anthropic_messages"}:
+                raise ValueError("该模型传输尚未验证显式SDK重试设置")
+            parameters.update(sdk_retry_policy="explicit_transport_options",
+                transport_options=transport_options.model_dump(mode="json"))
+        return parameters
 
     async def resolve_langchain_chat_model(self, model_key: str) -> Any:
         """Resolve a database-backed LangChain chat model for a harness.
@@ -107,9 +115,10 @@ class ModelRuntimeService:
         request: ModelInvocationRequest,
         *, expected_parameters: dict[str, Any] | None = None,
         expected_runtime_parameters: dict[str, Any] | None = None,
+        transport_options: ModelTransportOptions | None = None,
     ) -> ModelInvocationResult:
         if (expected_runtime_parameters is not None and
-            self.get_invocation_runtime_parameters(model_key) != expected_runtime_parameters):
+            self.get_invocation_runtime_parameters(model_key, transport_options=transport_options) != expected_runtime_parameters):
             logger.warning("model_invocation_runtime_changed", extra={"model_key": model_key})
             raise ValueError("模型调用适配器、SDK或超时设置已变化，不能续写原任务")
         try:
@@ -135,6 +144,10 @@ class ModelRuntimeService:
             if model_invocation_parameters(config) != expected_parameters:
                 logger.warning("model_invocation_parameters_changed", extra={"model_key": model_key})
                 raise ValueError("模型参数已变化，不能使用新配置续写原任务")
+        if transport_options is not None:
+            self.get_invocation_runtime_parameters(model_key, transport_options=transport_options)
+            logger.info("model_invocation_transport_configured", extra={"model_key": config.key,
+                "timeout_seconds": transport_options.timeout_seconds, "max_retries": transport_options.max_retries})
         try:
             api_key = await self._resolve_auth_token(config)
         except Exception as exc:
@@ -177,11 +190,12 @@ class ModelRuntimeService:
             getattr(self._settings.model, "langchain_model_adapter_enabled", False)
             and config.transport == "openai_chat_completions"
         ):
-            return await self._invoke_with_langchain_adapter(config, api_key, request)
+            return await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
 
         client = resolve_client(
             config,
-            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
+            timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
+            **({"max_retries": transport_options.max_retries} if transport_options else {}),
         )
         return await self._invoke_with_client(client, config, api_key, request)
 
@@ -190,9 +204,11 @@ class ModelRuntimeService:
         config: ModelConfigRecord,
         api_key: str,
         request: ModelInvocationRequest,
+        *, transport_options: ModelTransportOptions | None = None,
     ) -> ModelInvocationResult:
         adapter = LangChainModelAdapter(
-            timeout_seconds=self._settings.model.llm_request_timeout_seconds,
+            timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
+            max_retries=transport_options.max_retries if transport_options else 2,
             stream_handler=self._emit_stream_chunk if _stream_handler_var.get() is not None else None,
         )
         trace_context = None

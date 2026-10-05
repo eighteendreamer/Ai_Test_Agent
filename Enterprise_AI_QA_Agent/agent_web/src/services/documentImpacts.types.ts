@@ -18,6 +18,7 @@ export interface DocumentImpactBatchPolicy {
 }
 
 export interface DocumentImpactInvocationPolicy {
+  transport_policy?: "provider_defaults" | "single_attempt";
   max_logical_calls: number;
   max_reserved_estimated_tokens: number;
   call_timeout_seconds: number;

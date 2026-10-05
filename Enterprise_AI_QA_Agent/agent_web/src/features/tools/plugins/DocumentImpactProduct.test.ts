@@ -191,8 +191,11 @@ it("edits all five configuration payloads and preserves token and grouping contr
   await w.get('[aria-label="边界上下文字符"]').setValue(0); await w.get('form[aria-label="影响分段设置"]').trigger("submit"); await flushPromises();
   expect(api.saveDocumentImpactBatchSettings.mock.calls[0][1].boundary_context_chars).toBe(0);
   await w.get('[aria-label="影响内容计量"]').setValue("tiktoken_content"); await w.get('[aria-label="影响计量编码"]').setValue("o200k_base");
+  expect((w.get('[aria-label="影响请求发送策略"]').element as HTMLSelectElement).value).toBe("provider_defaults");
+  await w.get('[aria-label="影响请求发送策略"]').setValue("single_attempt");
   await w.get('form[aria-label="影响调用预算设置"]').trigger("submit"); await flushPromises();
   expect(api.saveDocumentImpactInvocationSettings.mock.calls[0][1].encoding_name).toBe("o200k_base");
+  expect(api.saveDocumentImpactInvocationSettings.mock.calls[0][1].transport_policy).toBe("single_attempt");
   await w.get('[aria-label="影响内容计量"]').setValue("utf8_bytes_estimate"); await w.get('form[aria-label="影响调用预算设置"]').trigger("submit"); await flushPromises();
   expect(api.saveDocumentImpactInvocationSettings.mock.calls[1][1].encoding_name).toBeNull();
   await w.get('[aria-label="每组证据数量上限"]').setValue(2);

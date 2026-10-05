@@ -1,0 +1,224 @@
+{
+  "checkpoint": {
+    "task_id": "81e952d0-3675-4760-b55e-e9fbb695c7bc",
+    "call_id": "50ee2d95-d6bb-4e97-8b2a-f6b19c1fb48b",
+    "validator_version": "impact-response-validator-v2",
+    "request_sha256": "106df855c7badb1905e0e499db04be47fc673bcd47e70d1ea054f36e8a59e2fc",
+    "response_sha256": "18c732962806edf2145ff59ee0c925053e94722203aa25dbb225de5267b7b235",
+    "manifest_sha256": "52ddd22c2efd922adc7bcfc30aca5de094c03fd6e136cdb3903819b8a26c08c2",
+    "result": {
+      "storage_uri": "rustfs://qa-agent/document-impacts/f5e500f5-ca6f-4ada-90e8-8a03db717fcf/81e952d0-3675-4760-b55e-e9fbb695c7bc/ddf39472-e165-454d-a583-bc9f79d16e38/calls/5ea7702c-0c93-4b32-91be-21caa4123b9c/response-check.json",
+      "sha256": "2064244a0df4aec533319beadeb7d9a27afe61f15e35631b53125c98e50fcb28",
+      "size_bytes": 6868
+    },
+    "created_at": "2026-10-05T02:01:49.675425Z"
+  },
+  "assessment": {
+    "validator_version": "impact-response-validator-v2",
+    "runtime_versions": {
+      "identity_binding": "impact-text-bindings-v1",
+      "pydantic": "2.13.5",
+      "python": "3.11.16"
+    },
+    "task_id": "81e952d0-3675-4760-b55e-e9fbb695c7bc",
+    "call_id": "50ee2d95-d6bb-4e97-8b2a-f6b19c1fb48b",
+    "request_sha256": "106df855c7badb1905e0e499db04be47fc673bcd47e70d1ea054f36e8a59e2fc",
+    "response_sha256": "18c732962806edf2145ff59ee0c925053e94722203aa25dbb225de5267b7b235",
+    "manifest_sha256": "52ddd22c2efd922adc7bcfc30aca5de094c03fd6e136cdb3903819b8a26c08c2",
+    "status": "unit_finished",
+    "decision": {
+      "protocol_version": "impact-canonical-v2",
+      "unit": {
+        "kind": "segment",
+        "id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a:0:126"
+      },
+      "action": "finish",
+      "summary": "在新旧订单服务需求文档中识别出3项规则变化候选：订单保留天数由7天改为9天；删除优惠码章节（提交PROMO5订单金额减少5元）；新增订单导出章节（GET /orders/export 按创建时间倒序）。全部固定证据成员已完整提供并逐项处理；部署状态为用户声明且未知，所有候选仅作评审用途，未执行测试或修改正式记录。",
+      "reads": {
+        "segment_ids": [],
+        "case_version_ids": [],
+        "difference_ids": [],
+        "ranges": []
+      },
+      "unit_outcome": "analyzed",
+      "candidates": [
+        {
+          "key": "order_retention_period_change",
+          "kind": "modified",
+          "summary": "已支付订单保留期从7天变更为9天",
+          "reason": "旧文本规定“已支付订单保留7天”，新文本改为“已支付订单保留9天”，触发条件“超过保留期查询返回410”保持不变，属于规则值修改。",
+          "document_citations": [
+            {
+              "source_id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留7天，超过保留期查询返回410。\r\n"
+            },
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 21,
+              "end_char": 46,
+              "quote": "已支付订单保留9天，超过保留期查询返回410。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "promo_code_rule_removed",
+          "kind": "removed",
+          "summary": "删除优惠码规则：提交有效优惠码PROMO5时订单金额减少5元",
+          "reason": "旧文档存在独立“优惠码”章节及其规则文本，新文档全文中不再包含该章节或对应规则描述，属于整节移除。",
+          "document_citations": [
+            {
+              "source_id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 56,
+              "quote": "## 优惠码\r\n"
+            },
+            {
+              "source_id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 56,
+              "end_char": 81,
+              "quote": "提交有效优惠码PROMO5时订单金额减少5元。\r\n"
+            },
+            {
+              "source_id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a",
+              "text_sha256": "7acb94760bac15c53bd7df52c5acaa0773fbbeb75d0e119d87aa8a10848fa792",
+              "start_char": 48,
+              "end_char": 83,
+              "quote": "## 优惠码\r\n提交有效优惠码PROMO5时订单金额减少5元。\r\n\r\n"
+            },
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 0,
+              "end_char": 139,
+              "quote": "# 订单服务需求\r\n\r\n## 订单保留\r\n已支付订单保留9天，超过保留期查询返回410。\r\n\r\n## 管理鉴权\r\n未登录访问GET /admin必须返回401，不得创建登录前置。\r\n\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        },
+        {
+          "key": "order_export_rule_added",
+          "kind": "added",
+          "summary": "新增订单导出规则：GET /orders/export 导出订单按创建时间倒序排列",
+          "reason": "新版文档末尾新增“订单导出”章节，定义了GET /orders/export接口及结果排序要求；旧文档中无对应内容，属于新增规则。",
+          "document_citations": [
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 102,
+              "quote": "## 订单导出\r\n"
+            },
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 102,
+              "end_char": 139,
+              "quote": "新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            },
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 91,
+              "end_char": 139,
+              "quote": "\r\n## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            },
+            {
+              "source_id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671",
+              "text_sha256": "bf3109a4a4dfd159cb678b663510ad35b58546b7f99d884b31f1f545642a99f9",
+              "start_char": 93,
+              "end_char": 139,
+              "quote": "## 订单导出\r\n新增GET /orders/export，导出订单按创建时间倒序排列。\r\n"
+            }
+          ],
+          "case_impacts": [],
+          "applicability_suggestion": "unknown",
+          "uncertainties": []
+        }
+      ],
+      "unresolved": [],
+      "evidence_outcomes": [
+        {
+          "unit": {
+            "kind": "segment",
+            "id": "parse:0b3de744-f261-440b-a9e0-109be13c0b4a:0:126"
+          },
+          "outcome": "analyzed",
+          "reason": "提供旧版完整分块与章节文本，覆盖订单保留7天、优惠码、管理鉴权三节，解析状态complete，内容完整可用。"
+        },
+        {
+          "unit": {
+            "kind": "segment",
+            "id": "parse:a99999a4-0020-48b7-a2e5-837c3155b671:0:139"
+          },
+          "outcome": "analyzed",
+          "reason": "提供新版完整分块与章节文本，覆盖订单保留9天、管理鉴权、订单导出三节，解析状态complete，内容完整可用。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "raw:0"
+          },
+          "outcome": "analyzed",
+          "reason": "raw差异显示原第4行“7”被替换为“9”，并删除从字符43到78的优惠码相关文本。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "raw:1"
+          },
+          "outcome": "analyzed",
+          "reason": "raw差异显示在文档末尾（字符91至139）插入订单导出章节内容。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "normalized:0"
+          },
+          "outcome": "analyzed",
+          "reason": "normalized差异与raw:0一致，辅助确认同一保留天数修改与优惠码内容删除。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "normalized:1"
+          },
+          "outcome": "analyzed",
+          "reason": "normalized差异与raw:1一致，辅助确认同一订单导出章节新增。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "section:0"
+          },
+          "outcome": "analyzed",
+          "reason": "section差异显示旧section-3“优惠码”被删除，与raw删除范围对应。"
+        },
+        {
+          "unit": {
+            "kind": "difference",
+            "id": "section:1"
+          },
+          "outcome": "analyzed",
+          "reason": "section差异显示新section-4“订单导出”被新增，与raw插入范围对应。"
+        }
+      ]
+    },
+    "issues": [],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "semantic_status": "pending_review",
+    "deployment_status": "unknown"
+  }
+}

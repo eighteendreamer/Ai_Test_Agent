@@ -344,7 +344,10 @@ class DocumentImpactCallService:
             logger.warning("document_impact_call_preflight_rejected", extra={"task_id": claim.task.id,
                 "call_id": call_id, "reason": "model_parameters_changed"})
             raise ValueError("模型参数已变化，不能使用新配置续写原任务")
-        if await asyncio.to_thread(self._models.get_invocation_runtime_parameters, context.model.key) != snapshot.runtime_parameters:
+        options = snapshot.config.payload.transport_options
+        runtime_kwargs = {"transport_options": options} if options is not None else {}
+        if await asyncio.to_thread(self._models.get_invocation_runtime_parameters, context.model.key,
+            **runtime_kwargs) != snapshot.runtime_parameters:
             logger.warning("document_impact_call_preflight_rejected", extra={"task_id": claim.task.id,
                 "call_id": call_id, "reason": "runtime_parameters_changed"})
             raise ValueError("模型调用适配器、SDK或超时设置已变化，不能续写原任务")
@@ -358,12 +361,13 @@ class DocumentImpactCallService:
         if not send:
             return record
         logger.info("document_impact_model_dispatching", extra={"task_id": task.id, "call_id": call_id,
-            "attempt_id": claim.attempt_id, "request_sha256": record.request.sha256})
+            "attempt_id": claim.attempt_id, "request_sha256": record.request.sha256,
+            "transport_policy": snapshot.config.payload.transport_policy, "logical_timeout_seconds": remaining})
         try:
             async with asyncio.timeout(remaining):
                 result = await self._models.invoke(context.model.key, payload.request,
                     expected_parameters=context.model.model_dump(mode="json"),
-                    expected_runtime_parameters=snapshot.runtime_parameters)
+                    expected_runtime_parameters=snapshot.runtime_parameters, **runtime_kwargs)
         except asyncio.CancelledError:
             logger.warning("document_impact_call_interrupted", extra={"task_id": task.id, "call_id": call_id})
             raise  # Keep invoking. A new lease owner establishes outcome_unknown.
@@ -374,6 +378,11 @@ class DocumentImpactCallService:
                 task_id=task.id, stage="dispatch_unknown")
         metadata = {key: result.response_summary.get(key) for key in
             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
+        if options is not None and metadata.get("mode") == "http_error" and metadata.get("status_code") is None:
+            logger.warning("document_impact_transport_outcome_unconfirmed", extra={"task_id": task.id,
+                "call_id": call_id, "error_type": metadata.get("error_type")})
+            return await confirmed_impact_write(self._store.calls.mark_unknown(claim, call_id,
+                code="transport_error_without_http_response"), task_id=task.id, stage="transport_unknown")
         # Provider errors may embed request credentials in their diagnostics.
         raw = result.raw_response if metadata.get("mode") not in MODEL_FAILURE_MODES else {
             "diagnostics_omitted": "provider error diagnostics may contain credentials", "metadata": metadata}

@@ -27,7 +27,7 @@ const batchFields: { key: keyof DocumentImpactBatchPolicy; label: string; min: n
   { key: "boundary_context_chars", label: "边界上下文字符", min: 0, max: 20000 },
   { key: "max_retrieval_bytes", label: "单次补读字节上限", min: 1, max: 10000000 },
 ];
-type NumericInvocation = Exclude<keyof DocumentImpactInvocationPolicy, "token_method" | "encoding_name">;
+type NumericInvocation = Exclude<keyof DocumentImpactInvocationPolicy, "token_method" | "encoding_name" | "transport_policy">;
 const invocationFields: { key: NumericInvocation; label: string; min: number; max: number; step?: string }[] = [
   { key: "max_logical_calls", label: "逻辑调用数量上限", min: 1, max: 10000 },
   { key: "max_reserved_estimated_tokens", label: "累计预留估算量上限", min: 1, max: 100000000 },
@@ -49,6 +49,7 @@ async function load() {
   const valid = <T,>(result: PromiseSettledResult<DocumentImpactSettings<T>>) => result.status === "fulfilled"
     && [projectId, "global"].includes(result.value.scope_key) ? result.value : null;
   policy.value = valid(values[0]); analysis.value = valid(values[1]); batch.value = valid(values[2]); invocation.value = valid(values[3]);
+  if (invocation.value) invocation.value.payload.transport_policy ??= "provider_defaults";
   reasoning.value = valid(values[4]);
   error.value = errors.join("；"); busy.value = false;
 }
@@ -129,7 +130,10 @@ onBeforeUnmount(() => { disposed = true; ++epoch; });
       <p>调用预算 · {{ invocation.scope_key === 'global' ? '全局默认' : '项目覆盖' }} · 修订 {{ invocation.revision }}</p>
       <fieldset :disabled="busy || !canWrite"><div class="settings-grid"><label v-for="field in invocationFields" :key="field.key">{{ field.label }}
         <input v-model.number="invocation.payload[field.key]" :aria-label="field.label" type="number" :min="field.min" :max="field.max" :step="field.step || 1" required>
-      </label></div><label>内容计量<select v-model="invocation.payload.token_method" aria-label="影响内容计量" @change="changeMethod">
+      </label></div><label>请求发送策略<select v-model="invocation.payload.transport_policy" aria-label="影响请求发送策略">
+        <option value="provider_defaults">沿用提供商重试</option><option value="single_attempt">单次发送</option>
+      </select></label><p>单次发送使用本次调用期限等待响应，关闭 SDK 重试；超时结果保留为未知。</p>
+      <label>内容计量<select v-model="invocation.payload.token_method" aria-label="影响内容计量" @change="changeMethod">
         <option value="utf8_bytes_estimate">UTF-8字节估算</option><option value="tiktoken_content">指定编码的内容计数</option>
       </select></label><label v-if="invocation.payload.token_method === 'tiktoken_content'">编码<select v-model="invocation.payload.encoding_name" aria-label="影响计量编码">
         <option value="cl100k_base">cl100k_base</option><option value="o200k_base">o200k_base</option>

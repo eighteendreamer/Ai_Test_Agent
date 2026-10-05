@@ -2390,3 +2390,42 @@ $env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\
 交付验证脚本首次把所有专项都当作保存了独立计划对象文件，在真实专项result.json断言失败。查证该专项实际由服务读计划并将完整plan保存于verification.json；按现有规范字典序列化重算hash/大小与检查点一致，明确区分服务读取元数据与另存原始对象字节。最终723份本轮原证据、1015份历史原证据、12条生产/正式App物理消息和12条默认模型物理消息、计划/完整范围及三份方案均核对通过；没有补造未保存的对象或更改模型答复。
 
 暂存检查首次报告四个原日志末尾空行；按原始证据保留规则在.gitattributes明确允许p4-grouped日志末尾空行，没有裁剪日志。最终754份相关文件范围核对、723份原证据暂存字节与SHA/大小核对、暂存diff检查通过，用户.gitignore未改动/未暂存。默认模型失败仍按失败交付，本提交不是完整升级完成。
+
+## 项目SDK策略及真实单次发送〔研究基线845287bb〕
+
+调研及采用方式见P4_TRANSPORT_BUDGET_DESIGN.md。先核对原默认模型60秒超时和SDK重复、现有不可变调用预算、工厂参数、安装签名及官方文档，再实现可选transport_policy、冻结有效options、现有Runtime keyword、无状态传输unknown与正式页面配置；全局模型/其他调用行为保留。默认配置缺失新字段按provider_defaults，原ModelInvocationRequest不变。Google单次选项提交前拒绝，Responses/Anthropic参数构造已验而实际HTTP尚未验。
+
+实际命令（后端工作目录Agent_Server，输出重定向同名前缀.log并保留；前端工作目录agent_web）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_model_clients.py tests/test_langchain_model_adapter.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-transport-model-regression.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-transport-live-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_transport.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-transport-live-first.xml
+$env:QA_IMPACT_TASK_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-transport-regression-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_transport.py tests/test_document_impact_calls.py tests/test_document_impact_responses.py tests/test_document_impact_grouped_workflow.py tests/test_document_impact_workflow.py tests/test_document_impact_tasks.py tests/test_document_impact_analysis_context.py tests/test_model_clients.py tests/test_langchain_model_adapter.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-transport-regression-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-transport-production-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-transport-production-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-transport-full-product-final')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-transport-full-product-final.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_DEFAULT_MODEL='1'
+$env:QA_DOCUMENT_IMPACT_SINGLE_ATTEMPT='1'
+$env:QA_DOCUMENT_IMPACT_DEFAULT_MODEL_EVIDENCE_DIR=(Join-Path (Resolve-Path '..\docs\upgrade_2026-10-03') 'p4-default-model-single-attempt-first')
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_impact_default_workflow.py -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-model-single-attempt-first.xml
+npm run test -- src/services/documentImpacts.api.test.ts src/features/tools/plugins/DocumentImpactProduct.test.ts
+npm run build
+```
+
+模型26通过2.89秒、新真实功能17通过71.37秒、最终九模块156通过529.86秒、独立生产全五项294.62秒、正式App一项85.06秒，全部0跳过。生产包括MD/DOCX/PDF原生、DOCX LangChain正常及MD实际杀进程恢复。单次慢响应专项实际SDK4秒/重试0、HTTP0.7秒延迟而原全局0.25秒，六组每组两次调用成功；HTTP500/断连接/取消×两适配器每项一次发送，当前MySQL配置变化及新租约恢复不重发。旧四份v6请求hash不变，完整12步JSON/未知字段/来源保留。
+
+前端24通过；第一build退出2，TS2339是测试Element.value类型错误。修正标准HTMLSelectElement类型后build退出0，vue-tsc/Vite通过，Vite6.67秒；未放宽业务断言，首失败log保留。
+
+真实默认模型1失败468.08秒，Handler460.515秒、5逻辑/5物理，冻结SDK120秒/重试0，实际四种HTTP timeout均120。源默认step-5-preview、8192/globalSDK60/call120/isolatedTask600不变。发现73.063秒得到合法三规则/八声明；保留期用例119.906秒回应但content_json.title不存在，invalid_case_citation拒绝；促销23.437秒请求另两条固定用例，续读109708字节/4消息120秒取消，未鉴权52429字节/2消息120秒取消。全部三条8步用例实际发送；最后8 analyzed/1 rejected/2unknown、3rules、partial/pending_review/deployment unknown。仍失败，任务completed仅是生命周期终态。
+
+没有改写原错误引用/unknown，没有原样重跑失败默认任务。终态不重领、历史查询不HTTP/上传/重建，源模型前后相同。本轮代码/文档范围不含用户.gitignore；三份方案、原证据、消息、固定options及旧345+85+328+257+723原文件核对另记p4-transport-validation.json。无依赖或新SQL表，未执行生产历史迁移。完整P0—P5保持未完成，后续按真实样本查证引用和补读阶段边界，再完成需求评审/矩阵/增量及其他原定模块。
+
+交付核对已实际完成：11份Python源码/测试AST与字节编译、跨层引用及diff检查通过；522份本轮原文件、1738份历史原文件、12条生产/正式App消息和5条默认消息逐字节/固定请求核对，三份方案一致。首次验证脚本把调用phase的outcome_unknown错当结果单元status；读取真实Schema后使用unknown，原业务记录和源码未改，核对脚本复验通过。方案正文最初多留文件末尾空行，去除后diff检查通过；未裁剪原始日志。
+
+最终暂存541份相关文件，522份原始证据暂存字节与记录SHA/大小相同，暂存diff检查通过，用户.gitignore未改/未暂存。首次一次性暂存参数超过Windows命令行长度（WinError 206），改为顺序分批暂存，范围不变；没有删除或裁剪证据。

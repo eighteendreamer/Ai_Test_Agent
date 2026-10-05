@@ -12,11 +12,13 @@ from types import SimpleNamespace
 import pytest
 
 from src.application.documents.impact_calls import DocumentImpactCallService
+from src.application.documents.impact_config_service import DocumentImpactConfigService
 from src.application.documents.impact_response_service import DocumentImpactResponseService
 from src.application.documents.impact_workflow import DocumentImpactWorkflow
 from src.application.model_clients.openai_client import OpenAIChatClient
 from src.runtime.document_impact_task_handler import DocumentImpactTaskHandler
 from src.schemas.document_impact import DocumentImpactCommand, DocumentImpactTaskRequest
+from src.schemas.document_impact_calls import DocumentImpactInvocationPolicy
 from test_document_impact_default_model import real_scenario, write_json
 
 
@@ -32,6 +34,12 @@ async def test_default_model_automatic_fixed_scope_and_terminal_history(tmp_path
     (directory / "objects").mkdir()
     wire = []
     async with real_scenario(tmp_path, directory) as (env, project, doc, diff_id, cases, store, tasks, models):
+        single_attempt = os.getenv("QA_DOCUMENT_IMPACT_SINGLE_ATTEMPT") == "1"
+        if single_attempt:
+            configs = DocumentImpactConfigService(config_store=env.configs, project_service=env.projects)
+            configured = await configs.save_invocation_settings(project.id,
+                DocumentImpactInvocationPolicy(transport_policy="single_attempt"))
+            write_json(directory / "transport-policy.json", configured.model_dump(mode="json"))
         default = models.get_default_model_config()
         assert default.transport == "openai_chat_completions"
         inspection = OpenAIChatClient()._make_client(default, "unused-type-inspection")
@@ -51,6 +59,7 @@ async def test_default_model_automatic_fixed_scope_and_terminal_history(tmp_path
                 "request_sha256": hashlib.sha256(raw).hexdigest(), "request_bytes": len(raw),
                 "unit": payload["unit"], "stage": payload["coordination_context"]["stage"],
                 "message_count": len(body["messages"])}
+            entry["sdk_timeouts"] = request.extensions.get("timeout")
             (directory / f"http-request-{entry['attempt']}.json").write_bytes(raw)
             wire.append(entry)
             write_json(directory / "physical-http.json", wire)
@@ -122,6 +131,8 @@ async def test_default_model_automatic_fixed_scope_and_terminal_history(tmp_path
             await handler(delivery)
             assert await workflow.read_result(project.id, doc.id, task.id) == (snapshot, result)
         assert len(wire) == sent
+        if single_attempt:
+            assert len(wire) == len(records), "single-attempt SDK must not repeat a logical request"
         assert await store.claim(project.id, task.id, worker_id="terminal") is None
         assert [item.unit for item in result.units] == calls.units(manifest)
         assert result.semantic_status == "pending_review" and result.deployment_status == "unknown"

@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import Field, StrictInt, model_validator
 
 from src.schemas.document_impact_batches import ImpactBatchModel
-from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.model_config import ModelInvocationRequest, ModelTransportOptions
 from src.schemas.tool_runtime import ModelToolCall
 
 
@@ -14,6 +14,7 @@ class DocumentImpactInvocationPolicy(ImpactBatchModel):
     max_logical_calls: int = Field(default=200, ge=1, le=10000)
     max_reserved_estimated_tokens: int = Field(default=2_000_000, ge=1, le=100_000_000)
     call_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    transport_policy: Literal["provider_defaults", "single_attempt"] = "provider_defaults"
     max_response_bytes: int = Field(default=8_000_000, ge=1, le=100_000_000)
     token_method: Literal["utf8_bytes_estimate", "tiktoken_content"] = "utf8_bytes_estimate"
     encoding_name: Literal["cl100k_base", "o200k_base"] | None = None
@@ -24,6 +25,12 @@ class DocumentImpactInvocationPolicy(ImpactBatchModel):
         if (self.token_method == "tiktoken_content") != (self.encoding_name is not None):
             raise ValueError("tiktoken内容计量必须明确编码；字节估算不能声明编码")
         return self
+
+    @property
+    def transport_options(self):
+        if self.transport_policy == "single_attempt":
+            return ModelTransportOptions(timeout_seconds=self.call_timeout_seconds, max_retries=0)
+        return None
 
 
 class DocumentImpactInvocationSettings(ImpactBatchModel):

@@ -13,6 +13,7 @@ def resolve_client(
     config: ModelConfigRecord,
     *,
     timeout_seconds: float = 300.0,
+    max_retries: int | None = None,
 ) -> ProviderClient:
     """Pick the official-SDK client for this config's transport.
 
@@ -22,10 +23,13 @@ def resolve_client(
         config.transport,
         provider=normalize_provider(config.provider),
     )
+    retry_options = {"max_retries": max_retries} if max_retries is not None else {}
     if transport == "anthropic_messages":
-        return AnthropicMessagesClient(timeout_seconds=timeout_seconds)
+        return AnthropicMessagesClient(timeout_seconds=timeout_seconds, **retry_options)
     if transport == "google_gemini_generate_content":
+        if max_retries is not None:
+            raise ValueError("Google客户端尚未验证显式SDK重试设置")
         return GoogleGenAIClient(timeout_seconds=timeout_seconds)
     if transport == "openai_responses":
-        return OpenAIResponsesClient(timeout_seconds=timeout_seconds)
-    return OpenAIChatClient(timeout_seconds=timeout_seconds)
+        return OpenAIResponsesClient(timeout_seconds=timeout_seconds, **retry_options)
+    return OpenAIChatClient(timeout_seconds=timeout_seconds, **retry_options)

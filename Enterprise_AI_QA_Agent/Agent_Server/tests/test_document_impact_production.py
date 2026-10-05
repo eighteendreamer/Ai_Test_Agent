@@ -135,6 +135,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             if suffix == "document-impact-settings": payload = {**payload, "timeout_seconds": 300}
                             if suffix == "document-impact-analysis-settings":
                                 payload = {**payload, "model_key": model.key, "analysis_guidance": "实测固定完整来源"}
+                            if suffix == "document-impact-invocation-settings":
+                                payload = {**payload, "transport_policy": "single_attempt"}
                             response = await client.put(root + "/" + suffix, json=payload)
                             assert response.status_code == 200, response.text
                             frozen[suffix] = response.json()

@@ -132,6 +132,7 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                             await panel.get_by_role('button', name='保存影响分段设置', exact=True).click()
                             await expect(panel.get_by_role('status')).to_contain_text('项目影响设置已保存')
                             await panel.get_by_label('逻辑调用数量上限', exact=True).fill('250')
+                            await panel.get_by_label('影响请求发送策略', exact=True).select_option('single_attempt')
                             await panel.get_by_role('button', name='保存影响调用预算', exact=True).click()
                             await expect(panel.get_by_role('status')).to_contain_text('项目影响设置已保存')
                             mysql = MySQLApplicationConfigStore(settings)
@@ -144,6 +145,7 @@ async def test_full_product_submit_lost_reply_exact_history_settings_failure_res
                                 ('document-impact-reasoning-settings', 'document.impact_reasoning_settings')]:
                                 assert mysql.get(key, scope_key=project['id']).payload == configuration[suffix]['payload']
                             assert configuration['document-impact-settings']['payload']['timeout_seconds'] == 300
+                            assert configuration['document-impact-invocation-settings']['payload']['transport_policy'] == 'single_attempt'
                             assert configuration['document-impact-analysis-settings']['payload']['model_key'] == model.key
                             assert configuration['document-impact-batch-settings']['payload']['boundary_context_chars'] == 0
                             assert configuration['document-impact-invocation-settings']['payload']['max_logical_calls'] == 250

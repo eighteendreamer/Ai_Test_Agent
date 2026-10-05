@@ -40,8 +40,10 @@ class DocumentImpactAnalysisContexts:
     async def capture_invocation_snapshot(self, project_id, model_key):
         config = await self._configs.get_invocation_settings(project_id)
         version = importlib.metadata.version("tiktoken") if config.payload.token_method == "tiktoken_content" else None
+        options = config.payload.transport_options
         return DocumentImpactInvocationSnapshot(config=config, tokenizer_version=version,
-            runtime_parameters=await asyncio.to_thread(self._models.get_invocation_runtime_parameters, model_key))
+            runtime_parameters=await asyncio.to_thread(self._models.get_invocation_runtime_parameters, model_key,
+                **({"transport_options": options} if options is not None else {})))
 
     async def capture(self, project, request):
         config = await self._configs.get_analysis_settings(project.id)
