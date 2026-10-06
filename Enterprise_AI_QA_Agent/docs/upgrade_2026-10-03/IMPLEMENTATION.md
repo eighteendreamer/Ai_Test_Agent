@@ -3528,3 +3528,14 @@ npm run build
 源码/跨层契约、原失败、原件/事件、物理消息、旧证据和三方案核对见p4-effect-evidence-validation.json。新表在原动作服务初始化时创建；旧记录不补写事件，旧三个Prompt/原wire验证一致。仅新增原操作查询索引，不改变原索引身份。实际新策略独立生产、默认模型生成声明、真实数组返回、完整App和生产迁移未验。逐对象覆盖、消费完成、未知查证、运行修订及其余完整P0—P5仍未完成，6.44/6.45缺口不宣称已修复。
 
 正式来源元数据放在原执行项基类，产生声明预期来自完整固定JSON；prepare的预期继续来自自身instructions。新声明依赖原逻辑操作/范围策略，缺省字段与三个旧Prompt字节保持。正式清理定义扩展、逐对象覆盖/消费完成、默认模型与完整App仍是后续实施范围。
+
+
+## 2026-10-07 方案正文更新与三份同步〔核对ddd8d81a〕
+
+本次按用户“更新这个方案”的要求修改PLAN.md首页、2.4、3.1.4—3.1.5及第六节，并同步所贴附件和选中计划文件。上传由应用保存原件/版本，不使用Git缓存；Git仅作可选来源；模板只用于生成，执行保留当前项目选取、初排、按必要条件补全及最终冻结的流程。上传状态、提交结果未知时恢复及独立验收已列为操作表。
+
+在Agent_Server实际运行：`..\.venv\Scripts\python.exe -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --junitxml=../docs/upgrade_2026-10-03/plan-revision-current-upload.xml`。退出0：2通过、0失败、0跳过，3.54秒；原stdout/stderr保存于同名.log。测试使用临时真实文件和本地测试存储，没有登记Git来源；未重跑生产存储、解析/比较进程、正式App或默认模型。
+
+本次读取当前工作区清理覆盖初轮原失败记录，1失败、3通过、7夹具错误；7项原生场景未执行。未修复、未重跑或提交这些业务改动。PLAN 6.48标注了原绑定无target_key的真实契约及固定run_item_ids来源；逐对象覆盖、消费完成和其余P0—P5仍未验收。
+
+三份正文一致、既有19个脏文件hash未变、用户.gitignore未变，核对见plan-revision-current-validation.json。本次提交只包含方案、文档说明及此次测试/同步核对记录，不包含已有业务改动或旧失败日志。
