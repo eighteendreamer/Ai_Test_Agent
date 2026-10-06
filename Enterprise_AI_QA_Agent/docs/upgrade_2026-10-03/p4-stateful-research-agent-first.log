@@ -1,0 +1,19 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order _
+tests\test_case_stateful_recovery_research.py:117: in test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order
+    pending = await approval_continuation(runs,reader,adapter,args,pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:307: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:172: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:227: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session ffe0f274-97ef-4bc6-aae8-83fcfea6b143: 'input'
+=========================== short test summary info ===========================
+FAILED tests/test_case_stateful_recovery_research.py::test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order
+1 failed, 3 deselected in 9.09s

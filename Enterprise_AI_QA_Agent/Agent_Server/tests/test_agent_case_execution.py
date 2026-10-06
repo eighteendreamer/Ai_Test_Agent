@@ -251,11 +251,12 @@ async def test_agent_regression_http_run_recreates_data_and_preserves_actual_par
 
 
 @asynccontextmanager
-async def adapter_environment(tmp_path, business_http, live=False, agent=None, start_item=True):
+async def adapter_environment(tmp_path, business_http, live=False, agent=None, start_item=True, planning_policy=None):
     async with AsyncExitStack() as resources:
         services = {}
         env = await resources.enter_async_context(execution(tmp_path, business_http, live,
-            perform_tools=False, with_business_instructions=True, services=services, start_item=start_item))
+            perform_tools=False, with_business_instructions=True, services=services, start_item=start_item,
+            planning_policy=planning_policy))
         base = services['environment']
         writer, reader = await resources.enter_async_context(session_stores(env[1], live))
         services['creator']._sessions = reader

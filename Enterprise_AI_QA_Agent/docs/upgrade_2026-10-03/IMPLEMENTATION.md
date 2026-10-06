@@ -3366,3 +3366,29 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 本步不宣称真实清理、跨call_id稳定操作身份/全局仅执行一次、发送未知自动查证、执行修订、换目标回归、默认Agent、正式环境完整App、生产迁移或全P0—P5完成。领取commit边界之后确认不能撤销已领取动作；after仅保留，phase不是cleanup证据。用户.gitignore和旧environment-action诊断不提交；无push/PR。
 
 交付审计预检先两次失败：读取固定计划时误用顶层items而实际为decision.items；将physical_requests误按整数比较而实际是完整请求列表。两次均在方案写入前退出；读取真实保存结构后改为精确版本及列表逐项比较。最终716份新增raw已逐个核对Git暂存二进制SHA/size，旧8973份raw不变，742文件精确范围与cached diff检查通过，三方案逐字节一致且所有本地链接有效。源码、功能测试与已有失败工件没有因审计调整而重写。
+
+## 2026-10-06 C2c3：真实订单准备/清理与跨调用重复研究
+
+研究基线5102413d。重读原目标、计划拥有者/输出路径、完整Agent上下文、原Job构建/领取/可靠返回恢复、API完成检查点及本地Agent课程04.5。复用原regression_business_http有状态服务和原图/审批/MySQL/PG/RustFS；测试辅助入口增加可选planning_policy，缺省不改既有行为。没有生产逻辑修复，详见P4_STATEFUL_OPERATION_RESEARCH.md及PLAN.md 6.42。
+
+最终两条命令从Agent_Server运行，原标准输出/错误保存同前缀日志，所有进程已结束：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-stateful-research-current'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_stateful_recovery_research.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-stateful-research-current.xml *> ../docs/upgrade_2026-10-03/p4-stateful-research-current.log
+# 实际退出1；2通过、2失败，18.92秒。真实失败不改为xfail。
+
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_agent_case_assessment.py tests/test_agent_case_execution.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-stateful-research-compat-final.xml *> ../docs/upgrade_2026-10-03/p4-stateful-research-compat-final.log
+# 实际退出0；67通过、2跳过，160.09秒。实际模型/公开Redis Worker开关未启。
+```
+
+此前first只包含当时三项，2通过/1失败16.01秒。agent-first、agent-fixed、agent-wire-corrected单独选取-k original_agent_changed_provider：分别1失败9.09秒、1失败8.69秒、1真实失败11.32秒，各3未选。前两次是研究夹具结构错误：原tool JSON不含input，内部ModelToolCall使用arguments而非SDK的function。查原model_invoker/build_tool_message及实际消息后更正，原错误日志/XML保留，不把夹具错误解释为产品重复证据。
+
+current单次原图三次审批：POST→GET真实ID→DELETE同ID，created=1/orders=0；目标期望count=0实际1，Result.failed保持，seed/cleanup passed。原图跨调用四次审批：原参数/task_id/归属不变，仅seed变seed-recovery，POST两次、GET/DELETE第一条，created=2/orders=1；4个原Jobcompleted，目标failed，5次受控模型请求完整保存。另用共享runtime丢失创建返回：同原Jobrunning无输出不重发；换provider call_id新建Job并再POST，created=2，原Job仍未知。两个入口分别记录，不称未知原图已经自动继续。
+
+验证原件JSON文件及RustFS原件保存、MySQL策略冻结、完整PG固定上下文/原Job/检查点/审批、实际HTTP与服务器对象状态。未知场景未清理，隔离服务器关闭不算业务清理；受控Agent不是默认外部模型。本轮未跑独立生产进程、三格式解析或App。已有兼容67项不证明新研究两个缺口已修。
+
+方案正文/附件/选中计划同步；按既有gitattributes保存raw原字节，审计p4-stateful-research-validation.json核对实际参数/上下文SHA、业务对象、XML、旧9689份原工件与用户.gitignore。只提交本轮研究/方案/原失败证据，不推送/建PR。稳定操作身份、执行中效果/清理状态、修订、换目标回归、默认Agent、环境App及完整P0—P5继续未完成。
+
+审计首轮误从固定plan顶层读取policy，实际为config_snapshot.policy，在三方案同步前退出；检查已保存真实结构后更正。最终六份场景的原参数/上下文/领取回执SHA和真实状态核对通过，34份raw及旧9689份原工件不变，三方案同字节，132个本地链接存在。三个测试文件py_compile和git diff --check实际通过；这两项不代替功能验收或两个真实失败的修复。

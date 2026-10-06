@@ -1,0 +1,18 @@
+.F.F                                                                     [100%]
+================================== FAILURES ===================================
+_ test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order _
+tests\test_case_stateful_recovery_research.py:134: in test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order
+    assert len(business[2]) == 1 and not business[1], 'Original Agent repeated the preparation under a new call_id and leaked its second order'
+E   AssertionError: Original Agent repeated the preparation under a new call_id and leaked its second order
+E   assert (2 == 1)
+E    +  where 2 = len(['regression-775958b8b3a645e6993d7bf70b32a194', 'regression-3afdd44b08284ae18dd360307fd2ceee'])
+_____ test_actual_lost_create_return_must_not_create_another_order[True] ______
+tests\test_case_stateful_recovery_research.py:197: in test_actual_lost_create_return_must_not_create_another_order
+    assert len(business[2]) == 1 and len(business[1]) == 1, 'Changed provider call_id repeated the unknown preparation POST'
+E   AssertionError: Changed provider call_id repeated the unknown preparation POST
+E   assert (2 == 1)
+E    +  where 2 = len(['regression-bffc1332d79341ec908346572bc6f6aa', 'regression-1e6c6ec1bebf4564a8591c502d5f8c76'])
+=========================== short test summary info ===========================
+FAILED tests/test_case_stateful_recovery_research.py::test_actual_original_agent_changed_provider_call_must_not_repeat_preparation_or_leak_order
+FAILED tests/test_case_stateful_recovery_research.py::test_actual_lost_create_return_must_not_create_another_order[True]
+2 failed, 2 passed in 18.92s

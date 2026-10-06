@@ -74,9 +74,11 @@ def business_http():
 
 @asynccontextmanager
 async def execution(tmp_path, business_http, live=False, perform_tools=True, with_business_instructions=False,
-    services=None, start_item=True):
+    services=None, start_item=True, planning_policy=None):
     async with planned(tmp_path, live) as (env, store, suites, creator, old, now, table):
         project = await env.projects.get(old.project_id)
+        if planning_policy is not None:
+            await env.service.save_policy(project.id, planning_policy)
         content = {'objective': '完整用例检查', '期望': {'code': 200, 'flag': False, 'count': 0,
                    'nullable': None, 'semantic': '订单仍待支付且未出库'},
                    'steps': [{'action': '核对完整实际响应'}]}
@@ -123,6 +125,11 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
                     cur.execute('SELECT to_regclass(%s) AS existing', (name,))
                     assert cur.fetchone()['existing'] is None
         jobs = ToolJobService(PostgresToolJobStore(env.settings) if live else InMemoryToolJobStore())
+        if planning_policy is not None and planning_policy.action_admission_protocol is not None:
+            if not live:
+                raise ValueError('动作确认研究必须使用真实PG事务')
+            from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
+            jobs._case_action_admission = PostgresCaseActionAdmission(runs=store, jobs=jobs._store)
         await jobs.initialize()
         runtime = ToolRuntimeService(tool_job_service=jobs)
         session, turn, attempt = str(uuid4()), str(uuid4()), run_attempt.id
