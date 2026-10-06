@@ -46,6 +46,24 @@ class PostgresBusinessPlanning:
             raise ValueError("所选规划环境快照哈希不同")
         return snapshot
 
+    def _latest_reviews(self, cur, project_id, selection):
+        cur.execute(f"SELECT DISTINCT ON(requirement_version_id) * FROM {self._decisions.table} "
+            "WHERE project_id=%s AND environment_id=%s AND snapshot_id=%s "
+            "ORDER BY requirement_version_id,revision DESC",
+            (project_id, selection.environment_id, selection.snapshot_id))
+        return [self._decisions._review(row) for row in cur.fetchall()]
+
+    def current_reviews_in_cursor(self, cur, plan):
+        """Lock before RunItems, sharing the append-review serialization boundary."""
+        fixed = fixed_planning_environment(plan.project_id, plan.request.environment, plan.environment)
+        self._environments._project(cur, plan.project_id)
+        if self._snapshot(cur, plan.project_id, plan.request.environment) != fixed.snapshot:
+            raise ValueError("执行所选固定目标与PG原快照不同")
+        reviews = self._latest_reviews(cur, plan.project_id, plan.request.environment)
+        if any(review.snapshot != fixed.snapshot for review in reviews):
+            raise ValueError("执行适用确认不属于本次固定目标")
+        return reviews
+
     async def freeze(self, project_id, selection):
         def read():
             env = self._environments
@@ -61,11 +79,7 @@ class PostgresBusinessPlanning:
                     raise ValueError("规划环境快照与原登记不同")
                 # Same project lock as append reviews: select one complete head
                 # per requirement version, including explicit revoke/unknown.
-                cur.execute(f"SELECT DISTINCT ON(requirement_version_id) * FROM {self._decisions.table} "
-                    "WHERE project_id=%s AND environment_id=%s AND snapshot_id=%s "
-                    "ORDER BY requirement_version_id,revision DESC",
-                    (project_id, selection.environment_id, selection.snapshot_id))
-                reviews = [self._decisions._review(row) for row in cur.fetchall()]
+                reviews = self._latest_reviews(cur, project_id, selection)
                 result = BusinessPlanningEnvironment(snapshot=snapshot, reviews=reviews, sha256="0"*64)
                 result.sha256 = environment_digest(result.model_dump(mode="json", exclude={"sha256"}))
                 return fixed_planning_environment(project_id, selection, result)

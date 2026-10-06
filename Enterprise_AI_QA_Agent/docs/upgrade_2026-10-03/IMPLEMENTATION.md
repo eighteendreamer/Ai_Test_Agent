@@ -3170,3 +3170,51 @@ npm run build
 首次扩大规划回归未指定QA_PLANNING_TASK_EVIDENCE_DIR，测试默认写根目录p2-planning-worker-probe.json并替换旧cli诊断。已将本轮确切内容保存至p4-environment-planning-regression-fixed目录，再从HEAD恢复旧cli原字节；历史清单核对原SHA/大小，不把新内容留在旧记录位置。后续规划回归须指定该证据目录。
 
 三份方案同步，明确C1固定依据已接但C2最新确认的创建/领取/开始限制尚未实现。精确受影响项/依赖、独立项继续、未知副作用、新目标回归、D正式页面、用户业务评审、默认Agent、生产迁移及其他P0—P5继续。交付审计environment_planning_delivery_20261006.py核对旧原始证据、最新原件/工具/结果/模型请求及暂存原字节；用户.gitignore保持，不推送或建PR。
+
+## 2026-10-06 C2a：精确失效的未执行限制与方案同步
+
+研究基线bbea328e；先读run_store创建/领取/开始/过期恢复、原依赖结果、PG环境确认锁及本地Agent协议课程，详见P4_ENVIRONMENT_RESTRICTIONS_DESIGN.md。原C1依据核对不是当前失效限制；原失败真实捕获后才实施，不添加通用业务检查清单。复用原项目锁、Attempt/Result与依赖传播；保存完整当前确认、采用确认、原规划/快照SHA、精确版本和阶段。原请求优先恢复；历史已开始/有检查点条目不伪报未执行，不自动新发HTTP。
+
+| 独立轮次，文件前缀p4-environment-restrictions- | 实际结果 |
+|---|---|
+| reproduction | 1失败，30.63秒；原实现创建全queued，未保存完整SQL前已断言 |
+| reproduction-captured | 1失败，27.37秒；保存真实原件、固定计划/运行及PG确认后重现同一漏洞 |
+| create-first | 3通过，46.14秒；MD/DOCX/PDF真实创建限制 |
+| live-first | 9通过、1收集警告，81.30秒；该轮加载的是早期源码，不含随后全部current_reviews及重放hash核验 |
+| live-final | 12通过/0跳过，119.22秒；最新源码，11项实时功能与1项真实失败输入重放；原类型导入别名消除警告 |
+| regression | 132通过/2外部模型跳过，277.48秒；依赖/创建/规划/Agent会话/审批/正文核验与原检查点 |
+| production-first | 1失败，75.38秒；直接比较PG/API时间JSON，失败前只保存规划/进程证据，没有补造完整SQL |
+| production-captured | 1失败，67.09秒；完整捕获后确认仅updated_at/completed_at的+00:00与Z不同 |
+| production-final | 1通过/0跳过，99.22秒；采用原Run模型读取比较，生产时间序列化不改；API/Outbox/独立规划及执行CLI、真实PG/MySQL/Redis/RustFS、终态恢复 |
+
+实际命令在Agent_Server目录执行；每轮使用不同证据目录/XML/log，stdout和stderr完整保存：
+
+```powershell
+# 首两轮使用相同真实失败输入，第二轮已加入断言前保存。
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+# QA_REQUIREMENT_EVIDENCE_DIR依次为p4-environment-restrictions-reproduction、reproduction-captured、create-first、live-first、live-final。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_restrictions.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-restrictions-live-final.xml
+# 首两轮另传-x；create-first当时只包含3项创建测试。
+
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-restrictions-regression'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-restrictions-regression\planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_business_planning.py tests/test_agent_case_context.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-restrictions-regression.xml
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-restrictions-production-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_restrictions_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-restrictions-production-final.xml
+# 首轮和完整捕获轮分别使用production-first、production-captured目录，旧失败保留。
+```
+
+本轮包装命令把每轮全部stdout/stderr重定向至同名log，读取尾部后返回原退出码。最新6个生产文件、5个相关测试/场景与交付审计py_compile通过，源码diff检查通过。公开RunItem/Result类型既有blocked和灵活actual，事件消费方全局搜索；没有新公开字段/路由、前端改动或依赖，故本轮未重新构建/操作正式App。
+
+每个实际文档场景保留完整12步JSON及False/0/null。创建限制旧前置及必要目标，独立项实际GET五项正文核验passed，Run完成/不可重领。四路真实领取只领取一个独立项；领取后确认invalid使start保存原租约未执行结果，原PG提交回执丢失后恢复相同结果、错token拒绝。真实PG项目锁保存transactionid等待/阻塞PID，证明追加确认不能穿过正在领取的事务；开始随后看到新确认。另一测试实际POST并保存ToolJob/原检查点，过期后确认invalid仍保留原started/checkpoint；恢复无新HTTP，不证明静态目标产生了业务状态变化，也未调用Agent自主续跑。
+
+独立生产模型4物理发送：原影响2、C1规划1、新限制规划1。明确invalid的旧精确版本创建即blocked/completed；原Outbox payload真实派发给独立执行CLI，只处理终态，新增业务HTTP=0。撤回、API重启、关闭派发、归档及删除当前MySQL配置后，原任务/计划/Run/Result保持相同；不重置终态、不重新发模型。语义评审/模型为受控夹具，不是外部默认模型验收。
+
+PLAN第5.2.3/6.37及进度表同步区分C2a已验与C2其余待实施，正文/附件/选中计划保持相同字节。上传独立于Git、模板仅生成、完整用例与项目选取/初排/简单衔接检查/补全/最终冻结继续保留。environment_restrictions_delivery_20261006.py核对旧8010份原始证据、新原件/确认/回执/hash/工具检查/锁竞争/原检查点、真实生产消息及暂存原字节；用户.gitignore保持。
+
+未完成：允许通过项当前决定回执、运行中逐动作修订及未知副作用处理、换目标回归，D正式页面/AI候选/默认Agent、用户业务评审、生产历史迁移及其余P0—P5。没有新表或配置迁移；新限制只消费正式绑定环境中的明确精确invalid，旧无环境运行继续原流程。默认中文范围提交，不推送或建PR。

@@ -68,7 +68,7 @@ def collect_objects(settings, owned):
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
     verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_execution=None,
-    verify_applicability=None, verify_environment_planning=False):
+    verify_applicability=None, verify_environment_planning=False, verify_environment_restrictions=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -392,6 +392,13 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                                 case=case, model_key=model.key, settings=settings, processes=processes,
                                 get=get, post=post, client=client, evidence=evidence, sends=sends)
                             sent += environment_planning_state["physical_planning_calls"]
+                        environment_restrictions_state = None
+                        if verify_environment_restrictions:
+                            from business_environment_restrictions_production_scenario import restrictions_from_production
+                            environment_restrictions_state = await restrictions_from_production(root=root,state=applicability_state,
+                                case=case,model_key=model.key,settings=settings,processes=processes,
+                                get=get,post=post,client=client,evidence=evidence,sends=sends)
+                            sent += environment_restrictions_state["physical_planning_calls"]
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
                         terminal = processes.start("impact-worker-terminal", "-m", "src.cli.run_document_impact_worker",
@@ -433,11 +440,16 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         if applicability_state:
                             from business_applicability_production_scenario import decisions_after_restart
                             await decisions_after_restart(state=applicability_state, get=get, post=post, client=client,
-                                settings=settings, evidence=evidence, root=root, sends=sends)
+                                settings=settings, evidence=evidence, root=root, sends=sends,
+                                extra_reviews=(environment_restrictions_state["additional_reviews"] if environment_restrictions_state else None))
                         if environment_planning_state:
                             from business_planning_production_scenario import planning_after_restart
                             await planning_after_restart(state=environment_planning_state, root=root,
                                 get=get, post=post, client=client, evidence=evidence, settings=settings, sends=sends)
+                        if environment_restrictions_state:
+                            from business_environment_restrictions_production_scenario import restrictions_after_restart
+                            await restrictions_after_restart(state=environment_restrictions_state,root=root,get=get,post=post,
+                                evidence=evidence,sends=sends)
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

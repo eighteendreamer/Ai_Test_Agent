@@ -103,12 +103,24 @@ def blocked_dependency_records(item: TestRunItemRecord, failures: list[dict[str,
         evidence_refs=[{"evidence_type": "run_item", "evidence_id": failure["item_id"],
             "label": failure["reason"], "metadata": {"result_id": failure.get("result_id")}} for failure in failures],
         payload_hash="0" * 64)
+    return unexecuted_records(item, completion, now, worker_id="dependency-resolution")
+
+
+def unexecuted_records(item, completion, now, *, worker_id, attempt=None):
+    """Share the existing terminal receipt for queued or not-yet-started claimed work."""
     content = completion.model_dump(mode="json", exclude={"payload_hash"})
     completion.payload_hash = hashlib.sha256(json.dumps(content, ensure_ascii=False,
         sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    attempt = TestRunAttemptRecord(id=str(uuid4()), run_id=item.run_id, run_item_id=item.id,
-        attempt_no=item.attempt_no + 1, worker_id="dependency-resolution", lease_token=str(uuid4()),
-        status="blocked", claimed_at=now, completed_at=now)
+    if attempt is None:
+        attempt = TestRunAttemptRecord(id=str(uuid4()), run_id=item.run_id, run_item_id=item.id,
+            attempt_no=item.attempt_no + 1, worker_id=worker_id, lease_token=str(uuid4()),
+            status="blocked", claimed_at=now, completed_at=now)
+    else:
+        if (item.status != "claimed" or attempt.status != "claimed" or attempt.started_at is not None
+            or attempt.checkpoint_version or attempt.run_item_id != item.id or attempt.lease_token != item.lease_token):
+            raise ValueError("未执行回执不能替代已开始、未知副作用或其他租约")
+        attempt = attempt.model_copy(deep=True, update={"status": "blocked", "completed_at": now,
+            "wall_clock_duration_ms": max(0,int((now-attempt.claimed_at).total_seconds()*1000))})
     result = TestCaseResultRecord(id=str(uuid4()), run_id=item.run_id, run_item_id=item.id,
         case_id=item.case_id, case_version_id=item.case_version_id,
         regression_source_result_id=item.regression_source_result_id, attempt_id=attempt.id,

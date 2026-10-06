@@ -823,7 +823,7 @@ class TestRunService:
         payload: RunItemLeaseRequest,
     ) -> TestRunItemRecord:
         item = await self._store.start_item(item_id, payload.lease_token, self._clock())
-        await self._emit_for_item(item, "test_run.item_started")
+        await self._emit_for_item(item, "test_run.item_blocked" if item.status == "blocked" else "test_run.item_started")
         return item
 
     async def get_item(self, item_id: str) -> TestRunItemRecord:

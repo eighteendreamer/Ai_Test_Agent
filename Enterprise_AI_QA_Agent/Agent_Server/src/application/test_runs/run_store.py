@@ -13,6 +13,7 @@ from src.core.config import Settings
 from src.application.test_runs.timing import add_active_duration, add_waiting_duration, elapsed_ms
 from src.application.test_runs.dependencies import (dependencies_ready, validate_run_dependencies,
     dependency_failures, blocked_dependency_records)
+from src.application.test_runs.environment_restrictions import restriction_reviews, blocked_environment_records
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -1880,10 +1881,17 @@ class PostgresTestRunStore:
                 raise ValueError("回归指定启用版本在提交前发生变化，请重新规划")
             suite_store.insert_in_cursor(cur, suite.suite, suite.items)
             self._insert_run_and_items(cur, run, items)
+            reviews = self._current_environment_reviews(cur, run)
+            restricted = self._block_environment_items_in_cursor(cur, run, reviews, run.created_at, "create")
+            dependent = self._block_failed_dependencies_in_cursor(cur, run.id, run.created_at) if restricted else 0
+            if restricted or dependent:
+                self._refresh_run_in_cursor(cur, run.id, run.created_at,
+                    status_deltas=[("queued", "blocked")]*(restricted+dependent))
             if outbox_table:
                 cur.execute(f"INSERT INTO {outbox_table} (event_key, stream, payload) VALUES (%s,%s,%s::jsonb)",
                     (event_key, stream, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))))
-        return TestRunDetail(run=run, items=items)
+            stored = self._detail_from_cursor(cur, run.id)
+        return stored
 
     def _create_run_sync(
         self,
@@ -2313,7 +2321,13 @@ class PostgresTestRunStore:
                 run = self._read_run(cur, run_id)
                 if run.status in {"completed", "cancelled"}:
                     return []
-                blocked_count = self._block_failed_dependencies_in_cursor(cur, run_id, now)
+                reviews = self._current_environment_reviews(cur, run)
+                if reviews is not None:
+                    run = self._read_run(cur, run_id)
+                    if run.status in {"completed", "cancelled"}:
+                        return []
+                restricted_count = self._block_environment_items_in_cursor(cur, run, reviews, now, "claim")
+                blocked_count = restricted_count + self._block_failed_dependencies_in_cursor(cur, run_id, now)
                 cur.execute(
                     f"SELECT candidate.record FROM {self._item_table} AS candidate "
                     "WHERE candidate.run_id = %s AND candidate.status = 'queued' "
@@ -2420,7 +2434,23 @@ class PostgresTestRunStore:
     ) -> TestRunItemRecord:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                cur.execute(f"SELECT record FROM {self._item_table} WHERE id=%s", (item_id,))
+                row = cur.fetchone()
+                if row is None:
+                    raise KeyError(f"Test run item not found: {item_id}")
+                original = self._item_from_value(row["record"])
+                # Terminal replay needs only its original result/token, even after
+                # archive, revoke or a change to the current environment decisions.
+                if original.status == "blocked":
+                    item = self._lock_item(cur, item_id)
+                    if self._environment_block_replayed(cur, item, lease_token):
+                        return item
+                    self._validate_lease(item, lease_token, now, {"claimed"})
+                run = self._read_run(cur, original.run_id)
+                reviews = self._current_environment_reviews(cur, run)
                 item = self._lock_item(cur, item_id)
+                if self._environment_block_replayed(cur, item, lease_token):
+                    return item
                 self._validate_lease(item, lease_token, now, {"claimed"})
                 if item.dependencies:
                     cur.execute(f"SELECT candidate.id FROM {self._item_table} AS candidate "
@@ -2428,6 +2458,17 @@ class PostgresTestRunStore:
                     if cur.fetchone() is None:
                         raise ValueError("运行条目的必要前置或输出尚未满足")
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                restricted = restriction_reviews(run.plan_snapshot.plan, item, reviews) if reviews else []
+                if restricted and not self._prior_business_started(cur, item):
+                    updated, ended, result = blocked_environment_records(run, item, restricted, now, "start",
+                        attempt=attempt, current_reviews=reviews)
+                    self._save_unexecuted_in_cursor(cur, updated, ended, result, existing_attempt=True)
+                    dependent = self._block_failed_dependencies_in_cursor(cur, run.id, now)
+                    self._refresh_run_in_cursor(cur, run.id, now,
+                        status_deltas=[("claimed", "blocked")]+[("queued", "blocked")]*dependent)
+                    logger.info("test_run_environment_restricted", extra={"run_id": run.id,
+                        "run_item_id": item.id, "phase": "start", "review_ids": [r.id for r in restricted]})
+                    return updated
                 item = item.model_copy(
                     update={
                         "status": "running",
@@ -3489,6 +3530,80 @@ class PostgresTestRunStore:
             raise KeyError(f"Test run not found: {run_id}")
         return self._run_from_value(row["record"])
 
+    def _current_environment_reviews(self, cur, run):
+        if run.plan_snapshot is None:
+            return None
+        plan = run.plan_snapshot.plan
+        if plan.environment is None and plan.request.environment is None:
+            return None
+        if self._environments is None:
+            raise RuntimeError("固定目标运行尚未配置环境适用读取服务")
+        return self._environments.current_reviews_in_cursor(cur, plan)
+
+    def _prior_business_started(self, cur, item):
+        cur.execute(f"SELECT EXISTS(SELECT 1 FROM {self._attempt_table} WHERE run_item_id=%s "
+            "AND (record->>'started_at' IS NOT NULL OR COALESCE((record->>'checkpoint_version')::integer,0)>0)) AS started",
+            (item.id,))
+        started = bool(cur.fetchone()["started"])
+        if started:
+            logger.warning("test_run_environment_recovery_preserved", extra={"run_id": item.run_id,
+                "run_item_id": item.id, "reason": "prior_started_or_checkpoint_requires_recovery"})
+        return started
+
+    def _block_environment_items_in_cursor(self, cur, run, reviews, now, phase):
+        if not reviews:
+            return 0
+        versions = sorted({case.case_version_id for review in reviews for case in review.cases if case.status == "invalid"})
+        if not versions:
+            return 0
+        cur.execute(f"SELECT record FROM {self._item_table} WHERE run_id=%s AND status='queued' "
+            "AND case_version_id=ANY(%s::uuid[]) ORDER BY position,id FOR UPDATE SKIP LOCKED", (run.id, versions))
+        candidates = [self._item_from_value(row["record"]) for row in cur.fetchall()]
+        count = 0
+        for item in candidates:
+            restricted = restriction_reviews(run.plan_snapshot.plan, item, reviews)
+            if not restricted or self._prior_business_started(cur, item):
+                continue
+            updated, attempt, result = blocked_environment_records(run, item, restricted, now, phase, current_reviews=reviews)
+            self._save_unexecuted_in_cursor(cur, updated, attempt, result)
+            count += 1
+            logger.info("test_run_environment_restricted", extra={"project_id": run.project_id,
+                "run_id": run.id, "run_item_id": item.id, "phase": phase,
+                "review_ids": [r.id for r in restricted]})
+        return count
+
+    def _environment_block_replayed(self, cur, item, lease_token):
+        if item.status != "blocked" or not item.result_id or item.lease_token != lease_token:
+            return False
+        cur.execute(f"SELECT record FROM {self._result_table} WHERE id=%s AND run_item_id=%s", (item.result_id,item.id))
+        row = cur.fetchone()
+        if row is None:
+            return False
+        from src.application.documents.requirement_execution_checks import fixed_result
+        from src.runtime.postgres_business_environment_store import environment_digest
+        result = fixed_result(row["record"])
+        receipt = result.actual.get("environment_restriction")
+        if receipt and (receipt.get("case_id") != item.case_id or receipt.get("case_version_id") != item.case_version_id
+            or receipt.get("sha256") != environment_digest({k:v for k,v in receipt.items() if k != "sha256"})):
+            raise ValueError("环境未执行回执与精确版本或原hash不同")
+        return result.actual.get("business_execution_started") is False and bool(receipt)
+
+    def _save_unexecuted_in_cursor(self, cur, item, attempt, result, *, existing_attempt=False):
+        if existing_attempt:
+            self._write_attempt(cur, attempt)
+        else:
+            cur.execute(f"INSERT INTO {self._attempt_table} "
+                "(id,run_id,run_item_id,attempt_no,lease_token,status,record) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                (attempt.id, attempt.run_id, attempt.run_item_id, attempt.attempt_no,
+                 attempt.lease_token, attempt.status, self._json(attempt)))
+        cur.execute(f"INSERT INTO {self._result_table} "
+            "(id,run_id,run_item_id,case_id,case_version_id,regression_source_result_id,"
+            "attempt_id,status,payload_hash,created_at,record) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+            (result.id, result.run_id, result.run_item_id, result.case_id, result.case_version_id,
+             result.regression_source_result_id, result.attempt_id, result.status, result.payload_hash,
+             result.created_at, self._json(result)))
+        self._write_item(cur, item)
+
     def _dependencies_ready_sql(self, *, failed: bool = False) -> str:
         # Existing stores use jsonb_array_elements and #>>. PostgreSQL #> returns
         # SQL NULL for absent/invalid paths; explicit JSON null is also missing.
@@ -3549,17 +3664,7 @@ class PostgresTestRunStore:
                 if not failures:
                     continue
                 updated, attempt, result = blocked_dependency_records(item, failures, now)
-                cur.execute(f"INSERT INTO {self._attempt_table} "
-                    "(id,run_id,run_item_id,attempt_no,lease_token,status,record) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb)",
-                    (attempt.id, attempt.run_id, attempt.run_item_id, attempt.attempt_no,
-                     attempt.lease_token, attempt.status, self._json(attempt)))
-                cur.execute(f"INSERT INTO {self._result_table} "
-                    "(id,run_id,run_item_id,case_id,case_version_id,regression_source_result_id,"
-                    "attempt_id,status,payload_hash,created_at,record) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
-                    (result.id, result.run_id, result.run_item_id, result.case_id, result.case_version_id,
-                     result.regression_source_result_id, result.attempt_id, result.status, result.payload_hash,
-                     result.created_at, self._json(result)))
-                self._write_item(cur, updated)
+                self._save_unexecuted_in_cursor(cur, updated, attempt, result)
                 changed += 1
             if not changed:
                 break

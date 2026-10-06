@@ -66,7 +66,7 @@ async def decisions_from_production(*, root, review, get, post, client, settings
     return state
 
 
-async def decisions_after_restart(*, state, get, post, client, settings, evidence, root, sends):
+async def decisions_after_restart(*, state, get, post, client, settings, evidence, root, sends, extra_reviews=None):
     before = len(sends)
     for target in state["targets"]:
         assert await post(target["path"], target["request"], 201) == target["review"]
@@ -89,7 +89,7 @@ async def decisions_after_restart(*, state, get, post, client, settings, evidenc
     with postgres_connect(settings) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT record FROM {store.table} ORDER BY created_at,id")
         records = [row["record"] for row in cur.fetchall()]
-    assert records == [*[t["review"] for t in state["targets"]], state["revoked"]]
+    assert records == [*[t["review"] for t in state["targets"]], state["revoked"], *(extra_reviews or [])]
     assert all(fixed_applicability(r).model_dump(mode="json") == r for r in records)
     assert len(sends) == before
     (evidence/"environment-decisions-restart.json").write_text(json.dumps({"records": records,

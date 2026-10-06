@@ -164,6 +164,13 @@ class TestRunExecutionService:
             item_id,
             RunItemLeaseRequest(lease_token=payload.lease_token),
         )
+        if item.status == "blocked" and item.result_id:
+            result = await self._runs.get_result(item.result_id)
+            if result.actual.get("business_execution_started") is False and result.actual.get("environment_restriction"):
+                logger.info("test_run_environment_block_receipt_returned", extra={"run_id": item.run_id,
+                    "run_item_id": item.id, "result_id": result.id})
+                return result
+            raise ValueError("开始执行返回了没有环境未执行依据的blocked状态")
         run = await self._runs.get_record(item.run_id)
         get_latest_attempt = getattr(self._runs, "get_latest_attempt", None)
         latest_attempt = (
