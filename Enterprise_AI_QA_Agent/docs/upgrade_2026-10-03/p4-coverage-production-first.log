@@ -1,0 +1,14 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__ test_actual_production_all_original_objects_and_terminal_recovery[False] ___
+tests\test_case_cleanup_coverage_production.py:174: in test_actual_production_all_original_objects_and_terminal_recovery
+    task = await post(root + "/case-planning-tasks", request, 202)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_cleanup_coverage_production.py:140: in post
+    assert r.status_code == status, (r.status_code, r.text, errors)
+E   AssertionError: (503, '{"detail":"规划任务服务暂时不可用；提交结果尚不能确认时，请按原请求身份查询或重试"}', [])
+E   assert 503 == 202
+E    +  where 503 = <Response [503 Service Unavailable]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_case_cleanup_coverage_production.py::test_actual_production_all_original_objects_and_terminal_recovery[False]
+1 failed in 19.01s

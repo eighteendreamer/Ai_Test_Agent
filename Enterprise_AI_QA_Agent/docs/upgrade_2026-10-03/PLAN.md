@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次源码核对基线：`a009b0f8`。本次直接更新方案正文、用户所贴附件和选中的计划文件，保留完整 P0—P5 范围。既有实施历史和原始失败记录见第六节；本次只修改文档，未运行业务测试或进行新的生产验收。
+修订日期：2026-10-07；本次源码核对基线：`56af7313`。本轮新增独立生产功能专项，真实结果及边界见6.50；未修改业务源码。方案正文、用户所贴附件和选中的计划文件同步，保留完整 P0—P5 范围与既有实施历史、原始失败记录。
 
 本方案按用户纠正后的流程执行：
 
@@ -22,7 +22,7 @@
 | 上传无需Git缓存 | 3.1—3.2：应用保存原件/版本；按指定解析快照比较；Git仅在用户选择独立来源入口时参与 |
 | 可行性与完成范围分开 | 3.1.1、3.1.4—3.1.5及6.49：列出现有调用与验收边界；文档核对、历史专项和完整产品验收分别记录 |
 
-本次三份正文同步、代码依据与本地链接检查见[本次方案核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-a009-validation.json)。
+此前方案修订的三份正文同步、代码依据与本地链接检查见[原方案核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-a009-validation.json)。最新生产专项与同步核对见[本轮记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-coverage-production-validation.json)。
 
 用户已确认的设计约定：
 
@@ -1840,3 +1840,27 @@ npm run build
 所有实际原件、固定上下文、HTTP、PG观察/清单/正式结果、持久seed与失败日志/XML保留于p4-cleanup-coverage-*，前端夹具取实际结果并保存原记录SHA。核对见[p4-cleanup-coverage-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-cleanup-coverage-validation.json)；此前11254份原始证据未变，用户.gitignore未改，三份方案同步。新增开关不自动升级旧运行/补写历史结果；新数据沿已有JSONB及对象证据表，不增加另一套状态存储。
 
 本批模型为受控查询/声明和只读回执；实际执行采用原生工具与真实HTTP/数据库/文件。未执行独立生产新策略、默认Agent自动生成/执行声明、正式完整App及生产迁移；三个外部模型专项未运行。实际消费完成、同条目提前清理、重复身份的业务含义、未知只读查证、运行修订及完整P0—P5仍待推进，旧6.44/6.45失败及限制不回写为通过。下一步先研究新协议如何沿原API/Worker/SDK完整执行，再实测。
+
+### 6.50 C2c5新覆盖协议的独立生产执行〔源码基线56af7313〕
+
+先读用户目标原附件及原main/API、任务/Outbox、规划CLI、执行CLI、Agent图、动作领取、对象证据和回执路径，研究见[P4_COVERAGE_PRODUCTION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_COVERAGE_PRODUCTION_RESEARCH.md)。旧生产专项只验单次规则GET/别名，不能证明新覆盖策略；新增独立生产专项复用原生命周期/存储夹具，不替换AppContainer、不增加业务执行器或依赖，没有修改业务源码。
+
+正式鉴权API上传实际需求文件并读回RustFS，创建/评审/启用完整八步JSON；MySQL启用覆盖策略，任务提交后关闭当前策略。独立规划CLI按PG原seed查询固定原生工具接口并完成两个回合；原API创建固定运行，独立执行CLI进入原审批，API续执行真实POST/GET/DELETE。每条Agent请求都核对完整JSON末尾、False/0/null和模板未注入；全局默认模型参数未改。
+
+最终实际命令：
+
+```powershell
+# 工作目录Agent_Server；前缀及证据目录每次独立，不覆盖原记录。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-coverage-production-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-coverage-production-final.xml
+# 退出0：2通过、0失败、0跳过，92.65秒。
+```
+
+两个场景分别：两次创建只清理一条→known2/covered1、blocked，实际剩1；全部清理→2/2、passed，实际剩0。部分/全部场景分别8/9次SDK物理模型请求（2次规划、6/7次Agent），4/5次实际业务HTTP，5/6个PG Job；同逻辑操作新provider ID是别名，不新增原对象或HTTP。第一条创建后重启API，固定运行、审批和已创建记录保留；终态投递不再调用模型或业务工具。最终seed输出明确引用第一条ID、目标实际输出一致，第二条没有被回执输出但仍纳入覆盖。
+
+直接读取MySQL当前关闭策略、PG原规划seed/固定工具接口及原运行记录，与正式API结果对账。实际完整用例及全部Agent消息、PG Job/结果/对象清单、业务剩余对象、过程stdout/stderr保存于p4-coverage-production-final；数据传递与对象全集分别核对，不能只看最后一个回执输出。
+
+原first为1失败19.01秒：夹具未登记规划派发流，提交503，尚无模型/业务HTTP；按main显式注册要求修正。stream-fixed2通过95.02秒；补鉴权及SQL对账后authenticated2通过91.59秒。这两个历史批次seed回执曾指第二条而目标用第一条，不作为正确数据传递证据；最终修正引用并新增核对后2通过，原记录全部保留，不累计成6项覆盖。
+
+本轮使用受控模型验证实际main/API/独立CLI/SDK和原生业务工具，未执行默认自主Agent、完整App或生产历史迁移。build_assessment_request当前没有生产调用方；生产最终图回执进入assess确定性核验，不能宣称已追加只读模型调用。共享消费完成、未知只读查证、运行修订与P0—P5其余项仍未完成。下一步沿完整新协议研究并实测默认Agent与正式页面，保留既有默认length失败。

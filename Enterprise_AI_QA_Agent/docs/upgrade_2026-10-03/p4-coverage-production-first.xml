@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="19.006" timestamp="2026-10-07T03:24:29.565687+08:00" hostname="EIghteen"><testcase classname="tests.test_case_cleanup_coverage_production" name="test_actual_production_all_original_objects_and_terminal_recovery[False]" time="13.295"><failure message="AssertionError: (503, '{&quot;detail&quot;:&quot;规划任务服务暂时不可用；提交结果尚不能确认时，请按原请求身份查询或重试&quot;}', [])&#10;assert 503 == 202&#10; +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code">tests\test_case_cleanup_coverage_production.py:174: in test_actual_production_all_original_objects_and_terminal_recovery
+    task = await post(root + "/case-planning-tasks", request, 202)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_cleanup_coverage_production.py:140: in post
+    assert r.status_code == status, (r.status_code, r.text, errors)
+E   AssertionError: (503, '{"detail":"规划任务服务暂时不可用；提交结果尚不能确认时，请按原请求身份查询或重试"}', [])
+E   assert 503 == 202
+E    +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code</failure></testcase></testsuite></testsuites>

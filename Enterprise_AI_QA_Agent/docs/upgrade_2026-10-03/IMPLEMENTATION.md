@@ -3581,3 +3581,27 @@ npm run build
 按用户要求直接更新PLAN.md及所贴附件、选中计划三份正文。首页集中列出模板、项目用例补全和上传独立保存约定；3.1.4—3.1.5校正当前源码基线和验收措辞。重新读取upload_document/upload_version、Git独立导入、固定快照比较及项目规划Prompt/query/finish/最终依赖排序；没有改业务代码。
 
 实际执行Python文档核对：三份字节完全一致、纠正事项存在、全部本地链接目标存在、用户.gitignore SHA未变，记录见plan-refresh-a009-validation.json。首次用了相对于后端的Python路径，未启动脚本；确认根目录实际解释器后执行成功。本次未重跑业务测试、生产链路或页面；首页2项上传及167项回归明确标为历史结果，完整P0—P5待验范围保留。
+
+### 6.50 C2c5新覆盖协议的独立生产执行〔源码基线56af7313〕
+
+先读用户目标原附件及原main/API、任务/Outbox、规划CLI、执行CLI、Agent图、动作领取、对象证据和回执路径，研究见[P4_COVERAGE_PRODUCTION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_COVERAGE_PRODUCTION_RESEARCH.md)。旧生产专项只验单次规则GET/别名，不能证明新覆盖策略；新增独立生产专项复用原生命周期/存储夹具，不替换AppContainer、不增加业务执行器或依赖，没有修改业务源码。
+
+正式鉴权API上传实际需求文件并读回RustFS，创建/评审/启用完整八步JSON；MySQL启用覆盖策略，任务提交后关闭当前策略。独立规划CLI按PG原seed查询固定原生工具接口并完成两个回合；原API创建固定运行，独立执行CLI进入原审批，API续执行真实POST/GET/DELETE。每条Agent请求都核对完整JSON末尾、False/0/null和模板未注入；全局默认模型参数未改。
+
+最终实际命令：
+
+```powershell
+# 工作目录Agent_Server；前缀及证据目录每次独立，不覆盖原记录。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-coverage-production-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-coverage-production-final.xml
+# 退出0：2通过、0失败、0跳过，92.65秒。
+```
+
+两个场景分别：两次创建只清理一条→known2/covered1、blocked，实际剩1；全部清理→2/2、passed，实际剩0。部分/全部场景分别8/9次SDK物理模型请求（2次规划、6/7次Agent），4/5次实际业务HTTP，5/6个PG Job；同逻辑操作新provider ID是别名，不新增原对象或HTTP。第一条创建后重启API，固定运行、审批和已创建记录保留；终态投递不再调用模型或业务工具。最终seed输出明确引用第一条ID、目标实际输出一致，第二条没有被回执输出但仍纳入覆盖。
+
+直接读取MySQL当前关闭策略、PG原规划seed/固定工具接口及原运行记录，与正式API结果对账。实际完整用例及全部Agent消息、PG Job/结果/对象清单、业务剩余对象、过程stdout/stderr保存于p4-coverage-production-final；数据传递与对象全集分别核对，不能只看最后一个回执输出。
+
+原first为1失败19.01秒：夹具未登记规划派发流，提交503，尚无模型/业务HTTP；按main显式注册要求修正。stream-fixed2通过95.02秒；补鉴权及SQL对账后authenticated2通过91.59秒。这两个历史批次seed回执曾指第二条而目标用第一条，不作为正确数据传递证据；最终修正引用并新增核对后2通过，原记录全部保留，不累计成6项覆盖。
+
+本轮使用受控模型验证实际main/API/独立CLI/SDK和原生业务工具，未执行默认自主Agent、完整App或生产历史迁移。build_assessment_request当前没有生产调用方；生产最终图回执进入assess确定性核验，不能宣称已追加只读模型调用。共享消费完成、未知只读查证、运行修订与P0—P5其余项仍未完成。下一步沿完整新协议研究并实测默认Agent与正式页面，保留既有默认length失败。
