@@ -109,6 +109,10 @@ def build_agent_case_context(
         preparation_scopes=deepcopy(snapshot.preparation_scopes),
         effect_evidence_protocol=plan.config_snapshot.policy.effect_evidence_protocol,
         effect_evidence_max_bytes=plan.config_snapshot.policy.effect_evidence_max_bytes,
+        effect_coverage_protocol=plan.config_snapshot.policy.effect_coverage_protocol,
+        effect_coverage_max_bytes=plan.config_snapshot.policy.effect_coverage_max_bytes,
+        effect_owner_item_ids=deepcopy(snapshot.run_item_ids)
+            if plan.config_snapshot.policy.effect_coverage_protocol else None,
         runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,environment_admission=admission,
         evidence=evidence,
         unresolved=[gap.model_copy(deep=True) for gap in plan.decision.unresolved if gap.item_key is None or gap.item_key in owned])

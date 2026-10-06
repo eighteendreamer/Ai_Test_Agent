@@ -147,6 +147,8 @@ function chooseActionBinding(event: Event) {
     delete config.value.policy.preparation_scope_protocol;
     delete config.value.policy.effect_evidence_protocol;
     delete config.value.policy.effect_evidence_max_bytes;
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
   }
 }
 function chooseActionAdmission(event: Event) {
@@ -160,6 +162,8 @@ function chooseActionAdmission(event: Event) {
     delete config.value.policy.preparation_scope_protocol;
     delete config.value.policy.effect_evidence_protocol;
     delete config.value.policy.effect_evidence_max_bytes;
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
   }
 }
 function chooseOperationRecovery(event: Event) {
@@ -173,6 +177,8 @@ function chooseOperationRecovery(event: Event) {
     delete config.value.policy.preparation_scope_protocol;
     delete config.value.policy.effect_evidence_protocol;
     delete config.value.policy.effect_evidence_max_bytes;
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
   }
 }
 function choosePreparationScopes(event: Event) {
@@ -186,6 +192,8 @@ function choosePreparationScopes(event: Event) {
     delete config.value.policy.preparation_scope_protocol;
     delete config.value.policy.effect_evidence_protocol;
     delete config.value.policy.effect_evidence_max_bytes;
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
   }
 }
 function chooseEffectEvidence(event: Event) {
@@ -199,6 +207,22 @@ function chooseEffectEvidence(event: Event) {
   } else {
     delete config.value.policy.effect_evidence_protocol;
     delete config.value.policy.effect_evidence_max_bytes;
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
+  }
+}
+function chooseEffectCoverage(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.action_binding_protocol = "case-action-binding-v1";
+    config.value.policy.action_admission_protocol = "case-action-admission-v1";
+    config.value.policy.operation_protocol = "case-operation-v1";
+    config.value.policy.preparation_scope_protocol = "preparation-scope-v1";
+    config.value.policy.effect_evidence_protocol = "case-effect-evidence-v1";
+    config.value.policy.effect_coverage_protocol = "case-effect-coverage-v1";
+  } else {
+    delete config.value.policy.effect_coverage_protocol;
+    delete config.value.policy.effect_coverage_max_bytes;
   }
 }
 async function openSaved() {
@@ -247,9 +271,14 @@ onMounted(loadPolicy);
           :checked="config.policy.preparation_scope_protocol === 'preparation-scope-v1'" @change="choosePreparationScopes">按准备消费范围安排清理</label>
         <label><input data-testid="effect-evidence" type="checkbox" :disabled="busy"
           :checked="config.policy.effect_evidence_protocol === 'case-effect-evidence-v1'" @change="chooseEffectEvidence">保存实际对象证据</label>
-        <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；完整清理覆盖及消费完成尚待核验。</p>
+        <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
         <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
           type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>
+        <label><input data-testid="effect-coverage" type="checkbox" :disabled="busy"
+          :checked="config.policy.effect_coverage_protocol === 'case-effect-coverage-v1'" @change="chooseEffectCoverage">核对原对象清理覆盖</label>
+        <label v-if="config.policy.effect_coverage_protocol">覆盖证据预算（字节）<input data-testid="effect-coverage-budget" v-model.number="config.policy.effect_coverage_max_bytes"
+          type="number" min="1" max="10000000" placeholder="1024000" :disabled="busy"></label>
+        <p v-if="config.policy.effect_coverage_protocol">核对固定声明范围内的所有原对象及清理证据。未覆盖或来源未知时保留缺口，不代表共享消费已完成。</p>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>

@@ -1,0 +1,595 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="7" failures="1" skipped="0" tests="11" time="3.875" timestamp="2026-10-07T02:41:46.021145+08:00" hostname="EIghteen"><testcase classname="tests.test_case_cleanup_coverage" name="test_saved_two_original_objects_are_not_reduced_to_the_last_receipt_output" time="0.004"><failure message="KeyError: 'target_key'">tests\test_case_cleanup_coverage.py:36: in test_saved_two_original_objects_are_not_reduced_to_the_last_receipt_output
+    good = cleanup_coverage(context, inventory)["cleanups"]["cleanup"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\case_cleanup_coverage.py:36: in cleanup_coverage
+    if row["binding"]["target_key"] != scope.source_owner_key:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'target_key'</failure></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_literal_operation_selection_keeps_typed_false_and_zero[False-0-not_applicable]" time="0.002" /><testcase classname="tests.test_case_cleanup_coverage" name="test_literal_operation_selection_keeps_typed_false_and_zero[0-0-captured]" time="0.001" /><testcase classname="tests.test_case_cleanup_coverage" name="test_missing_selection_field_retains_unknown_scope" time="0.001" /><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[one-of-two]" time="0.006"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[all-two]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[target-read]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[cleanup-read]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[source-query]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[unknown-create]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase><testcase classname="tests.test_case_cleanup_coverage" name="test_actual_full_files_all_origins_and_formal_cleanup_result[coverage-budget]" time="0.001"><error message="failed on setup with &quot;file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63&#10;  @pytest.mark.asyncio&#10;  @LIVE&#10;  @pytest.mark.parametrize(&quot;scenario&quot;, [&quot;one-of-two&quot;, &quot;all-two&quot;, &quot;target-read&quot;, &quot;cleanup-read&quot;, &quot;source-query&quot;, &quot;unknown-create&quot;, &quot;coverage-budget&quot;])&#10;  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):&#10;      business = regression_business_http&#10;      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,&#10;          coverage_max_bytes=1 if scenario == &quot;coverage-budget&quot; else None) as values:&#10;          services, runtime, tool, execution, context, store, action, read, save = values&#10;          root = business[0][0]&#10;          records = []&#10;          if scenario == &quot;source-query&quot;:&#10;              records.append(await action(&quot;source-query&quot;, &quot;seed&quot;, &quot;seed.query&quot;, &quot;GET&quot;, root + &quot;/orders/not-created&quot;))&#10;          records.append(await action(&quot;seed&quot;, &quot;seed&quot;, &quot;seed.first&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario in {&quot;one-of-two&quot;, &quot;all-two&quot;}:&#10;              records.append(await action(&quot;seed-second&quot;, &quot;seed&quot;, &quot;seed.second&quot;, &quot;POST&quot;, root + &quot;/orders&quot;))&#10;          if scenario == &quot;unknown-create&quot;:&#10;              handler = runtime._handlers[tool.key]&#10;              async def lost(args, ctx):&#10;                  await handler(args, ctx)&#10;                  raise ConnectionError(&quot;second actual object created; return lost&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, lost)&#10;              with pytest.raises(CaseActionClaimUnavailable):&#10;                  await action(&quot;lost-create&quot;, &quot;seed&quot;, &quot;seed.unknown&quot;, &quot;POST&quot;, root + &quot;/orders&quot;)&#10;              monkeypatch.setitem(runtime._handlers, tool.key, handler)&#10;          first = business[2][0]&#10;          records.append(await action(&quot;target&quot;, &quot;target&quot;, &quot;target.read&quot;, &quot;GET&quot;, root + &quot;/orders/&quot; + first))&#10;          cleanup_call = &quot;target&quot; if scenario == &quot;target-read&quot; else &quot;cleanup&quot;&#10;          if scenario != &quot;target-read&quot;:&#10;              records.append(await action(&quot;cleanup&quot;, &quot;cleanup&quot;, &quot;cleanup.first&quot;,&#10;                  &quot;GET&quot; if scenario == &quot;cleanup-read&quot; else &quot;DELETE&quot;, root + &quot;/orders/&quot; + first))&#10;          if scenario == &quot;all-two&quot;:&#10;              records.append(await action(&quot;cleanup-second&quot;, &quot;cleanup&quot;, &quot;cleanup.second&quot;, &quot;DELETE&quot;, root + &quot;/orders/&quot; + business[2][1]))&#10;          jobs, runs = services[0][1], services[4]&#10;          assessment = AgentCaseAssessmentService(jobs)&#10;          before_HTTP = len(business[0][1])&#10;          request = await assessment.build_assessment_request(context=context, tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle[&quot;attempt_id&quot;])&#10;          model_data = json.loads(unescape(request.messages[0][&quot;content&quot;].split(&quot;\n&quot;, 1)[1].rsplit(&quot;\n&quot;, 1)[0]))&#10;          assert len(model_data[&quot;execution_items&quot;][1][&quot;expected_source&quot;][&quot;steps&quot;]) == 8&#10;          if scenario != &quot;coverage-budget&quot;:&#10;              assert len(model_data[&quot;effect_inventory&quot;]) == len(await read())&#10;          else:&#10;              assert model_data[&quot;effect_inventory&quot;][&quot;available&quot;] is False&#10;          # Freeze recovery: the current editable config may change; the context cannot.&#10;          policy = await services[-1][&quot;environment&quot;].service.get_policy(context.project_id)&#10;          old = policy.policy.model_dump(mode=&quot;json&quot;)&#10;          old.pop(&quot;effect_coverage_protocol&quot;); old.pop(&quot;effect_coverage_max_bytes&quot;)&#10;          await services[-1][&quot;environment&quot;].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))&#10;          item = await runs.get_item(context.run_item_id)&#10;          outcome = await assessment.assess(context=context, receipt=receipt_for(context,&#10;              {&quot;seed&quot;: &quot;seed&quot;, &quot;target&quot;: &quot;target&quot;, &quot;cleanup&quot;: cleanup_call}), tool_records=records,&#10;              session_id=execution.session_id, turn_id=execution.turn_id,&#10;              attempt_id=execution.context_bundle[&quot;attempt_id&quot;], model_key=&quot;actual-controlled-coverage&quot;, lease_token=item.lease_token)&#10;          result = await runs.complete_item(item.id, outcome.completion)&#10;          coverage = result.actual[&quot;effect_cleanup_coverage&quot;][&quot;cleanups&quot;][&quot;cleanup&quot;]&#10;          expected = &quot;passed&quot; if scenario in {&quot;all-two&quot;, &quot;source-query&quot;} else &quot;failed&quot; if scenario == &quot;cleanup-read&quot; else &quot;blocked&quot;&#10;          assert result.status == coverage[&quot;status&quot;] == expected&#10;          assert result.actual[&quot;case_status&quot;] == &quot;passed&quot;&#10;          assert len(business[0][1]) == before_HTTP&#10;          if scenario == &quot;one-of-two&quot;:&#10;              assert coverage[&quot;known_object_count&quot;] == 2 and coverage[&quot;covered_object_count&quot;] == 1&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;all-two&quot;:&#10;              assert coverage[&quot;covered_object_count&quot;] == 2 and not business[1]&#10;              assert len(result.evidence_refs) &gt;= len(records)&#10;          elif scenario == &quot;source-query&quot;:&#10;              assert len(coverage[&quot;excluded_operations&quot;]) == 1 and coverage[&quot;known_object_count&quot;] == 1&#10;              assert not business[1]&#10;          elif scenario in {&quot;target-read&quot;, &quot;cleanup-read&quot;}:&#10;              assert len(business[1]) == 1&#10;          elif scenario == &quot;unknown-create&quot;:&#10;              assert coverage[&quot;unknown&quot;] and len(business[1]) == 1&#10;              assert any(r[&quot;returned_evidence&quot;] is None and r[&quot;origin_job&quot;][&quot;status&quot;] == &quot;running&quot; for r in await read())&#10;          else:&#10;              assert coverage[&quot;reason&quot;] == &quot;inventory_limit_exceeded&quot; and coverage[&quot;known_object_count&quot;] == 1&#10;          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id=&quot;terminal&quot;,limit=1))).claims&#10;          await save(&quot;coverage-&quot; + scenario, effect_coverage_result_connected=True,&#10;              actual_formal_result=result.model_dump(mode=&quot;json&quot;), actual_assessment_request=request.model_dump(mode=&quot;json&quot;),&#10;              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)&#10;E       fixture 'regression_business_http' not found&#10;&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory&#10;&gt;       use 'pytest --fixtures [testpath]' for help on them.&#10;&#10;G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63&quot;">file G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py, line 63
+  @pytest.mark.asyncio
+  @LIVE
+  @pytest.mark.parametrize("scenario", ["one-of-two", "all-two", "target-read", "cleanup-read", "source-query", "unknown-create", "coverage-budget"])
+  async def test_actual_full_files_all_origins_and_formal_cleanup_result(tmp_path, regression_business_http, monkeypatch, scenario):
+      business = regression_business_http
+      async with original_effect_runtime(tmp_path, business, coverage=True, select_operations=True,
+          coverage_max_bytes=1 if scenario == "coverage-budget" else None) as values:
+          services, runtime, tool, execution, context, store, action, read, save = values
+          root = business[0][0]
+          records = []
+          if scenario == "source-query":
+              records.append(await action("source-query", "seed", "seed.query", "GET", root + "/orders/not-created"))
+          records.append(await action("seed", "seed", "seed.first", "POST", root + "/orders"))
+          if scenario in {"one-of-two", "all-two"}:
+              records.append(await action("seed-second", "seed", "seed.second", "POST", root + "/orders"))
+          if scenario == "unknown-create":
+              handler = runtime._handlers[tool.key]
+              async def lost(args, ctx):
+                  await handler(args, ctx)
+                  raise ConnectionError("second actual object created; return lost")
+              monkeypatch.setitem(runtime._handlers, tool.key, lost)
+              with pytest.raises(CaseActionClaimUnavailable):
+                  await action("lost-create", "seed", "seed.unknown", "POST", root + "/orders")
+              monkeypatch.setitem(runtime._handlers, tool.key, handler)
+          first = business[2][0]
+          records.append(await action("target", "target", "target.read", "GET", root + "/orders/" + first))
+          cleanup_call = "target" if scenario == "target-read" else "cleanup"
+          if scenario != "target-read":
+              records.append(await action("cleanup", "cleanup", "cleanup.first",
+                  "GET" if scenario == "cleanup-read" else "DELETE", root + "/orders/" + first))
+          if scenario == "all-two":
+              records.append(await action("cleanup-second", "cleanup", "cleanup.second", "DELETE", root + "/orders/" + business[2][1]))
+          jobs, runs = services[0][1], services[4]
+          assessment = AgentCaseAssessmentService(jobs)
+          before_HTTP = len(business[0][1])
+          request = await assessment.build_assessment_request(context=context, tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id, attempt_id=execution.context_bundle["attempt_id"])
+          model_data = json.loads(unescape(request.messages[0]["content"].split("\n", 1)[1].rsplit("\n", 1)[0]))
+          assert len(model_data["execution_items"][1]["expected_source"]["steps"]) == 8
+          if scenario != "coverage-budget":
+              assert len(model_data["effect_inventory"]) == len(await read())
+          else:
+              assert model_data["effect_inventory"]["available"] is False
+          # Freeze recovery: the current editable config may change; the context cannot.
+          policy = await services[-1]["environment"].service.get_policy(context.project_id)
+          old = policy.policy.model_dump(mode="json")
+          old.pop("effect_coverage_protocol"); old.pop("effect_coverage_max_bytes")
+          await services[-1]["environment"].service.save_policy(context.project_id, CasePlanningPolicy.model_validate(old))
+          item = await runs.get_item(context.run_item_id)
+          outcome = await assessment.assess(context=context, receipt=receipt_for(context,
+              {"seed": "seed", "target": "target", "cleanup": cleanup_call}), tool_records=records,
+              session_id=execution.session_id, turn_id=execution.turn_id,
+              attempt_id=execution.context_bundle["attempt_id"], model_key="actual-controlled-coverage", lease_token=item.lease_token)
+          result = await runs.complete_item(item.id, outcome.completion)
+          coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["cleanup"]
+          expected = "passed" if scenario in {"all-two", "source-query"} else "failed" if scenario == "cleanup-read" else "blocked"
+          assert result.status == coverage["status"] == expected
+          assert result.actual["case_status"] == "passed"
+          assert len(business[0][1]) == before_HTTP
+          if scenario == "one-of-two":
+              assert coverage["known_object_count"] == 2 and coverage["covered_object_count"] == 1
+              assert len(business[1]) == 1
+          elif scenario == "all-two":
+              assert coverage["covered_object_count"] == 2 and not business[1]
+              assert len(result.evidence_refs) &gt;= len(records)
+          elif scenario == "source-query":
+              assert len(coverage["excluded_operations"]) == 1 and coverage["known_object_count"] == 1
+              assert not business[1]
+          elif scenario in {"target-read", "cleanup-read"}:
+              assert len(business[1]) == 1
+          elif scenario == "unknown-create":
+              assert coverage["unknown"] and len(business[1]) == 1
+              assert any(r["returned_evidence"] is None and r["origin_job"]["status"] == "running" for r in await read())
+          else:
+              assert coverage["reason"] == "inventory_limit_exceeded" and coverage["known_object_count"] == 1
+          assert not (await runs.claim(context.run_id, __import__('src.schemas.run_management', fromlist=['RunClaimRequest']).RunClaimRequest(worker_id="terminal",limit=1))).claims
+          await save("coverage-" + scenario, effect_coverage_result_connected=True,
+              actual_formal_result=result.model_dump(mode="json"), actual_assessment_request=request.model_dump(mode="json"),
+              actual_model_input=model_data, actual_native_readonly_no_new_HTTP=True)
+E       fixture 'regression_business_http' not found
+&gt;       available fixtures: _asyncio_loop_factory, _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, captured_job, doctest_namespace, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+&gt;       use 'pytest --fixtures [testpath]' for help on them.
+
+G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_case_cleanup_coverage.py:63</error></testcase></testsuite></testsuites>

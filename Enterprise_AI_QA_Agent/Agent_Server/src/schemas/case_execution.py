@@ -51,6 +51,9 @@ class AgentCaseExecutionContext(PlanningModel):
     preparation_scopes: dict[str, PreparationScopeRecord] | None = None
     effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
+    effect_coverage_protocol: Literal["case-effect-coverage-v1"] | None = None
+    effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
+    effect_owner_item_ids: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
@@ -64,6 +67,18 @@ class AgentCaseExecutionContext(PlanningModel):
             raise ValueError("对象证据上下文需要固定准备消费范围")
         if bool(self.effect_evidence_protocol) != (self.effect_evidence_max_bytes is not None):
             raise ValueError("对象证据上下文需要实际冻结的大小配置")
+        if self.effect_coverage_protocol and not self.effect_evidence_protocol:
+            raise ValueError("对象覆盖上下文需要固定对象证据")
+        if bool(self.effect_coverage_protocol) != (self.effect_coverage_max_bytes is not None):
+            raise ValueError("对象覆盖上下文需要实际冻结的大小配置")
+        if self.effect_coverage_protocol:
+            if (not self.effect_owner_item_ids or
+                self.effect_owner_item_ids.get(self.target_key) != self.run_item_id or
+                any(scope.source_owner_key not in self.effect_owner_item_ids
+                    for scope in (self.preparation_scopes or {}).values())):
+                raise ValueError("对象覆盖上下文缺少原固定拥有者与运行条目映射")
+        elif self.effect_owner_item_ids is not None:
+            raise ValueError("对象覆盖拥有者映射缺少固定协议")
         return self
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
@@ -86,6 +101,12 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("effect_evidence_protocol")
         if self.effect_evidence_max_bytes is None:
             omitted.add("effect_evidence_max_bytes")
+        if self.effect_coverage_protocol is None:
+            omitted.add("effect_coverage_protocol")
+        if self.effect_coverage_max_bytes is None:
+            omitted.add("effect_coverage_max_bytes")
+        if self.effect_owner_item_ids is None:
+            omitted.add("effect_owner_item_ids")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

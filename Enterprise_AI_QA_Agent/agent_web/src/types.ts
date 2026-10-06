@@ -1986,6 +1986,8 @@ export interface CasePlanningPolicy {
   preparation_scope_protocol?: "preparation-scope-v1" | null;
   effect_evidence_protocol?: "case-effect-evidence-v1" | null;
   effect_evidence_max_bytes?: number | null;
+  effect_coverage_protocol?: "case-effect-coverage-v1" | null;
+  effect_coverage_max_bytes?: number | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;
@@ -2046,7 +2048,8 @@ export interface CasePlanInputBinding {
 export interface CasePlanItemBase {
   effect_evidence?: { role: "produced" | "cleanup"; object_path_tokens: string[]; collection: boolean;
     checks: { output_path_tokens: string[]; expected_path_tokens: string[];
-      operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte" }[] } | null;
+      operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte" }[];
+    select_when?: { input_path_tokens: string[]; expected_path_tokens: string[] }[] | null } | null;
   key: string;
   reason: string;
   evidence_ids: string[];
@@ -2074,11 +2077,11 @@ export interface CasePlanRecord {
   decision: {
     action: "query" | "finish";
     summary: string;
-    queries: Array<{ kind: "cases" | "documents" | "document" | "recordings" | "recording"; query: string; source_id: string | null; start_line: number; max_lines: number; offset: number }>;
+    queries: Array<{ kind: "cases" | "documents" | "document" | "recordings" | "recording" | "tools" | "tool"; query: string; source_id: string | null; start_line: number; max_lines: number; offset: number }>;
     items: CasePlanItem[];
     unresolved: Array<{ item_key: string | null; condition: string; reason: string }>;
   } | null;
-  evidence: Array<{ id: string; kind: "case" | "document" | "recording"; source_id: string; version: string; content_hash: string; payload: Record<string, unknown> }>;
+  evidence: Array<{ id: string; kind: "case" | "document" | "recording" | "tool"; source_id: string; version: string; content_hash: string; payload: Record<string, unknown> }>;
   config_snapshot: CasePlanningConfig;
   model_key: string | null;
   prompt_version: string;

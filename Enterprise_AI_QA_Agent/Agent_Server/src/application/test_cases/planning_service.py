@@ -16,6 +16,7 @@ from src.application.test_cases.planning_workflow import CasePlanningWorkflow
 from src.application.test_cases.planning_sources import ProjectPlanningSources, json_text
 from src.application.test_runs.preparation_scopes import normalize_preparation_scopes
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
+from src.application.test_cases.planning_tool_contracts import capture_tool_contracts
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -97,11 +98,15 @@ class CasePlanningService:
             record.prompt_version = "case-planning-preparation-scopes-v1"
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
+        if config.policy.effect_coverage_protocol:
+            record.prompt_version = "case-planning-effect-coverage-v1"
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
-                effect_evidence=config.policy.effect_evidence_protocol is not None), model_parameters=planning_model_parameters(model))
+                effect_evidence=config.policy.effect_evidence_protocol is not None,
+                effect_coverage=config.policy.effect_coverage_protocol is not None), model_parameters=planning_model_parameters(model),
+            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
                      fixed_case_versions: dict[str, str] | None = None,
@@ -120,6 +125,8 @@ class CasePlanningService:
             record.prompt_version = "case-planning-preparation-scopes-v1"
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
+        if config.policy.effect_coverage_protocol:
+            record.prompt_version = "case-planning-effect-coverage-v1"
         fixed_case_versions = dict(fixed_case_versions or {})
         if fixed_case_versions:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
@@ -128,7 +135,9 @@ class CasePlanningService:
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
-                effect_evidence=config.policy.effect_evidence_protocol is not None))
+                effect_evidence=config.policy.effect_evidence_protocol is not None,
+                effect_coverage=config.policy.effect_coverage_protocol is not None),
+            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,
             deadline_at=datetime.now(timezone.utc) + timedelta(seconds=config.policy.timeout_seconds),
@@ -218,7 +227,8 @@ class CasePlanningService:
                 if current != frozen:
                     raise ValueError("规划期间用例启用版本或内容发生变化，请重新规划")
         declared_parents = {key: list(item.depends_on) for key, item in items.items()}
-        validate_effect_declarations(decision, record.config_snapshot.policy.effect_evidence_protocol, record.evidence)
+        validate_effect_declarations(decision, record.config_snapshot.policy.effect_evidence_protocol, record.evidence,
+            record.config_snapshot.policy.effect_coverage_protocol)
         normalize_preparation_scopes(decision, record.config_snapshot.policy.preparation_scope_protocol)
         changed = {key: item.depends_on for key, item in items.items() if item.depends_on != declared_parents[key]}
         if changed:
@@ -278,8 +288,12 @@ class CasePlanningService:
         raise ValueError("模型没有返回有效的结构化计划；未创建测试运行")
 
     @staticmethod
-    def _system_prompt(*, environment=False, preparation_scopes=False, effect_evidence=False) -> str:
+    def _system_prompt(*, environment=False, preparation_scopes=False, effect_evidence=False, effect_coverage=False) -> str:
         schema = PlanningDecision.model_json_schema()
+        if not effect_coverage:
+            schema["$defs"]["PlanningQuery"]["properties"]["kind"]["enum"] = ["cases", "documents", "document", "recordings", "recording"]
+            schema["$defs"]["EffectEvidenceDeclaration"]["properties"].pop("select_when", None)
+            schema["$defs"].pop("EffectOperationSelector", None)
         if not preparation_scopes:
             schema["$defs"]["PreparationPlanItem"]["properties"].pop("cleanup_sources", None)
         if not effect_evidence:
@@ -333,6 +347,13 @@ class CasePlanningService:
                "cleanup需要cleanup_sources及来源的produced声明。依据不足保留unresolved，不猜测工具输出结构。"
                "本策略保存原可靠返回中的对象/清理证据；不代表消费完成或所有对象已清理。"
                if effect_evidence else "")
+            + ("\n对象覆盖：tools按编号/名称列出固定工具目录；tool按source_id读取固定输入/输出接口，包括真实worker输出变体。"
+               "接口描述不代表有执行授权。使用已读接口和完整固定业务依据声明字面量路径，不能猜测包装字段。"
+               "同一执行项有查询和产生操作时，可用select_when.input_path_tokens与expected_path_tokens声明固定输入相等匹配；"
+               "预期仍来自正式完整JSON或prepare.instructions。匹配不通过的调用不当作产生对象；字段缺失保留未知。"
+               "所有明确cleanup_sources的项都需要cleanup声明及产生来源声明；服务端核对所有原操作及对象覆盖，"
+               "不能只清理步骤最终输出。来源/预算未知不能宣称全部通过；覆盖不等于业务消费完成。"
+               if effect_coverage else "")
             + ("\n环境依据：business_environment 是服务端固定的本次目标，以它的snapshot.configuration.payload.base_url为准，"
                "项目默认地址或runtime_context不能替换该目标。reviews仅覆盖明确选择的需求版本、点和精确用例版本；"
                "unknown或未提及不表示失效。确认invalid的精确正式目标或前置应查询替代依据，无法补齐时记录unresolved；"

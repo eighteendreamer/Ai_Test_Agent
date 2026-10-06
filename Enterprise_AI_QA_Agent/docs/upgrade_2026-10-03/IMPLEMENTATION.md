@@ -3539,3 +3539,39 @@ npm run build
 本次读取当前工作区清理覆盖初轮原失败记录，1失败、3通过、7夹具错误；7项原生场景未执行。未修复、未重跑或提交这些业务改动。PLAN 6.48标注了原绑定无target_key的真实契约及固定run_item_ids来源；逐对象覆盖、消费完成和其余P0—P5仍未验收。
 
 三份正文一致、既有19个脏文件hash未变、用户.gitignore未变，核对见plan-revision-current-validation.json。本次提交只包含方案、文档说明及此次测试/同步核对记录，不包含已有业务改动或旧失败日志。
+### 6.49 C2c4全部原对象证据、清理覆盖及正式结果〔研究基线82de0568〕
+
+实施前研究见[P4_CLEANUP_COVERAGE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_CLEANUP_COVERAGE_DESIGN.md)。原动作只有run_item_id/item_key，不能读取不存在的target_key；采用原PG固定run_item_ids冻结为覆盖专用effect_owner_item_ids，核对当前条目及来源拥有者，旧上下文省略该字段。旧wire及三个旧Prompt保持。没有新工具、模式、依赖或另一套执行器。
+
+MySQL原规划策略增加可选case-effect-coverage-v1及实际1024000字节清单/覆盖预算；随原PG计划、执行检查点冻结。规划可只读查询冻结工具接口，原生API execute_task的task_result结构依据实际ApiTestTask保存；持久任务在当前配置关闭、接口再捕获被禁止后仍沿原PG seed完成，终态重投不调用模型。可选select_when只作固定字面量输入匹配，预期来自完整用例JSON或prepare.instructions；不同值排除，缺字段保留未知，不引入注册/登录/HTTP方法推断的通用检查表。
+
+原ToolJobService查询全运行原操作，紧凑投影保留每个原Job、未知来源、固定声明、对象路径和检查。清理投影核对cleanup_sources、实际拥有者、typed值SHA及先后观察时间；别名不新增原对象。failed检查保留失败；未覆盖、未知及超预算保留blocked。只读assessment将覆盖断言接入原VerificationResult及Result.actual，引用未被模型选择的原对象Job，评估不发送业务HTTP。原运行详情面板显示声明范围、已知/已覆盖、未覆盖与未知，预算不足不显示假零。覆盖记录不是业务对象全集，也不证明共享消费完成。
+
+最终综合实际运行：
+
+```powershell
+# Agent_Server；四个实际开关及三个独立证据目录均已设置。
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_EFFECT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-cleanup-coverage-final'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-cleanup-coverage-final-operations'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-cleanup-coverage-final-planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_evidence.py tests/test_case_cleanup_coverage.py tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py tests/test_case_operations.py tests/test_agent_case_assessment.py tests/test_preparation_scopes.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-cleanup-coverage-final.xml
+# 退出0：167通过、3外部模型跳过，150.36秒；170个条目。
+
+# agent_web
+npm exec vitest -- run src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts
+# 退出0：22通过，2.54秒；frontend-verified日志。
+npm run build
+# 退出0：vue-tsc及Vite通过，Vite9.06秒；build-final日志。
+```
+
+真实结果：创建两条只删一条→已知2/覆盖1、blocked且现场剩1；逐条删两条→覆盖2/2、passed且剩0；借目标GET→没有清理覆盖、blocked；after GET→固定清理检查失败、failed。合法source GET未误当创建；第二创建丢返回→已知1已覆盖，但未知原Job保留、blocked且真实仍剩1；预算1→清单不可用、已知1、blocked。正式八步JSON前置在独立RunItem产生两条，消费/清理在后续条目；单清理仍blocked，全清理passed，原前置结果不改写。同操作别名不再发送HTTP、不重复对象。真实数组一项生成两条、多来源生成四条，原路径下标/所有来源保留，单清理blocked、全清理passed。旧wire、来源/清理错误拥有者及早于产生的清理边界也已检查。
+
+原first1失败/3通过/7夹具错误保留；owner-fixed和native-first各4通过/7跳过，开关未开，不计真实场景。native-enabled7失败/4通过17.00秒为受控模型只有一回合回复，新增工具查询后夹具耗尽；query-fixed7失败/4通过19.60秒为测试错误拆解原不可信内容封装。按已有两回合/封装方式修正后envelope-fixed11通过18.92秒；formal-first2通过8.68秒，arrays-first3通过11.61秒。持久工具专项first缺objective、fixed未转换RowMapping，原失败分别保留，serializable1通过4.91秒。前端first19通过但新套件被Vite拒绝；读取方式调整后22通过，构建先发现Node类型/ES2020 at及联合JSON类型问题；改用项目已有JSON夹具及普通下标后最终测试/构建通过。没有升级依赖或放宽类型检查。
+
+所有实际原件、固定上下文、HTTP、PG观察/清单/正式结果、持久seed与失败日志/XML保留于p4-cleanup-coverage-*，前端夹具取实际结果并保存原记录SHA。核对见[p4-cleanup-coverage-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-cleanup-coverage-validation.json)；此前11254份原始证据未变，用户.gitignore未改，三份方案同步。新增开关不自动升级旧运行/补写历史结果；新数据沿已有JSONB及对象证据表，不增加另一套状态存储。
+
+本批模型为受控查询/声明和只读回执；实际执行采用原生工具与真实HTTP/数据库/文件。未执行独立生产新策略、默认Agent自动生成/执行声明、正式完整App及生产迁移；三个外部模型专项未运行。实际消费完成、同条目提前清理、重复身份的业务含义、未知只读查证、运行修订及完整P0—P5仍待推进，旧6.44/6.45失败及限制不回写为通过。下一步先研究新协议如何沿原API/Worker/SDK完整执行，再实测。

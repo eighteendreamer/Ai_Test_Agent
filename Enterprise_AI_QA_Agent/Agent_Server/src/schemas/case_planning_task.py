@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_serializer
 
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningModel,
@@ -27,6 +27,14 @@ class PlanningTaskSeed(PlanningModel):
     project_context: dict[str, Any]
     system_prompt: str
     model_parameters: dict[str, Any] = Field(default_factory=dict)
+    tool_contracts: dict[str, dict[str, Any]] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_seed(self, handler):
+        data = handler(self)
+        if self.tool_contracts is None:
+            data.pop("tool_contracts", None)
+        return data
 
 
 class PlanningTaskCheckpoint(PlanningModel):

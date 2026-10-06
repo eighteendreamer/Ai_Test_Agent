@@ -1,0 +1,24 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_durable_tool_query_uses_original_seed_after_registry_and_policy_change _
+tests\test_case_cleanup_coverage.py:365: in test_durable_tool_query_uses_original_seed_after_registry_and_policy_change
+    directory.joinpath("verification.json").write_text(json.dumps({"actual_seed_and_checkpoint": original,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:202: in encode
+    chunks = list(chunks)
+             ^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:432: in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:406: in _iterencode_dict
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:439: in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:180: in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+E   TypeError: Object of type RowMapping is not JSON serializable
+=========================== short test summary info ===========================
+FAILED tests/test_case_cleanup_coverage.py::test_durable_tool_query_uses_original_seed_after_registry_and_policy_change
+1 failed, 16 deselected in 5.25s

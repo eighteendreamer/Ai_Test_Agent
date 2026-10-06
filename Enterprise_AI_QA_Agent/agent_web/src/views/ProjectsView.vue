@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CaseEffectCoveragePanel from "../features/projects/CaseEffectCoveragePanel.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
@@ -1287,6 +1288,8 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
               </tr>
             </tbody></table>
           </div>
+          <CaseEffectCoveragePanel v-for="result in runDetail.results" :key="result.id"
+            :coverage="result.actual.effect_cleanup_coverage" :result-label="shortId(result.id)" />
           <footer><button v-if="runDetail.run.status === 'cancelled' && runDetail.items.some(item => !item.resource_cleanup_completed_at && (item.approval_id || item.tool_job_id))" @click="reconcileRunResources">重试资源补偿</button><button @click="runDetailOpen = false">关闭</button></footer>
         </template>
       </section>

@@ -45,6 +45,16 @@ class ToolJobService:
             await self._case_action_admission.initialize()
         return await self._store.mark_stale_running_jobs(self._heartbeat_timeout_seconds)
 
+    async def list_case_effect_evidence(self, *, project_id: str, run_id: str, plan_id: str) -> list[dict]:
+        store = getattr(self._store, "effect_evidence", None)
+        if store is None:
+            raise RuntimeError("固定对象证据查询未配置；不能用空集合代替未知范围")
+        records = await store.list_run_evidence(project_id, run_id, plan_id)
+        return [{"origin_job_id": row["origin_job"]["id"], "operation_id": row["operation"]["operation_id"],
+            "binding": deepcopy(row["origin_job"]["metadata"]["case_action_binding"]),
+            "status": row["origin_job"]["status"], "evidence_state": row["evidence_state"],
+            "returned_evidence": deepcopy(row["returned_evidence"])} for row in records]
+
     async def create_job(
         self,
         tool: ToolDescriptor,

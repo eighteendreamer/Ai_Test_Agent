@@ -45,8 +45,14 @@ def declaration(role):
 
 
 @asynccontextmanager
-async def original_effect_runtime(tmp_path, business, max_bytes=None, formal_source=False):
+async def original_effect_runtime(tmp_path, business, max_bytes=None, formal_source=False,
+    coverage=False, coverage_max_bytes=None, select_operations=False, declaration_factory=None,
+    plan_transform=None):
+    declare = declaration_factory or declaration
     policy = NEW_POLICY if max_bytes is None else NEW_POLICY.model_copy(update={"effect_evidence_max_bytes": max_bytes})
+    if coverage:
+        policy = policy.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1",
+            "effect_coverage_max_bytes": coverage_max_bytes})
     async with adapter_environment(tmp_path, business[0], live=True, start_item=False,
         planning_policy=policy) as values:
         env, _, _, _, runs, _, adapter, _, _, services = values
@@ -73,22 +79,35 @@ async def original_effect_runtime(tmp_path, business, max_bytes=None, formal_sou
             await active_case(base, project, "effect-consumer", consumer)
 
         def plan(c):
+            if coverage and not any(e["kind"] == "tool" for e in c["evidence"]):
+                return {"action": "query", "summary": "读取固定实际工具接口",
+                    "queries": [{"kind": "tool", "source_id": "api-test-runner"}]}
             target = item(c, "effect-consumer" if formal_source else "effect-evidence", key="target", depends_on=["seed"],
                 input_bindings={"id": {"source_item": "seed", "output_path_tokens": ["body", "order.id"]}})
             refs = target["evidence_ids"]
+            if coverage:
+                contract = next(e for e in c["evidence"] if e["kind"] == "tool")
+                assert "response_status" in contract["payload"]["output_variants"][0]["schema"]["properties"]
+                refs.append(contract["id"])
             producer = {"key": "seed", "kind": "prepare", "reason": "按实际依据记录产生对象",
                 "evidence_ids": refs, "instructions": {"expected": 201, "method": "POST", "url": business[0][0] + "/orders"},
-                "effect_evidence": declaration("produced")}
+                "effect_evidence": declare("produced")}
             if formal_source:
-                formal_declaration = declaration("produced")
+                formal_declaration = declare("produced")
                 formal_declaration["checks"][0]["expected_path_tokens"] = ["期望", "code"]
                 producer = item(c, "effect-evidence", key="seed", kind="dependency", effect_evidence=formal_declaration)
-            return finish(producer, target,
+            if select_operations:
+                producer["effect_evidence"]["select_when"] = [{"input_path_tokens": ["task", "method"],
+                    "expected_path_tokens": ["steps", "0", "method"] if formal_source else ["method"]}]
+            if coverage and formal_source:
+                producer["evidence_ids"].append(contract["id"])
+            result = finish(producer, target,
                 {"key": "cleanup", "kind": "prepare", "reason": "按固定证据核对清理对象",
                     "depends_on": ["target"], "evidence_ids": refs, "cleanup_sources": ["seed"],
                     "instructions": {"expected": 200, "method": "DELETE", "url": business[0][0] + "/orders/{id}"},
-                    "effect_evidence": declaration("cleanup")})
-        base.service._models = SharedPlanningModel(plan)
+                    "effect_evidence": declare("cleanup")})
+            return plan_transform(result) if plan_transform else result
+        base.service._models = SharedPlanningModel(plan, plan) if coverage else SharedPlanningModel(plan)
         planned = await base.service.create(project.id, CasePlanningRequest(objective="实际原工具对象证据"))
         assert planned.status == "planned", planned.summary
         detail = await services["creator"].create(project.id, planned.id,
@@ -115,7 +134,7 @@ async def original_effect_runtime(tmp_path, business, max_bytes=None, formal_sou
             directory = Path(os.environ["QA_EFFECT_EVIDENCE_DIR"]) / name
             directory.mkdir(parents=True, exist_ok=False)
             directory.joinpath(source.name).write_bytes(source.read_bytes())
-            payload = {"implementation_baseline": "186679a8", "fixed_context": context.execution_json(),
+            payload = {"implementation_baseline": "82de0568", "fixed_context": context.execution_json(),
                 "actual_run": (await runs.get(context.run_id)).model_dump(mode="json"),
                 "actual_MySQL_policy": (await base.service.get_policy(context.project_id)).model_dump(mode="json"),
                 "actual_origin_evidence": await read(), "actual_HTTP": deepcopy(business[0][1]),

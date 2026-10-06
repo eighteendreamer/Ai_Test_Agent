@@ -25,6 +25,8 @@ class CasePlanningPolicy(PlanningModel):
     preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
     effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
+    effect_coverage_protocol: Literal["case-effect-coverage-v1"] | None = None
+    effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
 
     @model_validator(mode="after")
     def require_action_ownership(self):
@@ -40,6 +42,12 @@ class CasePlanningPolicy(PlanningModel):
             self.effect_evidence_max_bytes = 512000
         if not self.effect_evidence_protocol and self.effect_evidence_max_bytes is not None:
             raise ValueError("对象证据大小配置需要固定对象证据策略")
+        if self.effect_coverage_protocol and not self.effect_evidence_protocol:
+            raise ValueError("对象覆盖需要固定对象证据策略")
+        if self.effect_coverage_protocol and self.effect_coverage_max_bytes is None:
+            self.effect_coverage_max_bytes = 1024000
+        if not self.effect_coverage_protocol and self.effect_coverage_max_bytes is not None:
+            raise ValueError("对象覆盖大小配置需要固定覆盖策略")
         return self
 
     @model_serializer(mode="wrap")
@@ -57,6 +65,10 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("effect_evidence_protocol", None)
         if self.effect_evidence_max_bytes is None:
             data.pop("effect_evidence_max_bytes", None)
+        if self.effect_coverage_protocol is None:
+            data.pop("effect_coverage_protocol", None)
+        if self.effect_coverage_max_bytes is None:
+            data.pop("effect_coverage_max_bytes", None)
         return data
 
 
@@ -69,7 +81,7 @@ class CasePlanningRequest(PlanningModel):
 
 
 class PlanningQuery(PlanningModel):
-    kind: Literal["cases", "documents", "document", "recordings", "recording"]
+    kind: Literal["cases", "documents", "document", "recordings", "recording", "tools", "tool"]
     query: str = Field(default="", max_length=1000)
     source_id: str | None = Field(default=None, max_length=160)
     start_line: int = Field(default=1, ge=1)
@@ -166,7 +178,7 @@ class PlanningDecision(PlanningModel):
 
 class PlanningEvidence(PlanningModel):
     id: str
-    kind: Literal["case", "document", "recording"]
+    kind: Literal["case", "document", "recording", "tool"]
     source_id: str
     version: str
     content_hash: str
