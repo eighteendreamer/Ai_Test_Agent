@@ -8,6 +8,7 @@ from graphlib import CycleError, TopologicalSorter
 from uuid import NAMESPACE_URL, uuid5
 
 from src.application.test_runs.dependencies import validate_run_dependencies
+from src.application.test_runs.preparation_scopes import frozen_preparation_scopes
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest, RegressionPlanSource, case_plan_json
 from src.schemas.run_management import RunItemDependency, TestRunItemRecord, TestRunRecord, TestCaseResultRecord
@@ -119,7 +120,8 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
     suite_id, run_id = identity("suite"), identity("run")
     item_ids = {key: identity("item", key) for key in formal}
     snapshot = CasePlanExecutionSnapshot(plan=plan.model_copy(deep=True), run_item_ids=item_ids,
-        owners=owners, preparation_phases=phases, regression=regression.model_copy(deep=True) if regression else None)
+        owners=owners, preparation_phases=phases, regression=regression.model_copy(deep=True) if regression else None,
+        preparation_scopes=frozen_preparation_scopes(plan, owners))
     dependencies: dict[str, dict[str, RunItemDependency]] = {key: {} for key in formal}
 
     def edge(owner: str, parent: str, condition: str, preparation: str | None = None) -> RunItemDependency:

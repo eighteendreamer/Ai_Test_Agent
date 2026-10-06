@@ -1983,6 +1983,7 @@ export interface CasePlanningPolicy {
   action_binding_protocol?: "case-action-binding-v1" | null;
   action_admission_protocol?: "case-action-admission-v1" | null;
   operation_protocol?: "case-operation-v1" | null;
+  preparation_scope_protocol?: "preparation-scope-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;
@@ -2050,7 +2051,7 @@ export interface CasePlanItemBase {
 
 export type CasePlanItem = CasePlanItemBase & (
   { kind: "target" | "dependency"; case_id: string; case_version_id: string } |
-  { kind: "prepare"; case_id: null; case_version_id: null; instructions: Record<string, unknown> }
+  { kind: "prepare"; case_id: null; case_version_id: null; instructions: Record<string, unknown>; cleanup_sources?: string[] | null }
 );
 
 export interface CasePlanRunRequest {
@@ -2187,6 +2188,7 @@ export interface TestRunRecord {
   mode_key: string;
   execution_strategy?: "legacy" | "agent";
   plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after">;
+    preparation_scopes?: Record<string, { source_key: string; source_owner_key: string; consumer_keys: string[]; cleanup_keys: string[] }> | null;
     regression?: { parent_run_id: string; source_plan_id: string; source_results: Record<string, string>; version_overrides: Record<string, string> } | null } | null;
   creation_key?: string | null;
   creation_hash?: string | null;

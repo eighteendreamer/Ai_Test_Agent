@@ -8,6 +8,7 @@ import logging
 from src.application.test_runs.dependencies import dependencies_ready, output_at_path
 from src.application.test_runs.environment_admission import fixed_environment_admission
 from src.application.test_runs.plan_mapping import source_output_path
+from src.application.test_runs.preparation_scopes import frozen_preparation_scopes
 from src.runtime.postgres_business_planning import fixed_planning_environment
 from src.schemas.case_execution import AgentCaseExecutionContext, BoundCaseInput, CaseExecutionStep
 from src.schemas.case_management import TestCaseVersionRecord
@@ -27,6 +28,8 @@ def build_agent_case_context(
     if run.execution_strategy != "agent" or snapshot is None:
         raise ValueError("运行没有固定的 Agent 执行依据")
     plan = snapshot.plan
+    if snapshot.preparation_scopes != frozen_preparation_scopes(plan, snapshot.owners):
+        raise ValueError("固定准备消费范围与原计划不一致")
     if plan.project_id != run.project_id or item.run_id != run.id or plan.decision is None:
         raise ValueError("固定计划与当前项目或运行引用不一致")
     nodes = {node.key: node for node in plan.decision.items}
@@ -102,6 +105,8 @@ def build_agent_case_context(
         action_binding_protocol=plan.config_snapshot.policy.action_binding_protocol,
         action_admission_protocol=plan.config_snapshot.policy.action_admission_protocol,
         operation_protocol=plan.config_snapshot.policy.operation_protocol,
+        preparation_scope_protocol=plan.config_snapshot.policy.preparation_scope_protocol,
+        preparation_scopes=deepcopy(snapshot.preparation_scopes),
         runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,environment_admission=admission,
         evidence=evidence,
         unresolved=[gap.model_copy(deep=True) for gap in plan.decision.unresolved if gap.item_key is None or gap.item_key in owned])

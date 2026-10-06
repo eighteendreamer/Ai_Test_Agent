@@ -149,6 +149,10 @@ async def test_actual_replay_preserves_origin_and_marks_HTTP_as_reused(tmp_path,
         first=await runtime.execute(tool,call,execution);origin=await jobs.get_job(first.job_id)
         second=await runtime.execute(tool,call.model_copy(update={'id':'recovery'},deep=True),execution)
         alias=await jobs.get_job(second.job_id)
+        await save_operation(tmp_path,'replay-provenance-input',values,business,
+            before_provenance_assertions=True,original_job=origin.model_dump(mode='json'),
+            alias_job=alias.model_dump(mode='json'),original_record=first.model_dump(mode='json'),
+            alias_record=second.model_dump(mode='json'))
         assert alias.started_at is None and alias.input_payload==origin.input_payload
         assert await jobs.get_job(origin.id)==origin and len(business[0][1])==1
         receipt=await jobs.validate_case_operation(alias)

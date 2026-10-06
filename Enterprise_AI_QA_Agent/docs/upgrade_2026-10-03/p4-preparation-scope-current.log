@@ -1,0 +1,46 @@
+...........F.FFF                                                         [100%]
+================================== FAILURES ===================================
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False-False-False] _
+tests\test_case_shared_effect_research.py:234: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    assert remaining_after_left == 1, "Cleanup removed shared object before its second consumer ran"
+E   AssertionError: Cleanup removed shared object before its second consumer ran
+E   assert 0 == 1
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[True-False-False-True] _
+tests\test_case_shared_effect_research.py:148: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    seed = await base.service.prepare_task(project.id, CasePlanningRequest(objective="固定共享准备任务输入"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\planning_service.py:100: in prepare_task
+    preparation_scopes=config.policy.preparation_scope_protocol is not None), model_parameters=planning_model_parameters(model))
+                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\schemas\model_config.py:146: in model_invocation_parameters
+    parameters = config.model_dump(mode="json", include={
+                 ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'model_dump'
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[True-True-False-True] _
+tests\test_case_shared_effect_research.py:148: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    seed = await base.service.prepare_task(project.id, CasePlanningRequest(objective="固定共享准备任务输入"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\planning_service.py:100: in prepare_task
+    preparation_scopes=config.policy.preparation_scope_protocol is not None), model_parameters=planning_model_parameters(model))
+                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\schemas\model_config.py:146: in model_invocation_parameters
+    parameters = config.model_dump(mode="json", include={
+                 ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'model_dump'
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False-False-True] _
+tests\test_case_shared_effect_research.py:148: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    seed = await base.service.prepare_task(project.id, CasePlanningRequest(objective="固定共享准备任务输入"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_cases\planning_service.py:100: in prepare_task
+    preparation_scopes=config.policy.preparation_scope_protocol is not None), model_parameters=planning_model_parameters(model))
+                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\schemas\model_config.py:146: in model_invocation_parameters
+    parameters = config.model_dump(mode="json", include={
+                 ^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'model_dump'
+=========================== short test summary info ===========================
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False-False-False]
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[True-False-False-True]
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[True-True-False-True]
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False-False-True]
+4 failed, 12 passed in 43.42s

@@ -144,6 +144,7 @@ function chooseActionBinding(event: Event) {
     delete config.value.policy.action_binding_protocol;
     delete config.value.policy.action_admission_protocol;
     delete config.value.policy.operation_protocol;
+    delete config.value.policy.preparation_scope_protocol;
   }
 }
 function chooseActionAdmission(event: Event) {
@@ -154,6 +155,7 @@ function chooseActionAdmission(event: Event) {
   } else {
     delete config.value.policy.action_admission_protocol;
     delete config.value.policy.operation_protocol;
+    delete config.value.policy.preparation_scope_protocol;
   }
 }
 function chooseOperationRecovery(event: Event) {
@@ -162,7 +164,19 @@ function chooseOperationRecovery(event: Event) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
-  } else delete config.value.policy.operation_protocol;
+  } else {
+    delete config.value.policy.operation_protocol;
+    delete config.value.policy.preparation_scope_protocol;
+  }
+}
+function choosePreparationScopes(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.action_binding_protocol = "case-action-binding-v1";
+    config.value.policy.action_admission_protocol = "case-action-admission-v1";
+    config.value.policy.operation_protocol = "case-operation-v1";
+    config.value.policy.preparation_scope_protocol = "preparation-scope-v1";
+  } else delete config.value.policy.preparation_scope_protocol;
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -206,6 +220,8 @@ onMounted(loadPolicy);
           :checked="config.policy.action_admission_protocol === 'case-action-admission-v1'" @change="chooseActionAdmission">执行前核对当前失效确认</label>
         <label><input data-testid="operation-recovery" type="checkbox" :disabled="busy"
           :checked="config.policy.operation_protocol === 'case-operation-v1'" @change="chooseOperationRecovery">按逻辑操作恢复结果</label>
+        <label><input data-testid="preparation-scopes" type="checkbox" :disabled="busy"
+          :checked="config.policy.preparation_scope_protocol === 'preparation-scope-v1'" @change="choosePreparationScopes">按准备消费范围安排清理</label>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
@@ -238,6 +254,7 @@ onMounted(loadPolicy);
           <details><summary>{{ item.kind === 'prepare' ? '准备操作与验证点' : '完整固定用例' }}</summary><JsonContentTree :value="content(item)" /></details>
           <details v-if="Object.keys(item.input_bindings).length"><summary>数据来源</summary><JsonContentTree :value="item.input_bindings" /></details>
           <p>依据：{{ item.evidence_ids.join('、') }}</p>
+          <p v-if="item.kind === 'prepare' && item.cleanup_sources">清理来源：{{ item.cleanup_sources.join('、') }}。这是计划范围，清理结果需实际证据核验。</p>
         </li></ol>
         <details v-if="plan.evidence.some(e => e.kind !== 'case')"><summary>查询到的项目原文与录制依据</summary><template v-for="source in plan.evidence.filter(e => e.kind !== 'case')" :key="source.id"><p>{{ source.id }}</p><JsonContentTree :value="source.payload" /></template></details>
       </template>

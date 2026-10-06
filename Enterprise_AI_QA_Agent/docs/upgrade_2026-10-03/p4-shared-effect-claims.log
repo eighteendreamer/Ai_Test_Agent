@@ -1,0 +1,37 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[True-False] _
+tests\test_case_shared_effect_research.py:162: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    assert left_result["status"] == ("failed" if left_fails else "passed")
+E   AssertionError: assert 'error' == 'passed'
+E     
+E     - passed
+E     + error
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session a415f779-4767-4909-85ee-62a0a931e85e: 'call_id'
+WARNING  src.application.test_runs.execution_service:execution_service.py:363 test_run_agent_execution_requires_reconciliation
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[True-True] _
+tests\test_case_shared_effect_research.py:162: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    assert left_result["status"] == ("failed" if left_fails else "passed")
+E   AssertionError: assert 'error' == 'failed'
+E     
+E     - failed
+E     + error
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session 947ba64e-1c6a-4e79-a3f9-49c4a019f130: 'call_id'
+WARNING  src.application.test_runs.execution_service:execution_service.py:363 test_run_agent_execution_requires_reconciliation
+_ test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False] _
+tests\test_case_shared_effect_research.py:162: in test_actual_shared_object_survives_until_all_declared_consumers_finish
+    assert left_result["status"] == ("failed" if left_fails else "passed")
+E   AssertionError: assert 'error' == 'passed'
+E     
+E     - passed
+E     + error
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session 541f3320-94df-4306-97fb-82ff4a3c6089: 'call_id'
+WARNING  src.application.test_runs.execution_service:execution_service.py:363 test_run_agent_execution_requires_reconciliation
+=========================== short test summary info ===========================
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[True-False]
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[True-True]
+FAILED tests/test_case_shared_effect_research.py::test_actual_shared_object_survives_until_all_declared_consumers_finish[False-False]
+3 failed in 15.75s

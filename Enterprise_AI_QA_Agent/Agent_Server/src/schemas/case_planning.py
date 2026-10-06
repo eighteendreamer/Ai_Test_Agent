@@ -21,6 +21,7 @@ class CasePlanningPolicy(PlanningModel):
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
     operation_protocol: Literal["case-operation-v1"] | None = None
+    preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
@@ -28,6 +29,8 @@ class CasePlanningPolicy(PlanningModel):
             raise ValueError("动作确认检查需要固定执行项关联")
         if self.operation_protocol and not self.action_admission_protocol:
             raise ValueError("逻辑操作恢复需要固定执行项关联和动作领取")
+        if self.preparation_scope_protocol and not self.operation_protocol:
+            raise ValueError("准备消费范围需要固定逻辑操作策略")
         return self
 
     @model_serializer(mode="wrap")
@@ -39,6 +42,8 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("action_admission_protocol", None)
         if self.operation_protocol is None:
             data.pop("operation_protocol", None)
+        if self.preparation_scope_protocol is None:
+            data.pop("preparation_scope_protocol", None)
         return data
 
 
@@ -101,6 +106,14 @@ class PreparationPlanItem(CasePlanItemBase):
     case_id: None = None
     case_version_id: None = None
     instructions: dict[str, Any] = Field(min_length=1)
+    cleanup_sources: list[Annotated[str, Field(min_length=1, max_length=80)]] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_serializer(mode="wrap")
+    def preserve_original_preparation(self, handler):
+        data = handler(self)
+        if self.cleanup_sources is None:
+            data.pop("cleanup_sources", None)
+        return data
 
 
 CasePlanItem = Annotated[FormalCasePlanItem | PreparationPlanItem, Field(discriminator="kind")]
@@ -212,9 +225,24 @@ class RegressionPlanSource(PlanningModel):
     version_overrides: dict[str, str] = Field(default_factory=dict, max_length=200)
 
 
+class PreparationScopeRecord(PlanningModel):
+    source_key: str
+    source_owner_key: str
+    consumer_keys: list[str]
+    cleanup_keys: list[str]
+
+
 class CasePlanExecutionSnapshot(PlanningModel):
     plan: CasePlanRecord
     run_item_ids: dict[str, str]
     owners: dict[str, str]
     preparation_phases: dict[str, Literal["before", "after"]]
     regression: RegressionPlanSource | None = None
+    preparation_scopes: dict[str, PreparationScopeRecord] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_snapshot(self, handler):
+        data = handler(self)
+        if self.preparation_scopes is None:
+            data.pop("preparation_scopes", None)
+        return data

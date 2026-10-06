@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
+    PreparationScopeRecord,
 )
 from src.schemas.business_planning import BusinessPlanningEnvironment
 from src.schemas.business_execution import BusinessExecutionAdmission
@@ -46,11 +47,17 @@ class AgentCaseExecutionContext(PlanningModel):
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
     operation_protocol: Literal["case-operation-v1"] | None = None
+    preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
+    preparation_scopes: dict[str, PreparationScopeRecord] | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
         if self.operation_protocol and (not self.action_binding_protocol or not self.action_admission_protocol):
             raise ValueError("固定逻辑操作上下文需要原执行项关联和动作领取策略")
+        if self.preparation_scope_protocol and (not self.operation_protocol or self.preparation_scopes is None):
+            raise ValueError("固定准备消费范围需要逻辑操作策略与原范围快照")
+        if self.preparation_scope_protocol is None and self.preparation_scopes is not None:
+            raise ValueError("准备消费范围缺少固定协议")
         return self
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
@@ -65,6 +72,10 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("action_admission_protocol")
         if self.operation_protocol is None:
             omitted.add("operation_protocol")
+        if self.preparation_scope_protocol is None:
+            omitted.add("preparation_scope_protocol")
+        if self.preparation_scopes is None:
+            omitted.add("preparation_scopes")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

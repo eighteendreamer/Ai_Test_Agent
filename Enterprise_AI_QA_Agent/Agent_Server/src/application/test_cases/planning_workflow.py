@@ -149,6 +149,12 @@ class CasePlanningWorkflow:
                         try:
                             decision = self._planner._parse(checkpoint.response_text or "")
                             if decision.action == "finish":
+                                if policy.preparation_scope_protocol is not None:
+                                    round_record["preparation_scope_declaration"] = {
+                                        item.key: {"cleanup_sources": list(item.cleanup_sources),
+                                            "depends_on": list(item.depends_on)}
+                                        for item in decision.items if item.kind == "prepare"
+                                        and item.cleanup_sources is not None}
                                 versions = {}
                                 if pin_read_versions:
                                     versions.update({item.source_id: item.version for item in record.evidence if item.kind == "case"})

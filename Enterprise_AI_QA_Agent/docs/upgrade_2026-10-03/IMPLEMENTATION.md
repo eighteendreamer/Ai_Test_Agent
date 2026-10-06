@@ -3456,3 +3456,37 @@ $env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 这是对象范围与清理覆盖的架构缺失，不只是步骤归属检查。准备数据单步摘要不能充当完整对象清单；HTTP 200、after阶段或方法一致都不能单独证明清理完毕。新设计先实测共享拥有者/消费者/清理等待关系，再冻结协议并查证原观察事务集成；目前共享循环等待是源码风险，尚未实测。保持原Job、权限、租约、操作恢复和旧固定历史；不另建执行器，不按业务关键词推断效果。
 
 七项回执由研究代码受控提交，未调用默认外部Agent；简单状态码检查不证明完整目标业务字段已覆盖。本次没有运行前端构建或生产迁移，也没有宣称修复三个缺口。上传专项只证明本地链路，生产存储/正式App继续引用各自历史证据。三份方案同步、原工件SHA/size、用户.gitignore及提交范围检查见p4-effect-research-validation.json；保留真实失败，不改为xfail。
+
+## 2026-10-06 固定准备来源、消费者及清理范围〔研究基线4cde9a7d〕
+
+先重读原附件目标、计划、实际对象反例、原映射/依赖/上下文/回归、原领取/观察和本地Agent课程。实际共享图两个消费者后清理可用；只等左侧时提前删除、右侧GET 404；左目标failed但准备passed仍可供右侧；实际pending清理审批使右侧不可领取，说明执行时再等待右侧会形成条件循环。查证后采用P4_PREPARATION_SCOPE_DESIGN.md，新增显式计划范围，未将此范围当作实际效果生命周期。
+
+MySQL原规划策略可选preparation_scope_protocol，PG原固定计划/运行JSONB记录声明前来源/依赖、规范化后顺序及preparation_scopes；RustFS原件沿用。新prepare.cleanup_sources只引用本计划来源，服务端补消费者依赖，原映射分配拥有者。创建/上下文重算核对，回归丢清理来源时用原重新规划；前端类型、设置及来源展示同步。没有新执行器、工具、模式、表或依赖。旧字段省略，普通/环境Prompt分别与Git基线旧schema/旧实现逐字对比一致；旧wire/hash和终态保持。
+
+```powershell
+# Agent_Server；真实专项使用RUN_LIVE_PLAN_RUN_CREATION=1，
+# QA_SHARED_EFFECT_EVIDENCE_DIR指向每轮独立目录；保留stdout/stderr及退出码。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_preparation_scopes.py tests/test_case_shared_effect_research.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-preparation-scope-declarations.xml
+# 退出1：16通过/1真实旧策略失败，58.43秒；17项=9边界+8实际场景。
+
+# 同目录；RUN_LIVE_CASE_PLANNING_TESTS、RUN_LIVE_CASE_PLANNING_TASKS也为1，
+# QA_STATEFUL_RESEARCH_EVIDENCE_DIR和QA_PLANNING_TASK_EVIDENCE_DIR为对应独立目录。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py tests/test_case_operations.py tests/test_agent_case_assessment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-preparation-scope-regression-captured.xml
+# 退出0：121通过/3外部模型跳过，120.79秒；最终全部生产源码。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations.py::test_actual_replay_preserves_origin_and_marks_HTTP_as_reused -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-preparation-scope-provenance-diagnostic.xml
+# 退出0：1通过，6.85秒；改断言前捕获，不修改网络生产逻辑或放宽断言。
+
+# agent_web
+npm run test -- src/features/projects/CasePlanDialog.test.ts
+# 退出0：13通过，2.85秒。
+npm run build
+# 退出0：vue-tsc和Vite实际运行，Vite13.62秒。
+```
+
+真实八步JSON文件分别上传并读回RustFS、评审/启用，MySQL策略/Seed、PG运行、原图/审批/API/实际HTTP均验证。新协议原清理只依赖left，声明source=seed后冻结为全部消费者；实际创建1条、左查询、右查询、删除，0剩余。当前MySQL关协议且右侧启用201新预期后，原请求/运行仍用原范围及200版本。左侧失败的新回归只保留左消费者、重新创建另一真实ID并清理，父结果不变、终态不重领。另让模型在right内部先删后查，真实right failed/cleanup passed，证实实际消费状态仍缺；这个对照通过不等于目标业务通过。
+
+保留各轮：shared-first3失败13.99秒是claims误读；shared-claims3失败15.75秒是工具JSON内误读call_id；纠正后shared-wire2通过/1真实失败23.20秒；shared-wait1通过9.57秒。scope-live11通过27.86秒；scope-current12通过/4失败43.42秒，其中1旧策略缺口、3个Seed模型配置夹具缺model_dump；改正式ModelConfig后verified15通过/1旧策略失败49.52秒，另consumption1通过13.21秒，final16通过/1旧策略失败54.08秒；加入声明前记录后为最终58.43秒。范围变化不累加覆盖数。
+
+兼容regression首次121通过/3跳过119.46秒；regression-final120通过/1失败/3跳过111.30秒，来源专项原输出缺network观察。该次断言前无原Job捕获，原因未知；本次在原来源断言前保存原/alias Job、完整输入/输出/记录、HTTP及服务器状态，单项及最终captured121通过；不宣称网络根因修复。所有旧失败和三份方案历史保留，不改为xfail。源码/DTO/消费者已核对，审计和原件暂存字节核对见p4-preparation-scope-validation.json。
+
+没有调用默认外部模型，没有完整App或新范围独立生产进程验收，没有生产历史迁移。当前是计划范围基础，实际对象/消费完成/清理覆盖/未知查证、修订及其他完整P0—P5继续未完成。

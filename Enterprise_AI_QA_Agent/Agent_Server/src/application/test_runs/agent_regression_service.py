@@ -128,6 +128,11 @@ class AgentRegressionService:
             if any(binding.source_item and binding.source_item not in keep
                    for binding in nodes[key].input_bindings.values()):
                 return None
+            if nodes[key].kind == "prepare" and any(source not in keep
+                    for source in nodes[key].cleanup_sources or []):
+                # A sliced plan cannot silently rewrite the declared cleanup
+                # operation or invent omitted sources; use the existing replan.
+                return None
         items = []
         for entry in original.decision.items:
             if entry.key not in keep:
