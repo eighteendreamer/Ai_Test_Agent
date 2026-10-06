@@ -3074,3 +3074,41 @@ npm run build
 全部复现失败及通过证据保留，不以地址匹配代替部署确认。没有正式环境页面、需求版本/点/精确用例追加确认、Run绑定/执行限制、默认Agent自主执行或生产历史迁移。下一步B将原观察固定关联已确认需求/覆盖/用例并验证追加/撤回/并发/恢复，再接C/D；完整P0—P5目标保持active。
 
 交付审计首轮误将公开DocumentParseTaskView当成包含seed的内部记录，KeyError: seed，失败输出保存于p4-http-origin-audit-first.log。读取真实任务摘要后改为核对project_id/document_id/version_id与原文档及snapshot_id存在；未补造缺失内部seed，不扩大该摘要的证明范围，不修改原功能证据。最终审计检查固定环境hash、每条PG原工具输出/原值/hash、实际地址链、两目标/回放及旧证据字节；脚本为http_origin_delivery_20261006.py。
+
+## 2026-10-06 B固定需求/覆盖/点/用例的显式环境确认〔基线1ec34cef〕
+
+重读原目标；上一步方案同步/核对完成，已有来源改动经暂存审计交付为1ec34cef。研究既有PG覆盖/正文执行确认、项目锁、原请求恢复、不可变需求/用例、环境捕获及真实工具观察。本地课程Action/Observation与版本化原则采用为来源与决定分开、不可变范围。设计先写P4_ENVIRONMENT_DECISIONS_DESIGN.md，再新增business_applicability契约/PG追加存储/单一服务/项目环境子API。main在需求表已初始化后创建确认表；容器与前端类型/API/统一客户端同步。当前配置继续MySQL，业务决定及固定依据PG，原件/大对象RustFS；无新依赖、模式、调度器或模型调用。
+
+提交显式绑定固定目标/需求/覆盖/hash/验证点和精确用例；事务重新读取同项目原ToolJob、网络来源与输出/字段hash，保存完整固定需求/覆盖/用例和观察。点生效与用例适用分开；partial不扩为完整需求通过。wrong-target、回放、早于捕获或缺依据仅unknown。撤回/重确认追加；同请求先找原决定，归档后恢复不读当前配置/模型/对象或发工具。旧矩阵、原结果和旧hash不改。原执行确认固定覆盖读取抽为requirement_coverage_basis，语义/错误行为保留，扩大旧真实回归。
+
+实际命令与证据：
+
+```powershell
+# 首次仓库根命令缺src路径，1收集错误；修正PYTHONPATH后离线1通过/5真实开关跳过。
+$env:PYTHONPATH="Agent_Server"
+.\.venv\Scripts\python.exe -Xutf8 -m pytest Agent_Server/tests/test_business_applicability.py -q --junitxml=docs/upgrade_2026-10-03/p4-environment-decisions-offline-fixed.xml
+# 以下均在Agent_Server。真实首轮6通过，新增边界两次夹具失败、修正后1通过，均另存XML/log。
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS="1"
+$env:QA_REQUIREMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-decisions-live-verified"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_applicability.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-decisions-live-verified.xml
+# 正式main、解析/比较/影响CLI独立进程，实际存储及两个固定规则业务HTTP。
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION="1"
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-decisions-production-verified"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_applicability_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-decisions-production-verified.xml
+# 扩大旧确认及环境回归：38通过、0跳过、122.80秒。
+$env:RUN_LIVE_BUSINESS_ENVIRONMENTS="1"
+$env:QA_REQUIREMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-decisions-regression\requirements"
+$env:QA_ENVIRONMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-decisions-regression\environments"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_execution.py tests/test_requirement_coverage.py tests/test_business_environment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-decisions-regression.xml
+# agent_web：9通过，vue-tsc/Vite通过8.17秒。
+npm test -- src/services/businessApplicability.api.test.ts src/services/businessEnvironments.api.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-environment-decisions-client-first.xml
+npm run build
+```
+
+最后新专项7通过73.03秒、独立生产1通过92.38秒，均0跳过。真实MD/DOCX/PDF从原件上传/独立解析/影响到明确需求及覆盖；两个各自固定7/9天且相同release目标，经ToolRuntime/PG原值保存，明确所选retention和旧用例；boundary不继承。旧用例在旧目标valid、新目标invalid，新覆盖的完整12步九天用例另确认valid。撤回/重确认、四路首次唯一、不同修订冲突、实际PG丢回执恢复、跨项目/点/版本/hash/观察SQL改动均验。新需求/新捕获没有旧确认，旧观察时间和completed_request不能转为生效，回放不增加业务HTTP。生产流程重启/归档、删当前配置、原确认/撤回/完整固定JSON与原件/hash都保留；确认模型新增0，业务HTTP2，影响仍2条受控模型请求。
+
+失败如实保留：最初命令1收集错误0.48秒；新增边界1失败12.31秒源于浅复制共享点列表，提交提前422；独立请求后1失败14.07秒因夹具使用新task/幂等身份，实际发送新network。按原执行器恢复契约改用原ToolJob的task和真实idempotency_key，增加取得方式/真实HTTP数量断言；复验1通过12.52秒。没有改生产执行器绕过合法请求身份，也没有把新网络证据伪报回放。完整早期7通过72.17秒后复核历史改按revision排序，最后源码7通过73.03秒；早期生产56.26秒及补分页后92.38秒分目录保留。
+
+本步仅明确所选范围的显式业务评审API，评审语义由夹具提供。正式环境/矩阵页面、AI候选、C固定规划/启动/领取/回归执行限制、默认Agent、生产迁移及其他P0—P5继续，完整目标保持active。不会因为确认API通过就把运行约束或整条需求生效标成已完成。
+
+交付审计首轮通过Tee保存自身输出：实际首份清单没有audit-first.log，控制台输出之后该文件才创建，第二次核对报告因新增文件出现AssertionError。首份和中间复核报告分别保留为validation-first/validation-recheck；最终命令直接输出控制台，在日志已关闭后生成并复核最终报告，避免审计新增未纳入清单的自身输出。功能测试、原件、PG和HTTP记录不改写。最终核对7505份既有原始证据、当前工件、三份方案及用户.gitignore；该审计错误不算功能测试失败或成功。

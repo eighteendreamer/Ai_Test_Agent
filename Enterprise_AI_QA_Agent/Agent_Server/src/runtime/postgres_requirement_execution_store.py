@@ -10,6 +10,7 @@ from src.application.test_cases.version_content import version_content_hash
 from src.application.test_runs.agent_case_assessment import literal_value
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_requirement_store import fixed_requirement_version, requirement_hash
+from src.runtime.requirement_coverage_basis import load_requirement_coverage
 from src.runtime.postgres_tool_job_store import _job_from_row
 from src.schemas.case_management import TestCaseVersionRecord
 from src.schemas.requirement_execution import (
@@ -117,28 +118,9 @@ class PostgresRequirementExecutionStore:
         return await asyncio.to_thread(read)
 
     def _basis(self, cur, project_id, document_id, requirement_id, version_id, coverage_id):
-        req = self._requirements
-        cur.execute(f"SELECT v.record FROM {req._versions} v JOIN {req._requirements} r ON r.id=v.requirement_id "
-            "WHERE r.project_id=%s AND r.document_id=%s AND r.id=%s AND v.id=%s FOR SHARE OF r,v",
-            (project_id, document_id, requirement_id, version_id))
-        row = cur.fetchone()
-        if row is None:
-            raise KeyError("执行确认需求版本不属于当前项目文档")
-        version = fixed_requirement_version(row["record"])
-        if version.id != version_id or version.requirement_id != requirement_id:
-            raise ValueError("执行确认数据库需求身份与固定版本不同")
-        links, digest = version.case_links, version.content_sha256
-        if coverage_id != "initial":
-            cur.execute(f"SELECT * FROM {req.coverage.table} WHERE id=%s AND project_id=%s AND document_id=%s "
-                "AND requirement_id=%s AND requirement_version_id=%s", (coverage_id, project_id, document_id, requirement_id, version_id))
-            row = cur.fetchone()
-            if row is None:
-                raise KeyError("执行确认覆盖依据不属于指定需求版本")
-            coverage = req.coverage._review(row)
-            if coverage.requirement_version_sha256 != version.content_sha256:
-                raise ValueError("执行确认覆盖与固定需求版本哈希不同")
-            links, digest = coverage.case_links, coverage.sha256
-        return version, links, digest
+        basis = load_requirement_coverage(cur, self._requirements, project_id, document_id,
+            requirement_id, version_id, coverage_id)
+        return basis.version, basis.links, basis.sha256
 
     def _result(self, cur, project_id, result_id):
         cur.execute(f"SELECT x.* FROM {self._results} x JOIN {self._runs} r ON r.id=x.run_id "

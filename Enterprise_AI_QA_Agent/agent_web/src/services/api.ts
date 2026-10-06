@@ -11,6 +11,7 @@ import * as documentParsing from "./documentParsing.api";
 import * as documentDifferences from "./documentDifferences.api";
 import * as documentImpacts from "./documentImpacts.api";
 import * as businessEnvironments from "./businessEnvironments.api";
+import * as businessApplicability from "./businessApplicability.api";
 
 export const api = {
   ...sessions,
@@ -26,4 +27,5 @@ export const api = {
   ...documentDifferences,
   ...documentImpacts,
   ...businessEnvironments,
+  ...businessApplicability,
 };

@@ -1,0 +1,13 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___ test_actual_new_coverage_requirement_capture_and_replay_do_not_inherit ____
+tests\test_business_applicability.py:302: in test_actual_new_coverage_requirement_capture_and_replay_do_not_inherit
+    assert (await client.post(route, json=replay_request)).status_code == 409
+E   assert 422 == 409
+E    +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.projects.business_applicability_service:business_applicability_service.py:32 business_applicability_write_failed
+WARNING  src.api.routes.business_applicability:business_applicability.py:21 business_applicability_request_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_business_applicability.py::test_actual_new_coverage_requirement_capture_and_replay_do_not_inherit
+1 failed, 6 deselected in 12.31s

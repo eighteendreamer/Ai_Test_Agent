@@ -27,6 +27,7 @@ from src.api.routes.knowledge import router as knowledge_router
 from src.api.routes.oauth import router as oauth_router
 from src.api.routes.projects import router as projects_router
 from src.api.routes.business_environments import router as business_environments_router
+from src.api.routes.business_applicability import router as business_applicability_router
 from src.api.routes.recordings import router as recordings_router
 from src.api.routes.reports import router as reports_router
 from src.api.routes.registry import router as registry_router
@@ -492,6 +493,9 @@ async def _initialize_lifespan_resources(
     app.state.document_impact_store = document_impact_runtime.store
     await document_impact_runtime.requirements.initialize()
     app.state.requirement_service = document_impact_runtime.requirements
+    business_applicability_service = container.business_applicability_service()
+    await business_applicability_service.initialize()
+    app.state.business_applicability_service = business_applicability_service
     generation_runtime = build_generation_runtime(settings, container,
         requirements=document_impact_runtime.requirements, impact_tasks=document_impact_runtime.tasks,
         stream=(GENERATION_STREAM if settings.orchestration.redis_task_dispatch_enabled
@@ -994,6 +998,7 @@ app.include_router(attachments_router, prefix=settings.api_v1_prefix)
 app.include_router(api_docs_router, prefix=settings.api_v1_prefix)
 app.include_router(projects_router, prefix=settings.api_v1_prefix)
 app.include_router(business_environments_router, prefix=settings.api_v1_prefix)
+app.include_router(business_applicability_router, prefix=settings.api_v1_prefix)
 app.include_router(compatibility_router, prefix=settings.api_v1_prefix)
 app.include_router(integrations_router, prefix=settings.api_v1_prefix)
 app.include_router(reports_router, prefix=settings.api_v1_prefix)

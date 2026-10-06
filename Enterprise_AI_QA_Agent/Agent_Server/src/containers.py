@@ -35,6 +35,9 @@ from src.application.projects.project_overview_service import ProjectOverviewSer
 from src.application.projects.project_service import ProjectService
 from src.application.projects.business_environment_service import BusinessEnvironmentService
 from src.runtime.postgres_business_environment_store import PostgresBusinessEnvironmentStore
+from src.application.projects.business_applicability_service import BusinessApplicabilityService
+from src.runtime.postgres_business_applicability_store import PostgresBusinessApplicabilityStore
+from src.runtime.postgres_requirement_store import PostgresRequirementStore
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.prompting.prompt_service import PromptSubmissionService
@@ -161,6 +164,10 @@ class AppContainer(containers.DeclarativeContainer):
     business_environment_service = providers.Singleton(BusinessEnvironmentService,
         store=business_environment_store, configs=application_config_store, projects=project_service,
         tool_jobs=tool_job_store)
+    business_applicability_store = providers.Singleton(PostgresBusinessApplicabilityStore,
+        requirements=providers.Singleton(PostgresRequirementStore, settings=settings), environments=business_environment_store)
+    business_applicability_service = providers.Singleton(BusinessApplicabilityService,
+        store=business_applicability_store, projects=project_service, environments=business_environment_service)
     task_pool_entries_store = providers.Singleton(PostgresTaskPoolStore, settings=settings)
     task_pool_service = providers.Singleton(TaskPoolService, store=session_store, entries_store=task_pool_entries_store)
     permission_service = providers.Singleton(PermissionService)
