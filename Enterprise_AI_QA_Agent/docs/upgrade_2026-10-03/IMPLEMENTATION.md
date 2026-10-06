@@ -3605,3 +3605,11 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 原first为1失败19.01秒：夹具未登记规划派发流，提交503，尚无模型/业务HTTP；按main显式注册要求修正。stream-fixed2通过95.02秒；补鉴权及SQL对账后authenticated2通过91.59秒。这两个历史批次seed回执曾指第二条而目标用第一条，不作为正确数据传递证据；最终修正引用并新增核对后2通过，原记录全部保留，不累计成6项覆盖。
 
 本轮使用受控模型验证实际main/API/独立CLI/SDK和原生业务工具，未执行默认自主Agent、完整App或生产历史迁移。build_assessment_request当前没有生产调用方；生产最终图回执进入assess确定性核验，不能宣称已追加只读模型调用。共享消费完成、未知只读查证、运行修订与P0—P5其余项仍未完成。下一步沿完整新协议研究并实测默认Agent与正式页面，保留既有默认length失败。
+
+## 2026-10-07 用户所贴完整方案再次同步〔源码基线6c345dcb〕
+
+按“那不更新这个方案？”更新PLAN.md、所贴附件及选中计划正文。核对普通上传路由、upload_version、原件保存、Git独立来源及固定快照比较；首页更新为已提交生产验证的实际范围，3.1.4—3.1.5同步本次验证结果。模板只用于生成、按项目选取和AI补全、上传无需Git缓存等约定保留在正文。本次未改业务源码。
+
+在Agent_Server执行 `..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short`，退出0，2通过，4.30秒。使用临时实际文件、上传路由及本地测试存储，未重跑生产数据库/RustFS、独立解析/比较进程、完整App或默认自主模型。
+
+Python核对三份正文逐字节一致、168个本地链接有效、纠正事项存在且用户.gitignore未变；`git diff --check`通过。详细范围见plan-user-update-validation.json。完整P0—P5仍未完成；无关工作区改动及原始验证文件保持原状。

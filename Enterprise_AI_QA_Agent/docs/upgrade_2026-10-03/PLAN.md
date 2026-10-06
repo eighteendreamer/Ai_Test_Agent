@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次源码核对基线：`56af7313`。本轮新增独立生产功能专项，真实结果及边界见6.50；未修改业务源码。方案正文、用户所贴附件和选中的计划文件同步，保留完整 P0—P5 范围与既有实施历史、原始失败记录。
+修订日期：2026-10-07；本次源码核对基线：`6c345dcb`。本次按用户要求直接更新完整方案、所贴附件及选中的计划文件，重新核对上传、版本保存、Git来源和固定快照比较的调用边界，并实际重跑两项无Git上传回归：**2通过，4.30秒**。未修改业务源码；完整 P0—P5 范围与既有实施历史、原始失败记录继续保留。
 
 本方案按用户纠正后的流程执行：
 
@@ -11,7 +11,7 @@
 
 此前`82de0568`方案修订重跑无Git的上传/原件回归，**2通过、0失败、0跳过，3.54秒**。它们验证本地测试存储中的版本追加、原件保留、原请求恢复及同名独立文档；该次未重跑生产存储、独立解析/比较进程或完整App。历史验收范围见[原核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-revision-current-validation.json)，不计为本次测试。
 
-最新实施提交`a009b0f8`；新固定`case-effect-coverage-v1`已接原操作清单、拥有者映射、正式结果及页面，真实文件/HTTP/MySQL/PG/RustFS综合回归167通过、3外部模型跳过，前端22项和构建通过，见6.49。以上为该提交的既有结果。旧策略历史失败保留；共享消费完成、未知只读查证、独立生产新协议和默认自主Agent仍待验。完整P0—P5升级尚未完成。
+最新已提交验证为`6c345dcb`：新覆盖协议在独立生产API、规划CLI和执行CLI中实测2通过，部分清理仍blocked、全部清理passed，见6.50；使用受控模型，未证明默认自主Agent通过。此前`a009b0f8`的167项综合回归、3外部模型跳过、前端22项及构建结果见6.49，均为历史结果，不计成本次验证。旧策略历史失败保留；共享消费完成、未知只读查证、默认自主Agent及完整App仍待验。完整P0—P5升级尚未完成。
 
 本次修订直接落实到以下正文，详细工程范围与历史证据继续保留：
 
@@ -22,7 +22,7 @@
 | 上传无需Git缓存 | 3.1—3.2：应用保存原件/版本；按指定解析快照比较；Git仅在用户选择独立来源入口时参与 |
 | 可行性与完成范围分开 | 3.1.1、3.1.4—3.1.5及6.49：列出现有调用与验收边界；文档核对、历史专项和完整产品验收分别记录 |
 
-此前方案修订的三份正文同步、代码依据与本地链接检查见[原方案核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-a009-validation.json)。最新生产专项与同步核对见[本轮记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-coverage-production-validation.json)。
+此前方案修订的三份正文同步、代码依据与本地链接检查见[原方案核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-a009-validation.json)。已提交的生产专项记录见[生产验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-coverage-production-validation.json)；本次完整方案更新、三份字节同步和两项上传回归结果见[本次核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-user-update-validation.json)。
 
 用户已确认的设计约定：
 
@@ -291,7 +291,7 @@ V1/V2原件保存后，分别选择版本提交解析任务，再选择这两个
 
 2026-10-07本次同步重新执行上述两个指定节点：**2通过、0失败、0跳过，5.89秒**，见[本次XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-sync-2026-10-07-upload.xml)和[本次日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-sync-2026-10-07-upload.log)。这是无Git的上传及原件回归，不代替解析/比较进程、生产存储或完整页面验收。
 
-### 3.1.4 上传变更的具体操作契约〔源码核对a009b0f8〕
+### 3.1.4 上传变更的具体操作契约〔源码核对6c345dcb〕
 
 这一功能采用应用内文件版本管理。用户上传文件即可保存原件；更新同一份文档时明确选择该文档的新版本；比较时选择系统已经保存的两份解析快照。Git配置和仓库缓存均不是这个流程的依赖。
 
@@ -310,7 +310,7 @@ V1/V2原件保存后，分别选择版本提交解析任务，再选择这两个
 
 实现依据：[上传及历史路由](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/api_docs.py:54)、[上传请求模型](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/api_docs.py:74)、[页面请求身份](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web/src/features/tools/plugins/documentUploadRequest.ts:26)、[解析路由](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/document_parsing.py:39)、[比较提交](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py:48)。Git只在独立入口读取来源字节，然后复用保存服务，见[Git导入](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/git_service.py:101)。
 
-本项交付判据：无Git来源配置时完成首次上传、同文档新版本、两份原件读取、指定版本解析、指定快照比较；分别检查保存/解析/比较状态与原提交恢复。此前实际重跑上传版本与原件保留两项，2通过、3.54秒，原记录见6.48；本次只重新核对源码及方案，未重跑上传、解析/比较进程、生产存储或完整页面，历史专项结果见3.1.1。
+本项交付判据：无Git来源配置时完成首次上传、同文档新版本、两份原件读取、指定版本解析、指定快照比较；分别检查保存/解析/比较状态与原提交恢复。本次按用户要求更新完整方案时，重新执行3.1.3所列两个既有测试节点：**2通过，4.30秒**，使用临时实际文件、真实上传路由和本地测试存储，验证版本追加、原件保留、请求恢复及同名独立文档。此次未重跑独立解析/比较进程、生产存储或完整页面，历史专项结果见3.1.1；本次核对记录见首页链接。
 
 ### 3.1.5 上传变更的状态、恢复及独立验收
 
@@ -326,7 +326,7 @@ V1/V2原件保存后，分别选择版本提交解析任务，再选择这两个
 | 比较成功或失败 | 固定双方快照、比较配置和结果/诊断；不改写原件或快照 | 比较后新增版本或解析快照，确认历史结果仍指向原双方 |
 | AI影响分析及评审 | 分析任务、原文引用和影响候选；确认后才增量生成草稿 | 先核对确定性差异，再核对AI引用及评审；不以上传成功代替业务判断 |
 
-此前两项回归覆盖第一、第二及部分请求恢复/冲突行为，使用临时真实文件和本地测试存储；本次未重跑业务测试。生产数据库/RustFS、独立Worker与正式App应在对应实施批次另外记录结果。Git来源读取、脏工作区和仓库不可用后的历史恢复另行验证，不能成为上传验收的前置。
+本次重新执行的两项回归覆盖第一、第二及部分请求恢复/冲突行为，使用临时实际文件和本地测试存储。生产数据库/RustFS、独立Worker与正式App应在对应实施批次另外记录结果。Git来源读取、脏工作区和仓库不可用后的历史恢复另行验证，不能成为上传验收的前置。
 
 ### 3.2 Git 仅作独立可选来源
 
