@@ -3575,3 +3575,9 @@ npm run build
 所有实际原件、固定上下文、HTTP、PG观察/清单/正式结果、持久seed与失败日志/XML保留于p4-cleanup-coverage-*，前端夹具取实际结果并保存原记录SHA。核对见[p4-cleanup-coverage-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-cleanup-coverage-validation.json)；此前11254份原始证据未变，用户.gitignore未改，三份方案同步。新增开关不自动升级旧运行/补写历史结果；新数据沿已有JSONB及对象证据表，不增加另一套状态存储。
 
 本批模型为受控查询/声明和只读回执；实际执行采用原生工具与真实HTTP/数据库/文件。未执行独立生产新策略、默认Agent自动生成/执行声明、正式完整App及生产迁移；三个外部模型专项未运行。实际消费完成、同条目提前清理、重复身份的业务含义、未知只读查证、运行修订及完整P0—P5仍待推进，旧6.44/6.45失败及限制不回写为通过。下一步先研究新协议如何沿原API/Worker/SDK完整执行，再实测。
+
+## 2026-10-07 完整方案更新与历史结果区分〔源码基线a009b0f8〕
+
+按用户要求直接更新PLAN.md及所贴附件、选中计划三份正文。首页集中列出模板、项目用例补全和上传独立保存约定；3.1.4—3.1.5校正当前源码基线和验收措辞。重新读取upload_document/upload_version、Git独立导入、固定快照比较及项目规划Prompt/query/finish/最终依赖排序；没有改业务代码。
+
+实际执行Python文档核对：三份字节完全一致、纠正事项存在、全部本地链接目标存在、用户.gitignore SHA未变，记录见plan-refresh-a009-validation.json。首次用了相对于后端的Python路径，未启动脚本；确认根目录实际解释器后执行成功。本次未重跑业务测试、生产链路或页面；首页2项上传及167项回归明确标为历史结果，完整P0—P5待验范围保留。
