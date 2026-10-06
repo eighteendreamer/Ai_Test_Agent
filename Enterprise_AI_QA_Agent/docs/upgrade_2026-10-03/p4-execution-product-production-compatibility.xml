@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="49.395" timestamp="2026-10-06T08:42:15.946332+08:00" hostname="EIghteen"><testcase classname="tests.test_requirement_execution_production" name="test_production_api_association_failed_regression_and_restart" time="45.172"><failure message="NameError: name 'jobs' is not defined">tests\test_requirement_execution_production.py:12: in test_production_api_association_failed_regression_and_restart
+    await scenario(tmp_path, "md", False, False, verify_requirements=True, verify_execution=retention_http)
+tests\test_document_impact_production.py:373: in test_production_fixed_analysis_history_and_process_recovery
+    execution_state = await execution_from_production(base=base, root=root, review=requirement_review,
+tests\requirement_execution_production_scenario.py:73: in execution_from_production
+    "tool_jobs": [(await jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\requirement_execution_production_scenario.py:73: in &lt;listcomp&gt;
+    "tool_jobs": [(await jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
+                         ^^^^
+E   NameError: name 'jobs' is not defined</failure></testcase></testsuite></testsuites>

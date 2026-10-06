@@ -1,0 +1,17 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+________ test_production_api_association_failed_regression_and_restart ________
+tests\test_requirement_execution_production.py:12: in test_production_api_association_failed_regression_and_restart
+    await scenario(tmp_path, "md", False, False, verify_requirements=True, verify_execution=retention_http)
+tests\test_document_impact_production.py:373: in test_production_fixed_analysis_history_and_process_recovery
+    execution_state = await execution_from_production(base=base, root=root, review=requirement_review,
+tests\requirement_execution_production_scenario.py:73: in execution_from_production
+    "tool_jobs": [(await jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\requirement_execution_production_scenario.py:73: in <listcomp>
+    "tool_jobs": [(await jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
+                         ^^^^
+E   NameError: name 'jobs' is not defined
+=========================== short test summary info ===========================
+FAILED tests/test_requirement_execution_production.py::test_production_api_association_failed_regression_and_restart
+1 failed in 49.42s

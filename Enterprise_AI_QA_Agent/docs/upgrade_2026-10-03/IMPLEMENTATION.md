@@ -2941,3 +2941,39 @@ npm run build
 下一步正式关联编辑与完整App、环境身份/适用、默认Agent自主执行及业务评审；P2准备状态/未知副作用/修订、P1模板导入、P0录制/Docker/发送追踪、P5知识报告及历史迁移仍未完成，完整目标保持active。
 
 暂存首轮一次传入351个完整路径，Windows CreateProcess报WinError206命令过长，未写入暂存。随后改为每批20条的明确文件路径；审计同时修正空暂存列表被识别为空字符串的问题。没有改变证据文件、用户.gitignore或Git配置。
+
+## 2026-10-06 正式执行关联页面与真实DOCX完整App
+
+上一阶段8efcdd99属于实际进展。重读目标附件、PLAN、已有覆盖管理、执行Store的全局父确认/按覆盖读取、完整run/result/case接口及本地Agent轨迹课程后实施；研究记录P4_REQUIREMENT_EXECUTION_PRODUCT_DESIGN.md。没有新增配置键、依赖、业务表或测试模式，MySQL配置/PG业务/RustFS原件与工件职责保持。
+
+新增RequirementExecutionPanel.vue及useRequirementExecution.ts，扩展requirementExecutionProduct固定确认/原请求/原正文读取核对，候选摘要补精确类型；矩阵展开正式编辑并与覆盖管理互斥。用户从固定覆盖实际结果读取完整12步JSON、自身说明、正文预期/实际/算子/方法和原工具引用，再明确选择检查与验证点。编辑父确认取全局最新历史，矩阵/历史按固定覆盖读取；selected_checks及原结果总体状态单列，部署unknown。
+
+sessionStorage按项目/文档/需求/版本/覆盖保存原请求及固定hash；未知POST重开先GET恢复，404不推断未提交，显式同编号重试保留参数。空集合明确撤销，旧历史保留；实际409保留原请求，显式重读后作新决定。归档禁新确认而完整原结果/用例/历史/原请求可读，迟到响应不能污染新上下文。
+
+组件首轮67项通过；构建TS2352失败来自故意非法verdict的负向测试转换，改unknown后显式转契约，生产类型不放宽。补完整用例hash和缺证据/重复分页后70项通过；一次扩大命令中的两个测试名称未命中，原XML仅5文件。按rg实际文件名更正后，最终 **120通过、0跳过，8文件，2.46秒**，包括21项新编辑边界、既有需求/覆盖/生成/重试/任务详情/API。失败与各轮XML不覆盖。
+
+真实DOCX built App首轮 **1通过、91.02秒**；最后固定用例hash检查源码复验 **1通过、87.75秒**。独立生产API兼容首轮 **1失败、49.42秒**，共享夹具抽取后证据采集误用旧局部jobs，修正f.jobs后 **1通过、62.33秒**。原正式覆盖完整App **1通过、152.65秒**，旧开关/生成/两种重试继续原6次物理发送。两个最终App均实际运行vue-tsc/Vite构建，无页面错误，1440宽度不横向溢出；已检查截图。
+
+新App使用真实DOCX原件/解析/比较、需求评审及固定覆盖、独立API与解析/比较/影响CLI、真实隔离PG/MySQL/Redis/RustFS。实际本地HTTP→ToolRuntime→受控Agent回执核验→RunService.complete_item保存失败7天和新回归9天结果；回归清理HTTP500使整条result.failed，四项正文通过仍独立显示，原失败作为回归源保留。业务HTTP6次，正文关联/读取/恢复模型0次；原影响两次物理消息逐条匹配保存请求。受控回执不声称验证默认Agent自主执行。
+
+浏览器实际PG首次保存后中断回执，刷新原GET恢复没有第二次POST；撤销、恢复、initial与固定历史、实际API并发写后的页面409和重读新决定均实测。PG五条确认；浏览器五次POST中一次409。API重启禁派发、项目归档后恢复原编号、读取原固定case/result/回归源继续可用，新写控件禁用、实际新POST409、原POST可重放。原需求/覆盖/结果及hash、SQL、6个ToolJob输出、完整run、对象与物理消息、截图/DOM留存。
+
+实际命令（后端在Agent_Server，前端在agent_web）：
+
+```powershell
+npm run test -- src/features/tools/plugins/RequirementExecutionPanel.test.ts src/features/tools/plugins/RequirementExecutionProduct.test.ts src/features/tools/plugins/RequirementCoverageProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/GenerationRetryProduct.test.ts src/features/tools/plugins/GenerationTaskProduct.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-execution-product-components-delivery.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT="1"
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-execution-product-App-verified"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_execution_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-execution-product-App-verified.xml
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-execution-product-coverage-compatibility"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_coverage_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-execution-product-coverage-compatibility.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION="1"
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-execution-product-production-verified"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_execution_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-execution-product-production-verified.xml
+# 以下在项目根目录；只核对已有证据，不重跑功能：
+.\.venv\Scripts\python.exe -Xutf8 docs/upgrade_2026-10-03/execution_product_delivery_20261006.py --sync
+```
+
+首次交付审计引用尚未生成的自身报告而失败，改为报告保存后核对自身路径，其他链接仍逐项检查。随后复用旧check_execution遇到dict.get默认表达式提前求值，虽已有execution_sql仍读取不存在的second；根因修为按字段存在性选择分支，新旧真实样本均重新校验，不改原证据或旧审计报告。最终新审计335份原始文件与此前6964份原始证据通过，三份方案逐字节一致，用户.gitignore保持；XML、原完整结果/版本/hash、ToolJob输出、生产对象与物理消息核对。暂存分批仅本阶段相关文件并验证原证据blob，不推送/建PR。
+
+方案3.6.13/5.2.2/6.31同步实际状态。下一步先研究正式环境/部署与运行冻结，继续点级完整性、默认Agent自主执行、用户业务评审、生产历史迁移及其他P2/P1/P0/P5。完整目标仍active，本阶段不代替P0—P5完成。

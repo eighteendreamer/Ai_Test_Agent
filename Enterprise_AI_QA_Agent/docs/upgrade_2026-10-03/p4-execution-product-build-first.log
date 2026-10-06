@@ -1,0 +1,12 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 build
+> npm run typecheck && vite build
+
+
+> enterprise-ai-qa-agent-web@0.1.0 typecheck
+> vue-tsc --noEmit -p tsconfig.json
+
+src/features/tools/plugins/RequirementExecutionPanel.test.ts(162,112): error TS2352: Conversion of type '{ checks: { verdict: string; result_id: string; verification_id: string; check_index: number; point_keys: string[]; }[]; request_id: string; coverage_id: string; expected_execution_id: null; note: string; }' to type 'RequirementExecutionRequest' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Types of property 'checks' are incompatible.
+    Type '{ verdict: string; result_id: string; verification_id: string; check_index: number; point_keys: string[]; }[]' is not comparable to type 'RequirementExecutionCheckInput[]'.
+      Object literal may only specify known properties, and 'verdict' does not exist in type 'RequirementExecutionCheckInput'.

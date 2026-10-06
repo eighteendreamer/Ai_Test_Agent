@@ -97,5 +97,9 @@ export interface RequirementExecutionReview {
 }
 export interface RequirementExecutionCandidate {
   result_id: string; run_id: string; case_id: string; case_version_id: string; status: string;
-  summary: string; created_at: string; checks: Record<string, unknown>[]; warnings: string[];
+  summary: string; created_at: string; checks: RequirementExecutionCandidateCheck[]; warnings: string[];
+}
+export interface RequirementExecutionCandidateCheck {
+  verification_id: string; check_index: number; name: string; status: "passed" | "failed" | "not_run";
+  method: "deterministic" | "model"; expected_path_tokens: (string | number)[];
 }

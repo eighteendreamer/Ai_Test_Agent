@@ -19,7 +19,7 @@ from src.schemas.case_management import TestCaseBundle
 from test_requirement_execution import actual_run, association
 
 
-async def execution_from_production(*, base, root, review, settings, get, post, client, evidence, sends, business_http, source_ref):
+async def prepare_execution_fixture(*, base, root, review, settings, post, business_http, source_ref):
     assert review
     projects = ProjectService(store=PostgresProjectStore(settings))
     cases = TestCaseService(store=PostgresTestCaseStore(settings), project_service=projects)
@@ -44,6 +44,13 @@ async def execution_from_production(*, base, root, review, settings, get, post, 
         jobs=jobs, runs=PostgresTestRunStore(settings), suites=PostgresTestSuiteStore(settings), http=business_http,
         results=[], outcomes=[], tool_records=[])
     path = stem+f"/versions/{version['id']}/execution-reviews"
+    return f, path, stem, version
+
+
+async def execution_from_production(*, base, root, review, settings, get, post, client, evidence, sends, business_http, source_ref):
+    f, path, stem, version = await prepare_execution_fixture(base=base, root=root, review=review, settings=settings,
+        post=post, business_http=business_http, source_ref=source_ref)
+    selected, coverage = f.selected, f.coverage
     before = len(sends)
     failed = await actual_run(f, days=7)
     first_payload = association(f, failed, request_id="production-first-execution")
@@ -63,7 +70,7 @@ async def execution_from_production(*, base, root, review, settings, get, post, 
     state = {"path": path, "stem": stem, "base": base, "first_payload": first_payload, "first": first,
         "second_payload": second_payload, "second": second, "first_matrix": first_matrix, "matrix": matrix,
         "coverage": coverage, "candidates": candidates, "results": [r.model_dump(mode="json") for r in f.results],
-        "tool_jobs": [(await jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
+        "tool_jobs": [(await f.jobs.get_job_detail(r.job_id)).model_dump(mode="json") for r in f.tool_records],
         "business_http": business_http[1], "selected_case": selected.model_dump(mode="json"),
         "execution_model_http_calls": len(sends)-before, "external_default_model": False,
         "actual_production_api": True, "autonomous_agent_model_execution": False}

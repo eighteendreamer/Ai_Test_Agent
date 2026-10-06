@@ -34,7 +34,7 @@ def check_execution(value):
     assert version_content_hash(case.version) == case.version.content_hash
     results = {result.id: result for result in map(fixed_result, value["results"])}
     jobs = {job["id"]: job for job in value["tool_jobs"]}
-    reviews = value.get("execution_sql", [value["first"], value["second"]] if "first" in value else [])
+    reviews = value["execution_sql"] if "execution_sql" in value else [value["first"], value["second"]] if "first" in value else []
     for raw in reviews:
         review = fixed_execution(raw)
         for check in review.checks:
