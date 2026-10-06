@@ -1752,3 +1752,9 @@ MySQL原`test_case.planning_policy`追加可选`effect_evidence_protocol=case-ef
 各轮保留：first6通过/7夹具失败31.17秒，原因是新领取后未走原start接口；修正后started13通过23.82秒。增加冻结预算后budget14通过40.55秒；captured118通过/14失败/15跳过98.96秒，失败均缺QA_STATEFUL_RESEARCH_EVIDENCE_DIR，12实时任务开关未启。tasks补开关单独13通过41.20秒；verified144通过/3跳过112.49秒是正式来源扩展前的历史轮次。随后formal-gap **1失败、14未选中，4.13秒**，揭示只允许prepare声明遗漏正式前置来源；扩大声明范围后formal-fixed **16通过，25.11秒**，最终为上述146通过/3跳过。夹具错误与来源设计缺口分别记录，不累加历史数量，不删除真实失败。三个最终跳过为默认外部模型专项，未启用。
 
 原件、事务故障、对象事件和物理生产消息保留在`p4-effect-evidence-*`工件中；完整核对见[p4-effect-evidence-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-effect-evidence-validation.json)。[IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)保留历史命令并同步最终实际执行记录；原失败和未完成范围继续保留。下一步把原对象证据接入完整模型输入、逐对象覆盖和正式结果/页面，再接消费完成与未知只读查证。输出声明缺少可靠工具返回格式时须保留unresolved；默认模型生成声明、实际数组返回、生产迁移仍需验收。完整P0—P5、6.44三个失败、6.45同条目乱序与此前网络来源缺失的未确认根因继续保留，不标完成。
+
+### 6.47 原对象清理覆盖的下一步研究〔基线eac120cc〕
+
+对象证据基础提交后，重新实际执行原多对象/GET专项，终态退出1，**3失败、1通过，15.60秒**。只删两条中的一条、借目标GET、after自身GET仍被旧结果路径标cleanup passed；实际删两条的对照通过。原记录见[p4-cleanup-coverage-baseline.xml](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-cleanup-coverage-baseline.xml)和[本批核对](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-cleanup-coverage-baseline-validation.json)。旧专项正式来源仅一步JSON、采用旧逻辑操作策略，未启用对象声明；不能据此替代新协议或完整八步场景验收。
+
+查证原assess仍依据AI选取的检查和单项output汇总，未读取全运行原对象证据或逐对象覆盖。因此下一步需沿原ToolJobService提供固定对象清单，设计新的覆盖协议，再接原结果及页面；具体依据和待查边界见[P4_CLEANUP_COVERAGE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_CLEANUP_COVERAGE_RESEARCH.md)。同一正式用例可能还包含查询，不能把缺输出字段一概当成失败创建，或只加数量/HTTP方法判断。消费完成、未知只读查证、默认Agent和完整P0—P5继续待实施。本步未改生产判定，真实失败未改为xfail。
