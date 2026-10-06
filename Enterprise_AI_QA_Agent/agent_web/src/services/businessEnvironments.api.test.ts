@@ -47,3 +47,17 @@ it("does not auto resend a capture after a lost response or conflict", async () 
   await expect(environments.captureBusinessEnvironment("p", "e", payload)).rejects.toMatchObject({ status: 409 });
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+it("inspects the stored literal value without supplying a client verdict or changing target scope", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({
+    value: false, target_status: "mismatch", deployment_status: "unknown",
+  }) });
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = { tool_job_id: "job", output_path_tokens: ["task_result", "response_body", "expired"] };
+  const result = await environments.inspectBusinessToolObservation("p/#", "e?", "s/#", payload);
+  expect(fetchMock.mock.calls[0]![0]).toBe("/api/v1/projects/p%2F%23/business-environments/e%3F/snapshots/s%2F%23/tool-observations/inspect");
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual(payload);
+  expect(result).toEqual({ value: false, target_status: "mismatch", deployment_status: "unknown" });
+  expect(api.inspectBusinessToolObservation).toBe(environments.inspectBusinessToolObservation);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

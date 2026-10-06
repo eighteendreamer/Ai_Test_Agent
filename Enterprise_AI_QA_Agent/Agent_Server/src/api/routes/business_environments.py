@@ -11,6 +11,7 @@ from src.schemas.business_environment import (
     BusinessTargetConfiguration, BusinessTargetConfigurationRecord,
     BusinessEnvironmentCaptureRequest, BusinessEnvironmentSnapshot, BusinessEnvironmentSnapshotPage,
 )
+from src.schemas.business_tool_observation import BusinessToolObservation, BusinessToolObservationRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}/business-environments", tags=["business-environments"])
@@ -29,6 +30,8 @@ async def _call(request, project_id, operation, *args, **kwargs):
             "operation": operation, "error_type": type(exc).__name__})
         recovery = ("配置保存结果未知时，请GET核对当前配置；并发更新后不能恢复旧配置回执" if
             operation == "save_configuration" else "提交结果未知时，请按原请求编号查询，不更换参数盲目重试")
+        if operation == "inspect_tool":
+            recovery = "原环境或工具证据暂不可读，请稍后重读该固定引用"
         raise HTTPException(status_code=503, detail=f"项目环境服务暂时不可用；{recovery}") from None
 
 
@@ -89,3 +92,9 @@ async def get_capture(project_id: UUID, environment_id: UUID, request: Request,
 @router.get("/{environment_id}/snapshots/{snapshot_id}", response_model=BusinessEnvironmentSnapshot)
 async def get_snapshot(project_id: UUID, environment_id: UUID, snapshot_id: UUID, request: Request):
     return await _call(request, project_id, "get_snapshot", str(environment_id), str(snapshot_id))
+
+
+@router.post("/{environment_id}/snapshots/{snapshot_id}/tool-observations/inspect", response_model=BusinessToolObservation)
+async def inspect_tool(project_id: UUID, environment_id: UUID, snapshot_id: UUID,
+    payload: BusinessToolObservationRequest, request: Request):
+    return await _call(request, project_id, "inspect_tool", str(environment_id), str(snapshot_id), payload)

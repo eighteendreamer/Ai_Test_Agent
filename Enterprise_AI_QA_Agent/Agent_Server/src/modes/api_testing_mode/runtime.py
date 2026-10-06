@@ -24,6 +24,7 @@ from src.modes.api_testing_mode.campaign_state import (
     ProjectCandidate,
 )
 from src.modes.api_testing_mode.capability_mapper import CapabilityMapper, MappedEndpoint
+from src.modes.api_testing_mode.http_observation import HTTP_OBSERVATION_KEY
 from src.modes.api_testing_mode.contracts import (
     AWAITING_PHASES,
     PHASE_AWAITING_AUTH_INPUT,
@@ -842,6 +843,8 @@ class ApiTestingModeRuntime:
                 "duration_ms": task.duration_ms,
                 "completed_at": task.completed_at,
             }
+            if HTTP_OBSERVATION_KEY in task.execution_checkpoint:
+                state.execution_checkpoint["completed_request"][HTTP_OBSERVATION_KEY] = task.execution_checkpoint[HTTP_OBSERVATION_KEY]
         self._persist_state(state, context)
 
     def _task_status_summary(self, tasks: list[ApiTestTask]) -> dict[str, int]:

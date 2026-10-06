@@ -1,0 +1,16 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_________ test_actual_cross_target_redirect_requires_response_origin __________
+tests\test_api_http_origin.py:70: in test_actual_cross_target_redirect_requires_response_origin
+    assert observation is not None, "Actual response origin is absent despite cross-target redirect"
+E   AssertionError: Actual response origin is absent despite cross-target redirect
+E   assert None is not None
+________ test_actual_targets_share_release_but_keep_independent_rules _________
+tests\test_api_http_origin.py:86: in test_actual_targets_share_release_but_keep_independent_rules
+    assert all(task.execution_checkpoint.get(KEY) for task in results)
+E   assert False
+E    +  where False = all(<generator object test_actual_targets_share_release_but_keep_independent_rules.<locals>.<genexpr> at 0x000001F89A37F680>)
+=========================== short test summary info ===========================
+FAILED tests/test_api_http_origin.py::test_actual_cross_target_redirect_requires_response_origin
+FAILED tests/test_api_http_origin.py::test_actual_targets_share_release_but_keep_independent_rules
+2 failed in 2.65s

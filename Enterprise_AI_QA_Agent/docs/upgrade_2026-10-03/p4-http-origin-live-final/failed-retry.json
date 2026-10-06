@@ -1,0 +1,117 @@
+{
+  "first": {
+    "task_id": "retry",
+    "name": "",
+    "method": "GET",
+    "path": "http://127.0.0.1:55634/rule",
+    "full_url": "",
+    "capability": "",
+    "execution_mode": "read",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": null,
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [],
+    "resource_locks": [],
+    "timeout_seconds": 30.0,
+    "status": "completed",
+    "attempts": 1,
+    "last_error": "",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-06T02:09:22.388123+00:00",
+    "completed_at": "2026-10-06T02:09:22.400352+00:00",
+    "response_status": 200,
+    "response_headers": {
+      "server": "BaseHTTP/0.6 Python/3.11.16",
+      "date": "Tue, 06 Oct 2026 02:09:22 GMT",
+      "content-type": "application/json",
+      "content-length": "105"
+    },
+    "response_body": {
+      "days": 9,
+      "release": "same-declared-release",
+      "expired_count": 0,
+      "expired": false,
+      "deleted_at": null
+    },
+    "check_results": [
+      {
+        "name": "default_status_check",
+        "kind": "status_code_range",
+        "passed": true,
+        "expected": "2xx",
+        "actual": 200,
+        "description": "Default: expect 2xx response status."
+      }
+    ],
+    "duration_ms": 11.48,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {
+      "http_observation_v1": {
+        "implementation_version": "api-http-observation-v1",
+        "acquisition": "network",
+        "observed_at": "2026-10-06T02:09:22.400352Z",
+        "hops": [
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 55634,
+              "path": "/rule",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 200
+          }
+        ]
+      }
+    }
+  },
+  "final": {
+    "task_id": "retry",
+    "name": "",
+    "method": "GET",
+    "path": "http://127.0.0.1:1/unreachable",
+    "full_url": "",
+    "capability": "",
+    "execution_mode": "read",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": null,
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [],
+    "resource_locks": [],
+    "timeout_seconds": 30.0,
+    "status": "failed",
+    "attempts": 2,
+    "last_error": "HTTP error: All connection attempts failed",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-06T02:09:22.400856+00:00",
+    "completed_at": "2026-10-06T02:09:24.453094+00:00",
+    "response_status": null,
+    "response_headers": {},
+    "response_body": null,
+    "check_results": [],
+    "duration_ms": 2052.7680000523105,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {}
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/rule"
+    }
+  ]
+}

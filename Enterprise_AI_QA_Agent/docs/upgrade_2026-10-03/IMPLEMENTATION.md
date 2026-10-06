@@ -3034,3 +3034,43 @@ npm run build
 失败轮次直接JSON化SQL RowMapping会把结构导出失败；新专项早期默认str虽然可保存但SQL行成为字符串，最终改成显式dict，最后原字段/hash可核对。前两轮失败、早期成功与最后SQL结构化证据分目录保留。前一生产首轮在collect之前assert导致确切原件遗漏清理，已经读取其返回记录、核对项目/URI/hash、复制原件后删除该隔离测试URI；后续夹具在任何成功上传状态检查前收集确切引用。
 
 当前A正式API已可用；没有正式环境编辑页面、部署观察/生效确认、规划/运行绑定或实际执行限制，也没有新外部自主Agent/生产历史迁移验证。下一步B先读真实ToolJob/result目标/参数/输出路径，再决定具体证据与确认契约；原P0—P5完整目标保持active。
+
+## 2026-10-06 B实际HTTP来源及固定目标工具观察〔基线bd1172d6〕
+
+上一轮环境登记/固定捕获提交属于实际进展；本轮重读用户原目标与当前文件。核对executor跟随跳转却不存来源、completed_request由调用输入提供、Worker/检查点/报告序列化、ToolRuntime先脱敏后保存输出、PG原记录及项目归属。HTTPX官方history/request/url与已装库源码确认接口。本地课程Action/Observation轨迹原则、旧测试query控制7/9的事实写入P4_HTTP_ORIGIN_EVIDENCE_DESIGN.md，先决定证据边界再编码。
+
+真实复现2失败2.65秒：旧目标POST跨端口303→新目标GET返回9，但没有来源；两个规则各自固定且release相同的目标也没有观察。新增http_observation模块、执行器清理旧回复/保存实际每跳，完成检查点和结构化报告同步。旧任务无新增缺省字段/旧hash改写，旧回放不补网络；恢复来源明确completed_request，缺原观察继续unknown。
+
+新增business_tool_observation契约与核对函数，单一环境服务读取PG原ToolJob和固定快照，正式API及容器装配、前端类型/客户端成对接入。具体原值和输出SHA由服务器读取，原输出检查点不一致unknown；目标地址匹配只描述所有hop地址范围。请求不接客户端verdict，不读当前MySQL、不写部署确认、不调用模型或工具。没有新依赖、配置策略、数据库表或测试模式。
+
+命令均在相应项目目录实际运行，stdout/stderr/log/XML分轮保留：
+
+```powershell
+# Agent_Server；复现阶段尚未修复，2失败，保留证据。
+$env:QA_HTTP_ORIGIN_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-http-origin-reproduction"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_http_origin.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-http-origin-reproduction.xml
+# 修复首轮18通过；最终三格式与恢复24通过16.75秒。
+$env:RUN_LIVE_HTTP_ORIGINS="1"
+$env:QA_HTTP_ORIGIN_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-http-origin-live-final"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_http_origin.py tests/test_api_task_executor_recovery.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-http-origin-live-final.xml
+# 正式main独立进程：1通过25.78秒。
+$env:RUN_LIVE_HTTP_ORIGIN_PRODUCTION="1"
+$env:QA_HTTP_ORIGIN_PRODUCTION_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-http-origin-production-first"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_http_origin_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-http-origin-production-first.xml
+# 扩大既有环境、正文执行、文档/API依赖及会话隔离：46通过74.98秒。
+$env:RUN_LIVE_BUSINESS_ENVIRONMENTS="1"
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS="1"
+$env:RUN_LIVE_UPGRADE_STORAGE_TESTS="1"
+$env:QA_ENVIRONMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-http-origin-regression\environments"
+$env:QA_REQUIREMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-http-origin-regression\requirements"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment.py tests/test_requirement_execution.py tests/test_api_document_dependency_http.py tests/test_api_mode_session_isolation.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-http-origin-regression.xml
+# agent_web：7项通过及vue-tsc/Vite通过7.26秒。
+npm run test -- src/services/businessEnvironments.api.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-http-origin-client-first.xml
+npm run build
+```
+
+每格式真实原件/独立解析、MySQL配置与PG固定捕获后，两个规则目标与跨目标跳转产生5业务HTTP，保存6ToolJob（包含两个不发HTTP的回放）。核对0/False/null、同release不同行为、字段/hash、跨项目404/缺路径409/注入判定422、原输出被改动unknown。配置改址、归档后原观察相同，禁止MySQL当前读取且新HTTP为0。独立main实际Bearer保护、PG工具输出、配置删除、重启及归档读取均验；2调用3业务HTTP，未调外部模型。
+
+全部复现失败及通过证据保留，不以地址匹配代替部署确认。没有正式环境页面、需求版本/点/精确用例追加确认、Run绑定/执行限制、默认Agent自主执行或生产历史迁移。下一步B将原观察固定关联已确认需求/覆盖/用例并验证追加/撤回/并发/恢复，再接C/D；完整P0—P5目标保持active。
+
+交付审计首轮误将公开DocumentParseTaskView当成包含seed的内部记录，KeyError: seed，失败输出保存于p4-http-origin-audit-first.log。读取真实任务摘要后改为核对project_id/document_id/version_id与原文档及snapshot_id存在；未补造缺失内部seed，不扩大该摘要的证明范围，不修改原功能证据。最终审计检查固定环境hash、每条PG原工具输出/原值/hash、实际地址链、两目标/回放及旧证据字节；脚本为http_origin_delivery_20261006.py。

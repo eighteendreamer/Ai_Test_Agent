@@ -18,6 +18,7 @@ from src.modes.api_testing_mode.campaign_state import (
     CampaignReport,
 )
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED, TASK_SKIPPED
+from src.modes.api_testing_mode.http_observation import HTTP_OBSERVATION_KEY
 
 
 class ReportBuilder:
@@ -205,6 +206,8 @@ class ReportBuilder:
             "checks": task.check_results,
         }
 
+        if HTTP_OBSERVATION_KEY in task.execution_checkpoint:
+            summary[HTTP_OBSERVATION_KEY] = task.execution_checkpoint[HTTP_OBSERVATION_KEY]
         # Add evidence snippet for failed tasks.
         if task.status == TASK_FAILED:
             evidence = self._build_evidence_snippet(task)
@@ -243,7 +246,7 @@ class ReportBuilder:
         """Build full evidence dict for artifact persistence."""
         if task.status != TASK_FAILED:
             return None
-        return {
+        evidence = {
             "task_id": task.task_id,
             "name": task.name,
             "method": task.method,
@@ -264,6 +267,9 @@ class ReportBuilder:
             "duration_ms": task.duration_ms,
             "attempts": task.attempts,
         }
+        if HTTP_OBSERVATION_KEY in task.execution_checkpoint:
+            evidence[HTTP_OBSERVATION_KEY] = task.execution_checkpoint[HTTP_OBSERVATION_KEY]
+        return evidence
 
     def _truncate_body(self, body: Any, max_chars: int = 2000) -> Any:
         if body is None:

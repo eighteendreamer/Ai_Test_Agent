@@ -1,0 +1,104 @@
+{
+  "task": {
+    "task_id": "cross-target",
+    "name": "",
+    "method": "POST",
+    "path": "http://127.0.0.1:55615/redirect",
+    "full_url": "",
+    "capability": "",
+    "execution_mode": "read",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": null,
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [],
+    "resource_locks": [],
+    "timeout_seconds": 30.0,
+    "status": "completed",
+    "attempts": 1,
+    "last_error": "",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-06T02:09:19.757852+00:00",
+    "completed_at": "2026-10-06T02:09:19.795463+00:00",
+    "response_status": 200,
+    "response_headers": {
+      "server": "BaseHTTP/0.6 Python/3.11.16",
+      "date": "Tue, 06 Oct 2026 02:09:19 GMT",
+      "content-type": "application/json",
+      "content-length": "105"
+    },
+    "response_body": {
+      "days": 9,
+      "release": "same-declared-release",
+      "expired_count": 0,
+      "expired": false,
+      "deleted_at": null
+    },
+    "check_results": [
+      {
+        "name": "default_status_check",
+        "kind": "status_code_range",
+        "passed": true,
+        "expected": "2xx",
+        "actual": 200,
+        "description": "Default: expect 2xx response status."
+      }
+    ],
+    "duration_ms": 37.87,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {
+      "http_observation_v1": {
+        "implementation_version": "api-http-observation-v1",
+        "acquisition": "network",
+        "observed_at": "2026-10-06T02:09:19.795463Z",
+        "hops": [
+          {
+            "method": "POST",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 55615,
+              "path": "/redirect",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 303
+          },
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 55616,
+              "path": "/rule",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 200
+          }
+        ]
+      }
+    }
+  },
+  "old": "http://127.0.0.1:55615",
+  "new": "http://127.0.0.1:55616",
+  "old_requests": [
+    {
+      "method": "POST",
+      "path": "/redirect"
+    }
+  ],
+  "new_requests": [
+    {
+      "method": "GET",
+      "path": "/rule"
+    }
+  ]
+}

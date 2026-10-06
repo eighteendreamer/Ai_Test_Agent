@@ -3,6 +3,7 @@ import type {
   BusinessEnvironmentCreateRequest, BusinessEnvironmentRecord, BusinessEnvironmentPage,
   BusinessTargetConfiguration, BusinessTargetConfigurationRecord,
   BusinessEnvironmentCaptureRequest, BusinessEnvironmentSnapshot, BusinessEnvironmentSnapshotPage,
+  BusinessToolObservationRequest, BusinessToolObservation,
 } from "./businessEnvironments.types";
 
 const environments = (projectId: string) => `/api/v1/projects/${encodeURIComponent(projectId)}/business-environments`;
@@ -42,4 +43,9 @@ export function getBusinessEnvironmentSnapshot(projectId: string, environmentId:
 }
 export function listBusinessEnvironmentSnapshots(projectId: string, environmentId: string, limit = 20, offset = 0): Promise<BusinessEnvironmentSnapshotPage> {
   return request(`${environment(projectId, environmentId)}/snapshots?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`);
+}
+export function inspectBusinessToolObservation(projectId: string, environmentId: string, snapshotId: string,
+  payload: BusinessToolObservationRequest): Promise<BusinessToolObservation> {
+  return request(`${environment(projectId, environmentId)}/snapshots/${encodeURIComponent(snapshotId)}/tool-observations/inspect`,
+    { method: "POST", body: JSON.stringify(payload) });
 }

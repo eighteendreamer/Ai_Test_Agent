@@ -20,3 +20,22 @@ export interface BusinessEnvironmentSnapshot {
 }
 export interface BusinessEnvironmentPage { items: BusinessEnvironmentRecord[]; limit: number; offset: number; has_more: boolean }
 export interface BusinessEnvironmentSnapshotPage { items: BusinessEnvironmentSnapshot[]; limit: number; offset: number; has_more: boolean }
+
+export interface BusinessToolObservationRequest { tool_job_id: string; output_path_tokens: string[] }
+export interface ApiHttpObservation {
+  implementation_version: "api-http-observation-v1"; acquisition: "network" | "completed_request";
+  observed_at: string;
+  hops: { method: string; status_code: number; target: {
+    scheme: "http" | "https"; host: string; port: number; path: string;
+    query_omitted: boolean; userinfo_omitted: boolean; fragment_omitted: boolean;
+  } }[];
+}
+export interface BusinessToolObservation {
+  implementation_version: "business-tool-observation-v1"; project_id: string; environment_id: string;
+  environment_snapshot_id: string; environment_snapshot_sha256: string; tool_job_id: string; tool_key: string;
+  call_id: string; session_id: string; turn_id: string; run_id: string | null; run_item_id: string | null;
+  attempt_id: string | null; job_status: string; output_sha256: string; output_path_tokens: string[];
+  value: unknown; value_sha256: string; http_observation: ApiHttpObservation | null;
+  target_status: "matched" | "mismatch" | "unknown"; limitations: string[]; observed_at: string | null;
+  deployment_status: "unknown";
+}

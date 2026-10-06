@@ -159,7 +159,8 @@ class AppContainer(containers.DeclarativeContainer):
     project_service = providers.Singleton(ProjectService, store=project_store)
     business_environment_store = providers.Singleton(PostgresBusinessEnvironmentStore, settings=settings)
     business_environment_service = providers.Singleton(BusinessEnvironmentService,
-        store=business_environment_store, configs=application_config_store, projects=project_service)
+        store=business_environment_store, configs=application_config_store, projects=project_service,
+        tool_jobs=tool_job_store)
     task_pool_entries_store = providers.Singleton(PostgresTaskPoolStore, settings=settings)
     task_pool_service = providers.Singleton(TaskPoolService, store=session_store, entries_store=task_pool_entries_store)
     permission_service = providers.Singleton(PermissionService)

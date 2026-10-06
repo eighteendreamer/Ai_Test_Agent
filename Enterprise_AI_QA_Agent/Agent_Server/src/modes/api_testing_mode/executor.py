@@ -13,6 +13,9 @@ import httpx
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED
 from src.modes.api_testing_mode.credential_manager import CredentialManager
+from src.modes.api_testing_mode.http_observation import (
+    HTTP_OBSERVATION_KEY, HttpResponseObservation, response_observation,
+)
 
 logger = logging.getLogger("uvicorn.error.api_testing_mode.executor")
 
@@ -33,8 +36,13 @@ class ApiTaskExecutor:
 
     async def execute(self, task: ApiTestTask) -> ApiTestTask:
         """Execute the task and populate result fields in-place."""
+        task.execution_checkpoint.pop(HTTP_OBSERVATION_KEY, None)
         if self._restore_completed_request(task):
             return task
+        # A fresh failed attempt must not retain a previous response or its origin.
+        task.response_status, task.response_body = None, None
+        task.response_headers, task.check_results = {}, []
+        task.duration_ms, task.last_error, task.completed_at = 0.0, "", ""
         task.started_at = datetime.now(timezone.utc).isoformat()
         task.attempts += 1
 
@@ -71,6 +79,9 @@ class ApiTaskExecutor:
             task.response_status = response.status_code
             task.response_headers = dict(response.headers)
             task.response_body = self._parse_response_body(response)
+            task.execution_checkpoint[HTTP_OBSERVATION_KEY] = response_observation(response).model_dump(mode="json")
+            logger.info("api_task_response_origin_observed", extra={"task_id": task.task_id,
+                "response_status": response.status_code, "redirect_count": len(response.history)})
         except httpx.TimeoutException:
             task.status = TASK_FAILED
             task.last_error = f"Request timed out after {task.timeout_seconds}s"
@@ -128,6 +139,17 @@ class ApiTaskExecutor:
         task.duration_ms = float(completed.get("duration_ms") or 0)
         task.last_error = ""
         task.completed_at = str(completed.get("completed_at") or datetime.now(timezone.utc).isoformat())
+        supplied = completed.get(HTTP_OBSERVATION_KEY)
+        if supplied is not None:
+            try:
+                observation = HttpResponseObservation.model_validate(supplied)
+                observation.acquisition = "completed_request"
+                task.execution_checkpoint[HTTP_OBSERVATION_KEY] = observation.model_dump(mode="json")
+            except ValueError:
+                logger.warning("api_task_checkpoint_origin_invalid", extra={"task_id": task.task_id})
+        logger.info("api_task_completed_request_restored", extra={"task_id": task.task_id,
+            "http_origin_available": HTTP_OBSERVATION_KEY in task.execution_checkpoint,
+            "response_source": "completed_request"})
         return True
 
     # ------------------------------------------------------------------

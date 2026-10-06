@@ -11,13 +11,15 @@ from src.runtime.postgres_business_environment_store import (
 from src.schemas.business_environment import (
     TARGET_CONFIG_KEY, BusinessTargetConfiguration, BusinessTargetConfigurationRecord, BusinessEnvironmentSnapshot,
 )
+from src.application.projects.business_tool_observation import inspect_tool_observation
 
 logger = logging.getLogger(__name__)
 
 
 class BusinessEnvironmentService:
-    def __init__(self, *, store, configs, projects):
+    def __init__(self, *, store, configs, projects, tool_jobs=None):
         self._store, self._configs, self._projects = store, configs, projects
+        self._tool_jobs = tool_jobs
 
     async def initialize(self):
         await asyncio.to_thread(self._configs.initialize)
@@ -133,6 +135,19 @@ class BusinessEnvironmentService:
         for value in page.items:
             self._registration_link(registered, value)
         return page
+
+    async def inspect_tool(self, project_id, environment_id, snapshot_id, request):
+        snapshot = await self.get_snapshot(project_id, environment_id, snapshot_id)
+        if self._tool_jobs is None:
+            raise RuntimeError("原工具证据存储暂不可用")
+        job = await self._tool_jobs.get_job(request.tool_job_id)
+        if job is None:
+            raise KeyError("原工具证据不存在")
+        result = inspect_tool_observation(snapshot, job, request)
+        logger.info("business_target_tool_observed", extra={"project_id": project_id,
+            "environment_id": environment_id, "snapshot_id": snapshot_id, "tool_job_id": job.id,
+            "target_status": result.target_status, "limitations": result.limitations})
+        return result
 
     @staticmethod
     def _registration_link(registered, value):

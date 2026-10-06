@@ -30,6 +30,7 @@ from src.schemas.business_environment import (
 )
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.document_parsing import DocumentParseTaskRequest
+from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from test_document_parse_tasks import parsing_environment
 from test_document_differences import write_pair
 
@@ -47,14 +48,24 @@ def save_evidence(name, **data):
 
 
 @asynccontextmanager
-async def actual_environment(tmp_path):
+async def actual_environment(tmp_path, *, include_tool_jobs=False):
     async with parsing_environment(tmp_path) as (env, parsing, parse_store, _, _):
         store = PostgresBusinessEnvironmentStore(env.settings)
+        owned_tables = list(store.tables)
+        tool_jobs = None
+        if include_tool_jobs:
+            env.settings.database.postgres_tool_job_table = "up_ht_job_" + uuid4().hex[:12]
+            env.settings.database.postgres_tool_artifact_table = "up_ht_art_" + uuid4().hex[:12]
+            owned_tables = [env.settings.database.postgres_tool_artifact_table,
+                env.settings.database.postgres_tool_job_table, *owned_tables]
+            tool_jobs = PostgresToolJobStore(env.settings)
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-            for table in store.tables:
+            for table in owned_tables:
                 cur.execute("SELECT to_regclass(%s) AS existing", (table,))
                 assert cur.fetchone()["existing"] is None
-        service = BusinessEnvironmentService(store=store, configs=env.configs, projects=env.projects)
+        if tool_jobs:
+            await tool_jobs.initialize()
+        service = BusinessEnvironmentService(store=store, configs=env.configs, projects=env.projects, tool_jobs=tool_jobs)
         await service.initialize()
         app = FastAPI()
         app.state.business_environment_service = service
@@ -65,9 +76,9 @@ async def actual_environment(tmp_path):
                 other = await env.projects.create(ProjectCreateRequest(project_key="other", name="另一项目"))
                 yield env, parsing, parse_store, store, service, client, project, other
         finally:
-            # Only the two UUID-derived tables proved absent above are owned here.
+            # Only the UUID-derived tables proved absent above are owned here.
             with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                for table in store.tables:
+                for table in owned_tables:
                     cur.execute(f'DROP TABLE "{table}"')
 
 

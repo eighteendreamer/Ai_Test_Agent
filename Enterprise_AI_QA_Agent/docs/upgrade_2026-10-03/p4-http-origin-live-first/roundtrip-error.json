@@ -1,0 +1,198 @@
+{
+  "roundtrip": {
+    "task_id": "roundtrip",
+    "name": "",
+    "method": "GET",
+    "path": "http://127.0.0.1:62506/roundtrip",
+    "full_url": "",
+    "capability": "",
+    "execution_mode": "read",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": null,
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [],
+    "resource_locks": [],
+    "timeout_seconds": 30.0,
+    "status": "completed",
+    "attempts": 1,
+    "last_error": "",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-06T02:04:45.853598+00:00",
+    "completed_at": "2026-10-06T02:04:45.869366+00:00",
+    "response_status": 200,
+    "response_headers": {
+      "server": "BaseHTTP/0.6 Python/3.11.16",
+      "date": "Tue, 06 Oct 2026 02:04:45 GMT",
+      "content-type": "application/json",
+      "content-length": "105"
+    },
+    "response_body": {
+      "days": 7,
+      "release": "same-declared-release",
+      "expired_count": 0,
+      "expired": false,
+      "deleted_at": null
+    },
+    "check_results": [
+      {
+        "name": "default_status_check",
+        "kind": "status_code_range",
+        "passed": true,
+        "expected": "2xx",
+        "actual": 200,
+        "description": "Default: expect 2xx response status."
+      }
+    ],
+    "duration_ms": 16.02,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {
+      "http_observation_v1": {
+        "implementation_version": "api-http-observation-v1",
+        "acquisition": "network",
+        "observed_at": "2026-10-06T02:04:45.869366Z",
+        "hops": [
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 62506,
+              "path": "/roundtrip",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 303
+          },
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 62507,
+              "path": "/back",
+              "query_omitted": true,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 303
+          },
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 62506,
+              "path": "/rule",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 200
+          }
+        ]
+      }
+    }
+  },
+  "error": {
+    "task_id": "http-error",
+    "name": "",
+    "method": "GET",
+    "path": "http://127.0.0.1:62506/error",
+    "full_url": "",
+    "capability": "",
+    "execution_mode": "read",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": null,
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [],
+    "resource_locks": [],
+    "timeout_seconds": 30.0,
+    "status": "failed",
+    "attempts": 1,
+    "last_error": "Assertions failed: default_status_check",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-06T02:04:45.869366+00:00",
+    "completed_at": "2026-10-06T02:04:45.880575+00:00",
+    "response_status": 503,
+    "response_headers": {
+      "server": "BaseHTTP/0.6 Python/3.11.16",
+      "date": "Tue, 06 Oct 2026 02:04:45 GMT",
+      "content-type": "application/json",
+      "content-length": "105"
+    },
+    "response_body": {
+      "days": 7,
+      "release": "same-declared-release",
+      "expired_count": 0,
+      "expired": false,
+      "deleted_at": null
+    },
+    "check_results": [
+      {
+        "name": "default_status_check",
+        "kind": "status_code_range",
+        "passed": false,
+        "expected": "2xx",
+        "actual": 503,
+        "description": "Default: expect 2xx response status."
+      }
+    ],
+    "duration_ms": 10.93,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {
+      "http_observation_v1": {
+        "implementation_version": "api-http-observation-v1",
+        "acquisition": "network",
+        "observed_at": "2026-10-06T02:04:45.880575Z",
+        "hops": [
+          {
+            "method": "GET",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 62506,
+              "path": "/error",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 503
+          }
+        ]
+      }
+    }
+  },
+  "old_requests": [
+    {
+      "method": "GET",
+      "path": "/roundtrip"
+    },
+    {
+      "method": "GET",
+      "path": "/rule"
+    },
+    {
+      "method": "GET",
+      "path": "/error"
+    }
+  ],
+  "new_requests": [
+    {
+      "method": "GET",
+      "path": "/back"
+    }
+  ]
+}
