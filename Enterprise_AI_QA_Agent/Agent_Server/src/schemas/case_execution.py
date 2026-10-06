@@ -49,6 +49,8 @@ class AgentCaseExecutionContext(PlanningModel):
     operation_protocol: Literal["case-operation-v1"] | None = None
     preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
     preparation_scopes: dict[str, PreparationScopeRecord] | None = None
+    effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
+    effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
 
     @model_validator(mode="after")
     def require_operation_admission(self):
@@ -58,6 +60,10 @@ class AgentCaseExecutionContext(PlanningModel):
             raise ValueError("固定准备消费范围需要逻辑操作策略与原范围快照")
         if self.preparation_scope_protocol is None and self.preparation_scopes is not None:
             raise ValueError("准备消费范围缺少固定协议")
+        if self.effect_evidence_protocol and not self.preparation_scope_protocol:
+            raise ValueError("对象证据上下文需要固定准备消费范围")
+        if bool(self.effect_evidence_protocol) != (self.effect_evidence_max_bytes is not None):
+            raise ValueError("对象证据上下文需要实际冻结的大小配置")
         return self
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
@@ -76,6 +82,10 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("preparation_scope_protocol")
         if self.preparation_scopes is None:
             omitted.add("preparation_scopes")
+        if self.effect_evidence_protocol is None:
+            omitted.add("effect_evidence_protocol")
+        if self.effect_evidence_max_bytes is None:
+            omitted.add("effect_evidence_max_bytes")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

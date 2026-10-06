@@ -3490,3 +3490,41 @@ npm run build
 兼容regression首次121通过/3跳过119.46秒；regression-final120通过/1失败/3跳过111.30秒，来源专项原输出缺network观察。该次断言前无原Job捕获，原因未知；本次在原来源断言前保存原/alias Job、完整输入/输出/记录、HTTP及服务器状态，单项及最终captured121通过；不宣称网络根因修复。所有旧失败和三份方案历史保留，不改为xfail。源码/DTO/消费者已核对，审计和原件暂存字节核对见p4-preparation-scope-validation.json。
 
 没有调用默认外部模型，没有完整App或新范围独立生产进程验收，没有生产历史迁移。当前是计划范围基础，实际对象/消费完成/清理覆盖/未知查证、修订及其他完整P0—P5继续未完成。
+
+## 2026-10-07：原可靠返回的对象与清理证据〔基线186679a8〕
+
+实施前检查原Job观察/结算事务、固定上下文/动作领取、原操作索引和6.44/6.45真实反例；研究/采用方式见P4_EFFECT_EVIDENCE_DESIGN.md。新增可选MySQL策略和证据预算、PG固定声明/意图及同原可靠返回事务的不可变小型证据；沿原操作索引查询全部原Job。没有新工具、模式、执行器或依赖。原件/大工件沿RustFS；超限明确保留诊断而非伪装零对象。字面量路径函数从原assessment提取共享，原导入名称保留。
+
+```powershell
+# Agent_Server；最终源代码，两个证据目录和规划开关均须实际配置。
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_EFFECT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-effect-evidence-final'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-effect-evidence-final-operations'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-effect-evidence-final-planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_evidence.py tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py tests/test_case_operations.py tests/test_agent_case_assessment.py tests/test_preparation_scopes.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-effect-evidence-final.xml
+# 实际退出0：146通过、3外部模型跳过，128.47秒；149个条目。
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-effect-evidence-production-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-effect-evidence-production-final.xml
+# 实际退出0：1通过，108.37秒。独立main/API/CLI/SDK旧逻辑操作链路，未开启新对象证据声明。
+
+# agent_web；最终正式来源展示/预算控件/类型。
+npm exec vitest -- run src/features/projects/CasePlanDialog.test.ts
+# 实际退出0：14通过，2.58秒；p4-effect-evidence-frontend-formal.log。
+npm run build
+# 实际退出0：vue-tsc与Vite通过，Vite9.77秒；p4-effect-evidence-build-formal.log。
+```
+
+保存的是声明路径的原观察值及来源，不是模型选中的最后一步输出：实际同prepare两次POST、原结果别名复用、两条DELETE分别留下记录。当前配置关闭后原上下文/事件保留；跨项目/运行/计划不返回原事件。after GET的状态检查通过但固定清理method比较失败，尚未连到正式结果覆盖判定。配置/预算来自MySQL，原固定计划、Job、观察和事件来自真实PG，八步JSON原件上传/读回RustFS；未把受控声明生成当作默认模型验收。
+
+交付中断保留原值，别名partial不重发；真正返回丢失与观察事务回滚保留running/无输出/无事件，别名拒绝；PG观察提交回执丢失通过原查询恢复同事件。隔离夹具直接改变事件值时读取拒绝，恢复原数据后可读。预算1时业务POST完成，事件超限/完整值不可用/实际识别数量1，不当作零对象或清理通过。
+
+首轮first6通过/7失败31.17秒，夹具遗漏正式start接口；原租约校验正确拒绝。started修正后13通过23.82秒；补预算budget14通过40.55秒。captured在最终来源数量字段后的综合轮为118通过/14失败/15跳过98.96秒，失败全部为未配置既有QA_STATEFUL_RESEARCH_EVIDENCE_DIR，12任务开关缺失。tasks独立开关13通过41.20秒；补齐目录/开关的verified为历史144通过/3跳过112.49秒；正式来源扩展后final为146通过/3跳过128.47秒。formal-gap1真实失败/14未选中4.13秒揭示prepare-only遗漏；修正后formal-fixed16通过25.11秒，正式来源真实POST及完整JSON预期均已核验。保留最初XML/日志，没有修改断言以变绿。第一批Python stdout未显式启用UTF-8，原日志保持；XML和JSON为UTF-8，最终综合调用使用-Xutf8。前端四次14项/构建分别在控件变化前后运行，历史不累加覆盖数。
+
+源码/跨层契约、原失败、原件/事件、物理消息、旧证据和三方案核对见p4-effect-evidence-validation.json。新表在原动作服务初始化时创建；旧记录不补写事件，旧三个Prompt/原wire验证一致。仅新增原操作查询索引，不改变原索引身份。实际新策略独立生产、默认模型生成声明、真实数组返回、完整App和生产迁移未验。逐对象覆盖、消费完成、未知查证、运行修订及其余完整P0—P5仍未完成，6.44/6.45缺口不宣称已修复。
+
+正式来源元数据放在原执行项基类，产生声明预期来自完整固定JSON；prepare的预期继续来自自身instructions。新声明依赖原逻辑操作/范围策略，缺省字段与三个旧Prompt字节保持。正式清理定义扩展、逐对象覆盖/消费完成、默认模型与完整App仍是后续实施范围。

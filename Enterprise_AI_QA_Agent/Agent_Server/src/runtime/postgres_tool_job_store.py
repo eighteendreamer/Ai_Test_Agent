@@ -13,6 +13,8 @@ from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatu
 class PostgresToolJobStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        from src.runtime.postgres_case_effect_evidence import PostgresCaseEffectEvidence
+        self.effect_evidence = PostgresCaseEffectEvidence(settings)
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -45,6 +47,8 @@ class PostgresToolJobStore:
             """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False),
                   json.dumps({"tool_output_observation": observation}, ensure_ascii=False), job_id))
             row = cur.fetchone()
+            if row is not None:
+                self.effect_evidence.capture(cur, _job_from_row(row), output_payload, observation)
             return _job_from_row(row) if row else None
 
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,

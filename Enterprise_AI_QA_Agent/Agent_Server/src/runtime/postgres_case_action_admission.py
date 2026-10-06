@@ -15,6 +15,7 @@ from src.application.runtime.case_operation import (
     RECEIPT_KEY as OPERATION_RECEIPT_KEY,
 )
 from src.runtime.postgres_case_operations import PostgresCaseOperations
+from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
 from src.application.test_runs.environment_restrictions import restriction_reviews
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_business_environment_store import environment_digest
@@ -35,6 +36,7 @@ class PostgresCaseActionAdmission:
 
     async def initialize(self):
         await self.operations.initialize()
+        await self._jobs.effect_evidence.initialize()
 
     async def claim(self, job_id, bundle):
         try:
@@ -66,6 +68,8 @@ class PostgresCaseActionAdmission:
         if (context.action_admission_protocol != ADMISSION_PROTOCOL or
             any(job.metadata.get(k) != getattr(binding, k) for k in ("project_id", "run_id", "run_item_id", "attempt_id"))):
             raise ValueError("动作确认与原Job运行身份或新策略不一致")
+        if job.metadata.get(INTENT_KEY) != effect_intent(bundle, binding):
+            raise ValueError("原工具对象证据意图与固定上下文不同")
         return binding
 
     @staticmethod

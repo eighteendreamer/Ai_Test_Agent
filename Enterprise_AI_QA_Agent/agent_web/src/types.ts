@@ -1984,6 +1984,8 @@ export interface CasePlanningPolicy {
   action_admission_protocol?: "case-action-admission-v1" | null;
   operation_protocol?: "case-operation-v1" | null;
   preparation_scope_protocol?: "preparation-scope-v1" | null;
+  effect_evidence_protocol?: "case-effect-evidence-v1" | null;
+  effect_evidence_max_bytes?: number | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;
@@ -2042,6 +2044,9 @@ export interface CasePlanInputBinding {
 }
 
 export interface CasePlanItemBase {
+  effect_evidence?: { role: "produced" | "cleanup"; object_path_tokens: string[]; collection: boolean;
+    checks: { output_path_tokens: string[]; expected_path_tokens: string[];
+      operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte" }[] } | null;
   key: string;
   reason: string;
   evidence_ids: string[];

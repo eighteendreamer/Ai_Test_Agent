@@ -174,6 +174,10 @@ class ToolExecutionContext:
         metadata = {"selected_agent_key": self.selected_agent_key, "selected_model_key": self.selected_model_key}
         if self.case_action_binding is not None:
             metadata["case_action_binding"] = self.case_action_binding.model_dump(mode="json")
+            from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
+            intent = effect_intent(self.context_bundle, self.case_action_binding)
+            if intent is not None:
+                metadata[INTENT_KEY] = intent
         for key in ("project_id", "run_id", "run_item_id", "attempt_id"):
             value = self.context_bundle.get(key)
             if key == "run_id" and not value:

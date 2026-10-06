@@ -132,6 +132,8 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
             jobs._case_action_admission = PostgresCaseActionAdmission(runs=store, jobs=jobs._store)
             tables.append(jobs._case_action_admission.operations.table)
         await jobs.initialize()
+        if live and jobs._case_action_admission is not None:
+            tables.append(jobs._store.effect_evidence.table)
         runtime = ToolRuntimeService(tool_job_service=jobs)
         session, turn, attempt = str(uuid4()), str(uuid4()), run_attempt.id
         tool_context = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,

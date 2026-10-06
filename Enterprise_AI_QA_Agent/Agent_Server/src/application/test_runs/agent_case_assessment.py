@@ -14,6 +14,7 @@ from src.application.runtime.case_action_binding import bind_case_action, valida
 from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.application.testing.verification_service import VerificationService
 from src.application.test_runs.agent_case_contract import RECEIPT_PROMPT_VERSION, case_result_contract
+from src.application.test_runs.literal_evidence import literal_value
 from src.schemas.case_execution import AgentCaseExecutionContext, AgentCaseExecutionReceipt
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult
 from src.schemas.run_management import RunEvidenceRef, RunItemCompleteRequest
@@ -23,21 +24,6 @@ from src.schemas.tool_runtime import ToolExecutionRecord
 
 
 logger = logging.getLogger(__name__)
-
-
-def literal_value(value: Any, tokens: list[str]) -> Any:
-    """Literal keys/indexes; a present JSON null is evidence, a missing key is not."""
-    for token in tokens:
-        if isinstance(value, dict) and token in value:
-            value = value[token]
-        elif isinstance(value, list):
-            try:
-                value = value[int(token)]
-            except (ValueError, IndexError):
-                raise ValueError("执行证据的数组位置不存在") from None
-        else:
-            raise ValueError("执行证据或固定预期的位置不存在")
-    return deepcopy(value)
 
 
 @dataclass(frozen=True)

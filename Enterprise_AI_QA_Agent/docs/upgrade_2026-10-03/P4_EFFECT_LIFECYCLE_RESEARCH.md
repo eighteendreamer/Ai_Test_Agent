@@ -46,3 +46,7 @@
 已实现的是[P4_PREPARATION_SCOPE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_PREPARATION_SCOPE_DESIGN.md)中的固定范围：明确cleanup_sources后，规划阶段补全消费者依赖，PG冻结来源/拥有者/消费者/清理项，原Agent上下文及项目设置同步。旧策略未补写，6.44三项对象/清理反例仍保留。
 
 新范围下另实测模型在右侧所属条目中先DELETE、后GET，真实目标404/failed、cleanup passed。范围能限定计划和跨条目依赖，不能证明同条目实际消费已完成。因此下一步需要围绕原Job可靠观察和回执研究实际对象及消费完成证据，覆盖同条目顺序、合法多对象、未确认返回和清理范围；不能只增加before/after或HTTP方法门卫。仍未实现实际效果生命周期，默认外部Agent、完整App及生产历史迁移未验。
+
+## 6.46原可靠返回证据
+
+已按[P4_EFFECT_EVIDENCE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_EFFECT_EVIDENCE_DESIGN.md)接入固定字面量声明与原可靠观察同事务的小型不可变证据，查询全部原逻辑操作，保留两次合法创建、别名不重复、原未知与预算诊断。清理GET与固定method的已有字段比较失败，但完整覆盖尚未接到正式结果；不把这一检查当作三项旧失败已修。下一步沿原对象证据补完整模型输入、逐对象清理覆盖、消费完成、只读查证和正式展示，保留原计划/Job/回执及未知，不新增第二套执行器。

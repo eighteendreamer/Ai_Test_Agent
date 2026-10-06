@@ -29,6 +29,8 @@ class PostgresCaseOperations:
                     origin_job_id TEXT UNIQUE NOT NULL REFERENCES {self._settings.database.postgres_tool_job_table}(id),
                     record JSONB NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+                cur.execute(f"""CREATE INDEX IF NOT EXISTS idx_{self.table}_run ON {self.table}
+                    ((record->'scope'->>'project_id'),(record->'scope'->>'run_id'),(record->'scope'->>'plan_id'))""")
         await asyncio.to_thread(create)
 
     def read(self, cur, operation_id):

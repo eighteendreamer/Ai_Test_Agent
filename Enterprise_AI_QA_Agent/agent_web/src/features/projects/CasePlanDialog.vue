@@ -145,6 +145,8 @@ function chooseActionBinding(event: Event) {
     delete config.value.policy.action_admission_protocol;
     delete config.value.policy.operation_protocol;
     delete config.value.policy.preparation_scope_protocol;
+    delete config.value.policy.effect_evidence_protocol;
+    delete config.value.policy.effect_evidence_max_bytes;
   }
 }
 function chooseActionAdmission(event: Event) {
@@ -156,6 +158,8 @@ function chooseActionAdmission(event: Event) {
     delete config.value.policy.action_admission_protocol;
     delete config.value.policy.operation_protocol;
     delete config.value.policy.preparation_scope_protocol;
+    delete config.value.policy.effect_evidence_protocol;
+    delete config.value.policy.effect_evidence_max_bytes;
   }
 }
 function chooseOperationRecovery(event: Event) {
@@ -167,6 +171,8 @@ function chooseOperationRecovery(event: Event) {
   } else {
     delete config.value.policy.operation_protocol;
     delete config.value.policy.preparation_scope_protocol;
+    delete config.value.policy.effect_evidence_protocol;
+    delete config.value.policy.effect_evidence_max_bytes;
   }
 }
 function choosePreparationScopes(event: Event) {
@@ -176,7 +182,24 @@ function choosePreparationScopes(event: Event) {
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
     config.value.policy.preparation_scope_protocol = "preparation-scope-v1";
-  } else delete config.value.policy.preparation_scope_protocol;
+  } else {
+    delete config.value.policy.preparation_scope_protocol;
+    delete config.value.policy.effect_evidence_protocol;
+    delete config.value.policy.effect_evidence_max_bytes;
+  }
+}
+function chooseEffectEvidence(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.action_binding_protocol = "case-action-binding-v1";
+    config.value.policy.action_admission_protocol = "case-action-admission-v1";
+    config.value.policy.operation_protocol = "case-operation-v1";
+    config.value.policy.preparation_scope_protocol = "preparation-scope-v1";
+    config.value.policy.effect_evidence_protocol = "case-effect-evidence-v1";
+  } else {
+    delete config.value.policy.effect_evidence_protocol;
+    delete config.value.policy.effect_evidence_max_bytes;
+  }
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -222,6 +245,11 @@ onMounted(loadPolicy);
           :checked="config.policy.operation_protocol === 'case-operation-v1'" @change="chooseOperationRecovery">按逻辑操作恢复结果</label>
         <label><input data-testid="preparation-scopes" type="checkbox" :disabled="busy"
           :checked="config.policy.preparation_scope_protocol === 'preparation-scope-v1'" @change="choosePreparationScopes">按准备消费范围安排清理</label>
+        <label><input data-testid="effect-evidence" type="checkbox" :disabled="busy"
+          :checked="config.policy.effect_evidence_protocol === 'case-effect-evidence-v1'" @change="chooseEffectEvidence">保存实际对象证据</label>
+        <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；完整清理覆盖及消费完成尚待核验。</p>
+        <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
+          type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
@@ -255,6 +283,7 @@ onMounted(loadPolicy);
           <details v-if="Object.keys(item.input_bindings).length"><summary>数据来源</summary><JsonContentTree :value="item.input_bindings" /></details>
           <p>依据：{{ item.evidence_ids.join('、') }}</p>
           <p v-if="item.kind === 'prepare' && item.cleanup_sources">清理来源：{{ item.cleanup_sources.join('、') }}。这是计划范围，清理结果需实际证据核验。</p>
+          <details v-if="item.effect_evidence"><summary>对象证据声明</summary><JsonContentTree :value="item.effect_evidence" /></details>
         </li></ol>
         <details v-if="plan.evidence.some(e => e.kind !== 'case')"><summary>查询到的项目原文与录制依据</summary><template v-for="source in plan.evidence.filter(e => e.kind !== 'case')" :key="source.id"><p>{{ source.id }}</p><JsonContentTree :value="source.payload" /></template></details>
       </template>

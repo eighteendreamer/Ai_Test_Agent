@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
+from src.schemas.case_effects import EffectEvidenceDeclaration
 
 
 class PlanningModel(BaseModel):
@@ -22,6 +23,8 @@ class CasePlanningPolicy(PlanningModel):
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
     operation_protocol: Literal["case-operation-v1"] | None = None
     preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
+    effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
+    effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
 
     @model_validator(mode="after")
     def require_action_ownership(self):
@@ -31,6 +34,12 @@ class CasePlanningPolicy(PlanningModel):
             raise ValueError("逻辑操作恢复需要固定执行项关联和动作领取")
         if self.preparation_scope_protocol and not self.operation_protocol:
             raise ValueError("准备消费范围需要固定逻辑操作策略")
+        if self.effect_evidence_protocol and not self.preparation_scope_protocol:
+            raise ValueError("对象证据需要固定准备消费范围策略")
+        if self.effect_evidence_protocol and self.effect_evidence_max_bytes is None:
+            self.effect_evidence_max_bytes = 512000
+        if not self.effect_evidence_protocol and self.effect_evidence_max_bytes is not None:
+            raise ValueError("对象证据大小配置需要固定对象证据策略")
         return self
 
     @model_serializer(mode="wrap")
@@ -44,6 +53,10 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("operation_protocol", None)
         if self.preparation_scope_protocol is None:
             data.pop("preparation_scope_protocol", None)
+        if self.effect_evidence_protocol is None:
+            data.pop("effect_evidence_protocol", None)
+        if self.effect_evidence_max_bytes is None:
+            data.pop("effect_evidence_max_bytes", None)
         return data
 
 
@@ -94,6 +107,14 @@ class CasePlanItemBase(PlanningModel):
     evidence_ids: list[str] = Field(min_length=1, max_length=50)
     depends_on: list[str] = Field(default_factory=list, max_length=200)
     input_bindings: dict[str, PlanInputBinding] = Field(default_factory=dict)
+    effect_evidence: EffectEvidenceDeclaration | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_item(self, handler):
+        data = handler(self)
+        if self.effect_evidence is None:
+            data.pop("effect_evidence", None)
+        return data
 
 class FormalCasePlanItem(CasePlanItemBase):
     kind: Literal["target", "dependency"]
@@ -113,6 +134,8 @@ class PreparationPlanItem(CasePlanItemBase):
         data = handler(self)
         if self.cleanup_sources is None:
             data.pop("cleanup_sources", None)
+        if self.effect_evidence is None:
+            data.pop("effect_evidence", None)
         return data
 
 
