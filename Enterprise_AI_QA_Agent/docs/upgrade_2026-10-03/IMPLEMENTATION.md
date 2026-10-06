@@ -3431,3 +3431,28 @@ $env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 模型更换key的语义重复、真实效果拥有者/多对象清理/共享消费、未知只读查证、计划修订、换目标新回归、默认模型、其他模式、完整环境页面/AI候选、用户业务评审/点级完整性、生产迁移及完整P0—P5仍待实施或验收。没有把这一批缩成整体完成。
 
 交付审计实际核对101份真实场景、673份新增原始工件及单独的暂存范围清单、旧9723份原工件SHA/size，三方案同字节、用户.gitignore不变；独立SDK最后三次请求完整上下文相同，原参数与两个PG Job输入/hash一致，完整12步用例和False/0/null保持，最终Result确实引用alias并带原来源。13个生产文件py_compile及git diff --check通过，136个本地方案链接存在；编译结果不代替上述功能验证。
+
+## 2026-10-06 方案同步与实际效果研究〔实现基线e8e9ed16〕
+
+用户要求更新所贴方案。重读附件目标、三份当前方案并核对普通上传/新版本/原件保存、可选Git导入及实际执行评估路径。更新PLAN顶部、2.4/2.5、P2进度和6.44，并新增P4_EFFECT_LIFECYCLE_RESEARCH.md。普通上传没有Git依赖；生成模板不进入执行依据。此次没有修改生产代码、公开契约或数据库；完整P0—P5仍在进行。
+
+前序已实际执行的效果研究日志及XML均为终态，本次读取完整JSON现场核对后同步入方案，没有重新启动这些实验：
+
+```powershell
+# 工作目录：Agent_Server；真实实验使用RUN_LIVE_PLAN_RUN_CREATION=1，
+# QA_STATEFUL_RESEARCH_EVIDENCE_DIR指向对应的独立原件目录。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_lifecycle_research.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-effect-research-current.xml
+# 最新7项：4通过、3真实失败，18.49秒；0跳过。对应log及原件目录已保存。
+# 首轮4失败18.25秒是辅助会话/turn引用错误，原身份校验正确拒绝；
+# 修正身份后的4项为1通过/3真实失败12.48秒；增加对照后成为最新7项。
+
+# 本次另实际运行上传边界专项，并完整保存stdout/stderr和原退出码：
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-update-upload-verification.xml
+# 退出0，2通过，3.59秒。本地临时文件/测试存储，不调用Git。
+```
+
+实际两次不同operation_key创建两条，只删第一条时第二条仍存在；只引用目标GET，或after本步骤自己GET，没有任何DELETE时对象仍存在。三场景最终Result却将cleanup标passed。完整HTTP/对象、原Job/操作索引及评估前身份现场均保存。全删两条对照通过；现有字面量输出检查对照固定DELETE/实际GET能判failed；已知删除返回换provider ID恢复无新HTTP；删除已在服务器发生但可靠返回丢失时原Job仍running、新调用denied且不重发。
+
+这是对象范围与清理覆盖的架构缺失，不只是步骤归属检查。准备数据单步摘要不能充当完整对象清单；HTTP 200、after阶段或方法一致都不能单独证明清理完毕。新设计先实测共享拥有者/消费者/清理等待关系，再冻结协议并查证原观察事务集成；目前共享循环等待是源码风险，尚未实测。保持原Job、权限、租约、操作恢复和旧固定历史；不另建执行器，不按业务关键词推断效果。
+
+七项回执由研究代码受控提交，未调用默认外部Agent；简单状态码检查不证明完整目标业务字段已覆盖。本次没有运行前端构建或生产迁移，也没有宣称修复三个缺口。上传专项只证明本地链路，生产存储/正式App继续引用各自历史证据。三份方案同步、原工件SHA/size、用户.gitignore及提交范围检查见p4-effect-research-validation.json；保留真实失败，不改为xfail。
