@@ -101,6 +101,7 @@ def build_agent_case_context(
         plan_id=plan.id, objective=plan.request.objective, target_key=target.key, steps=steps,
         action_binding_protocol=plan.config_snapshot.policy.action_binding_protocol,
         action_admission_protocol=plan.config_snapshot.policy.action_admission_protocol,
+        operation_protocol=plan.config_snapshot.policy.operation_protocol,
         runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,environment_admission=admission,
         evidence=evidence,
         unresolved=[gap.model_copy(deep=True) for gap in plan.decision.unresolved if gap.item_key is None or gap.item_key in owned])

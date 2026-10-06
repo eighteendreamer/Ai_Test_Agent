@@ -479,6 +479,14 @@ class PromptAssemblyService:
                        "retain earlier evidence. An after phase alone does not prove cleanup ownership. "
                        "A started action without a reliable result requires reconciliation, not another send."
                        if frozen.action_admission_protocol is not None else "")
+                    + (" Every _case_action must also contain operation_key: a stable logical operation "
+                       "key within its owned item, independent of provider call IDs. Keep the same key "
+                       "and every business input when recovering that operation. For a deliberate new "
+                       "operation, negative repeat or read refresh use a different key. A reused output "
+                       "does not mean a new HTTP send or independent evidence. case_operation_outcome_unknown "
+                       "requires reconciliation using actual available read-only knowledge; changing "
+                       "the key is not a way to recover an unknown effect. Input conflicts are not sent."
+                       if frozen.operation_protocol is not None else "")
                     + (" The server-bound business_environment fixes the selected target for this run: "
                        "use its snapshot.configuration.payload.base_url rather than project defaults "
                        "or similarly named runtime_inputs. Its reviews apply only to their explicit "

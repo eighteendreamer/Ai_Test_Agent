@@ -130,6 +130,7 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
                 raise ValueError('动作确认研究必须使用真实PG事务')
             from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
             jobs._case_action_admission = PostgresCaseActionAdmission(runs=store, jobs=jobs._store)
+            tables.append(jobs._case_action_admission.operations.table)
         await jobs.initialize()
         runtime = ToolRuntimeService(tool_job_service=jobs)
         session, turn, attempt = str(uuid4()), str(uuid4()), run_attempt.id

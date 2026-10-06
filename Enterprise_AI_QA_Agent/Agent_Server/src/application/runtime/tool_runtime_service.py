@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from contextlib import nullcontext
 import json
 import logging
@@ -724,6 +725,8 @@ class ToolRuntimeService:
                 job_id=job.id if job is not None else None,
                 include_artifacts=resolved_status in {"completed", "partial", "failed"},
             )
+            if job is not None and "case_operation" in job.metadata:
+                record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
@@ -813,6 +816,9 @@ class ToolRuntimeService:
                 ToolJobStatus.failed,
             },
         )
+        if "case_operation" in job.metadata:
+            await self._tool_job_service.validate_case_operation(job)
+            record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
         return ToolExecutionRecord(
             call_id=job.call_id,
             tool_key=job.tool_key,

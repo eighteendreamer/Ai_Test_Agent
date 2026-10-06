@@ -45,6 +45,13 @@ class AgentCaseExecutionContext(PlanningModel):
     environment_admission: BusinessExecutionAdmission | None = None
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
+    operation_protocol: Literal["case-operation-v1"] | None = None
+
+    @model_validator(mode="after")
+    def require_operation_admission(self):
+        if self.operation_protocol and (not self.action_binding_protocol or not self.action_admission_protocol):
+            raise ValueError("固定逻辑操作上下文需要原执行项关联和动作领取策略")
+        return self
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
@@ -56,6 +63,8 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("action_binding_protocol")
         if self.action_admission_protocol is None:
             omitted.add("action_admission_protocol")
+        if self.operation_protocol is None:
+            omitted.add("operation_protocol")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

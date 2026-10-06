@@ -3392,3 +3392,42 @@ current单次原图三次审批：POST→GET真实ID→DELETE同ID，created=1/o
 方案正文/附件/选中计划同步；按既有gitattributes保存raw原字节，审计p4-stateful-research-validation.json核对实际参数/上下文SHA、业务对象、XML、旧9689份原工件与用户.gitignore。只提交本轮研究/方案/原失败证据，不推送/建PR。稳定操作身份、执行中效果/清理状态、修订、换目标回归、默认Agent、环境App及完整P0—P5继续未完成。
 
 审计首轮误从固定plan顶层读取policy，实际为config_snapshot.policy，在三方案同步前退出；检查已保存真实结构后更正。最终六份场景的原参数/上下文/领取回执SHA和真实状态核对通过，34份raw及旧9689份原工件不变，三方案同字节，132个本地链接存在。三个测试文件py_compile和git diff --check实际通过；这两项不代替功能验收或两个真实失败的修复。
+
+## 2026-10-06 C2c3：逻辑操作索引、原Job恢复与最终结果来源
+
+研究基线253d47f0，后续上传方案文档提交9b85add3。先重读原目标、6.42真实有状态失败、原Job/固定上下文/领取事务/可靠观察/API/图治理审批/最终评估，参考已有generation creation_key事务及本地Agent轨迹课程；P4_CASE_OPERATION_DESIGN.md记录采用做法及已确认错误。新协议在原MySQL规划policy冻结，业务索引在PG、原件沿RustFS，保留原Job执行体系，不新增依赖或测试模式。
+
+实际最后两条主验证与诊断命令从Agent_Server运行；stdout/stderr和原失败均保存，不因通过重写旧工件：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-case-operation-result-regression'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-case-operation-result-regression\requirements'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations.py tests/test_agent_case_assessment.py tests/test_agent_case_execution.py tests/test_agent_case_context.py tests/test_deep_agent_tool_replay.py tests/test_langchain_tool_adapter.py tests/test_security_approval_boundary.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-operation-result-regression.xml *> ../docs/upgrade_2026-10-03/p4-case-operation-result-regression.log
+# 退出0；107通过、3跳过，208.80秒；缺外部实际模型或公开Worker开关。
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-case-operation-production-result-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-operation-production-result-final.xml *> ../docs/upgrade_2026-10-03/p4-case-operation-production-result-final.log
+# 退出0；1通过、0跳过，101.11秒；main/API/独立CLI/SDK和实际存储。
+
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-case-operation-tamper-reproduction'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations.py::test_actual_replay_output_tampering_is_rejected_without_HTTP -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-case-operation-tamper-reproduction.xml *> ../docs/upgrade_2026-10-03/p4-case-operation-tamper-reproduction.log
+# 退出0；1通过、6.29秒；修改前原输入、Job、HTTP及服务器状态保存。
+# 各命令保存LASTEXITCODE，读取日志尾部，返回原退出码；进程均已结束。
+```
+
+最后107项包含15项新操作专项；原图/审批有状态POST→真实ID GET→DELETE同ID，created=1/orders=0，目标真实count=1不符合0仍failed。丢创建返回保留原running，新call_id拒绝重发；该未知订单仍存在，关闭隔离服务器不算清理。合法同参数不同key创建两条并实际删除两条，same key改参数拒绝；已知读取恢复和明确刷新不同；4路PG领取仅1原Job；实际commit回执丢失、可靠观察交付中断、当前配置关闭、Unicode/业务同名协议字段、输出篡改及治理反馈覆盖。
+
+独立生产最后运行新增两次provider工具调用和两次审批，两个原Job/不可变PG索引，新增业务HTTP1条；总7模型HTTP（影响2、既有规划1、新规划1、Agent3）。最终Result五项检查均引用复用Job，evidence_ref元数据携带case_operation及原Job/输出hash；原network不变，复用completed_request，False/0/null真实比较。停派发/归档/API重启/终态重投无新发送。受控模型与语义评审不能冒充默认外部Agent。前3轮生产first/current/recovery各1通过（111.28/105.67/107.42秒）；前两轮只执行一条工具调用，recovery首次验证新call_id复用，但最终Result引用alias是result-final才实测。
+
+先前live-first为7通过25.37秒、live-expanded为10通过25.97秒、live-final为12通过34.78秒、complete-final为13通过33.58秒，源码/测试范围各有增长，数量不累计。regression-current为16模块240通过/24跳过655.87秒，在后来HTTP路径/治理反馈/最终Result修改之前导入；20项完整DeepAgent缺依赖，3外部模型和1公开Worker开关。wire-final为29通过/1失败43.58秒，夹具缺ToolRegistry导入；wire-fixed为30通过/1失败40.37秒，响应正文None后测试改写报错。没有该次原Job现场，原因未知；随后增加改写前捕获，单项诊断及最终完整源码均通过，不以重跑通过声称空正文根因已修。
+
+真实business-field-first为1通过/1失败9.69秒：初版递归所有JSON并验证同名http_observation_v1误伤业务字段，捕获真实GET/原Job/订单内容；修正后只处理API服务端检查点位置，同名业务数据原样保留。初期领取回执action_sent=true语义不正确，现dispatched action_sent=null/execution_claimed=true，复用/拒绝false；早期证据保留原值。frontend-test为11通过/1夹具失败2.49秒，mock保存丢新policy字段；修正后12通过1.80秒、实际vue-tsc/Vite构建通过13.51秒。
+
+策略/上下文/schema/提示、共享PG索引及原领取/可靠返回、原图/治理反馈、ToolRuntime投影、assessment manifest及最终Result来源、前端DTO/设置/测试均核对；13个生产文件。关闭入口只影响新计划，不补写旧wire/hash或原终态，操作身份是原Job引用，没有另建执行/效果状态机。新增初始化FK表由原服务初始化创建；生产历史迁移未验，不能回填原已未知操作为成功。审计p4-case-operation-validation.json核对三方案、用户.gitignore、旧9723raw、新增原件/身份/参数/回执/索引/实际状态与暂存字节；仅提交相关文件，无push/PR。
+
+模型更换key的语义重复、真实效果拥有者/多对象清理/共享消费、未知只读查证、计划修订、换目标新回归、默认模型、其他模式、完整环境页面/AI候选、用户业务评审/点级完整性、生产迁移及完整P0—P5仍待实施或验收。没有把这一批缩成整体完成。
+
+交付审计实际核对101份真实场景、673份新增原始工件及单独的暂存范围清单、旧9723份原工件SHA/size，三方案同字节、用户.gitignore不变；独立SDK最后三次请求完整上下文相同，原参数与两个PG Job输入/hash一致，完整12步用例和False/0/null保持，最终Result确实引用alias并带原来源。13个生产文件py_compile及git diff --check通过，136个本地方案链接存在；编译结果不代替上述功能验证。

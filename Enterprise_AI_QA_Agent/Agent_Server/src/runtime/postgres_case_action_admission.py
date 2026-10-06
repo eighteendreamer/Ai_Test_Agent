@@ -8,7 +8,13 @@ import logging
 from src.application.runtime.case_action_binding import (
     ADMISSION_PROTOCOL, CaseActionClaimUnavailable, bind_case_action, fixed_action_context,
     validate_action_admission_receipt,
+    OPERATION_PROTOCOL,
 )
+from src.application.runtime.case_operation import (
+    CaseOperationRecoveryRequired, operation_identity, operation_receipt, replay_output,
+    RECEIPT_KEY as OPERATION_RECEIPT_KEY,
+)
+from src.runtime.postgres_case_operations import PostgresCaseOperations
 from src.application.test_runs.environment_restrictions import restriction_reviews
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_business_environment_store import environment_digest
@@ -25,11 +31,15 @@ class PostgresCaseActionAdmission:
             raise ValueError("动作确认与原工具任务必须使用同一PG配置")
         self._runs, self._jobs, self._settings = runs, jobs, runs._settings
         self._table = self._settings.database.postgres_tool_job_table
+        self.operations = PostgresCaseOperations(self._settings)
+
+    async def initialize(self):
+        await self.operations.initialize()
 
     async def claim(self, job_id, bundle):
         try:
             result = await asyncio.to_thread(self._claim, job_id, bundle)
-            if result is not None:
+            if result is not None and not isinstance(result,CaseOperationRecoveryRequired):
                 logger.info("case_action_claim_confirmed", extra={"tool_job_id":job_id,
                     "decision":result.metadata[RECEIPT_KEY]["decision"], "status":result.status.value})
             return result
@@ -129,6 +139,22 @@ class PostgresCaseActionAdmission:
                 "restricted_review_ids":[r.id for r in restricted],
                 "after_phase_is_cleanup_evidence":False}
             receipt["sha256"] = environment_digest(receipt)
+            identity = operation_identity(job,binding) if context.operation_protocol == OPERATION_PROTOCOL else None
+            operation = None
+            if identity is not None:
+                operation = self.operations.read(cur,identity["operation_id"])
+                if operation is not None:
+                    origin = self._read_job(cur,operation["origin_job_id"],lock=True)
+                    original = self.operations.validate_origin(operation,origin)
+                    self._check_prior_receipt(origin,bind_case_action(bundle=bundle,
+                        arguments=origin.input_payload,session_id=origin.session_id,turn_id=origin.turn_id))
+                    if original != identity:
+                        return self._operation_alias(cur,job,receipt,identity,origin,"input_conflict")
+                    if origin.status.value in {"running","resume_requested"} and origin.metadata.get("tool_output_observation"):
+                        return CaseOperationRecoveryRequired(origin.id)
+                    if origin.status.value not in {"completed","partial","failed","denied","cancelled"}:
+                        return self._operation_alias(cur,job,receipt,identity,origin,"outcome_unknown")
+                    return self._operation_alias(cur,job,receipt,identity,origin,"replayed")
             if decision == "explicit_invalid":
                 output = {"status":"denied", "error":"case_action_explicit_invalid", RECEIPT_KEY:receipt,
                     "summary":"固定目标已明确确认此精确用例版本失效；本次待执行动作未发送", "action_sent":False}
@@ -139,8 +165,41 @@ class PostgresCaseActionAdmission:
                         json.dumps({RECEIPT_KEY:receipt},ensure_ascii=False),job.id))
                 saved = _job_from_row(cur.fetchone())
             else:
-                saved = self._jobs.claim_job_execution_in_transaction(cur, job.id, metadata={RECEIPT_KEY:receipt})
+                metadata = {RECEIPT_KEY:receipt}
+                if identity is not None:
+                    self.operations.register(cur,identity,job)
+                    metadata[OPERATION_RECEIPT_KEY] = operation_receipt(identity,origin_job_id=job.id,
+                        decision="dispatched",action_sent=None)
+                saved = self._jobs.claim_job_execution_in_transaction(cur, job.id, metadata=metadata)
             logger.info("case_action_admission_prepared", extra={"tool_job_id":job.id, "project_id":run.project_id,
                 "run_item_id":item.id, "item_key":binding.item_key, "item_phase":binding.phase,
                 "decision":decision, "review_ids":[r.id for r in reviews or []], "receipt_sha256":receipt["sha256"]})
             return saved
+
+    def _operation_alias(self,cur,job,admission,identity,origin,decision):
+        if decision == "replayed":
+            output = replay_output(origin)
+            status = origin.status.value
+            summary = "复用原逻辑操作的固定结果；本次没有新发送。" + origin.summary
+        else:
+            output = {"status":"denied","error":"case_operation_"+decision,
+                "origin_job_id":origin.id,"action_sent":False}
+            status = "denied"
+            summary = ("原逻辑操作完整输入不同；本次未发送。" if decision == "input_conflict" else
+                "原逻辑操作结果未知；先按项目真实只读能力查证，本次未发送。")
+        receipt = operation_receipt(identity,origin_job_id=origin.id,decision=decision,action_sent=False,
+            output=output if decision == "replayed" else None,
+            origin_output=origin.output_payload if decision == "replayed" else None)
+        admission = {**admission,"decision":"operation_"+decision}
+        admission["sha256"] = environment_digest({k:v for k,v in admission.items() if k != "sha256"})
+        cur.execute(f"""UPDATE {self._table} SET status=%s,output_payload=%s::jsonb,summary=%s,
+            completed_at=now(),updated_at=now(),metadata=metadata || %s::jsonb
+            WHERE id=%s AND started_at IS NULL AND status IN ('queued','waiting_approval') RETURNING *""",
+            (status,json.dumps(output,ensure_ascii=False),summary,
+                json.dumps({RECEIPT_KEY:admission,OPERATION_RECEIPT_KEY:receipt},ensure_ascii=False),job.id))
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("逻辑操作别名原状态已变化，不能覆盖")
+        logger.info("case_operation_alias_saved",extra={"tool_job_id":job.id,"origin_job_id":origin.id,
+            "operation_id":identity["operation_id"],"decision":decision,"action_sent":False})
+        return _job_from_row(row)

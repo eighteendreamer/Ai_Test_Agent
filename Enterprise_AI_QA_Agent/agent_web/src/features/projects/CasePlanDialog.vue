@@ -143,6 +143,7 @@ function chooseActionBinding(event: Event) {
   else {
     delete config.value.policy.action_binding_protocol;
     delete config.value.policy.action_admission_protocol;
+    delete config.value.policy.operation_protocol;
   }
 }
 function chooseActionAdmission(event: Event) {
@@ -150,7 +151,18 @@ function chooseActionAdmission(event: Event) {
   if ((event.target as HTMLInputElement).checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
-  } else delete config.value.policy.action_admission_protocol;
+  } else {
+    delete config.value.policy.action_admission_protocol;
+    delete config.value.policy.operation_protocol;
+  }
+}
+function chooseOperationRecovery(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.action_binding_protocol = "case-action-binding-v1";
+    config.value.policy.action_admission_protocol = "case-action-admission-v1";
+    config.value.policy.operation_protocol = "case-operation-v1";
+  } else delete config.value.policy.operation_protocol;
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -192,6 +204,8 @@ onMounted(loadPolicy);
           :checked="config.policy.action_binding_protocol === 'case-action-binding-v1'" @change="chooseActionBinding">记录工具所属执行项</label>
         <label><input type="checkbox" data-testid="action-admission" :disabled="busy"
           :checked="config.policy.action_admission_protocol === 'case-action-admission-v1'" @change="chooseActionAdmission">执行前核对当前失效确认</label>
+        <label><input data-testid="operation-recovery" type="checkbox" :disabled="busy"
+          :checked="config.policy.operation_protocol === 'case-operation-v1'" @change="chooseOperationRecovery">按逻辑操作恢复结果</label>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>

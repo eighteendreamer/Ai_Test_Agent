@@ -14,6 +14,7 @@ from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation
 from src.infrastructure.storage_utils import make_json_safe
 from src.application.runtime.case_action_binding import action_admission_enabled, CaseActionClaimUnavailable
+from src.application.runtime.case_operation import CaseOperationRecoveryRequired
 
 logger = logging.getLogger(__name__)
 OUTPUT_OBSERVATION_KEY = "tool_output_observation"
@@ -40,6 +41,8 @@ class ToolJobService:
 
     async def initialize(self) -> list[ToolJobRecord]:
         await self._store.initialize()
+        if self._case_action_admission is not None:
+            await self._case_action_admission.initialize()
         return await self._store.mark_stale_running_jobs(self._heartbeat_timeout_seconds)
 
     async def create_job(
@@ -279,6 +282,12 @@ class ToolJobService:
             if self._case_action_admission is None:
                 raise CaseActionClaimUnavailable("固定动作确认策略尚未配置PG领取服务，不能发送")
             claimed = await self._case_action_admission.claim(job_id, context_bundle)
+            if isinstance(claimed,CaseOperationRecoveryRequired):
+                await self.recover_observed_output(claimed.origin_job_id,
+                    reason="原逻辑操作可靠返回已保存，恢复结果交付而不重新发送")
+                claimed = await self._case_action_admission.claim(job_id,context_bundle)
+                if isinstance(claimed,CaseOperationRecoveryRequired):
+                    raise CaseActionClaimUnavailable("原逻辑操作可靠返回恢复尚未确认；保留原记录并先查证")
             if claimed is None:
                 # Identity was checked by the PG domain claim. A durable returned
                 # result precedes any newer applicability decision; recover delivery only.
@@ -290,6 +299,11 @@ class ToolJobService:
                 return None
             return claimed
         return await self._store.claim_job_execution(job_id)
+
+    async def validate_case_operation(self,job):
+        if self._case_action_admission is None:
+            raise ValueError("逻辑操作证据核对缺少原PG服务")
+        return await self._case_action_admission.operations.validate_job(job)
 
     async def finish_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict[str, Any],
                                summary: str, error_message: str | None = None) -> ToolJobRecord | None:

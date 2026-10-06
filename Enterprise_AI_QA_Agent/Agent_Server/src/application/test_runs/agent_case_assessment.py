@@ -65,6 +65,8 @@ class AgentCaseAssessmentService:
                     if context.action_binding_protocol is not None else {})
                 | ({"case_action_admission": deepcopy(job.metadata["case_action_admission"])}
                     if context.action_admission_protocol is not None and "case_action_admission" in job.metadata else {})
+                | ({"case_operation":deepcopy(job.metadata["case_operation"])}
+                    if context.operation_protocol is not None and "case_operation" in job.metadata else {})
                 for key, job in jobs.items()]
 
     async def build_assessment_request(self, *, context: AgentCaseExecutionContext,
@@ -145,6 +147,8 @@ class AgentCaseAssessmentService:
                     raise ValueError("工具证据的执行项归属与完整固定上下文不一致")
                 if context.action_admission_protocol is not None:
                     validate_action_admission_receipt(job, binding, required=True)
+                if context.operation_protocol is not None:
+                    await self._jobs.validate_case_operation(job)
             if record.call_id in jobs and jobs[record.call_id].id != job.id:
                 raise ValueError("本次执行的 call 身份对应多个工具证据")
             jobs[record.call_id] = job
@@ -242,7 +246,10 @@ class AgentCaseAssessmentService:
         summary = target["summary"] if not unsuccessful else "; ".join(
             f"{key}: {results[key]['summary']} ({value})" for key, value in unsuccessful.items())
         evidence_refs = [RunEvidenceRef(evidence_type="tool_job", evidence_id=job.id, label=job.tool_name,
-            metadata={"call_id": job.call_id, "tool_key": job.tool_key}) for job in used.values()]
+            metadata={"call_id": job.call_id, "tool_key": job.tool_key}
+                | ({"case_operation":deepcopy(job.metadata["case_operation"])}
+                    if context.operation_protocol is not None and "case_operation" in job.metadata else {}))
+            for job in used.values()]
         artifacts = {artifact.id: artifact for job in used.values() for artifact in job.artifacts}
         evidence_refs.extend(RunEvidenceRef(evidence_type="artifact", evidence_id=a.id, label=a.label or a.artifact_type,
             uri=a.path, metadata={"tool_job_id": a.tool_job_id}) for a in artifacts.values())

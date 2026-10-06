@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="9.670" timestamp="2026-10-06T20:45:43.321498+08:00" hostname="EIghteen"><testcase classname="tests.test_case_operations" name="test_actual_configuration_change_does_not_replace_frozen_operation_protocol" time="2.296" /><testcase classname="tests.test_case_operations" name="test_actual_replay_preserves_business_field_named_like_HTTP_protocol" time="1.833"><failure message="src.application.runtime.case_action_binding.CaseActionClaimUnavailable: 工具任务 a0e55e5e-547d-4926-9e7c-19beb3dcde25 动作领取未获可靠确认；保留原记录并先查证，不能重复发送">src\runtime\postgres_case_action_admission.py:41: in claim
+    result = await asyncio.to_thread(self._claim, job_id, bundle)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_action_admission.py:157: in _claim
+    return self._operation_alias(cur,job,receipt,identity,origin,"replayed")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_action_admission.py:181: in _operation_alias
+    output = replay_output(origin)
+             ^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\case_operation.py:53: in replay_output
+    mark(output)
+src\application\runtime\case_operation.py:49: in mark
+    mark(child)
+src\application\runtime\case_operation.py:49: in mark
+    mark(child)
+src\application\runtime\case_operation.py:46: in mark
+    observation = HttpResponseObservation.model_validate(child)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 7 validation errors for HttpResponseObservation
+E   acquisition
+E     Field required [type=missing, input_value={'flag': False, 'count': ...业务字段': '保留'}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/missing
+E   observed_at
+E     Field required [type=missing, input_value={'flag': False, 'count': ...业务字段': '保留'}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/missing
+E   hops
+E     Field required [type=missing, input_value={'flag': False, 'count': ...业务字段': '保留'}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/missing
+E   flag
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=False, input_type=bool]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E   count
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=0, input_type=int]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E   nullable
+E     Extra inputs are not permitted [type=extra_forbidden, input_value=None, input_type=NoneType]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+E   业务字段
+E     Extra inputs are not permitted [type=extra_forbidden, input_value='保留', input_type=str]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+The above exception was the direct cause of the following exception:
+tests\test_case_operations.py:299: in test_actual_replay_preserves_business_field_named_like_HTTP_protocol
+    second=await runtime.execute(tool,ModelToolCall(id='read-business-recovery',name=tool.key,arguments=deepcopy(read)),execution)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:493: in execute
+    record = await self._dispatch(tool, call, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:585: in _dispatch
+    claimed = await self._tool_job_service.claim_execution(job.id, context_bundle=context.context_bundle)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_job_service.py:284: in claim_execution
+    claimed = await self._case_action_admission.claim(job_id, context_bundle)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_action_admission.py:49: in claim
+    raise CaseActionClaimUnavailable(
+E   src.application.runtime.case_action_binding.CaseActionClaimUnavailable: 工具任务 a0e55e5e-547d-4926-9e7c-19beb3dcde25 动作领取未获可靠确认；保留原记录并先查证，不能重复发送</failure></testcase></testsuite></testsuites>

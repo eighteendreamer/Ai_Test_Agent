@@ -39,10 +39,21 @@ def admission_message(body):
             tool = next(t["function"] for t in body["tools"] if t["function"]["name"] == "api-test-runner")
             assert "_case_action" in tool["parameters"]["required"]
             args["_case_action"] = {"item_key": context["target_key"]}
+            if context.get("operation_protocol"):
+                assert context["operation_protocol"] == "case-operation-v1"
+                assert "operation_key" in tool["parameters"]["properties"]["_case_action"]["required"]
+                args["_case_action"]["operation_key"] = "target.rule-read"
         return {"role":"assistant","content":"读取固定目标规则","tool_calls":[{"id":"admission-rule","type":"function",
             "function":{"name":"api-test-runner","arguments":json.dumps(args,ensure_ascii=False)}}]}
+    if context.get("operation_protocol") and len([m for m in body["messages"] if m.get("role")=="tool"]) == 1:
+        original = next(call for message in body["messages"] for call in message.get("tool_calls",[])
+            if call["id"] == "admission-rule")
+        return {"role":"assistant","content":"恢复同一逻辑操作；保持完整原参数而使用新的provider调用ID。",
+            "tool_calls":[{"id":"admission-rule-recovery","type":"function",
+                "function":{"name":"api-test-runner","arguments":original["function"]["arguments"]}}]}
     checks = [{"name":field,"operator":"equals","expected_path_tokens":["expected",field],
-        "observations":[{"call_id":"admission-rule","output_path_tokens":["task_result","response_status"]
+        "observations":[{"call_id":"admission-rule-recovery" if context.get("operation_protocol") else "admission-rule",
+            "output_path_tokens":["task_result","response_status"]
             if field == "code" else ["task_result","response_body",field]}]}
         for field in ["code","days","expired_count","expired","deleted_at"]]
     receipt = {"schema_version":1,"steps":[{"item_key":context["target_key"],"status":"passed",
@@ -51,7 +62,7 @@ def admission_message(body):
 
 
 async def admission_from_production(*,root,state,case,model_key,settings,processes,get,post,client,evidence,sends,
-    action_binding=False, action_admission=False):
+    action_binding=False, action_admission=False, case_operation=False):
     target = state["targets"][0]
     snapshot = target["snapshot"]
     if action_binding:
@@ -59,6 +70,8 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         updated = {**policy["policy"], "action_binding_protocol": "case-action-binding-v1"}
         if action_admission:
             updated["action_admission_protocol"] = "case-action-admission-v1"
+        if case_operation:
+            updated["operation_protocol"] = "case-operation-v1"
         configured = await client.put(root+"/case-plans/policy", json=updated)
         assert configured.status_code == 200, configured.text
     content = {"expected":{"code":200,"days":7,"expired_count":0,"expired":False,"deleted_at":None},
@@ -97,6 +110,8 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         assert plan["config_snapshot"]["policy"]["action_binding_protocol"] == "case-action-binding-v1"
     if action_admission:
         assert plan["config_snapshot"]["policy"]["action_admission_protocol"] == "case-action-admission-v1"
+    if case_operation:
+        assert plan["config_snapshot"]["policy"]["operation_protocol"] == "case-operation-v1"
     assert plan["environment"]["reviews"] == [target["review"]]
     launch = {"creation_key":"production-admission-run","mode_key":"api_testing"}
     detail = await post(root+"/case-plans/"+plan["id"]+"/runs",launch,201)
@@ -118,13 +133,16 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         assert await processes.wait(child) == 0
         detail = await get("/runs/"+detail["run"]["id"])
         save(evidence,"environment-admission-worker-attempt.json",{"detail":detail,"physical_requests":sends})
-        if detail["items"][0]["status"] == "waiting_approval":
+        for _ in range(3):
+            if detail["items"][0]["status"] != "waiting_approval":
+                break
             item = detail["items"][0]
             await post("/run-items/"+item["id"]+"/approval",{"approval_id":item["approval_id"],"decision":"approved"})
             detail = await get("/runs/"+detail["run"]["id"])
         save(evidence,"environment-admission-execution-attempt.json",{"detail":detail,"physical_requests":sends})
         assert detail["run"]["status"] == "completed" and detail["items"][0]["status"] == "passed"
-        assert len(sends) == before+3 and [len(t["HTTP"]) for t in state["targets"]] == [2,1]
+        model_calls = 4 if case_operation else 3
+        assert len(sends) == before+model_calls and [len(t["HTTP"]) for t in state["targets"]] == [2,1]
         result = detail["results"][0]
         receipt = result["actual"]["environment_admission"]
         assert receipt["reviews"] == [unknown] and receipt["decision"] == "no_explicit_invalid"
@@ -139,29 +157,56 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         child = processes.start("admission-terminal-worker","-m","src.cli.run_redis_worker",
             "--once","--worker-id","admission-terminal-worker")
         assert await processes.wait(child) == 0
-        assert await get("/runs/"+detail["run"]["id"]) == detail and len(sends) == before+3
+        assert await get("/runs/"+detail["run"]["id"]) == detail and len(sends) == before+model_calls
     finally: await queue.close()
     value = {"task_path":route,"request":command,"task":done,"plan":plan,"launch":launch,"detail":detail,
-        "additional_reviews":[unknown],"physical_model_calls":3,"actual_HTTP_counts":[2,1],
+        "additional_reviews":[unknown],"physical_model_calls":model_calls,"actual_HTTP_counts":[2,1],
         "case":created,"SQL_run":sql_run,"physical_requests":sends,"actual_terminal_dispatch":delivery,
         "independent_planning_CLI":True,"independent_execution_CLI":True,"actual_SDK_HTTP":True,
         "controlled_model":True,"autonomous_external_model_verified":False,"terminal_replay_new_HTTP":0}
     if action_binding:
         with postgres_connect(settings) as conn, conn.cursor() as cur:
-            cur.execute(f"SELECT id,input_payload,metadata,status FROM {settings.database.postgres_tool_job_table} "
+            cur.execute(f"SELECT id,input_payload,output_payload,metadata,status,started_at FROM {settings.database.postgres_tool_job_table} "
                 "WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
             jobs = [dict(row) for row in cur.fetchall()]
-        assert len(jobs) == 1 and jobs[0]["status"] == "completed"
-        binding = jobs[0]["metadata"]["case_action_binding"]
+        assert len(jobs) == (2 if case_operation else 1) and all(j["status"] == "completed" for j in jobs)
+        original_job=next(j for j in jobs if j["metadata"]["case_operation"]["decision"] == "dispatched") if case_operation else jobs[0]
+        binding = original_job["metadata"]["case_action_binding"]
         assert binding["phase"] == "case" and binding["run_item_id"] == detail["items"][0]["id"]
-        assert jobs[0]["input_payload"]["_case_action"]["item_key"] == binding["item_key"]
+        assert original_job["input_payload"]["_case_action"]["item_key"] == binding["item_key"]
         value.update(action_binding_enabled=True,actual_owned_jobs=jobs,applicability_action_gate_implemented=False)
         if action_admission:
-            action_receipt = jobs[0]["metadata"]["case_action_admission"]
+            action_receipt = original_job["metadata"]["case_action_admission"]
             assert action_receipt["decision"] == "no_explicit_invalid" and action_receipt["reviews"] == [unknown]
-            assert action_receipt["binding"] == binding and action_receipt["tool_job_id"] == str(jobs[0]["id"])
+            assert action_receipt["binding"] == binding and action_receipt["tool_job_id"] == str(original_job["id"])
             value.update(action_admission_enabled=True, applicability_action_gate_implemented=True,
                 stateful_cleanup_verified=False, logical_operation_identity_implemented=False)
+        if case_operation:
+            from src.runtime.postgres_case_operations import PostgresCaseOperations
+            from src.application.runtime.case_action_binding import _digest
+            index=PostgresCaseOperations(settings)
+            operation=original_job["metadata"]["case_operation"]
+            with postgres_connect(settings) as conn,conn.cursor() as cur:
+                cur.execute(f"SELECT record FROM {index.table} WHERE operation_id=%s",(operation["operation_id"],))
+                saved_index=cur.fetchone()["record"]
+            assert saved_index["origin_job_id"] == original_job["id"]
+            assert operation["decision"] == "dispatched" and operation["execution_claimed"] is True
+            assert operation["action_sent"] is None  # Claim does not establish actual HTTP delivery.
+            assert operation["sha256"] == _digest({k:v for k,v in operation.items() if k!='sha256'})
+            alias=next(j for j in jobs if j["id"]!=original_job["id"])
+            assert alias["started_at"] is None and alias["input_payload"]==original_job["input_payload"]
+            assert alias["metadata"]["case_operation"]["origin_job_id"]==original_job["id"]
+            assert alias["metadata"]["case_operation"]["action_sent"] is False
+            assert alias["output_payload"]["task_result"]["execution_checkpoint"]["http_observation_v1"]["acquisition"]=='completed_request'
+            evidence_ref=next(ref for ref in result["evidence_refs"] if ref["evidence_type"]=='tool_job')
+            assert evidence_ref["evidence_id"]==alias["id"]
+            assert evidence_ref["metadata"]["case_operation"]==alias["metadata"]["case_operation"]
+            value.update(operation_protocol="case-operation-v1",actual_operation_index=saved_index,
+                logical_operation_identity_implemented=True,default_external_Agent_verified=False,
+                changed_provider_call_reused_original_output=True,new_provider_call_business_HTTP=0)
+        # Preserve typed SQL timestamps on all branches, including old strategies.
+        for job in jobs:
+            job["started_at"]=job["started_at"].isoformat() if job["started_at"] is not None else None
     save(evidence,"environment-admission.json",value)
     return value
 

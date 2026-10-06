@@ -20,11 +20,14 @@ class CasePlanningPolicy(PlanningModel):
     timeout_seconds: float = Field(default=180, gt=0, le=600)
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
+    operation_protocol: Literal["case-operation-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
         if self.action_admission_protocol and not self.action_binding_protocol:
             raise ValueError("动作确认检查需要固定执行项关联")
+        if self.operation_protocol and not self.action_admission_protocol:
+            raise ValueError("逻辑操作恢复需要固定执行项关联和动作领取")
         return self
 
     @model_serializer(mode="wrap")
@@ -34,6 +37,8 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("action_binding_protocol", None)
         if self.action_admission_protocol is None:
             data.pop("action_admission_protocol", None)
+        if self.operation_protocol is None:
+            data.pop("operation_protocol", None)
         return data
 
 

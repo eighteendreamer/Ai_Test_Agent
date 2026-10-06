@@ -206,8 +206,11 @@ class ToolGovernanceService:
         try:
             context.execution.bind_call(call)
         except ValueError:
+            frozen = context.execution.context_bundle.get("case_execution")
+            operation_note = (" 新逻辑操作协议还要求稳定的_case_action.operation_key。"
+                if isinstance(frozen,dict) and frozen.get("operation_protocol") else "")
             return self._terminal_record(call=call, status="failed",
-                summary="工具调用必须用_case_action.item_key选择本条目所属的固定执行项。",
+                summary="工具调用必须用_case_action.item_key选择本条目所属的固定执行项。" + operation_note,
                 output={"error": "invalid_case_action_binding"})
         try:
             tool = self._tool_registry.get(call.name)

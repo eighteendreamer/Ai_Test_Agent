@@ -14,6 +14,7 @@ from src.schemas.case_execution import AgentCaseExecutionContext
 PROTOCOL = "case-action-binding-v1"
 ARGUMENT = "_case_action"
 ADMISSION_PROTOCOL = "case-action-admission-v1"
+OPERATION_PROTOCOL = "case-operation-v1"
 
 
 class CaseActionClaimUnavailable(RuntimeError):
@@ -28,6 +29,10 @@ def action_admission_enabled(bundle: dict[str, Any]) -> bool:
 class CaseActionSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     item_key: str = Field(min_length=1, max_length=80)
+
+
+class CaseOperationSelection(CaseActionSelection):
+    operation_key: str = Field(min_length=1, max_length=160)
 
 
 class CaseActionBinding(BaseModel):
@@ -95,6 +100,13 @@ def action_input_schema(schema: dict[str, Any], bundle: dict[str, Any]) -> dict[
         "properties": {"item_key": {"type": "string", "enum": [step.item.key for step in context.steps]}},
         "required": ["item_key"],
         "description": "Select the owned frozen execution item for this call. Its phase is server-derived."}
+    if context.operation_protocol is not None:
+        properties[ARGUMENT]["properties"]["operation_key"] = {
+            "type":"string", "minLength":1, "maxLength":160,
+            "description":"Stable logical operation key within the owned item. Preserve this key and all inputs "
+                "when recovering an operation, including a new provider call ID. Use a different key for a "
+                "deliberate new operation or read refresh. This is not a business endpoint idempotency key."}
+        properties[ARGUMENT]["required"].append("operation_key")
     result["required"] = list(dict.fromkeys([*result.get("required", []), ARGUMENT]))
     return result
 
@@ -104,7 +116,8 @@ def bind_case_action(*, bundle: dict[str, Any], arguments: dict[str, Any],
     context = fixed_action_context(bundle)
     if context is None:
         return None
-    selection = CaseActionSelection.model_validate(arguments.get(ARGUMENT))
+    selection_type = CaseOperationSelection if context.operation_protocol is not None else CaseActionSelection
+    selection = selection_type.model_validate(arguments.get(ARGUMENT))
     step = next((step for step in context.steps if step.item.key == selection.item_key), None)
     if step is None:
         raise ValueError("工具调用选择的执行项不属于当前固定条目")

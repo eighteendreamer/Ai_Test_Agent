@@ -69,7 +69,8 @@ def collect_objects(settings, owned):
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
     verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_execution=None,
     verify_applicability=None, verify_environment_planning=False, verify_environment_restrictions=False,
-    verify_environment_admission=False, verify_action_binding=False, verify_action_admission=False):
+    verify_environment_admission=False, verify_action_binding=False, verify_action_admission=False,
+    verify_case_operation=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -409,7 +410,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             environment_admission_state = await admission_from_production(root=root,state=applicability_state,
                                 case=case,model_key=model.key,settings=settings,processes=processes,
                                 get=get,post=post,client=client,evidence=evidence,sends=sends,
-                                action_binding=verify_action_binding, action_admission=verify_action_admission)
+                                action_binding=verify_action_binding, action_admission=verify_action_admission,
+                                case_operation=verify_case_operation)
                             sent += environment_admission_state["physical_model_calls"]
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})

@@ -1,0 +1,45 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/projects/CasePlanDialog.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/projects/CasePlanDialog.test.ts (12 tests | 1 failed) 233ms
+     × enables operation recovery with its prerequisites and removes it with admission 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/projects/CasePlanDialog.test.ts > case planning > enables operation recovery with its prerequisites and removes it with admission
+AssertionError: expected last "vi.fn()" call to have been called with [ 'project', { max_rounds: 5, …(5) } ]
+
+- Expected
++ Received
+
+@@ -1,9 +1,8 @@
+  [
+    "project",
+    {
+-     "action_binding_protocol": "case-action-binding-v1",
+      "max_candidates": 20,
+      "max_context_chars": 180000,
+      "max_items": 50,
+      "max_rounds": 5,
+      "timeout_seconds": 180,
+
+ ❯ src/features/projects/CasePlanDialog.test.ts:118:40
+    116|     await wrapper.get('[data-testid="action-admission"]').setValue(fal…
+    117|     await button(wrapper, "保存项目规划设置").trigger("click"); await flushPro…
+    118|     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("proje…
+       |                                        ^
+    119|       ...config().policy, action_binding_protocol: "case-action-bindin…
+    120|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)
+   Start at  20:33:25
+   Duration  2.49s (transform 430ms, setup 0ms, import 654ms, tests 233ms, environment 1.43s)
+
