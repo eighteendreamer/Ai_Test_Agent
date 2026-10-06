@@ -11,7 +11,7 @@ import shlex
 import shutil
 import subprocess
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -52,6 +52,7 @@ from src.modes.code_review_mode.project_source import (
 from src.application.reporting.report_template_service import ReportTemplateService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.case_action_binding import CaseActionBinding, bind_case_action, business_arguments
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.testing.ui_exploration_service import UIExplorationService
 from src.core.config import Settings
@@ -158,10 +159,17 @@ class ToolExecutionContext:
     server_approval_granted: bool = False
     approval_scope_hash: str = ""
     trusted_case_run_item_id: str = ""
+    case_action_binding: CaseActionBinding | None = None
+
+    def bind_call(self, call: ModelToolCall) -> ToolExecutionContext:
+        return replace(self, case_action_binding=bind_case_action(bundle=self.context_bundle,
+            arguments=call.arguments, session_id=self.session_id, turn_id=self.turn_id))
 
     def job_metadata(self) -> dict[str, Any]:
         """Persist server-owned run identity; never derive it from tool arguments."""
         metadata = {"selected_agent_key": self.selected_agent_key, "selected_model_key": self.selected_model_key}
+        if self.case_action_binding is not None:
+            metadata["case_action_binding"] = self.case_action_binding.model_dump(mode="json")
         for key in ("project_id", "run_id", "run_item_id", "attempt_id"):
             value = self.context_bundle.get(key)
             if key == "run_id" and not value:
@@ -444,6 +452,12 @@ class ToolRuntimeService:
         context: ToolExecutionContext,
     ) -> ToolExecutionRecord:
         """Count and time every tool call at the one place handlers are entered."""
+        context = context.bind_call(call)
+        if context.case_action_binding is not None:
+            logger.info("tool_case_action_bound", extra={"tool_key": tool.key, "call_id": call.id,
+                "project_id": context.case_action_binding.project_id, "run_id": context.case_action_binding.run_id,
+                "run_item_id": context.case_action_binding.run_item_id, "item_key": context.case_action_binding.item_key,
+                "phase": context.case_action_binding.phase, "context_sha256": context.case_action_binding.context_sha256})
         reserved_keys = [
             key for key in call.arguments if is_reserved_tool_argument(key)
         ]
@@ -535,6 +549,7 @@ class ToolRuntimeService:
                     server_approval_granted=context.server_approval_granted,
                     approval_scope_hash=context.approval_scope_hash,
                     trusted_case_run_item_id=context.trusted_case_run_item_id,
+                    case_action_binding=context.case_action_binding,
                 )
             if self._tool_job_service is not None:
                 if context.tool_job_id:
@@ -549,6 +564,11 @@ class ToolRuntimeService:
                         input_payload=call.arguments,
                         metadata=context.job_metadata(),
                     )
+                if context.case_action_binding is not None and (
+                    job.input_payload != call.arguments
+                    or job.metadata.get("case_action_binding") != context.case_action_binding.model_dump(mode="json")
+                ):
+                    raise ValueError("工具任务执行项关联与原固定调用不一致")
                 await self._tool_job_service.mark_running(job)
                 job_heartbeat_stop = asyncio.Event()
                 job_heartbeat_task = asyncio.create_task(
@@ -572,6 +592,7 @@ class ToolRuntimeService:
                     server_approval_granted=context.server_approval_granted,
                     approval_scope_hash=context.approval_scope_hash,
                     trusted_case_run_item_id=context.trusted_case_run_item_id,
+                    case_action_binding=context.case_action_binding,
                 )
 
             trace_context = None
@@ -605,7 +626,7 @@ class ToolRuntimeService:
                 else nullcontext()
             )
             with trace_manager:
-                raw_result = await handler(call.arguments, job_context)
+                raw_result = await handler(business_arguments(call.arguments, context.case_action_binding), job_context)
             result = self._normalize_result(tool, raw_result, context=job_context)
             result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
             resolved_status = self._resolve_result_status(result)

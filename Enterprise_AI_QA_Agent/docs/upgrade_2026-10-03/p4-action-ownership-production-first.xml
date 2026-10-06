@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="75.584" timestamp="2026-10-06T18:44:39.831244+08:00" hostname="EIghteen"><testcase classname="tests.test_case_action_binding_production" name="test_production_owned_action_original_approval_and_terminal_replay" time="71.562"><failure message="TypeError: Object of type RowMapping is not JSON serializable">tests\test_case_action_binding_production.py:14: in test_production_owned_action_original_approval_and_terminal_replay
+    await scenario(tmp_path,"md",False,False,verify_requirements=True,verify_applicability=[old,new],
+tests\test_document_impact_production.py:409: in test_production_fixed_analysis_history_and_process_recovery
+    environment_admission_state = await admission_from_production(root=root,state=applicability_state,
+tests\business_environment_admission_production_scenario.py:155: in admission_from_production
+    save(evidence,"environment-admission.json",value)
+tests\business_environment_admission_production_scenario.py:13: in save
+    (evidence/name).write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8")
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:202: in encode
+    chunks = list(chunks)
+             ^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:432: in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:406: in _iterencode_dict
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:326: in _iterencode_list
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:439: in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:180: in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+E   TypeError: Object of type RowMapping is not JSON serializable</failure></testcase></testsuite></testsuites>

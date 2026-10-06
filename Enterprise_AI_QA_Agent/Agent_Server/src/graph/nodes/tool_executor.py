@@ -233,6 +233,21 @@ async def _resolve_tool_call(
     safety_gate: SafetyGate | None = None,
 ) -> dict[str, Any]:
     state.setdefault("event_log", [])
+    try:
+        tool_context = tool_context.bind_call(tool_call)
+    except ValueError:
+        result = ToolExecutionRecord(call_id=tool_call.id, tool_key=tool_call.name,
+            tool_name=tool_call.name, status="failed", input=tool_call.arguments,
+            summary="工具调用必须用_case_action.item_key选择本条目所属的固定执行项。",
+            output={"error": "invalid_case_action_binding"})
+        append_graph_event(state, "tool.case_action_binding_rejected", "tool_executor",
+            result.summary, call_id=tool_call.id, tool_key=tool_call.name)
+        return {"tool_result": result.model_dump(mode="python"),
+            "tool_message": build_tool_message(result), "approval": None}
+    if tool_context.case_action_binding is not None:
+        append_graph_event(state, "tool.case_action_bound", "tool_executor",
+            "Tool call was bound to an owned frozen execution item.", call_id=tool_call.id,
+            item_key=tool_context.case_action_binding.item_key, item_phase=tool_context.case_action_binding.phase)
     permission_decision = _find_permission_decision(state, tool_call.name)
     try:
         tool = tool_registry.get(tool_call.name)

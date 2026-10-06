@@ -99,6 +99,7 @@ def build_agent_case_context(
     admission = fixed_environment_admission(run,item,attempt,detail.attempts) if attempt else None
     context = AgentCaseExecutionContext(project_id=run.project_id, run_id=run.id, run_item_id=item.id,
         plan_id=plan.id, objective=plan.request.objective, target_key=target.key, steps=steps,
+        action_binding_protocol=plan.config_snapshot.policy.action_binding_protocol,
         runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,environment_admission=admission,
         evidence=evidence,
         unresolved=[gap.model_copy(deep=True) for gap in plan.decision.unresolved if gap.item_key is None or gap.item_key in owned])

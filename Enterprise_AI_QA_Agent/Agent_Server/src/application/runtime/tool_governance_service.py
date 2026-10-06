@@ -82,6 +82,7 @@ class ToolGovernanceService:
         if isinstance(assessment, GovernedToolCallResult):
             return assessment
         tool, decision, execution_safety = assessment
+        context = replace(context, execution=context.execution.bind_call(call))
         if prepare_approval and not (
             decision.behavior == "ask" or execution_safety.behavior == "ask"
         ):
@@ -135,6 +136,8 @@ class ToolGovernanceService:
                 or job.turn_id != context.execution.turn_id
                 or job.call_id != call.id or job.tool_key != call.name
                 or job.input_payload != original_arguments
+                or (context.execution.case_action_binding is not None
+                    and job.metadata.get("case_action_binding") != context.execution.case_action_binding.model_dump(mode="json"))
             ):
                 raise RuntimeError("ToolJob identity or arguments changed during checkpoint recovery.")
             context.execution.tool_job_id = job.id
@@ -193,6 +196,12 @@ class ToolGovernanceService:
     def _assess(
         self, call: ModelToolCall, context: GovernedToolCallContext
     ) -> GovernedToolCallResult | tuple[ToolDescriptor, ToolPermissionDecision, ToolSafetyDecision]:
+        try:
+            context.execution.bind_call(call)
+        except ValueError:
+            return self._terminal_record(call=call, status="failed",
+                summary="工具调用必须用_case_action.item_key选择本条目所属的固定执行项。",
+                output={"error": "invalid_case_action_binding"})
         try:
             tool = self._tool_registry.get(call.name)
         except KeyError:
@@ -357,6 +366,8 @@ class ToolGovernanceService:
                 "selected_agent_key": context.execution.selected_agent_key,
                 "selected_model_key": context.execution.selected_model_key,
                 "tool_job_id": approval_job_id,
+                **({"case_action_binding": context.execution.case_action_binding.model_dump(mode="json")}
+                    if context.execution.case_action_binding is not None else {}),
                 "permission_behavior": "ask",
                 "permission_source": permission_source,
                 "permission_reason": reason,

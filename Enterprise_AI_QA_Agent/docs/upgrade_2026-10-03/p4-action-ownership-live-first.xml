@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="5" time="42.897" timestamp="2026-10-06T18:35:27.936069+08:00" hostname="EIghteen"><testcase classname="tests.test_case_action_binding" name="test_legacy_policy_and_saved_context_keep_original_wire" time="0.005" /><testcase classname="tests.test_case_action_binding" name="test_actual_three_owned_phases_fixed_policy_and_unmodified_business_parameters[md]" time="11.196" /><testcase classname="tests.test_case_action_binding" name="test_actual_three_owned_phases_fixed_policy_and_unmodified_business_parameters[docx]" time="9.654" /><testcase classname="tests.test_case_action_binding" name="test_actual_three_owned_phases_fixed_policy_and_unmodified_business_parameters[pdf]" time="9.187" /><testcase classname="tests.test_case_action_binding" name="test_actual_original_graph_approval_recovers_bound_call_and_full_tool_wire" time="8.554"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行">tests\test_case_action_binding.py:163: in test_actual_original_graph_approval_recovers_bound_call_and_full_tool_wire
+    wait=await adapter.execute(**await args())
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:158: in execute
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:227: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 interrupted，需恢复原快照而非重新执行</failure></testcase></testsuite></testsuites>

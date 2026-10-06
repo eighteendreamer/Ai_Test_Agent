@@ -1,0 +1,178 @@
+...........................s........s................................... [ 33%]
+..............FF................s....................................... [ 66%]
+.....sFFFFFFFF........sssssssF...ssss...........s.......ssssssss....F... [100%]
+================================== FAILURES ===================================
+________ test_governed_job_and_approval_keep_execution_identity[False] ________
+tests\test_agent_case_assessment.py:370: in test_governed_job_and_approval_keep_execution_identity
+    first = await service.execute(ModelToolCall(id='scope-call', name='knowledge-rag', arguments={'query': 'scope'}),
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+________ test_governed_job_and_approval_keep_execution_identity[True] _________
+tests\test_agent_case_assessment.py:370: in test_governed_job_and_approval_keep_execution_identity
+    first = await service.execute(ModelToolCall(id='scope-call', name='knowledge-rag', arguments={'query': 'scope'}),
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+__ test_completed_tool_call_replay_reuses_persisted_result_without_executing __
+tests\test_deep_agent_tool_replay.py:54: in test_completed_tool_call_replay_reuses_persisted_result_without_executing
+    first = await service.execute(call, _context())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_____ test_failed_tool_call_replay_preserves_the_persisted_failure_output _____
+tests\test_deep_agent_tool_replay.py:75: in test_failed_tool_call_replay_preserves_the_persisted_failure_output
+    first = await service.execute(call, _context())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_ test_same_call_id_with_changed_arguments_is_rejected_without_executing_again _
+tests\test_deep_agent_tool_replay.py:94: in test_same_call_id_with_changed_arguments_is_rejected_without_executing_again
+    await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_ test_concurrent_duplicate_call_does_not_execute_while_first_owner_is_active _
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py:500: in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+tests\test_deep_agent_tool_replay.py:123: in test_concurrent_duplicate_call_does_not_execute_while_first_owner_is_active
+    await asyncio.wait_for(entered.wait(), timeout=2)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py:502: in wait_for
+    raise exceptions.TimeoutError() from exc
+E   TimeoutError
+_ test_claimed_call_without_terminal_result_requires_reconciliation_not_retry _
+tests\test_deep_agent_tool_replay.py:158: in test_claimed_call_without_terminal_result_requires_reconciliation_not_retry
+    await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_ test_terminal_non_success_job_is_replayed_without_execution[failed-failed] __
+tests\test_deep_agent_tool_replay.py:204: in test_terminal_non_success_job_is_replayed_without_execution
+    replay = await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_ test_terminal_non_success_job_is_replayed_without_execution[denied-denied] __
+tests\test_deep_agent_tool_replay.py:204: in test_terminal_non_success_job_is_replayed_without_execution
+    replay = await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_ test_terminal_non_success_job_is_replayed_without_execution[cancelled-denied] _
+tests\test_deep_agent_tool_replay.py:204: in test_terminal_non_success_job_is_replayed_without_execution
+    replay = await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+__ test_da_e4_governance_allows_safe_runtime_and_blocks_ask_before_execution __
+tests\test_deep_agent_runtime_adapter.py:537: in test_da_e4_governance_allows_safe_runtime_and_blocks_ask_before_execution
+    safe = await service.execute(
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+_____ test_deep_agent_governance_passes_approval_outside_model_arguments ______
+tests\test_security_approval_boundary.py:233: in test_deep_agent_governance_passes_approval_outside_model_arguments
+    blocked = asyncio.run(governance.execute(call, context))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:81: in execute
+    assessment = self._assess(call, context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_governance_service.py:199: in _assess
+    try:
+        ^
+<string>:4: in __setattr__
+    ???
+E   dataclasses.FrozenInstanceError: cannot assign to field 'execution'
+------------------------------ Captured log call ------------------------------
+WARNING  src.schemas.tool_runtime:tool_runtime.py:29 model_tool_reserved_arguments_ignored
+=========================== short test summary info ===========================
+FAILED tests/test_agent_case_assessment.py::test_governed_job_and_approval_keep_execution_identity[False]
+FAILED tests/test_agent_case_assessment.py::test_governed_job_and_approval_keep_execution_identity[True]
+FAILED tests/test_deep_agent_tool_replay.py::test_completed_tool_call_replay_reuses_persisted_result_without_executing
+FAILED tests/test_deep_agent_tool_replay.py::test_failed_tool_call_replay_preserves_the_persisted_failure_output
+FAILED tests/test_deep_agent_tool_replay.py::test_same_call_id_with_changed_arguments_is_rejected_without_executing_again
+FAILED tests/test_deep_agent_tool_replay.py::test_concurrent_duplicate_call_does_not_execute_while_first_owner_is_active
+FAILED tests/test_deep_agent_tool_replay.py::test_claimed_call_without_terminal_result_requires_reconciliation_not_retry
+FAILED tests/test_deep_agent_tool_replay.py::test_terminal_non_success_job_is_replayed_without_execution[failed-failed]
+FAILED tests/test_deep_agent_tool_replay.py::test_terminal_non_success_job_is_replayed_without_execution[denied-denied]
+FAILED tests/test_deep_agent_tool_replay.py::test_terminal_non_success_job_is_replayed_without_execution[cancelled-denied]
+FAILED tests/test_deep_agent_runtime_adapter.py::test_da_e4_governance_allows_safe_runtime_and_blocks_ask_before_execution
+FAILED tests/test_security_approval_boundary.py::test_deep_agent_governance_passes_approval_outside_model_arguments
+12 failed, 180 passed, 24 skipped in 301.14s (0:05:01)

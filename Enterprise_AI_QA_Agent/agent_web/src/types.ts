@@ -1980,6 +1980,7 @@ export interface CaseImportBatchView {
 }
 
 export interface CasePlanningPolicy {
+  action_binding_protocol?: "case-action-binding-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;

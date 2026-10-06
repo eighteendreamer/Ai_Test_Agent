@@ -3267,3 +3267,57 @@ $env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_A
 终态原Outbox投递独立执行CLI、重启API/派发关闭、项目环境归档及删除当前MySQL配置后，原任务/计划/运行/Result保持一致，无新模型或业务HTTP。Agent图另验真正PG检查点/恢复祖先，后续unknown/过期重领后不重新发工具或模型。生产可选记忆检索有memory_query_embedding_failed警告，保留日志，不宣称该检索成功。篡改测试只修改真实已保存记录的内存副本，不向业务PG注入篡改记录。
 
 未完成：外部默认Agent自主判断、运行中动作修订和未知副作用、换目标新回归、正式环境页面/AI候选、用户业务评审、点级完整性、历史迁移及完整P0—P5。配置继续MySQL，业务/Attempt PG，大原件RustFS；无新表/依赖/配置迁移。三方案同步更新，历史失败/unknown保持，用户.gitignore不变；默认只提交相关文件，不推送或建PR。
+
+
+## C2c1 固定执行项关联（2026-10-06，研究基线38643f9c）
+
+本步沿原MySQL规划策略、PG固定计划/Run/ToolJob、原图/DeepAgent治理/审批和RustFS文档实现。新共享模块case_action_binding只接受所属固定item_key，服务器确定阶段与身份。旧策略省略新缺省字段；模型/Job/审批保留原工具参数，处理器接收分离且独立复制的业务参数。项目页面“记录工具所属执行项”保存到原策略，仅作用于后续规划。采用依据和后续边界见P4_CASE_ACTION_BINDING_DESIGN.md；本步不实现逐动作适用性限制。
+
+所有测试进程均已经结束。以下轮次原失败和原输入分别保留，不覆盖、不累计为当前覆盖数：
+
+- offline-first：1通过/4跳过，8.04秒；XML保留，首命令的辅助读取工作目录错误未影响测试。
+- live-first：4通过/1失败，42.92秒；日志字段phase与append_graph_event形参冲突使原Agent图中断。改为item_phase后live-fixed为5通过/0跳过，38.47秒。
+- live-final：6通过/0跳过，45.19秒；增加正式配置API和实际DeepAgent治理。boundaries-final为6通过/0跳过，44.86秒，补完整业务值与跨项目。
+- regression：12失败/180通过/24跳过，301.14秒；进程加载修正前代码，_assess给frozen治理上下文赋值。改为验证后不可变replace，governance-final为46通过/20跳过，7.63秒；regression-final完整复验192通过/24跳过，298.56秒。
+- wire-final：23通过/0跳过，50.64秒；当前最终副本行为、保存真实输入后嵌套修改保护、7项关联及原工具治理/未知结果/审批验证。
+- public-worker-final：1通过/27未选，7.30秒；补启RUN_LIVE_PUBLIC_PLAN_WORKER验证原公开启动/Outbox/Redis/Worker/审批/终态复用。
+- production-first：1失败，75.75秒；业务步骤已通过但测试保存SQL RowMapping时报JSON序列化错误。根据现有字典读取转换成dict，没有修改生产存储。production-fixed为1通过/0跳过，93.48秒。
+- frontend-test-final：10通过，1.89秒；frontend-build-final：真实vue-tsc和Vite通过，Vite8.28秒。早期同一前端验证10通过/构建通过已执行，但没有保存全部输出；最终轮将完整stdout/stderr保存到独立日志，不冒充第一次原日志。
+
+实际命令从Agent_Server执行，合并stdout/stderr并保留pytest原退出码：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-ownership-live-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_binding.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-ownership-live-final.xml 2>&1 | Tee-Object -FilePath ../docs/upgrade_2026-10-03/p4-action-ownership-live-final.log
+# live-first / live-fixed / boundaries-final分别使用对应独立前缀；offline-first不启真实存储开关。
+
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-ownership-wire-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_binding.py tests/test_deep_agent_tool_replay.py tests/test_langchain_tool_adapter.py tests/test_security_approval_boundary.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-ownership-wire-final.xml
+
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-ownership-regression-final'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-ownership-regression-final\planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission.py tests/test_business_planning.py tests/test_agent_case_context.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py tests/test_case_plan_run_creation.py tests/test_case_planning.py tests/test_deep_agent_tool_replay.py tests/test_deep_agent_runtime_adapter.py tests/test_langchain_tool_adapter.py tests/test_security_approval_boundary.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-ownership-regression-final.xml
+
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_agent_case_execution.py -q -k public_plan_launch_outbox_redis_worker --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-ownership-public-worker-final.xml
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-ownership-production-fixed'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_binding_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-ownership-production-fixed.xml
+# 后续各命令均采用首条相同的Tee-Object形式保存同名前缀日志，最终exit $LASTEXITCODE。
+# agent_web：npm run test -- src/features/projects/CasePlanDialog.test.ts；npm run build；各自完整合并到frontend-*-final.log。
+```
+
+真实三格式分别完成原件保存/解析/PG计划、MySQL配置API及三个GET所属阶段，原完整12步/未知字段/False/0/null保留；改变当前设置不替换旧计划。陌生项、伪造phase、缺选择及跨项目无新HTTP。实际原图审批保存原参数/归属，获批后只新增1请求；其受控回执没有业务checks，明确blocked。DeepAgent治理入口实际PG/HTTP验证批准与终态复用，LangChain wrapper仅检查schema；完整DeepAgent框架未验。
+
+独立生产通过main/API、Outbox、规划/执行CLI、真实SDK和实际HTTP，完整十二步有意义用例五项核验200/7/0/False/null，Result passed。6物理模型HTTP＝影响2＋已有C1规划1＋新关联规划1＋Agent调用/工具后2；新增业务GET1。PG原Job保存新归属及原参数，终态投递/API重启/归档/删除当前目标配置后原记录保持，模型和业务HTTP增量0。模型和语义确认由受控夹具提供；不等于外部默认Agent验收。
+
+扩大回归24项跳过：20项缺少deepagents、3项外部真实模型、1项真实Redis开关；后者已另启开关实际通过。缺失依赖没有通过安装/换版本绕过。没有完整页面浏览器、默认Agent、实际有状态清理、逐动作限制、逻辑操作身份、发送未知修订或生产历史迁移验收；完整P0—P5继续未完成。
+
+交付核对保存p4-action-ownership-validation.json，检查旧原始证据、三方案同字节、当前原件/消息/PG归属/hash、XML数量、前端日志和暂存原字节。用户.gitignore与此前未提交environment-action诊断保持原状态；只提交本轮相关文件，不推送或建PR。
+
+交付暂存首命令退出128：Git返回路径带Enterprise_AI_QA_Agent前缀，但在项目目录直接add使路径重复。只读dry-run确认重复目录后，改为在git rev-parse返回的仓库根执行add，并通过NUL pathspec stdin传递精确文件列表；未改变功能证据或用户.gitignore。

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
 
@@ -18,6 +18,14 @@ class CasePlanningPolicy(PlanningModel):
     max_items: int = Field(default=50, ge=1, le=200)
     max_context_chars: int = Field(default=180000, ge=10000, le=1000000)
     timeout_seconds: float = Field(default=180, gt=0, le=600)
+    action_binding_protocol: Literal["case-action-binding-v1"] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_policy(self, handler):
+        data = handler(self)
+        if self.action_binding_protocol is None:
+            data.pop("action_binding_protocol", None)
+        return data
 
 
 class CasePlanningRequest(PlanningModel):

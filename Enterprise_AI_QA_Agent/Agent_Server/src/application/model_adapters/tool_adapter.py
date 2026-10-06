@@ -7,6 +7,7 @@ from langchain.tools import ToolRuntime
 from src.application.model_adapters.message_adapter import to_langchain_tools
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_runtime import ModelToolCall
+from src.application.runtime.case_action_binding import action_input_schema
 
 
 class LangChainToolAdapter:
@@ -52,6 +53,7 @@ class LangChainToolAdapter:
         tools: Iterable[ToolDescriptor],
         *,
         invoke: Callable[[ToolDescriptor, str, dict[str, Any]], Awaitable[str]],
+        context_bundle: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Build LangChain tools whose execution callback is application-owned.
 
@@ -74,10 +76,10 @@ class LangChainToolAdapter:
                     coroutine=bind(descriptor),
                     name=descriptor.key,
                     description=descriptor.description,
-                    args_schema=descriptor.input_schema or {
+                    args_schema=action_input_schema(descriptor.input_schema or {
                         "type": "object",
                         "properties": {},
-                    },
+                    }, context_bundle or {}),
                     infer_schema=False,
                 )
             )

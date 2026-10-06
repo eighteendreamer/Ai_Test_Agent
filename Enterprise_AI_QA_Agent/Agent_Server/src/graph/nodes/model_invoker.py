@@ -7,6 +7,7 @@ from src.registry.tools import ToolRegistry
 from src.runtime.execution_logging import append_graph_event, summarize_messages, truncate_text
 from src.schemas.model_config import ModelInvocationRequest, is_model_failure_summary
 from src.schemas.prompting import PromptSection
+from src.application.runtime.case_action_binding import action_input_schema
 
 
 def build_model_invoker_node(
@@ -65,7 +66,8 @@ def build_model_invoker_node(
         request_payload = ModelInvocationRequest(
             system_prompt=state["system_prompt"],
             messages=state["runtime_messages"],
-            tools=tool_registry.build_model_tools(model_visible_tool_keys),
+            tools=[{**tool, "input_schema": action_input_schema(tool["input_schema"], state.get("context_bundle") or {})}
+                for tool in tool_registry.build_model_tools(model_visible_tool_keys)],
             system_prompt_sections=system_sections,
             runtime_message_sections=runtime_message_sections,
             trace_context={

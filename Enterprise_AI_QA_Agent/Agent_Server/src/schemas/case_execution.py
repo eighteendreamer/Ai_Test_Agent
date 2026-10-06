@@ -43,6 +43,7 @@ class AgentCaseExecutionContext(PlanningModel):
     unresolved: list[PlanningGap] = Field(default_factory=list)
     business_environment: BusinessPlanningEnvironment | None = None
     environment_admission: BusinessExecutionAdmission | None = None
+    action_binding_protocol: Literal["case-action-binding-v1"] | None = None
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
@@ -50,6 +51,8 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("business_environment")
         if self.environment_admission is None:
             omitted.add("environment_admission")
+        if self.action_binding_protocol is None:
+            omitted.add("action_binding_protocol")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

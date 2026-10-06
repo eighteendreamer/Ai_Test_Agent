@@ -137,6 +137,11 @@ async function remember() {
   catch (err) { showError(err); }
   finally { busy.value = false; }
 }
+function chooseActionBinding(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) config.value.policy.action_binding_protocol = "case-action-binding-v1";
+  else delete config.value.policy.action_binding_protocol;
+}
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
   busy.value = true; error.value = ""; notice.value = ""; plan.value = null;
@@ -173,6 +178,9 @@ onMounted(loadPolicy);
         <label>最多执行项<input v-model.number="config.policy.max_items" :disabled="busy" type="number" min="1" max="200"></label>
         <label>上下文字符上限<input v-model.number="config.policy.max_context_chars" :disabled="busy" type="number" min="10000" max="1000000"></label>
         <label>超时秒数<input v-model.number="config.policy.timeout_seconds" :disabled="busy" type="number" min="1" max="600"></label>
+        <label><input data-testid="action-binding" type="checkbox" :disabled="busy"
+          :checked="config.policy.action_binding_protocol === 'case-action-binding-v1'" @change="chooseActionBinding">记录工具所属执行项</label>
+        <p>只影响后续计划。记录动作归属，执行中的适用性变化限制仍待接入。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
       <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"

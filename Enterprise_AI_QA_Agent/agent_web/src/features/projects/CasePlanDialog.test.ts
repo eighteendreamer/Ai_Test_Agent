@@ -79,6 +79,19 @@ describe("case planning", () => {
     wrapper.unmount();
   });
 
+  it("saves action ownership for new plans and can disable it without altering other policy", async () => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="action-binding"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
+      ...config().policy, action_binding_protocol: "case-action-binding-v1",
+    });
+    await wrapper.get('[data-testid="action-binding"]').setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", config().policy);
+    wrapper.unmount();
+  });
+
   it("launches the saved identity with any test mode and opens the returned run", async () => {
     const wrapper = setup(); await generate(wrapper);
     expect(wrapper.findAll('select option').map(option => option.text())).toEqual(["api_testing", "code_review"]);

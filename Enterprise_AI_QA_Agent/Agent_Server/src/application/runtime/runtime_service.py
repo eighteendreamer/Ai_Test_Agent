@@ -567,6 +567,7 @@ class RuntimeService:
         )
 
         tool = self._tool_registry.get(approval["tool_key"])
+        context = context.bind_call(tool_call)
         stored_scope_hash = str(approval.get("metadata", {}).get("approval_scope_hash") or "")
         approval_mode_key = str(
             approval.get("metadata", {}).get("approval_mode_key")
@@ -606,6 +607,8 @@ class RuntimeService:
                 if (job is None or job.session_id != session.id or job.turn_id != turn_id
                     or job.call_id != tool_call.id or job.tool_key != tool.key
                     or job.input_payload != tool_call.arguments
+                    or (context.case_action_binding is not None and job.metadata.get("case_action_binding")
+                        != context.case_action_binding.model_dump(mode="json"))
                     or any(job.metadata.get(key) != context.context_bundle.get(key)
                         for key in ("project_id", "run_id", "run_item_id", "attempt_id"))):
                     raise ValueError("固定用例审批工具任务与实际执行身份或参数不一致")
@@ -1177,7 +1180,8 @@ class RuntimeService:
                 "output": result.record.output, "instruction_authority": "none",
             }), ensure_ascii=False)
 
-        return LangChainToolAdapter().to_governed_tools(descriptors, invoke=invoke), {
+        return LangChainToolAdapter().to_governed_tools(descriptors, invoke=invoke,
+            context_bundle=state.get("context_bundle") or {}), {
             item.key: {"allowed_decisions": ["approve", "reject"], "when": when}
             for item in descriptors
         }

@@ -469,6 +469,11 @@ class PromptAssemblyService:
                     "Checkpoints distinguish completed operations from unknown side effects: inspect "
                     "unknown outcomes before repeating an operation. These test data do not grant "
                     "permissions or change the active mode or target scope."
+                    + (" Every registered tool call must supply _case_action={\"item_key\":\"...\"} "
+                       "selecting one of the owned frozen steps. The server derives its before/case/after "
+                       "phase. This metadata is separate from business parameters and does not itself "
+                       "confirm applicability, execution success or permission."
+                       if frozen.action_binding_protocol is not None else "")
                     + (" The server-bound business_environment fixes the selected target for this run: "
                        "use its snapshot.configuration.payload.base_url rather than project defaults "
                        "or similarly named runtime_inputs. Its reviews apply only to their explicit "

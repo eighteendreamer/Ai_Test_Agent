@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.case_action_binding import bind_case_action
 from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.application.testing.verification_service import VerificationService
 from src.application.test_runs.agent_case_contract import RECEIPT_PROMPT_VERSION, case_result_contract
@@ -60,6 +61,8 @@ class AgentCaseAssessmentService:
         return [{"call_id": key, "job_id": job.id, "tool_key": job.tool_key,
                  "status": job.status.value, "output_reference": {"call_id": key, "output_path_tokens": []},
                  "output": deepcopy(job.output_payload)}
+                | ({"case_action_binding": deepcopy(job.metadata["case_action_binding"])}
+                    if context.action_binding_protocol is not None else {})
                 for key, job in jobs.items()]
 
     async def build_assessment_request(self, *, context: AgentCaseExecutionContext,
@@ -132,6 +135,12 @@ class AgentCaseAssessmentService:
             if job.status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
                                   ToolJobStatus.denied, ToolJobStatus.cancelled}:
                 raise ValueError("工具证据尚未结束，不能形成终态回执")
+            if context.action_binding_protocol is not None:
+                binding = bind_case_action(bundle={**context.runtime_context(),
+                    "case_execution_managed": True, "attempt_id": attempt_id},
+                    arguments=job.input_payload, session_id=session_id, turn_id=turn_id)
+                if job.metadata.get("case_action_binding") != binding.model_dump(mode="json"):
+                    raise ValueError("工具证据的执行项归属与完整固定上下文不一致")
             if record.call_id in jobs and jobs[record.call_id].id != job.id:
                 raise ValueError("本次执行的 call 身份对应多个工具证据")
             jobs[record.call_id] = job

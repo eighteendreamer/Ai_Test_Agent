@@ -34,6 +34,11 @@ def admission_message(body):
     if not any(m.get("role") == "tool" for m in body["messages"]):
         path = context["business_environment"]["snapshot"]["configuration"]["payload"]["base_url"]+"/rule"
         args = {"worker_action":"execute_task","task":{"task_id":"admission-rule","method":"GET","path":path}}
+        if context.get("action_binding_protocol"):
+            assert context["action_binding_protocol"] == "case-action-binding-v1"
+            tool = next(t["function"] for t in body["tools"] if t["function"]["name"] == "api-test-runner")
+            assert "_case_action" in tool["parameters"]["required"]
+            args["_case_action"] = {"item_key": context["target_key"]}
         return {"role":"assistant","content":"读取固定目标规则","tool_calls":[{"id":"admission-rule","type":"function",
             "function":{"name":"api-test-runner","arguments":json.dumps(args,ensure_ascii=False)}}]}
     checks = [{"name":field,"operator":"equals","expected_path_tokens":["expected",field],
@@ -45,9 +50,15 @@ def admission_message(body):
     return {"role":"assistant","content":json.dumps(receipt,ensure_ascii=False)}
 
 
-async def admission_from_production(*,root,state,case,model_key,settings,processes,get,post,client,evidence,sends):
+async def admission_from_production(*,root,state,case,model_key,settings,processes,get,post,client,evidence,sends,
+    action_binding=False):
     target = state["targets"][0]
     snapshot = target["snapshot"]
+    if action_binding:
+        policy = await get(root+"/case-plans/policy")
+        configured = await client.put(root+"/case-plans/policy",
+            json={**policy["policy"], "action_binding_protocol": "case-action-binding-v1"})
+        assert configured.status_code == 200, configured.text
     content = {"expected":{"code":200,"days":7,"expired_count":0,"expired":False,"deleted_at":None},
         "深层扩展":{"零":0,"空":None,"布尔":False,"未知字段":"不能丢失"},
         "steps":[{"order":i+1,"action":action} for i,action in enumerate([
@@ -80,6 +91,8 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
     done = await get(route+"/"+task["id"])
     assert done["status"] == "completed" and len(sends) == before+1
     plan = await get(root+"/case-plans/"+done["plan_id"])
+    if action_binding:
+        assert plan["config_snapshot"]["policy"]["action_binding_protocol"] == "case-action-binding-v1"
     assert plan["environment"]["reviews"] == [target["review"]]
     launch = {"creation_key":"production-admission-run","mode_key":"api_testing"}
     detail = await post(root+"/case-plans/"+plan["id"]+"/runs",launch,201)
@@ -129,6 +142,16 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         "case":created,"SQL_run":sql_run,"physical_requests":sends,"actual_terminal_dispatch":delivery,
         "independent_planning_CLI":True,"independent_execution_CLI":True,"actual_SDK_HTTP":True,
         "controlled_model":True,"autonomous_external_model_verified":False,"terminal_replay_new_HTTP":0}
+    if action_binding:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT id,input_payload,metadata,status FROM {settings.database.postgres_tool_job_table} "
+                "WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
+            jobs = [dict(row) for row in cur.fetchall()]
+        assert len(jobs) == 1 and jobs[0]["status"] == "completed"
+        binding = jobs[0]["metadata"]["case_action_binding"]
+        assert binding["phase"] == "case" and binding["run_item_id"] == detail["items"][0]["id"]
+        assert jobs[0]["input_payload"]["_case_action"]["item_key"] == binding["item_key"]
+        value.update(action_binding_enabled=True,actual_owned_jobs=jobs,applicability_action_gate_implemented=False)
     save(evidence,"environment-admission.json",value)
     return value
 
