@@ -3321,3 +3321,12 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 交付核对保存p4-action-ownership-validation.json，检查旧原始证据、三方案同字节、当前原件/消息/PG归属/hash、XML数量、前端日志和暂存原字节。用户.gitignore与此前未提交environment-action诊断保持原状态；只提交本轮相关文件，不推送或建PR。
 
 交付暂存首命令退出128：Git返回路径带Enterprise_AI_QA_Agent前缀，但在项目目录直接add使路径重复。只读dry-run确认重复目录后，改为在git rev-parse返回的仓库根执行add，并通过NUL pathspec stdin传递精确文件列表；未改变功能证据或用户.gitignore。
+
+
+## 2026-10-06 方案同步：上传独立版本与实际操作契约
+
+响应用户“那不更新这个方案”：核对当前9168fb01源码，将正文研究基线更新，并新增3.1.4操作契约。明确首次上传、新版本上传、历史原件、指定版本解析、指定快照比较和原提交找回的实际入口/字段；上传不要求Git缓存，同文档关联由document_id及父版本明确表达。保留模板只用于生成、项目内选取/简单补全、轻量解析和完整P0—P5设计；未新增业务实现。
+
+查证：读取api_docs路由/服务/请求模型、document_parsing路由/请求模型、difference_service/路由/请求模型、git_service及前端documentUploadRequest；核对既有解析/比较和Git产品XML。三份方案写入前SHA-256均为8b1a5321879708db041411e97524256ce3bf1ef958b39ec321e97e0e1d889778，写入后检查逐字节一致、新增源码链接及行号有效、操作契约对应已有路由和字段，执行git diff --check。仅提交PLAN.md和本日志，附件与选中计划同步；用户.gitignore及既有未提交诊断工件保留。
+
+本轮仅文档修订，未运行编译、功能测试、外部模型或完整App验收；历史测试结果保留原日期和范围，不作为本轮执行结果。完整升级继续未完成。
