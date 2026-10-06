@@ -238,6 +238,8 @@ class AgentCaseAssessmentService:
         completion = RunItemCompleteRequest(lease_token=lease_token, status=status, summary=summary,
             actual={"case_output": target["output"], "case_status": target["status"],
                 "preparations": {key: value for key, value in results.items() if key != context.target_key},
+                **({"environment_admission":context.environment_admission.model_dump(mode="json")}
+                    if context.environment_admission is not None else {}),
                 "receipt": receipt.model_dump(mode="json"), "verification_results": [v.model_dump(mode="json") for v in verifications]},
             evidence_refs=evidence_refs, artifact_ids=list(artifacts), verification_ids=[v.id for v in verifications],
             tool_job_id=next(reversed(used), None), error_message=summary if status != "passed" else None)

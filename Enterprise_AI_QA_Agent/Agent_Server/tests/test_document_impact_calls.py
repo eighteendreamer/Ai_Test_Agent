@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUME
 
 
 @contextmanager
-def provider(*, mode="ok", gated=False, responder=None):
+def provider(*, mode="ok", gated=False, responder=None, message_responder=None):
     calls, arrived, release = [], threading.Event(), threading.Event()
     if not gated:
         release.set()
@@ -53,7 +53,10 @@ def provider(*, mode="ok", gated=False, responder=None):
                 self.send_response(500)
             else:
                 message = {"role": "assistant", "content": "controlled complete response"}
-                if responder is not None:
+                direct = message_responder(body) if message_responder else None
+                if direct is not None:
+                    message = direct
+                elif responder is not None:
                     message["content"] = responder(body)
                 if mode == "length": message["content"] = "partial"
                 if mode == "empty": message["content"] = ""
@@ -62,10 +65,20 @@ def provider(*, mode="ok", gated=False, responder=None):
                     message["tool_calls"] = [{"id": "tool-fixture", "type": "function",
                         "function": {"name": "unexpected_execution", "arguments": "{}"}}]
                 raw = json.dumps({"id": "impact-fixture-response", "model": body["model"], "choices": [{"index": 0,
-                    "message": message, "finish_reason": "length" if mode == "length" else "stop"}],
+                    "message": message, "finish_reason": "length" if mode == "length" else
+                        "tool_calls" if direct is not None and message.get("tool_calls") else "stop"}],
                     "usage": {"prompt_tokens": 41, "completion_tokens": 13, "total_tokens": 54}}).encode()
                 self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            streamed = mode != "http_failure" and direct is not None and body.get("stream")
+            if streamed:
+                delta = dict(message)
+                for index, call in enumerate(delta.get("tool_calls", [])):
+                    call["index"] = index
+                reason = "tool_calls" if message.get("tool_calls") else "stop"
+                chunk = {"id":"impact-fixture-response","object":"chat.completion.chunk","created":1,
+                    "model":body["model"],"choices":[{"index":0,"delta":delta,"finish_reason":reason}]}
+                raw = ("data: "+json.dumps(chunk,ensure_ascii=False)+"\n\ndata: [DONE]\n\n").encode()
+            self.send_header("Content-Type", "text/event-stream" if streamed else "application/json")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             try: self.wfile.write(raw)

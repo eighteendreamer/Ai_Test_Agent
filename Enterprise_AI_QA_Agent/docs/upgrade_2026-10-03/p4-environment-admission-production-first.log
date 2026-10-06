@@ -1,0 +1,14 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_production_allowed_admission_agent_execution_and_terminal_replay ____
+tests\test_business_environment_admission_production.py:12: in test_production_allowed_admission_agent_execution_and_terminal_replay
+    await scenario(tmp_path,"md",False,False,verify_requirements=True,verify_applicability=[old,new],
+tests\test_document_impact_production.py:409: in test_production_fixed_analysis_history_and_process_recovery
+    environment_admission_state = await admission_from_production(root=root,state=applicability_state,
+tests\business_environment_admission_production_scenario.py:109: in admission_from_production
+    assert detail["run"]["status"] == "completed" and detail["items"][0]["status"] == "passed"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_business_environment_admission_production.py::test_production_allowed_admission_agent_execution_and_terminal_replay
+1 failed in 91.33s (0:01:31)

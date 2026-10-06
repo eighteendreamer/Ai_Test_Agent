@@ -475,6 +475,11 @@ class PromptAssemblyService:
                        "requirement versions, points and case versions; they are not evidence of "
                        "successful execution. Existing tool permissions still apply."
                        if frozen.business_environment is not None else "")
+                    + (" environment_admission records the confirmations inspected at this execution's "
+                       "first start. Use that fixed receipt with the original planning basis; "
+                       "no_explicit_invalid does not assert validity, deployment or a passing test. "
+                       "Recovery retains the original receipt and completed operations."
+                       if frozen.environment_admission is not None else "")
                 ),
             ))
             sections.append(PromptSection(

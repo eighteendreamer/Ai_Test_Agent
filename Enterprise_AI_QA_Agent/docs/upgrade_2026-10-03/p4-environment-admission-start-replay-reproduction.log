@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_actual_committed_allowed_start_reply_recovers_without_replacing_confirmation _
+tests\test_business_environment_admission.py:73: in test_actual_committed_allowed_start_reply_recovers_without_replacing_confirmation
+    started = await f.runs.start_item(claim[0].id,claim[1].lease_token,datetime.now(timezone.utc))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\run_store.py:1594: in start_item
+    return await asyncio.to_thread(
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\run_store.py:2457: in _start_item_sync
+    self._validate_lease(item, lease_token, now, {"claimed"})
+src\application\test_runs\run_store.py:3389: in _validate_lease
+    raise ValueError(
+E   ValueError: Illegal run item transition from running: f041c0fb-348a-5115-a773-56bae29d7d53
+=========================== short test summary info ===========================
+FAILED tests/test_business_environment_admission.py::test_actual_committed_allowed_start_reply_recovers_without_replacing_confirmation
+1 failed, 4 deselected in 17.79s

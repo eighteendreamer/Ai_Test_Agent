@@ -1,4 +1,5 @@
 import type { BusinessEnvironmentSelection, BusinessPlanningEnvironment } from "./services/businessPlanning.types";
+import type { BusinessExecutionAdmission } from "./services/businessExecution.types";
 
 export type SessionStatus =
   | "idle"
@@ -2286,7 +2287,7 @@ export interface RunItemApprovalPending {
 export interface TestRunDetail {
   run: TestRunRecord;
   items: TestRunItemRecord[];
-  attempts: Array<Record<string, unknown>>;
+  attempts: Array<Record<string, unknown> & { environment_admission?: BusinessExecutionAdmission | null }>;
   results: TestCaseResultRecord[];
 }
 

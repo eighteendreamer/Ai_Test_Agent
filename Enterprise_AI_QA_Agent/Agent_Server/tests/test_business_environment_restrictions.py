@@ -58,9 +58,9 @@ def runs_service(f):
         test_case_service=f.env.cases, tool_job_service=f.jobs)
 
 
-async def execute_independent(f, claim):
+async def execute_independent(f, claim, *, started=None):
     entry, attempt = claim
-    started = await f.runs.start_item(entry.id, attempt.lease_token, datetime.now(timezone.utc))
+    started = started or await f.runs.start_item(entry.id, attempt.lease_token, datetime.now(timezone.utc))
     context = build_agent_case_context(await f.runs.get_run(entry.run_id), started,
         await f.env.cases.get_version(entry.case_version_id))
     session, turn = str(uuid4()), str(uuid4())

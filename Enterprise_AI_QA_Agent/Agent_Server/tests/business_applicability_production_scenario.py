@@ -66,9 +66,9 @@ async def decisions_from_production(*, root, review, get, post, client, settings
     return state
 
 
-async def decisions_after_restart(*, state, get, post, client, settings, evidence, root, sends, extra_reviews=None):
+async def decisions_after_restart(*, state, get, post, client, settings, evidence, root, sends, extra_reviews=None,allowed_HTTP_counts=None):
     before = len(sends)
-    for target in state["targets"]:
+    for index,target in enumerate(state["targets"]):
         assert await post(target["path"], target["request"], 201) == target["review"]
         assert await get(target["path"]+"/by-request", request_id=target["request"]["request_id"]) == target["review"]
         await post(target["environment"]+"/archive", {})
@@ -78,12 +78,12 @@ async def decisions_after_restart(*, state, get, post, client, settings, evidenc
             cur.execute(f"DELETE FROM `{settings.database.application_config_table}` WHERE config_key=%s AND scope_key=%s",
                 ("project.environment_target", target["snapshot"]["environment_id"]))
         conn.commit()
-    for target in state["targets"]:
+    for index,target in enumerate(state["targets"]):
         assert await post(target["path"], target["request"], 201) == target["review"]
         assert await get(target["path"]+"/"+target["review"]["id"]) == target["review"]
         rejected = await client.post(target["path"], json={**target["request"], "request_id": "new-archived"})
         assert rejected.status_code == 409
-        assert len(target["HTTP"]) == 1
+        assert len(target["HTTP"]) == (allowed_HTTP_counts[index] if allowed_HTTP_counts is not None else 1)
     assert await post(state["targets"][1]["path"], state["revoke_request"], 201) == state["revoked"]
     store = PostgresBusinessApplicabilityStore(requirements=PostgresRequirementStore(settings), environments=PostgresBusinessEnvironmentStore(settings))
     with postgres_connect(settings) as conn, conn.cursor() as cur:

@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 from src.schemas.case_planning import CasePlanExecutionSnapshot
 from src.schemas.session import ApprovalDecisionRequest
+from src.schemas.business_execution import BusinessExecutionAdmission
 
 
 TestRunKind = Literal["normal", "regression"]
@@ -160,6 +161,15 @@ class TestRunAttemptRecord(BaseModel):
     checkpoint_payload: dict[str, Any] = Field(default_factory=dict)
     checkpoint_at: datetime | None = None
     recovered_from_attempt_id: str | None = None
+    environment_admission: BusinessExecutionAdmission | None = None
+
+    @model_serializer(mode="wrap")
+    def original_attempt_wire(self, handler):
+        # Pydantic 2.8 wrap handler retains every original field and nested null.
+        value = handler(self)
+        if self.environment_admission is None:
+            value.pop("environment_admission", None)
+        return value
 
 
 class RunEvidenceRef(BaseModel):

@@ -3218,3 +3218,52 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 PLAN第5.2.3/6.37及进度表同步区分C2a已验与C2其余待实施，正文/附件/选中计划保持相同字节。上传独立于Git、模板仅生成、完整用例与项目选取/初排/简单衔接检查/补全/最终冻结继续保留。environment_restrictions_delivery_20261006.py核对旧8010份原始证据、新原件/确认/回执/hash/工具检查/锁竞争/原检查点、真实生产消息及暂存原字节；用户.gitignore保持。
 
 未完成：允许通过项当前决定回执、运行中逐动作修订及未知副作用处理、换目标回归，D正式页面/AI候选/默认Agent、用户业务评审、生产历史迁移及其余P0—P5。没有新表或配置迁移；新限制只消费正式绑定环境中的明确精确invalid，旧无环境运行继续原流程。默认中文范围提交，不推送或建PR。
+
+
+## 2026-10-06 C2b：允许项首次开始确认与原Agent恢复
+
+研究基线afa9381e。先读PG start/claim/checkpoint、Agent上下文/会话/审批/提示/核验以及本地Agent协议课程04.5。原start读了当前确认却未持久化，实际允许MD场景复现1失败；保存回执后，又用真实PG提交成功但回复丢失复现running重试失败。根因和边界见P4_ENVIRONMENT_ADMISSION_DESIGN.md。
+
+复用原Attempt JSONB，在首次允许start的同一事务保存完整当前确认/固定目标/精确版本/root Attempt/SHA；它独立于原planning environment。原Agent上下文/hash、提示、审批、持久快照和结果同步；过期恢复保留原receipt，真实祖先链核对。旧无receipt的started/checkpoint不补造历史，新缺省字段仅在原wire省略，原null/False/0保留。项目依赖>=2.8，官方2.8 wrap model_serializer已查证，未使用新版Field.exclude_if或升级依赖。
+
+| 独立轮次，p4-environment-admission-前缀 | 实际结果 |
+|---|---|
+| reproduction | 1失败，23.09秒；完整原件/计划/Attempt已保存，当前确认未交给Agent |
+| live-first | 3通过，37.75秒；三格式真实允许开始、实际GET与结果 |
+| start-replay-reproduction | 1失败，17.79秒；真实PG提交后丢回执，原running重试被拒；原证据保留 |
+| live-final | 19通过，160.22秒；当时7项C2b和12项C2a，不含后来图专项 |
+| graph-first | 1通过/7未选，17.06秒；原Agent图、真实PG Session/工具/审批/快照，后续确认和过期领取复用原结果，新增模型/HTTP均0 |
+| production-first | 1失败，91.33秒；5真实SDK POST，普通JSON夹具不支持Agent stream=True，error终态保存 |
+| production-stream | 1通过，114.46秒；按现有execution_worker_cli夹具支持SSE；新任务完整独立API/Outbox/规划及执行CLI/SDK/真实业务HTTP/实际存储；没有修改生产模型传输 |
+| regression | 171通过/2外部默认模型跳过，547.98秒；当前8项C2b、12项C2a及原依赖/创建/规划/会话/工具/审批/正文核验/影响调用 |
+| frontend-build | npm run build成功，vue-tsc和Vite实际运行，Vite12.08秒 |
+
+完整stdout/stderr、原件和对象保持各轮独立目录。实际命令从Agent_Server运行：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-admission-live-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission.py tests/test_business_environment_restrictions.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-admission-live-final.xml
+# graph-first：同真实存储开关，独立证据目录，-k actual_agent_graph。
+# 首复现用 -x/-k first_start；丢回执复现用 -x/-k committed_allowed。
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-admission-production-stream'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-admission-production-stream.xml
+# 失败首轮为production-first，原输入/日志/error保留。
+
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-admission-regression'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-admission-regression\planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission.py tests/test_business_environment_restrictions.py tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_business_planning.py tests/test_agent_case_context.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py tests/test_document_impact_calls.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-admission-regression.xml
+# 命令完整合并stderr和stdout至同名log后返回pytest原退出码。
+# agent_web目录：npm run build，输出p4-environment-admission-frontend-build.log。
+```
+
+生产创建新正式用例：十二项有实际含义的步骤和expected五项，不使用旧占位步骤冒充成功。固定七天快照和原确认进入规划，创建Run后追加unknown，首次开始回执读取unknown；原规划不重写。真实执行Worker经已有工具审批进入waiting_approval，由所属RunItem审批入口继续原图，实际GET新增1，五项核验200/7/0/False/null通过并保存PG Result。总6物理模型请求＝原影响2＋原C1规划1＋新规划1＋Agent工具调用/工具后回执2。HTTP来自真实目标；unknown只表示没有明确invalid，不作为passed证据。
+
+终态原Outbox投递独立执行CLI、重启API/派发关闭、项目环境归档及删除当前MySQL配置后，原任务/计划/运行/Result保持一致，无新模型或业务HTTP。Agent图另验真正PG检查点/恢复祖先，后续unknown/过期重领后不重新发工具或模型。生产可选记忆检索有memory_query_embedding_failed警告，保留日志，不宣称该检索成功。篡改测试只修改真实已保存记录的内存副本，不向业务PG注入篡改记录。
+
+未完成：外部默认Agent自主判断、运行中动作修订和未知副作用、换目标新回归、正式环境页面/AI候选、用户业务评审、点级完整性、历史迁移及完整P0—P5。配置继续MySQL，业务/Attempt PG，大原件RustFS；无新表/依赖/配置迁移。三方案同步更新，历史失败/unknown保持，用户.gitignore不变；默认只提交相关文件，不推送或建PR。

@@ -68,7 +68,8 @@ def collect_objects(settings, owned):
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
     verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_execution=None,
-    verify_applicability=None, verify_environment_planning=False, verify_environment_restrictions=False):
+    verify_applicability=None, verify_environment_planning=False, verify_environment_restrictions=False,
+    verify_environment_admission=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -88,7 +89,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
         factory = grouped_responder if payload["analysis_protocol"]["version"] in {"impact-call-v6", "impact-call-v7"} else responder
         return factory(holder, views, holder["case"])(body)
     try:
-        with provider(gated=interrupt, responder=respond) as (endpoint, sends, arrived, release):
+        if verify_environment_admission:
+            from business_environment_admission_production_scenario import admission_message
+        with provider(gated=interrupt, responder=respond,
+            message_responder=admission_message if verify_environment_admission else None) as (endpoint, sends, arrived, release):
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
                 settings.model.langchain_model_adapter_enabled = adapter
                 settings.api_auth_token = SecretStr(uuid4().hex)
@@ -399,6 +403,13 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                                 case=case,model_key=model.key,settings=settings,processes=processes,
                                 get=get,post=post,client=client,evidence=evidence,sends=sends)
                             sent += environment_restrictions_state["physical_planning_calls"]
+                        environment_admission_state = None
+                        if verify_environment_admission:
+                            from business_environment_admission_production_scenario import admission_from_production
+                            environment_admission_state = await admission_from_production(root=root,state=applicability_state,
+                                case=case,model_key=model.key,settings=settings,processes=processes,
+                                get=get,post=post,client=client,evidence=evidence,sends=sends)
+                            sent += environment_admission_state["physical_model_calls"]
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
                         terminal = processes.start("impact-worker-terminal", "-m", "src.cli.run_document_impact_worker",
@@ -441,7 +452,9 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             from business_applicability_production_scenario import decisions_after_restart
                             await decisions_after_restart(state=applicability_state, get=get, post=post, client=client,
                                 settings=settings, evidence=evidence, root=root, sends=sends,
-                                extra_reviews=(environment_restrictions_state["additional_reviews"] if environment_restrictions_state else None))
+                                extra_reviews=(environment_restrictions_state["additional_reviews"] if environment_restrictions_state else [])
+                                    +(environment_admission_state["additional_reviews"] if environment_admission_state else []),
+                                allowed_HTTP_counts=(environment_admission_state["actual_HTTP_counts"] if environment_admission_state else None))
                         if environment_planning_state:
                             from business_planning_production_scenario import planning_after_restart
                             await planning_after_restart(state=environment_planning_state, root=root,
@@ -449,6 +462,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                         if environment_restrictions_state:
                             from business_environment_restrictions_production_scenario import restrictions_after_restart
                             await restrictions_after_restart(state=environment_restrictions_state,root=root,get=get,post=post,
+                                evidence=evidence,sends=sends)
+                        if environment_admission_state:
+                            from business_environment_admission_production_scenario import admission_after_restart
+                            await admission_after_restart(state=environment_admission_state,root=root,get=get,post=post,
                                 evidence=evidence,sends=sends)
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):

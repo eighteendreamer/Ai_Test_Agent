@@ -14,6 +14,7 @@ from src.application.test_runs.timing import add_active_duration, add_waiting_du
 from src.application.test_runs.dependencies import (dependencies_ready, validate_run_dependencies,
     dependency_failures, blocked_dependency_records)
 from src.application.test_runs.environment_restrictions import restriction_reviews, blocked_environment_records
+from src.application.test_runs.environment_admission import create_environment_admission, fixed_environment_admission
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -597,6 +598,7 @@ class InMemoryTestRunStore:
                     checkpoint_payload=prior.checkpoint_payload if prior else {},
                     checkpoint_at=prior.checkpoint_at if prior else None,
                     recovered_from_attempt_id=prior.id if prior else None,
+                    environment_admission=prior.environment_admission if prior else None,
                 )
                 stored_item = item.model_copy(
                     deep=True,
@@ -2365,6 +2367,7 @@ class PostgresTestRunStore:
                         checkpoint_payload=prior.checkpoint_payload if prior else {},
                         checkpoint_at=prior.checkpoint_at if prior else None,
                         recovered_from_attempt_id=prior.id if prior else None,
+                        environment_admission=prior.environment_admission if prior else None,
                     )
                     updated = item.model_copy(
                         update={
@@ -2446,10 +2449,17 @@ class PostgresTestRunStore:
                     if self._environment_block_replayed(cur, item, lease_token):
                         return item
                     self._validate_lease(item, lease_token, now, {"claimed"})
+                if original.status == "running":
+                    item = self._lock_item(cur,item_id)
+                    if self._environment_running_replayed(cur,item,lease_token,now):
+                        return item
+                    self._validate_lease(item,lease_token,now,{"claimed"})
                 run = self._read_run(cur, original.run_id)
                 reviews = self._current_environment_reviews(cur, run)
                 item = self._lock_item(cur, item_id)
                 if self._environment_block_replayed(cur, item, lease_token):
+                    return item
+                if self._environment_running_replayed(cur,item,lease_token,now):
                     return item
                 self._validate_lease(item, lease_token, now, {"claimed"})
                 if item.dependencies:
@@ -2469,6 +2479,16 @@ class PostgresTestRunStore:
                     logger.info("test_run_environment_restricted", extra={"run_id": run.id,
                         "run_item_id": item.id, "phase": "start", "review_ids": [r.id for r in restricted]})
                     return updated
+                if reviews is not None and attempt.environment_admission is None:
+                    if not self._prior_business_started(cur, item):
+                        attempt = attempt.model_copy(update={"environment_admission":
+                            create_environment_admission(run,item,attempt,reviews,now)})
+                        logger.info("test_run_environment_admission_saved",extra={"project_id":run.project_id,
+                            "run_id":run.id,"run_item_id":item.id,"attempt_id":attempt.id,
+                            "review_ids":[r.id for r in reviews],"admission_sha256":attempt.environment_admission.sha256})
+                    else:
+                        logger.warning("test_run_historical_environment_admission_missing",extra={"run_id":run.id,
+                            "run_item_id":item.id,"attempt_id":attempt.id,"reason":"preserve_original_started_context"})
                 item = item.model_copy(
                     update={
                         "status": "running",
@@ -3587,6 +3607,19 @@ class PostgresTestRunStore:
             or receipt.get("sha256") != environment_digest({k:v for k,v in receipt.items() if k != "sha256"})):
             raise ValueError("环境未执行回执与精确版本或原hash不同")
         return result.actual.get("business_execution_started") is False and bool(receipt)
+
+    def _environment_running_replayed(self,cur,item,lease_token,now):
+        if item.status != "running" or item.lease_token != lease_token:
+            return False
+        attempt = self._lock_attempt(cur,item.id,lease_token)
+        if attempt.environment_admission is None:
+            return False
+        self._validate_lease(item,lease_token,now,{"running"})
+        detail = self._detail_from_cursor(cur,item.run_id)
+        fixed_environment_admission(detail.run,item,attempt,detail.attempts)
+        logger.info("test_run_environment_start_receipt_replayed",extra={"run_id":item.run_id,
+            "run_item_id":item.id,"attempt_id":attempt.id,"admission_sha256":attempt.environment_admission.sha256})
+        return True
 
     def _save_unexecuted_in_cursor(self, cur, item, attempt, result, *, existing_attempt=False):
         if existing_attempt:
