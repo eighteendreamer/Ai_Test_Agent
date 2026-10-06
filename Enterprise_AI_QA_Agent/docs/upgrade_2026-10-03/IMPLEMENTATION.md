@@ -2977,3 +2977,23 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 首次交付审计引用尚未生成的自身报告而失败，改为报告保存后核对自身路径，其他链接仍逐项检查。随后复用旧check_execution遇到dict.get默认表达式提前求值，虽已有execution_sql仍读取不存在的second；根因修为按字段存在性选择分支，新旧真实样本均重新校验，不改原证据或旧审计报告。最终新审计335份原始文件与此前6964份原始证据通过，三份方案逐字节一致，用户.gitignore保持；XML、原完整结果/版本/hash、ToolJob输出、生产对象与物理消息核对。暂存分批仅本阶段相关文件并验证原证据blob，不推送/建PR。
 
 方案3.6.13/5.2.2/6.31同步实际状态。下一步先研究正式环境/部署与运行冻结，继续点级完整性、默认Agent自主执行、用户业务评审、生产历史迁移及其他P2/P1/P0/P5。完整目标仍active，本阶段不代替P0—P5完成。
+
+## 2026-10-06 完整方案同步与环境适用性实施前查证
+
+本阶段以d47ab66d为代码基线，重新核对用户原目标、三份完整方案和上传/新版本/可选Git/固定比较路径。上传入口及版本保存无需Git缓存、提交或仓库；已明确的模板仅生成、项目选取/初排/简单补全/最终冻结和轻量解析策略保留。本次修改完整PLAN而非只给聊天片段。
+
+继续研究下一步环境适用性，读取项目/配置/影响环境声明、规划/映射/运行事务/执行/回归及需求矩阵。发现已有user_declared环境/发布版本，但部署固定unknown；当前目标URL可修改，资源/兼容设备/安全容器各有其他用途，不能当业务部署证据。MySQL配置get没有历史revision参数，save没有expected_revision；后续必须捕获实际配置的非敏感payload/revision/SHA，不能设计不存在的旧配置恢复调用。
+
+新增P4_ENVIRONMENT_APPLICABILITY_DESIGN.md，明确A环境身份/配置/固定依据→B具体证据/追加确认→C现有规划/启动事务/实际领取/回归→D正式页面/完整产品的实施顺序。精确环境/目标、需求版本及用例版本限定适用性；unknown不误停旧版本，重大变化且已确认失效才限制对应新执行，保留历史和独立目标。
+
+实际运行environment_research_20261006.py：初次把已有审计的size_bytes误写为size，KeyError失败；读取原记录后纠正。首次成功核对保存为p4-environment-research-facts.json；扩展核对已有影响声明及运行事务后保存p4-environment-research-facts-verified.json，旧报告保留。最终核对17个源码blob与此前335份原始证据，重读真实DOCX App保存的普通运行/新回归，用当前映射重建原id、creation_hash和整个plan_snapshot；两个完整用例各12步，原结果failed，部署unknown。仅在内存做hash试验确认新增environment_id=null会改变原创建hash，没有修改旧schema或存储。
+
+```powershell
+# 项目根目录；录制事实报告已存在，以下命令只重放并核对，不覆盖报告：
+.\.venv\Scripts\python.exe -Xutf8 docs/upgrade_2026-10-03/environment_research_20261006.py
+git diff --check
+```
+
+本阶段没有修改生产功能、请求契约、数据库或依赖，没有重新执行API/Worker/完整App和外部模型，也没有实现环境注册/部署确认/执行限制；研究重放不计为新功能现场验收。三份方案同步，用户.gitignore和所有旧原始证据保留。完整P0—P5继续active，下一实施项为A环境身份/配置/固定依据的实际隔离存储及历史兼容验证。
+
+交付核对三份方案字节一致、117个本地链接存在。暂存首轮事实报告blob大小/hash不符，定位为Windows写入CRLF后Git转换LF；沿用本目录已有证据保留规则给p4-environment-research-*添加-text，重新暂存并核对原字节，不重写事实报告或改用户.gitignore。
