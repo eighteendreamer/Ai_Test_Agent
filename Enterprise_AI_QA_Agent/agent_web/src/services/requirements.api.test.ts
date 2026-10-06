@@ -1,8 +1,27 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { getRequirementReviewSubmission, listRequirementReviews, listRequirements, listRequirementVersions, readRequirementMatrix, submitRequirementReview,
-  getRequirementCoverageSubmission, listRequirementCoverage, submitRequirementCoverage } from "./requirements.api";
+  getRequirementCoverageSubmission, listRequirementCoverage, submitRequirementCoverage,
+  getRequirementExecutionSubmission, listRequirementExecution, listRequirementExecutionCandidates, submitRequirementExecution } from "./requirements.api";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("preserves fixed execution evidence, original recovery identity and history selectors", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = { request_id: "执行 ?/#", coverage_id: "fixed-coverage", expected_execution_id: "previous", note: "原核验",
+    checks: [{ result_id: "original-result", verification_id: "body-check", check_index: 3, point_keys: ["boundary"] }] };
+  await submitRequirementExecution("p/#", "d?", "r/#", "v?", payload);
+  await getRequirementExecutionSubmission("p/#", "d?", payload.request_id);
+  await listRequirementExecution("p", "d", "r", "v", 1, 2);
+  await listRequirementExecutionCandidates("p", "d", "r", "v", "coverage ?/#", 1, 2);
+  await readRequirementMatrix("p", "d", "r", "v", "fixed-coverage", "initial");
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects/p%2F%23/documents/d%3F/requirements/r%2F%23/versions/v%3F/execution-reviews");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+  expect(new URL(fetchMock.mock.calls[1][0], "http://localhost").searchParams.get("request_id")).toBe(payload.request_id);
+  expect(fetchMock.mock.calls[2][0]).toContain("/execution-reviews?limit=1&offset=2");
+  expect(new URL(fetchMock.mock.calls[3][0], "http://localhost").searchParams.get("coverage_id")).toBe("coverage ?/#");
+  expect(fetchMock.mock.calls[4][0]).toContain("coverage_id=fixed-coverage&execution_id=initial");
+});
 
 it("preserves the explicit review and original request identity across encoded routes", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });

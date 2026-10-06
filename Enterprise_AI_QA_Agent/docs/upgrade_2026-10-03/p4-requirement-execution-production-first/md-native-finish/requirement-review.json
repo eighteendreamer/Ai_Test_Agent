@@ -1,0 +1,231 @@
+{
+  "id": "befc7141-f25b-4309-996b-b3bcd4fad533",
+  "project_id": "1823ceef-0ea6-469d-b3b0-b495ee8d9b23",
+  "document_id": "1c735537-9ed5-5106-bc83-a9f1dba850ee",
+  "request": {
+    "request_id": "production-requirement-review",
+    "rule_id": "cd6e757e35280fab97f60b305c608fb686b062281219b74477b0b2d2191842e7",
+    "decision": "accept",
+    "note": "仅确认来源及设计关联，运行和部署另验",
+    "expected_review_id": null,
+    "requirement_id": null,
+    "expected_version_id": null,
+    "change": "modified",
+    "title": "订单保留期",
+    "statement": "订单保留九天",
+    "points": [
+      {
+        "key": "retention",
+        "description": "验证九天保留期"
+      }
+    ],
+    "case_links": [
+      {
+        "case_version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+        "point_keys": [
+          "retention"
+        ]
+      }
+    ]
+  },
+  "request_sha256": "c1b392230f86ec5d16ff6bd045746778d4d51ac3763e3daaf8850b0f0dfed79e",
+  "source": {
+    "snapshot_id": "171c3c84-b338-4966-be20-77507e0f72e5",
+    "task_id": "69b7df26-9744-406f-885b-49653dd894f4",
+    "snapshot_sha256": "4cbfded89b3e0383610195d6fa6376e99a6ee39c6742490c24ca2cf71922e2f1",
+    "input_sha256": "25f5f740bc4d3497203e5056028caee913b23c48629572b1b554672e5f5af38b",
+    "manifest_sha256": "d735b7dfa0f5e3bd9b01cb700d671003d574839b24539053d4f8f172709875b6",
+    "rule": {
+      "id": "cd6e757e35280fab97f60b305c608fb686b062281219b74477b0b2d2191842e7",
+      "candidate": {
+        "key": "retention-change",
+        "kind": "modified",
+        "summary": "订单保留7天调整为9天",
+        "reason": "固定新旧原文的期限不同",
+        "document_citations": [
+          {
+            "source_id": "parse:5c5836c8-2304-4bb3-8090-c2a5e71a6ac3",
+            "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+            "start_char": 0,
+            "end_char": 20,
+            "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+          },
+          {
+            "source_id": "parse:aea7ca2f-1433-42de-a845-968e49a8ebb8",
+            "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+            "start_char": 0,
+            "end_char": 20,
+            "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+          }
+        ],
+        "case_impacts": [],
+        "applicability_suggestion": "current",
+        "uncertainties": [
+          "部署生效状态未核实"
+        ]
+      },
+      "origins": [
+        {
+          "checkpoint": {
+            "task_id": "69b7df26-9744-406f-885b-49653dd894f4",
+            "call_id": "65af0e1e-7194-495e-9075-c413e1d6b11d",
+            "validator_version": "impact-response-validator-v3",
+            "request_sha256": "222666f698904661dfdb200904bd9228aa58ce7dbe40598d717a94b5da950081",
+            "response_sha256": "94d8907cfe4feacf3234315a1ce6c7a0c8be040b08e2823d8bdc40e2d4a543cc",
+            "manifest_sha256": "d735b7dfa0f5e3bd9b01cb700d671003d574839b24539053d4f8f172709875b6",
+            "result": {
+              "storage_uri": "rustfs://qa-agent/document-impacts/1823ceef-0ea6-469d-b3b0-b495ee8d9b23/69b7df26-9744-406f-885b-49653dd894f4/304ca92b-356a-4843-bef1-4707afef29f3/calls/5bab36b8-befe-4fdb-98e3-c722b085f724/response-check.json",
+              "sha256": "c1178299afb5d77263877838b6a5a39f10e538514fa7a1df0b8371b8881f9751",
+              "size_bytes": 2274
+            },
+            "created_at": "2026-10-05T18:19:29.458638Z"
+          },
+          "local_key": "retention-change"
+        }
+      ]
+    },
+    "case_assessments": [
+      {
+        "key": "cd6e757e35280fab97f60b305c608fb686b062281219b74477b0b2d2191842e7",
+        "kind": "modified",
+        "summary": "订单保留7天调整为9天",
+        "reason": "固定新旧原文的期限不同",
+        "document_citations": [
+          {
+            "source_id": "parse:5c5836c8-2304-4bb3-8090-c2a5e71a6ac3",
+            "text_sha256": "1989b0b99e6fe7575a0fd6229227c6a8121f333094460914c05593aed5853e62",
+            "start_char": 0,
+            "end_char": 20,
+            "quote": "# 订单查询\r\n有效期：7 天。  \r\n"
+          },
+          {
+            "source_id": "parse:aea7ca2f-1433-42de-a845-968e49a8ebb8",
+            "text_sha256": "4c9e902b270ef0559c868b7066b033613da7516175d183b7334af7bf0ca67cbb",
+            "start_char": 0,
+            "end_char": 20,
+            "quote": "# 订单查询\r\n有效期：9 天。  \r\n"
+          }
+        ],
+        "case_impacts": [
+          {
+            "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+            "level": "major",
+            "reason": "用例仍预期7天",
+            "verification_points": [
+              "保留期限边界"
+            ],
+            "citations": [
+              {
+                "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+                "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1",
+                "root": "content_json",
+                "path": [
+                  "目标"
+                ],
+                "value": "验证订单保留7天"
+              },
+              {
+                "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+                "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1",
+                "root": "content_json",
+                "path": [
+                  "steps",
+                  11,
+                  "操作"
+                ],
+                "value": "完整步骤11"
+              },
+              {
+                "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+                "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1",
+                "root": "content_json",
+                "path": [
+                  "深层扩展",
+                  "布尔"
+                ],
+                "value": false
+              },
+              {
+                "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+                "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1",
+                "root": "content_json",
+                "path": [
+                  "深层扩展",
+                  "零"
+                ],
+                "value": 0
+              },
+              {
+                "version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+                "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1",
+                "root": "content_json",
+                "path": [
+                  "深层扩展",
+                  "空"
+                ],
+                "value": null
+              }
+            ]
+          }
+        ],
+        "applicability_suggestion": "current",
+        "uncertainties": [
+          "部署生效状态未核实"
+        ]
+      }
+    ],
+    "case_checkpoints": [
+      {
+        "task_id": "69b7df26-9744-406f-885b-49653dd894f4",
+        "call_id": "243d51d9-7dd0-4e4d-8b2a-8cf958fa2fc5",
+        "validator_version": "impact-response-validator-v3",
+        "request_sha256": "20eda0f28fec6fb6c18fbc2efb19711cfde0a6ec0ee62460f09fd65889464876",
+        "response_sha256": "ce108769b009433a48e082b7d89b31586b347487c44d7b36e5eb385f6f40aee7",
+        "manifest_sha256": "d735b7dfa0f5e3bd9b01cb700d671003d574839b24539053d4f8f172709875b6",
+        "result": {
+          "storage_uri": "rustfs://qa-agent/document-impacts/1823ceef-0ea6-469d-b3b0-b495ee8d9b23/69b7df26-9744-406f-885b-49653dd894f4/304ca92b-356a-4843-bef1-4707afef29f3/calls/3c63bccc-dcd6-49d7-bea7-e8182a2c1fd9/response-check.json",
+          "sha256": "7cf21929f8a8c6b8c52b15e4c86858e7cdc1e2cb87485cd7f9bddad154deb754",
+          "size_bytes": 2997
+        },
+        "created_at": "2026-10-05T18:19:29.935054Z"
+      }
+    ],
+    "basis_limitations": [
+      "difference_warning:extracted_text_positions"
+    ],
+    "analysis_status": "partial",
+    "deployment_status": "unknown"
+  },
+  "previous_review_id": null,
+  "review_number": 1,
+  "requirement_version": {
+    "id": "b455d90f-06dc-465d-aa0d-1d0dcadcc1cd",
+    "requirement_id": "64169ac3-5111-4a06-8165-48707d0139bb",
+    "version": 1,
+    "parent_version_id": null,
+    "review_id": "befc7141-f25b-4309-996b-b3bcd4fad533",
+    "change": "modified",
+    "title": "订单保留期",
+    "statement": "订单保留九天",
+    "points": [
+      {
+        "key": "retention",
+        "description": "验证九天保留期",
+        "id": "16515f8d-120d-46f5-a364-0758602339ce"
+      }
+    ],
+    "case_links": [
+      {
+        "case_version_id": "3a031950-5181-49e6-8e4c-a282761b9a59",
+        "point_keys": [
+          "retention"
+        ],
+        "case_id": "07f9c291-aeb4-4641-925f-01e414f483d8",
+        "version_record_sha256": "a7c7c6c09aa31b437330d6cb7a43fdd751fb592bf0485b8dcd719cc27655a4e1"
+      }
+    ],
+    "content_sha256": "ada63dda730b8dd2c3e7034382ba7ebcf49bb7276dacc722ae16fb2975f519e5",
+    "created_at": "2026-10-05T18:19:32.039438Z"
+  },
+  "created_at": "2026-10-05T18:19:32.039438Z"
+}

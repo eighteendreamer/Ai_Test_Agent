@@ -1,0 +1,15 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________ test_uuid_case_variants_keep_same_fixed_execution_identity __________
+tests\test_requirement_execution.py:399: in test_uuid_case_variants_keep_same_fixed_execution_identity
+    reply = await f.client.post(f.route, json=request); assert reply.status_code == 201, reply.text
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {"detail":"引用不是该结果的正文核验；准备或清理不能证明需求通过"}
+E   assert 409 == 201
+E    +  where 409 = <Response [409 Conflict]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.documents.requirement_service:requirement_service.py:144 requirement_execution_write_failed
+WARNING  src.api.document_operation_calls:document_operation_calls.py:19 requirement_request_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_requirement_execution.py::test_uuid_case_variants_keep_same_fixed_execution_identity
+1 failed in 11.73s

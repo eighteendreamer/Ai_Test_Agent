@@ -65,8 +65,37 @@ export interface RequirementCoverageReview {
 export interface RequirementMatrix extends RequirementBundle {
   points: {
     point: RequirementPoint; case_links: RequirementCaseLink[]; previous_case_links: RequirementCaseLink[];
-    design_status: "uncovered" | "design_covered" | "needs_review"; execution_status: "not_assessed";
+    design_status: "uncovered" | "design_covered" | "needs_review"; execution_status: "passed" | "failed" | "partial" | "not_assessed";
+    execution_scope?: "selected_checks"; execution_checks?: RequirementExecutionCheck[];
   }[];
   removed: boolean; deployment_status: "unknown";
   coverage_review?: RequirementCoverageReview | null;
+  execution_review?: RequirementExecutionReview | null;
+}
+
+export interface RequirementExecutionCheckInput {
+  result_id: string; verification_id: string; check_index: number; point_keys: string[];
+}
+export interface RequirementExecutionRequest {
+  request_id: string; coverage_id: string; expected_execution_id?: string | null; note: string;
+  checks: RequirementExecutionCheckInput[];
+}
+export interface RequirementExecutionCheck extends RequirementExecutionCheckInput {
+  run_id: string; run_item_id: string; attempt_id: string; attempt_no: number; case_id: string; case_version_id: string;
+  content_hash: string; version_record_sha256: string; result_payload_hash: string; result_record_sha256: string;
+  result_status: "passed" | "failed" | "error" | "blocked" | "skipped";
+  run_kind: "normal" | "regression"; run_origin: "native" | "legacy_smoke_import";
+  execution_strategy: "legacy" | "agent"; mode_key: string; regression_source_result_id: string | null;
+  plan_sha256: string | null; check: Record<string, unknown>; check_sha256: string;
+  tool_sources: Record<string, unknown>[];
+}
+export interface RequirementExecutionReview {
+  implementation_version: "requirement-execution-v1"; id: string; project_id: string; document_id: string;
+  requirement_id: string; requirement_version_id: string; requirement_version_sha256: string; coverage_sha256: string;
+  request: RequirementExecutionRequest; request_sha256: string; previous_execution_id: string | null;
+  revision: number; checks: RequirementExecutionCheck[]; created_at: string; sha256: string;
+}
+export interface RequirementExecutionCandidate {
+  result_id: string; run_id: string; case_id: string; case_version_id: string; status: string;
+  summary: string; created_at: string; checks: Record<string, unknown>[]; warnings: string[];
 }

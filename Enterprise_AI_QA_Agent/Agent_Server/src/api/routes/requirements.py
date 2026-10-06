@@ -5,6 +5,10 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 
 from src.api.document_operation_calls import call_document_operation
+from src.schemas.requirement_execution import (
+    COVERAGE_PATTERN, RequirementExecutionRequest, RequirementExecutionReview,
+    RequirementExecutionPage, RequirementExecutionCandidates,
+)
 from src.schemas.requirements import (
     RequirementMatrix, RequirementPage, RequirementReview, RequirementReviewPage,
     RequirementReviewRequest, RequirementVersion,
@@ -51,9 +55,10 @@ async def list_versions(project_id: UUID, document_id: UUID, requirement_id: UUI
 @router.get("/requirements/{requirement_id}/matrix", response_model=RequirementMatrix)
 async def read_matrix(project_id: UUID, document_id: UUID, requirement_id: UUID, request: Request,
     version_id: UUID | None = None,
-    coverage_id: str | None = Query(default=None, pattern=r"^(initial|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")):
+    coverage_id: str | None = Query(default=None, pattern=COVERAGE_PATTERN),
+    execution_id: str | None = Query(default=None, pattern=COVERAGE_PATTERN)):
     return await _call(request, project_id, document_id, "read_matrix", str(requirement_id),
-        version_id=str(version_id) if version_id else None, coverage_id=coverage_id)
+        version_id=str(version_id) if version_id else None, coverage_id=coverage_id, execution_id=execution_id)
 
 
 @router.post("/requirements/{requirement_id}/versions/{version_id}/coverage-reviews",
@@ -73,3 +78,30 @@ async def list_coverage(project_id: UUID, document_id: UUID, requirement_id: UUI
 async def get_coverage_by_request(project_id: UUID, document_id: UUID, request: Request,
     request_id: str = Query(min_length=1, max_length=160)):
     return await _call(request, project_id, document_id, "get_coverage_by_request", request_id)
+
+
+@router.post("/requirements/{requirement_id}/versions/{version_id}/execution-reviews",
+    response_model=RequirementExecutionReview, status_code=201)
+async def submit_execution(project_id: UUID, document_id: UUID, requirement_id: UUID, version_id: UUID,
+    payload: RequirementExecutionRequest, request: Request):
+    return await _call(request, project_id, document_id, "submit_execution", str(requirement_id), str(version_id), payload)
+
+
+@router.get("/requirements/{requirement_id}/versions/{version_id}/execution-reviews", response_model=RequirementExecutionPage)
+async def list_execution(project_id: UUID, document_id: UUID, requirement_id: UUID, version_id: UUID, request: Request,
+    limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)):
+    return await _call(request, project_id, document_id, "list_execution", str(requirement_id), str(version_id), limit=limit, offset=offset)
+
+
+@router.get("/requirement-execution-reviews/by-request", response_model=RequirementExecutionReview)
+async def get_execution_by_request(project_id: UUID, document_id: UUID, request: Request,
+    request_id: str = Query(min_length=1, max_length=160)):
+    return await _call(request, project_id, document_id, "get_execution_by_request", request_id)
+
+
+@router.get("/requirements/{requirement_id}/versions/{version_id}/execution-candidates", response_model=RequirementExecutionCandidates)
+async def execution_candidates(project_id: UUID, document_id: UUID, requirement_id: UUID, version_id: UUID, request: Request,
+    coverage_id: str = Query(default="initial", pattern=COVERAGE_PATTERN),
+    limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)):
+    return await _call(request, project_id, document_id, "execution_candidates", str(requirement_id), str(version_id), coverage_id,
+        limit=limit, offset=offset)

@@ -2892,3 +2892,52 @@ git diff --cached --check
 同步首轮失败为AssertionError，链接为planning_service.py:245；校验器把行号当作文件名。去掉文件链接末尾行号后实际通过，最终文档再次同步。重复同步只接受原预期hash或上次审计hash，未知副本不覆盖。
 
 同步脚本核对三份计划字节、所有本地链接、18份历史审计的6636份原始文件hash/大小、四份原最终XML统计和用户.gitignore；保存p4-plan-execution-sync-validation.json。历史XML读取不算本次重新测试；未运行业务测试/构建/浏览器/模型/迁移。文档提交只包含PLAN、IMPLEMENTATION、研究设计、同步脚本和审计，工作区源码草稿和.gitignore保留，不推送或建PR。
+
+## 2026-10-06 正文执行核验关联、生产API与方案同步
+
+实施基线c27efe0e。重新读取原目标和研究设计后，将执行关联草稿接入固定结果验证、PG追加确认、服务、公开API和矩阵，前端DTO/客户端与只读展示同步。新增文档表前缀_requirement_execution表，随既有initialize创建；业务元数据PG、可编辑配置MySQL、原件/既有大工件RustFS职责不变。没有新增依赖、配置键或测试模式，没有执行生产历史迁移。
+
+选择明确需求/覆盖版本和原result/verification/check，保存前核对run/item/attempt、原payload_hash、完整用例hash/固定预期、原CaseExecutionCheck算子/方法及实际ToolJob身份/输出。保存selected_checks范围，正文与准备/清理以及整条result.status分别展示。历史恢复仅读取原确认，未知回执不重新运行工具/模型。新覆盖和新需求不继承旧通过，回归新运行仍引用原失败。
+
+真实MD/DOCX/PDF、实际解析/比较进程与MySQL/PG/RustFS，以及本地业务HTTP→ToolRuntime→Agent回执核验→RunService.complete_item完成实际入库；12步JSON和False/0/null保留。测试回执为受控输入，尚未证明默认Agent自主执行。真实清理HTTP500使整条结果失败，正文检查可独立通过；实际7天错误返回后新回归取得9天结果，原失败不改写。
+
+各轮实际结果均有独立原XML/log：
+
+| 文件前缀p4-requirement-execution- | 实际结果 |
+|---|---|
+| offline-first | 1通过/6跳过，未开真实存储开关 |
+| live-first | 1通过/6失败，39.72秒；夹具缺现有非空skill_versions，补manual:v1 |
+| md-fixed / live-fixed | 1通过及7通过，0跳过 |
+| verified | 65通过/2跳过；缺计划运行live开关及外部模型开关 |
+| final | 67通过/1跳过，172.65秒；唯一外部实际模型未调用 |
+| production-first / production-final | 1通过及2通过；后者139.74秒，含原覆盖生产兼容 |
+| uuid-first | 实际大写UUID引用1失败，11.73秒；输入未统一UUID导致字符串误拒绝，Schema规范化身份后修复 |
+| identity-verified | 最后源码11通过/0跳过，66.85秒 |
+| production-identity | 最后源码独立生产API1通过/0跳过，60.91秒 |
+| components-first / build-final | 49项/4文件通过；vue-tsc与Vite构建通过，Vite8.58秒 |
+
+完整实际命令对应原日志/证据目录，主要命令如下（先在Agent_Server目录执行后端）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS="1"
+$env:RUN_LIVE_DOCUMENT_IMPACT_SOURCES="1"
+$env:RUN_LIVE_PLAN_RUN_CREATION="1"
+$env:QA_REQUIREMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-execution-identity-verified"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_execution.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-execution-identity-verified.xml
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION="1"
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-execution-production-identity"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_requirement_execution_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-execution-production-identity.xml
+# agent_web目录；组件命令另保存完整原log：
+npm run test -- src/features/tools/plugins/RequirementExecutionProduct.test.ts src/features/tools/plugins/RequirementProduct.test.ts src/features/tools/plugins/RequirementCoverageProduct.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-requirement-execution-components-first.xml
+npm run build
+# 项目根目录，以下审计只核对已有证据，不重新运行上述功能测试：
+.\.venv\Scripts\python.exe -Xutf8 docs/upgrade_2026-10-03/requirement_execution_delivery_20261006.py --sync
+```
+
+独立生产流程使用真实API和解析/比较/影响CLI、隔离数据库与对象、实际业务HTTP/ToolRuntime结果；新执行场景6次业务HTTP，关联和重启归档恢复模型发送0，原结果/ToolJob/SQL/hash/回归源核对。新影响夹具2次受控模型发送不计为自主Agent测试；旧覆盖兼容流程仍原4次发送。尚未运行正式执行关联编辑页面或浏览器完整App，也没有调用外部默认Agent模型。
+
+初次更新设计文档patch未命中长段落，未写入；重新读取后分文件精确更新。方案3.6.12、5.2.2及6.30反映实际接入范围，三份方案字节一致；p4-requirement-execution-validation.json核对原件/结果/工具输出、生产对象和全部新增XML，以及此前18份审计的6636份原始证据不变。用户.gitignore保留。暂存仅相关源码/测试/方案和新证据，原失败保留；不推送或建PR。
+
+下一步正式关联编辑与完整App、环境身份/适用、默认Agent自主执行及业务评审；P2准备状态/未知副作用/修订、P1模板导入、P0录制/Docker/发送追踪、P5知识报告及历史迁移仍未完成，完整目标保持active。
+
+暂存首轮一次传入351个完整路径，Windows CreateProcess报WinError206命令过长，未写入暂存。随后改为每批20条的明确文件路径；审计同时修正空暂存列表被识别为空字符串的问题。没有改变证据文件、用户.gitignore或Git配置。

@@ -11,6 +11,7 @@ from src.schemas.document_impact_responses import DocumentImpactRuleCandidate, D
 from src.schemas.document_impact_workflow import DocumentImpactDiscoveredRule
 from src.schemas.case_management import TestCaseVersionReview
 from src.schemas.generation_receipts import GenerationReceipt
+from src.schemas.requirement_execution import RequirementExecutionCheck, RequirementExecutionReview
 
 
 class RequirementModel(BaseModel):
@@ -217,7 +218,9 @@ class RequirementMatrixPoint(RequirementModel):
     case_links: list[RequirementCaseLink]
     previous_case_links: list[RequirementCaseLink]
     design_status: Literal["uncovered", "design_covered", "needs_review"]
-    execution_status: Literal["not_assessed"] = "not_assessed"
+    execution_status: Literal["passed", "failed", "partial", "not_assessed"] = "not_assessed"
+    execution_scope: Literal["selected_checks"] = "selected_checks"
+    execution_checks: list[RequirementExecutionCheck] = Field(default_factory=list)
 
 
 class RequirementMatrix(RequirementBundle):
@@ -225,3 +228,4 @@ class RequirementMatrix(RequirementBundle):
     removed: bool
     deployment_status: Literal["unknown"] = "unknown"
     coverage_review: RequirementCoverageReview | None = None
+    execution_review: RequirementExecutionReview | None = None

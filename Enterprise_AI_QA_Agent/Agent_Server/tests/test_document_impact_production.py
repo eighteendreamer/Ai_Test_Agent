@@ -67,7 +67,7 @@ def collect_objects(settings, owned):
     ("docx", True, False), ("md", False, True),
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
-    verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False):
+    verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_execution=None):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -367,6 +367,13 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                                 settings=settings,evidence=evidence,sends=sends)
                             matrix = coverage_state["matrix"]
                         sent = len(sends)
+                        execution_state = None
+                        if verify_execution:
+                            from requirement_execution_production_scenario import execution_from_production
+                            execution_state = await execution_from_production(base=base, root=root, review=requirement_review,
+                                settings=settings, get=get, post=post, client=client, evidence=evidence, sends=sends,
+                                business_http=verify_execution, source_ref=source(SimpleNamespace(id=document['id']), views[1]))
+                            matrix = execution_state["matrix"]
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
                         terminal = processes.start("impact-worker-terminal", "-m", "src.cli.run_document_impact_worker",
@@ -401,6 +408,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             from requirement_coverage_production_scenario import coverage_after_restart
                             await coverage_after_restart(state=coverage_state,get=get,post=post,client=client,
                                 evidence=evidence,project_id=project["id"])
+                        if execution_state:
+                            from requirement_execution_production_scenario import execution_after_restart
+                            await execution_after_restart(state=execution_state, get=get, post=post, client=client,
+                                settings=settings, evidence=evidence, project_id=project["id"], sends=sends)
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

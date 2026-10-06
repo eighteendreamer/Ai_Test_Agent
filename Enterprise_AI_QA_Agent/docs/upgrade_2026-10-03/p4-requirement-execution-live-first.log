@@ -1,0 +1,82 @@
+.FFFFFF                                                                  [100%]
+================================== FAILURES ===================================
+___ test_real_fixed_body_checks_partial_association_history_and_archive[md] ___
+tests\test_requirement_execution.py:213: in test_real_fixed_body_checks_partial_association_history_and_archive
+    async with execution_environment(tmp_path, retention_http, extension) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+__ test_real_fixed_body_checks_partial_association_history_and_archive[docx] __
+tests\test_requirement_execution.py:213: in test_real_fixed_body_checks_partial_association_history_and_archive
+    async with execution_environment(tmp_path, retention_http, extension) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+__ test_real_fixed_body_checks_partial_association_history_and_archive[pdf] ___
+tests\test_requirement_execution.py:213: in test_real_fixed_body_checks_partial_association_history_and_archive
+    async with execution_environment(tmp_path, retention_http, extension) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+____________ test_lost_commit_reply_race_and_candidate_pagination _____________
+tests\test_requirement_execution.py:253: in test_lost_commit_reply_race_and_candidate_pagination
+    async with execution_environment(tmp_path, retention_http) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+_________ test_failed_business_then_new_regression_preserves_original _________
+tests\test_requirement_execution.py:283: in test_failed_business_then_new_regression_preserves_original
+    async with execution_environment(tmp_path, retention_http) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+_____ test_wrong_refs_foreign_project_coverage_and_actual_tool_corruption _____
+tests\test_requirement_execution.py:301: in test_wrong_refs_foreign_project_coverage_and_actual_tool_corruption
+    async with execution_environment(tmp_path, retention_http) as f:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_requirement_execution.py:92: in execution_environment
+    selected = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for TestCaseDraftCreateRequest
+E   skill_versions
+E     Dictionary should have at least 1 item after validation, not 0 [type=too_short, input_value={}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/too_short
+=========================== short test summary info ===========================
+FAILED tests/test_requirement_execution.py::test_real_fixed_body_checks_partial_association_history_and_archive[md]
+FAILED tests/test_requirement_execution.py::test_real_fixed_body_checks_partial_association_history_and_archive[docx]
+FAILED tests/test_requirement_execution.py::test_real_fixed_body_checks_partial_association_history_and_archive[pdf]
+FAILED tests/test_requirement_execution.py::test_lost_commit_reply_race_and_candidate_pagination
+FAILED tests/test_requirement_execution.py::test_failed_business_then_new_regression_preserves_original
+FAILED tests/test_requirement_execution.py::test_wrong_refs_foreign_project_coverage_and_actual_tool_corruption
+6 failed, 1 passed in 39.72s
