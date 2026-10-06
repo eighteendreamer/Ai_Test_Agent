@@ -4,6 +4,18 @@ import { getCasePlanningTask, getCasePlanningTaskByRequest, listCasePlanningTask
 describe("project planning task HTTP contract", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("sends only the chosen fixed target identity and preserves the original submission", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({ id: "task" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = { creation_key: "fixed-target", objective: "完整用例规划",
+      environment: { environment_id: "env", snapshot_id: "snapshot", expected_snapshot_sha256: "a".repeat(64) },
+      runtime_context: { empty: null, flag: false, count: 0 } };
+    await submitCasePlanningTask("project", payload);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+    await getCasePlanningTaskByRequest("project", payload.creation_key);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("preserves a submission identity and encodes lookup keys independently of path segments", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({ id: "task" }) });
     vi.stubGlobal("fetch", fetchMock);

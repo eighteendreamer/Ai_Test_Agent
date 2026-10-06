@@ -89,6 +89,8 @@ class CasePlanningWorkflow:
                             "round": checkpoint.next_round + 1, "remaining_rounds": policy.max_rounds - checkpoint.next_round}
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
+                        if record.environment is not None:
+                            context["business_environment"] = record.environment.model_dump(mode="json")
                         body = json_text(context)
                         if len(body) + len(seed.system_prompt) > policy.max_context_chars:
                             raise ValueError("完整规划上下文超过配置限制，未截断用例；请缩小候选范围或调整配置")

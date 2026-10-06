@@ -1351,7 +1351,7 @@ class SessionService:
         if not attempt_id:
             raise ValueError("固定用例执行缺少 attempt 身份")
         turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
-        frozen = context.model_dump(mode="json")
+        frozen = context.execution_json()
         mode = self._mode_registry.resolve(mode_key)
         async with self._session_locks[session_id]:
             session = await self._require_session(session_id)
@@ -1406,7 +1406,7 @@ class SessionService:
             state = snapshot.graph_state if snapshot is not None else {}
             saved = state.get("context_bundle") or {}
             if (session.project_id != context.project_id or state.get("turn_id") != turn_id
-                or saved.get("case_execution") != context.model_dump(mode="json")
+                or saved.get("case_execution") != context.execution_json()
                 or saved.get("attempt_id") != attempt_id or not saved.get("case_execution_managed")
                 or state.get("mode_key") != self._mode_registry.resolve(mode_key).key):
                 raise ValueError("审批续执行与固定运行身份或内容不一致")

@@ -7,6 +7,7 @@ import logging
 
 from src.application.test_runs.dependencies import dependencies_ready, output_at_path
 from src.application.test_runs.plan_mapping import source_output_path
+from src.runtime.postgres_business_planning import fixed_planning_environment
 from src.schemas.case_execution import AgentCaseExecutionContext, BoundCaseInput, CaseExecutionStep
 from src.schemas.case_management import TestCaseVersionRecord
 from src.schemas.run_management import TestRunDetail, TestRunItemRecord
@@ -87,9 +88,14 @@ def build_agent_case_context(
         if entry.id == frozen.id:
             entry.payload = {key: value for key, value in entry.payload.items()
                 if key not in {"content", "execution_notes"}}
+    fixed = None
+    if plan.environment is not None:
+        fixed = fixed_planning_environment(run.project_id, plan.request.environment, plan.environment)
+    elif plan.request.environment is not None:
+        raise ValueError("Agent所选环境缺少固定规划依据")
     context = AgentCaseExecutionContext(project_id=run.project_id, run_id=run.id, run_item_id=item.id,
         plan_id=plan.id, objective=plan.request.objective, target_key=target.key, steps=steps,
-        runtime_inputs=deepcopy(plan.request.runtime_context),
+        runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,
         evidence=evidence,
         unresolved=[gap.model_copy(deep=True) for gap in plan.decision.unresolved if gap.item_key is None or gap.item_key in owned])
     logger.info("agent_case_context_built", extra={"project_id": run.project_id, "run_id": run.id,

@@ -73,7 +73,7 @@ class AgentCaseAssessmentService:
             session_id=session_id, turn_id=turn_id, attempt_id=attempt_id)
         # Explicitly name the two reference roots, presenting complete business
         # content once. Both prompts still use the same receipt schema/validator.
-        data = {"frozen_execution": context.model_dump(mode="json", exclude={"steps"}),
+        data = {"frozen_execution": context.execution_json(exclude={"steps"}),
             "requested_item_keys": keys,
             "execution_items": [{"item_key": step.item.key, "phase": step.phase,
                 "plan_item": step.item.model_dump(mode="json", exclude={"instructions"}),

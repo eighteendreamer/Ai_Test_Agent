@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
 )
+from src.schemas.business_planning import BusinessPlanningEnvironment
 
 
 class BoundCaseInput(PlanningModel):
@@ -39,6 +40,13 @@ class AgentCaseExecutionContext(PlanningModel):
     runtime_inputs: dict[str, Any] = Field(default_factory=dict)
     evidence: list[PlanningEvidence] = Field(default_factory=list)
     unresolved: list[PlanningGap] = Field(default_factory=list)
+    business_environment: BusinessPlanningEnvironment | None = None
+
+    def execution_json(self, *, exclude=None) -> dict[str, Any]:
+        omitted = set(exclude or ())
+        if self.business_environment is None:
+            omitted.add("business_environment")
+        return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:
         """Use the existing graph/TurnState/snapshot context, without copies per layer."""
@@ -47,7 +55,7 @@ class AgentCaseExecutionContext(PlanningModel):
             "run_id": self.run_id,
             "run_item_id": self.run_item_id,
             "execution_basis": "cases",
-            "case_execution": self.model_dump(mode="json"),
+            "case_execution": self.execution_json(),
         }
 
 

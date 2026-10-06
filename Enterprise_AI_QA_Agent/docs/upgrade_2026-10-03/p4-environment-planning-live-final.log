@@ -1,0 +1,238 @@
+.....FFF..                                                               [100%]
+================================== FAILURES ===================================
+_ test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[md] __
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-827/test_fixed_environment_reaches0')
+retention_http = ('http://127.0.0.1:60365', [], 'actual-5dcbf9341ccf4d8b9320b9eba1c8142f')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000022D7E56DAD0>
+extension = 'md'
+
+    @pytest.mark.asyncio
+    @LIVE
+    @pytest.mark.parametrize("extension", ["md", "docx", "pdf"])
+    async def test_fixed_environment_reaches_real_planner_full_case_run_and_recovery(tmp_path, retention_http, monkeypatch, extension):
+        async with decisions_environment(tmp_path, retention_http, extension) as f:
+            old = await f.decision_client.post(f.decision_routes[0], json=decision_request(f))
+            assert old.status_code == 201, old.text
+            new_request = decision_request(f, 1, key="new-case-valid", status="effective", case_status="valid")
+            new_request.update(coverage_id=f.coverage["id"], expected_coverage_sha256=f.coverage["sha256"])
+            new_request["cases"][0]["case_version_id"] = f.selected.version.id
+            new_review = await f.decision_client.post(f.decision_routes[1], json=new_request)
+            assert new_review.status_code == 201, new_review.text
+            target = PostgresBusinessPlanning(applicability=f.decision_store)
+            f.env.service._environments = f.runs._environments = target
+            model = SequenceModel(complete_plan, complete_plan)
+            f.env.service._models = model
+            request = CasePlanningRequest(objective="读取完整十二步核对固定九天目标",
+                candidate_case_ids=[f.selected.case.id], environment=selection(f),
+                runtime_context={"flag": False, "count": 0, "empty": None, "business_environment": "客户端自报不能覆盖"})
+            request_file = tmp_path / "planning-request.json"
+            request_file.write_text(json.dumps(request.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8")
+            plan = await f.env.service.create(f.project.id, CasePlanningRequest.model_validate_json(request_file.read_bytes()))
+            assert plan.status == "planned", plan.summary
+            assert plan.environment.snapshot.model_dump(mode="json") == f.snapshots[1]
+            assert [r.id for r in plan.environment.reviews] == [new_review.json()["id"]]
+            sent = json.loads(model.requests[0].messages[0]["content"])
+            assert sent["business_environment"] == plan.environment.model_dump(mode="json")
+            assert "不读取生成模板" in model.requests[0].system_prompt
+            assert "business_environment" in model.requests[0].system_prompt
+            creator = CasePlanRunService(run_store=f.runs, suite_store=f.suites, plan_store=f.env.store,
+                case_service=f.env.cases, project_service=f.env.projects)
+            payload = CasePlanRunRequest(creation_key="bound-run", mode_key="api_testing")
+            detail = await creator.create(f.project.id, plan.id, payload)
+            now = datetime.now(timezone.utc)
+            claimed, attempt = (await f.runs.claim_items(run_id=detail.run.id, worker_id="fixed-target", limit=1,
+                lease_seconds=60, now=now))[0]
+            started = await f.runs.start_item(claimed.id, attempt.lease_token, now)
+            stored = await f.runs.get_run(detail.run.id)
+            context = build_agent_case_context(stored, started, f.selected.version)
+            assert len(context.steps[0].content_json["steps"]) == 12
+            assert context.runtime_inputs["business_environment"] == plan.environment.model_dump(mode="json")
+            assert context.runtime_inputs["flag"] is False and context.runtime_inputs["count"] == 0 and context.runtime_inputs["empty"] is None
+            original_context = context.model_dump(mode="json")
+            original_hash = detail.run.creation_hash
+            session, turn = str(uuid4()), str(uuid4())
+            runtime = ToolRuntimeService(tool_job_service=f.jobs)
+            fixed_url = context.runtime_inputs["business_environment"]["snapshot"]["configuration"]["payload"]["base_url"]
+            tc = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,
+                user_message=context.objective, normalized_input=context.objective,
+                context_bundle={**context.runtime_context(), "attempt_id": attempt.id})
+            actual_tool = await runtime.execute(ToolRegistry().get("api-test-runner"), ModelToolCall(
+                id="fixed-target-case", name="api-test-runner", arguments={"worker_action": "execute_task",
+                    "task": {"task_id": "fixed-target-case", "method": "GET", "path": fixed_url+"/rule"}}), tc)
+            checks = [{"name": field, "operator": "equals", "expected_path_tokens": ["expected", field],
+                "observations": [{"call_id": actual_tool.call_id, "output_path_tokens": ["task_result", "response_status"]
+                    if field == "code" else ["task_result", "response_body", field]}]}
+                for field in ["code", "days", "expired_count", "expired", "deleted_at"]]
+            outcome = await AgentCaseAssessmentService(f.jobs).assess(context=context, receipt={"schema_version": 1,
+                "steps": [{"item_key": "target", "status": "passed", "summary": "对照固定用例的真实九天响应",
+                    "checks": checks}]}, tool_records=[actual_tool], session_id=session, turn_id=turn,
+                attempt_id=attempt.id, model_key="controlled-tool-receipt", lease_token=attempt.lease_token)
+            run_service = RunService(store=f.runs, project_service=f.env.projects, suite_service=None,
+                test_case_service=f.env.cases, tool_job_service=f.jobs, clock=lambda: datetime.now(timezone.utc))
+            result = await run_service.complete_item(started.id, outcome.completion)
+            assert result.status == "passed"
+>           assert all(check["status"] == "passed" for check in result.actual["verification_results"][0]["checks"])
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'checks'
+
+Agent_Server\tests\test_business_planning.py:170: KeyError
+_ test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[docx] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-827/test_fixed_environment_reaches1')
+retention_http = ('http://127.0.0.1:60481', [], 'actual-2c3afeac005a417bbe9aac6a111a0f36')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000022D7E56DA90>
+extension = 'docx'
+
+    @pytest.mark.asyncio
+    @LIVE
+    @pytest.mark.parametrize("extension", ["md", "docx", "pdf"])
+    async def test_fixed_environment_reaches_real_planner_full_case_run_and_recovery(tmp_path, retention_http, monkeypatch, extension):
+        async with decisions_environment(tmp_path, retention_http, extension) as f:
+            old = await f.decision_client.post(f.decision_routes[0], json=decision_request(f))
+            assert old.status_code == 201, old.text
+            new_request = decision_request(f, 1, key="new-case-valid", status="effective", case_status="valid")
+            new_request.update(coverage_id=f.coverage["id"], expected_coverage_sha256=f.coverage["sha256"])
+            new_request["cases"][0]["case_version_id"] = f.selected.version.id
+            new_review = await f.decision_client.post(f.decision_routes[1], json=new_request)
+            assert new_review.status_code == 201, new_review.text
+            target = PostgresBusinessPlanning(applicability=f.decision_store)
+            f.env.service._environments = f.runs._environments = target
+            model = SequenceModel(complete_plan, complete_plan)
+            f.env.service._models = model
+            request = CasePlanningRequest(objective="读取完整十二步核对固定九天目标",
+                candidate_case_ids=[f.selected.case.id], environment=selection(f),
+                runtime_context={"flag": False, "count": 0, "empty": None, "business_environment": "客户端自报不能覆盖"})
+            request_file = tmp_path / "planning-request.json"
+            request_file.write_text(json.dumps(request.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8")
+            plan = await f.env.service.create(f.project.id, CasePlanningRequest.model_validate_json(request_file.read_bytes()))
+            assert plan.status == "planned", plan.summary
+            assert plan.environment.snapshot.model_dump(mode="json") == f.snapshots[1]
+            assert [r.id for r in plan.environment.reviews] == [new_review.json()["id"]]
+            sent = json.loads(model.requests[0].messages[0]["content"])
+            assert sent["business_environment"] == plan.environment.model_dump(mode="json")
+            assert "不读取生成模板" in model.requests[0].system_prompt
+            assert "business_environment" in model.requests[0].system_prompt
+            creator = CasePlanRunService(run_store=f.runs, suite_store=f.suites, plan_store=f.env.store,
+                case_service=f.env.cases, project_service=f.env.projects)
+            payload = CasePlanRunRequest(creation_key="bound-run", mode_key="api_testing")
+            detail = await creator.create(f.project.id, plan.id, payload)
+            now = datetime.now(timezone.utc)
+            claimed, attempt = (await f.runs.claim_items(run_id=detail.run.id, worker_id="fixed-target", limit=1,
+                lease_seconds=60, now=now))[0]
+            started = await f.runs.start_item(claimed.id, attempt.lease_token, now)
+            stored = await f.runs.get_run(detail.run.id)
+            context = build_agent_case_context(stored, started, f.selected.version)
+            assert len(context.steps[0].content_json["steps"]) == 12
+            assert context.runtime_inputs["business_environment"] == plan.environment.model_dump(mode="json")
+            assert context.runtime_inputs["flag"] is False and context.runtime_inputs["count"] == 0 and context.runtime_inputs["empty"] is None
+            original_context = context.model_dump(mode="json")
+            original_hash = detail.run.creation_hash
+            session, turn = str(uuid4()), str(uuid4())
+            runtime = ToolRuntimeService(tool_job_service=f.jobs)
+            fixed_url = context.runtime_inputs["business_environment"]["snapshot"]["configuration"]["payload"]["base_url"]
+            tc = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,
+                user_message=context.objective, normalized_input=context.objective,
+                context_bundle={**context.runtime_context(), "attempt_id": attempt.id})
+            actual_tool = await runtime.execute(ToolRegistry().get("api-test-runner"), ModelToolCall(
+                id="fixed-target-case", name="api-test-runner", arguments={"worker_action": "execute_task",
+                    "task": {"task_id": "fixed-target-case", "method": "GET", "path": fixed_url+"/rule"}}), tc)
+            checks = [{"name": field, "operator": "equals", "expected_path_tokens": ["expected", field],
+                "observations": [{"call_id": actual_tool.call_id, "output_path_tokens": ["task_result", "response_status"]
+                    if field == "code" else ["task_result", "response_body", field]}]}
+                for field in ["code", "days", "expired_count", "expired", "deleted_at"]]
+            outcome = await AgentCaseAssessmentService(f.jobs).assess(context=context, receipt={"schema_version": 1,
+                "steps": [{"item_key": "target", "status": "passed", "summary": "对照固定用例的真实九天响应",
+                    "checks": checks}]}, tool_records=[actual_tool], session_id=session, turn_id=turn,
+                attempt_id=attempt.id, model_key="controlled-tool-receipt", lease_token=attempt.lease_token)
+            run_service = RunService(store=f.runs, project_service=f.env.projects, suite_service=None,
+                test_case_service=f.env.cases, tool_job_service=f.jobs, clock=lambda: datetime.now(timezone.utc))
+            result = await run_service.complete_item(started.id, outcome.completion)
+            assert result.status == "passed"
+>           assert all(check["status"] == "passed" for check in result.actual["verification_results"][0]["checks"])
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'checks'
+
+Agent_Server\tests\test_business_planning.py:170: KeyError
+_ test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[pdf] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-827/test_fixed_environment_reaches2')
+retention_http = ('http://127.0.0.1:49934', [], 'actual-4cd3b55d7d7c4246958fa6bce838ad70')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000022D7E56DB90>
+extension = 'pdf'
+
+    @pytest.mark.asyncio
+    @LIVE
+    @pytest.mark.parametrize("extension", ["md", "docx", "pdf"])
+    async def test_fixed_environment_reaches_real_planner_full_case_run_and_recovery(tmp_path, retention_http, monkeypatch, extension):
+        async with decisions_environment(tmp_path, retention_http, extension) as f:
+            old = await f.decision_client.post(f.decision_routes[0], json=decision_request(f))
+            assert old.status_code == 201, old.text
+            new_request = decision_request(f, 1, key="new-case-valid", status="effective", case_status="valid")
+            new_request.update(coverage_id=f.coverage["id"], expected_coverage_sha256=f.coverage["sha256"])
+            new_request["cases"][0]["case_version_id"] = f.selected.version.id
+            new_review = await f.decision_client.post(f.decision_routes[1], json=new_request)
+            assert new_review.status_code == 201, new_review.text
+            target = PostgresBusinessPlanning(applicability=f.decision_store)
+            f.env.service._environments = f.runs._environments = target
+            model = SequenceModel(complete_plan, complete_plan)
+            f.env.service._models = model
+            request = CasePlanningRequest(objective="读取完整十二步核对固定九天目标",
+                candidate_case_ids=[f.selected.case.id], environment=selection(f),
+                runtime_context={"flag": False, "count": 0, "empty": None, "business_environment": "客户端自报不能覆盖"})
+            request_file = tmp_path / "planning-request.json"
+            request_file.write_text(json.dumps(request.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8")
+            plan = await f.env.service.create(f.project.id, CasePlanningRequest.model_validate_json(request_file.read_bytes()))
+            assert plan.status == "planned", plan.summary
+            assert plan.environment.snapshot.model_dump(mode="json") == f.snapshots[1]
+            assert [r.id for r in plan.environment.reviews] == [new_review.json()["id"]]
+            sent = json.loads(model.requests[0].messages[0]["content"])
+            assert sent["business_environment"] == plan.environment.model_dump(mode="json")
+            assert "不读取生成模板" in model.requests[0].system_prompt
+            assert "business_environment" in model.requests[0].system_prompt
+            creator = CasePlanRunService(run_store=f.runs, suite_store=f.suites, plan_store=f.env.store,
+                case_service=f.env.cases, project_service=f.env.projects)
+            payload = CasePlanRunRequest(creation_key="bound-run", mode_key="api_testing")
+            detail = await creator.create(f.project.id, plan.id, payload)
+            now = datetime.now(timezone.utc)
+            claimed, attempt = (await f.runs.claim_items(run_id=detail.run.id, worker_id="fixed-target", limit=1,
+                lease_seconds=60, now=now))[0]
+            started = await f.runs.start_item(claimed.id, attempt.lease_token, now)
+            stored = await f.runs.get_run(detail.run.id)
+            context = build_agent_case_context(stored, started, f.selected.version)
+            assert len(context.steps[0].content_json["steps"]) == 12
+            assert context.runtime_inputs["business_environment"] == plan.environment.model_dump(mode="json")
+            assert context.runtime_inputs["flag"] is False and context.runtime_inputs["count"] == 0 and context.runtime_inputs["empty"] is None
+            original_context = context.model_dump(mode="json")
+            original_hash = detail.run.creation_hash
+            session, turn = str(uuid4()), str(uuid4())
+            runtime = ToolRuntimeService(tool_job_service=f.jobs)
+            fixed_url = context.runtime_inputs["business_environment"]["snapshot"]["configuration"]["payload"]["base_url"]
+            tc = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,
+                user_message=context.objective, normalized_input=context.objective,
+                context_bundle={**context.runtime_context(), "attempt_id": attempt.id})
+            actual_tool = await runtime.execute(ToolRegistry().get("api-test-runner"), ModelToolCall(
+                id="fixed-target-case", name="api-test-runner", arguments={"worker_action": "execute_task",
+                    "task": {"task_id": "fixed-target-case", "method": "GET", "path": fixed_url+"/rule"}}), tc)
+            checks = [{"name": field, "operator": "equals", "expected_path_tokens": ["expected", field],
+                "observations": [{"call_id": actual_tool.call_id, "output_path_tokens": ["task_result", "response_status"]
+                    if field == "code" else ["task_result", "response_body", field]}]}
+                for field in ["code", "days", "expired_count", "expired", "deleted_at"]]
+            outcome = await AgentCaseAssessmentService(f.jobs).assess(context=context, receipt={"schema_version": 1,
+                "steps": [{"item_key": "target", "status": "passed", "summary": "对照固定用例的真实九天响应",
+                    "checks": checks}]}, tool_records=[actual_tool], session_id=session, turn_id=turn,
+                attempt_id=attempt.id, model_key="controlled-tool-receipt", lease_token=attempt.lease_token)
+            run_service = RunService(store=f.runs, project_service=f.env.projects, suite_service=None,
+                test_case_service=f.env.cases, tool_job_service=f.jobs, clock=lambda: datetime.now(timezone.utc))
+            result = await run_service.complete_item(started.id, outcome.completion)
+            assert result.status == "passed"
+>           assert all(check["status"] == "passed" for check in result.actual["verification_results"][0]["checks"])
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'checks'
+
+Agent_Server\tests\test_business_planning.py:170: KeyError
+=========================== short test summary info ===========================
+FAILED Agent_Server\tests\test_business_planning.py::test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[md]
+FAILED Agent_Server\tests\test_business_planning.py::test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[docx]
+FAILED Agent_Server\tests\test_business_planning.py::test_fixed_environment_reaches_real_planner_full_case_run_and_recovery[pdf]
+3 failed, 7 passed in 80.84s (0:01:20)

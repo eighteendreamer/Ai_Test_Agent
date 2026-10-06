@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="14" tests="28" time="70.331" timestamp="2026-10-06T13:50:03.508946+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_execution" name="test_public_plan_launch_outbox_redis_worker_agent_approvals_and_terminal_replay" time="5.826" /><testcase classname="tests.test_agent_case_execution" name="test_agent_regression_http_run_recreates_data_and_preserves_actual_parent_failure[False]" time="1.061" /><testcase classname="tests.test_agent_case_execution" name="test_agent_regression_http_run_recreates_data_and_preserves_actual_parent_failure[True]" time="0.002"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:178: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[False]" time="0.797" /><testcase classname="tests.test_agent_case_execution" name="test_durable_admission_owned_approvals_actual_outputs_and_terminal_result[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:310: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[False]" time="0.817"><failure message="ValueError: 相同执行身份的冻结上下文或模式发生变化">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_terminal_snapshot_s0')
+business_http = ('http://127.0.0.1:53038', [('POST', '/orders'), ('GET', '/orders/actual-56825a59fb8940b1a354d3cfb45e41ce'), ('DELETE', '/orders/actual-56825a59fb8940b1a354d3cfb45e41ce')], 'actual-56825a59fb8940b1a354d3cfb45e41ce')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    async def test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, _, reader, _, runs, agent, adapter, args, clock, _ = values
+            pending = await adapter().execute(**await args())
+            for _ in range(3):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+            original = await runs.get_latest_attempt(env[0].run_item_id)
+            clock[0] += timedelta(seconds=91)
+            assert (await runs.recover_expired(env[0].run_id)).recovered_count == 1
+            claim = (await env[7].claim_items(run_id=env[0].run_id, worker_id='recovered',
+                limit=1, lease_seconds=60, now=clock[0]))[0]
+            await runs.start_item(claim[0].id, RunItemLeaseRequest(lease_token=claim[1].lease_token))
+&gt;           recovered = await adapter().execute(**await args())
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Agent_Server\tests\test_agent_case_execution.py:367: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+Agent_Server\src\application\test_runs\agent_case_execution.py:156: in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;src.application.sessions.session_service.SessionService object at 0x000001A8C89EEB90&gt;
+session_id = '58ca7199-e4ea-46e9-b845-6e3b46493d77'
+context = AgentCaseExecutionContext(schema_version=1, project_id='083259b1-ff9e-4ee6-8b04-847b522a837f', run_id='a586ed2d-543a-5...eceipt-case', 'version': None, 'label': '', 'uri': None, 'metadata': {}}]})], unresolved=[], business_environment=None)
+attempt_id = '2ffbbe71-500c-43a1-ba55-640f11045270', mode_key = 'api_testing'
+managed_by_run = True
+
+    async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str, managed_by_run: bool = False) -&gt; SessionSnapshot:
+        """Server-only frozen execution; share normal turn leases, events and snapshots.
+    
+        The caller must build context from persisted versions and validate its
+        own item lease before calling. No HTTP route accepts this frozen payload.
+        """
+        if not attempt_id:
+            raise ValueError("固定用例执行缺少 attempt 身份")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        frozen = context.model_dump(mode="json")
+        mode = self._mode_registry.resolve(mode_key)
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.project_id != context.project_id:
+                raise ValueError("固定用例执行会话与正式项目不一致")
+            for snapshot in reversed(await self._store.list_snapshots(session_id, include_graph_state=True)):
+                state = snapshot.graph_state
+                if state.get("turn_id") != turn_id:
+                    continue
+                saved = state.get("context_bundle") or {}
+                if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or bool(saved.get("case_execution_managed")) != managed_by_run
+                    or state.get("mode_key") != mode.key):
+&gt;                   raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+E                   ValueError: 相同执行身份的冻结上下文或模式发生变化
+
+Agent_Server\src\application\sessions\session_service.py:1368: ValueError</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:353: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[False]" time="0.511" /><testcase classname="tests.test_agent_case_execution" name="test_crash_after_intent_before_any_snapshot_requires_reconciliation[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:379: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False]" time="15.837"><failure message="ValueError: 相同执行身份的冻结上下文或模式发生变化">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_http_completed_but_approv0')
+business_http = ('http://127.0.0.1:53053', [('POST', '/orders')], 'actual-5caa14ee5b6147d89fe935e7428aed90')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    async def test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live, CancelAfterCreated()) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, clock, _ = values
+            pending = await adapter().execute(**await args())
+            task = asyncio.create_task(approval_continuation(runs, reader, adapter, args, pending))
+            try:
+                await asyncio.wait_for(agent.after_created.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            assert business_http[1] == [('POST', '/orders')]
+            job = await env[1].get_job(pending.tool_job_id)
+            assert job.status.value == 'completed'
+            # The cancelled coroutine is terminal. Observe the actual preserved
+            # lease until the real reaper removes it; do not assume clock alignment.
+            async def wait_for_recovery():
+                while True:
+                    await sessions.recover_expired_turn_executions()
+                    if not (await reader.get_session(pending.session_id)).metadata.get('turn_lease_token'):
+                        return
+                    await asyncio.sleep(.5)
+            await asyncio.wait_for(wait_for_recovery(), 22)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await env[7].claim_items(run_id=env[0].run_id, worker_id='recovered',
+                limit=1, lease_seconds=60, now=clock[0]))[0]
+            await runs.start_item(claim[0].id, RunItemLeaseRequest(lease_token=claim[1].lease_token))
+            # A recovered Worker has no new user decision. Consume the saved one
+            # and replay the completed POST evidence through ordinary execution.
+&gt;           resumed = await adapter().execute(**await args())
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Agent_Server\tests\test_agent_case_execution.py:452: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+Agent_Server\src\application\test_runs\agent_case_execution.py:156: in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;src.application.sessions.session_service.SessionService object at 0x000001A8C8828110&gt;
+session_id = '4a333da6-609e-4411-b7b0-e7c572557b3d'
+context = AgentCaseExecutionContext(schema_version=1, project_id='21be4143-dc04-4e80-bb5e-76bcb5a64016', run_id='d86560c2-84a8-5...eceipt-case', 'version': None, 'label': '', 'uri': None, 'metadata': {}}]})], unresolved=[], business_environment=None)
+attempt_id = '5dc22bad-ce14-4454-aa49-8ca7ae5d60c6', mode_key = 'api_testing'
+managed_by_run = True
+
+    async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str, managed_by_run: bool = False) -&gt; SessionSnapshot:
+        """Server-only frozen execution; share normal turn leases, events and snapshots.
+    
+        The caller must build context from persisted versions and validate its
+        own item lease before calling. No HTTP route accepts this frozen payload.
+        """
+        if not attempt_id:
+            raise ValueError("固定用例执行缺少 attempt 身份")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        frozen = context.model_dump(mode="json")
+        mode = self._mode_registry.resolve(mode_key)
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.project_id != context.project_id:
+                raise ValueError("固定用例执行会话与正式项目不一致")
+            for snapshot in reversed(await self._store.list_snapshots(session_id, include_graph_state=True)):
+                state = snapshot.graph_state
+                if state.get("turn_id") != turn_id:
+                    continue
+                saved = state.get("context_bundle") or {}
+                if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or bool(saved.get("case_execution_managed")) != managed_by_run
+                    or state.get("mode_key") != mode.key):
+&gt;                   raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+E                   ValueError: 相同执行身份的冻结上下文或模式发生变化
+
+Agent_Server\src\application\sessions\session_service.py:1368: ValueError</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:417: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_stale_lease_foreign_checkpoint_or_context_cannot_admit_tools" time="0.518" /><testcase classname="tests.test_agent_case_execution" name="test_existing_dispatch_handler_claims_agent_item_and_suspends_without_reclaiming[False]" time="0.520" /><testcase classname="tests.test_agent_case_execution" name="test_existing_dispatch_handler_claims_agent_item_and_suspends_without_reclaiming[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:477: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_existing_run_http_routes_use_agent_strategy_and_return_each_approval_and_result[False]" time="1.121" /><testcase classname="tests.test_agent_case_execution" name="test_existing_run_http_routes_use_agent_strategy_and_return_each_approval_and_result[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:499: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_denied_owned_approval_saves_blocked_result_without_business_calls[False]" time="0.517" /><testcase classname="tests.test_agent_case_execution" name="test_denied_owned_approval_saves_blocked_result_without_business_calls[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:553: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_unknown_tool_outcome_never_reexecutes_or_overwrites_job_evidence[False]" time="0.510" /><testcase classname="tests.test_agent_case_execution" name="test_unknown_tool_outcome_never_reexecutes_or_overwrites_job_evidence[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:573: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_item_session_preserves_formal_parent_model_and_server_environment[False]" time="0.516" /><testcase classname="tests.test_agent_case_execution" name="test_item_session_preserves_formal_parent_model_and_server_environment[True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:588: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_agent_admission_does_not_reserve_resources_from_legacy_mode_fields[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:615: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_actual_tool_resource_leases_use_frozen_execution_identity[True]" time="0.000"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:637: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_approval_decision_recovers_without_another_user_decision[approved-False]" time="15.660"><failure message="AssertionError: assert (False)&#10; +  where False = isinstance(TestCaseResultRecord(id='b502d58e-0926-4bc7-9700-6bab977c0008', run_id='389d3a87-3e41-5ab2-a848-3f5e4d5584e5', run_ite...1738461fe59dffcaad15ebf84', created_at=datetime.datetime(2026, 10, 6, 5, 52, 13, 465040, tzinfo=datetime.timezone.utc)), RunItemApprovalPending)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_approval_decision_r0')
+business_http = ('http://127.0.0.1:57717', [], 'actual-21e6dc365d7344e6b6cf3e5a1591923b')
+live = False, decision = &lt;ToolApprovalStatus.approved: 'approved'&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001A8C60CDB10&gt;
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('decision', [ToolApprovalStatus.approved, ToolApprovalStatus.denied])
+    async def test_saved_approval_decision_recovers_without_another_user_decision(
+        tmp_path, business_http, live, decision, monkeypatch):
+        agent = StopsAfterDenial() if decision == ToolApprovalStatus.denied else ControlledAgent()
+        async with adapter_environment(tmp_path, business_http, live, agent, start_item=False) as values:
+            env, writer, reader, sessions, runs, _, adapter, _, clock, _ = values
+            service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+                adapter=None, session_store=reader, tool_job_service=env[1])
+            service.set_agent_execution_adapter(adapter())
+            pending = await service.execute_item(env[0].run_item_id,
+                RunItemExecuteRequest(lease_token=env[6].items[0].lease_token))
+            reached = asyncio.Event()
+            append = sessions._append_approval_resolved_event
+    
+            async def stop_after_decision(session_id, approval):
+                await append(session_id, approval)
+                reached.set()
+                await asyncio.Event().wait()
+    
+            monkeypatch.setattr(sessions, '_append_approval_resolved_event', stop_after_decision)
+            note = '实际保存的审批决定，恢复时保持'
+            task = asyncio.create_task(service.resolve_item_approval(env[0].run_item_id,
+                RunItemApprovalDecisionRequest(approval_id=pending.approval_id, decision=decision, reason=note)))
+            try:
+                await asyncio.wait_for(reached.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                monkeypatch.setattr(sessions, '_append_approval_resolved_event', append)
+            saved = next(entry for entry in await reader.list_approvals(pending.session_id) if entry.id == pending.approval_id)
+            assert saved.status == decision and saved.decision_note == note
+            assert not business_http[1]
+            await expire_preserved_session_lease(sessions, reader, pending.session_id)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await runs.claim(env[0].run_id,
+                RunClaimRequest(worker_id='decision-recovery', limit=1))).claims[0]
+            resumed = await service.execute_item(claim.item.id, RunItemExecuteRequest(lease_token=claim.lease_token))
+            if decision == ToolApprovalStatus.approved:
+&gt;               assert isinstance(resumed, RunItemApprovalPending) and resumed.approval_id != pending.approval_id
+E               AssertionError: assert (False)
+E                +  where False = isinstance(TestCaseResultRecord(id='b502d58e-0926-4bc7-9700-6bab977c0008', run_id='389d3a87-3e41-5ab2-a848-3f5e4d5584e5', run_ite...1738461fe59dffcaad15ebf84', created_at=datetime.datetime(2026, 10, 6, 5, 52, 13, 465040, tzinfo=datetime.timezone.utc)), RunItemApprovalPending)
+
+Agent_Server\tests\test_agent_case_execution.py:739: AssertionError</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_approval_decision_recovers_without_another_user_decision[approved-True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:694: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_approval_decision_recovers_without_another_user_decision[denied-False]" time="15.688"><failure message="AssertionError: assert ('error' == 'blocked'&#10;  &#10;  - blocked&#10;  + error)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_approval_decision_r1')
+business_http = ('http://127.0.0.1:52439', [], 'actual-fd331818ae7f412db1be1dde0d6cb960')
+live = False, decision = &lt;ToolApprovalStatus.denied: 'denied'&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001A8C81A6850&gt;
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('decision', [ToolApprovalStatus.approved, ToolApprovalStatus.denied])
+    async def test_saved_approval_decision_recovers_without_another_user_decision(
+        tmp_path, business_http, live, decision, monkeypatch):
+        agent = StopsAfterDenial() if decision == ToolApprovalStatus.denied else ControlledAgent()
+        async with adapter_environment(tmp_path, business_http, live, agent, start_item=False) as values:
+            env, writer, reader, sessions, runs, _, adapter, _, clock, _ = values
+            service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+                adapter=None, session_store=reader, tool_job_service=env[1])
+            service.set_agent_execution_adapter(adapter())
+            pending = await service.execute_item(env[0].run_item_id,
+                RunItemExecuteRequest(lease_token=env[6].items[0].lease_token))
+            reached = asyncio.Event()
+            append = sessions._append_approval_resolved_event
+    
+            async def stop_after_decision(session_id, approval):
+                await append(session_id, approval)
+                reached.set()
+                await asyncio.Event().wait()
+    
+            monkeypatch.setattr(sessions, '_append_approval_resolved_event', stop_after_decision)
+            note = '实际保存的审批决定，恢复时保持'
+            task = asyncio.create_task(service.resolve_item_approval(env[0].run_item_id,
+                RunItemApprovalDecisionRequest(approval_id=pending.approval_id, decision=decision, reason=note)))
+            try:
+                await asyncio.wait_for(reached.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                monkeypatch.setattr(sessions, '_append_approval_resolved_event', append)
+            saved = next(entry for entry in await reader.list_approvals(pending.session_id) if entry.id == pending.approval_id)
+            assert saved.status == decision and saved.decision_note == note
+            assert not business_http[1]
+            await expire_preserved_session_lease(sessions, reader, pending.session_id)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await runs.claim(env[0].run_id,
+                RunClaimRequest(worker_id='decision-recovery', limit=1))).claims[0]
+            resumed = await service.execute_item(claim.item.id, RunItemExecuteRequest(lease_token=claim.lease_token))
+            if decision == ToolApprovalStatus.approved:
+                assert isinstance(resumed, RunItemApprovalPending) and resumed.approval_id != pending.approval_id
+                assert business_http[1] == [('POST', '/orders')]
+            else:
+&gt;               assert resumed.status == 'blocked' and not business_http[1]
+E               AssertionError: assert ('error' == 'blocked'
+E                 
+E                 - blocked
+E                 + error)
+
+Agent_Server\tests\test_agent_case_execution.py:742: AssertionError</failure></testcase><testcase classname="tests.test_agent_case_execution" name="test_saved_approval_decision_recovers_without_another_user_decision[denied-True]" time="0.001"><skipped type="pytest.skip" message="requires isolated real PostgreSQL/MySQL/RustFS">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_agent_case_execution.py:694: requires isolated real PostgreSQL/MySQL/RustFS</skipped></testcase></testsuite></testsuites>

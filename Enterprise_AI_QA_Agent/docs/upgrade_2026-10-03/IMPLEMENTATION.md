@@ -3112,3 +3112,61 @@ npm run build
 本步仅明确所选范围的显式业务评审API，评审语义由夹具提供。正式环境/矩阵页面、AI候选、C固定规划/启动/领取/回归执行限制、默认Agent、生产迁移及其他P0—P5继续，完整目标保持active。不会因为确认API通过就把运行约束或整条需求生效标成已完成。
 
 交付审计首轮通过Tee保存自身输出：实际首份清单没有audit-first.log，控制台输出之后该文件才创建，第二次核对报告因新增文件出现AssertionError。首份和中间复核报告分别保留为validation-first/validation-recheck；最终命令直接输出控制台，在日志已关闭后生成并复核最终报告，避免审计新增未纳入清单的自身输出。功能测试、原件、PG和HTTP记录不改写。最终核对7505份既有原始证据、当前工件、三份方案及用户.gitignore；该审计错误不算功能测试失败或成功。
+
+## 2026-10-06 C1固定环境进入规划、运行和独立Agent上下文〔基线67602761〕
+
+先查原任务重放/规划回合、计划映射/PG运行事务、会话/审批/核验及追加确认，再写P4_ENVIRONMENT_PLANNING_DESIGN.md。沿原服务接入固定环境，不建另一规划器。请求只带明确快照选择，服务器冻结完整PG依据/当时确认；原创建事务核对原PG快照和确认。main、容器、前端请求/计划类型及客户端同步。当前配置仍MySQL，固定业务依据PG，原件RustFS；没有新依赖、模式、表或配置键。
+
+新增business_planning契约/PG读取组件和http_observation纯schema。首次真实导入发现类型位于模式包引起运行时导入环，移出纯类型，原模块兼容导出。规划checkpoint固定字段包含环境；新增缺省字段通过集中wire函数省略，保留业务null/False/0及旧计划/运行hash。执行环境最初放入runtime_inputs，复核发现覆盖合法同名输入，改成独立AgentCaseExecutionContext.business_environment；原用户输入保持。
+
+实际结果按轮保存，不累计为当前测试数量：
+
+| 证据前缀p4-environment-planning- | 实际结果与范围 |
+|---|---|
+| offline-first | 1收集错误，导入环；没有功能通过项 |
+| offline-fixed | 36通过/25真实开关跳过，11.39秒 |
+| live-first | 6通过/0跳过，69.84秒；初始三格式固定规划/恢复 |
+| compatibility-first | 5通过，20.46秒；旧普通/回归Run、完整JSON、请求hash与独立导入顺序 |
+| live-final | 3失败/7通过，80.84秒；实际工具核验保存已成功，夹具误读顶层checks，正确路径为metadata.checks |
+| live-verified | 10通过/0跳过，75.62秒；完整工具/结果、持久输入、伪造依据拒绝 |
+| live-separated | 10通过/0跳过，84.16秒；独立环境字段、用户同名输入与改址/撤回/归档恢复 |
+| regression | 命令错误退出4，零项测试；误写不存在的test_business_tool_observation.py，保留log和零计数XML |
+| regression-fixed | 78通过/5跳过，152.35秒；旧规划/创建/环境/API来源，未开全部真实来源开关，详见XML跳过原因 |
+| production-first | 1失败，89.45秒；受控响应content为dict，原协议要求字符串，5回合合法拒绝；该轮未完整保存全部物理消息，只有进程日志，不能补造 |
+| production-fixed | 1失败，81.99秒；完整规划/运行创建成功，旧场景末尾仅预期影响2发送，遗漏新规划1发送；按明确新增1修正，不动态重算期望值 |
+| production-final | 1通过/0跳过，90.53秒；main/API、Outbox、独立规划CLI、正式创建运行、重启/归档/删配置后原请求恢复，3条物理模型HTTP |
+| agent-regression | 12失败/72通过/3跳过，199.82秒；会话重放漏改序列化导致身份误拒绝，另2项仓库根工作目录使旧证据相对路径不存在 |
+| agent-live | 4失败/10通过/14跳过；同一序列化根因，且只开公共Worker开关而未开完整PG参数开关 |
+| agent-recovery-fixed | 85通过/2外部模型跳过，252.17秒；统一首次/重放/审批/上下文hash序列化并在Agent_Server工作目录运行，含实际图/HTTP/存储/公共Worker恢复 |
+| origin-live | 24通过/0跳过，33.05秒；纯类型移动后实际来源及原API检查点恢复 |
+| model-context-final | 19通过/1外部模型跳过，85.37秒；新三格式实际提示/SDK模型HTTP及旧上下文，完整独立环境JSON进入每次真实请求 |
+| client-final/build-final | 6客户端通过；vue-tsc/Vite通过，Vite11.65秒 |
+
+实际命令（每轮用独立目录/XML/log；旧失败不覆盖）：
+
+```powershell
+# Agent_Server工作目录；最终三格式、持久种子、伪造依据和提示HTTP：
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS="1"
+$env:RUN_LIVE_PLAN_RUN_CREATION="1"
+$env:QA_REQUIREMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-planning-model-context-final"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_planning.py tests/test_agent_case_context.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-planning-model-context-final.xml
+# 真实PG参数和实际公共Worker开关均启用；两个外部默认模型开关未启用：
+$env:RUN_LIVE_PUBLIC_PLAN_WORKER="1"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_agent_case_context.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-planning-agent-recovery-fixed.xml
+$env:RUN_LIVE_HTTP_ORIGINS="1"
+$env:QA_HTTP_ORIGIN_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-planning-origin-live"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_http_origin.py tests/test_api_task_executor_recovery.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-planning-origin-live.xml
+# 独立生产API/Worker；该场景只到正式Run创建，不启动执行Worker：
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION="1"
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-planning-production-final"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_planning_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-planning-production-final.xml
+# agent_web：
+npm run test -- src/services/projects.planning-tasks.api.test.ts src/services/businessApplicability.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-environment-planning-client-final.xml
+npm run build
+```
+
+实际三格式完整12步、未知嵌套字段及False/0/null均保持，固定九天地址从Agent环境取出发实际GET；ToolRuntime/PG原输出及五项正文核验200/9/0/False/null保存passed结果，终态不可重领。最新模型输入专项各一条真实本地SDK HTTP验证完整上下文与固定目标指令；模型回应为受控夹具，工具执行/回执也由受控脚本驱动，不冒充外部Agent自主执行。独立生产规划1发送加原影响2发送，原运行仍queued；当前配置/派发/归档变化后原请求恢复不发新模型。
+
+首次扩大规划回归未指定QA_PLANNING_TASK_EVIDENCE_DIR，测试默认写根目录p2-planning-worker-probe.json并替换旧cli诊断。已将本轮确切内容保存至p4-environment-planning-regression-fixed目录，再从HEAD恢复旧cli原字节；历史清单核对原SHA/大小，不把新内容留在旧记录位置。后续规划回归须指定该证据目录。
+
+三份方案同步，明确C1固定依据已接但C2最新确认的创建/领取/开始限制尚未实现。精确受影响项/依赖、独立项继续、未知副作用、新目标回归、D正式页面、用户业务评审、默认Agent、生产迁移及其他P0—P5继续。交付审计environment_planning_delivery_20261006.py核对旧原始证据、最新原件/工具/结果/模型请求及暂存原字节；用户.gitignore保持，不推送或建PR。

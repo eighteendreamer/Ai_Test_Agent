@@ -1,0 +1,311 @@
+..s.sFs.sFs..s.s.s.s.sssFsFs                                             [100%]
+================================== FAILURES ===================================
+_ test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_terminal_snapshot_s0')
+business_http = ('http://127.0.0.1:53038', [('POST', '/orders'), ('GET', '/orders/actual-56825a59fb8940b1a354d3cfb45e41ce'), ('DELETE', '/orders/actual-56825a59fb8940b1a354d3cfb45e41ce')], 'actual-56825a59fb8940b1a354d3cfb45e41ce')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    async def test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, _, reader, _, runs, agent, adapter, args, clock, _ = values
+            pending = await adapter().execute(**await args())
+            for _ in range(3):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+            original = await runs.get_latest_attempt(env[0].run_item_id)
+            clock[0] += timedelta(seconds=91)
+            assert (await runs.recover_expired(env[0].run_id)).recovered_count == 1
+            claim = (await env[7].claim_items(run_id=env[0].run_id, worker_id='recovered',
+                limit=1, lease_seconds=60, now=clock[0]))[0]
+            await runs.start_item(claim[0].id, RunItemLeaseRequest(lease_token=claim[1].lease_token))
+>           recovered = await adapter().execute(**await args())
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Agent_Server\tests\test_agent_case_execution.py:367: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+Agent_Server\src\application\test_runs\agent_case_execution.py:156: in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.application.sessions.session_service.SessionService object at 0x000001A8C89EEB90>
+session_id = '58ca7199-e4ea-46e9-b845-6e3b46493d77'
+context = AgentCaseExecutionContext(schema_version=1, project_id='083259b1-ff9e-4ee6-8b04-847b522a837f', run_id='a586ed2d-543a-5...eceipt-case', 'version': None, 'label': '', 'uri': None, 'metadata': {}}]})], unresolved=[], business_environment=None)
+attempt_id = '2ffbbe71-500c-43a1-ba55-640f11045270', mode_key = 'api_testing'
+managed_by_run = True
+
+    async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str, managed_by_run: bool = False) -> SessionSnapshot:
+        """Server-only frozen execution; share normal turn leases, events and snapshots.
+    
+        The caller must build context from persisted versions and validate its
+        own item lease before calling. No HTTP route accepts this frozen payload.
+        """
+        if not attempt_id:
+            raise ValueError("固定用例执行缺少 attempt 身份")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        frozen = context.model_dump(mode="json")
+        mode = self._mode_registry.resolve(mode_key)
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.project_id != context.project_id:
+                raise ValueError("固定用例执行会话与正式项目不一致")
+            for snapshot in reversed(await self._store.list_snapshots(session_id, include_graph_state=True)):
+                state = snapshot.graph_state
+                if state.get("turn_id") != turn_id:
+                    continue
+                saved = state.get("context_bundle") or {}
+                if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or bool(saved.get("case_execution_managed")) != managed_by_run
+                    or state.get("mode_key") != mode.key):
+>                   raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+E                   ValueError: 相同执行身份的冻结上下文或模式发生变化
+
+Agent_Server\src\application\sessions\session_service.py:1368: ValueError
+_ test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_http_completed_but_approv0')
+business_http = ('http://127.0.0.1:53053', [('POST', '/orders')], 'actual-5caa14ee5b6147d89fe935e7428aed90')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    async def test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live, CancelAfterCreated()) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, clock, _ = values
+            pending = await adapter().execute(**await args())
+            task = asyncio.create_task(approval_continuation(runs, reader, adapter, args, pending))
+            try:
+                await asyncio.wait_for(agent.after_created.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            assert business_http[1] == [('POST', '/orders')]
+            job = await env[1].get_job(pending.tool_job_id)
+            assert job.status.value == 'completed'
+            # The cancelled coroutine is terminal. Observe the actual preserved
+            # lease until the real reaper removes it; do not assume clock alignment.
+            async def wait_for_recovery():
+                while True:
+                    await sessions.recover_expired_turn_executions()
+                    if not (await reader.get_session(pending.session_id)).metadata.get('turn_lease_token'):
+                        return
+                    await asyncio.sleep(.5)
+            await asyncio.wait_for(wait_for_recovery(), 22)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await env[7].claim_items(run_id=env[0].run_id, worker_id='recovered',
+                limit=1, lease_seconds=60, now=clock[0]))[0]
+            await runs.start_item(claim[0].id, RunItemLeaseRequest(lease_token=claim[1].lease_token))
+            # A recovered Worker has no new user decision. Consume the saved one
+            # and replay the completed POST evidence through ordinary execution.
+>           resumed = await adapter().execute(**await args())
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Agent_Server\tests\test_agent_case_execution.py:452: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+Agent_Server\src\application\test_runs\agent_case_execution.py:156: in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.application.sessions.session_service.SessionService object at 0x000001A8C8828110>
+session_id = '4a333da6-609e-4411-b7b0-e7c572557b3d'
+context = AgentCaseExecutionContext(schema_version=1, project_id='21be4143-dc04-4e80-bb5e-76bcb5a64016', run_id='d86560c2-84a8-5...eceipt-case', 'version': None, 'label': '', 'uri': None, 'metadata': {}}]})], unresolved=[], business_environment=None)
+attempt_id = '5dc22bad-ce14-4454-aa49-8ca7ae5d60c6', mode_key = 'api_testing'
+managed_by_run = True
+
+    async def execute_case_turn(self, session_id: str, *, context: AgentCaseExecutionContext,
+        attempt_id: str, mode_key: str, managed_by_run: bool = False) -> SessionSnapshot:
+        """Server-only frozen execution; share normal turn leases, events and snapshots.
+    
+        The caller must build context from persisted versions and validate its
+        own item lease before calling. No HTTP route accepts this frozen payload.
+        """
+        if not attempt_id:
+            raise ValueError("固定用例执行缺少 attempt 身份")
+        turn_id = str(uuid5(NAMESPACE_URL, f"case-run:{context.run_id}:{context.run_item_id}:{attempt_id}"))
+        frozen = context.model_dump(mode="json")
+        mode = self._mode_registry.resolve(mode_key)
+        async with self._session_locks[session_id]:
+            session = await self._require_session(session_id)
+            if session.project_id != context.project_id:
+                raise ValueError("固定用例执行会话与正式项目不一致")
+            for snapshot in reversed(await self._store.list_snapshots(session_id, include_graph_state=True)):
+                state = snapshot.graph_state
+                if state.get("turn_id") != turn_id:
+                    continue
+                saved = state.get("context_bundle") or {}
+                if (saved.get("case_execution") != frozen or saved.get("attempt_id") != attempt_id
+                    or bool(saved.get("case_execution_managed")) != managed_by_run
+                    or state.get("mode_key") != mode.key):
+>                   raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+E                   ValueError: 相同执行身份的冻结上下文或模式发生变化
+
+Agent_Server\src\application\sessions\session_service.py:1368: ValueError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.sessions.session_service:session_service.py:1447 case_approval_lease_preserved_for_recovery
+WARNING  src.application.sessions.session_service:session_service.py:357 expired_turn_recovered
+_ test_saved_approval_decision_recovers_without_another_user_decision[approved-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_approval_decision_r0')
+business_http = ('http://127.0.0.1:57717', [], 'actual-21e6dc365d7344e6b6cf3e5a1591923b')
+live = False, decision = <ToolApprovalStatus.approved: 'approved'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A8C60CDB10>
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('decision', [ToolApprovalStatus.approved, ToolApprovalStatus.denied])
+    async def test_saved_approval_decision_recovers_without_another_user_decision(
+        tmp_path, business_http, live, decision, monkeypatch):
+        agent = StopsAfterDenial() if decision == ToolApprovalStatus.denied else ControlledAgent()
+        async with adapter_environment(tmp_path, business_http, live, agent, start_item=False) as values:
+            env, writer, reader, sessions, runs, _, adapter, _, clock, _ = values
+            service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+                adapter=None, session_store=reader, tool_job_service=env[1])
+            service.set_agent_execution_adapter(adapter())
+            pending = await service.execute_item(env[0].run_item_id,
+                RunItemExecuteRequest(lease_token=env[6].items[0].lease_token))
+            reached = asyncio.Event()
+            append = sessions._append_approval_resolved_event
+    
+            async def stop_after_decision(session_id, approval):
+                await append(session_id, approval)
+                reached.set()
+                await asyncio.Event().wait()
+    
+            monkeypatch.setattr(sessions, '_append_approval_resolved_event', stop_after_decision)
+            note = '实际保存的审批决定，恢复时保持'
+            task = asyncio.create_task(service.resolve_item_approval(env[0].run_item_id,
+                RunItemApprovalDecisionRequest(approval_id=pending.approval_id, decision=decision, reason=note)))
+            try:
+                await asyncio.wait_for(reached.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                monkeypatch.setattr(sessions, '_append_approval_resolved_event', append)
+            saved = next(entry for entry in await reader.list_approvals(pending.session_id) if entry.id == pending.approval_id)
+            assert saved.status == decision and saved.decision_note == note
+            assert not business_http[1]
+            await expire_preserved_session_lease(sessions, reader, pending.session_id)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await runs.claim(env[0].run_id,
+                RunClaimRequest(worker_id='decision-recovery', limit=1))).claims[0]
+            resumed = await service.execute_item(claim.item.id, RunItemExecuteRequest(lease_token=claim.lease_token))
+            if decision == ToolApprovalStatus.approved:
+>               assert isinstance(resumed, RunItemApprovalPending) and resumed.approval_id != pending.approval_id
+E               AssertionError: assert (False)
+E                +  where False = isinstance(TestCaseResultRecord(id='b502d58e-0926-4bc7-9700-6bab977c0008', run_id='389d3a87-3e41-5ab2-a848-3f5e4d5584e5', run_ite...1738461fe59dffcaad15ebf84', created_at=datetime.datetime(2026, 10, 6, 5, 52, 13, 465040, tzinfo=datetime.timezone.utc)), RunItemApprovalPending)
+
+Agent_Server\tests\test_agent_case_execution.py:739: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.sessions.session_service:session_service.py:1447 case_approval_lease_preserved_for_recovery
+WARNING  src.application.sessions.session_service:session_service.py:357 expired_turn_recovered
+ERROR    src.application.test_runs.execution_service:execution_service.py:381 test_run_case_execution_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 307, in execute_item
+    outcome = await self._execute_with_lease_watch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 490, in _execute_with_lease_watch
+    return await execution
+           ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 156, in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\sessions\session_service.py", line 1368, in execute_case_turn
+    raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+ValueError: 相同执行身份的冻结上下文或模式发生变化
+_ test_saved_approval_decision_recovers_without_another_user_decision[denied-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-833/test_saved_approval_decision_r1')
+business_http = ('http://127.0.0.1:52439', [], 'actual-fd331818ae7f412db1be1dde0d6cb960')
+live = False, decision = <ToolApprovalStatus.denied: 'denied'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A8C81A6850>
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('decision', [ToolApprovalStatus.approved, ToolApprovalStatus.denied])
+    async def test_saved_approval_decision_recovers_without_another_user_decision(
+        tmp_path, business_http, live, decision, monkeypatch):
+        agent = StopsAfterDenial() if decision == ToolApprovalStatus.denied else ControlledAgent()
+        async with adapter_environment(tmp_path, business_http, live, agent, start_item=False) as values:
+            env, writer, reader, sessions, runs, _, adapter, _, clock, _ = values
+            service = ExecutionService(run_service=runs, test_case_service=runs._cases,
+                adapter=None, session_store=reader, tool_job_service=env[1])
+            service.set_agent_execution_adapter(adapter())
+            pending = await service.execute_item(env[0].run_item_id,
+                RunItemExecuteRequest(lease_token=env[6].items[0].lease_token))
+            reached = asyncio.Event()
+            append = sessions._append_approval_resolved_event
+    
+            async def stop_after_decision(session_id, approval):
+                await append(session_id, approval)
+                reached.set()
+                await asyncio.Event().wait()
+    
+            monkeypatch.setattr(sessions, '_append_approval_resolved_event', stop_after_decision)
+            note = '实际保存的审批决定，恢复时保持'
+            task = asyncio.create_task(service.resolve_item_approval(env[0].run_item_id,
+                RunItemApprovalDecisionRequest(approval_id=pending.approval_id, decision=decision, reason=note)))
+            try:
+                await asyncio.wait_for(reached.wait(), 5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                monkeypatch.setattr(sessions, '_append_approval_resolved_event', append)
+            saved = next(entry for entry in await reader.list_approvals(pending.session_id) if entry.id == pending.approval_id)
+            assert saved.status == decision and saved.decision_note == note
+            assert not business_http[1]
+            await expire_preserved_session_lease(sessions, reader, pending.session_id)
+            clock[0] += timedelta(seconds=91)
+            await runs.recover_expired(env[0].run_id)
+            claim = (await runs.claim(env[0].run_id,
+                RunClaimRequest(worker_id='decision-recovery', limit=1))).claims[0]
+            resumed = await service.execute_item(claim.item.id, RunItemExecuteRequest(lease_token=claim.lease_token))
+            if decision == ToolApprovalStatus.approved:
+                assert isinstance(resumed, RunItemApprovalPending) and resumed.approval_id != pending.approval_id
+                assert business_http[1] == [('POST', '/orders')]
+            else:
+>               assert resumed.status == 'blocked' and not business_http[1]
+E               AssertionError: assert ('error' == 'blocked'
+E                 
+E                 - blocked
+E                 + error)
+
+Agent_Server\tests\test_agent_case_execution.py:742: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.sessions.session_service:session_service.py:1447 case_approval_lease_preserved_for_recovery
+WARNING  src.application.sessions.session_service:session_service.py:357 expired_turn_recovered
+ERROR    src.application.test_runs.execution_service:execution_service.py:381 test_run_case_execution_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 307, in execute_item
+    outcome = await self._execute_with_lease_watch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 490, in _execute_with_lease_watch
+    return await execution
+           ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 156, in execute
+    snapshot = await self._sessions.execute_case_turn(checkpoint.session_id, context=context,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\sessions\session_service.py", line 1368, in execute_case_turn
+    raise ValueError("相同执行身份的冻结上下文或模式发生变化")
+ValueError: 相同执行身份的冻结上下文或模式发生变化
+=========================== short test summary info ===========================
+FAILED Agent_Server\tests\test_agent_case_execution.py::test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay[False]
+FAILED Agent_Server\tests\test_agent_case_execution.py::test_http_completed_but_approval_snapshot_stale_replays_tool_evidence_without_reposting[False]
+FAILED Agent_Server\tests\test_agent_case_execution.py::test_saved_approval_decision_recovers_without_another_user_decision[approved-False]
+FAILED Agent_Server\tests\test_agent_case_execution.py::test_saved_approval_decision_recovers_without_another_user_decision[denied-False]
+4 failed, 10 passed, 14 skipped in 70.35s (0:01:10)

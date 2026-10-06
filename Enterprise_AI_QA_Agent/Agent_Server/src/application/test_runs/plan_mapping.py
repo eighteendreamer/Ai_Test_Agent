@@ -9,7 +9,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from src.application.test_runs.dependencies import validate_run_dependencies
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
-from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest, RegressionPlanSource
+from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest, RegressionPlanSource, case_plan_json
 from src.schemas.run_management import RunItemDependency, TestRunItemRecord, TestRunRecord, TestCaseResultRecord
 from src.schemas.suite_management import TestSuiteBundle, TestSuiteItemRecord, TestSuiteRecord
 
@@ -152,7 +152,7 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
         created_at=now, updated_at=now), items=[TestSuiteItemRecord(id=identity("suite-item", key),
         suite_id=suite_id, case_id=nodes[key].case_id, case_version_id=nodes[key].case_version_id,
         position=index) for index, key in enumerate(formal, 1)])
-    plan_data = plan.model_dump(mode="json")
+    plan_data = case_plan_json(plan)
     if plan.regression is None:
         # Normal plans created before durable regression have no such field.
         # Keep their creation hash stable so acknowledgement retries still work.

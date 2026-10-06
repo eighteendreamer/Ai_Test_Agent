@@ -446,7 +446,8 @@ async def _initialize_lifespan_resources(
     case_planning_service = container.case_planning_service()
     await case_planning_service.initialize()
     planning_task_store = PostgresPlanningTaskStore(settings,
-        lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+        lease_seconds=settings.orchestration.task_outbox_lease_seconds,
+        environment_store=container.business_planning_store())
     planning_stream = settings.orchestration.case_planning_task_stream
     case_planning_task_service = CasePlanningTaskService(store=planning_task_store,
         planning_service=case_planning_service, project_service=project_service,

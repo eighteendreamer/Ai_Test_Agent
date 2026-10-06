@@ -194,7 +194,7 @@ async def test_frozen_case_uses_actual_session_runtime_graph_tools_and_replays_w
         assert snapshot.stage == 'completed'
         assert len(agent.requests) == 4
         assert len(business_http[1]) == 3
-        assert snapshot.graph_state['context_bundle']['case_execution'] == context.model_dump(mode='json')
+        assert snapshot.graph_state['context_bundle']['case_execution'] == context.execution_json()
         assert snapshot.graph_state['context_bundle']['attempt_id'] == attempt
         records = [ToolExecutionRecord.model_validate(r) for r in snapshot.graph_state['tool_results']]
         assert len(records) == 3 and all(record.job_id for record in records)
@@ -267,7 +267,7 @@ async def test_case_session_lease_loss_stops_runtime_and_waits_for_cleanup(tmp_p
 
             class BlockingRuntime:
                 async def execute_turn(self, session, request, **kwargs):
-                    assert request.context['case_execution'] == context.model_dump(mode='json')
+                    assert request.context['case_execution'] == context.execution_json()
                     entered.set()
                     try:
                         await asyncio.Event().wait()

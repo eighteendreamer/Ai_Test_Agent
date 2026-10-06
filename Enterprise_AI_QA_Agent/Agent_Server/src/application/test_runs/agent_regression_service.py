@@ -91,7 +91,7 @@ class AgentRegressionService:
         fixed_plan = None if request.version_overrides else self._subset(snapshot, selected, context)
         planning_request = fixed_plan.request if fixed_plan is not None else CasePlanningRequest(objective=snapshot.plan.request.objective,
             candidate_case_ids=list(versions), model_key=snapshot.plan.model_key,
-            runtime_context=snapshot.plan.request.runtime_context)
+            runtime_context=snapshot.plan.request.runtime_context, environment=snapshot.plan.request.environment)
         return await self._planning_tasks.submit_regression(parent.project_id, request, source,
             planning_request=planning_request, prepared_plan=fixed_plan)
 
@@ -99,7 +99,7 @@ class AgentRegressionService:
         original = parent.plan_snapshot.plan
         request = CasePlanningRequest(objective=original.request.objective,
             candidate_case_ids=list(versions), model_key=original.model_key,
-            runtime_context=original.request.runtime_context)
+            runtime_context=original.request.runtime_context, environment=original.request.environment)
         plan = await self._planner.create(parent.project_id, request,
             fixed_case_versions=versions, planning_context=context)
         if plan.status not in {"planned", "blocked"} or plan.decision is None:

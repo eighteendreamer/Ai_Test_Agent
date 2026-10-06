@@ -1,0 +1,51 @@
+{
+  "scope": "isolated process host; production RedisTaskWorker/PlanningTaskHandler; full API lifespan not used",
+  "task_id": "551d5e2b-9238-4764-82ef-f83a5ad61d76",
+  "plan_id": "22fc9585-49e7-4dcf-b849-6e52df09dd5b",
+  "attempt_count": 2,
+  "calls": [
+    {
+      "round": 1,
+      "evidence_ids": [
+        "case:48027602-2a3e-4950-af8f-d750b76a4f9c"
+      ],
+      "warnings": [],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": null,
+      "query_errors": []
+    },
+    {
+      "round": 2,
+      "evidence_ids": [
+        "case:48027602-2a3e-4950-af8f-d750b76a4f9c",
+        "document:bcfc20df-b94f-50d1-8c60-823bb516911c:164aff3c733d9b9b"
+      ],
+      "warnings": [],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": null,
+      "query_errors": []
+    },
+    {
+      "round": 3,
+      "evidence_ids": [
+        "case:48027602-2a3e-4950-af8f-d750b76a4f9c",
+        "document:bcfc20df-b94f-50d1-8c60-823bb516911c:164aff3c733d9b9b"
+      ],
+      "warnings": [
+        "第 2 回合已记录调用意图但没有持久响应；不能确认是否发送或计费。该回合额度已消耗，后续仅使用剩余额度。"
+      ],
+      "model": "planning-fixture",
+      "path": "/v1/chat/completions",
+      "stream": null,
+      "validation_error": "上一规划调用响应无法确认，请仅按已保存依据继续",
+      "query_errors": []
+    }
+  ],
+  "retained_fixed_case_version": true,
+  "retained_document_bytes": true,
+  "terminal_redelivery_no_model_calls": true
+}

@@ -1,3 +1,5 @@
+import type { BusinessEnvironmentSelection, BusinessPlanningEnvironment } from "./services/businessPlanning.types";
+
 export type SessionStatus =
   | "idle"
   | "running"
@@ -1995,6 +1997,7 @@ export interface CasePlanningRequest {
   model_key?: string | null;
   candidate_case_ids?: string[];
   runtime_context?: Record<string, unknown>;
+  environment?: BusinessEnvironmentSelection | null;
 }
 
 export interface CasePlanningTaskRequest extends CasePlanningRequest {
@@ -2073,6 +2076,7 @@ export interface CasePlanRecord {
   warnings: string[];
   created_at: string;
   regression?: RegressionPlanningInput | null;
+  environment?: BusinessPlanningEnvironment | null;
 }
 
 export interface RegressionPlanningInput {

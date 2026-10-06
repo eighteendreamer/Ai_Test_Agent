@@ -1,0 +1,66 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______ test_production_environment_bound_planning_and_fixed_run_recovery ______
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-826/test_production_environment_bo0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION") != "1", reason="independent production API/CLIs and real stores")
+    async def test_production_environment_bound_planning_and_fixed_run_recovery(tmp_path):
+        with fixed_target(7) as old, fixed_target(9) as new:
+>           await scenario(tmp_path, "md", False, False, verify_requirements=True, verify_applicability=[old, new],
+                verify_environment_planning=True)
+
+Agent_Server\tests\test_business_planning_production.py:13: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+Agent_Server\tests\test_document_impact_production.py:391: in test_production_fixed_analysis_history_and_process_recovery
+    environment_planning_state = await planning_from_production(root=root, state=applicability_state,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+root = '/projects/96c6e5db-df01-4557-8b1c-87d53b56338f'
+state = {'targets': [{'path': '/projects/96c6e5db-df01-4557-8b1c-87d53b56338f/business-environments/8eb4a26d-a78a-5c40-9397-14...c-87d53b56338f', 'environment_id': '9a050a29-018c-5c27-8db0-604d1fd89704', ...}, 'model_calls_during_decision': 0, ...}
+case = TestCaseBundle(case=TestCaseRecord(id='a4f399d1-85ed-415f-9151-e804fe1a7d6f', project_id='96c6e5db-df01-4557-8b1c-87d5...-v1', skill_versions={'manual': 'v1'}, created_at=datetime.datetime(2026, 10, 6, 5, 42, 58, 978927, tzinfo=TzInfo(0))))
+model_key = 'controlled-impact'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=SecretStr('...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+processes = <test_execution_worker_cli.Processes object at 0x000001E39C394E50>
+get = <function test_production_fixed_analysis_history_and_process_recovery.<locals>.get at 0x000001E39CEF4540>
+post = <function test_production_fixed_analysis_history_and_process_recovery.<locals>.post at 0x000001E39CF8BB00>
+client = <httpx.AsyncClient object at 0x000001E39CEEF1D0>
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-environment-planning-production-first/md-native-finish')
+sends = [{'messages': [{'role': 'system', 'content': '## Skill: analyze-document-impact\nSource: G:\\Code_Warehouse\\Ai_Test_A...86b\']}]}","error":"模型没有返回有效的结构化计划；未创建测试运行"},"warnings":[]}'}], 'model': 'controlled-impact', 'max_tokens': 1024}, ...]
+
+    async def planning_from_production(*, root, state, case, model_key, settings, processes, get, post, client, evidence, sends):
+        snapshot = state["targets"][0]["snapshot"]
+        await post(f"/test-cases/{case.case.id}/submit-review", {"version_id": case.version.id, "request_id": "planning-review"})
+        await post(f"/test-cases/{case.case.id}/activate", {"version_id": case.version.id, "request_id": "planning-activate"})
+        request = {"creation_key": "production-fixed-planning", "objective": "在固定七天目标读取完整用例",
+            "model_key": model_key, "candidate_case_ids": [case.case.id], "runtime_context": {"flag": False, "empty": None, "count": 0},
+            "environment": {"environment_id": snapshot["environment_id"], "snapshot_id": snapshot["id"], "expected_snapshot_sha256": snapshot["sha256"]}}
+        route = root+"/case-planning-tasks"
+        before = len(sends)
+        task = await post(route, request, 202)
+        assert len(sends) == before
+        assert (await client.post(route, json=request, headers={"Authorization": "Bearer invalid-fixture"})).status_code == 401
+        changed = await client.put(state["targets"][0]["environment"]+"/configuration",
+            json={"display_name": "提交后改址", "base_url": "http://127.0.0.1:1/different"})
+        assert changed.status_code == 200, changed.text
+        stream = settings.orchestration.case_planning_task_stream
+        queue = RedisTaskQueue(settings.database.redis_url, stream=stream,
+            group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
+        await queue.connect()
+        try:
+            assert await PostgresTaskOutbox(settings).relay_once(queue, limit=1) == 1
+            child = processes.start("environment-planning-worker", "-m", "src.cli.run_case_planning_worker",
+                "--once", "--worker-id", "environment-planning-worker")
+            assert await processes.wait(child) == 0
+        finally:
+            await queue.close()
+        done = await get(route+"/"+task["id"])
+>       assert done["status"] == "completed", done
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: {'id': 'b832ca54-02ff-45db-b305-fcc15b4305f4', 'project_id': '96c6e5db-df01-4557-8b1c-87d53b56338f', 'creation_key': 'production-fixed-planning', 'status': 'failed', 'phase': 'finished', 'message': '模型没有返回有效的结构化计划；未创建测试运行', 'attempt_no': 1, 'round_count': 5, 'plan_id': '8856ce96-f0a1-444e-8ccf-b85d288c8e6b', 'created_at': '2026-10-06T05:43:29.046517Z', 'updated_at': '2026-10-06T05:43:36.087918Z', 'started_at': '2026-10-06T05:43:34.895745Z', 'deadline_at': '2026-10-06T05:46:34.895745Z', 'completed_at': '2026-10-06T05:43:36.087918Z'}
+
+Agent_Server\tests\business_planning_production_scenario.py:47: AssertionError
+=========================== short test summary info ===========================
+FAILED Agent_Server\tests\test_business_planning_production.py::test_production_environment_bound_planning_and_fixed_run_recovery
+1 failed in 89.45s (0:01:29)

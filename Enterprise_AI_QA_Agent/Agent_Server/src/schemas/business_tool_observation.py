@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.modes.api_testing_mode.http_observation import HttpResponseObservation
+from src.schemas.http_observation import HttpResponseObservation
 from src.schemas.document_differences import UUID_PATTERN
 
 

@@ -1325,8 +1325,9 @@ class InMemoryTestRunStore:
 
 
 class PostgresTestRunStore:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, environment_store=None) -> None:
         self._settings = settings
+        self._environments = environment_store
 
     @property
     def _run_table(self) -> str:
@@ -1825,7 +1826,7 @@ class PostgresTestRunStore:
         event_key: str, stream: str | None, payload: dict[str, object]) -> TestRunDetail:
         from src.application.test_suites.suite_store import PostgresTestSuiteStore
         from src.application.test_runs.plan_mapping import json_digest, validate_frozen_cases, validate_plan_bundle, validate_regression_parent
-        from src.schemas.case_planning import CasePlanRecord
+        from src.schemas.case_planning import CasePlanRecord, case_plan_json
         from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
         if not isinstance(suite_store, PostgresTestSuiteStore):
             raise ValueError("PostgreSQL 计划运行必须使用同类套件存储")
@@ -1853,8 +1854,12 @@ class PostgresTestRunStore:
             cur.execute(f"SELECT record FROM {self._settings.database.postgres_case_plan_table} WHERE id=%s AND project_id=%s",
                 (run.plan_snapshot.plan.id, run.project_id))
             plan_row = cur.fetchone()
-            if plan_row is None or json_digest(CasePlanRecord.model_validate(plan_row["record"]).model_dump(mode="json")) != json_digest(run.plan_snapshot.plan.model_dump(mode="json")):
+            if plan_row is None or json_digest(case_plan_json(CasePlanRecord.model_validate(plan_row["record"]))) != json_digest(case_plan_json(run.plan_snapshot.plan)):
                 raise ValueError("固定计划不存在或与保存依据不一致")
+            if run.plan_snapshot.plan.request.environment is not None or run.plan_snapshot.plan.environment is not None:
+                if self._environments is None:
+                    raise RuntimeError("计划运行尚未配置固定环境核对服务")
+                self._environments.validate_in_cursor(cur, run.plan_snapshot.plan)
             source = run.plan_snapshot.regression
             if source:
                 cur.execute(f"SELECT record FROM {self._run_table} WHERE id=%s FOR SHARE", (source.parent_run_id,))

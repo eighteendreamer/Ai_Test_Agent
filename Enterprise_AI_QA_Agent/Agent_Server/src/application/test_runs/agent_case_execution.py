@@ -62,7 +62,7 @@ class AgentCaseExecutionAdapter:
             or attempt.lease_token != item.lease_token or attempt.status != "running"):
             raise ValueError("Agent 执行与当前运行条目或 attempt 租约不一致")
         context = build_agent_case_context(detail, current, version)
-        canonical = json.dumps(context.model_dump(mode="json"), sort_keys=True,
+        canonical = json.dumps(context.execution_json(), sort_keys=True,
             ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         context_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         if attempt.checkpoint_version:

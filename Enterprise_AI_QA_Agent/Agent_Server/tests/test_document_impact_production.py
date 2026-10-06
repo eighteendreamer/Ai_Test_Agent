@@ -68,7 +68,7 @@ def collect_objects(settings, owned):
 ])
 async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, extension, adapter, interrupt,
     verify_requirements=False, verify_generation=False, verify_retry=False, verify_coverage=False, verify_execution=None,
-    verify_applicability=None):
+    verify_applicability=None, verify_environment_planning=False):
     name = f"{extension}-{'langchain' if adapter else 'native'}-{'restart' if interrupt else 'finish'}"
     evidence = Path(os.getenv("QA_IMPACT_PRODUCTION_EVIDENCE_DIR", str(tmp_path / "evidence"))) / name
     evidence.mkdir(parents=True, exist_ok=True)
@@ -77,6 +77,9 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
     holder, views = {}, []
     def respond(body):
         payload = json.loads(body["messages"][-1]["content"])
+        if verify_environment_planning and "business_environment" in payload and "catalog" in payload:
+            from business_planning_production_scenario import planning_response
+            return planning_response(payload)
         if verify_generation and "incremental_generation" in payload.get("evidence_context", {}):
             from test_incremental_generation_sources import responder as generation_responder
             return generation_responder(body)
@@ -91,7 +94,8 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                 settings.api_auth_token = SecretStr(uuid4().hex)
                 settings.orchestration.redis_task_outbox_streams = ",".join(
                     [DOCUMENT_PARSE_STREAM, DOCUMENT_DIFFERENCE_STREAM, DOCUMENT_IMPACT_STREAM,
-                        *([GENERATION_STREAM] if verify_generation else [])])
+                        *([GENERATION_STREAM] if verify_generation else []),
+                        *([settings.orchestration.case_planning_task_stream] if verify_environment_planning else [])])
                 settings.orchestration.task_outbox_lease_seconds = 6
                 models = MySQLModelConfigStore(settings); models.initialize()
                 model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-impact", provider="openai",
@@ -381,6 +385,13 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             applicability_state = await decisions_from_production(root=root, review=requirement_review,
                                 get=get, post=post, client=client, settings=settings, evidence=evidence,
                                 targets=verify_applicability, sends=sends)
+                        environment_planning_state = None
+                        if verify_environment_planning:
+                            from business_planning_production_scenario import planning_from_production
+                            environment_planning_state = await planning_from_production(root=root, state=applicability_state,
+                                case=case, model_key=model.key, settings=settings, processes=processes,
+                                get=get, post=post, client=client, evidence=evidence, sends=sends)
+                            sent += environment_planning_state["physical_planning_calls"]
                         await queues["document_impact"].enqueue({"schema_version": 1, "task_type": "document_impact",
                             "project_id": project["id"], "task_id": task["id"]})
                         terminal = processes.start("impact-worker-terminal", "-m", "src.cli.run_document_impact_worker",
@@ -423,6 +434,10 @@ async def test_production_fixed_analysis_history_and_process_recovery(tmp_path, 
                             from business_applicability_production_scenario import decisions_after_restart
                             await decisions_after_restart(state=applicability_state, get=get, post=post, client=client,
                                 settings=settings, evidence=evidence, root=root, sends=sends)
+                        if environment_planning_state:
+                            from business_planning_production_scenario import planning_after_restart
+                            await planning_after_restart(state=environment_planning_state, root=root,
+                                get=get, post=post, client=client, evidence=evidence, settings=settings, sends=sends)
                         assert len(sends) == sent
                         for path, parse in zip(paths, views):
                             raw = (await objects.read_object_uri(parse.snapshot.seed.original_asset.storage_uri))["content"]

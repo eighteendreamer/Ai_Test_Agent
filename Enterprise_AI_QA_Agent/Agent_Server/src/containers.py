@@ -37,6 +37,7 @@ from src.application.projects.business_environment_service import BusinessEnviro
 from src.runtime.postgres_business_environment_store import PostgresBusinessEnvironmentStore
 from src.application.projects.business_applicability_service import BusinessApplicabilityService
 from src.runtime.postgres_business_applicability_store import PostgresBusinessApplicabilityStore
+from src.runtime.postgres_business_planning import PostgresBusinessPlanning
 from src.runtime.postgres_requirement_store import PostgresRequirementStore
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
@@ -147,7 +148,6 @@ class AppContainer(containers.DeclarativeContainer):
         settings=settings,
     )
     test_suite_store = providers.Singleton(PostgresTestSuiteStore, settings=settings)
-    test_run_store = providers.Singleton(PostgresTestRunStore, settings=settings)
     mcp_server_store = providers.Singleton(PostgresMCPServerStore, settings=settings)
     recording_store = providers.Singleton(PostgresRecordingStore, settings=settings)
 
@@ -168,6 +168,8 @@ class AppContainer(containers.DeclarativeContainer):
         requirements=providers.Singleton(PostgresRequirementStore, settings=settings), environments=business_environment_store)
     business_applicability_service = providers.Singleton(BusinessApplicabilityService,
         store=business_applicability_store, projects=project_service, environments=business_environment_service)
+    business_planning_store = providers.Singleton(PostgresBusinessPlanning, applicability=business_applicability_store)
+    test_run_store = providers.Singleton(PostgresTestRunStore, settings=settings, environment_store=business_planning_store)
     task_pool_entries_store = providers.Singleton(PostgresTaskPoolStore, settings=settings)
     task_pool_service = providers.Singleton(TaskPoolService, store=session_store, entries_store=task_pool_entries_store)
     permission_service = providers.Singleton(PermissionService)
@@ -382,6 +384,7 @@ class AppContainer(containers.DeclarativeContainer):
         CasePlanningService, store=case_plan_store, config_store=application_config_store,
         project_service=project_service, sources=project_planning_sources,
         model_runtime_service=model_runtime_service, embedding_service=test_case_embedding_service,
+        environment_store=business_planning_store,
     )
     test_run_service = providers.Singleton(
         TestRunService,

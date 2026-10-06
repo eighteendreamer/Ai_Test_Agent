@@ -1,0 +1,40 @@
+
+=================================== ERRORS ====================================
+______________ ERROR collecting tests/test_business_planning.py _______________
+ImportError while importing test module 'G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_business_planning.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Agent_Server\tests\test_business_planning.py:13: in <module>
+    from test_business_applicability import decisions_environment, decision_request, save_decision_evidence
+Agent_Server\tests\test_business_applicability.py:16: in <module>
+    from src.api.routes.business_applicability import router
+Agent_Server\src\api\routes\business_applicability.py:7: in <module>
+    from src.schemas.business_applicability import BusinessApplicabilityRequest, BusinessApplicabilityReview, BusinessApplicabilityPage
+Agent_Server\src\schemas\business_applicability.py:9: in <module>
+    from src.schemas.business_tool_observation import BusinessToolObservation, BusinessToolObservationRequest
+Agent_Server\src\schemas\business_tool_observation.py:7: in <module>
+    from src.modes.api_testing_mode.http_observation import HttpResponseObservation
+Agent_Server\src\modes\api_testing_mode\__init__.py:4: in <module>
+    from .runtime import ApiTestingModeRuntime
+Agent_Server\src\modes\api_testing_mode\runtime.py:65: in <module>
+    from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
+Agent_Server\src\modes\api_testing_mode\subagent_coordinator.py:24: in <module>
+    from src.runtime.store import SessionStore
+Agent_Server\src\runtime\store.py:19: in <module>
+    from src.schemas.task_pool import TaskPoolSessionSummary
+Agent_Server\src\schemas\task_pool.py:9: in <module>
+    from src.schemas.case_planning_task import CasePlanningTaskRecord
+Agent_Server\src\schemas\case_planning_task.py:9: in <module>
+    from src.schemas.case_planning import (
+Agent_Server\src\schemas\case_planning.py:8: in <module>
+    from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
+Agent_Server\src\schemas\business_planning.py:7: in <module>
+    from src.schemas.business_applicability import BusinessApplicabilityReview
+E   ImportError: cannot import name 'BusinessApplicabilityReview' from partially initialized module 'src.schemas.business_applicability' (most likely due to a circular import) (G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\schemas\business_applicability.py)
+=========================== short test summary info ===========================
+ERROR Agent_Server\tests\test_business_planning.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 6.21s

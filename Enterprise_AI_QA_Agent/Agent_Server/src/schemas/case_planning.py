@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
+
 
 class PlanningModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -23,6 +25,7 @@ class CasePlanningRequest(PlanningModel):
     model_key: str | None = Field(default=None, max_length=160)
     candidate_case_ids: list[str] = Field(default_factory=list, max_length=50)
     runtime_context: dict[str, Any] = Field(default_factory=dict)
+    environment: BusinessEnvironmentSelection | None = None
 
 
 class PlanningQuery(PlanningModel):
@@ -156,6 +159,22 @@ class CasePlanRecord(PlanningModel):
     warnings: list[str] = Field(default_factory=list)
     created_at: datetime
     regression: RegressionPlanningInput | None = None
+    environment: BusinessPlanningEnvironment | None = None
+
+
+def planning_request_json(request: CasePlanningRequest) -> dict:
+    data = request.model_dump(mode="json")
+    if request.environment is None:
+        data.pop("environment", None)
+    return data
+
+
+def case_plan_json(plan: CasePlanRecord) -> dict:
+    data = plan.model_dump(mode="json")
+    data["request"] = planning_request_json(plan.request)
+    if plan.environment is None:
+        data.pop("environment", None)
+    return data
 
 
 class CasePlanRunRequest(PlanningModel):

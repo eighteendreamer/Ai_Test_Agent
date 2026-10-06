@@ -18,15 +18,17 @@ from src.schemas.case_planning_task import (
     CasePlanningTaskClaim, CasePlanningTaskCommand, CasePlanningTaskPage,
     CasePlanningTaskRecord, PlanningTaskCheckpoint, PlanningTaskSeed,
 )
+from src.schemas.case_planning import planning_request_json
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresPlanningTaskStore:
-    def __init__(self, settings, *, lease_seconds: float = 30) -> None:
+    def __init__(self, settings, *, lease_seconds: float = 30, environment_store=None) -> None:
         if lease_seconds <= 0:
             raise ValueError("Planning lease must be positive")
         self._settings = settings
+        self._environments = environment_store
         self._table = settings.database.postgres_case_planning_task_table
         self._projects = settings.database.postgres_project_table
         self._plans = settings.database.postgres_case_plan_table
@@ -69,7 +71,7 @@ class PostgresPlanningTaskStore:
 
     @staticmethod
     def request_hash(request) -> str:
-        return hashlib.sha256(json_text(request.model_dump(mode="json")).encode()).hexdigest()
+        return hashlib.sha256(json_text(planning_request_json(request)).encode()).hexdigest()
 
     @staticmethod
     def regression_request_hash(parent_run_id, submission) -> str:
@@ -105,6 +107,10 @@ class PostgresPlanningTaskStore:
                 return self._record(previous)
             if project["status"] != "active":
                 raise ValueError("归档项目不能创建规划任务")
+            if seed.plan.request.environment is not None or seed.plan.environment is not None:
+                if self._environments is None:
+                    raise RuntimeError("持久规划尚未配置固定环境核对服务")
+                self._environments.validate_in_cursor(cur, seed.plan)
             cur.execute(f"""INSERT INTO {self._table}(id,project_id,creation_key,request_hash,seed,checkpoint,phase)
                 VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s) RETURNING *""",
                 (task_id, project_id, creation_key, request_hash, seed.model_dump_json(), checkpoint.model_dump_json(), checkpoint.phase))
@@ -206,7 +212,7 @@ class PostgresPlanningTaskStore:
     @staticmethod
     def _check_checkpoint(row, checkpoint):
         original = PlanningTaskSeed.model_validate(row["seed"]).plan
-        fixed = ("id", "project_id", "request", "config_snapshot", "model_key", "prompt_version", "created_at", "regression")
+        fixed = ("id", "project_id", "request", "config_snapshot", "model_key", "prompt_version", "created_at", "regression", "environment")
         if any(getattr(checkpoint.plan, key) != getattr(original, key) for key in fixed):
             raise ValueError("规划检查点不能替换固定输入或身份")
         prior = PlanningTaskCheckpoint.model_validate(row["checkpoint"])
