@@ -2997,3 +2997,40 @@ git diff --check
 本阶段没有修改生产功能、请求契约、数据库或依赖，没有重新执行API/Worker/完整App和外部模型，也没有实现环境注册/部署确认/执行限制；研究重放不计为新功能现场验收。三份方案同步，用户.gitignore和所有旧原始证据保留。完整P0—P5继续active，下一实施项为A环境身份/配置/固定依据的实际隔离存储及历史兼容验证。
 
 交付核对三份方案字节一致、117个本地链接存在。暂存首轮事实报告blob大小/hash不符，定位为Windows写入CRLF后Git转换LF；沿用本目录已有证据保留规则给p4-environment-research-*添加-text，重新暂存并核对原字节，不重写事实报告或改用户.gitignore。
+
+## 2026-10-06 A步环境登记、MySQL配置与PG固定捕获
+
+上一轮方案/环境研究属于实际进展。本轮先重读原目标、完整方案与设计，复查project服务/API、MySQL配置接口、PG项目锁/固定记录、容器及main初始化、错误/客户端、真实文件解析与生产隔离夹具。明确配置GET/save没有历史revision或幂等写入；先登记PG身份、再单独保存MySQL当前设置，捕获提交固定实际读到且与明确revision/SHA一致的配置，原捕获恢复不访问当前设置。研究后的契约决定先写入P4_ENVIRONMENT_APPLICABILITY_DESIGN.md再编码。
+
+新增business_environment.py、BusinessEnvironmentService、PostgresBusinessEnvironmentStore、business_environments路由；main与容器生产初始化、businessEnvironments类型/API和统一api同步。MySQL键project.environment_target以正式environment_id为scope；PG稳定登记和追加固定捕获，项目锁内重放优先，再核对生命周期。固定目录/请求/config SHA/原登记关联重新验证；同key不同项目独立，当前设置不做全局fallback。合法63字节项目表名用短确定性派生名，真实PG验证，不减少现有合法配置范围。无新依赖、模式、全局默认目标，不修改旧计划/运行/Checkpoint/hash或deployment_status。
+
+新增实际存储及生产进程测试，结果如下：
+
+| 实际轮次 | 结果及范围 |
+|---|---|
+| live-first | 16通过/0跳过，10.14秒；三格式实际文件、解析进程及PG/MySQL/RustFS |
+| live-verified | 56通过/1跳过，25.67秒；新专项及原运行创建、完整执行上下文、项目API；跳过当前外部模型测试 |
+| live-final | 19通过/0跳过，10.13秒；SQL证据字段转换后的新专项，含真实MySQL未知回执及最长表名 |
+| production-first | 1失败，16.64秒；夹具错把原上传200预期为201，接口正确；原件复制核对后清理确切测试对象 |
+| production-verified | 1失败，23.90秒；全流程后RowMapping导出失败，显式dict保留字段修正，未改生产接口 |
+| production-final | 1通过/0跳过，21.97秒；实际main/独立API重启、Bearer、隔离PG/MySQL/Redis/RustFS及归档恢复 |
+| client-first / build-first | 6项新/原API客户端通过；vue-tsc/Vite成功，Vite7.13秒 |
+
+实际验证配置改址/删除/归档后原捕获恢复不读当前MySQL；PG未知提交新服务恢复、四路并发只一记录、归档抢先拒绝、读配置后再变化保存真实选定读值、旧revision/新参数/跨项目/错登记关联/重算hash篡改及部署字段注入拒绝。MySQL实际提交回执丢失后GET能读到已保存值；同样PUT再保存revision从2变3，明确不是幂等请求。三格式原件和解析source hash保持；哨兵模型/目标0次访问，配置不当部署证据。
+
+```powershell
+# 后端在Agent_Server目录；各轮使用不同目录/XML/log，原失败未覆盖：
+$env:RUN_LIVE_BUSINESS_ENVIRONMENTS="1"
+$env:QA_ENVIRONMENT_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-foundation-live-final"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-foundation-live-final.xml
+$env:RUN_LIVE_BUSINESS_ENVIRONMENT_PRODUCTION="1"
+$env:QA_ENVIRONMENT_PRODUCTION_EVIDENCE_DIR="G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-environment-foundation-production-final"
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-environment-foundation-production-final.xml
+# agent_web目录：
+npm run test -- src/services/businessEnvironments.api.test.ts src/services/requirements.api.test.ts --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p4-environment-foundation-client-first.xml
+npm run build
+```
+
+失败轮次直接JSON化SQL RowMapping会把结构导出失败；新专项早期默认str虽然可保存但SQL行成为字符串，最终改成显式dict，最后原字段/hash可核对。前两轮失败、早期成功与最后SQL结构化证据分目录保留。前一生产首轮在collect之前assert导致确切原件遗漏清理，已经读取其返回记录、核对项目/URI/hash、复制原件后删除该隔离测试URI；后续夹具在任何成功上传状态检查前收集确切引用。
+
+当前A正式API已可用；没有正式环境编辑页面、部署观察/生效确认、规划/运行绑定或实际执行限制，也没有新外部自主Agent/生产历史迁移验证。下一步B先读真实ToolJob/result目标/参数/输出路径，再决定具体证据与确认契约；原P0—P5完整目标保持active。

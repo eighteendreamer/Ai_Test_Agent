@@ -26,6 +26,7 @@ from src.api.routes.integrations import router as integrations_router
 from src.api.routes.knowledge import router as knowledge_router
 from src.api.routes.oauth import router as oauth_router
 from src.api.routes.projects import router as projects_router
+from src.api.routes.business_environments import router as business_environments_router
 from src.api.routes.recordings import router as recordings_router
 from src.api.routes.reports import router as reports_router
 from src.api.routes.registry import router as registry_router
@@ -267,6 +268,8 @@ async def _initialize_lifespan_resources(
     project_store = container.project_store()
     project_service = container.project_service()
     await project_service.initialize()
+    business_environment_service = container.business_environment_service()
+    await business_environment_service.initialize()
 
     store = container.session_store()
     await store.initialize()
@@ -721,6 +724,7 @@ async def _initialize_lifespan_resources(
     app.state.api_doc_store = api_doc_store
     app.state.project_store = project_store
     app.state.project_service = project_service
+    app.state.business_environment_service = business_environment_service
     app.state.integration_catalog_service = integration_catalog_service
     app.state.mcp_server_store = mcp_server_store
     app.state.mcp_tool_bridge = mcp_tool_bridge
@@ -989,6 +993,7 @@ app.include_router(registry_router, prefix=settings.api_v1_prefix)
 app.include_router(attachments_router, prefix=settings.api_v1_prefix)
 app.include_router(api_docs_router, prefix=settings.api_v1_prefix)
 app.include_router(projects_router, prefix=settings.api_v1_prefix)
+app.include_router(business_environments_router, prefix=settings.api_v1_prefix)
 app.include_router(compatibility_router, prefix=settings.api_v1_prefix)
 app.include_router(integrations_router, prefix=settings.api_v1_prefix)
 app.include_router(reports_router, prefix=settings.api_v1_prefix)

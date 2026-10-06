@@ -1,0 +1,26 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_actual_production_registration_configuration_capture_restart_and_archive _
+tests\test_business_environment_production.py:139: in test_actual_production_registration_configuration_capture_restart_and_archive
+    (output / "verified.json").write_text(json.dumps({"registration": registered, "configuration": config,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:202: in encode
+    chunks = list(chunks)
+             ^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:432: in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:406: in _iterencode_dict
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:326: in _iterencode_list
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:439: in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:180: in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+E   TypeError: Object of type RowMapping is not JSON serializable
+=========================== short test summary info ===========================
+FAILED tests/test_business_environment_production.py::test_actual_production_registration_configuration_capture_restart_and_archive
+1 failed in 23.90s

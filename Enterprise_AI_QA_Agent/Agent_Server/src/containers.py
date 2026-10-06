@@ -33,6 +33,8 @@ from src.application.permissions.permission_service import PermissionService
 from src.application.projects.legacy_smoke_history_service import LegacySmokeHistoryService
 from src.application.projects.project_overview_service import ProjectOverviewService
 from src.application.projects.project_service import ProjectService
+from src.application.projects.business_environment_service import BusinessEnvironmentService
+from src.runtime.postgres_business_environment_store import PostgresBusinessEnvironmentStore
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.prompting.prompt_service import PromptSubmissionService
@@ -155,6 +157,9 @@ class AppContainer(containers.DeclarativeContainer):
         ),
     )
     project_service = providers.Singleton(ProjectService, store=project_store)
+    business_environment_store = providers.Singleton(PostgresBusinessEnvironmentStore, settings=settings)
+    business_environment_service = providers.Singleton(BusinessEnvironmentService,
+        store=business_environment_store, configs=application_config_store, projects=project_service)
     task_pool_entries_store = providers.Singleton(PostgresTaskPoolStore, settings=settings)
     task_pool_service = providers.Singleton(TaskPoolService, store=session_store, entries_store=task_pool_entries_store)
     permission_service = providers.Singleton(PermissionService)

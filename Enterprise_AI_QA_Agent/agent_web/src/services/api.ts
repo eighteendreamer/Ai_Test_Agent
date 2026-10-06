@@ -10,6 +10,7 @@ import * as system from "./system.api";
 import * as documentParsing from "./documentParsing.api";
 import * as documentDifferences from "./documentDifferences.api";
 import * as documentImpacts from "./documentImpacts.api";
+import * as businessEnvironments from "./businessEnvironments.api";
 
 export const api = {
   ...sessions,
@@ -24,4 +25,5 @@ export const api = {
   ...documentParsing,
   ...documentDifferences,
   ...documentImpacts,
+  ...businessEnvironments,
 };
