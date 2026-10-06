@@ -13,6 +13,7 @@ from src.runtime.tool_job_store import ToolJobStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation
 from src.infrastructure.storage_utils import make_json_safe
+from src.application.runtime.case_action_binding import action_admission_enabled, CaseActionClaimUnavailable
 
 logger = logging.getLogger(__name__)
 OUTPUT_OBSERVATION_KEY = "tool_output_observation"
@@ -32,9 +33,10 @@ INLINE_TEXT_MAX_BYTES = 1024 * 1024
 
 
 class ToolJobService:
-    def __init__(self, store: ToolJobStore, heartbeat_timeout_seconds: int = 90) -> None:
+    def __init__(self, store: ToolJobStore, heartbeat_timeout_seconds: int = 90, case_action_admission=None) -> None:
         self._store = store
         self._heartbeat_timeout_seconds = heartbeat_timeout_seconds
+        self._case_action_admission = case_action_admission
 
     async def initialize(self) -> list[ToolJobRecord]:
         await self._store.initialize()
@@ -271,8 +273,22 @@ class ToolJobService:
         job.updated_at = job.completed_at
         return await self._store.save_job(job)
 
-    async def claim_execution(self, job_id: str) -> ToolJobRecord | None:
+    async def claim_execution(self, job_id: str, *, context_bundle=None) -> ToolJobRecord | None:
         """Use the Store's atomic queued/waiting-to-running transition."""
+        if action_admission_enabled(context_bundle or {}):
+            if self._case_action_admission is None:
+                raise CaseActionClaimUnavailable("固定动作确认策略尚未配置PG领取服务，不能发送")
+            claimed = await self._case_action_admission.claim(job_id, context_bundle)
+            if claimed is None:
+                # Identity was checked by the PG domain claim. A durable returned
+                # result precedes any newer applicability decision; recover delivery only.
+                latest = await self._store.get_job(job_id)
+                if latest is not None and latest.status in {ToolJobStatus.running, ToolJobStatus.resume_requested}:
+                    return await self.recover_observed_output(job_id, reason="原动作返回已保存，恢复未完成的结果交付")
+                # Preserve the existing claim contract for terminal jobs: None
+                # lets callers distinguish replay from a newly denied claim.
+                return None
+            return claimed
         return await self._store.claim_job_execution(job_id)
 
     async def finish_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict[str, Any],

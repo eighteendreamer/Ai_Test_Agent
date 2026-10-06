@@ -28,12 +28,14 @@ from src.schemas.session import ApprovalDecisionRequest, ToolApprovalStatus
 from src.schemas.tool_runtime import ModelToolCall
 
 
-async def owned_plan(f, multiple=True):
+async def owned_plan(f, multiple=True, *, admission=False, environment=True):
     binding = PostgresBusinessPlanning(applicability=f.decision_store)
     f.env.service._environments = f.runs._environments = binding
     config = await f.env.service.get_policy(f.project.id)
-    response=await f.env.client.put(f"/projects/{f.project.id}/case-plans/policy",
-        json=config.policy.model_copy(update={"action_binding_protocol": PROTOCOL}).model_dump(mode="json"))
+    policy = {**config.policy.model_dump(mode="json"), "action_binding_protocol": PROTOCOL}
+    if admission:
+        policy["action_admission_protocol"] = "case-action-admission-v1"
+    response=await f.env.client.put(f"/projects/{f.project.id}/case-plans/policy", json=policy)
     assert response.status_code==200 and response.json()["policy"]["action_binding_protocol"]==PROTOCOL
     def decision(context):
         target = item(context, f.selected.case.case_key, key="target", depends_on=["seed"] if multiple else [])
@@ -46,7 +48,7 @@ async def owned_plan(f, multiple=True):
         return finish(prep("seed", []), target, prep("after_read", ["target"]))
     f.env.service._models = SequenceModel(decision)
     plan = await f.env.service.create(f.project.id, CasePlanningRequest(objective="检查完整用例和所属动作",
-        environment=selection(f,1), candidate_case_ids=[f.selected.case.id]))
+        environment=selection(f,1) if environment else None, candidate_case_ids=[f.selected.case.id]))
     assert plan.status == "planned"
     creator = CasePlanRunService(run_store=f.runs, suite_store=f.suites, plan_store=f.env.store,
         case_service=f.env.cases, project_service=f.env.projects)

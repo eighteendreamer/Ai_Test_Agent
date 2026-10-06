@@ -1,0 +1,12 @@
+..............F..................                                        [100%]
+================================== FAILURES ===================================
+____ test_actual_governance_pending_job_denial_and_replay_use_same_receipt ____
+tests\test_case_action_admission.py:383: in test_actual_governance_pending_job_denial_and_replay_use_same_receipt
+    assert denied.record.status == repeated.record.status == "denied" and repeated.replayed
+E   AssertionError: assert ('denied' == 'denied'
+E     
+E       denied and False)
+E    +  where False = GovernedToolCallResult(record=ToolExecutionRecord(call_id='action-call', job_id='becb8323-b0af-5e2f-951c-1d477ef228ab'...None, started_at=None, completed_at=datetime.datetime(2026, 10, 6, 11, 38, 16, 374081)), approval=None, replayed=False).replayed
+=========================== short test summary info ===========================
+FAILED tests/test_case_action_admission.py::test_actual_governance_pending_job_denial_and_replay_use_same_receipt
+1 failed, 32 passed in 144.56s (0:02:24)

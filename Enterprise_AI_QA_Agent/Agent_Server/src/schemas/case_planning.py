@@ -19,12 +19,21 @@ class CasePlanningPolicy(PlanningModel):
     max_context_chars: int = Field(default=180000, ge=10000, le=1000000)
     timeout_seconds: float = Field(default=180, gt=0, le=600)
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
+    action_admission_protocol: Literal["case-action-admission-v1"] | None = None
+
+    @model_validator(mode="after")
+    def require_action_ownership(self):
+        if self.action_admission_protocol and not self.action_binding_protocol:
+            raise ValueError("动作确认检查需要固定执行项关联")
+        return self
 
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
         if self.action_binding_protocol is None:
             data.pop("action_binding_protocol", None)
+        if self.action_admission_protocol is None:
+            data.pop("action_admission_protocol", None)
         return data
 
 

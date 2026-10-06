@@ -51,13 +51,15 @@ def admission_message(body):
 
 
 async def admission_from_production(*,root,state,case,model_key,settings,processes,get,post,client,evidence,sends,
-    action_binding=False):
+    action_binding=False, action_admission=False):
     target = state["targets"][0]
     snapshot = target["snapshot"]
     if action_binding:
         policy = await get(root+"/case-plans/policy")
-        configured = await client.put(root+"/case-plans/policy",
-            json={**policy["policy"], "action_binding_protocol": "case-action-binding-v1"})
+        updated = {**policy["policy"], "action_binding_protocol": "case-action-binding-v1"}
+        if action_admission:
+            updated["action_admission_protocol"] = "case-action-admission-v1"
+        configured = await client.put(root+"/case-plans/policy", json=updated)
         assert configured.status_code == 200, configured.text
     content = {"expected":{"code":200,"days":7,"expired_count":0,"expired":False,"deleted_at":None},
         "深层扩展":{"零":0,"空":None,"布尔":False,"未知字段":"不能丢失"},
@@ -93,6 +95,8 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
     plan = await get(root+"/case-plans/"+done["plan_id"])
     if action_binding:
         assert plan["config_snapshot"]["policy"]["action_binding_protocol"] == "case-action-binding-v1"
+    if action_admission:
+        assert plan["config_snapshot"]["policy"]["action_admission_protocol"] == "case-action-admission-v1"
     assert plan["environment"]["reviews"] == [target["review"]]
     launch = {"creation_key":"production-admission-run","mode_key":"api_testing"}
     detail = await post(root+"/case-plans/"+plan["id"]+"/runs",launch,201)
@@ -152,6 +156,12 @@ async def admission_from_production(*,root,state,case,model_key,settings,process
         assert binding["phase"] == "case" and binding["run_item_id"] == detail["items"][0]["id"]
         assert jobs[0]["input_payload"]["_case_action"]["item_key"] == binding["item_key"]
         value.update(action_binding_enabled=True,actual_owned_jobs=jobs,applicability_action_gate_implemented=False)
+        if action_admission:
+            action_receipt = jobs[0]["metadata"]["case_action_admission"]
+            assert action_receipt["decision"] == "no_explicit_invalid" and action_receipt["reviews"] == [unknown]
+            assert action_receipt["binding"] == binding and action_receipt["tool_job_id"] == str(jobs[0]["id"])
+            value.update(action_admission_enabled=True, applicability_action_gate_implemented=True,
+                stateful_cleanup_verified=False, logical_operation_identity_implemented=False)
     save(evidence,"environment-admission.json",value)
     return value
 

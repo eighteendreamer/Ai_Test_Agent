@@ -13,6 +13,16 @@ from src.schemas.case_execution import AgentCaseExecutionContext
 
 PROTOCOL = "case-action-binding-v1"
 ARGUMENT = "_case_action"
+ADMISSION_PROTOCOL = "case-action-admission-v1"
+
+
+class CaseActionClaimUnavailable(RuntimeError):
+    """A claim is not safely repeatable; preserve its original durable state."""
+
+
+def action_admission_enabled(bundle: dict[str, Any]) -> bool:
+    raw = bundle.get("case_execution")
+    return isinstance(raw, dict) and raw.get("action_admission_protocol") == ADMISSION_PROTOCOL
 
 
 class CaseActionSelection(BaseModel):
@@ -39,6 +49,21 @@ class CaseActionBinding(BaseModel):
 def _digest(value) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
         allow_nan=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def validate_action_admission_receipt(job, binding, *, required=False):
+    receipt = job.metadata.get("case_action_admission")
+    if receipt is None:
+        if required and job.started_at is not None:
+            raise ValueError("已领取的新策略动作缺少原确认回执")
+        return None  # Permission-denied calls can end before domain admission.
+    if (not isinstance(receipt, dict) or receipt.get("version") != ADMISSION_PROTOCOL or
+        receipt.get("tool_job_id") != job.id or receipt.get("binding") != binding.model_dump(mode="json") or
+        receipt.get("sha256") != _digest({k:v for k,v in receipt.items() if k != "sha256"})):
+        raise ValueError("原动作确认回执身份或SHA不同")
+    if receipt.get("decision") == "explicit_invalid" and job.started_at is not None:
+        raise ValueError("明确拒绝的原动作不能带业务领取时间")
+    return receipt
 
 
 def fixed_action_context(bundle: dict[str, Any]) -> AgentCaseExecutionContext | None:

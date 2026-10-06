@@ -129,16 +129,17 @@ class PostgresToolJobStore:
     def _claim_job_execution_sync(self, job_id: str) -> ToolJobRecord | None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    UPDATE {self._settings.database.postgres_tool_job_table}
-                    SET status = 'running', started_at = now(), heartbeat_at = now(), updated_at = now()
-                    WHERE id = %s AND started_at IS NULL AND status IN ('queued', 'waiting_approval')
-                    RETURNING *
-                    """,
-                    (job_id,),
-                )
-                row = cur.fetchone()
+                return self.claim_job_execution_in_transaction(cur, job_id)
+
+    def claim_job_execution_in_transaction(self, cur, job_id, *, metadata=None):
+        """Share the original claim with domain confirmation, without whole-row replacement."""
+        cur.execute(f"""
+            UPDATE {self._settings.database.postgres_tool_job_table}
+            SET status = 'running', started_at = now(), heartbeat_at = now(), updated_at = now(),
+                metadata = metadata || %s::jsonb
+            WHERE id = %s AND started_at IS NULL AND status IN ('queued', 'waiting_approval')
+            RETURNING *""", (json.dumps(make_json_safe(metadata or {}), ensure_ascii=False), job_id))
+        row = cur.fetchone()
         return _job_from_row(row) if row else None
 
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:

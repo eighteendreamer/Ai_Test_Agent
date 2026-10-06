@@ -44,6 +44,7 @@ class AgentCaseExecutionContext(PlanningModel):
     business_environment: BusinessPlanningEnvironment | None = None
     environment_admission: BusinessExecutionAdmission | None = None
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
+    action_admission_protocol: Literal["case-action-admission-v1"] | None = None
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
@@ -53,6 +54,8 @@ class AgentCaseExecutionContext(PlanningModel):
             omitted.add("environment_admission")
         if self.action_binding_protocol is None:
             omitted.add("action_binding_protocol")
+        if self.action_admission_protocol is None:
+            omitted.add("action_admission_protocol")
         return self.model_dump(mode="json", exclude=omitted)
 
     def runtime_context(self) -> dict[str, Any]:

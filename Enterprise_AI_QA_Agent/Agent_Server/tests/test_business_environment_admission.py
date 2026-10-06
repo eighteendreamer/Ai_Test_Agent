@@ -176,7 +176,11 @@ class AdmissionAgent(ControlledAgent):
 
 
 @asynccontextmanager
-async def agent_runtime(f,agent):
+async def agent_runtime(f,agent, *, action_admission=False):
+    original_admission = f.jobs._case_action_admission
+    if action_admission:
+        from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
+        f.jobs._case_action_admission = PostgresCaseActionAdmission(runs=f.runs, jobs=f.jobs._store)
     async with session_stores(f.jobs,True) as (writer,reader):
         tools,skills,control = ToolRegistry(),SkillRegistry(),RuntimeControlRegistry()
         runtime_tools = ToolRuntimeService(tool_job_service=f.jobs,session_store=writer)
@@ -194,7 +198,9 @@ async def agent_runtime(f,agent):
             session_store=writer,tool_job_service=f.jobs,clock=lambda:clock[0])
         adapter = AgentCaseExecutionAdapter(run_service=runs,session_service=sessions,session_store=reader,tool_job_service=f.jobs)
         try: yield runs,adapter,reader,clock
-        finally: await sessions.close()
+        finally:
+            await sessions.close()
+            f.jobs._case_action_admission = original_admission
 
 
 @pytest.mark.asyncio

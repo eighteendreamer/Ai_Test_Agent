@@ -52,7 +52,9 @@ from src.modes.code_review_mode.project_source import (
 from src.application.reporting.report_template_service import ReportTemplateService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.tool_job_service import ToolJobService
-from src.application.runtime.case_action_binding import CaseActionBinding, bind_case_action, business_arguments
+from src.application.runtime.case_action_binding import (
+    CaseActionBinding, bind_case_action, business_arguments, action_admission_enabled, CaseActionClaimUnavailable,
+)
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.testing.ui_exploration_service import UIExplorationService
 from src.core.config import Settings
@@ -160,6 +162,7 @@ class ToolExecutionContext:
     approval_scope_hash: str = ""
     trusted_case_run_item_id: str = ""
     case_action_binding: CaseActionBinding | None = None
+    claimed_job: ToolJobRecord | None = None
 
     def bind_call(self, call: ModelToolCall) -> ToolExecutionContext:
         return replace(self, case_action_binding=bind_case_action(bundle=self.context_bundle,
@@ -505,6 +508,9 @@ class ToolRuntimeService:
         job_heartbeat_stop: asyncio.Event | None = None
         job_heartbeat_task: asyncio.Task | None = None
         handler = self._handlers.get(tool.key)
+        action_admission = action_admission_enabled(context.context_bundle)
+        if action_admission and self._tool_job_service is None:
+            raise CaseActionClaimUnavailable("固定动作确认缺少原ToolJob服务，不能发送")
         if handler is None and is_mcp_tool_key(tool.key):
             handler = self._handlers.get("mcp-bridge")
         if handler is None:
@@ -569,7 +575,27 @@ class ToolRuntimeService:
                     or job.metadata.get("case_action_binding") != context.case_action_binding.model_dump(mode="json")
                 ):
                     raise ValueError("工具任务执行项关联与原固定调用不一致")
-                await self._tool_job_service.mark_running(job)
+                if action_admission:
+                    if context.claimed_job is not None:
+                        if (context.claimed_job.id != job.id or context.claimed_job.status != ToolJobStatus.running
+                            or context.claimed_job.metadata != job.metadata or job.status != ToolJobStatus.running):
+                            raise CaseActionClaimUnavailable("治理领取对象与原PG动作记录不同")
+                    else:
+                        claimed = await self._tool_job_service.claim_execution(job.id, context_bundle=context.context_bundle)
+                        if claimed is None:
+                            latest = await self._tool_job_service.get_job(job.id)
+                            if latest is not None and latest.status in {
+                                ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                                ToolJobStatus.denied, ToolJobStatus.cancelled,
+                            }:
+                                return await self.record_from_job(latest)
+                            raise CaseActionClaimUnavailable("原动作已领取但结果未知；先查证，不能重复发送")
+                        job = claimed
+                        if job.status in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                            ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                            return await self.record_from_job(job)
+                else:
+                    await self._tool_job_service.mark_running(job)
                 job_heartbeat_stop = asyncio.Event()
                 job_heartbeat_task = asyncio.create_task(
                     self._keep_tool_job_alive(
@@ -712,6 +738,12 @@ class ToolRuntimeService:
                 completed_at=datetime.utcnow(),
             )
         except Exception as exc:
+            if action_admission and not observed_output:
+                # Before a reliable returned-output checkpoint, execution may be unknown.
+                # In particular, never turn a lost claim acknowledgement into a retryable failure.
+                if isinstance(exc, CaseActionClaimUnavailable):
+                    raise
+                raise CaseActionClaimUnavailable("固定动作没有可靠返回检查点；保留原状态并先查证") from exc
             sanitized_error, _ = self._output_safety_policy.sanitize_text(str(exc))
             failure_summary = f"Tool '{tool.key}' failed: {sanitized_error}"
             if job is not None and self._tool_job_service is not None:

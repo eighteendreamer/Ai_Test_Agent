@@ -35,6 +35,7 @@ from src.application.projects.project_overview_service import ProjectOverviewSer
 from src.application.projects.project_service import ProjectService
 from src.application.projects.business_environment_service import BusinessEnvironmentService
 from src.runtime.postgres_business_environment_store import PostgresBusinessEnvironmentStore
+from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
 from src.application.projects.business_applicability_service import BusinessApplicabilityService
 from src.runtime.postgres_business_applicability_store import PostgresBusinessApplicabilityStore
 from src.runtime.postgres_business_planning import PostgresBusinessPlanning
@@ -294,6 +295,7 @@ class AppContainer(containers.DeclarativeContainer):
     tool_job_service = providers.Singleton(
         ToolJobService,
         store=tool_job_store,
+        case_action_admission=providers.Singleton(PostgresCaseActionAdmission, runs=test_run_store, jobs=tool_job_store),
         heartbeat_timeout_seconds=providers.Callable(
             lambda s: s.orchestration.tool_job_heartbeat_timeout_seconds, settings,
         ),

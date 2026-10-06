@@ -474,6 +474,11 @@ class PromptAssemblyService:
                        "phase. This metadata is separate from business parameters and does not itself "
                        "confirm applicability, execution success or permission."
                        if frozen.action_binding_protocol is not None else "")
+                    + (" Current applicability is checked atomically when claiming each original ToolJob. "
+                       "A denied case_action_explicit_invalid means this pending action was not sent; "
+                       "retain earlier evidence. An after phase alone does not prove cleanup ownership. "
+                       "A started action without a reliable result requires reconciliation, not another send."
+                       if frozen.action_admission_protocol is not None else "")
                     + (" The server-bound business_environment fixes the selected target for this run: "
                        "use its snapshot.configuration.payload.base_url rather than project defaults "
                        "or similarly named runtime_inputs. Its reviews apply only to their explicit "

@@ -3330,3 +3330,39 @@ $env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterpri
 查证：读取api_docs路由/服务/请求模型、document_parsing路由/请求模型、difference_service/路由/请求模型、git_service及前端documentUploadRequest；核对既有解析/比较和Git产品XML。三份方案写入前SHA-256均为8b1a5321879708db041411e97524256ce3bf1ef958b39ec321e97e0e1d889778，写入后检查逐字节一致、新增源码链接及行号有效、操作契约对应已有路由和字段，执行git diff --check。仅提交PLAN.md和本日志，附件与选中计划同步；用户.gitignore及既有未提交诊断工件保留。
 
 本轮仅文档修订，未运行编译、功能测试、外部模型或完整App验收；历史测试结果保留原日期和范围，不作为本轮执行结果。完整升级继续未完成。
+## 2026-10-06 C2c2：当前确认、原动作领取与可靠返回恢复
+
+研究基线fc7b7b8f；先读原目标、固定计划/环境/Attempt/Agent祖先检查点、MySQL策略、原PG确认锁/工具领取、图/治理/审批/输出交付及本地《Agent轨迹与协议鲁棒性》04.5。新策略冻结进入原计划，共享PG服务同事务消费当前确认和原Job领取；原表/任务体系、模式和依赖保持。具体采用依据、首次夹具错误及完整限制见P4_CASE_ACTION_ADMISSION_DESIGN.md和PLAN.md 6.41。
+
+各命令从Agent_Server执行，XML/log及真实文件/SQL/HTTP在相同独立前缀保存，标准输出和错误完整合并。
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-admission-current-fixed'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_admission.py tests/test_deep_agent_tool_replay.py tests/test_langchain_tool_adapter.py tests/test_security_approval_boundary.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-admission-current-fixed.xml *> ../docs/upgrade_2026-10-03/p4-action-admission-current-fixed.log
+
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:QA_REQUIREMENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-admission-regression-final'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-admission-regression-final\planning'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_admission.py tests/test_case_action_binding.py tests/test_business_environment_admission.py tests/test_business_environment_restrictions.py tests/test_business_planning.py tests/test_agent_case_context.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py tests/test_case_plan_run_creation.py tests/test_case_planning.py tests/test_deep_agent_tool_replay.py tests/test_deep_agent_runtime_adapter.py tests/test_langchain_tool_adapter.py tests/test_security_approval_boundary.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-admission-regression-final.xml *> ../docs/upgrade_2026-10-03/p4-action-admission-regression-final.log
+
+$env:RUN_LIVE_DOCUMENT_IMPACT_PRODUCTION='1'
+$env:QA_IMPACT_PRODUCTION_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-action-admission-production-current-fixed'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_action_admission_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-action-admission-production-current-fixed.xml *> ../docs/upgrade_2026-10-03/p4-action-admission-production-current-fixed.log
+# 各命令保存退出码后Get-Content日志尾部并exit原退出码；没有靠重定向丢弃错误。
+# agent_web：npm run test -- src/features/projects/CasePlanDialog.test.ts；npm run build；保存frontend-test/build.log。
+```
+
+此前独立轮次使用上列对应模块：reproduction/live-first/exact-reproduction为单个同名pending测试；exact-fixed为三格式pending；boundaries-first为当时完整14项admission；no-target-final单独-k without_fixed_target；生产各轮同production模块。最终33项专项涵盖17项新admission及原治理/适配/审批边界；扩大回归是此前15模块版本，最后输出恢复修改由current-fixed再次验，不宣称扩大回归执行了后来新增分支。
+
+初始两个失败因夹具确认另一旧版本，服务正确保持no_explicit_invalid；改为精确同case/current coverage并关新策略后真实HTTP新增1，再启策略三格式阻止发送。current-final的1失败为旧终态错误地作为本次领取返回，重复denied的replayed=False；共享服务恢复旧terminal None契约后current-fixed通过。原失败输入、日志及XML保留。
+
+验证实际MD/DOCX/PDF原件/解析/PG、MySQL配置、新计划策略、原图等待审批的后来精确invalid、before/case拒绝/after标记未证明清理、unknown/其他版本/目标/撤销/无固定目标、四路同Job竞争、真实PG确认锁等待、领取commit回执及HTTP返回丢失、可靠已保存返回交付中断后恢复为partial、原治理终态复用、参数/上下文/租约篡改拒绝。独立main/API/Outbox/规划与执行CLI/SDK实际业务核验通过，受控模型不能冒充默认自主Agent。
+
+12个受影响生产文件py_compile实际通过；git diff --check通过。前端11项组件通过，vue-tsc/Vite构建通过。三方案同字节、用户.gitignore未变、旧8973份raw SHA/size和新增原件/回执/SDK完整上下文与原参数SHA独立核对；审计p4-action-admission-validation.json。最后暂存另逐份核对raw字节。
+
+本步不宣称真实清理、跨call_id稳定操作身份/全局仅执行一次、发送未知自动查证、执行修订、换目标回归、默认Agent、正式环境完整App、生产迁移或全P0—P5完成。领取commit边界之后确认不能撤销已领取动作；after仅保留，phase不是cleanup证据。用户.gitignore和旧environment-action诊断不提交；无push/PR。
+
+交付审计预检先两次失败：读取固定计划时误用顶层items而实际为decision.items；将physical_requests误按整数比较而实际是完整请求列表。两次均在方案写入前退出；读取真实保存结构后改为精确版本及列表逐项比较。最终716份新增raw已逐个核对Git暂存二进制SHA/size，旧8973份raw不变，742文件精确范围与cached diff检查通过，三方案逐字节一致且所有本地链接有效。源码、功能测试与已有失败工件没有因审计调整而重写。

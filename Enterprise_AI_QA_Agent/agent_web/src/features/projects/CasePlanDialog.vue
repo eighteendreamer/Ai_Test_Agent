@@ -140,7 +140,17 @@ async function remember() {
 function chooseActionBinding(event: Event) {
   if (!config.value) return;
   if ((event.target as HTMLInputElement).checked) config.value.policy.action_binding_protocol = "case-action-binding-v1";
-  else delete config.value.policy.action_binding_protocol;
+  else {
+    delete config.value.policy.action_binding_protocol;
+    delete config.value.policy.action_admission_protocol;
+  }
+}
+function chooseActionAdmission(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.action_binding_protocol = "case-action-binding-v1";
+    config.value.policy.action_admission_protocol = "case-action-admission-v1";
+  } else delete config.value.policy.action_admission_protocol;
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -180,7 +190,9 @@ onMounted(loadPolicy);
         <label>超时秒数<input v-model.number="config.policy.timeout_seconds" :disabled="busy" type="number" min="1" max="600"></label>
         <label><input data-testid="action-binding" type="checkbox" :disabled="busy"
           :checked="config.policy.action_binding_protocol === 'case-action-binding-v1'" @change="chooseActionBinding">记录工具所属执行项</label>
-        <p>只影响后续计划。记录动作归属，执行中的适用性变化限制仍待接入。</p>
+        <label><input type="checkbox" data-testid="action-admission" :disabled="busy"
+          :checked="config.policy.action_admission_protocol === 'case-action-admission-v1'" @change="chooseActionAdmission">执行前核对当前失效确认</label>
+        <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
       <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"

@@ -141,7 +141,13 @@ class ToolGovernanceService:
             ):
                 raise RuntimeError("ToolJob identity or arguments changed during checkpoint recovery.")
             context.execution.tool_job_id = job.id
-            claimed = await self._tool_job_service.claim_execution(job.id)
+            claimed = await self._tool_job_service.claim_execution(job.id, context_bundle=context.execution.context_bundle)
+            if claimed is not None and claimed.status in {
+                ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                ToolJobStatus.denied, ToolJobStatus.cancelled,
+            }:
+                return GovernedToolCallResult(record=await self._tool_runtime_service.record_from_job(claimed),
+                    replayed=claimed.status != ToolJobStatus.denied)
             if claimed is None:
                 latest = await self._tool_job_service.get_job(job.id)
                 if latest is not None and latest.status in {
@@ -170,6 +176,7 @@ class ToolGovernanceService:
                 )
         execution_context = replace(
             context.execution,
+            claimed_job=claimed if self._tool_job_service is not None else None,
             server_approval_granted=approval is not None,
             approval_scope_hash=(
                 str(approval.get("metadata", {}).get("approval_scope_hash") or "")

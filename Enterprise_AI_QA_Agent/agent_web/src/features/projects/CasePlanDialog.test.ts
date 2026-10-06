@@ -92,6 +92,19 @@ describe("case planning", () => {
     wrapper.unmount();
   });
 
+  it("freezes opt-in action admission and disables it when ownership is removed", async () => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="action-admission"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
+      ...config().policy, action_binding_protocol: "case-action-binding-v1", action_admission_protocol: "case-action-admission-v1",
+    });
+    await wrapper.get('[data-testid="action-binding"]').setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", config().policy);
+    wrapper.unmount();
+  });
+
   it("launches the saved identity with any test mode and opens the returned run", async () => {
     const wrapper = setup(); await generate(wrapper);
     expect(wrapper.findAll('select option').map(option => option.text())).toEqual(["api_testing", "code_review"]);
