@@ -3687,3 +3687,16 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 ..\.venv\Scripts\python.exe -Xutf8 -m py_compile src/application/test_cases/planning_tool_contracts.py src/application/test_cases/planning_service.py src/application/test_cases/planning_workflow.py tests/test_planning_tool_navigation.py tests/test_default_coverage_production.py
 # 退出0。功能验证不以编译替代。
 ```
+
+## 2026-10-07：按用户要求同步所贴方案的上传/Git边界
+
+源码核对基线`bb7cb3a8`。本次只更新完整方案及核对记录，没有修改业务代码。普通上传/新版本服务独立保存原件和应用版本；比较服务冻结并读取系统保存的双方解析快照；只有Git导入入口读取仓库来源，然后调用保存服务。方案明确不要求上传与Git共用一条文档历史，不创建上传Git缓存；同一文档新版本由用户明确选择。首页同步当前基线及最新默认自主试验失败状态；模板仅生成、项目隔离选取/排序/补全、完整P0—P5范围及历史证据均保留。
+
+实际命令（工作目录Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-upload-boundary-2026-10-07.xml
+# 退出0：2通过，0失败，0跳过，3.54秒。
+```
+
+这两项通过实际临时文件、上传路由和本地测试存储验证版本追加、原件读回、同名独立文档、原请求恢复及转换/项目URL修改不覆盖原件；没有Git配置或调用。此次没有重跑生产存储、独立解析/比较进程、完整App或默认模型。项目PLAN、用户所贴附件及选中计划文件同步为相同字节；核对记录为`plan-upload-boundary-2026-10-07-validation.json`。不将此文档修订标为完整升级完成。
