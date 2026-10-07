@@ -149,6 +149,7 @@ function chooseActionBinding(event: Event) {
     delete config.value.policy.effect_evidence_max_bytes;
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
 }
 function chooseActionAdmission(event: Event) {
@@ -164,6 +165,7 @@ function chooseActionAdmission(event: Event) {
     delete config.value.policy.effect_evidence_max_bytes;
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
 }
 function chooseOperationRecovery(event: Event) {
@@ -179,6 +181,7 @@ function chooseOperationRecovery(event: Event) {
     delete config.value.policy.effect_evidence_max_bytes;
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
 }
 function choosePreparationScopes(event: Event) {
@@ -194,6 +197,7 @@ function choosePreparationScopes(event: Event) {
     delete config.value.policy.effect_evidence_max_bytes;
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
 }
 function chooseEffectEvidence(event: Event) {
@@ -209,6 +213,7 @@ function chooseEffectEvidence(event: Event) {
     delete config.value.policy.effect_evidence_max_bytes;
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
 }
 function chooseEffectCoverage(event: Event) {
@@ -223,7 +228,15 @@ function chooseEffectCoverage(event: Event) {
   } else {
     delete config.value.policy.effect_coverage_protocol;
     delete config.value.policy.effect_coverage_max_bytes;
+    delete config.value.policy.planning_stage_protocol;
   }
+}
+function choosePlanningStages(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) {
+    chooseEffectCoverage(event);
+    config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v1";
+  } else delete config.value.policy.planning_stage_protocol;
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -279,6 +292,9 @@ onMounted(loadPolicy);
         <label v-if="config.policy.effect_coverage_protocol">覆盖证据预算（字节）<input data-testid="effect-coverage-budget" v-model.number="config.policy.effect_coverage_max_bytes"
           type="number" min="1" max="10000000" placeholder="1024000" :disabled="busy"></label>
         <p v-if="config.policy.effect_coverage_protocol">核对固定声明范围内的所有原对象及清理证据。未覆盖或来源未知时保留缺口，不代表共享消费已完成。</p>
+        <label><input type="checkbox" data-testid="planning-stages" :disabled="busy"
+          :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v1'" @change="choosePlanningStages">分阶段生成执行计划</label>
+        <p v-if="config.policy.planning_stage_protocol">先确定用例、必要前置和顺序，再补充执行证据；两阶段共用本次回合数和超时，全部校验后才可启动。</p>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>

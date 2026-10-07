@@ -193,6 +193,28 @@ describe("case planning", () => {
     },
   );
 
+  it.each(["action-binding", "action-admission", "operation-recovery", "preparation-scopes", "effect-evidence", "effect-coverage", "planning-stages"])(
+    "saves staged planning and removes it when %s is disabled", async (prerequisite) => {
+      api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
+        ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
+      }));
+      const wrapper = setup(); await flushPromises();
+      await wrapper.get('[data-testid="planning-stages"]').setValue(true);
+      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
+        ...config().policy, action_binding_protocol: "case-action-binding-v1",
+        action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
+        preparation_scope_protocol: "preparation-scope-v1", effect_evidence_protocol: "case-effect-evidence-v1",
+        effect_coverage_protocol: "case-effect-coverage-v1", planning_stage_protocol: "case-planning-staged-evidence-v1",
+      });
+      await wrapper.get(`[data-testid="${prerequisite}"]`).setValue(false);
+      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      const calls = api.saveCasePlanningPolicy.mock.calls;
+      expect(calls[calls.length - 1][1]).not.toHaveProperty("planning_stage_protocol");
+      wrapper.unmount();
+    },
+  );
+
   it("launches the saved identity with any test mode and opens the returned run", async () => {
     const wrapper = setup(); await generate(wrapper);
     expect(wrapper.findAll('select option').map(option => option.text())).toEqual(["api_testing", "code_review"]);

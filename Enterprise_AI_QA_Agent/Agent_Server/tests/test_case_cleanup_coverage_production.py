@@ -25,6 +25,7 @@ from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.case_planning import CasePlanningPolicy
+from src.schemas.case_planning_stages import STAGE_PROTOCOL, STAGED_PROMPT_VERSION
 from src.schemas.model_config import ModelCapabilitiesOverride
 from src.schemas.settings import ModelConfigUpdateRequest
 from src.schemas.run_management import TestRunRecord as RunRecord
@@ -50,6 +51,33 @@ def contexts(body):
     return values
 
 
+def staged_decision(context, business):
+    if context["planning_stage"] == "logic":
+        assert "tool_catalog" not in context
+        document = next((e for e in context["evidence"] if e["kind"] == "document"), None)
+        if document is None:
+            return {"action": "query", "summary": "读取真实项目原件", "queries": [{
+                "kind": "document", "source_id": context["catalog"]["documents"][0]["id"]}]}
+        target = item(context, "production-coverage", key="target", depends_on=["seed"])
+        refs = [*target["evidence_ids"], document["id"]]
+        return finish({"key": "seed", "kind": "prepare", "reason": "完整用例要求准备两条记录", "evidence_ids": refs,
+            "instructions": {"method": "POST", "url": business + "/orders", "expected": 201, "count": 2}}, target,
+            {"key": "cleanup", "kind": "prepare", "reason": "清理实际准备的全部记录", "evidence_ids": refs,
+             "depends_on": ["target"], "cleanup_sources": ["seed"],
+             "instructions": {"method": "DELETE", "url": business + "/orders/{id}", "expected": 200}})
+    contract = next((e for e in context["evidence"] if e["kind"] == "tool"), None)
+    if contract is None:
+        return {"action": "query", "summary": "读取固定原生操作", "queries": [{
+            "kind": "tool", "source_id": "api-test-runner", "operation": "execute_task"}]}
+    assert contract["payload"]["scope"] == "named-operation"
+    assert [i["key"] for i in context["logical_plan"]["items"]] == ["seed", "target", "cleanup"]
+    return {"action": "finish", "summary": "绑定固定逻辑的执行证据", "bindings": [
+        {"item_key": "seed", "evidence_ids": [contract["id"]], "effect_evidence": declaration("produced")},
+        {"item_key": "target", "evidence_ids": [contract["id"]], "input_bindings": {
+            "id": {"source_item": "seed", "output_path_tokens": ["body", "order.id"]}}},
+        {"item_key": "cleanup", "evidence_ids": [contract["id"]], "effect_evidence": declaration("cleanup")}]}
+
+
 def respond(body, business, clear_all):
     values = contexts(body)
     frozen = next((v for v in values if v.get("effect_coverage_protocol")), None)
@@ -59,6 +87,8 @@ def respond(body, business, clear_all):
         cases = [e for e in context["evidence"] if e["kind"] == "case"]
         assert len(cases) == 1 and len(cases[0]["payload"]["content"]["steps"]) == 8
         assert cases[0]["payload"]["content"]["steps"][-1]["business"] == {"flag": False, "zero": 0, "nullable": None}
+        if context.get("planning_stage"):
+            return {"role": "assistant", "content": json.dumps(staged_decision(context, business), ensure_ascii=False)}
         contract = next((e for e in context["evidence"] if e["kind"] == "tool"), None)
         if contract is None:
             data = {"action": "query", "summary": "读取固定原生工具接口", "queries": [{"kind": "tool", "source_id": "api-test-runner"}]}
@@ -175,6 +205,8 @@ async def test_actual_production_all_original_objects_and_terminal_recovery(tmp_
                     await post(f"/test-cases/{cid}/submit-review", {})
                     await post(f"/test-cases/{cid}/activate", {})
                     policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1", "effect_coverage_max_bytes": 1024000})
+                    if os.getenv("QA_STAGED_PLANNING") == "1":
+                        policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
                     configured = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                     assert configured.status_code == 200, configured.text
                     request = {"creation_key": "coverage-task", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -194,7 +226,7 @@ async def test_actual_production_all_original_objects_and_terminal_recovery(tmp_
                     assert task["status"] == "completed", task
                     plan = await get(root + "/case-plans/" + task["plan_id"])
                     assert plan["config_snapshot"]["policy"]["effect_coverage_protocol"] == "case-effect-coverage-v1"
-                    assert len(sends) == 2
+                    assert len(sends) == (4 if os.getenv("QA_STAGED_PLANNING") == "1" else 2)
                     with mysql_raw_connection(settings) as conn, conn.cursor() as cur:
                         cur.execute(f"SELECT payload_json,revision FROM `{settings.database.application_config_table}` WHERE scope_key=%s AND config_key=%s",
                             (project["id"], "test_case.planning_policy"))
@@ -206,6 +238,11 @@ async def test_actual_production_all_original_objects_and_terminal_recovery(tmp_
                         seed = cur.fetchone()["seed"]
                     assert seed["plan"]["config_snapshot"]["policy"]["effect_coverage_protocol"] == "case-effect-coverage-v1"
                     assert "api-test-runner" in seed["tool_contracts"]
+                    if os.getenv("QA_STAGED_PLANNING") == "1":
+                        assert seed["stage_prompts"]["protocol"] == STAGE_PROTOCOL
+                        assert plan["prompt_version"] == STAGED_PROMPT_VERSION
+                        assert task["round_count"] == 4
+                        assert "planning_stage_protocol" not in current_policy
                     path, launch = root + "/case-plans/" + plan["id"] + "/runs", {"creation_key": "coverage-run", "mode_key": "api_testing"}
                     detail = await post(path, launch, 201)
                     rid, iid = detail["run"]["id"], detail["items"][0]["id"]
@@ -243,7 +280,7 @@ async def test_actual_production_all_original_objects_and_terminal_recovery(tmp_
                     assert len(orders) == (0 if clear_all else 1) and len(created) == 2
                     assert [method for method, _ in effects] == ["POST", "POST", "GET", "DELETE"] + (["DELETE"] if clear_all else [])
                     assert result["actual"]["case_status"] == "passed" and not errors
-                    assert len(sends) == (9 if clear_all else 8)
+                    assert len(sends) == (9 if clear_all else 8) + (2 if os.getenv("QA_STAGED_PLANNING") == "1" else 0)
                     inventory = result["actual"]["effect_inventory"]
                     assert len(inventory) == len(effects)
                     with postgres_connect(settings) as conn, conn.cursor() as cur:

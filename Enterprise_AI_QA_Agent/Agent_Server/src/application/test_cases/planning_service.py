@@ -17,6 +17,8 @@ from src.application.test_cases.planning_sources import ProjectPlanningSources, 
 from src.application.test_runs.preparation_scopes import normalize_preparation_scopes
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.application.test_cases.planning_tool_contracts import OPERATION_PROMPT_VERSION, capture_tool_contracts, capture_tool_operations
+from src.application.test_cases.planning_stages import build_stage_prompts
+from src.schemas.case_planning_stages import STAGED_PROMPT_VERSION
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -101,16 +103,19 @@ class CasePlanningService:
         if config.policy.effect_coverage_protocol:
             record.prompt_version = OPERATION_PROMPT_VERSION
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
+        stages = build_stage_prompts() if config.policy.planning_stage_protocol else None
+        if stages is not None:
+            record.prompt_version = STAGED_PROMPT_VERSION
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
-            system_prompt=self._system_prompt(environment=record.environment is not None,
+            system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
                 effect_coverage=config.policy.effect_coverage_protocol is not None,
                 tool_operations=contracts is not None), model_parameters=planning_model_parameters(model),
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
-            response_protocol=PLANNING_RESPONSE_PROTOCOL)
+            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
                      fixed_case_versions: dict[str, str] | None = None,
@@ -136,16 +141,19 @@ class CasePlanningService:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
                                   "context": planning_context or {}})
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
+        stages = build_stage_prompts() if config.policy.planning_stage_protocol else None
+        if stages is not None:
+            record.prompt_version = STAGED_PROMPT_VERSION
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
-            system_prompt=self._system_prompt(environment=record.environment is not None,
+            system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
                 effect_coverage=config.policy.effect_coverage_protocol is not None,
                 tool_operations=contracts is not None),
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
-            response_protocol=PLANNING_RESPONSE_PROTOCOL)
+            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,
             deadline_at=datetime.now(timezone.utc) + timedelta(seconds=config.policy.timeout_seconds),
@@ -204,7 +212,8 @@ class CasePlanningService:
         return config
 
     async def _validate(self, record: CasePlanRecord, decision: PlanningDecision, *,
-                        fixed_case_versions: dict[str, str] | None = None, preserve_read_metadata: bool = False) -> None:
+                        fixed_case_versions: dict[str, str] | None = None, preserve_read_metadata: bool = False,
+                        validate_effects: bool = True) -> None:
         if len(decision.items) > record.config_snapshot.policy.max_items:
             raise ValueError("计划执行项超过配置限制")
         items = {item.key: item for item in decision.items}
@@ -235,8 +244,9 @@ class CasePlanningService:
                 if current != frozen:
                     raise ValueError("规划期间用例启用版本或内容发生变化，请重新规划")
         declared_parents = {key: list(item.depends_on) for key, item in items.items()}
-        validate_effect_declarations(decision, record.config_snapshot.policy.effect_evidence_protocol, record.evidence,
-            record.config_snapshot.policy.effect_coverage_protocol)
+        if validate_effects:
+            validate_effect_declarations(decision, record.config_snapshot.policy.effect_evidence_protocol, record.evidence,
+                record.config_snapshot.policy.effect_coverage_protocol)
         normalize_preparation_scopes(decision, record.config_snapshot.policy.preparation_scope_protocol)
         changed = {key: item.depends_on for key, item in items.items() if item.depends_on != declared_parents[key]}
         if changed:
@@ -267,7 +277,7 @@ class CasePlanningService:
         decision.items = [items[key] for key in ordered]
 
     @staticmethod
-    def _parse(text: str) -> PlanningDecision:
+    def _parse(text: str, decision_type=PlanningDecision):
         candidates = [text.strip()]
         candidates.extend(match.group(1).strip() for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", text, re.I))
         decoder = json.JSONDecoder()
@@ -290,7 +300,7 @@ class CasePlanningService:
             if not isinstance(parsed, dict):
                 continue
             try:
-                return PlanningDecision.model_validate(parsed)
+                return decision_type.model_validate(parsed)
             except (ValueError, TypeError):
                 continue
         raise ValueError("模型没有返回有效的结构化计划；未创建测试运行")

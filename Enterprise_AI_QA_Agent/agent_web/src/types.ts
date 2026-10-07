@@ -1988,6 +1988,7 @@ export interface CasePlanningPolicy {
   effect_evidence_max_bytes?: number | null;
   effect_coverage_protocol?: "case-effect-coverage-v1" | null;
   effect_coverage_max_bytes?: number | null;
+  planning_stage_protocol?: "case-planning-staged-evidence-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;

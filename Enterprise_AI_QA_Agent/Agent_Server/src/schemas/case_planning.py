@@ -27,6 +27,7 @@ class CasePlanningPolicy(PlanningModel):
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_coverage_protocol: Literal["case-effect-coverage-v1"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
+    planning_stage_protocol: Literal["case-planning-staged-evidence-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
@@ -48,6 +49,8 @@ class CasePlanningPolicy(PlanningModel):
             self.effect_coverage_max_bytes = 1024000
         if not self.effect_coverage_protocol and self.effect_coverage_max_bytes is not None:
             raise ValueError("对象覆盖大小配置需要固定覆盖策略")
+        if self.planning_stage_protocol and not self.effect_coverage_protocol:
+            raise ValueError("分阶段规划需要固定对象覆盖策略")
         return self
 
     @model_serializer(mode="wrap")
@@ -69,6 +72,8 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("effect_coverage_protocol", None)
         if self.effect_coverage_max_bytes is None:
             data.pop("effect_coverage_max_bytes", None)
+        if self.planning_stage_protocol is None:
+            data.pop("planning_stage_protocol", None)
         return data
 
 

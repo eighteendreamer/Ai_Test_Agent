@@ -10,6 +10,7 @@ from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningModel,
 )
 from src.schemas.model_config import model_invocation_parameters as planning_model_parameters
+from src.schemas.case_planning_stages import EvidencePlanningDecision, PlanningStageCheckpoint, PlanningStagePrompts
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
@@ -31,6 +32,7 @@ class PlanningTaskSeed(PlanningModel):
     tool_contracts: dict[str, dict[str, Any]] | None = None
     tool_operations: dict[str, dict[str, Any]] | None = None
     response_protocol: Literal["case-planning-response-completion-v1"] | None = None
+    stage_prompts: PlanningStagePrompts | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_seed(self, handler):
@@ -41,6 +43,8 @@ class PlanningTaskSeed(PlanningModel):
             data.pop("tool_operations", None)
         if self.response_protocol is None:
             data.pop("response_protocol", None)
+        if self.stage_prompts is None:
+            data.pop("stage_prompts", None)
         return data
 
 
@@ -52,10 +56,18 @@ class PlanningTaskCheckpoint(PlanningModel):
     validation_feedback: dict[str, Any] | None = None
     next_round: int = Field(default=0, ge=0)
     query_index: int = Field(default=0, ge=0)
-    pending_decision: PlanningDecision | None = None
+    pending_decision: PlanningDecision | EvidencePlanningDecision | None = None
     response_text: str | None = None
     response_metadata: dict[str, Any] = Field(default_factory=dict)
     response_has_tools: bool = False
+    stages: PlanningStageCheckpoint | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_checkpoint(self, handler):
+        data = handler(self)
+        if self.stages is None:
+            data.pop("stages", None)
+        return data
 
 
 class CasePlanningTaskRecord(PlanningModel):

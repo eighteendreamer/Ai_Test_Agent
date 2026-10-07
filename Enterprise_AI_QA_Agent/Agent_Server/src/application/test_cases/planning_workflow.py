@@ -8,6 +8,10 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.application.test_cases.planning_sources import json_text
+from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision
+from src.schemas.case_planning_stages import (
+    EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint, STAGED_PROMPT_VERSION,
+)
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
@@ -53,6 +57,14 @@ class CasePlanningWorkflow:
                     raise PlanningCheckpointUnavailable("规划检查点提交尚不能确认") from exc
 
         try:
+            if seed.stage_prompts is not None:
+                if record.prompt_version != STAGED_PROMPT_VERSION or seed.system_prompt != seed.stage_prompts.logic:
+                    raise ValueError("阶段Prompt与固定规划版本不一致")
+                if checkpoint.stages is None:
+                    if checkpoint.phase != "retrieval":
+                        raise ValueError("已开始的阶段规划缺少原阶段检查点")
+                    checkpoint.stages = PlanningStageCheckpoint()
+                PlanningStageCheckpoint.model_validate(checkpoint.stages.model_dump(mode="json"))
             remaining = remaining_seconds if remaining_seconds is not None else (deadline_at - datetime.now(timezone.utc)).total_seconds()
             if remaining <= 0:
                 raise TimeoutError("planning deadline expired")
@@ -88,20 +100,33 @@ class CasePlanningWorkflow:
                             "catalog": checkpoint.catalog, "query_results": checkpoint.query_results,
                             "warnings": record.warnings, "validation_feedback": checkpoint.validation_feedback,
                             "round": checkpoint.next_round + 1, "remaining_rounds": policy.max_rounds - checkpoint.next_round}
-                        if seed.tool_contracts is not None:
+                        stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
+                        prompt = seed.system_prompt
+                        if stage is not None:
+                            context["planning_stage"] = stage
+                            prompt = getattr(seed.stage_prompts, stage)
+                            if stage == "logic":
+                                context["available_tools"] = [{"key": key, "name": value["name"]}
+                                    for key, value in (seed.tool_contracts or {}).items()]
+                            else:
+                                context["logical_plan"] = checkpoint.stages.logical_decision.model_dump(mode="json")
+                                context["logical_hash"] = checkpoint.stages.logical_hash
+                        if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
-                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION},
-                                operations=seed.tool_operations if seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None)
+                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION},
+                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION} else None)
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
                             context["business_environment"] = record.environment.model_dump(mode="json")
                         body = json_text(context)
-                        if len(body) + len(seed.system_prompt) > policy.max_context_chars:
+                        if len(body) + len(prompt) > policy.max_context_chars:
                             raise ValueError("完整规划上下文超过配置限制，未截断用例；请缩小候选范围或调整配置")
                         checkpoint.next_round += 1
                         round_record = {"round": checkpoint.next_round, "status": "invoking",
                             "logical_call_id": str(uuid4()), "attempt_id": attempt_id, "streaming": model_config.capabilities.streaming}
+                        if stage is not None:
+                            round_record["planning_stage"] = stage
                         record.rounds.append(round_record)
                         checkpoint.phase = "invoking"
                         await save("模型调用意图已保存")
@@ -113,7 +138,7 @@ class CasePlanningWorkflow:
                         trace = ({"project_id": record.project_id, "trace_id": record.id,
                             "turn_id": f"{record.id}:{checkpoint.next_round}", "session_id": record.id,
                             "agent_key": "case-planning"} if persist is None else {})
-                        model_request = ModelInvocationRequest(system_prompt=seed.system_prompt,
+                        model_request = ModelInvocationRequest(system_prompt=prompt,
                             messages=[{"role": "user", "content": body}], tools=[], trace_context=trace)
                         started = perf_counter()
                         async def observe_delta(delta):
@@ -167,7 +192,13 @@ class CasePlanningWorkflow:
                                     "finish_reason": metadata.get("finish_reason"), "stop_reason": metadata.get("stop_reason")})
                                 raise ValueError(f"{reason}；已保留响应，不自动重发；未创建测试运行")
                         try:
-                            decision = self._planner._parse(checkpoint.response_text or "")
+                            stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
+                            decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
+                                LogicalPlanningDecision if stage == "logic" else EvidencePlanningDecision))
+                                if stage is not None else self._planner._parse(checkpoint.response_text or ""))
+                            wire_decision = decision.model_copy(deep=True)
+                            if decision.action == "finish" and stage == "effects":
+                                decision = merge_evidence_decision(checkpoint.stages, decision, record.evidence)
                             if decision.action == "finish":
                                 if policy.preparation_scope_protocol is not None:
                                     round_record["preparation_scope_declaration"] = {
@@ -180,7 +211,7 @@ class CasePlanningWorkflow:
                                     versions.update({item.source_id: item.version for item in record.evidence if item.kind == "case"})
                                 versions.update(fixed_case_versions)
                                 await self._planner._validate(record, decision, fixed_case_versions=versions,
-                                    preserve_read_metadata=pin_read_versions)
+                                    preserve_read_metadata=pin_read_versions, validate_effects=stage != "logic")
                                 if fixed_case_versions and {item.case_id: item.case_version_id for item in decision.items if item.kind == "target"} != fixed_case_versions:
                                     raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
                         except ValueError as exc:
@@ -196,11 +227,24 @@ class CasePlanningWorkflow:
                             await save("模型计划校验未通过，已保存具体反馈")
                             continue
                         checkpoint.validation_feedback = None
-                        round_record.update({"status": "parsed", "decision": decision.model_dump(mode="json")})
+                        round_record.update({"status": "parsed", "decision": (
+                            wire_decision if stage is not None else decision).model_dump(mode="json")})
                         logger.info("case_planning_round", extra={"project_id": record.project_id, "plan_id": record.id,
                             "round": checkpoint.next_round, "action": decision.action, "query_count": len(decision.queries)})
                         checkpoint.response_text = None
                         if decision.action == "finish":
+                            if stage == "logic":
+                                checkpoint.stages = seal_logical_decision(decision)
+                                round_record["logical_hash"] = checkpoint.stages.logical_hash
+                                if any(item.kind == "target" for item in decision.items):
+                                    checkpoint.query_results = []
+                                    checkpoint.phase = "ready"
+                                    await save("逻辑计划已固定，等待执行证据声明")
+                                    logger.info("case_planning_logic_frozen", extra={"project_id": record.project_id,
+                                        "plan_id": record.id, "logical_hash": checkpoint.stages.logical_hash})
+                                    continue
+                                await self._planner._validate(record, decision, fixed_case_versions=versions,
+                                    preserve_read_metadata=pin_read_versions)
                             await self._planner._projects.require_active(record.project_id)
                             record.decision, record.summary = decision, decision.summary
                             record.status = ("no_match" if not any(item.kind == "target" for item in decision.items)
@@ -223,8 +267,8 @@ class CasePlanningWorkflow:
                             try:
                                 if query.kind in {"tool", "tools"}:
                                     evidence, metadata = query_tool_contracts(seed.tool_contracts, query, policy.max_candidates,
-                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION},
-                                        operations=seed.tool_operations if seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None)
+                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION},
+                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION} else None)
                                     logger.info("case_planning_tool_query_resolved", extra={"plan_id": record.id,
                                         "round": checkpoint.next_round, "kind": query.kind,
                                         "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version,

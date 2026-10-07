@@ -422,3 +422,10 @@ p4-operation-contract-*/**/*.bin binary
 # Preserve this plan-only upload regression output without altering raw bytes.
 plan-user-latest-update* -text whitespace=cr-at-eol
 plan-user-latest-update.log whitespace=cr-at-eol,-blank-at-eof
+
+# Keep staged-plan inputs, actual streams, failures and process evidence intact.
+p4-staged-planning-* -text whitespace=cr-at-eol
+p4-staged-planning-*/** -text whitespace=cr-at-eol
+p4-staged-planning-*.log whitespace=cr-at-eol,-blank-at-eol,-blank-at-eof
+p4-staged-planning-*.xml whitespace=cr-at-eol,-blank-at-eol
+p4-staged-planning-*/**/*.bin binary

@@ -19,6 +19,7 @@ from src.schemas.case_planning_task import (
     CasePlanningTaskRecord, PlanningTaskCheckpoint, PlanningTaskSeed,
 )
 from src.schemas.case_planning import planning_request_json
+from src.schemas.case_planning_stages import PlanningStageCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,8 @@ class PostgresPlanningTaskStore:
             raise ValueError("规划输入与提交请求不一致")
         task_id = str(uuid4())
         checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True),
-            phase="finished" if source and seed.plan.status in {"planned", "blocked"} else "retrieval")
+            phase="finished" if source and seed.plan.status in {"planned", "blocked"} else "retrieval",
+            stages=PlanningStageCheckpoint() if seed.stage_prompts is not None else None)
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             # As with the run creation service, bindability is checked again
             # under the project lock, not only before the transaction.
@@ -216,6 +218,16 @@ class PostgresPlanningTaskStore:
         if any(getattr(checkpoint.plan, key) != getattr(original, key) for key in fixed):
             raise ValueError("规划检查点不能替换固定输入或身份")
         prior = PlanningTaskCheckpoint.model_validate(row["checkpoint"])
+        if PlanningTaskSeed.model_validate(row["seed"]).stage_prompts is not None:
+            if checkpoint.stages is None:
+                raise ValueError("阶段检查点不能丢弃")
+            PlanningStageCheckpoint.model_validate(checkpoint.stages.model_dump(mode="json"))
+            if prior.stages is not None and prior.stages.stage == "effects":
+                if (checkpoint.stages.stage != "effects" or checkpoint.stages.logical_decision != prior.stages.logical_decision
+                    or checkpoint.stages.logical_hash != prior.stages.logical_hash):
+                    raise ValueError("检查点不能回退阶段或改写固定逻辑决定")
+        elif checkpoint.stages is not None:
+            raise ValueError("旧任务不能改用新阶段协议")
         if checkpoint.next_round < prior.next_round or checkpoint.next_round > original.config_snapshot.policy.max_rounds:
             raise ValueError("规划检查点不能重置或超过原回合预算")
         # Any evidence already used by a persisted round stays byte-for-byte

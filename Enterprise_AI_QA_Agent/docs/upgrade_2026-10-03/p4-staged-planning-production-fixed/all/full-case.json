@@ -1,0 +1,53 @@
+{
+  "objective": "查询真实第一条记录并清理全部准备记录",
+  "期望": {
+    "code": 200,
+    "flag": false,
+    "count": 1,
+    "nullable": null
+  },
+  "steps": [
+    {
+      "order": 1,
+      "action": "POST /orders创建第一条返回201及order.id"
+    },
+    {
+      "order": 2,
+      "action": "再创建第二条，保留两个实际ID"
+    },
+    {
+      "order": 3,
+      "action": "GET第一条/orders/{id}"
+    },
+    {
+      "order": 4,
+      "action": "核对状态码200"
+    },
+    {
+      "order": 5,
+      "action": "核对flag为False"
+    },
+    {
+      "order": 6,
+      "action": "核对count为1及nullable为null"
+    },
+    {
+      "order": 7,
+      "action": "逐条DELETE全部本次记录"
+    },
+    {
+      "order": 8,
+      "action": "LAST-COVERAGE-STEP",
+      "business": {
+        "flag": false,
+        "zero": 0,
+        "nullable": null
+      }
+    }
+  ],
+  "operations": {
+    "create": "http://127.0.0.1:51182/orders",
+    "query": "http://127.0.0.1:51182/orders/{id}",
+    "cleanup": "http://127.0.0.1:51182/orders/{id}"
+  }
+}

@@ -27,6 +27,7 @@ from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
+from src.schemas.case_planning_stages import STAGE_PROTOCOL
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
@@ -68,7 +69,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
-    report = {"baseline": "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
+    report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     def save(name, value):
         (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -133,6 +134,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 await post(f"/test-cases/{cid}/submit-review", {})
                 await post(f"/test-cases/{cid}/activate", {})
                 policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1", "effect_coverage_max_bytes": 1024000})
+                if os.getenv("QA_STAGED_PLANNING") == "1":
+                    policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -143,6 +146,9 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     frozen = cur.fetchone()["seed"]
                 assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
                 report["frozen_response_protocol"] = frozen["response_protocol"]
+                if os.getenv("QA_STAGED_PLANNING") == "1":
+                    assert frozen["stage_prompts"]["protocol"] == STAGE_PROTOCOL
+                    report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
                 planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,
                     group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
                 await planning_queue.connect()

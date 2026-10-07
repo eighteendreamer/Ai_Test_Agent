@@ -586,7 +586,7 @@ async def test_independent_worker_restart_uses_mysql_model_http_and_persisted_do
             assert len(calls) == 3
             evidence_name = "p2-planning-worker-cli.json" if production_cli else "p2-planning-worker-probe.json"
             evidence_dir = Path(os.getenv("QA_PLANNING_TASK_EVIDENCE_DIR") or
-                str(Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"))
+                str(tmp_path / "evidence"))
             evidence_dir.mkdir(parents=True, exist_ok=True)
             (evidence_dir / evidence_name).write_text(json.dumps({
                 "scope": "production CLI and dedicated planning runtime" if production_cli else "isolated process host; production RedisTaskWorker/PlanningTaskHandler; full API lifespan not used",

@@ -1,0 +1,22 @@
+# 默认真实逻辑失败与正式用例内清理的契约缺口
+
+基线c7d20303及已实测的分阶段工作区。依据为本批实际默认模型PG检查点、完整八步用例、原件、三个物理请求及原业务范围；不改写原任务，不重复其未知第三轮。
+
+## 已证明的事实
+
+- 默认第一轮读实际文档，第二轮返回完整JSON，finish_reason=stop。其意图是prepare_orders创建两条、default_query查询第一条并清理两条；prepare.instructions明确“不提前删除”。然而cleanup_sources写在prepare_orders上并指向自身，现有normalize_preparation_scopes因此拒绝。第三轮总时限中断，没有可靠完成正文，业务HTTP为0。
+- PreparationPlanItem才有cleanup_sources；FormalCasePlanItem无此字段。normalize_preparation_scopes和frozen_preparation_scopes只把prepare识别为独立清理项。正式目标自己清理外部准备对象时，没有同等显式来源关系可填。
+- CasePlanItemBase只有一个effect_evidence，EffectEvidenceDeclaration.role只能produced或cleanup。select_when只筛选这一份声明；不能把一个正式用例合法的不同产生和清理操作分别归为两种角色。不能拿已验的“独立prepare创建→正式目标查询→独立prepare清理”替代这个场景。
+- 本批受控两阶段生产正常完成4回合，真实部分/全部清理分别blocked/passed，旧协议和恢复回归通过。它证明阶段协议及独立准备/清理链路可用，不证明默认模型或正式项内混合效果已经可用。
+
+代码依据：schemas/case_planning.py的正式/准备项与单个effect_evidence；schemas/case_effects.py的单角色声明；application/test_runs/preparation_scopes.py的cleanups筛选和自引用拒绝；application/runtime/case_effect_evidence.py的compile_declaration/validate_effect_declarations。原失败文本保存在p4-staged-planning-default-first/PG-planning.json的validation_feedback.candidate_response。
+
+## 判断与下一步研究边界
+
+准备项自引用是实际非法声明，应保留拒绝；但只提示模型“不要自引用”不足以说明正式目标负责清理时应该怎样表达。当前存在正式清理关系和项内多角色声明的架构缺口。不能自动删掉cleanup_sources、把整个准备项解释为cleanup，或人为改目标JSON/造正式用例来让断言通过。
+
+下一步先枚举原声明编译、实际ToolJob观察、对象来源/拥有者、清单、清理覆盖、Agent上下文和页面的消费方，再决定新增版本协议。需要区分执行项之间的依赖边和同一项内实际操作的效果来源，避免把项内合法先后操作误变成依赖自环。完整正式JSON及自身说明仍由Agent理解执行，声明只负责可靠返回的证据分类；不按HTTP方法猜创建/清理，不把业务用例编译成模式参数。
+
+拟研究按固定实际操作选择条件描述多份产生/清理声明，以及正式项清理外部来源的显式关系。任何采用方案都必须保留旧序列化/hash/Prompt、原unknown和终态；新配置MySQL、新冻结关系PG、原件/大证据RustFS。源码各消费方和前端契约成对同步，不能先放宽旧校验。
+
+验收必须使用真实正式用例：同一项内创建后查询再清理；正式目标消费并清理独立准备；两条来源只清一条；真实不同操作被错误角色声明；未知创建/清理不重发；共享消费完成后清理；项目/版本隔离与原预算恢复。还需另建默认模型任务验证其自主规划与执行。以上尚未实施，不将本研究或本批受控通过作为这些需求已完成。

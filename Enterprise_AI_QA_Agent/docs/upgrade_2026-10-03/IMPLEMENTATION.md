@@ -3809,3 +3809,59 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 ```
 
 使用真实文件、应用路由与本地测试存储，没有Git来源。验证原件/版本/恢复和派生修改边界，不证明生产数据库/对象存储、独立解析比较或完整App通过。本次没有重跑默认模型，也不将既有代码存在称为分阶段验收成功；默认原失败继续保留。三份同步及原工作区字节核对见plan-user-latest-update-validation.json；完整P0—P5目标未完成。
+
+## 2026-10-07：分阶段规划的功能、真实恢复、独立生产及默认失败
+
+基线c7d20303，研究先于实现，见P4_STAGED_PLANNING_RESEARCH.md、PLAN2.3.1/6.57。项目策略MySQL可选，新v4Prompt/逻辑/hash/恢复PG冻结，原件RustFS；同一Workflow、原模型和原总时限/回合。前端设置/类型/前置联动同步，未引入依赖或数据库列。QA_STAGED_PLANNING仅为测试夹具选用API配置的开关，运行时仍以MySQL策略及PGseed为准，不是应用环境配置。
+
+实际命令（Agent_Server，原始stdout/stderr及XML每批独立保存）：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_stages.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-first.xml
+# 退出0：9通过、5实际存储未启用，5.96秒。
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:QA_STAGED_PLANNING_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-live-first'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_stages.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-live-first.xml
+# 退出0：14通过、0跳过，12.68秒；MD原件/RustFS、MySQL/PG阶段恢复及不可变逻辑。
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_STAGED_PLANNING_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-regression-stages'
+$env:QA_TOOL_OPERATIONS_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-regression-operations'
+$env:QA_TOOL_NAVIGATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-regression-navigation'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-regression-stateful'
+$env:QA_PLANNING_COMPLETION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-regression-completion'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_stages.py tests/test_planning_tool_operations.py tests/test_planning_tool_navigation.py tests/test_api_dispatched_task_contract.py tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_planning_response_completion.py tests/test_case_plan_run_creation.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-regression.xml
+# 退出0：99通过、1旧外部模型未启用，82.15秒。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_STAGED_PLANNING='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-production-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-production-final.xml
+# 最终退出0：2通过103.98秒；部分blocked/剩1，全清理passed/剩0，4/5业务HTTP。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-staged-planning-default-first'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-default-first.xml
+# 退出1：1失败201.49秒；3轮logic，第二轮完整正文/非法自引用，第三轮原180秒截止，业务HTTP0。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_stages.py::test_actual_default_candidate_preserves_illegal_self_scope_and_formal_contract_gap -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-default-replay.xml
+# 退出0：实际新失败回放1通过7.01秒，证明拒绝和契约缺口，不证明修复。
+..\.venv\Scripts\python.exe -Xutf8 -m py_compile src/application/test_cases/planning_stages.py src/schemas/case_planning_stages.py src/application/test_cases/planning_service.py src/application/test_cases/planning_workflow.py src/schemas/case_planning_task.py src/schemas/case_planning.py src/runtime/postgres_planning_task_store.py tests/test_case_planning_stages.py tests/test_case_cleanup_coverage_production.py tests/test_default_coverage_production.py
+# 退出0；不代替上述实际功能验证。
+```
+
+agent_web实际执行npm.cmd test -- src/features/projects/CasePlanDialog.test.ts：26通过2.55秒；npm.cmd run build含vue-tsc/Vite：退出0，Vite9.57秒。记录为p4-staged-planning-frontend-first/build-first.log。没有执行完整浏览器App。
+
+生产首批2失败57.54秒，旧规划2次计数与新4次不符，尚未执行业务；第二批2失败94.22秒，实际部分/全部结果已正确，但已加载的旧8/9总次数与实际10/11不符。两处测试计数同步后第三批通过。第二批进行期间修正源文件另一处计数，pytest行缓存可能显示新文字，实际比较仍为旧加载值；失败和原业务证据保留。源码/参数在生产各批间不改，没有放宽业务校验。
+
+默认实际47.344/119.377/12.577秒，三次不同逻辑/SDK/物理请求，无业务HTTP或Run；第二轮stop/1283字符完整JSON，第三轮取消且流未完成，不判length。实际候选清理由目标负责，prepare自身声明cleanup_sources非法；正式项无该字段且单项只支持一个产生/清理角色。新失败回放和根因研究见P4_FORMAL_EFFECT_RELATIONS_RESEARCH.md，后续先研究完整消费方和新版本协议，不删错误字段、不改目标JSON制造通过。新协议受控可用，默认自主、正式项内混合效果及完整P0—P5仍未完成；完整三份方案同步及原12002份证据核对见本批validation。
+
+交付第一次校验停止于p2-planning-worker-cli.json原SHA不匹配；回归夹具缺QA_PLANNING_TASK_EVIDENCE_DIR，默认写历史目录并覆盖CLI/probe两份既有汇总。新内容保存于p4-staged-planning-export-overwrite，旧12002原件/物理证据仍匹配；项目和相关pytest临时目录、Git可恢复小型blob未找到原字节，未提交这两个文件，限制如实保留。已将缺配置默认导出改为tmp_path/evidence，不继续依赖调用者记得设置变量。校验失败审计见p4-staged-planning-validation-first-failure.json。
+
+隔离导出根因修复后，在Agent_Server清除QA_PLANNING_TASK_EVIDENCE_DIR，运行：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+Remove-Item Env:QA_PLANNING_TASK_EVIDENCE_DIR -ErrorAction SilentlyContinue
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_tasks.py::test_independent_worker_restart_uses_mysql_model_http_and_persisted_document -q --tb=short --basetemp=C:\Users\32734\AppData\Local\Temp\qa_staged_export_test_20261007 --junitxml=../docs/upgrade_2026-10-03/p4-staged-planning-export-isolated.xml
+# 退出0：2通过37.19秒。实际临时导出两份汇总，项目两份汇总SHA前后一致。
+```
+
+只将两份非敏感汇总及验证结果复制到p4-staged-planning-export-isolated，没有复制临时.env或凭据。它证明根因修复后的历史目录保护，不是旧字节已恢复；旧12002原始证据核对、当前汇总覆盖事实和无法找到旧字节的限制分别保留。
