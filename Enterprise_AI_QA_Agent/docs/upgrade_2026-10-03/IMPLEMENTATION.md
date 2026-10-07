@@ -3794,3 +3794,5 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 前端在agent_web实际执行npm.cmd test -- src/features/projects/CasePlanDialog.test.ts：19通过2.68秒；npm.cmd run build包含vue-tsc及Vite，退出0，Vite11.06秒。源码/测试py_compile、diff、原证据SHA及三份PLAN核对见p4-operation-contract-validation.json。
 
 新默认轮1/2分别17.304/54.609秒正常query；轮2同时读操作和完整工具，轮3请求39801字节，107.380秒后interrupted。SDK流有3206块但正文0、无finish_reason，消费被取消；不是完整length返回。三个不同逻辑/SDK/物理调用，没有JSON修正/同回合重发证据。业务HTTP0，模型全局配置及原预算不变，旧终态与未知不重发。操作功能已验，默认执行未通过；下一步重审逻辑规划与技术证据的分阶段职责，继续完整P0—P5范围。
+
+交付核对另有两项真实失败：初始验证器误将默认夹具末尾business.false按受控夹具business.flag核对，读取实际文件后修正验证器，未修改原件；记录为p4-operation-contract-validation-first-failure.json。初次暂存原96份字节均匹配，但两个stream/physical-*.response.bin的协议末尾空行触发git diff --cached --check退出2；脚本未在Python检查失败后终止，仍产生144f7bcb。没有将该检查标成通过。补齐.bin binary属性，保留响应全部原字节，重新核对原提交及暂存数据后追加纠正提交；完整失败信息与最后结果保存在本批validation记录。

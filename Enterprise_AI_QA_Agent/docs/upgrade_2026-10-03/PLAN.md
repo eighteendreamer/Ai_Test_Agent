@@ -1947,3 +1947,5 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 保存失败契约中完整payload8827字符，指定操作payload4902字符，完整模型仍32字段；但实际模型同时读取两者，第三轮请求39801字节。因此不能宣称实际输入减少或默认失败已修复。连续默认规划失败是职责/协议需要重审的架构信号，不继续只加提示、加超时或重复同一流程。下一步研究逻辑选取/衔接与技术证据声明的分阶段协议，逐一检查固定计划、检查点、引用、预算及恢复消费者，不能在研究前弱化覆盖校验或丢弃完整用例。
 
 原文件/PG事实/物理请求/失败/独立过程日志保存于p4-operation-contract-*，核对见[p4-operation-contract-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-operation-contract-validation.json)，实际命令见IMPLEMENTATION。全局模型配置、预算及历史终态/未知发送保持。默认自主执行、正式项混合创建/清理、共享消费完成、未知只读核对、运行修订、P1正式模板/Excel导入产品、DeepSeek录制、Docker性能/安全、历史迁移和其余P0—P5继续推进，完整目标未完成。
+
+本批首次提交核对的原始字节检查已通过，但两个原SSE响应的协议末尾空行触发diff检查；命令脚本没有及时停止，仍产生144f7bcb提交。失败另存，原响应不修改。随后补齐.bin二进制属性，重新核对已提交及暂存原字节、提交范围和diff，追加纠正提交；这项记录修订不代表默认模型失败已解决。

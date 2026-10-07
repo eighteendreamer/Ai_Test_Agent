@@ -1,0 +1,15 @@
+{
+  "actual_check": "git diff --cached --check",
+  "exit_code": 2,
+  "diagnostics": [
+    "stream/physical-1.response.bin:4: new blank line at EOF",
+    "stream/physical-2.response.bin:4: new blank line at EOF"
+  ],
+  "raw_byte_verification_before_failure": {
+    "matched": 96,
+    "scope_files": 110
+  },
+  "script_error": "Shell continued after Python CalledProcessError, creating commit 144f7bcb despite failed diff check.",
+  "corrective_action": "Keep raw SSE framing intact; add binary attributes and repeat committed/staged byte and scope checks in fail-fast Python before corrective commit.",
+  "business_source_changed_for_this_correction": false
+}
