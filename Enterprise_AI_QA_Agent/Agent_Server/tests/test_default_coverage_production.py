@@ -67,7 +67,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
-    report = {"baseline": "cd06743d plus native task contract correction", "configured_model_parameters": parameters, "controlled_model": False,
+    report = {"baseline": "b134f063 plus frozen tool navigation v2", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     def save(name, value):
         (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

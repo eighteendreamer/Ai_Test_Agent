@@ -16,7 +16,7 @@ from src.application.test_cases.planning_workflow import CasePlanningWorkflow
 from src.application.test_cases.planning_sources import ProjectPlanningSources, json_text
 from src.application.test_runs.preparation_scopes import normalize_preparation_scopes
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
-from src.application.test_cases.planning_tool_contracts import capture_tool_contracts
+from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, capture_tool_contracts
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -99,7 +99,7 @@ class CasePlanningService:
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
         if config.policy.effect_coverage_protocol:
-            record.prompt_version = "case-planning-effect-coverage-v1"
+            record.prompt_version = NAVIGATION_PROMPT_VERSION
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(environment=record.environment is not None,
@@ -126,7 +126,7 @@ class CasePlanningService:
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
         if config.policy.effect_coverage_protocol:
-            record.prompt_version = "case-planning-effect-coverage-v1"
+            record.prompt_version = NAVIGATION_PROMPT_VERSION
         fixed_case_versions = dict(fixed_case_versions or {})
         if fixed_case_versions:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
@@ -347,7 +347,11 @@ class CasePlanningService:
                "cleanup需要cleanup_sources及来源的produced声明。依据不足保留unresolved，不猜测工具输出结构。"
                "本策略保存原可靠返回中的对象/清理证据；不代表消费完成或所有对象已清理。"
                if effect_evidence else "")
-            + ("\n对象覆盖：tools按编号/名称列出固定工具目录；tool按source_id读取固定输入/输出接口，包括真实worker输出变体。"
+            + ("\n对象覆盖：tool_catalog已列出固定工具身份及detail_query，它是导航而不是已读契约。"
+               "已知key时直接使用detail_query读取tool详情，不再用tools搜索同一已知名称。"
+               "独立的文档和工具详情读取可放在同一queries回合。"
+               "tools按编号/名称搜索目录；非空搜索唯一匹配且当前页包含该项时也会提供完整tool证据，contract_loaded明确是否已读。"
+               "多匹配只返回目录和详情查询，不猜选工具；tool按source_id读取固定输入/输出接口，包括真实worker输出变体。"
                "接口描述不代表有执行授权。使用已读接口和完整固定业务依据声明字面量路径，不能猜测包装字段。"
                "同一执行项有查询和产生操作时，可用select_when.input_path_tokens与expected_path_tokens声明固定输入相等匹配；"
                "预期仍来自正式完整JSON或prepare.instructions。匹配不通过的调用不当作产生对象；字段缺失保留未知。"

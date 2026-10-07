@@ -1,0 +1,116 @@
+{
+  "case": {
+    "id": "501e57b1-6ce8-4b67-a7d6-f454e8013d58",
+    "project_id": "843a8967-af33-433b-8879-66ad423875be",
+    "case_key": "default-query",
+    "title": "完整八步已有订单查询",
+    "mode_key": "api_testing",
+    "case_type": "json",
+    "priority": "P1",
+    "lifecycle_status": "draft",
+    "active_version_id": null,
+    "latest_version": 1,
+    "created_by": null,
+    "created_at": "2026-10-07T00:17:29.143154Z",
+    "updated_at": "2026-10-07T00:17:29.143154Z",
+    "archived_at": null,
+    "version_reviews": {
+      "0fca4fd3-adc8-4d0b-8d04-4eba26ce9e6e": {
+        "version_id": "0fca4fd3-adc8-4d0b-8d04-4eba26ce9e6e",
+        "version": 1,
+        "status": "draft",
+        "origin": "native",
+        "events": []
+      }
+    }
+  },
+  "version": {
+    "content_json": {
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "requires": [
+        "actual_order_id"
+      ],
+      "期望": {
+        "code": 200,
+        "flag": false,
+        "count": 1,
+        "nullable": null
+      },
+      "steps": [
+        {
+          "order": 1,
+          "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+        },
+        {
+          "order": 2,
+          "action": "确认准备两条记录且记录两个实际ID"
+        },
+        {
+          "order": 3,
+          "action": "GET第一条/orders/{id}"
+        },
+        {
+          "order": 4,
+          "action": "核对状态码200"
+        },
+        {
+          "order": 5,
+          "action": "核对flag为False"
+        },
+        {
+          "order": 6,
+          "action": "核对count为1"
+        },
+        {
+          "order": 7,
+          "action": "核对nullable为null并清理所有本次记录"
+        },
+        {
+          "order": 8,
+          "action": "LAST-DEFAULT-COVERAGE-STEP",
+          "business": {
+            "false": false,
+            "zero": 0,
+            "nullable": null
+          }
+        }
+      ],
+      "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回",
+      "operations": {
+        "query": "http://127.0.0.1:52072/orders/{id}"
+      }
+    },
+    "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
+    "generation_metadata": {
+      "template": {
+        "writing_guidance": "DO-NOT-INJECT-TEMPLATE"
+      }
+    },
+    "preconditions": [],
+    "steps": [],
+    "assertions": [],
+    "test_data": {},
+    "cleanup": [],
+    "content_format": "json-v1",
+    "id": "0fca4fd3-adc8-4d0b-8d04-4eba26ce9e6e",
+    "case_id": "501e57b1-6ce8-4b67-a7d6-f454e8013d58",
+    "version": 1,
+    "content_hash": "37156ef82a32e064865af5ce03ab084c1550fa7172a1d6b1ca2cbde4118a527e",
+    "source_refs": [
+      {
+        "source_type": "api_doc",
+        "source_id": "f0e32960-6a4b-54dd-b948-6b9a18fd158c",
+        "version": null,
+        "label": "",
+        "uri": null,
+        "metadata": {}
+      }
+    ],
+    "model_key": "manual",
+    "prompt_version": "manual-v1",
+    "skill_versions": {
+      "manual": "v1"
+    },
+    "created_at": "2026-10-07T00:17:29.143154Z"
+  }
+}

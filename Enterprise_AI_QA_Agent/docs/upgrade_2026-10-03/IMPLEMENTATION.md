@@ -3653,3 +3653,37 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 ..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-coverage-task-contract.xml
 # 退出1，1失败207.57秒；规划超时，未创建运行。
 ```
+
+
+### 6.52 固定工具查询导航及旧任务恢复〔源码基线b134f063〕
+
+先核对上一轮实际PG响应、固定工具目录/查询、Workflow、Prompt及持久seed，研究见[P4_TOOL_NAVIGATION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_TOOL_NAVIGATION_RESEARCH.md)。已知api-test-runner后再次搜索名称只返回目录，无法取得契约；不能把这个流程继续失败归因于业务条件。新建覆盖规划Prompt为case-planning-effect-coverage-v2；固定seed版本决定导航语义，旧v1任务保留原目录和查询行为，不读取当前注册/Prompt替换历史。
+
+新目录给每项detail_query，不把目录当已读Evidence。Prompt指引已知key直接读tool并批量读取独立文档/工具。非空搜索在完整固定目录中唯一匹配、且当前页包含它时，返回同一完整tool契约及contract_loaded；空搜索、多匹配、空页不自动猜选或伪造Evidence。直接详情与唯一搜索共用既有Schema/hash，完整内容仍受原上下文限制，不截断、不改变预算。只扩展内部导航与日志，没有新增依赖、可编辑配置键、数据库结构或前端接口；已有开关继续MySQL，固定事实与Prompt版本继续PG，大对象继续RustFS。
+
+保存的真实失败查询、唯一/多匹配/空页/旧目录、引用hash及只读副本、真实文件上传、MySQL策略冻结与PG原任务恢复专项：8通过8.31秒。扩展规划/持久任务回归42通过、1旧外部模型开关未运行，43.15秒；其中新v2两轮完成、旧v1三轮完成，修改当前注册/策略不影响原seed，终态再投递没有新模型调用。受控模型的独立生产部分/全部清理2通过97.73秒。独立配置、源码编译及diff核对通过；前端无修改未重跑。
+
+默认自主试验仍失败：1失败201.18秒。第一轮32.946秒正常，模型直接批量读取项目原文、api-tester和api-test-runner三个详情，已消除目录重复查询。第二轮111.379秒、completion_tokens=8192、finish_reason=length，可见正文为空，规划校验拒绝；第三个修正回合35.179秒后总180秒截止并interrupted。三次物理请求对应三个不同逻辑回合，请求SHA各不相同，本场景没有同一回合重复发送证据。未创建测试运行，业务HTTP仍为0；收到响应头不等于完整响应。不能将导航修正或受控生产通过称作默认执行通过，不增加预算或重发旧任务来掩盖失败。
+
+原试验参数、三份原请求、PGseed/检查点、任务终态、实际文件和过程日志完整保留于p4-tool-navigation-*；核对见[p4-tool-navigation-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-tool-navigation-validation.json)。针对提供商的step-5-preview/max_tokens及reasoning_content官方域名检索未获得可用结果，未据此修改模型参数。下一步需核对实际SDK响应字段及输出额度/空正文处理；不凭猜测宣称隐藏推理或提供商行为。默认自主执行、正式项内部混合创建/清理的全对象判定、共享消费完成、未知只读核对、运行修订及其余P0—P5仍待实施，完整目标继续保持。
+
+
+实际命令（Agent_Server；各前缀与目录独立，原失败不覆盖）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:QA_TOOL_NAVIGATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-tool-navigation-regression'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_tool_navigation.py tests/test_case_planning.py tests/test_case_planning_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-tool-navigation-regression.xml
+# 退出0：42通过、1跳过，43.15秒；此前first专项8通过8.31秒。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-tool-navigation-production'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-tool-navigation-production.xml
+# 退出0：2通过97.73秒；受控模型。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-tool-navigation-default'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-tool-navigation-default.xml
+# 退出1：1失败201.18秒，第二轮length/空正文，第三轮总预算截止。
+..\.venv\Scripts\python.exe -Xutf8 -m py_compile src/application/test_cases/planning_tool_contracts.py src/application/test_cases/planning_service.py src/application/test_cases/planning_workflow.py tests/test_planning_tool_navigation.py tests/test_default_coverage_production.py
+# 退出0。功能验证不以编译替代。
+```
