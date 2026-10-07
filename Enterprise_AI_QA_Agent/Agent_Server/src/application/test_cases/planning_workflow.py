@@ -20,6 +20,8 @@ from src.application.test_cases.planning_operation_prefetch import (
 )
 from src.schemas.case_planning import PlanningQuery
 from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
+from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
+from src.schemas.case_planning_references import ReferencedEvidenceDecision
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
@@ -178,6 +180,8 @@ class CasePlanningWorkflow:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
                             context["business_environment"] = record.environment.model_dump(mode="json")
+                        if stage == "effects" and policy.evidence_reference_protocol:
+                            context["evidence_reference_catalog"] = evidence_reference_catalog(record.evidence)
                         body = json_text(context)
                         if len(body) + len(prompt) > policy.max_context_chars:
                             raise ValueError("完整规划上下文超过配置限制，未截断用例；请缩小候选范围或调整配置")
@@ -189,6 +193,8 @@ class CasePlanningWorkflow:
                         record.rounds.append(round_record)
                         if checkpoint.linked_sources is not None:
                             round_record["linked_source_reads"] = checkpoint.linked_sources.model_dump(mode="json")
+                        if "evidence_reference_catalog" in context:
+                            round_record["evidence_reference_catalog"] = context["evidence_reference_catalog"]
                         checkpoint.phase = "invoking"
                         await save("模型调用意图已保存")
                         logger.info("case_planning_model_invoking", extra={"project_id": record.project_id,
@@ -254,6 +260,8 @@ class CasePlanningWorkflow:
                                 raise ValueError(f"{reason}；已保留响应，不自动重发；未创建测试运行")
                         try:
                             stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
+                            if stage == "effects" and policy.evidence_reference_protocol:
+                                round_record["wire_response_text"] = checkpoint.response_text
                             logic_type, effects_type = (LogicalPlanningDecisionV2, EvidencePlanningDecisionV2) if (
                                 seed.stage_prompts is not None and seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL) else (
                                 LogicalPlanningDecision, EvidencePlanningDecision)
@@ -261,10 +269,16 @@ class CasePlanningWorkflow:
                                 logic_type, effects_type = LogicalPlanningDecisionV3, EvidencePlanningDecisionV3
                             if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
                                 logic_type = LogicalPlanningDecisionV4
+                            if stage == "effects" and policy.evidence_reference_protocol:
+                                effects_type = ReferencedEvidenceDecision
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
                             wire_decision = decision.model_copy(deep=True)
+                            if isinstance(decision, ReferencedEvidenceDecision):
+                                decision = bind_evidence_references(decision,
+                                    round_record.get("evidence_reference_catalog"), record.evidence)
+                                round_record["canonical_evidence_decision"] = decision.model_dump(mode="json")
                             if isinstance(decision, LogicalPlanningDecisionV4):
                                 validate_operation_selections(decision, decision.operation_selections, record.evidence)
                                 decision = LogicalPlanningDecisionV3.model_validate(decision.model_dump(mode="json", exclude={"operation_selections"}))

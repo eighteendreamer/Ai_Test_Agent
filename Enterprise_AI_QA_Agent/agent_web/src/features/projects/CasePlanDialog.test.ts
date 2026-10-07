@@ -411,6 +411,18 @@ describe("case planning", () => {
     expect(actual.decision.items.every(item => item.kind === "target")).toBe(true);
     wrapper.unmount();
   });
+  it.each(["evidence-references", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves evidence reference policy and clears it with %s", async (name) => {
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="evidence-references"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ evidence_reference_protocol: "case-planning-evidence-references-v1",
+      source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180 });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].evidence_reference_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
   it("renders actual authored source read before the first model with complete fixed content", async () => {
     const actual = linkedSourceActual.plan;
     api.getCasePlan.mockResolvedValue(actual);

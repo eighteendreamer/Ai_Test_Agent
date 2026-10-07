@@ -1993,6 +1993,7 @@ export interface CasePlanningPolicy {
   operation_prefetch_protocol?: "case-planning-declared-operation-prefetch-v1" | "case-planning-item-operation-prefetch-v2" | null;
   source_identity_protocol?: "case-planning-source-full-hash-v1" | null;
   linked_source_protocol?: "case-planning-linked-documents-v1" | null;
+  evidence_reference_protocol?: "case-planning-evidence-references-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;

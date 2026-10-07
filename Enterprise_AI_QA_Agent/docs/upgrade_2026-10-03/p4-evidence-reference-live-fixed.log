@@ -1,0 +1,15 @@
+.........F...                                                            [100%]
+================================== FAILURES ===================================
+_ test_actual_durable_references_survive_response_commit_and_current_changes[response-ack] _
+tests\test_planning_evidence_references.py:147: in test_actual_durable_references_survive_response_commit_and_current_changes
+    changed=before.checkpoint.model_copy(deep=True)
+            ^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1042: in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E   AttributeError: 'CasePlanningTaskRecord' object has no attribute 'checkpoint'
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:67 case_planning_checkpoint_unconfirmed
+ERROR    src.runtime.planning_task_handler:planning_task_handler.py:65 case_planning_worker_failed
+=========================== short test summary info ===========================
+FAILED tests/test_planning_evidence_references.py::test_actual_durable_references_survive_response_commit_and_current_changes[response-ack]
+1 failed, 12 passed in 21.81s

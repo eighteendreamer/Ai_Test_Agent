@@ -264,6 +264,9 @@ class PostgresPlanningTaskStore:
             raise ValueError("规划检查点不能删除或改写已读取依据")
         if len(checkpoint.plan.rounds) < len(prior.plan.rounds):
             raise ValueError("规划检查点不能删除已记录的调用回合")
+        for old, new in zip(prior.plan.rounds, checkpoint.plan.rounds):
+            if old.get("evidence_reference_catalog") is not None and new.get("evidence_reference_catalog") != old["evidence_reference_catalog"]:
+                raise ValueError("规划检查点不能改写已发送调用的短引用目录")
         sealed = max(0, len(prior.plan.rounds) - 1)
         if checkpoint.plan.rounds[:sealed] != prior.plan.rounds[:sealed]:
             raise ValueError("规划检查点不能改写此前完成的调用回合")

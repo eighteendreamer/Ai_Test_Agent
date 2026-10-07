@@ -15,11 +15,15 @@ from src.application.test_cases.planning_operation_prefetch import (
 )
 
 from src.schemas.case_planning_sources import LINKED_SOURCE_PROMPT_VERSION
+from src.schemas.case_planning_references import REFERENCE_PROMPT_VERSION, ReferencedEvidenceDecision
+from src.application.test_cases.planning_evidence_references import reference_effects_prompt
 
 SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if policy.evidence_reference_protocol:
+        return REFERENCE_PROMPT_VERSION
     if policy.linked_source_protocol:
         return LINKED_SOURCE_PROMPT_VERSION
     if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
@@ -33,7 +37,11 @@ def stage_prompt_version(policy, stages):
     return RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None):
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None):
+    if evidence_reference_protocol:
+        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol, linked_source_protocol)
+        original.effects = reference_effects_prompt(ReferencedEvidenceDecision.model_json_schema())
+        return original
     if linked_source_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol)
         original.logic = ("linked_source_reads是首次推理前对完整用例明确关联文档的只读记录。已读正文在evidence；"

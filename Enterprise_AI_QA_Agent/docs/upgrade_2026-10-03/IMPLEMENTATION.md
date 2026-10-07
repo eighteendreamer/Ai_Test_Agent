@@ -4055,3 +4055,15 @@ agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/featu
 固定来源三种角色严格区分，当时snapshot缺失不从latest补历史；500行预读仍保留分页，后续固定basis而非当前catalog。旧任务/终态不升级、当前配置关闭及attempt2原deadline实验通过。下一步研究证据阶段的实际工作量，完整P0—P5未完成；原始文件/物理消息与三份审计见p4-linked-source-validation.json。
 
 最后补验generation_pipeline历史来源的updated_at时间戳：实际来源元数据先复现PG DataError/1失败10.70秒，不能把它当正式UUID版本。复用impact_sources已有身份核对，保留明确来源错误、不fallback当前版本；最终test_planning_linked_sources完整20节点和两种实际业务共22通过29.66秒、零跳过，详见legacy-version-first/identity-final原命令、日志和XML。这个新身份核对只处理确定性文档身份，不判断业务依赖；没有改写旧source_refs或历史结果。
+
+## 2026-10-07 证据阶段短引用职责与新默认失败
+
+研究先于生产修改，见P4_EVIDENCE_REFERENCE_RESEARCH.md。MySQL新增可选evidence_reference_protocol/v11；PG每次调用保存目录、原wire正文/结构和规范决定。还原使用当前实际已读E/T，再走原文值和产生/清理核验；没有新表列、依赖或模式参数编译。旧seed/Prompt/终态不升级，原件仍RustFS。
+
+命令、cwd、exit_code、完整stdout/stderr和XML在p4-evidence-reference-*.command.json/log/xml。实时开关及隔离路径沿已核对qa_linked_source_run的原命令；新QA_EVIDENCE_REFERENCE_DIR独立导出恢复证据，默认另启QA_EVIDENCE_REFERENCES=1，未改全局模型及限额。
+
+首8通过3导入失败14.82秒；正确导入后12通过1夹具读取公开摘要checkpoint失败21.81秒。改为读实际PG后13通过22.20秒；最终保存原wire正文13通过12.19秒，含两种原生业务各2受控模型/5次HTTP，2对象全清、现场0剩余。两份早期失败均保留。
+
+回归首路径猜错exit4/0测试，改读已有命令后7模块105通过3跳过134.91秒；遗漏首模块另验20通过23.79秒，三格式走旧v10兼容。不累计为新的当前通过数。前端两文件66通过4.62秒，build含vue-tsc退出0/Vite9.19秒，完整App未重跑。
+
+独立默认1失败239.24秒。逻辑82.859秒/证据96.53秒，2实际模型/SDK/物理请求，原180截止，最后0正文/Run/业务HTTP。原文、完整八步/False/0/null、32字段接口及本次目录已送达；未保存私有推理内容，不将200头当完整回执。最终raw正文保存补充在默认之后，由raw-final实际验证，不新跑相同默认任务。完整P0—P5未完成，下一步深查准备输出与真实依赖传值，不猜测内部超时原因。

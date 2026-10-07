@@ -1,0 +1,15 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________ test_actual_default_model_plans_and_executes_complete_case __________
+tests\test_default_coverage_production.py:203: in test_actual_default_model_plans_and_executes_complete_case
+    assert code == 0 and task["status"] == "completed", task
+E   AssertionError: {'id': 'b0ccb762-eb78-48a8-ba59-9ba9cb9f798a', 'project_id': 'bc952acf-5727-42eb-b97d-85cb70511c84', 'creation_key': 'default-complete-plan', 'status': 'failed', ...}
+E   assert (0 == 0 and 'failed' == 'completed'
+E     
+E     - completed
+E     + failed)
+---------------------------- Captured stdout call -----------------------------
+default_planning_terminal {"status": "failed", "worker_exit": 0}
+=========================== short test summary info ===========================
+FAILED tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case
+1 failed in 239.24s (0:03:59)

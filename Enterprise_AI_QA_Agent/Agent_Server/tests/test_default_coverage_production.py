@@ -171,6 +171,9 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 if os.getenv("QA_LINKED_SOURCES") == "1":
                     policy.linked_source_protocol = "case-planning-linked-documents-v1"
                     report["baseline"] = "af790e15 plus fixed linked sources v10"
+                if os.getenv("QA_EVIDENCE_REFERENCES") == "1":
+                    policy.evidence_reference_protocol = "case-planning-evidence-references-v1"
+                    report["baseline"] = "43f1700b plus evidence references v11"
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
