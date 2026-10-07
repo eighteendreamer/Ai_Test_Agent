@@ -8,7 +8,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.application.test_cases.planning_sources import json_text
-from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
+from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest
@@ -90,7 +90,8 @@ class CasePlanningWorkflow:
                             "round": checkpoint.next_round + 1, "remaining_rounds": policy.max_rounds - checkpoint.next_round}
                         if seed.tool_contracts is not None:
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
-                                navigation=seed.plan.prompt_version == NAVIGATION_PROMPT_VERSION)
+                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION},
+                                operations=seed.tool_operations if seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None)
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
@@ -222,10 +223,13 @@ class CasePlanningWorkflow:
                             try:
                                 if query.kind in {"tool", "tools"}:
                                     evidence, metadata = query_tool_contracts(seed.tool_contracts, query, policy.max_candidates,
-                                        navigation=seed.plan.prompt_version == NAVIGATION_PROMPT_VERSION)
+                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION},
+                                        operations=seed.tool_operations if seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None)
                                     logger.info("case_planning_tool_query_resolved", extra={"plan_id": record.id,
                                         "round": checkpoint.next_round, "kind": query.kind,
-                                        "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version})
+                                        "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version,
+                                        "operation": query.operation,
+                                        "evidence_scope": metadata.get("scope", "full-tool" if evidence else "catalog")})
                                 else:
                                     evidence, metadata = await self._planner._sources.query(record.project_id, query, policy.max_candidates)
                                 versions = dict(fixed_case_versions)

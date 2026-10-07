@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次源码核对基线：`a2ed767b`。上传独立版本管理、模板仅生成、项目内选取/排序/补全及完整P0—P5范围保持。最新SDK观察专项8项通过；默认自主试验1项失败：第二轮实际流完成，但生成达到8192输出上限，最终正文为空。现有完整性协议明确停止，不进入JSON修正、不创建运行，业务HTTP为0，详见6.54。观察仅属于测试探针；默认自主执行、正式产品追踪及完整升级均未完成。
+修订日期：2026-10-07；本次源码核对基线：`eae3393a`。上传独立版本管理、模板仅生成、项目内选取/排序/补全及完整P0—P5范围保持。本次接入指定操作的固定契约读取，完整工具详情仍可查；真实存储/旧任务恢复、受控独立生产与前端检查已验证，详见6.55。默认自主新试验仍失败：实际读取操作及完整契约后，第三轮耗尽原180秒预算，未创建运行，业务HTTP为0。不能将新读取能力称为默认执行成功，下一步研究规划职责及分阶段协议。
 
 本方案按用户纠正后的流程执行：
 
@@ -11,7 +11,7 @@
 
 此前`82de0568`方案修订重跑无Git的上传/原件回归，**2通过、0失败、0跳过，3.54秒**。它们验证本地测试存储中的版本追加、原件保留、原请求恢复及同名独立文档；该次未重跑生产存储、独立解析/比较进程或完整App。历史验收范围见[原核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-revision-current-validation.json)，不计为本次测试。
 
-最新已提交源码为`a2ed767b`：规划响应完整性及恢复见6.53，固定工具导航见6.52，原生API任务契约见6.51；此前受控生产场景通过。6.54新增的独立默认试验已实际运行，并触发截断拒绝分支。两次逻辑调用对应两次不同物理请求，没有修正回合或业务执行；不能将安全停止当作默认执行成功。历史测试按原批次保存，不累计为本次覆盖；共享消费完成、未知只读查证、默认自主Agent及完整App仍待验。
+此前`a2ed767b`提交规划响应完整性及恢复，`eae3393a`提交安全SDK观察和方案同步，见6.53—6.54；固定工具导航及原生API任务契约见6.51—6.52。6.55新增指定操作读取及新默认实测，三次逻辑调用对应三次不同物理请求，未进入JSON修正或业务执行。历史测试按原批次保存，不累计为本次覆盖；共享消费完成、未知只读查证、默认自主Agent及完整App仍待验。
 
 本次修订直接落实到以下正文，详细工程范围与历史证据继续保留：
 
@@ -1931,3 +1931,19 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 第二轮请求32689字节，系统Prompt9258字符，api-test-runner查询结果9566字符。这些尺寸是下一步研究线索，尚不能证明输入复杂度是根因。下一步先核对完整用例、工具契约与规划职责的实际消费者，再评估按具体操作提供固定契约依据或分阶段规划；不能先截断完整用例、伪称部分契约为完整接口、使用reasoning代替最终计划，或只提高预算重复原方式。采用新阶段/协议前须验证旧seed、引用hash、未知发送和终态恢复，保留准备/目标/清理的完整证据。
 
 实测原文件、物理请求、PG事实及过程日志为p4-sdk-observation-*；核对见[p4-sdk-observation-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-sdk-observation-validation.json)，实际命令见IMPLEMENTATION。前端无修改未重跑；完整App、默认业务执行、正式项混合创建/清理、共享消费、未知只读核对、运行修订、模板/导入产品、DeepSeek录制、Docker性能/安全和历史迁移仍需推进。完整P0—P5目标未完成。
+
+### 6.55 指定操作的固定契约读取、旧版本恢复与默认新试验〔源码基线eae3393a〕
+
+先核对原失败seed、完整工具注册、原生runtime、真实HTTP输入/输出及本地Agent轨迹课程，见[P4_OPERATION_CONTRACT_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_OPERATION_CONTRACT_RESEARCH.md)。api-test-runner同时包含Campaign接口与execute_task输出；本步新增明确operation读取，完整tool读取保留，不按业务目标自动猜入口。操作证据显式标注named-operation、父契约hash与独立来源身份；完整32字段ApiTestTask由输入/输出共同引用一份，不删除业务内容或模型字段。
+
+新覆盖规划Prompt为case-planning-tool-operations-v3，seed冻结tool_operations。PlanningQuery的可选operation、模型解析、同步/异步服务、Workflow与前端内联查询类型成对同步；None序列化省略，保存的旧v2完整seed重序列化相等，旧v1/v2恢复维持原导航。目录只提供操作详情查询，不伪造已读证据；未知操作/旧快照不能静默降级成完整tool读取。无需新依赖、可编辑配置或数据库列，策略仍MySQL、固定事实仍PG、原件仍RustFS。
+
+首次回放/实际原生HTTP8通过、3真实存储未启用，7.43秒。六模块真实批次59通过、1旧外部模型跳过、3失败，63.66秒；三个失败均为证据导出缺少QA_STATEFUL_RESEARCH_EVIDENCE_DIR或QA_PLANNING_COMPLETION_DIR的KeyError，保留原失败。补齐运行参数后单独三项12.80秒通过，没有修改业务源码掩盖失败。新读取、同回合完整与操作证据共存、真实上传原字节、完整八步/False/0/null、配置变化后的固定恢复及v1/v2终态无重发均实际核对；旧完整seed序列化追加检查1通过4.61秒。
+
+受控独立main/API/规划CLI/执行CLI2通过111.90秒：部分清理RunItem为blocked且留1条记录，全部清理为passed且无遗留；两份Run的completed仅表示已结束。前端相关页面19通过2.68秒，vue-tsc与Vite构建退出0（Vite11.06秒）；未完成完整App及默认业务验收。
+
+新的默认试验1失败203.46秒。第一轮17.304秒正常读文档/api-tester；第二轮54.609秒正常同时读execute_task操作与完整api-test-runner；第三轮107.380秒后原180秒截止，interrupted。三次逻辑调用对应三个SDK调用、三个不同物理请求，没有JSON修正回合或同回合重复发送证据；未创建Run，业务HTTP及业务新建ID均为0。第三轮SDK1.736秒已收块，共3206块，可见正文0，CancelledError，迭代未完成、无finish_reason；最新usage=7899不是完整最终用量，不判定为length返回。
+
+保存失败契约中完整payload8827字符，指定操作payload4902字符，完整模型仍32字段；但实际模型同时读取两者，第三轮请求39801字节。因此不能宣称实际输入减少或默认失败已修复。连续默认规划失败是职责/协议需要重审的架构信号，不继续只加提示、加超时或重复同一流程。下一步研究逻辑选取/衔接与技术证据声明的分阶段协议，逐一检查固定计划、检查点、引用、预算及恢复消费者，不能在研究前弱化覆盖校验或丢弃完整用例。
+
+原文件/PG事实/物理请求/失败/独立过程日志保存于p4-operation-contract-*，核对见[p4-operation-contract-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-operation-contract-validation.json)，实际命令见IMPLEMENTATION。全局模型配置、预算及历史终态/未知发送保持。默认自主执行、正式项混合创建/清理、共享消费完成、未知只读核对、运行修订、P1正式模板/Excel导入产品、DeepSeek录制、Docker性能/安全、历史迁移和其余P0—P5继续推进，完整目标未完成。

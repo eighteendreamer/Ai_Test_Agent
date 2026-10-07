@@ -16,7 +16,7 @@ from src.application.test_cases.planning_workflow import CasePlanningWorkflow
 from src.application.test_cases.planning_sources import ProjectPlanningSources, json_text
 from src.application.test_runs.preparation_scopes import normalize_preparation_scopes
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
-from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, capture_tool_contracts
+from src.application.test_cases.planning_tool_contracts import OPERATION_PROMPT_VERSION, capture_tool_contracts, capture_tool_operations
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -99,14 +99,17 @@ class CasePlanningService:
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
         if config.policy.effect_coverage_protocol:
-            record.prompt_version = NAVIGATION_PROMPT_VERSION
+            record.prompt_version = OPERATION_PROMPT_VERSION
+        contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
-                effect_coverage=config.policy.effect_coverage_protocol is not None), model_parameters=planning_model_parameters(model),
-            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None,
+                effect_coverage=config.policy.effect_coverage_protocol is not None,
+                tool_operations=contracts is not None), model_parameters=planning_model_parameters(model),
+            tool_contracts=contracts,
+            tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
             response_protocol=PLANNING_RESPONSE_PROTOCOL)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
@@ -127,18 +130,21 @@ class CasePlanningService:
         if config.policy.effect_evidence_protocol:
             record.prompt_version = "case-planning-effect-evidence-v1"
         if config.policy.effect_coverage_protocol:
-            record.prompt_version = NAVIGATION_PROMPT_VERSION
+            record.prompt_version = OPERATION_PROMPT_VERSION
         fixed_case_versions = dict(fixed_case_versions or {})
         if fixed_case_versions:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
                                   "context": planning_context or {}})
+        contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=self._system_prompt(environment=record.environment is not None,
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
-                effect_coverage=config.policy.effect_coverage_protocol is not None),
-            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None,
+                effect_coverage=config.policy.effect_coverage_protocol is not None,
+                tool_operations=contracts is not None),
+            tool_contracts=contracts,
+            tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
             response_protocol=PLANNING_RESPONSE_PROTOCOL)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,
@@ -290,8 +296,10 @@ class CasePlanningService:
         raise ValueError("模型没有返回有效的结构化计划；未创建测试运行")
 
     @staticmethod
-    def _system_prompt(*, environment=False, preparation_scopes=False, effect_evidence=False, effect_coverage=False) -> str:
+    def _system_prompt(*, environment=False, preparation_scopes=False, effect_evidence=False, effect_coverage=False, tool_operations=False) -> str:
         schema = PlanningDecision.model_json_schema()
+        if not tool_operations:
+            schema["$defs"]["PlanningQuery"]["properties"].pop("operation", None)
         if not effect_coverage:
             schema["$defs"]["PlanningQuery"]["properties"]["kind"]["enum"] = ["cases", "documents", "document", "recordings", "recording"]
             schema["$defs"]["EffectEvidenceDeclaration"]["properties"].pop("select_when", None)
@@ -364,4 +372,9 @@ class CasePlanningService:
                "项目默认地址或runtime_context不能替换该目标。reviews仅覆盖明确选择的需求版本、点和精确用例版本；"
                "unknown或未提及不表示失效。确认invalid的精确正式目标或前置应查询替代依据，无法补齐时记录unresolved；"
                "prepare不能伪装成已失效的正式用例。目标地址或release不证明规则已生效，规划不报告实际测试成功。" if environment else "")
+            + ("\n操作契约：tool_catalog.operations给出具体入口及其detail_query；项目依据指定入口时读取对应operation。"
+               "它只描述该入口，scope=named-operation，不是完整工具接口；无operation的tool查询仍读取完整接口。"
+               "输入task和输出task_result中的model_ref引用同一models中的完整模型，模型含全部字段及原$defs。"
+               "根据该入口的when/input/output核对字面量路径，不把Campaign报告包装套到原生任务。"
+               "入口未知时先读完整tool，不猜操作；接口读取不改变工具授权或用例执行方式。" if tool_operations else "")
         )

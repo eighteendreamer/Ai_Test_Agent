@@ -1,0 +1,45 @@
+..................F.....................s....................FF          [100%]
+================================== FAILURES ===================================
+_ test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation _
+tests\test_api_dispatched_task_contract.py:117: in test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation
+    await save_operation(tmp_path, 'invalid-task-checkpoint', values, business,
+tests\test_case_operations.py:63: in save_operation
+    return await base_save(tmp_path,name,values,business,**extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_stateful_recovery_research.py:64: in save_research
+    directory = Path(os.environ['QA_STATEFUL_RESEARCH_EVIDENCE_DIR'])/name
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen os>:679: in __getitem__
+    ???
+E   KeyError: 'QA_STATEFUL_RESEARCH_EVIDENCE_DIR'
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.runtime:runtime.py:972 api_task_payload_rejected
+____ test_actual_http_response_ack_loss_recovers_without_third_send[False] ____
+tests\test_planning_response_completion.py:213: in test_actual_http_response_ack_loss_recovers_without_third_send
+    directory = Path(os.environ['QA_PLANNING_COMPLETION_DIR'])/('stream' if streaming else 'native')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen os>:679: in __getitem__
+    ???
+E   KeyError: 'QA_PLANNING_COMPLETION_DIR'
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:51 case_planning_checkpoint_unconfirmed
+ERROR    src.runtime.planning_task_handler:planning_task_handler.py:65 case_planning_worker_failed
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:164 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_failed
+____ test_actual_http_response_ack_loss_recovers_without_third_send[True] _____
+tests\test_planning_response_completion.py:213: in test_actual_http_response_ack_loss_recovers_without_third_send
+    directory = Path(os.environ['QA_PLANNING_COMPLETION_DIR'])/('stream' if streaming else 'native')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen os>:679: in __getitem__
+    ???
+E   KeyError: 'QA_PLANNING_COMPLETION_DIR'
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:51 case_planning_checkpoint_unconfirmed
+ERROR    src.runtime.planning_task_handler:planning_task_handler.py:65 case_planning_worker_failed
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:164 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_failed
+=========================== short test summary info ===========================
+FAILED tests/test_api_dispatched_task_contract.py::test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation
+FAILED tests/test_planning_response_completion.py::test_actual_http_response_ack_loss_recovers_without_third_send[False]
+FAILED tests/test_planning_response_completion.py::test_actual_http_response_ack_loss_recovers_without_third_send[True]
+3 failed, 59 passed, 1 skipped in 63.66s (0:01:03)

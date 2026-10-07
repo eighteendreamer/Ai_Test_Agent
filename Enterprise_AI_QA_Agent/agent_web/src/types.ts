@@ -2077,7 +2077,7 @@ export interface CasePlanRecord {
   decision: {
     action: "query" | "finish";
     summary: string;
-    queries: Array<{ kind: "cases" | "documents" | "document" | "recordings" | "recording" | "tools" | "tool"; query: string; source_id: string | null; start_line: number; max_lines: number; offset: number }>;
+    queries: Array<{ kind: "cases" | "documents" | "document" | "recordings" | "recording" | "tools" | "tool"; query: string; source_id: string | null; start_line: number; max_lines: number; offset: number; operation?: string | null }>;
     items: CasePlanItem[];
     unresolved: Array<{ item_key: string | null; condition: string; reason: string }>;
   } | null;

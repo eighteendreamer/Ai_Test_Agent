@@ -29,6 +29,7 @@ class PlanningTaskSeed(PlanningModel):
     system_prompt: str
     model_parameters: dict[str, Any] = Field(default_factory=dict)
     tool_contracts: dict[str, dict[str, Any]] | None = None
+    tool_operations: dict[str, dict[str, Any]] | None = None
     response_protocol: Literal["case-planning-response-completion-v1"] | None = None
 
     @model_serializer(mode="wrap")
@@ -36,6 +37,8 @@ class PlanningTaskSeed(PlanningModel):
         data = handler(self)
         if self.tool_contracts is None:
             data.pop("tool_contracts", None)
+        if self.tool_operations is None:
+            data.pop("tool_operations", None)
         if self.response_protocol is None:
             data.pop("response_protocol", None)
         return data

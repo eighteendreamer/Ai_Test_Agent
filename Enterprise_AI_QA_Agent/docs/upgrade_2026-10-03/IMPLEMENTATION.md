@@ -3758,3 +3758,39 @@ $env:QA_SDK_OBSERVATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Ag
 ```
 
 初次/受控/最终批次重叠，不累计。原默认参数、完整八步用例、文档原件与PG终态保留。后续研究规划职责与具体操作契约，不将输入尺寸认作已证实根因；正式产品追踪、其他模式、完整App和P0—P5剩余范围继续保留。
+
+## 2026-10-07：指定操作的固定接口依据及默认新实测
+
+基线eae3393a，先研究原失败seed、完整注册、原生runtime和真实HTTP，见P4_OPERATION_CONTRACT_RESEARCH.md及PLAN 6.55。新增v3指定operation读取，完整tool读取保持；固定操作显式named-operation/父hash/独立来源，完整ApiTestTask32字段由输入输出共用一份。新seed冻结tool_operations，None省略保证旧结构，v1/v2恢复不改语义。服务/Workflow/Schema/前端查询类型同步，无依赖/可编辑配置/数据库列变更，MySQL/PG/RustFS职责保持。
+
+实际命令（Agent_Server，各前缀独立，首批失败保留）：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_tool_operations.py tests/test_api_dispatched_task_contract.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-first.xml
+# 退出0：8通过、3真实存储开关未启用，7.43秒。
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_TOOL_OPERATIONS_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-regression'
+$env:QA_TOOL_NAVIGATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-navigation'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_tool_operations.py tests/test_planning_tool_navigation.py tests/test_api_dispatched_task_contract.py tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_planning_response_completion.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-regression.xml
+# 退出1：59通过、1跳过、3失败，63.66秒；遗漏两个导出目录环境变量，末尾KeyError。
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-recovery-fixed'
+$env:QA_PLANNING_COMPLETION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-response-fixed'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_dispatched_task_contract.py::test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation tests/test_planning_response_completion.py::test_actual_http_response_ack_loss_recovers_without_third_send -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-recovery-fixed.xml
+# 补齐运行参数退出0：3通过12.80秒，没有源码修补。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_tool_operations.py::test_old_query_and_seed_serialization_and_navigation_remain_unchanged -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-serialization.xml
+# 退出0：1通过4.61秒，完整旧seed字典相等。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-production'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-production.xml
+# 退出0：受控独立生产2通过111.90秒，部分清理blocked/全清理passed；Run均completed。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-operation-contract-default'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-operation-contract-default.xml
+# 退出1：1失败203.46秒；第三轮原180秒截止，未创建运行或业务请求。
+```
+
+前端在agent_web实际执行npm.cmd test -- src/features/projects/CasePlanDialog.test.ts：19通过2.68秒；npm.cmd run build包含vue-tsc及Vite，退出0，Vite11.06秒。源码/测试py_compile、diff、原证据SHA及三份PLAN核对见p4-operation-contract-validation.json。
+
+新默认轮1/2分别17.304/54.609秒正常query；轮2同时读操作和完整工具，轮3请求39801字节，107.380秒后interrupted。SDK流有3206块但正文0、无finish_reason，消费被取消；不是完整length返回。三个不同逻辑/SDK/物理调用，没有JSON修正/同回合重发证据。业务HTTP0，模型全局配置及原预算不变，旧终态与未知不重发。操作功能已验，默认执行未通过；下一步重审逻辑规划与技术证据的分阶段职责，继续完整P0—P5范围。

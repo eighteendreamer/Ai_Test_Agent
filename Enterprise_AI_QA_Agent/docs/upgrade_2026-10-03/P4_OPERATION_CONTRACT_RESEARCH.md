@@ -1,0 +1,35 @@
+# 固定操作契约读取研究
+
+基线eae3393a。上一轮为progress；完整P0—P5目标仍未完成。本步处理已有工具同时暴露Campaign与原生任务变体的职责歧义，不将输入尺寸认作已经证明的默认模型失败根因。
+
+## 代码及实际依据 → 做法
+
+- planning_tool_contracts.capture_tool_contracts保存完整注册输入/输出，并追加ApiTestTask原生输出变体；原默认失败任务第二轮读取完整api-test-runner详情9566字符。
+- registry/tools.py的api-test-runner同时包含worker_action/task/credential_session/auth_token_field和Campaign的endpoint/objective等字段，通用output_schema描述Campaign。
+- api_testing_mode.runtime.handle明确将worker_action=execute_task分派给_execute_dispatched_task；此入口只读取task、execution_checkpoint、credential_session及auth_token_field。原生成功结果包含task_result；task缺失或模型校验失败时不执行HTTP，失败结果不保证存在task_result。
+- test_api_dispatched_task_contract.py实际HTTP已证明POST/GET/DELETE与task_result.response_body路径，原模型invalid_task_payload失败样本也保存。完整输入task与输出task_result对应同一ApiTestTask模型；可用单份模型及明确引用表示，不能删除其字段。
+- 本地Agent轨迹与协议鲁棒性课程将工具选择、参数拼装、观察解释分别验收，并要求真实异常协议覆盖。沿用项目固定seed、引用hash和旧版导航测试方法。
+
+新增明确operation查询，仅新Prompt v3启用。完整tool查询仍返回原完整注册契约；operation查询只返回指定原生操作的固定依据，显式标注scope、父契约hash及模型引用，不把它称为完整工具接口。不按业务目标猜测操作，不在读取时查看当前注册或重新生成模型。
+
+捕获时从实际ApiTestTask及既有注册输入创建操作契约，独立单份task模型供输入/输出引用；另列原生成功包裹、已知失败形状和四个实际输入。保留execution_checkpoint这一实际入口接受但旧描述缺少的可选参数，不将其伪作普通Campaign字段。原完整契约继续保留；新证据拥有独立身份与hash。
+
+PlanningQuery增加可选operation，None序列化省略，旧查询结构与hash保持。旧v1/v2恢复保持原导航/查询行为；操作查询不能静默降级成完整tool读取。新目录列出操作名和其详情查询，Prompt要求按项目已读依据选择入口。模型仍负责用例理解、补全及路径声明；不强制编译用例为模式参数。
+
+此改动属于内部规划协议，不增加可编辑配置、依赖或数据库列。规划策略仍MySQL，固定seed/查询/版本仍PG，原件及大证据仍RustFS。公开计划中的查询类型、模型解析、Workflow、同步/异步服务和测试同时核对；前端rounds为通用记录，types.ts中的decision.queries内联类型同步增加可选operation。没有新增用户配置或页面操作。
+
+## 验证与边界
+
+使用保存的真实失败seed验证完整tool原样读取、操作独立hash、未知操作/旧seed拒绝、共享模型完整字段/引用解析、目录不冒充已读证据和不修改固定源。实际文件上传及MySQL/PG/RustFS验固定新seed、完整八步JSON、0/False/null、操作查询、配置/注册变化后恢复及终态无重发；增加旧v2恢复。原生HTTP的实际创建/查询/清理及已知校验失败继续回归。
+
+上述通过后，另建默认任务，用独立main/API/原CLI、原模型参数与180秒预算实际验收，保留失败与SDK安全计数。默认模型选择何种读取、是否产出完整计划、实际业务请求/清理分别核对；不能用受控测试替代默认自主执行或完整App。分阶段规划及正式项内部混合产生/清理仍是更大待实施范围，本步不宣称解决它们。
+
+## 实际结果
+
+回放及实际原生HTTP8通过、3真实存储开关跳过，7.43秒。六模块真实批次59通过、1旧外部模型跳过、3失败，63.66秒；失败均发生于导出阶段，缺QA_STATEFUL_RESEARCH_EVIDENCE_DIR或QA_PLANNING_COMPLETION_DIR，原失败保留。补齐参数定向重跑3通过12.80秒；无需源码修补。完整旧v2seed序列化追加断言1通过4.61秒。新v3和旧v1/v2固定恢复、完整八步/False/0/null及真实原件均验证，当前注册读取在恢复中被测试禁止。
+
+受控独立main/API/规划与执行CLI2通过111.90秒。全部清理RunItem passed/业务5次HTTP/遗留0；部分清理blocked/4次HTTP/遗留1；Run均completed表示生命周期结束。前端CasePlanDialog19通过2.68秒，类型检查与构建退出0，Vite11.06秒。检查前端后发现decision.queries存在内联类型，已同步operation，并修订上方依据说明。
+
+新默认试验1失败203.46秒，独立Worker退出0。第一轮17.304秒读原文/api-tester；第二轮54.609秒同时读指定execute_task及完整api-test-runner；第三轮107.380秒因原180秒总预算interrupted。三个不同逻辑调用/SDK调用/物理请求，未进入JSON修正、未创建Run、业务HTTP0。第三轮流1.736秒已有SDK块，共3206块，最终正文0；消费被CancelledError中断，没有finish_reason，不能把最新usage7899当完整最终用量或length终止。
+
+操作payload4902字符，完整父payload8827字符，原生模型32字段完全保留。但模型同时读两者，第三轮请求39801字节，实际输入没有因此减少；操作视图可用不等于默认执行成功。多次默认规划失败应升级为职责/协议的架构研究，下一步查证逻辑衔接与技术证据声明的分阶段方案及全链路消费者；不得先放宽覆盖、删用例内容、转用reasoning正文或仅加预算。历史未知与终态保持，完整目标继续。

@@ -11,7 +11,7 @@ from test_case_effect_evidence import NEW_POLICY
 from test_case_planning import active_case, item, finish
 from test_case_planning_tasks import tasks_environment, delivery
 from src.application.test_cases.planning_tool_contracts import (
-    NAVIGATION_PROMPT_VERSION, query_tool_contracts, tool_catalog,
+    OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog,
 )
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.planning_task_handler import PlanningTaskHandler
@@ -81,6 +81,7 @@ async def test_actual_frozen_navigation_and_old_seed_recovery(tmp_path, monkeypa
                 seed.plan.prompt_version = old['plan']['prompt_version']
                 seed.system_prompt = old['system_prompt']
                 seed.tool_contracts = deepcopy(old['tool_contracts'])
+                seed.tool_operations = None
                 return seed
             monkeypatch.setattr(env.service, 'prepare_task', old_seed)
         request = CasePlanningTaskRequest(creation_key='nav-'+str(legacy), objective=content['objective'])
@@ -100,7 +101,7 @@ async def test_actual_frozen_navigation_and_old_seed_recovery(tmp_path, monkeypa
         terminal = await env.jobs.get(project.id, task.id)
         assert terminal.status == 'completed' and terminal.round_count == (3 if legacy else 2)
         plan = await env.service.get(project.id, terminal.plan_id)
-        assert plan.prompt_version == (old['plan']['prompt_version'] if legacy else NAVIGATION_PROMPT_VERSION)
+        assert plan.prompt_version == (old['plan']['prompt_version'] if legacy else OPERATION_PROMPT_VERSION)
         assert next(e for e in plan.evidence if e.kind == 'case').payload['content'] == content
         assert next(e for e in plan.evidence if e.kind == 'document').payload['content'] == source.read_text(encoding='utf-8').rstrip('\n')
         contract = next(e for e in plan.evidence if e.kind == 'tool')

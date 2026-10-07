@@ -87,6 +87,20 @@ class PlanningQuery(PlanningModel):
     start_line: int = Field(default=1, ge=1)
     max_lines: int = Field(default=200, ge=1, le=500)
     offset: int = Field(default=0, ge=0, le=100000)
+    operation: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def operation_requires_tool(self):
+        if self.operation is not None and (self.kind != "tool" or not self.source_id):
+            raise ValueError("操作契约读取需要指定tool及source_id")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_original_query(self, handler):
+        data = handler(self)
+        if self.operation is None:
+            data.pop("operation", None)
+        return data
 
 
 class PlanInputBinding(PlanningModel):
