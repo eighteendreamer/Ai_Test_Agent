@@ -3865,3 +3865,19 @@ Remove-Item Env:QA_PLANNING_TASK_EVIDENCE_DIR -ErrorAction SilentlyContinue
 ```
 
 只将两份非敏感汇总及验证结果复制到p4-staged-planning-export-isolated，没有复制临时.env或凭据。它证明根因修复后的历史目录保护，不是旧字节已恢复；旧12002原始证据核对、当前汇总覆盖事实和无法找到旧字节的限制分别保留。
+
+
+## 2026-10-07 所贴方案直接更新与正式效果关系消费方核对
+
+基线18f9fccc。直接更新三份完整方案，增加2.3.2待实施工程设计、更新首页/P2推进顺序及6.58验收边界。进一步源码核对正式Schema→范围/运行归属→工具原返回→PG对象证据→全运行清单覆盖→只读assessment/Result→失败回归→前端全部消费者。没有修改业务源码或配置，没有重复默认模型未知请求。研究详情见P4_FORMAL_EFFECT_RELATIONS_RESEARCH.md。
+
+工作目录Agent_Server，实际命令：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' tests/test_case_planning_stages.py::test_saved_v3_seed_and_checkpoint_roundtrip_without_new_fields tests/test_case_planning_stages.py::test_actual_default_candidate_preserves_illegal_self_scope_and_formal_contract_gap tests/test_case_planning_stages.py::test_stage_merge_recreates_captured_production_plan_without_business_edits -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-formal-relations-update-tests.xml
+# 退出0：5通过，0失败，0跳过，6.41秒。
+```
+
+通过Python subprocess执行并保留合并stdout/stderr原字节，返回码非0即停止。两项临时文件/本地测试存储上传与三个原真实证据离线回放，范围没有扩大到生产存储、默认模型或完整App；没有重跑前端构建。新正式效果契约尚未实现；既有两阶段受控生产通过和默认失败依旧参考6.57原记录。
+
+本次交付核对三份字节一致及本地链接、相关源码SHA、前批171份原始工件与本批XML/log原字节、.gitignore及既有无关文件当前SHA，记录plan-formal-relations-update-validation.json。两份Worker汇总在前批已被覆盖、旧字节未恢复，当前保护仅表示本次未再次改动；不提交这些无关文件。
