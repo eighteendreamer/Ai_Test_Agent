@@ -45,6 +45,9 @@ def compile_declaration(item, expected_source=None):
 
 
 def validate_effect_declarations(decision, protocol, evidence, coverage_protocol=None):
+    if protocol == "case-effect-evidence-v2":
+        from src.application.runtime.case_effect_relations import validate_relations
+        return validate_relations(decision, evidence, coverage_protocol)
     items = {item.key: item for item in decision.items}
     for item in decision.items:
         if item.effect_evidence is None:
@@ -74,6 +77,9 @@ def effect_intent(bundle, binding):
     context = fixed_action_context(bundle)
     if context is None or context.effect_evidence_protocol is None or binding is None:
         return None
+    if context.effect_evidence_protocol == "case-effect-evidence-v2":
+        from src.application.runtime.case_effect_relations import relation_intent
+        return relation_intent(context, binding)
     step = next(step for step in context.steps if step.item.key == binding.item_key)
     definition = compile_declaration(step.item, step.content_json)
     if definition is None:
@@ -89,6 +95,9 @@ def capture_returned_evidence(job, output, observation):
     intent = job.metadata.get(INTENT_KEY)
     if intent is None:
         return None
+    if intent.get("version") == "case-effect-evidence-v2":
+        from src.application.runtime.case_effect_relations import capture_relation_return
+        return capture_relation_return(job, output, observation)
     if (intent.get("version") != PROTOCOL or intent.get("sha256") != _digest({k:v for k,v in intent.items() if k != "sha256"})
         or intent.get("binding") != job.metadata.get("case_action_binding")):
         raise ValueError("原对象证据意图与固定工具绑定或SHA不同")

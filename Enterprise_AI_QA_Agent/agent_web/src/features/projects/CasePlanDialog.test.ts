@@ -329,4 +329,25 @@ describe("case planning", () => {
     expect(api.launchCasePlan.mock.calls[0][2]).toMatchObject({ mode_key: "code_review", session_id: "bound-session" });
     expect(w.text()).toContain("回归来源：parent"); w.unmount();
   });
+  it("saves a consistent formal mixed-effects policy and preserves old settings when disabled", async () => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="formal-effects"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      preparation_scope_protocol: "preparation-scope-v2", effect_evidence_protocol: "case-effect-evidence-v2",
+      effect_coverage_protocol: "case-effect-coverage-v2", planning_stage_protocol: "case-planning-staged-evidence-v2",
+      operation_protocol: "case-operation-v1", timeout_seconds: 180,
+    });
+    wrapper.unmount();
+  });
+  it.each(["action-binding", "action-admission", "operation-recovery", "preparation-scopes", "effect-evidence", "effect-coverage", "planning-stages"])("removes mixed-effect policy consistently when %s is disabled", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="formal-effects"]').setValue(true);
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const saved = api.saveCasePlanningPolicy.mock.calls[0][1];
+    expect(Object.values(saved).some(value => typeof value === "string" && value.endsWith("-v2"))).toBe(false);
+    wrapper.unmount();
+  });
+
 });

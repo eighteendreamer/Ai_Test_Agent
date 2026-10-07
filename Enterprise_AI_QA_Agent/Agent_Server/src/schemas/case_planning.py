@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
-from src.schemas.case_effects import EffectEvidenceDeclaration
+from src.schemas.case_effects import EffectEvidenceDeclaration, EffectRelationDeclaration
 
 
 class PlanningModel(BaseModel):
@@ -22,15 +22,20 @@ class CasePlanningPolicy(PlanningModel):
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
     operation_protocol: Literal["case-operation-v1"] | None = None
-    preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
-    effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
+    preparation_scope_protocol: Literal["preparation-scope-v1", "preparation-scope-v2"] | None = None
+    effect_evidence_protocol: Literal["case-effect-evidence-v1", "case-effect-evidence-v2"] | None = None
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
-    effect_coverage_protocol: Literal["case-effect-coverage-v1"] | None = None
+    effect_coverage_protocol: Literal["case-effect-coverage-v1", "case-effect-coverage-v2"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
-    planning_stage_protocol: Literal["case-planning-staged-evidence-v1"] | None = None
+    planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol,
+            self.effect_coverage_protocol, self.planning_stage_protocol)
+        if any(value and value.endswith("-v2") for value in protocols) and protocols != (
+            "preparation-scope-v2", "case-effect-evidence-v2", "case-effect-coverage-v2", "case-planning-staged-evidence-v2"):
+            raise ValueError("正式多效果关系需要一致的v2范围、证据、覆盖和分阶段协议")
         if self.action_admission_protocol and not self.action_binding_protocol:
             raise ValueError("动作确认检查需要固定执行项关联")
         if self.operation_protocol and not self.action_admission_protocol:
@@ -204,6 +209,42 @@ class PlanningEvidence(PlanningModel):
     payload: dict[str, Any]
 
 
+class FormalCasePlanItemV2(FormalCasePlanItem):
+    effect_schema: Literal[2] = 2
+    effect_evidence: None = None
+    cleanup_sources: list[Annotated[str, Field(min_length=1, max_length=80)]] | None = Field(default=None, min_length=1, max_length=200)
+    effect_declarations: list[EffectRelationDeclaration] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_serializer(mode="wrap")
+    def preserve_relation_item(self, handler):
+        data = handler(self)
+        for name in ("effect_evidence", "cleanup_sources", "effect_declarations"):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+        return data
+
+
+class PreparationPlanItemV2(PreparationPlanItem):
+    effect_schema: Literal[2] = 2
+    effect_evidence: None = None
+    effect_declarations: list[EffectRelationDeclaration] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_serializer(mode="wrap")
+    def preserve_relation_item(self, handler):
+        data = handler(self)
+        for name in ("effect_evidence", "cleanup_sources", "effect_declarations"):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+        return data
+
+
+CasePlanItemV2 = Annotated[FormalCasePlanItemV2 | PreparationPlanItemV2, Field(discriminator="kind")]
+
+
+class PlanningDecisionV2(PlanningDecision):
+    items: list[CasePlanItemV2] = Field(default_factory=list, max_length=200)
+
+
 class CasePlanningConfig(PlanningModel):
     scope_key: str
     revision: int
@@ -239,7 +280,7 @@ class CasePlanRecord(PlanningModel):
     request: CasePlanningRequest
     status: Literal["planned", "no_match", "blocked", "retrieval_failed", "planning_failed"]
     summary: str
-    decision: PlanningDecision | None = None
+    decision: PlanningDecision | PlanningDecisionV2 | None = None
     evidence: list[PlanningEvidence] = Field(default_factory=list)
     config_snapshot: CasePlanningConfig
     model_key: str | None = None

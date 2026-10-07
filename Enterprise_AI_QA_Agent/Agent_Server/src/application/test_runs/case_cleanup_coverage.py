@@ -9,6 +9,9 @@ PROTOCOL = "case-effect-coverage-v1"
 
 
 def cleanup_coverage(context, inventory):
+    if context.effect_coverage_protocol == "case-effect-coverage-v2":
+        from src.application.test_runs.case_relation_coverage import relation_cleanup_coverage
+        return relation_cleanup_coverage(context, inventory)
     if context.effect_coverage_protocol != PROTOCOL:
         raise ValueError("对象覆盖缺少固定协议")
     # No upstream counterpart (checked: assessment, original effect store and

@@ -8,7 +8,7 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 const data = computed(() => {
   const value = record(props.coverage);
-  return value?.version === "case-effect-coverage-v1" ? value : null;
+  return value && ["case-effect-coverage-v1", "case-effect-coverage-v2"].includes(String(value.version)) ? value : null;
 });
 const rows = computed(() => Object.entries(record(data.value?.cleanups) || {})
   .map(([key, value]) => ({ key, value: record(value) || {} })));

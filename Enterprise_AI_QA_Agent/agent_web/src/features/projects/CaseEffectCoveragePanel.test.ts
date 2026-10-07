@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import samples from "../../../tests/fixtures/case-effect-coverage.actual.json";
+import relations from "../../../tests/fixtures/case-effect-relations.actual.json";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import CaseEffectCoveragePanel from "./CaseEffectCoveragePanel.vue";
@@ -34,4 +35,20 @@ describe("actual original object coverage", () => {
       expect(wrapper.find("section").exists()).toBe(false); wrapper.unmount();
     }
   });
+  it("shows actual formal v2 coverage and unknown origins", () => {
+    for (const [scenario, saved] of Object.entries(relations)) {
+      expect(saved.RustFS_original_verified).toBe(true);
+      const wrapper = mount(CaseEffectCoveragePanel, { props: { coverage: saved.coverage, resultLabel: scenario } });
+      expect(wrapper.find("section").exists()).toBe(true);
+      expect(wrapper.text()).toContain("已知对象 2");
+      if (scenario === "internal-partial") {
+        expect(wrapper.text()).toContain("已覆盖 1");
+        expect(wrapper.text()).toContain(relations["internal-partial"].coverage.cleanups.target.uncovered[0].value);
+      }
+      if (scenario.startsWith("unknown-")) expect(wrapper.text()).toContain("unknown");
+      if (scenario === "coverage-budget") expect(wrapper.text()).toContain("不能按零对象处理");
+      wrapper.unmount();
+    }
+  });
+
 });

@@ -18,7 +18,7 @@ from src.application.test_runs.preparation_scopes import normalize_preparation_s
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.application.test_cases.planning_tool_contracts import OPERATION_PROMPT_VERSION, capture_tool_contracts, capture_tool_operations
 from src.application.test_cases.planning_stages import build_stage_prompts
-from src.schemas.case_planning_stages import STAGED_PROMPT_VERSION
+from src.schemas.case_planning_stages import STAGED_PROMPT_VERSION, RELATION_STAGE_PROTOCOL, RELATION_PROMPT_VERSION
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -103,9 +103,9 @@ class CasePlanningService:
         if config.policy.effect_coverage_protocol:
             record.prompt_version = OPERATION_PROMPT_VERSION
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
-        stages = build_stage_prompts() if config.policy.planning_stage_protocol else None
+        stages = build_stage_prompts(config.policy.planning_stage_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
-            record.prompt_version = STAGED_PROMPT_VERSION
+            record.prompt_version = RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,
@@ -141,9 +141,9 @@ class CasePlanningService:
             record.rounds.append({"kind": "regression_input", "required_case_versions": fixed_case_versions,
                                   "context": planning_context or {}})
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
-        stages = build_stage_prompts() if config.policy.planning_stage_protocol else None
+        stages = build_stage_prompts(config.policy.planning_stage_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
-            record.prompt_version = STAGED_PROMPT_VERSION
+            record.prompt_version = RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,

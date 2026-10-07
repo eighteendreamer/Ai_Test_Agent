@@ -27,6 +27,10 @@ def _ancestors(items):
 
 def normalize_preparation_scopes(decision, protocol):
     """Only explicit declarations change dependencies; never infer from methods."""
+    if protocol == "preparation-scope-v2":
+        return normalize_relation_scopes(decision)
+    if any(getattr(item, "effect_schema", None) == 2 for item in decision.items):
+        raise ValueError("多效果执行项需要固定v2范围协议")
     cleanups = [item for item in decision.items if item.kind == "prepare" and item.cleanup_sources is not None]
     if protocol is None:
         if cleanups:
@@ -85,10 +89,42 @@ def frozen_preparation_scopes(plan, owners):
     ancestors = _ancestors(items)
     cleanups = {}
     for item in copy.items:
-        if item.kind == "prepare" and item.cleanup_sources is not None:
+        if (item.kind == "prepare" or protocol == "preparation-scope-v2") and getattr(item, "cleanup_sources", None) is not None:
             for source in item.cleanup_sources:
                 cleanups.setdefault(source, []).append(item.key)
     return {source: PreparationScopeRecord(source_key=source, source_owner_key=owners[source],
         consumer_keys=[key for key, item in items.items() if item.kind != "prepare"
             and (key == source or source in ancestors[key])], cleanup_keys=keys)
         for source, keys in cleanups.items()}
+
+
+def normalize_relation_scopes(decision):
+    items = {item.key: item for item in decision.items}
+    if len(items) != len(decision.items) or any(getattr(item, "effect_schema", None) != 2 for item in items.values()):
+        raise ValueError("多效果范围缺少唯一的v2固定执行项")
+    ancestors = _ancestors(items)
+    candidate = {key: item.model_copy(deep=True) for key, item in items.items()}
+    for cleanup in candidate.values():
+        sources = cleanup.cleanup_sources
+        if sources is None:
+            continue
+        if len(set(sources)) != len(sources) or any(source not in items for source in sources):
+            raise ValueError("多效果清理来源重复或不存在")
+        required = []
+        for source in sources:
+            consumers = [key for key, item in items.items() if item.kind != "prepare"
+                and (key == source or source in ancestors[key])]
+            if not consumers:
+                raise ValueError("多效果清理来源没有正式消费者")
+            # No upstream counterpart (checked: v1 scopes and actual formal
+            # cleanup failure): same-item effects are not item dependency edges.
+            required.extend(key for key in [source, *consumers] if key != cleanup.key)
+        cleanup.depends_on = list(dict.fromkeys([*cleanup.depends_on, *required]))
+    _ancestors(candidate)
+    for key, item in items.items():
+        parents = candidate[key].depends_on
+        if parents != item.depends_on:
+            logger.info("case_effect_relation_scope_frozen", extra={"item_key": key,
+                "source_keys": item.cleanup_sources,
+                "added_dependency_keys": [parent for parent in parents if parent not in item.depends_on]})
+            item.depends_on = parents

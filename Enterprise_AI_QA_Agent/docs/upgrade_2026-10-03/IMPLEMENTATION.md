@@ -3881,3 +3881,40 @@ Remove-Item Env:QA_PLANNING_TASK_EVIDENCE_DIR -ErrorAction SilentlyContinue
 通过Python subprocess执行并保留合并stdout/stderr原字节，返回码非0即停止。两项临时文件/本地测试存储上传与三个原真实证据离线回放，范围没有扩大到生产存储、默认模型或完整App；没有重跑前端构建。新正式效果契约尚未实现；既有两阶段受控生产通过和默认失败依旧参考6.57原记录。
 
 本次交付核对三份字节一致及本地链接、相关源码SHA、前批171份原始工件与本批XML/log原字节、.gitignore及既有无关文件当前SHA，记录plan-formal-relations-update-validation.json。两份Worker汇总在前批已被覆盖、旧字节未恢复，当前保护仅表示本次未再次改动；不提交这些无关文件。
+
+
+## 2026-10-07 正式清理与项内多效果v2、原可靠返回及默认新任务
+
+基线d81b25e8。查实际失败和完整消费者后，以独立v2项/决定、四协议一致配置和Prompt v5接入原两阶段循环、范围/上下文、ToolRuntime原返回、PG JSONB、全运行覆盖、正式Result和前端；无新依赖/SQL表列。方案2.3.2、P2推进及6.59同步到完整三份正文，旧6.58设计批次原文保留。当前预期只能引用自身完整content或prepare.instructions；文档独立预期引用及自主完成仍需研究。
+
+以下命令由Python subprocess执行，stdout/stderr完整保存原字节，每次检查退出码；失败轮不继续下条命令。工作目录Agent_Server：
+
+```powershell
+$env:RUN_LIVE_CASE_EFFECT_RELATIONS='1'
+$env:QA_EFFECT_RELATIONS_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-formal-effects-current-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_relations.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-formal-effects-current-final.xml
+# 退出0：12通过，0跳过，24.86秒。实际MySQL/PG/RustFS/原生HTTP、完整JSON与原件及阶段丢回执恢复。
+
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:QA_EFFECT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-formal-effects-v1-regression\effects'
+$env:QA_STAGED_PLANNING_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-formal-effects-v1-regression\stages'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_evidence.py tests/test_case_cleanup_coverage.py tests/test_preparation_scopes.py tests/test_case_planning_stages.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-formal-effects-v1-regression.xml
+# 退出0：61通过、0跳过，54.27秒。
+
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_FORMAL_EFFECT_RELATIONS='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-formal-effects-default-first'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-formal-effects-default-first.xml
+# 退出1：1失败、0跳过，215.55秒；Worker退出0但任务failed，不把进程退出0等同业务完成。
+```
+
+初live-first/fixed各2失败8通过21.56/18.03秒：测试误以为unknown重试应再抛异常/running。实际原操作claim契约生成denied/outcome_unknown别名、原Job仍running、action_sent=false，同/新call_id均不再发业务HTTP。读原PG契约后修正断言，没有改生产未知操作语义。live-final 10通过20.51秒，随后消除重复声明编译；current-final验证最新源码并增加四原返回故障回放和真实v2持久阶段丢回执恢复。保存所有失败XML/log及成功原件/PG/HTTP/结果。
+
+六实际业务场景已known2：内部/外部全清passed，部分清blocked且覆盖1/2、剩1；未知创建现场多1、未知删除现场无剩但可靠返回缺失，均blocked且两种重试均无额外HTTP；覆盖预算不足仍known2、blocked。原固定JSON及False/0/null、原件RustFS SHA、配置变更后的固定协议、原观察/ToolJob及Result均实际核对。手工受控完整用例含明确证据字段，不冒充默认原用例。
+
+新默认原参数step-5-preview、输出8192、原180秒总预算保持；四逻辑/SDK/物理请求，logic 15.647/106.085秒正确冻结prepare创建→target查询/清理；effects 56.697秒读取execute_task，第四0.984秒原deadline取消。前三完整stop，第四interrupted，无Run/业务HTTP。阶段逻辑缺口表达已修正，完整自主执行仍失败，原任务/未知/终态不重跑。
+
+工作目录agent_web，实际npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：38通过2.13秒；npm.cmd run build包含vue-tsc/Vite：退出0，Vite9.79秒。实际v2结果摘录到tests/fixtures/case-effect-relations.actual.json并保存来源SHA，不伪造coverage版本。首次前端37通过2.47秒是新增实际覆盖测试前的批次，不累计覆盖。
+
+未执行完整浏览器App、生产历史迁移、共享消费完成、其他模式、未知只读查证、计划修订、DeepSeek人工录制或Docker性能/安全。完整P0—P5仍active。交付核对三份方案相同字节、原物理消息/固定逻辑/原件/对象SHA、原失败工件及上批原证据；.gitignore、两份已被上批覆盖的Worker汇总及其他无关文件排除提交，旧汇总原字节未恢复。

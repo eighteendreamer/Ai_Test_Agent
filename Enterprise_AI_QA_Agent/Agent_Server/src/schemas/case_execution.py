@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
-    PreparationScopeRecord,
+    PreparationScopeRecord, CasePlanItemV2,
 )
 from src.schemas.business_planning import BusinessPlanningEnvironment
 from src.schemas.business_execution import BusinessExecutionAdmission
@@ -22,7 +22,7 @@ class BoundCaseInput(PlanningModel):
 
 
 class CaseExecutionStep(PlanningModel):
-    item: CasePlanItem
+    item: CasePlanItem | CasePlanItemV2
     phase: Literal["before", "case", "after"]
     inputs: dict[str, BoundCaseInput] = Field(default_factory=dict)
     content_json: dict[str, Any] | None = None
@@ -47,16 +47,20 @@ class AgentCaseExecutionContext(PlanningModel):
     action_binding_protocol: Literal["case-action-binding-v1"] | None = None
     action_admission_protocol: Literal["case-action-admission-v1"] | None = None
     operation_protocol: Literal["case-operation-v1"] | None = None
-    preparation_scope_protocol: Literal["preparation-scope-v1"] | None = None
+    preparation_scope_protocol: Literal["preparation-scope-v1", "preparation-scope-v2"] | None = None
     preparation_scopes: dict[str, PreparationScopeRecord] | None = None
-    effect_evidence_protocol: Literal["case-effect-evidence-v1"] | None = None
+    effect_evidence_protocol: Literal["case-effect-evidence-v1", "case-effect-evidence-v2"] | None = None
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
-    effect_coverage_protocol: Literal["case-effect-coverage-v1"] | None = None
+    effect_coverage_protocol: Literal["case-effect-coverage-v1", "case-effect-coverage-v2"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_owner_item_ids: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
+        protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol, self.effect_coverage_protocol)
+        if any(value and value.endswith("-v2") for value in protocols) and protocols != (
+            "preparation-scope-v2", "case-effect-evidence-v2", "case-effect-coverage-v2"):
+            raise ValueError("固定多效果上下文需要一致的v2协议")
         if self.operation_protocol and (not self.action_binding_protocol or not self.action_admission_protocol):
             raise ValueError("固定逻辑操作上下文需要原执行项关联和动作领取策略")
         if self.preparation_scope_protocol and (not self.operation_protocol or self.preparation_scopes is None):

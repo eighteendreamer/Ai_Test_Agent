@@ -71,6 +71,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     directory.mkdir(parents=True, exist_ok=False)
     report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
+    if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+        report["baseline"] = "d81b25e8 plus formal effect relations v2"
     def save(name, value):
         (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
@@ -136,6 +138,11 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1", "effect_coverage_max_bytes": 1024000})
                 if os.getenv("QA_STAGED_PLANNING") == "1":
                     policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
+                if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+                    from src.schemas.case_planning import CasePlanningPolicy
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2"})
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -146,8 +153,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     frozen = cur.fetchone()["seed"]
                 assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
                 report["frozen_response_protocol"] = frozen["response_protocol"]
-                if os.getenv("QA_STAGED_PLANNING") == "1":
-                    assert frozen["stage_prompts"]["protocol"] == STAGE_PROTOCOL
+                if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+                    assert frozen["stage_prompts"]["protocol"] == policy.planning_stage_protocol
                     report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
                 planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,
                     group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
@@ -166,7 +173,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 plan = await get(root + "/case-plans/" + task["plan_id"])
                 save("plan.json", plan)
                 report["planning_completed"] = True
-                assert plan["config_snapshot"]["policy"]["effect_coverage_protocol"] == "case-effect-coverage-v1"
+                assert plan["config_snapshot"]["policy"]["effect_coverage_protocol"] == policy.effect_coverage_protocol
                 detail = await post(root + "/case-plans/" + plan["id"] + "/runs", {"creation_key": "default-complete-run", "mode_key": "api_testing"}, 201)
                 rid = detail["run"]["id"]
                 assert await PostgresTaskOutbox(settings).relay_once(queue, limit=1) == 1
