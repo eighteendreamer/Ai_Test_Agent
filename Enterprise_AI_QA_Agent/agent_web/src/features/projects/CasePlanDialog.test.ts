@@ -5,12 +5,13 @@ import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
 import type { ModeDescriptor } from "../../types";
 import documentExpected from "../../../tests/fixtures/case-document-expected.actual.json";
+import itemOperationActual from "../../../tests/fixtures/case-item-operation.actual.json";
 
 const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const config = () => ({ scope_key: "global", revision: 1, policy: { max_rounds: 5, max_candidates: 20, max_items: 50, max_context_chars: 180000, timeout_seconds: 180 } });
 function plan(status = "planned") {
-  return { id: "plan", project_id: "project", status, summary: "按完整用例规划", warnings: [], config_snapshot: config(),
+  return { id: "plan", project_id: "project", status, summary: "按完整用例规划", warnings: [], rounds: [], config_snapshot: config(),
     decision: { items: [{ key: "target", kind: "target", case_id: "case", case_version_id: "version", reason: "验证拒绝", evidence_ids: ["case:version"], depends_on: [], input_bindings: {} }],
       unresolved: status === "blocked" ? [{ item_key: "target", condition: "缺少依据", reason: "没有可用原文" }] : [] },
     evidence: [{ id: "case:version", kind: "case", version: "version", payload: { title: "未登录返回401", content: { steps: [{ order: 7, action: "末尾关键验证😀" }], custom: [0, false, null] }, execution_notes: "保持未登录" } }] };
@@ -364,6 +365,37 @@ describe("case planning", () => {
     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
     expect(wrapper.text()).toContain("产生与清理证据声明");
     expect(wrapper.text()).not.toContain("证据契约");
+    wrapper.unmount();
+  });
+  it.each(["item-operation-selections", "source-identity", "operation-prefetch", "document-expected", "formal-effects", "operation-recovery"])("saves all-item operation selection and retains valid policy after disabling %s", async (name) => {
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="item-operation-selections"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      operation_prefetch_protocol: "case-planning-item-operation-prefetch-v2",
+      source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180,
+    });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).not.toBe("case-planning-item-operation-prefetch-v2");
+    if (name === "item-operation-selections" || name === "source-identity") {
+      expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).toBe("case-planning-declared-operation-prefetch-v1");
+    }
+    wrapper.unmount();
+  });
+  it("renders actual formal-only operation selection without changing fixed content", async () => {
+    const actual = itemOperationActual.plan;
+    api.getCasePlan.mockResolvedValue(actual);
+    api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "operation-task", project_id: projectId,
+      creation_key: payload.creation_key, status: "completed", plan_id: actual.id, round_count: 3, message: "完成" }));
+    const wrapper = setup(actual.project_id); await generate(wrapper);
+    expect(wrapper.text()).toContain("逻辑阶段选定的工具接口");
+    expect(wrapper.text()).toContain("api-test-runner");
+    expect(wrapper.text()).toContain("execute_task");
+    expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
+    expect(wrapper.text()).not.toContain("证据契约");
+    expect(actual.decision.items.every(item => item.kind === "target")).toBe(true);
     wrapper.unmount();
   });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves unified references independently and clears them with %s", async (name) => {

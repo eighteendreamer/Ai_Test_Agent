@@ -30,11 +30,13 @@ class CasePlanningPolicy(PlanningModel):
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
-    operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1"] | None = None
+    operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1", "case-planning-item-operation-prefetch-v2"] | None = None
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.operation_prefetch_protocol == "case-planning-item-operation-prefetch-v2" and not self.source_identity_protocol:
+            raise ValueError("执行项操作选择需要固定完整来源身份")
         if self.source_identity_protocol and not self.effect_expected_source_protocol:
             raise ValueError("完整摘要来源身份需要固定文档预期及分阶段协议")
         if self.operation_prefetch_protocol and not self.effect_expected_source_protocol:

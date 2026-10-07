@@ -13,8 +13,11 @@ from src.schemas.case_planning_stages import (
     EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint,
     RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
+    LogicalPlanningDecisionV4,
 )
-from src.application.test_cases.planning_operation_prefetch import PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries
+from src.application.test_cases.planning_operation_prefetch import (
+    PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries, validate_operation_selections, ITEM_PREFETCH_PROTOCOL,
+)
 from src.schemas.case_planning import PlanningQuery
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
@@ -73,6 +76,9 @@ class CasePlanningWorkflow:
                         raise ValueError("已开始的阶段规划缺少原阶段检查点")
                     checkpoint.stages = PlanningStageCheckpoint()
                 PlanningStageCheckpoint.model_validate(checkpoint.stages.model_dump(mode="json"))
+                if checkpoint.stages.stage == "effects" and (
+                    (checkpoint.stages.operation_selections is not None) != (policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL)):
+                    raise ValueError("固定阶段操作选择与原规划协议不一致")
             remaining = remaining_seconds if remaining_seconds is not None else (deadline_at - datetime.now(timezone.utc)).total_seconds()
             if remaining <= 0:
                 raise TimeoutError("planning deadline expired")
@@ -120,6 +126,8 @@ class CasePlanningWorkflow:
                             else:
                                 context["logical_plan"] = checkpoint.stages.logical_decision.model_dump(mode="json")
                                 context["logical_hash"] = checkpoint.stages.logical_hash
+                                if checkpoint.stages.operation_selections is not None:
+                                    context["operation_selections"] = [entry.model_dump(mode="json") for entry in checkpoint.stages.operation_selections]
                         if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
                                 navigation=native_navigation, operations=native_operations)
@@ -206,10 +214,15 @@ class CasePlanningWorkflow:
                                 LogicalPlanningDecision, EvidencePlanningDecision)
                             if policy.effect_expected_source_protocol:
                                 logic_type, effects_type = LogicalPlanningDecisionV3, EvidencePlanningDecisionV3
+                            if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
+                                logic_type = LogicalPlanningDecisionV4
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
                             wire_decision = decision.model_copy(deep=True)
+                            if isinstance(decision, LogicalPlanningDecisionV4):
+                                validate_operation_selections(decision, decision.operation_selections, record.evidence)
+                                decision = LogicalPlanningDecisionV3.model_validate(decision.model_dump(mode="json", exclude={"operation_selections"}))
                             if decision.action == "finish" and stage == "effects":
                                 decision = merge_evidence_decision(checkpoint.stages, decision, record.evidence)
                             if decision.action == "finish":
@@ -246,13 +259,14 @@ class CasePlanningWorkflow:
                         checkpoint.response_text = None
                         if decision.action == "finish":
                             if stage == "logic":
-                                checkpoint.stages = seal_logical_decision(decision)
+                                selections = wire_decision.operation_selections if isinstance(wire_decision, LogicalPlanningDecisionV4) else None
+                                checkpoint.stages = seal_logical_decision(decision, operation_selections=selections)
                                 round_record["logical_hash"] = checkpoint.stages.logical_hash
                                 if any(item.kind == "target" for item in decision.items):
                                     checkpoint.query_results = []
                                     checkpoint.phase = "ready"
                                     if policy.operation_prefetch_protocol:
-                                        queries, origins = declared_operation_queries(checkpoint.stages.logical_decision)
+                                        queries, origins = declared_operation_queries(checkpoint.stages.logical_decision, checkpoint.stages.operation_selections)
                                         if queries:
                                             checkpoint.pending_decision = EvidencePlanningDecisionV3(action="query", summary="读取固定逻辑明确选择的操作契约", queries=queries[:PREFETCH_QUERY_BATCH_SIZE])
                                             checkpoint.query_index = 0

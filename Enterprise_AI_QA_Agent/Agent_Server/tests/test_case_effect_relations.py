@@ -81,9 +81,11 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all", "selection-identity-prefetch-document-internal-all", "selection-identity-prefetch-document-external-all"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
     scenario_key = scenario
+    item_selection = scenario.startswith("selection-")
+    scenario = scenario.removeprefix("selection-")
     full_identity = scenario.startswith("identity-")
     scenario = scenario.removeprefix("identity-")
     prefetch = scenario.startswith("prefetch-")
@@ -105,6 +107,10 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
                 operation_prefetch_protocol="case-planning-declared-operation-prefetch-v1",
                 source_identity_protocol="case-planning-source-full-hash-v1")
+        if item_selection:
+            selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
+                source_identity_protocol="case-planning-source-full-hash-v1",
+                operation_prefetch_protocol="case-planning-item-operation-prefetch-v2")
         config = await base.service.save_policy(project.id, selected_policy)
         old = ROOT/"docs/upgrade_2026-10-03/p4-shared-effect-wire/first-consumer-only-left-passed-finished/shared-left.json"
         content = json.loads(old.read_bytes())
@@ -134,15 +140,17 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
                         "queries": [{"kind": "document", "source_id": document.id}]}
                 target = item(context, "formal-mixed", key="target", effect_schema=3 if document_expected else 2, cleanup_sources=[producer_key],
                     depends_on=["seed"] if external else [])
+                selections = [{"item_key": key, "tool_key": "api-test-runner", "operation": "execute_task",
+                    "evidence_ids": target["evidence_ids"]} for key in (["seed", "target"] if external else ["target"])]
                 if not external:
-                    return finish(target)
+                    return finish(target, **({"operation_selections": selections} if item_selection else {}))
                 if prefetch:
                     assert "返回201" in next(e["payload"]["content"] for e in context["evidence"] if e["kind"] == "document")
                 instructions = {"tool": "api-test-runner", "operation": "execute_task", "url": business[0][0]+"/orders", "expected": 201} if prefetch else {
                     **content["证据契约"], "url": business[0][0]+"/orders", "expected": 201}
                 return finish({"key": "seed", "kind": "prepare", "effect_schema": 3 if document_expected else 2,
                     "reason": "原文提供创建依据", "evidence_ids": target["evidence_ids"],
-                    "instructions": instructions}, target)
+                    "instructions": instructions}, target, **({"operation_selections": selections} if item_selection else {}))
             if not any(e["kind"] == "tool" for e in context["evidence"]):
                 return {"action": "query", "summary": "读取实际原生工具契约",
                     "queries": [{"kind": "tool", "source_id": "api-test-runner", "operation": "execute_task"}]}
@@ -167,7 +175,7 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == ("case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        assert plan.prompt_version == ("case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
         assert len(plan.rounds) == (3 if prefetch else 4)
         later_document = None
         if document_expected:

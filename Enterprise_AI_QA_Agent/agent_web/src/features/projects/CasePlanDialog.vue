@@ -43,6 +43,12 @@ function showError(err: unknown) { error.value = err instanceof Error ? err.mess
 function evidence(item: CasePlanItem) { return plan.value?.evidence.find(e => e.kind === "case" && e.version === item.case_version_id); }
 function title(item: CasePlanItem) { const value = evidence(item)?.payload.title; return typeof value === "string" ? value : item.key; }
 function content(item: CasePlanItem) { return item.kind === "prepare" ? item.instructions : evidence(item)?.payload.content; }
+const operationSelections = computed(() => plan.value?.rounds.flatMap(round => {
+  const decision = round.decision;
+  if (!decision || typeof decision !== "object" || Array.isArray(decision)) return [];
+  const selections = (decision as Record<string, unknown>).operation_selections;
+  return Array.isArray(selections) ? selections : [];
+}) || []);
 function launchStorageKey() { return `case-plan-launch:${props.projectId}:${plan.value?.id}`; }
 function persistLaunch() {
   try {
@@ -282,9 +288,26 @@ function chooseOperationPrefetch(event: Event) {
 }
 function chooseSourceIdentity(event: Event) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.source_identity_protocol; return; }
+  if (!(event.target as HTMLInputElement).checked) {
+    delete config.value.policy.source_identity_protocol;
+    if (config.value.policy.operation_prefetch_protocol === "case-planning-item-operation-prefetch-v2") {
+      config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
+    }
+    return;
+  }
   chooseDocumentExpected(event);
   config.value.policy.source_identity_protocol = "case-planning-source-full-hash-v1";
+}
+function chooseItemOperations(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) {
+    if (config.value.policy.operation_prefetch_protocol === "case-planning-item-operation-prefetch-v2") {
+      config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
+    }
+    return;
+  }
+  chooseSourceIdentity(event);
+  config.value.policy.operation_prefetch_protocol = "case-planning-item-operation-prefetch-v2";
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -341,6 +364,9 @@ onMounted(loadPolicy);
           :checked="!!config.policy.operation_prefetch_protocol" @change="chooseOperationPrefetch">自动读取计划已明确选择的工具操作说明</label>
         <label><input data-testid="source-identity" type="checkbox" :disabled="busy"
           :checked="!!config.policy.source_identity_protocol" @change="chooseSourceIdentity">使用统一的文档与录制引用</label>
+        <label><input data-testid="item-operation-selections" type="checkbox" :disabled="busy"
+          :checked="config.policy.operation_prefetch_protocol === 'case-planning-item-operation-prefetch-v2'"
+          @change="chooseItemOperations">读取正式用例及准备项已选操作的接口</label>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
         <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
           type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>
@@ -376,6 +402,7 @@ onMounted(loadPolicy);
           <button v-else :disabled="busy || (!pendingRequest && !modeKey)" @click="launch">{{ pendingRequest ? '重试启动请求' : '启动测试运行' }}</button>
         </section>
         <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
+        <details v-if="operationSelections.length"><summary>逻辑阶段选定的工具接口</summary><JsonContentTree :value="operationSelections" /></details>
         <ul v-if="plan.decision?.unresolved.length" class="gaps"><li v-for="(gap, index) in plan.decision.unresolved" :key="index">{{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}</li></ul>
         <ol class="plan-items"><li v-for="item in plan.decision?.items" :key="item.key">
           <h4>{{ kindLabels[item.kind] }} · {{ title(item) }}</h4><p>{{ item.reason }}</p>

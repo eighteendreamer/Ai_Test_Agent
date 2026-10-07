@@ -222,9 +222,11 @@ class PostgresPlanningTaskStore:
             if checkpoint.stages is None:
                 raise ValueError("阶段检查点不能丢弃")
             PlanningStageCheckpoint.model_validate(checkpoint.stages.model_dump(mode="json"))
+            if checkpoint.stages.stage == "effects" and (
+                (checkpoint.stages.operation_selections is not None) != (original.config_snapshot.policy.operation_prefetch_protocol == "case-planning-item-operation-prefetch-v2")):
+                raise ValueError("阶段操作选择不能替换原规划协议")
             if prior.stages is not None and prior.stages.stage == "effects":
-                if (checkpoint.stages.stage != "effects" or checkpoint.stages.logical_decision != prior.stages.logical_decision
-                    or checkpoint.stages.logical_hash != prior.stages.logical_hash):
+                if checkpoint.stages != prior.stages:
                     raise ValueError("检查点不能回退阶段或改写固定逻辑决定")
         elif checkpoint.stages is not None:
             raise ValueError("旧任务不能改用新阶段协议")

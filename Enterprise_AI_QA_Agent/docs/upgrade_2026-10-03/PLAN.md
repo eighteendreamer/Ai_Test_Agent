@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次代码核对基线：`5b5490ac`及一致来源身份工作区。新增2.3.5/6.62：新计划以完整摘要统一文档引用，旧任务保持原身份；真实MD/DOCX/PDF、PG恢复与原生业务专项已验。新默认模型引用和逻辑冻结通过，进入effects读取契约后原180秒预算耗尽，仍无Run/业务发送，不能宣称自主执行完成。三份全文同步，完整P0—P5仍未完成。
+修订日期：2026-10-07；本次代码核对基线：`07275986`及执行项操作选择工作区。新增2.3.6/6.63：正式项和准备项的明确操作共用只读契约队列，选择与逻辑共同冻结；真实存储/恢复、完整原件及两种原生业务专项已验。默认新任务实际触发去重读取，3逻辑/3物理，仍在原180秒预算内技术绑定超时，0Run/业务HTTP。三份全文同步，完整P0—P5未完成。
 
 本方案按用户纠正后的流程执行：
 
@@ -253,6 +253,16 @@ AI 只围绕一个问题检查初排后的用例：
 实际MD/DOCX/PDF原件经独立解析进程、RustFS字节读回、MySQL策略和PG规划保存/恢复，证明新旧ID对应相同内容/版本；真实任务丢回执换Worker仍使用固定身份/逻辑/hash/deadline，终态不新发；原生创建两条、查询、清理全部及V1固定执行另验。录制身份使用同一来源分支，但本次未验人工录制和实际录制数据库链路。
 
 默认新任务四轮为logic、logic、effects、effects：文档完整ID被正确引用，正式目标的自身清理关系冻结；第三轮读取execute_task，第四轮尚无正文时原deadline取消。系统预读仅接受prepare.instructions明确操作，而本次计划只有正式项，不能用旧预读专项宣称已省掉此轮。下一步研究正式项内明确操作如何在固定逻辑阶段表达并复用原查询/恢复，结合实际阶段成本再验自主能力；不把任意JSON编译成模式参数，不增加虚构前置，不暗增预算。具体失败/证据见6.62及[P4_SOURCE_IDENTITY_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_SOURCE_IDENTITY_RESEARCH.md)。
+
+### 2.3.6 正式项及准备项的只读操作选择〔专项已验，默认完整执行未过〕
+
+原v1预读只能从prepare.instructions取明确tool/operation；实际v8逻辑只有正式目标时，仍消耗25.208秒模型回合请求已知接口。新MySQL值`operation_prefetch_protocol=case-planning-item-operation-prefetch-v2`采用Prompt v9及独立逻辑wire，要求原完整来源身份和文档预期栈，旧v1/v6—v8字节/哈希保留。
+
+逻辑finish可填写operation_selections：item_key、tool_key、可选operation和已读业务evidence_ids，覆盖target、dependency与prepare。operation为空只读完整tool；没有明确选择仍可在effects查询。后端核对现有执行项及该项已读取的业务依据，不从HTTP方法推断工具、不为了读取接口增添虚构准备；未知工具或操作沿原查询错误反馈呈现。选择不编译用例参数，不增加执行授权。
+
+选择保存在PG阶段检查点，与完整逻辑决定共同生成新hash；旧None仍按原决定hash。进入effects后PG比较整个固定stage，即便重算hash也不能删改选择。最终执行决定继续原PlanningDecisionV3，完整用例/自身说明不改；effects只追加技术绑定。查询去重后保存item_keys及业务引用，沿原八条队列、next_offset、租约及deadline恢复，不增加next_round或业务调用。
+
+实际原件/MySQL/PG/RustFS、正式内部与prepare→正式两种真实产生/清理已验；原始JSON无证据字段，V2及当前政策改变后仍执行V1。前端保存一致政策，显示真实固定选择与完整用例。默认新任务对两个项的相同操作去重为一次读取，省掉独立模型读取回合；三次模型仍耗尽原预算，不能宣称自主完成。详细来源、命令及失败见6.63和[P4_ITEM_OPERATION_SELECTION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_ITEM_OPERATION_SELECTION_RESEARCH.md)。
 
 ### 2.4 冻结、执行与证据
 
@@ -1009,7 +1019,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 |---|---|---|
 | P0 | 重复请求根因与API身份修正，实测录制/Docker | 完整HTTP阶段追踪、人工录制闭环、Docker真实证据 |
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程；普通文档全量生成的模块进度与独立恢复仍待验，P4确认需求增量模块及重试的已验能力见3.6.5—3.6.8 |
-| P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归；固定范围、对象证据、清理覆盖及两阶段规划专项已验，见6.45—6.57 | 正式项清理及项内多效果v2专项已验，见2.3.2/6.59；默认新任务完成逻辑、证据阶段超时，固定文档预期已接入并专项验证，见2.3.3/6.60；明确操作读取及三轮真实业务专项已验，见2.3.4/6.61；来源身份一致及三格式/真实恢复专项已验，见2.3.5/6.62；新默认引用/逻辑冻结通过、effects超时，先研究正式项操作读取和实际阶段成本，再验自主执行；共享消费完成、完整准备状态、未知只读查证、计划修订、其他模式及完整产品流程继续 |
+| P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归；固定范围、对象证据、清理覆盖及两阶段规划专项已验，见6.45—6.57 | 正式项清理及项内多效果v2专项已验，见2.3.2/6.59；默认新任务完成逻辑、证据阶段超时，固定文档预期已接入并专项验证，见2.3.3/6.60；明确操作读取及三轮真实业务专项已验，见2.3.4/6.61；来源身份一致及三格式/真实恢复专项已验，见2.3.5/6.62；正式/准备项操作选择、固定hash和去重读取已验，见2.3.6/6.63；新默认实际3轮仍超时，先研究已关联业务文档的首轮固定读取和阶段成本，再验自主执行；共享消费完成、完整准备状态、未知只读查证、计划修订、其他模式及完整产品流程继续 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
 | P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 影响生产API/Worker/正式页面及固定版本治理已接；默认模型固定场景九判断见6.12；需求身份/版本/验证点、明确评审及设计矩阵API和页面已验，见6.13/6.14；确认范围/冻结生成基础已验，见3.6.3/6.15；持久增量模块/原响应/草稿事务内部已验，见3.6.4/6.17；正式API/独立生成Worker/CLI及前端客户端已接并实测，见3.6.5/6.18；正式增量App及真实DOCX/独立Worker流程已验，见3.6.6/6.19；失败显式新任务API/独立Worker已验，见3.6.7/6.20；重试正式页面已验，见3.6.8/6.22；覆盖确认API、固定历史与矩阵已验，见3.6.9/6.24；正式覆盖管理页面、完整版本/评审/原请求/历史及真实DOCX App已验，见3.6.10/6.26；增量/重试任务池与固定详情已验，见3.6.11/6.28；正文执行关联API/矩阵及正式编辑/完整App已验，见3.6.12—3.6.13/6.30—6.31；默认Agent自主执行、部署适用和更广业务仍待验 |
 | P5 | 录制场景、步骤/别名、知识查询、失败定位、结果报告 | 先证明录制链可用，再按实际缺口实施 |
@@ -2188,3 +2198,26 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 本次逻辑没有prepare.instructions，因此旧prepare明确操作预读没有触发；手工受控业务成功不能代替默认自主成功。下一步先研究正式项内明确操作选择及固定查询队列，而不是按HTTP方法猜工具或为赶预算截断用例/接口；技术绑定阶段耗时另查证。不重复原失败任务、不重置unknown/终态、不直接加时限。共享消费完成、未知只读查证、计划修订/其他模式、P1模板/Excel正式产品、DeepSeek人工录制、Docker性能/安全、报告及生产历史迁移继续实施，完整P0—P5未完成。
 
 三份完整方案、原件/PG/固定引用/物理消息、前批119份原始证据及无关当前字节核对见[p4-source-identity-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-source-identity-validation.json)。旧两份Worker汇总原字节仍未恢复，本次保护当前字节；没有推送或PR。
+
+### 6.63 执行项操作选择、固定恢复与默认三轮实测〔源码基线07275986〕
+
+完整目标及最新原失败、逻辑/Schema/查询/PG/Agent上下文和本地Agent轨迹课程先查证，研究存[P4_ITEM_OPERATION_SELECTION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_ITEM_OPERATION_SELECTION_RESEARCH.md)。新增原MySQL操作预读v2值及Prompt v9，独立逻辑wire和阶段选择/hash仍PG；原件RustFS。没有新依赖、表列、业务参数编译、运行/权限改写或旧任务升级。
+
+| 实际批次 | 结果与边界 |
+|---|---|
+| p4-item-operation-live-first | 40通过、0跳过33.69秒；新选择9离线/7实际任务、旧来源8及旧预读16项，包含真实MD/DOCX/PDF原件/PG和原v5/v7/v8seed/Prompt回放；旧模块重叠不累计为新增覆盖 |
+| p4-item-operation-choices-pg-final | 1通过5.50秒；加强固定选择专项，实际save_checkpoint事务拒绝替换后重hash及丢弃选择，原PG字节不变；换Worker仍原seed/截止/三次受控模型，终态不调用 |
+| p4-item-operation-full-tool-final | 1通过8.03秒；operation=null读取完整固定tool，native输出模型32字段及原变体保留，未假装为单操作契约 |
+| p4-item-operation-business-first | 2通过10.91秒；正式项内部创建/清理、prepare创建→正式清理；各三次受控模型，POST两次/GET一次/DELETE两次，两个可靠对象覆盖passed、现场0剩余，原完整JSON/False/0/null及V1依据保持 |
+| p4-item-operation-regression-first | 84通过、3跳过101.05秒；六个既有模块与新增两个业务场景，实际存储/租约/恢复保留。跳过与6.62相同：旧实时规划两个开关缺失、旧默认专项一个开关缺失；本批独立默认另测 |
+| p4-item-operation-frontend-first / frontend-fixed / frontend-actual | 首2失败52通过3.07秒，保存夹具回旧配置导致第二次关闭断言不符；改为回显实际提交策略后54通过2.52秒。新增真实内部场景的固定计划展示后55通过3.66秒，固定原件/八步及选择同屏可查 |
+| p4-item-operation-build-first / typecheck-actual | vue-tsc/Vite退出0，Vite8.23秒；新增实际展示夹具后vue-tsc退出0。另一次typecheck-final探针误调vitest --help，只是帮助命令退出0，不能计作类型检查；原命令/日志保留 |
+| p4-item-operation-default-first | 严格1失败、0跳过217.39秒，独立API/Worker退出0但任务failed；原180秒、实际3逻辑/3SDK/3物理POST，0Run/业务HTTP |
+
+新选择任务实际验正式项、重复选择去重、未知操作反馈、九条分两批完整读取、queue/read提交丢回执、当前政策关闭和工具注册禁止重捕获、attempt2/原deadline/终态不新发。新的阶段hash绑定完整决定和操作选择；旧None按原hash且字段省略。最终FormalCasePlanItem/Agent上下文保持原v3，源件业务正文不补造证据字段；原生专项计划后上传V2仍核验V1预期和清理全部对象。
+
+默认第一轮43.022秒读取case.source_refs已明确的项目文档；第二轮97.453秒按完整原件固定prepare_orders→query_first_order及清理来源，并为两项都选择api-test-runner.execute_task，系统去重一次只读完整32字段契约。第三轮38.808秒、已带固定原文/操作/选择/hash，在original deadline取消，正文0字符、流未结束，无validation_feedback。三条HTTP200仅证明收到响应头；最后流CancelledError，不写成完整响应/length。阶段及SDK统计保留推理字符数，不保存私有推理正文。
+
+本次模型选择了prepare而v8选择了正式内部准备，都是完整需求可允许的逻辑表达；不为结果统一而改响应。系统预读实际有效，但逻辑耗时增加，不能推断整体加速或完整自主成功。原全局step-5-preview、8192输出、SDK/单调用配置不变，不重试已失败任务。下一步查证已有case.source_refs的明确文档能否在首轮前固定读取、如何保留版本/分页/原查询恢复，避免模型仅为请求已知原件花一轮；不能把项目全部文档盲注入，也不偷加预算。共享消费/未知只读查证、计划修订/其他模式、P1模板与Excel正式App、人工录制/DeepSeek、Docker性能/安全、报告及迁移继续，完整目标未完成。
+
+三份完整正文、真实原件/PG/选择hash/物理消息、前批122份原始证据及无关当前字节核对见[p4-item-operation-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-item-operation-validation.json)。旧两份Worker汇总原字节仍未恢复，只保护当前字节；没有推送或PR。

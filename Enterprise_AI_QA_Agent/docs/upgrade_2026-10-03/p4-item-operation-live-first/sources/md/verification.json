@@ -1,0 +1,1316 @@
+{
+  "document": {
+    "id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+    "catalog_revision": 0,
+    "current_version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+    "version_number": 1,
+    "title": "original",
+    "filename": "original.md",
+    "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+    "legacy_project_name": null,
+    "project_name": null,
+    "project_url": null,
+    "source": "manual_upload",
+    "source_origin": null,
+    "format_label": "Markdown 文档",
+    "content_type": "application/octet-stream",
+    "size_bytes": 683,
+    "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+    "original_asset": {
+      "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+      "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+      "kind": "original",
+      "filename": "original.md",
+      "content_type": "application/octet-stream",
+      "size_bytes": 683,
+      "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+      "bucket": "qa-agent",
+      "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+      "created_at": "2026-10-07T09:01:31.440900Z",
+      "reason": "upload",
+      "security_report": {}
+    },
+    "derived_assets": [],
+    "bucket": "qa-agent",
+    "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+    "endpoint_count": null,
+    "preview_available": true,
+    "preview_truncated": false,
+    "preview_text": "# 实际查询及准备清理\r\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\r\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\r\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\r\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\r\n",
+    "preview_error": null,
+    "uploaded_at": "2026-10-07T09:01:31.440900Z",
+    "updated_at": "2026-10-07T09:01:31.440900Z",
+    "metadata": {
+      "security": null,
+      "conversion": null,
+      "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+      "size_bytes": 683,
+      "project_url": null,
+      "project_name": null,
+      "storage_backend": "rustfs",
+      "stored_filename": "original.md",
+      "original_filename": "original.md",
+      "original_size_bytes": 683,
+      "stored_content_type": "application/octet-stream",
+      "converted_to_markdown": false,
+      "original_content_type": "application/octet-stream"
+    }
+  },
+  "parse_task": {
+    "id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+    "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+    "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+    "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+    "creation_key": "fixed",
+    "status": "completed",
+    "phase": "finished",
+    "attempt_no": 1,
+    "snapshot_id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+    "error_code": null,
+    "failure_artifact": null,
+    "message": "解析结果已保存",
+    "created_at": "2026-10-07T09:01:32.627132Z",
+    "updated_at": "2026-10-07T09:01:32.993057Z",
+    "deadline_at": "2026-10-07T09:02:32.635189Z",
+    "completed_at": "2026-10-07T09:01:32.993057Z"
+  },
+  "snapshot": {
+    "id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+    "task_id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+    "seed": {
+      "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+      "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+      "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+      "original_asset": {
+        "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+        "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+        "kind": "original",
+        "filename": "original.md",
+        "content_type": "application/octet-stream",
+        "size_bytes": 683,
+        "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+        "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+        "bucket": "qa-agent",
+        "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+        "created_at": "2026-10-07T09:01:31.440900Z",
+        "reason": "upload",
+        "security_report": {}
+      },
+      "config": {
+        "scope_key": "global",
+        "revision": 1,
+        "payload": {
+          "policy": {
+            "limits": {
+              "max_bytes": 20000000,
+              "max_expanded_bytes": 100000000,
+              "max_zip_entries": 3000,
+              "max_pages": 1000,
+              "max_blocks": 50000,
+              "max_text_chars": 5000000,
+              "max_table_cells": 50000
+            },
+            "timeout_seconds": 60.0,
+            "max_cpu_seconds": 30.0,
+            "max_memory_bytes": 536870912,
+            "max_output_bytes": 40000000
+          },
+          "options": {
+            "parser_id": "auto",
+            "encoding": "utf-8-sig",
+            "pdf_extraction_mode": "plain"
+          },
+          "parser_by_extension": {
+            ".md": "markdown",
+            ".pdf": "pdf",
+            ".txt": "markdown",
+            ".docx": "docx"
+          }
+        }
+      },
+      "options": {
+        "parser_id": "markdown",
+        "encoding": "utf-8-sig",
+        "pdf_extraction_mode": "plain"
+      },
+      "parser": {
+        "parser_id": "markdown",
+        "formats": [
+          ".md",
+          ".txt"
+        ],
+        "implementation_version": "lightweight-v1",
+        "text": true,
+        "sections": true,
+        "tables": true,
+        "ocr": false,
+        "source_positions": [
+          "line"
+        ],
+        "transport": "local",
+        "available": true
+      }
+    },
+    "storage_uri": "rustfs://qa-agent/document-parsing/6c3444bc-534c-4a2a-aee3-2526c74ea61b/b65fbf51-5524-4fec-8968-b216660c6d6c/27e9b47d-e535-4d3d-b97b-f85928fd822a/31614d8d-6541-4285-a8f8-2080b38a4b14/result.json",
+    "sha256": "9347e49f3da07186a657f99ec927508e2f8b2d12527d8c9c1803e167d0ed7866",
+    "size_bytes": 3062,
+    "status": "complete",
+    "parser": {
+      "parser_id": "markdown",
+      "formats": [
+        ".md",
+        ".txt"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": true,
+      "tables": true,
+      "ocr": false,
+      "source_positions": [
+        "line"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {},
+    "warnings": [],
+    "created_at": "2026-10-07T09:01:32.052560Z"
+  },
+  "parse_result": {
+    "schema_version": "document-parse-v1",
+    "filename": "original.md",
+    "source_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+    "source_size_bytes": 683,
+    "parser": {
+      "parser_id": "markdown",
+      "formats": [
+        ".md",
+        ".txt"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": true,
+      "tables": true,
+      "ocr": false,
+      "source_positions": [
+        "line"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {},
+    "options": {
+      "parser_id": "markdown",
+      "encoding": "utf-8-sig",
+      "pdf_extraction_mode": "plain"
+    },
+    "text": "# 实际查询及准备清理\r\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\r\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\r\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\r\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\r\n",
+    "blocks": [
+      {
+        "id": "block-1",
+        "kind": "heading",
+        "text": "# 实际查询及准备清理\r\n",
+        "start_char": 0,
+        "end_char": 13,
+        "source": {
+          "kind": "line",
+          "start_line": 1,
+          "end_line": 1,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": 1
+      },
+      {
+        "id": "block-2",
+        "kind": "text",
+        "text": "POST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\r\n",
+        "start_char": 13,
+        "end_char": 98,
+        "source": {
+          "kind": "line",
+          "start_line": 2,
+          "end_line": 2,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-3",
+        "kind": "text",
+        "text": "本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\r\n",
+        "start_char": 98,
+        "end_char": 181,
+        "source": {
+          "kind": "line",
+          "start_line": 3,
+          "end_line": 3,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-4",
+        "kind": "text",
+        "text": "GET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\r\n",
+        "start_char": 181,
+        "end_char": 265,
+        "source": {
+          "kind": "line",
+          "start_line": 4,
+          "end_line": 4,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-5",
+        "kind": "text",
+        "text": "查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\r\n",
+        "start_char": 265,
+        "end_char": 355,
+        "source": {
+          "kind": "line",
+          "start_line": 5,
+          "end_line": 5,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      }
+    ],
+    "sections": [
+      {
+        "id": "section-1",
+        "heading_block_id": "block-1",
+        "title": "实际查询及准备清理",
+        "level": 1,
+        "parent_id": null,
+        "start_char": 0,
+        "end_char": 355
+      }
+    ],
+    "tables": [],
+    "warnings": [],
+    "status": "complete",
+    "metadata": {
+      "encoding": "utf-8-sig",
+      "line_count": 5
+    }
+  },
+  "old": {
+    "id": "document:ec7269c7-5299-563a-914b-70dd86b5be65:c628bcfcb5c3108f",
+    "kind": "document",
+    "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+    "version": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+    "content_hash": "c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+    "payload": {
+      "title": "original",
+      "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+      "start_line": 1,
+      "end_line": 5,
+      "has_more": false,
+      "source_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+      "content_asset_id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+      "content_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "catalog_revision": 0,
+      "parse_snapshot": {
+        "id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+        "task_id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+        "seed": {
+          "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+          "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+          "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+          "original_asset": {
+            "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+            "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+            "kind": "original",
+            "filename": "original.md",
+            "content_type": "application/octet-stream",
+            "size_bytes": 683,
+            "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+            "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+            "bucket": "qa-agent",
+            "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+            "created_at": "2026-10-07T09:01:31.440900Z",
+            "reason": "upload",
+            "security_report": {}
+          },
+          "config": {
+            "scope_key": "global",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 20000000,
+                  "max_expanded_bytes": 100000000,
+                  "max_zip_entries": 3000,
+                  "max_pages": 1000,
+                  "max_blocks": 50000,
+                  "max_text_chars": 5000000,
+                  "max_table_cells": 50000
+                },
+                "timeout_seconds": 60.0,
+                "max_cpu_seconds": 30.0,
+                "max_memory_bytes": 536870912,
+                "max_output_bytes": 40000000
+              },
+              "options": {
+                "parser_id": "auto",
+                "encoding": "utf-8-sig",
+                "pdf_extraction_mode": "plain"
+              },
+              "parser_by_extension": {
+                ".md": "markdown",
+                ".pdf": "pdf",
+                ".txt": "markdown",
+                ".docx": "docx"
+              }
+            }
+          },
+          "options": {
+            "parser_id": "markdown",
+            "encoding": "utf-8-sig",
+            "pdf_extraction_mode": "plain"
+          },
+          "parser": {
+            "parser_id": "markdown",
+            "formats": [
+              ".md",
+              ".txt"
+            ],
+            "implementation_version": "lightweight-v1",
+            "text": true,
+            "sections": true,
+            "tables": true,
+            "ocr": false,
+            "source_positions": [
+              "line"
+            ],
+            "transport": "local",
+            "available": true
+          }
+        },
+        "storage_uri": "rustfs://qa-agent/document-parsing/6c3444bc-534c-4a2a-aee3-2526c74ea61b/b65fbf51-5524-4fec-8968-b216660c6d6c/27e9b47d-e535-4d3d-b97b-f85928fd822a/31614d8d-6541-4285-a8f8-2080b38a4b14/result.json",
+        "sha256": "9347e49f3da07186a657f99ec927508e2f8b2d12527d8c9c1803e167d0ed7866",
+        "size_bytes": 3062,
+        "status": "complete",
+        "parser": {
+          "parser_id": "markdown",
+          "formats": [
+            ".md",
+            ".txt"
+          ],
+          "implementation_version": "lightweight-v1",
+          "text": true,
+          "sections": true,
+          "tables": true,
+          "ocr": false,
+          "source_positions": [
+            "line"
+          ],
+          "transport": "local",
+          "available": true
+        },
+        "dependency_versions": {},
+        "warnings": [],
+        "created_at": "2026-10-07T09:01:32.052560Z"
+      },
+      "parse_structure": {
+        "sections": [
+          {
+            "id": "section-1",
+            "heading_block_id": "block-1",
+            "title": "实际查询及准备清理",
+            "level": 1,
+            "parent_id": null,
+            "start_char": 0,
+            "end_char": 355
+          }
+        ],
+        "tables": [],
+        "blocks": [
+          {
+            "id": "block-1",
+            "kind": "heading",
+            "start_char": 0,
+            "end_char": 13,
+            "source": {
+              "kind": "line",
+              "start_line": 1,
+              "end_line": 1,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": 1
+          },
+          {
+            "id": "block-2",
+            "kind": "text",
+            "start_char": 13,
+            "end_char": 98,
+            "source": {
+              "kind": "line",
+              "start_line": 2,
+              "end_line": 2,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-3",
+            "kind": "text",
+            "start_char": 98,
+            "end_char": 181,
+            "source": {
+              "kind": "line",
+              "start_line": 3,
+              "end_line": 3,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-4",
+            "kind": "text",
+            "start_char": 181,
+            "end_char": 265,
+            "source": {
+              "kind": "line",
+              "start_line": 4,
+              "end_line": 4,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-5",
+            "kind": "text",
+            "start_char": 265,
+            "end_char": 355,
+            "source": {
+              "kind": "line",
+              "start_line": 5,
+              "end_line": 5,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          }
+        ]
+      }
+    }
+  },
+  "new": {
+    "id": "document:ec7269c7-5299-563a-914b-70dd86b5be65:c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+    "kind": "document",
+    "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+    "version": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+    "content_hash": "c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+    "payload": {
+      "title": "original",
+      "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+      "start_line": 1,
+      "end_line": 5,
+      "has_more": false,
+      "source_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+      "content_asset_id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+      "content_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "catalog_revision": 0,
+      "parse_snapshot": {
+        "id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+        "task_id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+        "seed": {
+          "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+          "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+          "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+          "original_asset": {
+            "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+            "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+            "kind": "original",
+            "filename": "original.md",
+            "content_type": "application/octet-stream",
+            "size_bytes": 683,
+            "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+            "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+            "bucket": "qa-agent",
+            "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+            "created_at": "2026-10-07T09:01:31.440900Z",
+            "reason": "upload",
+            "security_report": {}
+          },
+          "config": {
+            "scope_key": "global",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 20000000,
+                  "max_expanded_bytes": 100000000,
+                  "max_zip_entries": 3000,
+                  "max_pages": 1000,
+                  "max_blocks": 50000,
+                  "max_text_chars": 5000000,
+                  "max_table_cells": 50000
+                },
+                "timeout_seconds": 60.0,
+                "max_cpu_seconds": 30.0,
+                "max_memory_bytes": 536870912,
+                "max_output_bytes": 40000000
+              },
+              "options": {
+                "parser_id": "auto",
+                "encoding": "utf-8-sig",
+                "pdf_extraction_mode": "plain"
+              },
+              "parser_by_extension": {
+                ".md": "markdown",
+                ".pdf": "pdf",
+                ".txt": "markdown",
+                ".docx": "docx"
+              }
+            }
+          },
+          "options": {
+            "parser_id": "markdown",
+            "encoding": "utf-8-sig",
+            "pdf_extraction_mode": "plain"
+          },
+          "parser": {
+            "parser_id": "markdown",
+            "formats": [
+              ".md",
+              ".txt"
+            ],
+            "implementation_version": "lightweight-v1",
+            "text": true,
+            "sections": true,
+            "tables": true,
+            "ocr": false,
+            "source_positions": [
+              "line"
+            ],
+            "transport": "local",
+            "available": true
+          }
+        },
+        "storage_uri": "rustfs://qa-agent/document-parsing/6c3444bc-534c-4a2a-aee3-2526c74ea61b/b65fbf51-5524-4fec-8968-b216660c6d6c/27e9b47d-e535-4d3d-b97b-f85928fd822a/31614d8d-6541-4285-a8f8-2080b38a4b14/result.json",
+        "sha256": "9347e49f3da07186a657f99ec927508e2f8b2d12527d8c9c1803e167d0ed7866",
+        "size_bytes": 3062,
+        "status": "complete",
+        "parser": {
+          "parser_id": "markdown",
+          "formats": [
+            ".md",
+            ".txt"
+          ],
+          "implementation_version": "lightweight-v1",
+          "text": true,
+          "sections": true,
+          "tables": true,
+          "ocr": false,
+          "source_positions": [
+            "line"
+          ],
+          "transport": "local",
+          "available": true
+        },
+        "dependency_versions": {},
+        "warnings": [],
+        "created_at": "2026-10-07T09:01:32.052560Z"
+      },
+      "parse_structure": {
+        "sections": [
+          {
+            "id": "section-1",
+            "heading_block_id": "block-1",
+            "title": "实际查询及准备清理",
+            "level": 1,
+            "parent_id": null,
+            "start_char": 0,
+            "end_char": 355
+          }
+        ],
+        "tables": [],
+        "blocks": [
+          {
+            "id": "block-1",
+            "kind": "heading",
+            "start_char": 0,
+            "end_char": 13,
+            "source": {
+              "kind": "line",
+              "start_line": 1,
+              "end_line": 1,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": 1
+          },
+          {
+            "id": "block-2",
+            "kind": "text",
+            "start_char": 13,
+            "end_char": 98,
+            "source": {
+              "kind": "line",
+              "start_line": 2,
+              "end_line": 2,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-3",
+            "kind": "text",
+            "start_char": 98,
+            "end_char": 181,
+            "source": {
+              "kind": "line",
+              "start_line": 3,
+              "end_line": 3,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-4",
+            "kind": "text",
+            "start_char": 181,
+            "end_char": 265,
+            "source": {
+              "kind": "line",
+              "start_line": 4,
+              "end_line": 4,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          },
+          {
+            "id": "block-5",
+            "kind": "text",
+            "start_char": 265,
+            "end_char": 355,
+            "source": {
+              "kind": "line",
+              "start_line": 5,
+              "end_line": 5,
+              "page": null,
+              "path": [],
+              "part": null
+            },
+            "heading_level": null
+          }
+        ]
+      }
+    }
+  },
+  "RustFS_original_verified": true,
+  "actual_PG_plan": {
+    "id": "4378077c-3116-4465-99b5-6157d96ea166",
+    "rounds": [
+      {
+        "round": 1,
+        "status": "parsed",
+        "decision": {
+          "items": [],
+          "action": "query",
+          "queries": [
+            {
+              "kind": "document",
+              "query": "",
+              "offset": 0,
+              "max_lines": 500,
+              "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+              "start_line": 1
+            }
+          ],
+          "summary": "读取实际解析版本",
+          "unresolved": []
+        },
+        "streaming": false,
+        "attempt_id": null,
+        "query_results": [
+          {
+            "query": {
+              "kind": "document",
+              "query": "",
+              "offset": 0,
+              "max_lines": 500,
+              "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+              "start_line": 1
+            },
+            "has_more": false,
+            "evidence_ids": [
+              "document:ec7269c7-5299-563a-914b-70dd86b5be65:c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6"
+            ]
+          }
+        ],
+        "response_mode": "",
+        "planning_stage": "logic",
+        "logical_call_id": "18262f60-7e40-4f16-870d-46350d66c8b5",
+        "response_metadata": {
+          "mode": null,
+          "usage": null,
+          "error_type": null,
+          "response_id": null,
+          "status_code": null,
+          "stop_reason": null,
+          "finish_reason": null
+        },
+        "model_elapsed_seconds": 0.0
+      },
+      {
+        "round": 2,
+        "status": "parsed",
+        "decision": {
+          "items": [],
+          "action": "finish",
+          "queries": [],
+          "summary": "当前项目没有正式目标用例",
+          "unresolved": []
+        },
+        "streaming": false,
+        "attempt_id": null,
+        "logical_hash": "341041ee14644091fa208b1ffe5ca3c53fdf16ea3d57ea7670acad89e16758d8",
+        "response_mode": "",
+        "planning_stage": "logic",
+        "logical_call_id": "7f35ead7-e031-4c05-b188-d208c9c337a9",
+        "response_metadata": {
+          "mode": null,
+          "usage": null,
+          "error_type": null,
+          "response_id": null,
+          "status_code": null,
+          "stop_reason": null,
+          "finish_reason": null
+        },
+        "model_elapsed_seconds": 0.0,
+        "preparation_scope_declaration": {}
+      }
+    ],
+    "status": "no_match",
+    "request": {
+      "model_key": null,
+      "objective": "读取该固定文档并检查正式用例",
+      "environment": null,
+      "runtime_context": {},
+      "candidate_case_ids": []
+    },
+    "summary": "当前项目没有正式目标用例",
+    "decision": {
+      "items": [],
+      "action": "finish",
+      "queries": [],
+      "summary": "当前项目没有正式目标用例",
+      "unresolved": []
+    },
+    "evidence": [
+      {
+        "id": "document:ec7269c7-5299-563a-914b-70dd86b5be65:c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+        "kind": "document",
+        "payload": {
+          "title": "original",
+          "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+          "end_line": 5,
+          "has_more": false,
+          "source_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+          "start_line": 1,
+          "content_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+          "parse_snapshot": {
+            "id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+            "seed": {
+              "config": {
+                "payload": {
+                  "policy": {
+                    "limits": {
+                      "max_bytes": 20000000,
+                      "max_pages": 1000,
+                      "max_blocks": 50000,
+                      "max_text_chars": 5000000,
+                      "max_table_cells": 50000,
+                      "max_zip_entries": 3000,
+                      "max_expanded_bytes": 100000000
+                    },
+                    "max_cpu_seconds": 30.0,
+                    "timeout_seconds": 60.0,
+                    "max_memory_bytes": 536870912,
+                    "max_output_bytes": 40000000
+                  },
+                  "options": {
+                    "encoding": "utf-8-sig",
+                    "parser_id": "auto",
+                    "pdf_extraction_mode": "plain"
+                  },
+                  "parser_by_extension": {
+                    ".md": "markdown",
+                    ".pdf": "pdf",
+                    ".txt": "markdown",
+                    ".docx": "docx"
+                  }
+                },
+                "revision": 1,
+                "scope_key": "global"
+              },
+              "parser": {
+                "ocr": false,
+                "text": true,
+                "tables": true,
+                "formats": [
+                  ".md",
+                  ".txt"
+                ],
+                "sections": true,
+                "available": true,
+                "parser_id": "markdown",
+                "transport": "local",
+                "source_positions": [
+                  "line"
+                ],
+                "implementation_version": "lightweight-v1"
+              },
+              "options": {
+                "encoding": "utf-8-sig",
+                "parser_id": "markdown",
+                "pdf_extraction_mode": "plain"
+              },
+              "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+              "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+              "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+              "original_asset": {
+                "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+                "kind": "original",
+                "bucket": "qa-agent",
+                "reason": "upload",
+                "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+                "filename": "original.md",
+                "created_at": "2026-10-07T09:01:31.440900Z",
+                "size_bytes": 683,
+                "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+                "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+                "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+                "content_type": "application/octet-stream",
+                "security_report": {}
+              }
+            },
+            "parser": {
+              "ocr": false,
+              "text": true,
+              "tables": true,
+              "formats": [
+                ".md",
+                ".txt"
+              ],
+              "sections": true,
+              "available": true,
+              "parser_id": "markdown",
+              "transport": "local",
+              "source_positions": [
+                "line"
+              ],
+              "implementation_version": "lightweight-v1"
+            },
+            "sha256": "9347e49f3da07186a657f99ec927508e2f8b2d12527d8c9c1803e167d0ed7866",
+            "status": "complete",
+            "task_id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+            "warnings": [],
+            "created_at": "2026-10-07T09:01:32.052560Z",
+            "size_bytes": 3062,
+            "storage_uri": "rustfs://qa-agent/document-parsing/6c3444bc-534c-4a2a-aee3-2526c74ea61b/b65fbf51-5524-4fec-8968-b216660c6d6c/27e9b47d-e535-4d3d-b97b-f85928fd822a/31614d8d-6541-4285-a8f8-2080b38a4b14/result.json",
+            "dependency_versions": {}
+          },
+          "parse_structure": {
+            "blocks": [
+              {
+                "id": "block-1",
+                "kind": "heading",
+                "source": {
+                  "kind": "line",
+                  "page": null,
+                  "part": null,
+                  "path": [],
+                  "end_line": 1,
+                  "start_line": 1
+                },
+                "end_char": 13,
+                "start_char": 0,
+                "heading_level": 1
+              },
+              {
+                "id": "block-2",
+                "kind": "text",
+                "source": {
+                  "kind": "line",
+                  "page": null,
+                  "part": null,
+                  "path": [],
+                  "end_line": 2,
+                  "start_line": 2
+                },
+                "end_char": 98,
+                "start_char": 13,
+                "heading_level": null
+              },
+              {
+                "id": "block-3",
+                "kind": "text",
+                "source": {
+                  "kind": "line",
+                  "page": null,
+                  "part": null,
+                  "path": [],
+                  "end_line": 3,
+                  "start_line": 3
+                },
+                "end_char": 181,
+                "start_char": 98,
+                "heading_level": null
+              },
+              {
+                "id": "block-4",
+                "kind": "text",
+                "source": {
+                  "kind": "line",
+                  "page": null,
+                  "part": null,
+                  "path": [],
+                  "end_line": 4,
+                  "start_line": 4
+                },
+                "end_char": 265,
+                "start_char": 181,
+                "heading_level": null
+              },
+              {
+                "id": "block-5",
+                "kind": "text",
+                "source": {
+                  "kind": "line",
+                  "page": null,
+                  "part": null,
+                  "path": [],
+                  "end_line": 5,
+                  "start_line": 5
+                },
+                "end_char": 355,
+                "start_char": 265,
+                "heading_level": null
+              }
+            ],
+            "tables": [],
+            "sections": [
+              {
+                "id": "section-1",
+                "level": 1,
+                "title": "实际查询及准备清理",
+                "end_char": 355,
+                "parent_id": null,
+                "start_char": 0,
+                "heading_block_id": "block-1"
+              }
+            ]
+          },
+          "catalog_revision": 0,
+          "content_asset_id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0"
+        },
+        "version": "e0f90bde-a068-476d-9ea4-b05fcadba238",
+        "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+        "content_hash": "c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6"
+      }
+    ],
+    "warnings": [
+      "未配置向量召回，使用项目用例目录；相关性仍由 AI 阅读完整内容判断"
+    ],
+    "model_key": "fixture-model",
+    "created_at": "2026-10-07T09:01:32.166710Z",
+    "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+    "regression": null,
+    "environment": null,
+    "prompt_version": "case-planning-source-identity-v8",
+    "config_snapshot": {
+      "policy": {
+        "max_items": 50,
+        "max_rounds": 5,
+        "max_candidates": 20,
+        "timeout_seconds": 180.0,
+        "max_context_chars": 180000,
+        "operation_protocol": "case-operation-v1",
+        "action_binding_protocol": "case-action-binding-v1",
+        "planning_stage_protocol": "case-planning-staged-evidence-v2",
+        "effect_coverage_protocol": "case-effect-coverage-v2",
+        "effect_evidence_protocol": "case-effect-evidence-v2",
+        "source_identity_protocol": "case-planning-source-full-hash-v1",
+        "action_admission_protocol": "case-action-admission-v1",
+        "effect_coverage_max_bytes": 1024000,
+        "effect_evidence_max_bytes": 512000,
+        "preparation_scope_protocol": "preparation-scope-v2",
+        "effect_expected_source_protocol": "case-effect-document-expected-v1"
+      },
+      "revision": 1,
+      "scope_key": "6c3444bc-534c-4a2a-aee3-2526c74ea61b"
+    }
+  },
+  "MySQL_policy": {
+    "scope_key": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "action_binding_protocol": "case-action-binding-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "operation_protocol": "case-operation-v1",
+      "preparation_scope_protocol": "preparation-scope-v2",
+      "effect_evidence_protocol": "case-effect-evidence-v2",
+      "effect_evidence_max_bytes": 512000,
+      "effect_coverage_protocol": "case-effect-coverage-v2",
+      "effect_coverage_max_bytes": 1024000,
+      "planning_stage_protocol": "case-planning-staged-evidence-v2",
+      "effect_expected_source_protocol": "case-effect-document-expected-v1",
+      "source_identity_protocol": "case-planning-source-full-hash-v1"
+    }
+  },
+  "delivered_evidence": [
+    {
+      "content_hash": "c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+      "id": "document:ec7269c7-5299-563a-914b-70dd86b5be65:c628bcfcb5c3108f3177ad138e0e81de3dfe0e4b06d3d54ed3d6a5cee3924bd6",
+      "kind": "document",
+      "payload": {
+        "catalog_revision": 0,
+        "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51246/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51246/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+        "content_asset_id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+        "content_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+        "end_line": 5,
+        "has_more": false,
+        "parse_snapshot": {
+          "created_at": "2026-10-07T09:01:32.052560Z",
+          "dependency_versions": {},
+          "id": "31614d8d-6541-4285-a8f8-2080b38a4b14",
+          "parser": {
+            "available": true,
+            "formats": [
+              ".md",
+              ".txt"
+            ],
+            "implementation_version": "lightweight-v1",
+            "ocr": false,
+            "parser_id": "markdown",
+            "sections": true,
+            "source_positions": [
+              "line"
+            ],
+            "tables": true,
+            "text": true,
+            "transport": "local"
+          },
+          "seed": {
+            "config": {
+              "payload": {
+                "options": {
+                  "encoding": "utf-8-sig",
+                  "parser_id": "auto",
+                  "pdf_extraction_mode": "plain"
+                },
+                "parser_by_extension": {
+                  ".docx": "docx",
+                  ".md": "markdown",
+                  ".pdf": "pdf",
+                  ".txt": "markdown"
+                },
+                "policy": {
+                  "limits": {
+                    "max_blocks": 50000,
+                    "max_bytes": 20000000,
+                    "max_expanded_bytes": 100000000,
+                    "max_pages": 1000,
+                    "max_table_cells": 50000,
+                    "max_text_chars": 5000000,
+                    "max_zip_entries": 3000
+                  },
+                  "max_cpu_seconds": 30.0,
+                  "max_memory_bytes": 536870912,
+                  "max_output_bytes": 40000000,
+                  "timeout_seconds": 60.0
+                }
+              },
+              "revision": 1,
+              "scope_key": "global"
+            },
+            "document_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+            "options": {
+              "encoding": "utf-8-sig",
+              "parser_id": "markdown",
+              "pdf_extraction_mode": "plain"
+            },
+            "original_asset": {
+              "bucket": "qa-agent",
+              "content_type": "application/octet-stream",
+              "created_at": "2026-10-07T09:01:31.440900Z",
+              "filename": "original.md",
+              "id": "694cbb44-42ee-4d14-85aa-f8e1f31e2df0",
+              "kind": "original",
+              "object_name": "api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+              "reason": "upload",
+              "security_report": {},
+              "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+              "size_bytes": 683,
+              "storage_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+              "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238"
+            },
+            "parser": {
+              "available": true,
+              "formats": [
+                ".md",
+                ".txt"
+              ],
+              "implementation_version": "lightweight-v1",
+              "ocr": false,
+              "parser_id": "markdown",
+              "sections": true,
+              "source_positions": [
+                "line"
+              ],
+              "tables": true,
+              "text": true,
+              "transport": "local"
+            },
+            "project_id": "6c3444bc-534c-4a2a-aee3-2526c74ea61b",
+            "version_id": "e0f90bde-a068-476d-9ea4-b05fcadba238"
+          },
+          "sha256": "9347e49f3da07186a657f99ec927508e2f8b2d12527d8c9c1803e167d0ed7866",
+          "size_bytes": 3062,
+          "status": "complete",
+          "storage_uri": "rustfs://qa-agent/document-parsing/6c3444bc-534c-4a2a-aee3-2526c74ea61b/b65fbf51-5524-4fec-8968-b216660c6d6c/27e9b47d-e535-4d3d-b97b-f85928fd822a/31614d8d-6541-4285-a8f8-2080b38a4b14/result.json",
+          "task_id": "b65fbf51-5524-4fec-8968-b216660c6d6c",
+          "warnings": []
+        },
+        "parse_structure": {
+          "blocks": [
+            {
+              "end_char": 13,
+              "heading_level": 1,
+              "id": "block-1",
+              "kind": "heading",
+              "source": {
+                "end_line": 1,
+                "kind": "line",
+                "page": null,
+                "part": null,
+                "path": [],
+                "start_line": 1
+              },
+              "start_char": 0
+            },
+            {
+              "end_char": 98,
+              "heading_level": null,
+              "id": "block-2",
+              "kind": "text",
+              "source": {
+                "end_line": 2,
+                "kind": "line",
+                "page": null,
+                "part": null,
+                "path": [],
+                "start_line": 2
+              },
+              "start_char": 13
+            },
+            {
+              "end_char": 181,
+              "heading_level": null,
+              "id": "block-3",
+              "kind": "text",
+              "source": {
+                "end_line": 3,
+                "kind": "line",
+                "page": null,
+                "part": null,
+                "path": [],
+                "start_line": 3
+              },
+              "start_char": 98
+            },
+            {
+              "end_char": 265,
+              "heading_level": null,
+              "id": "block-4",
+              "kind": "text",
+              "source": {
+                "end_line": 4,
+                "kind": "line",
+                "page": null,
+                "part": null,
+                "path": [],
+                "start_line": 4
+              },
+              "start_char": 181
+            },
+            {
+              "end_char": 355,
+              "heading_level": null,
+              "id": "block-5",
+              "kind": "text",
+              "source": {
+                "end_line": 5,
+                "kind": "line",
+                "page": null,
+                "part": null,
+                "path": [],
+                "start_line": 5
+              },
+              "start_char": 265
+            }
+          ],
+          "sections": [
+            {
+              "end_char": 355,
+              "heading_block_id": "block-1",
+              "id": "section-1",
+              "level": 1,
+              "parent_id": null,
+              "start_char": 0,
+              "title": "实际查询及准备清理"
+            }
+          ],
+          "tables": []
+        },
+        "source_uri": "rustfs://qa-agent/api-docs/ec7269c7-5299-563a-914b-70dd86b5be65/e0f90bde-a068-476d-9ea4-b05fcadba238/original/original.md",
+        "start_line": 1,
+        "title": "original"
+      },
+      "source_id": "ec7269c7-5299-563a-914b-70dd86b5be65",
+      "version": "e0f90bde-a068-476d-9ea4-b05fcadba238"
+    }
+  ],
+  "business_HTTP": 0,
+  "controlled_model": true,
+  "model_calls": 2,
+  "full_upgrade_complete": false
+}

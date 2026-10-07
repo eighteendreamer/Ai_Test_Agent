@@ -6,15 +6,20 @@ from src.schemas.case_planning_stages import (
     PlanningStagePrompts, logical_decision_hash,
     RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
+    LogicalPlanningDecisionV4,
     STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION,
 )
 from src.schemas.case_effect_sources import SOURCE_PROTOCOL, SOURCE_PROMPT_VERSION
-from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION
+from src.application.test_cases.planning_operation_prefetch import (
+    PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION, ITEM_PREFETCH_PROTOCOL, ITEM_PREFETCH_PROMPT_VERSION,
+)
 
 SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
+        return ITEM_PREFETCH_PROMPT_VERSION
     if policy.source_identity_protocol:
         return SOURCE_IDENTITY_PROMPT_VERSION
     if policy.operation_prefetch_protocol:
@@ -25,6 +30,22 @@ def stage_prompt_version(policy, stages):
 
 
 def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None):
+    if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
+        original = build_stage_prompts(protocol, expected_source_protocol, None, source_identity_protocol)
+        original.logic = original.logic.replace(json_text(LogicalPlanningDecisionV3.model_json_schema()),
+            json_text(LogicalPlanningDecisionV4.model_json_schema()))
+        original.logic = (
+            "逻辑finish时可在operation_selections明确选择本计划项要用的工具接口：item_key引用现有正式项或prepare，"
+            "tool_key/operation原样使用available_tools的名称，evidence_ids引用该项已读业务依据。"
+            "正式项自行准备和清理同样可以选择，不为读取接口增添prepare；不改正式content。"
+            "operation为空表示读取完整tool；未知时不猜，可不填，effects仍可query。"
+            "选择只触发只读契约查询，不代表业务授权、参数编译或执行成功。"
+        ) + original.logic
+        original.effects = (
+            "operation_selections与logical_plan/hash共同固定，不更换选择。已读契约及query_results提供完整接口，"
+            "无需为同一接口再次query；其他必需技术依据仍按原查询取得。"
+        ) + original.effects
+        return original
     if source_identity_protocol == FULL_SOURCE_IDENTITY_PROTOCOL:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol)
         identity = "本计划文档/录制依据id使用完整content_hash摘要，查询结果与evidence.id为同一身份；引用该完整id，不截断或补写摘要。"
@@ -74,11 +95,11 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
     return PlanningStagePrompts(logic=logic, effects=effects)
 
 
-def seal_logical_decision(decision):
+def seal_logical_decision(decision, operation_selections=None):
     model = PlanningDecisionV3 if isinstance(decision, PlanningDecisionV3) else PlanningDecisionV2 if isinstance(decision, PlanningDecisionV2) else PlanningDecision
     fixed = model.model_validate(decision.model_dump(mode="json"))
     return PlanningStageCheckpoint(stage="effects", logical_decision=fixed,
-        logical_hash=logical_decision_hash(fixed))
+        logical_hash=logical_decision_hash(fixed, operation_selections), operation_selections=operation_selections)
 
 
 def merge_evidence_decision(stages, decision, evidence):

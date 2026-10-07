@@ -1,0 +1,39 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/projects/CasePlanDialog.test.ts (50 tests | 2 failed) 560ms
+     × saves all-item operation selection and retains valid policy after disabling item-operation-selections 11ms
+     × saves all-item operation selection and retains valid policy after disabling source-identity 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/projects/CasePlanDialog.test.ts > case planning > saves all-item operation selection and retains valid policy after disabling item-operation-selections
+ FAIL  src/features/projects/CasePlanDialog.test.ts > case planning > saves all-item operation selection and retains valid policy after disabling source-identity
+AssertionError: expected undefined to be 'case-planning-declared-operation-pref…' // Object.is equality
+
+- Expected:
+"case-planning-declared-operation-prefetch-v1"
+
++ Received:
+undefined
+
+ ❯ src/features/projects/CasePlanDialog.test.ts:381:87
+    379|     expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefe…
+    380|     if (name === "item-operation-selections" || name === "source-ident…
+    381|       expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_pre…
+       |                                                                                       ^
+    382|     }
+    383|     wrapper.unmount();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 52 passed (54)
+   Start at  17:01:12
+   Duration  3.07s (transform 718ms, setup 0ms, import 1.38s, tests 703ms, environment 3.24s)
+

@@ -4009,3 +4009,31 @@ agent_web执行npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/
 三种实际原件先保存/进程解析/存储，再比较同payload/版本新旧身份、跨项目与未知协议拒绝；补充同步受控规划每格式2模型调用，PG存完整文档ID、实际MySQL政策与送达上下文完全相等，no_match不建立Run。十个新旧任务模式真实PG丢回执恢复及完整契约，原截止/版本保持。录制来源同分支但实际录制数据库/人工链路未验。
 
 默认第二轮正确冻结正式目标内部产生/清理；第三轮模型才请求execute_task，第四轮只收到推理统计、0正文，原总截止取消，流未结束。没有来源校验失败；prepare专用预读因无prepare声明未触发。下一步研究正式项的明确操作选择/固定来源及完整技术绑定工作量，不重复同配置失败、不编译任意JSON为测试模式参数、不暗增预算。计划/目标范围保持全部P0—P5；旧Worker汇总原字节未恢复限制继续保留。本批物理消息/原件/PG/失败XML及三份字节审计见p4-source-identity-validation.json。
+
+## 2026-10-07 正式/准备项只读操作选择与实际默认三轮失败
+
+基线07275986，研究先读真实失败/原件、完整消费者及Agent轨迹课程后存P4_ITEM_OPERATION_SELECTION_RESEARCH.md。采用原MySQL操作预读v2值、Prompt v9和逻辑wire，PG阶段共同hash固定选择，旧None/Prompt/seed字节保留，原件RustFS；不改测试模式、业务JSON、授权和运行执行方式，没有新依赖/SQL表列。
+
+实际命令均由UTF8 Python subprocess数组执行、stdout/stderr原字节及.command.json退出码保存，cwd=Agent_Server；RUN_LIVE_CASE_PLANNING_TASKS、RUN_LIVE_CASE_EFFECT_RELATIONS、RUN_LIVE_PLAN_RUN_CREATION、RUN_LIVE_DOCUMENT_PARSERS=1；QA_ITEM_OPERATION_DIR、QA_SOURCE_IDENTITY_DIR、QA_OPERATION_PREFETCH_DIR、QA_STAGED_PLANNING_DIR、QA_EFFECT_RELATIONS_DIR和QA_EFFECT_EVIDENCE_DIR每批独立，避免覆盖旧工件。
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_item_operation_selection.py tests/test_planning_source_identity.py tests/test_planning_operation_prefetch.py -q --tb=short --junitxml=<本批.xml>
+# 40通过33.69秒，9离线/7实际新选择、8来源和16旧预读；不累计重叠覆盖
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_planning_item_operation_selection.py::test_actual_formal_operation_choices_durable_queue_and_original_deadline[fixed-choice]' -q --tb=short --junitxml=<本批.xml>
+# 加强实际PG篡改写入事务拒绝后1通过5.50秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_planning_item_operation_selection.py::test_actual_formal_operation_choices_durable_queue_and_original_deadline[full-tool]' -q --tb=short --junitxml=<本批.xml>
+# 新完整tool/null操作专项1通过8.03秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[selection-identity-prefetch-document-internal-all]' 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[selection-identity-prefetch-document-external-all]' -q --tb=short --junitxml=<本批.xml>
+# 两种实际原生业务2通过10.91秒，各5HTTP/两个可靠对象全覆盖且现场0剩余；受控模型
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_planning_stages.py tests/test_planning_tool_operations.py tests/test_case_effect_expected_sources.py tests/test_case_effect_relations.py -q --tb=short --junitxml=<本批.xml>
+# 84通过3跳过101.05秒，旧实时规划/默认模型开关未启用，另作本批新默认专项
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_ITEM_OPERATION_SELECTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='<本批默认独立目录>'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q --tb=short --junitxml=<本批.xml>
+# 1失败217.39秒，API/Worker0、任务failed，3逻辑/物理、去重读一次契约；技术绑定0正文时截止，0Run/业务HTTP
+```
+
+agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：首2失败52通过3.07秒，保存夹具未回显新策略；修正夹具后54通过2.52秒，实际计划JSON展示另55通过3.66秒。npm.cmd run build包含vue-tsc，退出0/Vite8.23秒；新增实际夹具后npm.cmd run typecheck退出0。typecheck-final探针误用了test --help，仅帮助成功，不能记作校验，日志保留。
+
+原件/MySQL/PG/RustFS，queue/read丢回执/attempt2恢复及固定选择重hash后修改/删除实际SQL事务拒绝均验。完整tool原模型及原native变体未截断；原八步JSON/false/0/null不补字段，V2/当前策略后仍固定V1；两个真实业务各三受控模型通过。默认43.022/97.453/38.808秒，第二轮选择prepare及正式target的同一操作、原队列实际去重，第三轮取消未完整响应。不能称整体加速或自主完成；下一步研究明确用例文档来源的首轮固定读取及阶段成本，完整P0—P5保持。原始文件/消息/PG/hash和无关当前字节核对见p4-item-operation-validation.json；旧Worker汇总未恢复限制保留。

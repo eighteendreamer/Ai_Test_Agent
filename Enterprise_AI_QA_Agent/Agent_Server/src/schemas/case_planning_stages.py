@@ -3,7 +3,7 @@ import hashlib
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from src.schemas.case_planning import (
     FormalCasePlanItem, PlanningDecision, PlanningGap, PlanningModel,
@@ -70,6 +70,23 @@ class LogicalPlanningDecisionV3(PlanningDecisionV3):
     items: list[Annotated[LogicalFormalCaseItemV3 | LogicalPreparationItemV3, Field(discriminator="kind")]] = Field(default_factory=list, max_length=200)
 
 
+class PlanningOperationSelection(PlanningModel):
+    item_key: str = Field(min_length=1, max_length=80)
+    tool_key: str = Field(min_length=1, max_length=160)
+    operation: str | None = Field(default=None, min_length=1, max_length=160)
+    evidence_ids: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1, max_length=50)
+
+
+class LogicalPlanningDecisionV4(LogicalPlanningDecisionV3):
+    operation_selections: list[PlanningOperationSelection] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def selections_after_logic(self):
+        if self.action != "finish" and self.operation_selections:
+            raise ValueError("操作选择只能随已完成的逻辑计划保存")
+        return self
+
+
 class EvidenceItemBinding(PlanningModel):
     item_key: str = Field(min_length=1, max_length=80)
     evidence_ids: list[str] = Field(min_length=1, max_length=50)
@@ -110,8 +127,11 @@ class EvidencePlanningDecisionV3(EvidencePlanningDecisionV2):
     bindings: list[EvidenceItemBindingV3] = Field(default_factory=list, max_length=200)
 
 
-def logical_decision_hash(decision):
-    raw = json.dumps(decision.model_dump(mode="json"), ensure_ascii=False,
+def logical_decision_hash(decision, operation_selections=None):
+    value = decision.model_dump(mode="json")
+    if operation_selections is not None:
+        value = {"decision": value, "operation_selections": [entry.model_dump(mode="json") for entry in operation_selections]}
+    raw = json.dumps(value, ensure_ascii=False,
         sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
@@ -126,12 +146,20 @@ class PlanningStageCheckpoint(PlanningModel):
     stage: Literal["logic", "effects"] = "logic"
     logical_decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | None = None
     logical_hash: str | None = None
+    operation_selections: list[PlanningOperationSelection] | None = Field(default=None, max_length=200)
+
+    @model_serializer(mode="wrap")
+    def preserve_original_stage(self, handler):
+        data = handler(self)
+        if self.operation_selections is None:
+            data.pop("operation_selections", None)
+        return data
 
     @model_validator(mode="after")
     def fixed_logic(self):
         if self.stage == "logic":
-            if self.logical_decision is not None or self.logical_hash is not None:
+            if self.logical_decision is not None or self.logical_hash is not None or self.operation_selections is not None:
                 raise ValueError("逻辑阶段尚不能保存已冻结决定")
-        elif self.logical_decision is None or self.logical_hash != logical_decision_hash(self.logical_decision):
+        elif self.logical_decision is None or self.logical_hash != logical_decision_hash(self.logical_decision, self.operation_selections):
             raise ValueError("证据阶段需要一致的固定逻辑决定及哈希")
         return self
