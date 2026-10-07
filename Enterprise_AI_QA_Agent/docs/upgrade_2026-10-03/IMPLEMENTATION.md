@@ -3733,3 +3733,28 @@ $env:QA_PLANNING_COMPLETION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 ```
 
 新默认模型试验实际协议入PG，前两轮27.332/55.453秒均stop；第三轮96.745秒后interrupted，没有完整响应。三个物理请求为不同合法逻辑回合，未进入JSON修正；响应头200不等于流完成。默认试验没有触发新拒绝分支，在最终同步正文保存字段补齐前运行；相关最终保存专项另外验收。模型全局配置与预算没有变化。旧失败/未知发送保留，完整App、正式项混合创建/清理、共享消费、未知只读核对、运行修订及其余P0—P5仍待实施。
+
+## 2026-10-07：实际SDK计数、默认试验与三份方案同步
+
+基线a2ed767b，研究和范围见P4_SDK_STREAM_OBSERVATION_RESEARCH.md及PLAN 6.54。仅测试探针及测试消费方改动，保存安全计数，实际SDK对象/正文/工具/异常继续原样传播；无生产源码、参数、数据库或前端变更。最终实际HTTP/SDK专项8通过14.92秒。新默认任务1失败168.47秒，第二轮length/8192及空正文实际触发完整性拒绝，不修正重发、不创建运行，业务HTTP为0。SDK第二轮1.436秒已有字段，共3707块，117.730秒迭代结束；reasoning别名只计数不保存内容。原180秒预算与模型配置保持。完整目标尚未达成。
+
+实际命令（Agent_Server，各证据前缀独立，失败不覆盖）：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_sdk_stream_observation.py tests/test_default_coverage_production.py::test_actual_SDK_event_hooks_preserve_full_stream_and_do_not_save_auth tests/test_sdk_midstream_retry_boundary.py tests/test_model_clients.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-sdk-observation-first.xml
+# 退出0：24通过12.80秒；当时尚未增加持续HTTP500专项。
+$env:QA_SDK_OBSERVATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-sdk-observation-controlled'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_sdk_stream_observation.py tests/test_default_coverage_production.py::test_actual_SDK_event_hooks_preserve_full_stream_and_do_not_save_auth -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-sdk-observation-controlled.xml
+# 退出0：7通过11.90秒。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-sdk-observation-default'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-sdk-observation-default.xml
+# 退出1：1失败168.47秒；两轮后截断拒绝，业务未执行。
+$env:QA_SDK_OBSERVATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-sdk-observation-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_sdk_stream_observation.py tests/test_default_coverage_production.py::test_actual_SDK_event_hooks_preserve_full_stream_and_do_not_save_auth -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-sdk-observation-final.xml
+# 退出0：8通过14.92秒，含持续500的3次物理发送/1次SDK调用/0次流消费。
+..\.venv\Scripts\python.exe -Xutf8 -m py_compile tests/default_model_probe.py tests/test_sdk_stream_observation.py tests/test_default_coverage_production.py
+# 退出0；功能验收以上述实际HTTP/SDK/独立进程结果为准。
+```
+
+初次/受控/最终批次重叠，不累计。原默认参数、完整八步用例、文档原件与PG终态保留。后续研究规划职责与具体操作契约，不将输入尺寸认作已证实根因；正式产品追踪、其他模式、完整App和P0—P5剩余范围继续保留。

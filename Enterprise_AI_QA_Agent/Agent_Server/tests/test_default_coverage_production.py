@@ -68,7 +68,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
-    report = {"baseline": "4a77cf98 plus frozen planning response completion v1", "configured_model_parameters": parameters, "controlled_model": False,
+    report = {"baseline": "a2ed767b plus passive SDK stream field observation", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     def save(name, value):
         (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -229,5 +229,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
             for p in tmp_path.iterdir():
                 if p.suffix in {".stdout", ".stderr"}:
                     shutil.copyfile(p, directory / p.name)
+            report['SDK_create_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-create.json'))]
+            report['SDK_stream_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-stream.json'))]
             assert model_invocation_parameters(MySQLModelConfigStore(global_settings).get_default_active()) == parameters
             save("verification.json", report)
