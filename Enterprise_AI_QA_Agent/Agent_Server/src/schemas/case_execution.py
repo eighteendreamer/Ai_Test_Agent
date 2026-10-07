@@ -6,7 +6,7 @@ from pydantic import Field, model_validator
 
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
-    PreparationScopeRecord, CasePlanItemV2,
+    PreparationScopeRecord, CasePlanItemV2, CasePlanItemV3,
 )
 from src.schemas.business_planning import BusinessPlanningEnvironment
 from src.schemas.business_execution import BusinessExecutionAdmission
@@ -22,7 +22,7 @@ class BoundCaseInput(PlanningModel):
 
 
 class CaseExecutionStep(PlanningModel):
-    item: CasePlanItem | CasePlanItemV2
+    item: CasePlanItem | CasePlanItemV2 | CasePlanItemV3
     phase: Literal["before", "case", "after"]
     inputs: dict[str, BoundCaseInput] = Field(default_factory=dict)
     content_json: dict[str, Any] | None = None
@@ -54,9 +54,14 @@ class AgentCaseExecutionContext(PlanningModel):
     effect_coverage_protocol: Literal["case-effect-coverage-v1", "case-effect-coverage-v2"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_owner_item_ids: dict[str, str] | None = None
+    effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
+        if self.effect_expected_source_protocol and self.effect_evidence_protocol != "case-effect-evidence-v2":
+            raise ValueError("固定文档预期需要多效果上下文")
+        if any(getattr(step.item, "effect_schema", None) == 3 for step in self.steps) and not self.effect_expected_source_protocol:
+            raise ValueError("文档预期执行项缺少固定来源协议")
         protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol, self.effect_coverage_protocol)
         if any(value and value.endswith("-v2") for value in protocols) and protocols != (
             "preparation-scope-v2", "case-effect-evidence-v2", "case-effect-coverage-v2"):
@@ -87,6 +92,8 @@ class AgentCaseExecutionContext(PlanningModel):
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
+        if self.effect_expected_source_protocol is None:
+            omitted.add("effect_expected_source_protocol")
         if self.business_environment is None:
             omitted.add("business_environment")
         if self.environment_admission is None:

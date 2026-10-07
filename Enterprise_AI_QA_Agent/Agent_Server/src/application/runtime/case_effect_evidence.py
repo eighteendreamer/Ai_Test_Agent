@@ -44,10 +44,10 @@ def compile_declaration(item, expected_source=None):
     return value
 
 
-def validate_effect_declarations(decision, protocol, evidence, coverage_protocol=None):
+def validate_effect_declarations(decision, protocol, evidence, coverage_protocol=None, expected_source_protocol=None):
     if protocol == "case-effect-evidence-v2":
         from src.application.runtime.case_effect_relations import validate_relations
-        return validate_relations(decision, evidence, coverage_protocol)
+        return validate_relations(decision, evidence, coverage_protocol, expected_source_protocol)
     items = {item.key: item for item in decision.items}
     for item in decision.items:
         if item.effect_evidence is None:

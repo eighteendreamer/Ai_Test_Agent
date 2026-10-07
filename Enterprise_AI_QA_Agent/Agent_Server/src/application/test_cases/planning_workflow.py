@@ -12,7 +12,9 @@ from src.application.test_cases.planning_stages import merge_evidence_decision, 
 from src.schemas.case_planning_stages import (
     EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint, STAGED_PROMPT_VERSION,
     RELATION_STAGE_PROTOCOL, RELATION_PROMPT_VERSION, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
+    LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
 )
+from src.schemas.case_effect_sources import SOURCE_PROMPT_VERSION
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
@@ -59,7 +61,7 @@ class CasePlanningWorkflow:
 
         try:
             if seed.stage_prompts is not None:
-                expected_version = RELATION_PROMPT_VERSION if seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
+                expected_version = SOURCE_PROMPT_VERSION if policy.effect_expected_source_protocol else RELATION_PROMPT_VERSION if seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
                 if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
@@ -116,8 +118,8 @@ class CasePlanningWorkflow:
                                 context["logical_hash"] = checkpoint.stages.logical_hash
                         if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
-                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION},
-                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION} else None)
+                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION},
+                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION} else None)
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
@@ -199,6 +201,8 @@ class CasePlanningWorkflow:
                             logic_type, effects_type = (LogicalPlanningDecisionV2, EvidencePlanningDecisionV2) if (
                                 seed.stage_prompts is not None and seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL) else (
                                 LogicalPlanningDecision, EvidencePlanningDecision)
+                            if policy.effect_expected_source_protocol:
+                                logic_type, effects_type = LogicalPlanningDecisionV3, EvidencePlanningDecisionV3
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
@@ -272,8 +276,8 @@ class CasePlanningWorkflow:
                             try:
                                 if query.kind in {"tool", "tools"}:
                                     evidence, metadata = query_tool_contracts(seed.tool_contracts, query, policy.max_candidates,
-                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION},
-                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION} else None)
+                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION},
+                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION} else None)
                                     logger.info("case_planning_tool_query_resolved", extra={"plan_id": record.id,
                                         "round": checkpoint.next_round, "kind": query.kind,
                                         "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version,

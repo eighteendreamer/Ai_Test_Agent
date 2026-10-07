@@ -247,6 +247,7 @@ function choosePlanningStages(event: Event) {
 }
 function downgradeFormalEffects() {
   const policy = config.value?.policy;
+  if (policy) delete policy.effect_expected_source_protocol;
   if (policy?.planning_stage_protocol !== "case-planning-staged-evidence-v2") return;
   policy.preparation_scope_protocol = "preparation-scope-v1";
   policy.effect_evidence_protocol = "case-effect-evidence-v1";
@@ -263,6 +264,12 @@ function chooseFormalEffects(event: Event) {
   config.value.policy.effect_evidence_protocol = "case-effect-evidence-v2";
   config.value.policy.effect_coverage_protocol = "case-effect-coverage-v2";
   config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
+}
+function chooseDocumentExpected(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.effect_expected_source_protocol; return; }
+  chooseFormalEffects(event);
+  config.value.policy.effect_expected_source_protocol = "case-effect-document-expected-v1";
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -312,6 +319,9 @@ onMounted(loadPolicy);
           :checked="!!config.policy.effect_evidence_protocol" @change="chooseEffectEvidence">保存实际对象证据</label>
         <label><input data-testid="formal-effects" type="checkbox" :disabled="busy"
           :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v2'" @change="chooseFormalEffects">支持正式用例内的产生与清理</label>
+        <label><input data-testid="document-expected" type="checkbox" :disabled="busy"
+          :checked="!!config.policy.effect_expected_source_protocol" @change="chooseDocumentExpected">允许引用固定项目文档中的预期</label>
+        <p v-if="config.policy.effect_expected_source_protocol">保留原用例内容，预期引用已读取的文档版本和具体原文。影响后续计划。</p>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
         <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
           type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>

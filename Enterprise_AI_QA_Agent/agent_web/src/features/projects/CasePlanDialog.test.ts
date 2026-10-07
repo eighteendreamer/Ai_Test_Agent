@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
 import type { ModeDescriptor } from "../../types";
+import documentExpected from "../../../tests/fixtures/case-document-expected.actual.json";
 
 const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
@@ -338,6 +339,31 @@ describe("case planning", () => {
       effect_coverage_protocol: "case-effect-coverage-v2", planning_stage_protocol: "case-planning-staged-evidence-v2",
       operation_protocol: "case-operation-v1", timeout_seconds: 180,
     });
+    wrapper.unmount();
+  });
+  it.each(["formal-effects", "planning-stages", "effect-evidence"])("freezes document expectations and clears them when %s is disabled", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="document-expected"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      effect_expected_source_protocol: "case-effect-document-expected-v1",
+      planning_stage_protocol: "case-planning-staged-evidence-v2", timeout_seconds: 180,
+    });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].effect_expected_source_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
+  it("renders the actual fixed document reference with the original full case", async () => {
+    expect(documentExpected.RustFS_original_verified).toBe(true);
+    api.getCasePlan.mockResolvedValue(documentExpected.plan);
+    api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "actual-plan-task", project_id: projectId,
+      creation_key: payload.creation_key, status: "completed", plan_id: documentExpected.plan.id, round_count: 4, message: "完成" }));
+    const wrapper = setup(documentExpected.plan.project_id); await generate(wrapper);
+    expect(wrapper.text()).toContain("DELETE同一路径返回200及刚删除的订单JSON。");
+    expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
+    expect(wrapper.text()).toContain("产生与清理证据声明");
+    expect(wrapper.text()).not.toContain("证据契约");
     wrapper.unmount();
   });
   it.each(["action-binding", "action-admission", "operation-recovery", "preparation-scopes", "effect-evidence", "effect-coverage", "planning-stages"])("removes mixed-effect policy consistently when %s is disabled", async (name) => {

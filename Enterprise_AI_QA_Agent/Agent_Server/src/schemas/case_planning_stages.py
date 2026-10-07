@@ -9,8 +9,10 @@ from src.schemas.case_planning import (
     FormalCasePlanItem, PlanningDecision, PlanningGap, PlanningModel,
     PlanningQuery, PlanInputBinding, PreparationPlanItem, FormalCasePlanItemV2,
     PreparationPlanItemV2, PlanningDecisionV2,
+    FormalCasePlanItemV3, PreparationPlanItemV3, PlanningDecisionV3,
 )
 from src.schemas.case_effects import EffectEvidenceDeclaration, EffectRelationDeclaration
+from src.schemas.case_effect_sources import SourceEffectRelationDeclaration
 
 STAGE_PROTOCOL = "case-planning-staged-evidence-v1"
 STAGED_PROMPT_VERSION = "case-planning-staged-evidence-v4"
@@ -53,6 +55,21 @@ class LogicalPlanningDecisionV2(PlanningDecisionV2):
     items: list[Annotated[LogicalFormalCaseItemV2 | LogicalPreparationItemV2, Field(discriminator="kind")]] = Field(default_factory=list, max_length=200)
 
 
+class LogicalFormalCaseItemV3(FormalCasePlanItemV3):
+    effect_declarations: None = None
+    input_bindings: dict[str, Any] = Field(default_factory=dict, max_length=0)
+
+
+class LogicalPreparationItemV3(PreparationPlanItemV3):
+    effect_declarations: None = None
+    input_bindings: dict[str, Any] = Field(default_factory=dict, max_length=0)
+
+
+class LogicalPlanningDecisionV3(PlanningDecisionV3):
+    queries: list[BusinessPlanningQuery] = Field(default_factory=list, max_length=8)
+    items: list[Annotated[LogicalFormalCaseItemV3 | LogicalPreparationItemV3, Field(discriminator="kind")]] = Field(default_factory=list, max_length=200)
+
+
 class EvidenceItemBinding(PlanningModel):
     item_key: str = Field(min_length=1, max_length=80)
     evidence_ids: list[str] = Field(min_length=1, max_length=50)
@@ -85,6 +102,14 @@ class EvidencePlanningDecisionV2(EvidencePlanningDecision):
     bindings: list[EvidenceItemBindingV2] = Field(default_factory=list, max_length=200)
 
 
+class EvidenceItemBindingV3(EvidenceItemBindingV2):
+    effect_declarations: list[SourceEffectRelationDeclaration] | None = Field(default=None, min_length=1, max_length=200)
+
+
+class EvidencePlanningDecisionV3(EvidencePlanningDecisionV2):
+    bindings: list[EvidenceItemBindingV3] = Field(default_factory=list, max_length=200)
+
+
 def logical_decision_hash(decision):
     raw = json.dumps(decision.model_dump(mode="json"), ensure_ascii=False,
         sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
@@ -99,7 +124,7 @@ class PlanningStagePrompts(PlanningModel):
 
 class PlanningStageCheckpoint(PlanningModel):
     stage: Literal["logic", "effects"] = "logic"
-    logical_decision: PlanningDecision | PlanningDecisionV2 | None = None
+    logical_decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | None = None
     logical_hash: str | None = None
 
     @model_validator(mode="after")

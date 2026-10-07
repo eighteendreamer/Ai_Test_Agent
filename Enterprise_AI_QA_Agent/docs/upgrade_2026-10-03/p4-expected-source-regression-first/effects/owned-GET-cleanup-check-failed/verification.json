@@ -1,0 +1,1822 @@
+{
+  "implementation_baseline": "82de0568",
+  "fixed_context": {
+    "schema_version": 1,
+    "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+    "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+    "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+    "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+    "objective": "实际原工具对象证据",
+    "target_key": "target",
+    "steps": [
+      {
+        "item": {
+          "key": "seed",
+          "reason": "按实际依据记录产生对象",
+          "evidence_ids": [
+            "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+          ],
+          "depends_on": [],
+          "input_bindings": {},
+          "effect_evidence": {
+            "role": "produced",
+            "object_path_tokens": [
+              "task_result",
+              "response_body",
+              "order.id"
+            ],
+            "collection": false,
+            "checks": [
+              {
+                "output_path_tokens": [
+                  "task_result",
+                  "response_status"
+                ],
+                "expected_path_tokens": [
+                  "expected"
+                ],
+                "operator": "equals"
+              }
+            ]
+          },
+          "kind": "prepare",
+          "case_id": null,
+          "case_version_id": null,
+          "instructions": {
+            "url": "http://127.0.0.1:51337/orders",
+            "method": "POST",
+            "expected": 201
+          }
+        },
+        "phase": "before",
+        "inputs": {},
+        "content_json": null,
+        "execution_notes": "",
+        "source_refs": []
+      },
+      {
+        "item": {
+          "key": "target",
+          "reason": "依据完整用例规划",
+          "evidence_ids": [
+            "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+          ],
+          "depends_on": [
+            "seed"
+          ],
+          "input_bindings": {
+            "id": {
+              "source_item": "seed",
+              "input_key": null,
+              "output_path": "",
+              "output_path_tokens": [
+                "body",
+                "order.id"
+              ],
+              "required": true
+            }
+          },
+          "kind": "target",
+          "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+          "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+        },
+        "phase": "case",
+        "inputs": {
+          "id": {
+            "binding": {
+              "source_item": "seed",
+              "input_key": null,
+              "output_path": "",
+              "output_path_tokens": [
+                "body",
+                "order.id"
+              ],
+              "required": true
+            },
+            "resolved": false,
+            "value": null,
+            "run_item_id": null,
+            "result_id": null,
+            "actual_path": null
+          }
+        },
+        "content_json": {
+          "steps": [
+            {
+              "url": "http://127.0.0.1:51337/orders/{id}",
+              "method": "GET"
+            },
+            {
+              "order": 2,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "order": 3,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "order": 4,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "order": 5,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "order": 6,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "order": 7,
+              "action": "read complete shared-data basis"
+            },
+            {
+              "action": "LAST-SHARED-STEP",
+              "business": {
+                "flag": false,
+                "zero": 0,
+                "nullable": null
+              }
+            }
+          ],
+          "期望": {
+            "code": 200
+          },
+          "objective": "完整对象证据用例"
+        },
+        "execution_notes": "读取全部步骤；保持负向条件。",
+        "source_refs": [
+          {
+            "source_type": "manual",
+            "source_id": "effect-evidence",
+            "version": null,
+            "label": "",
+            "uri": null,
+            "metadata": {}
+          }
+        ]
+      },
+      {
+        "item": {
+          "key": "cleanup",
+          "reason": "按固定证据核对清理对象",
+          "evidence_ids": [
+            "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+          ],
+          "depends_on": [
+            "target",
+            "seed"
+          ],
+          "input_bindings": {},
+          "effect_evidence": {
+            "role": "cleanup",
+            "object_path_tokens": [
+              "task_result",
+              "response_body",
+              "order.id"
+            ],
+            "collection": false,
+            "checks": [
+              {
+                "output_path_tokens": [
+                  "task_result",
+                  "response_status"
+                ],
+                "expected_path_tokens": [
+                  "expected"
+                ],
+                "operator": "equals"
+              },
+              {
+                "output_path_tokens": [
+                  "task_result",
+                  "execution_checkpoint",
+                  "http_observation_v1",
+                  "hops",
+                  "0",
+                  "method"
+                ],
+                "expected_path_tokens": [
+                  "method"
+                ],
+                "operator": "equals"
+              }
+            ]
+          },
+          "kind": "prepare",
+          "case_id": null,
+          "case_version_id": null,
+          "instructions": {
+            "url": "http://127.0.0.1:51337/orders/{id}",
+            "method": "DELETE",
+            "expected": 200
+          },
+          "cleanup_sources": [
+            "seed"
+          ]
+        },
+        "phase": "after",
+        "inputs": {},
+        "content_json": null,
+        "execution_notes": "",
+        "source_refs": []
+      }
+    ],
+    "runtime_inputs": {},
+    "evidence": [
+      {
+        "id": "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+        "kind": "case",
+        "source_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+        "version": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+        "content_hash": "28a1ded5c2169f74ad747ff1875eb0cc2a37f9c5878c3c8b70e049e5a91549f2",
+        "payload": {
+          "title": "完整对象证据用例",
+          "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+          "case_key": "effect-evidence",
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "effect-evidence",
+              "source_type": "manual"
+            }
+          ],
+          "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+          "historical_mode_key": "api_testing"
+        }
+      }
+    ],
+    "unresolved": [],
+    "action_binding_protocol": "case-action-binding-v1",
+    "action_admission_protocol": "case-action-admission-v1",
+    "operation_protocol": "case-operation-v1",
+    "preparation_scope_protocol": "preparation-scope-v1",
+    "preparation_scopes": {
+      "seed": {
+        "source_key": "seed",
+        "source_owner_key": "target",
+        "consumer_keys": [
+          "target"
+        ],
+        "cleanup_keys": [
+          "cleanup"
+        ]
+      }
+    },
+    "effect_evidence_protocol": "case-effect-evidence-v1",
+    "effect_evidence_max_bytes": 512000
+  },
+  "actual_run": {
+    "run": {
+      "id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+      "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+      "suite_id": "28361013-765d-5de2-91b6-e93fc0cb99df",
+      "run_kind": "normal",
+      "origin": "native",
+      "mode_key": "api_testing",
+      "execution_strategy": "agent",
+      "plan_snapshot": {
+        "plan": {
+          "id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "request": {
+            "objective": "实际原工具对象证据",
+            "model_key": null,
+            "candidate_case_ids": [],
+            "runtime_context": {},
+            "environment": null
+          },
+          "status": "planned",
+          "summary": "已按项目依据规划",
+          "decision": {
+            "action": "finish",
+            "summary": "已按项目依据规划",
+            "queries": [],
+            "items": [
+              {
+                "key": "seed",
+                "reason": "按实际依据记录产生对象",
+                "evidence_ids": [
+                  "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                ],
+                "depends_on": [],
+                "input_bindings": {},
+                "effect_evidence": {
+                  "role": "produced",
+                  "object_path_tokens": [
+                    "task_result",
+                    "response_body",
+                    "order.id"
+                  ],
+                  "collection": false,
+                  "checks": [
+                    {
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_status"
+                      ],
+                      "expected_path_tokens": [
+                        "expected"
+                      ],
+                      "operator": "equals"
+                    }
+                  ]
+                },
+                "kind": "prepare",
+                "case_id": null,
+                "case_version_id": null,
+                "instructions": {
+                  "url": "http://127.0.0.1:51337/orders",
+                  "method": "POST",
+                  "expected": 201
+                }
+              },
+              {
+                "key": "target",
+                "reason": "依据完整用例规划",
+                "evidence_ids": [
+                  "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                ],
+                "depends_on": [
+                  "seed"
+                ],
+                "input_bindings": {
+                  "id": {
+                    "source_item": "seed",
+                    "input_key": null,
+                    "output_path": "",
+                    "output_path_tokens": [
+                      "body",
+                      "order.id"
+                    ],
+                    "required": true
+                  }
+                },
+                "kind": "target",
+                "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+                "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+              },
+              {
+                "key": "cleanup",
+                "reason": "按固定证据核对清理对象",
+                "evidence_ids": [
+                  "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                ],
+                "depends_on": [
+                  "target",
+                  "seed"
+                ],
+                "input_bindings": {},
+                "effect_evidence": {
+                  "role": "cleanup",
+                  "object_path_tokens": [
+                    "task_result",
+                    "response_body",
+                    "order.id"
+                  ],
+                  "collection": false,
+                  "checks": [
+                    {
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_status"
+                      ],
+                      "expected_path_tokens": [
+                        "expected"
+                      ],
+                      "operator": "equals"
+                    },
+                    {
+                      "output_path_tokens": [
+                        "task_result",
+                        "execution_checkpoint",
+                        "http_observation_v1",
+                        "hops",
+                        "0",
+                        "method"
+                      ],
+                      "expected_path_tokens": [
+                        "method"
+                      ],
+                      "operator": "equals"
+                    }
+                  ]
+                },
+                "kind": "prepare",
+                "case_id": null,
+                "case_version_id": null,
+                "instructions": {
+                  "url": "http://127.0.0.1:51337/orders/{id}",
+                  "method": "DELETE",
+                  "expected": 200
+                },
+                "cleanup_sources": [
+                  "seed"
+                ]
+              }
+            ],
+            "unresolved": []
+          },
+          "evidence": [
+            {
+              "id": "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+              "kind": "case",
+              "source_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+              "version": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+              "content_hash": "28a1ded5c2169f74ad747ff1875eb0cc2a37f9c5878c3c8b70e049e5a91549f2",
+              "payload": {
+                "title": "完整对象证据用例",
+                "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+                "content": {
+                  "steps": [
+                    {
+                      "url": "http://127.0.0.1:51337/orders/{id}",
+                      "method": "GET"
+                    },
+                    {
+                      "order": 2,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "order": 3,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "order": 4,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "order": 5,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "order": 6,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "order": 7,
+                      "action": "read complete shared-data basis"
+                    },
+                    {
+                      "action": "LAST-SHARED-STEP",
+                      "business": {
+                        "flag": false,
+                        "zero": 0,
+                        "nullable": null
+                      }
+                    }
+                  ],
+                  "期望": {
+                    "code": 200
+                  },
+                  "objective": "完整对象证据用例"
+                },
+                "case_key": "effect-evidence",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "effect-evidence",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:cf35aa21-7fd0-49bd-a91a-7c56d9cdedb9",
+              "kind": "case",
+              "source_id": "2eb1e88f-3616-4459-898e-c688427367cd",
+              "version": "cf35aa21-7fd0-49bd-a91a-7c56d9cdedb9",
+              "content_hash": "dcaf3c599688b7b20bab0f4b2495d4243b78a7808ca74e4631441f3ca4248764",
+              "payload": {
+                "title": "完整用例检查",
+                "case_id": "2eb1e88f-3616-4459-898e-c688427367cd",
+                "content": {
+                  "steps": [
+                    {
+                      "url": "http://127.0.0.1:51337/orders/{id}",
+                      "action": "核对完整实际响应",
+                      "method": "GET"
+                    }
+                  ],
+                  "期望": {
+                    "code": 200,
+                    "flag": false,
+                    "count": 0,
+                    "nullable": null,
+                    "semantic": "订单仍待支付且未出库"
+                  },
+                  "objective": "完整用例检查"
+                },
+                "case_key": "receipt-case",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "receipt-case",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "cf35aa21-7fd0-49bd-a91a-7c56d9cdedb9",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:23de4c12-04be-422f-86ff-1151b6299e3b",
+              "kind": "case",
+              "source_id": "5850d1f6-05e2-4323-9eb5-12b670243430",
+              "version": "23de4c12-04be-422f-86ff-1151b6299e3b",
+              "content_hash": "bd019bfc386edb518a7df3300f2d573c7ea023b0a8e1a512a8620a7d6dc511ef",
+              "payload": {
+                "title": "真实依赖样本 4",
+                "case_id": "5850d1f6-05e2-4323-9eb5-12b670243430",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "POST /fixtures",
+                      "output": "body.id"
+                    },
+                    {
+                      "action": "GET /fixtures/{id}",
+                      "requires": "body.id"
+                    }
+                  ],
+                  "negative": "保留未登录条件",
+                  "objective": "真实依赖样本 4"
+                },
+                "case_key": "item-4",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "item-4",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "23de4c12-04be-422f-86ff-1151b6299e3b",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:e2a1237c-c2cd-4f09-84e3-b038e47381d0",
+              "kind": "case",
+              "source_id": "abd91441-7240-4931-807e-52fd72c1d0e9",
+              "version": "e2a1237c-c2cd-4f09-84e3-b038e47381d0",
+              "content_hash": "4836cf576152687a378b716c6cf65a0de6bb264f831798b810ea0d85eb4c24cd",
+              "payload": {
+                "title": "真实依赖样本 3",
+                "case_id": "abd91441-7240-4931-807e-52fd72c1d0e9",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "POST /fixtures",
+                      "output": "body.id"
+                    },
+                    {
+                      "action": "GET /fixtures/{id}",
+                      "requires": "body.id"
+                    }
+                  ],
+                  "negative": "保留未登录条件",
+                  "objective": "真实依赖样本 3"
+                },
+                "case_key": "item-3",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "item-3",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "e2a1237c-c2cd-4f09-84e3-b038e47381d0",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:5ba28152-4309-448f-a002-ac428751e47a",
+              "kind": "case",
+              "source_id": "4a2e0fc8-c88d-4b2e-9d3f-cc05ac325d25",
+              "version": "5ba28152-4309-448f-a002-ac428751e47a",
+              "content_hash": "56a6c02bd547a73628c80b3e29e7735dac3f66f68ea7d87d749253cdf52c7cc0",
+              "payload": {
+                "title": "真实依赖样本 2",
+                "case_id": "4a2e0fc8-c88d-4b2e-9d3f-cc05ac325d25",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "POST /fixtures",
+                      "output": "body.id"
+                    },
+                    {
+                      "action": "GET /fixtures/{id}",
+                      "requires": "body.id"
+                    }
+                  ],
+                  "negative": "保留未登录条件",
+                  "objective": "真实依赖样本 2"
+                },
+                "case_key": "item-2",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "item-2",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "5ba28152-4309-448f-a002-ac428751e47a",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:843f439b-c40b-42c9-b03a-0311c534f1fd",
+              "kind": "case",
+              "source_id": "e7ddefde-c0d9-4f54-bfdd-8dd44e9e8e0e",
+              "version": "843f439b-c40b-42c9-b03a-0311c534f1fd",
+              "content_hash": "249517385ebecaf4fb50ae89884c132522b357653f51cf37be22afcb5e28f796",
+              "payload": {
+                "title": "真实依赖样本 1",
+                "case_id": "e7ddefde-c0d9-4f54-bfdd-8dd44e9e8e0e",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "POST /fixtures",
+                      "output": "body.id"
+                    },
+                    {
+                      "action": "GET /fixtures/{id}",
+                      "requires": "body.id"
+                    }
+                  ],
+                  "negative": "保留未登录条件",
+                  "objective": "真实依赖样本 1"
+                },
+                "case_key": "item-1",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "item-1",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "843f439b-c40b-42c9-b03a-0311c534f1fd",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            },
+            {
+              "id": "case:8de99d02-4c1a-4112-bbed-4bc10fcc7350",
+              "kind": "case",
+              "source_id": "822fb423-cb95-4270-9040-ca7884179bc8",
+              "version": "8de99d02-4c1a-4112-bbed-4bc10fcc7350",
+              "content_hash": "e24ca22d36cdca45b532e00f1f04f2f627b496b3d6b66e682c342c4aea384ae2",
+              "payload": {
+                "title": "真实依赖样本 0",
+                "case_id": "822fb423-cb95-4270-9040-ca7884179bc8",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "POST /fixtures",
+                      "output": "body.id"
+                    },
+                    {
+                      "action": "GET /fixtures/{id}",
+                      "requires": "body.id"
+                    }
+                  ],
+                  "negative": "保留未登录条件",
+                  "objective": "真实依赖样本 0"
+                },
+                "case_key": "item-0",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "item-0",
+                    "source_type": "manual"
+                  }
+                ],
+                "case_version_id": "8de99d02-4c1a-4112-bbed-4bc10fcc7350",
+                "execution_notes": "读取全部步骤；保持负向条件。",
+                "historical_mode_key": "api_testing"
+              }
+            }
+          ],
+          "config_snapshot": {
+            "scope_key": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+            "revision": 1,
+            "policy": {
+              "max_rounds": 5,
+              "max_candidates": 20,
+              "max_items": 50,
+              "max_context_chars": 180000,
+              "timeout_seconds": 180.0,
+              "action_binding_protocol": "case-action-binding-v1",
+              "action_admission_protocol": "case-action-admission-v1",
+              "operation_protocol": "case-operation-v1",
+              "preparation_scope_protocol": "preparation-scope-v1",
+              "effect_evidence_protocol": "case-effect-evidence-v1",
+              "effect_evidence_max_bytes": 512000
+            }
+          },
+          "model_key": "fixture",
+          "prompt_version": "case-planning-effect-evidence-v1",
+          "rounds": [
+            {
+              "round": 1,
+              "status": "parsed",
+              "decision": {
+                "items": [
+                  {
+                    "key": "seed",
+                    "kind": "prepare",
+                    "reason": "按实际依据记录产生对象",
+                    "case_id": null,
+                    "depends_on": [],
+                    "evidence_ids": [
+                      "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                    ],
+                    "instructions": {
+                      "url": "http://127.0.0.1:51337/orders",
+                      "method": "POST",
+                      "expected": 201
+                    },
+                    "input_bindings": {},
+                    "case_version_id": null,
+                    "effect_evidence": {
+                      "role": "produced",
+                      "checks": [
+                        {
+                          "operator": "equals",
+                          "output_path_tokens": [
+                            "task_result",
+                            "response_status"
+                          ],
+                          "expected_path_tokens": [
+                            "expected"
+                          ]
+                        }
+                      ],
+                      "collection": false,
+                      "object_path_tokens": [
+                        "task_result",
+                        "response_body",
+                        "order.id"
+                      ]
+                    }
+                  },
+                  {
+                    "key": "target",
+                    "kind": "target",
+                    "reason": "依据完整用例规划",
+                    "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+                    "depends_on": [
+                      "seed"
+                    ],
+                    "evidence_ids": [
+                      "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                    ],
+                    "input_bindings": {
+                      "id": {
+                        "required": true,
+                        "input_key": null,
+                        "output_path": "",
+                        "source_item": "seed",
+                        "output_path_tokens": [
+                          "body",
+                          "order.id"
+                        ]
+                      }
+                    },
+                    "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                  },
+                  {
+                    "key": "cleanup",
+                    "kind": "prepare",
+                    "reason": "按固定证据核对清理对象",
+                    "case_id": null,
+                    "depends_on": [
+                      "target",
+                      "seed"
+                    ],
+                    "evidence_ids": [
+                      "case:48e95dea-9e4e-4883-ae26-c74e4b2b4b57"
+                    ],
+                    "instructions": {
+                      "url": "http://127.0.0.1:51337/orders/{id}",
+                      "method": "DELETE",
+                      "expected": 200
+                    },
+                    "input_bindings": {},
+                    "case_version_id": null,
+                    "cleanup_sources": [
+                      "seed"
+                    ],
+                    "effect_evidence": {
+                      "role": "cleanup",
+                      "checks": [
+                        {
+                          "operator": "equals",
+                          "output_path_tokens": [
+                            "task_result",
+                            "response_status"
+                          ],
+                          "expected_path_tokens": [
+                            "expected"
+                          ]
+                        },
+                        {
+                          "operator": "equals",
+                          "output_path_tokens": [
+                            "task_result",
+                            "execution_checkpoint",
+                            "http_observation_v1",
+                            "hops",
+                            "0",
+                            "method"
+                          ],
+                          "expected_path_tokens": [
+                            "method"
+                          ]
+                        }
+                      ],
+                      "collection": false,
+                      "object_path_tokens": [
+                        "task_result",
+                        "response_body",
+                        "order.id"
+                      ]
+                    }
+                  }
+                ],
+                "action": "finish",
+                "queries": [],
+                "summary": "已按项目依据规划",
+                "unresolved": []
+              },
+              "streaming": false,
+              "attempt_id": null,
+              "response_mode": "",
+              "logical_call_id": "821c34ea-ee08-4477-86aa-bb393e7898b7",
+              "response_metadata": {
+                "mode": null,
+                "usage": null,
+                "error_type": null,
+                "response_id": null,
+                "status_code": null,
+                "stop_reason": null,
+                "finish_reason": null
+              },
+              "model_elapsed_seconds": 0.0,
+              "preparation_scope_declaration": {
+                "cleanup": {
+                  "depends_on": [
+                    "target"
+                  ],
+                  "cleanup_sources": [
+                    "seed"
+                  ]
+                }
+              }
+            }
+          ],
+          "warnings": [
+            "未配置向量召回，使用项目用例目录；相关性仍由 AI 阅读完整内容判断"
+          ],
+          "created_at": "2026-10-07T04:45:11.873231Z",
+          "regression": null,
+          "environment": null
+        },
+        "run_item_ids": {
+          "target": "ecb6a158-6069-51ac-91cf-312d2b275bbf"
+        },
+        "owners": {
+          "seed": "target",
+          "target": "target",
+          "cleanup": "target"
+        },
+        "preparation_phases": {
+          "seed": "before",
+          "cleanup": "after"
+        },
+        "regression": null,
+        "preparation_scopes": {
+          "seed": {
+            "source_key": "seed",
+            "source_owner_key": "target",
+            "consumer_keys": [
+              "target"
+            ],
+            "cleanup_keys": [
+              "cleanup"
+            ]
+          }
+        }
+      },
+      "creation_key": "effect-evidence",
+      "creation_hash": "c039f364d94527b762424fadc57818062d80f981a191a2c76c948125429639f8",
+      "session_id": null,
+      "parent_run_id": null,
+      "status": "running",
+      "stats": {
+        "total": 1,
+        "queued": 0,
+        "claimed": 0,
+        "running": 1,
+        "waiting_resource": 0,
+        "waiting_approval": 0,
+        "passed": 0,
+        "failed": 0,
+        "error": 0,
+        "blocked": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "created_by": null,
+      "created_at": "2026-10-07T04:45:11.962762Z",
+      "updated_at": "2026-10-07T04:45:11.058682Z",
+      "started_at": "2026-10-07T04:45:11.058682Z",
+      "completed_at": null,
+      "cancel_reason": null,
+      "active_duration_ms": 0,
+      "waiting_duration_ms": 0,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0
+    },
+    "items": [
+      {
+        "id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+        "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+        "case_id": "f73f3f94-4187-4120-b0a5-da8fc4d1bef9",
+        "case_version_id": "48e95dea-9e4e-4883-ae26-c74e4b2b4b57",
+        "position": 1,
+        "plan_item_key": "target",
+        "dependencies": [],
+        "status": "running",
+        "waiting_reason": null,
+        "attempt_no": 1,
+        "lease_owner": "effect-evidence",
+        "lease_token": "45eb9964-1f12-4404-a1cb-2f99a1ac62ea",
+        "lease_expires_at": "2026-10-07T04:46:41.058682Z",
+        "heartbeat_at": "2026-10-07T04:45:11.058682Z",
+        "approval_id": null,
+        "tool_job_id": null,
+        "result_id": null,
+        "regression_source_result_id": null,
+        "created_at": "2026-10-07T04:45:11.962762Z",
+        "updated_at": "2026-10-07T04:45:11.058682Z",
+        "started_at": "2026-10-07T04:45:11.058682Z",
+        "completed_at": null,
+        "resource_cleanup_completed_at": null,
+        "active_started_at": "2026-10-07T04:45:11.058682Z",
+        "waiting_started_at": null,
+        "active_duration_ms": 0,
+        "waiting_duration_ms": 0,
+        "paused_duration_ms": 0,
+        "wall_clock_duration_ms": 0
+      }
+    ],
+    "attempts": [
+      {
+        "id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+        "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+        "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+        "attempt_no": 1,
+        "worker_id": "effect-evidence",
+        "lease_token": "45eb9964-1f12-4404-a1cb-2f99a1ac62ea",
+        "status": "running",
+        "claimed_at": "2026-10-07T04:45:11.058682Z",
+        "started_at": "2026-10-07T04:45:11.058682Z",
+        "heartbeat_at": "2026-10-07T04:45:11.058682Z",
+        "approval_id": null,
+        "tool_job_id": null,
+        "completed_at": null,
+        "active_started_at": "2026-10-07T04:45:11.058682Z",
+        "waiting_started_at": null,
+        "active_duration_ms": 0,
+        "waiting_duration_ms": 0,
+        "paused_duration_ms": 0,
+        "wall_clock_duration_ms": 0,
+        "checkpoint_version": 2,
+        "checkpoint_key": "agent_case_execution",
+        "checkpoint_payload": {
+          "phase": "running",
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "snapshot_id": null,
+          "context_hash": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+          "schema_version": 1,
+          "snapshot_version": null,
+          "execution_attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03"
+        },
+        "checkpoint_at": "2026-10-07T04:45:11.058682Z",
+        "recovered_from_attempt_id": null
+      }
+    ],
+    "results": []
+  },
+  "actual_MySQL_policy": {
+    "scope_key": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "action_binding_protocol": "case-action-binding-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "operation_protocol": "case-operation-v1",
+      "preparation_scope_protocol": "preparation-scope-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "effect_evidence_max_bytes": 512000
+    }
+  },
+  "actual_origin_evidence": [
+    {
+      "operation": {
+        "scope": {
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "item_key": "seed",
+          "protocol": "case-operation-v1",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "operation_key": "seed.first",
+          "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb"
+        },
+        "operation_id": "5e58fd678e197da4254e96584d982205bcce0c4d696802d9329bb55df842da59",
+        "origin_job_id": "46adcf91-d100-4e9d-8c74-6da193dc78c7",
+        "request_sha256": "9a4f4fd5ccc2e8f7dd12d6a2274d32343a65febf3b33deafb8c3b00b420ea23b"
+      },
+      "origin_job": {
+        "id": "46adcf91-d100-4e9d-8c74-6da193dc78c7",
+        "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+        "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+        "trace_id": "actual-effect-evidence",
+        "call_id": "first",
+        "tool_key": "api-test-runner",
+        "tool_name": "API Test Runner",
+        "status": "completed",
+        "attempt": 1,
+        "input_payload": {
+          "task": {
+            "path": "http://127.0.0.1:51337/orders",
+            "method": "POST",
+            "task_id": "seed.first",
+            "full_url": "http://127.0.0.1:51337/orders",
+            "timeout_seconds": 5
+          },
+          "_case_action": {
+            "item_key": "seed",
+            "operation_key": "seed.first"
+          },
+          "worker_action": "execute_task"
+        },
+        "output_payload": {
+          "ok": true,
+          "status": "completed",
+          "metrics": {},
+          "summary": "Executed API task seed.first with final status completed and HTTP 201.",
+          "trace_id": "actual-effect-evidence",
+          "artifacts": [],
+          "task_result": {
+            "name": "",
+            "path": "http://127.0.0.1:51337/orders",
+            "method": "POST",
+            "status": "completed",
+            "task_id": "seed.first",
+            "attempts": 1,
+            "auth_ref": "",
+            "full_url": "http://127.0.0.1:51337/orders",
+            "assertions": [],
+            "capability": "",
+            "depends_on": [],
+            "last_error": "",
+            "started_at": "2026-10-07T04:45:12.127770+00:00",
+            "duration_ms": 12.79,
+            "completed_at": "2026-10-07T04:45:12.141197+00:00",
+            "request_body": null,
+            "check_results": [
+              {
+                "kind": "status_code_range",
+                "name": "default_status_check",
+                "actual": 201,
+                "passed": true,
+                "expected": "2xx",
+                "description": "Default: expect 2xx response status."
+              }
+            ],
+            "request_query": {},
+            "response_body": {
+              "flag": false,
+              "count": 1,
+              "message": "订单处于待支付状态，尚未进入出库流程",
+              "nullable": null,
+              "order.id": "regression-1d64245dd3c64893a882c839de678bcb"
+            },
+            "worker_status": "",
+            "execution_mode": "read",
+            "input_bindings": [],
+            "resource_locks": [],
+            "worker_summary": "",
+            "request_headers": {},
+            "response_status": 201,
+            "timeout_seconds": 5.0,
+            "response_headers": {
+              "date": "Wed, 07 Oct 2026 04:45:12 GMT",
+              "server": "BaseHTTP/0.6 Python/3.11.16",
+              "content-type": "application/json; charset=utf-8",
+              "content-length": "173"
+            },
+            "worker_session_id": "",
+            "execution_checkpoint": {
+              "http_observation_v1": {
+                "hops": [
+                  {
+                    "method": "POST",
+                    "target": {
+                      "host": "127.0.0.1",
+                      "path": "/orders",
+                      "port": 51337,
+                      "scheme": "http",
+                      "query_omitted": false,
+                      "fragment_omitted": false,
+                      "userinfo_omitted": false
+                    },
+                    "status_code": 201
+                  }
+                ],
+                "acquisition": "network",
+                "observed_at": "2026-10-07T04:45:12.140527Z",
+                "implementation_version": "api-http-observation-v1"
+              }
+            },
+            "path_parameter_sources": {},
+            "dependency_skip_task_id": ""
+          },
+          "worker_kind": "api_test_task_execution",
+          "idempotency_key": "api-task:seed.first:POST:http://127.0.0.1:51337/orders",
+          "credential_session": null
+        },
+        "summary": "Executed API task seed.first with final status completed and HTTP 201.",
+        "error_message": null,
+        "artifact_count": 0,
+        "created_at": "2026-10-07T04:45:12.103606",
+        "updated_at": "2026-10-07T04:45:13.074669",
+        "heartbeat_at": "2026-10-07T04:45:13.028040",
+        "started_at": "2026-10-07T04:45:13.028040",
+        "completed_at": "2026-10-07T04:45:13.074669",
+        "metadata": {
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "case_operation": {
+            "scope": {
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "item_key": "seed",
+              "protocol": "case-operation-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "operation_key": "seed.first",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb"
+            },
+            "sha256": "9ea1a1b5df692a2191ab4c6320bcf082a6900cd8117ee6d35c5a852944c74805",
+            "version": "case-operation-v1",
+            "decision": "dispatched",
+            "action_sent": null,
+            "operation_id": "5e58fd678e197da4254e96584d982205bcce0c4d696802d9329bb55df842da59",
+            "origin_job_id": "46adcf91-d100-4e9d-8c74-6da193dc78c7",
+            "request_sha256": "9a4f4fd5ccc2e8f7dd12d6a2274d32343a65febf3b33deafb8c3b00b420ea23b",
+            "execution_claimed": true
+          },
+          "selected_agent_key": "",
+          "selected_model_key": "",
+          "case_action_binding": {
+            "phase": "before",
+            "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+            "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+            "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+            "item_key": "seed",
+            "protocol": "case-action-binding-v1",
+            "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+            "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+            "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+            "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+            "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+            "wire_arguments_sha256": "b5a00dccbd597e3a1019471b2f5c7fa8791a1a6f765119df420fbc72e8dee047"
+          },
+          "case_action_admission": {
+            "sha256": "c943083a3c6de5579bd8c57f3552908d9d5a9aa4cf13298945f45edc3e9aa8b8",
+            "binding": {
+              "phase": "before",
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+              "item_key": "seed",
+              "protocol": "case-action-binding-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+              "wire_arguments_sha256": "b5a00dccbd597e3a1019471b2f5c7fa8791a1a6f765119df420fbc72e8dee047"
+            },
+            "reviews": [],
+            "version": "case-action-admission-v1",
+            "decision": "no_fixed_environment",
+            "checked_at": "2026-10-07T04:45:13.032817+00:00",
+            "tool_job_id": "46adcf91-d100-4e9d-8c74-6da193dc78c7",
+            "lease_attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+            "restricted_review_ids": [],
+            "after_phase_is_cleanup_evidence": false
+          },
+          "tool_output_observation": {
+            "status": "completed",
+            "observed_at": "2026-10-07T04:45:12.143142",
+            "output_hash": "18c3f62c2ca1fba3dbdf9833d691191489dd02917c99d36c13a1fad095edcea3",
+            "schema_version": 1
+          },
+          "case_effect_evidence_intent": {
+            "sha256": "cfe3a184114baaf693b572125c911ef997d6e54b9c28ee7e5561ae2d079d366d",
+            "binding": {
+              "phase": "before",
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+              "item_key": "seed",
+              "protocol": "case-action-binding-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+              "wire_arguments_sha256": "b5a00dccbd597e3a1019471b2f5c7fa8791a1a6f765119df420fbc72e8dee047"
+            },
+            "version": "case-effect-evidence-v1",
+            "definition": {
+              "role": "produced",
+              "checks": [
+                {
+                  "expected": 201,
+                  "operator": "equals",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ],
+                  "expected_path_tokens": [
+                    "expected"
+                  ]
+                }
+              ],
+              "collection": false,
+              "source_keys": [
+                "seed"
+              ],
+              "object_path_tokens": [
+                "task_result",
+                "response_body",
+                "order.id"
+              ]
+            },
+            "max_evidence_bytes": 512000
+          }
+        }
+      },
+      "returned_evidence": {
+        "role": "produced",
+        "checks": [
+          {
+            "actual": 201,
+            "status": "passed",
+            "present": true,
+            "expected": 201,
+            "operator": "equals",
+            "output_path_tokens": [
+              "task_result",
+              "response_status"
+            ],
+            "expected_path_tokens": [
+              "expected"
+            ]
+          }
+        ],
+        "sha256": "c91e2cdd9f3695cf9c298682a75294eb698959207db8d4efc3be3dd244df0fc9",
+        "binding": {
+          "phase": "before",
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+          "item_key": "seed",
+          "protocol": "case-action-binding-v1",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+          "wire_arguments_sha256": "b5a00dccbd597e3a1019471b2f5c7fa8791a1a6f765119df420fbc72e8dee047"
+        },
+        "objects": [
+          {
+            "value": "regression-1d64245dd3c64893a882c839de678bcb",
+            "value_sha256": "0a1722b3c4882e40bfd9c9c6c51dc9f0d9d92661486fdda3e105417f032bcaa9",
+            "output_path_tokens": [
+              "task_result",
+              "response_body",
+              "order.id"
+            ]
+          }
+        ],
+        "version": "case-effect-evidence-v1",
+        "resolution": "captured",
+        "observation": {
+          "status": "completed",
+          "observed_at": "2026-10-07T04:45:12.143142",
+          "output_hash": "18c3f62c2ca1fba3dbdf9833d691191489dd02917c99d36c13a1fad095edcea3",
+          "schema_version": 1
+        },
+        "source_keys": [
+          "seed"
+        ],
+        "operation_id": "5e58fd678e197da4254e96584d982205bcce0c4d696802d9329bb55df842da59",
+        "checks_passed": true,
+        "intent_sha256": "cfe3a184114baaf693b572125c911ef997d6e54b9c28ee7e5561ae2d079d366d",
+        "origin_job_id": "46adcf91-d100-4e9d-8c74-6da193dc78c7",
+        "observed_object_count": 1
+      },
+      "evidence_state": "captured",
+      "returned_evidence_available": true
+    },
+    {
+      "operation": {
+        "scope": {
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "item_key": "cleanup",
+          "protocol": "case-operation-v1",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "operation_key": "cleanup.read",
+          "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb"
+        },
+        "operation_id": "b20c04686c6b3dfa0dfa093893a9b7cd71a53e8e92fa64ce28e3c218f8e30df7",
+        "origin_job_id": "a8cb20f6-5965-484f-84b9-7b89140a2dfe",
+        "request_sha256": "71dd8ed5b06db9ca8da36ff48d11d529b8d6da3ee6b03413d490006ab74fc45e"
+      },
+      "origin_job": {
+        "id": "a8cb20f6-5965-484f-84b9-7b89140a2dfe",
+        "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+        "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+        "trace_id": "actual-effect-evidence",
+        "call_id": "cleanup-read",
+        "tool_key": "api-test-runner",
+        "tool_name": "API Test Runner",
+        "status": "completed",
+        "attempt": 1,
+        "input_payload": {
+          "task": {
+            "path": "http://127.0.0.1:51337/orders/regression-1d64245dd3c64893a882c839de678bcb",
+            "method": "GET",
+            "task_id": "cleanup.read",
+            "full_url": "http://127.0.0.1:51337/orders/regression-1d64245dd3c64893a882c839de678bcb",
+            "timeout_seconds": 5
+          },
+          "_case_action": {
+            "item_key": "cleanup",
+            "operation_key": "cleanup.read"
+          },
+          "worker_action": "execute_task"
+        },
+        "output_payload": {
+          "ok": true,
+          "status": "completed",
+          "metrics": {},
+          "summary": "Executed API task cleanup.read with final status completed and HTTP 200.",
+          "trace_id": "actual-effect-evidence",
+          "artifacts": [],
+          "task_result": {
+            "name": "",
+            "path": "http://127.0.0.1:51337/orders/regression-1d64245dd3c64893a882c839de678bcb",
+            "method": "GET",
+            "status": "completed",
+            "task_id": "cleanup.read",
+            "attempts": 1,
+            "auth_ref": "",
+            "full_url": "http://127.0.0.1:51337/orders/regression-1d64245dd3c64893a882c839de678bcb",
+            "assertions": [],
+            "capability": "",
+            "depends_on": [],
+            "last_error": "",
+            "started_at": "2026-10-07T04:45:12.190374+00:00",
+            "duration_ms": 14.12,
+            "completed_at": "2026-10-07T04:45:12.205005+00:00",
+            "request_body": null,
+            "check_results": [
+              {
+                "kind": "status_code_range",
+                "name": "default_status_check",
+                "actual": 200,
+                "passed": true,
+                "expected": "2xx",
+                "description": "Default: expect 2xx response status."
+              }
+            ],
+            "request_query": {},
+            "response_body": {
+              "flag": false,
+              "count": 1,
+              "message": "订单处于待支付状态，尚未进入出库流程",
+              "nullable": null,
+              "order.id": "regression-1d64245dd3c64893a882c839de678bcb"
+            },
+            "worker_status": "",
+            "execution_mode": "read",
+            "input_bindings": [],
+            "resource_locks": [],
+            "worker_summary": "",
+            "request_headers": {},
+            "response_status": 200,
+            "timeout_seconds": 5.0,
+            "response_headers": {
+              "date": "Wed, 07 Oct 2026 04:45:12 GMT",
+              "server": "BaseHTTP/0.6 Python/3.11.16",
+              "content-type": "application/json; charset=utf-8",
+              "content-length": "173"
+            },
+            "worker_session_id": "",
+            "execution_checkpoint": {
+              "http_observation_v1": {
+                "hops": [
+                  {
+                    "method": "GET",
+                    "target": {
+                      "host": "127.0.0.1",
+                      "path": "/orders/regression-1d64245dd3c64893a882c839de678bcb",
+                      "port": 51337,
+                      "scheme": "http",
+                      "query_omitted": false,
+                      "fragment_omitted": false,
+                      "userinfo_omitted": false
+                    },
+                    "status_code": 200
+                  }
+                ],
+                "acquisition": "network",
+                "observed_at": "2026-10-07T04:45:12.205005Z",
+                "implementation_version": "api-http-observation-v1"
+              }
+            },
+            "path_parameter_sources": {},
+            "dependency_skip_task_id": ""
+          },
+          "worker_kind": "api_test_task_execution",
+          "idempotency_key": "api-task:cleanup.read:GET:http://127.0.0.1:51337/orders/regression-1d64245dd3c64893a882c839de678bcb",
+          "credential_session": null
+        },
+        "summary": "Executed API task cleanup.read with final status completed and HTTP 200.",
+        "error_message": null,
+        "artifact_count": 0,
+        "created_at": "2026-10-07T04:45:12.166525",
+        "updated_at": "2026-10-07T04:45:13.133671",
+        "heartbeat_at": "2026-10-07T04:45:13.085234",
+        "started_at": "2026-10-07T04:45:13.085234",
+        "completed_at": "2026-10-07T04:45:13.133671",
+        "metadata": {
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "case_operation": {
+            "scope": {
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "item_key": "cleanup",
+              "protocol": "case-operation-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "operation_key": "cleanup.read",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb"
+            },
+            "sha256": "c1d92b08f216b8c9700d5b06673d8697c0b2b19615e331ed97bf1b4306a8530a",
+            "version": "case-operation-v1",
+            "decision": "dispatched",
+            "action_sent": null,
+            "operation_id": "b20c04686c6b3dfa0dfa093893a9b7cd71a53e8e92fa64ce28e3c218f8e30df7",
+            "origin_job_id": "a8cb20f6-5965-484f-84b9-7b89140a2dfe",
+            "request_sha256": "71dd8ed5b06db9ca8da36ff48d11d529b8d6da3ee6b03413d490006ab74fc45e",
+            "execution_claimed": true
+          },
+          "selected_agent_key": "",
+          "selected_model_key": "",
+          "case_action_binding": {
+            "phase": "after",
+            "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+            "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+            "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+            "item_key": "cleanup",
+            "protocol": "case-action-binding-v1",
+            "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+            "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+            "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+            "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+            "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+            "wire_arguments_sha256": "47addd376f934a8c5a78e2dbe8583dd8e0fa01e5eecbad256d700d24dbde753b"
+          },
+          "case_action_admission": {
+            "sha256": "2b5f5579f8cdb75a9917309fa6bd2582f531c0cdd0f1331473b72562d236739e",
+            "binding": {
+              "phase": "after",
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+              "item_key": "cleanup",
+              "protocol": "case-action-binding-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+              "wire_arguments_sha256": "47addd376f934a8c5a78e2dbe8583dd8e0fa01e5eecbad256d700d24dbde753b"
+            },
+            "reviews": [],
+            "version": "case-action-admission-v1",
+            "decision": "after_not_restricted",
+            "checked_at": "2026-10-07T04:45:13.089649+00:00",
+            "tool_job_id": "a8cb20f6-5965-484f-84b9-7b89140a2dfe",
+            "lease_attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+            "restricted_review_ids": [],
+            "after_phase_is_cleanup_evidence": false
+          },
+          "tool_output_observation": {
+            "status": "completed",
+            "observed_at": "2026-10-07T04:45:12.205558",
+            "output_hash": "62ac46e89255e8964b4fbbf36c856b479e268ee67b678f0db0b058c9f2010880",
+            "schema_version": 1
+          },
+          "case_effect_evidence_intent": {
+            "sha256": "eed0dec426ce596f3a4fbadab72d13a4a0c7e1ec51a966d64d4407849996c910",
+            "binding": {
+              "phase": "after",
+              "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+              "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+              "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+              "item_key": "cleanup",
+              "protocol": "case-action-binding-v1",
+              "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+              "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+              "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+              "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+              "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+              "wire_arguments_sha256": "47addd376f934a8c5a78e2dbe8583dd8e0fa01e5eecbad256d700d24dbde753b"
+            },
+            "version": "case-effect-evidence-v1",
+            "definition": {
+              "role": "cleanup",
+              "checks": [
+                {
+                  "expected": 200,
+                  "operator": "equals",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ],
+                  "expected_path_tokens": [
+                    "expected"
+                  ]
+                },
+                {
+                  "expected": "DELETE",
+                  "operator": "equals",
+                  "output_path_tokens": [
+                    "task_result",
+                    "execution_checkpoint",
+                    "http_observation_v1",
+                    "hops",
+                    "0",
+                    "method"
+                  ],
+                  "expected_path_tokens": [
+                    "method"
+                  ]
+                }
+              ],
+              "collection": false,
+              "source_keys": [
+                "seed"
+              ],
+              "object_path_tokens": [
+                "task_result",
+                "response_body",
+                "order.id"
+              ]
+            },
+            "max_evidence_bytes": 512000
+          }
+        }
+      },
+      "returned_evidence": {
+        "role": "cleanup",
+        "checks": [
+          {
+            "actual": 200,
+            "status": "passed",
+            "present": true,
+            "expected": 200,
+            "operator": "equals",
+            "output_path_tokens": [
+              "task_result",
+              "response_status"
+            ],
+            "expected_path_tokens": [
+              "expected"
+            ]
+          },
+          {
+            "actual": "GET",
+            "status": "failed",
+            "present": true,
+            "expected": "DELETE",
+            "operator": "equals",
+            "output_path_tokens": [
+              "task_result",
+              "execution_checkpoint",
+              "http_observation_v1",
+              "hops",
+              "0",
+              "method"
+            ],
+            "expected_path_tokens": [
+              "method"
+            ]
+          }
+        ],
+        "sha256": "51d9b197afa6a5996c960991342c2deadcc043feb6422dc7d7c7b362dc31f2af",
+        "binding": {
+          "phase": "after",
+          "run_id": "6c42abec-5d45-57e3-823e-1cc4a48b7866",
+          "plan_id": "1ca94f53-0994-4eb1-a09b-abf369798c1b",
+          "turn_id": "e4f51209-4804-56e6-97d5-59766a75cf7b",
+          "item_key": "cleanup",
+          "protocol": "case-action-binding-v1",
+          "attempt_id": "ea37fdb6-6663-46d5-b84b-a1a1c75dbd03",
+          "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+          "session_id": "df4476bb-9bbf-4081-bde3-5b72e2e3b61c",
+          "run_item_id": "ecb6a158-6069-51ac-91cf-312d2b275bbf",
+          "context_sha256": "5dfe317dbb360be3440e88775cb90535a8a08aa2c7ccd70f162eee0bbcfc42eb",
+          "wire_arguments_sha256": "47addd376f934a8c5a78e2dbe8583dd8e0fa01e5eecbad256d700d24dbde753b"
+        },
+        "objects": [
+          {
+            "value": "regression-1d64245dd3c64893a882c839de678bcb",
+            "value_sha256": "0a1722b3c4882e40bfd9c9c6c51dc9f0d9d92661486fdda3e105417f032bcaa9",
+            "output_path_tokens": [
+              "task_result",
+              "response_body",
+              "order.id"
+            ]
+          }
+        ],
+        "version": "case-effect-evidence-v1",
+        "resolution": "captured",
+        "observation": {
+          "status": "completed",
+          "observed_at": "2026-10-07T04:45:12.205558",
+          "output_hash": "62ac46e89255e8964b4fbbf36c856b479e268ee67b678f0db0b058c9f2010880",
+          "schema_version": 1
+        },
+        "source_keys": [
+          "seed"
+        ],
+        "operation_id": "b20c04686c6b3dfa0dfa093893a9b7cd71a53e8e92fa64ce28e3c218f8e30df7",
+        "checks_passed": false,
+        "intent_sha256": "eed0dec426ce596f3a4fbadab72d13a4a0c7e1ec51a966d64d4407849996c910",
+        "origin_job_id": "a8cb20f6-5965-484f-84b9-7b89140a2dfe",
+        "observed_object_count": 1
+      },
+      "evidence_state": "captured",
+      "returned_evidence_available": true
+    }
+  ],
+  "actual_HTTP": [
+    [
+      "POST",
+      "/orders"
+    ],
+    [
+      "GET",
+      "/orders/regression-1d64245dd3c64893a882c839de678bcb"
+    ]
+  ],
+  "actual_created_ids": [
+    "regression-1d64245dd3c64893a882c839de678bcb"
+  ],
+  "actual_remaining_orders": {
+    "regression-1d64245dd3c64893a882c839de678bcb": {
+      "order.id": "regression-1d64245dd3c64893a882c839de678bcb",
+      "flag": false,
+      "count": 1,
+      "nullable": null,
+      "message": "订单处于待支付状态，尚未进入出库流程"
+    }
+  },
+  "original_document": {
+    "id": "217f637b-b2dc-5f4e-98a3-87ed245da1d6",
+    "catalog_revision": 0,
+    "current_version_id": "fbe0c194-c48b-47ef-87fa-74eb3483bd7d",
+    "version_number": 1,
+    "title": "effect-evidence-case",
+    "filename": "effect-evidence-case.json",
+    "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+    "legacy_project_name": null,
+    "project_name": null,
+    "project_url": null,
+    "source": "manual_upload",
+    "source_origin": null,
+    "format_label": "JSON 文档",
+    "content_type": "application/json",
+    "size_bytes": 585,
+    "storage_uri": "rustfs://qa-agent/api-docs/217f637b-b2dc-5f4e-98a3-87ed245da1d6/fbe0c194-c48b-47ef-87fa-74eb3483bd7d/original/effect-evidence-case.json",
+    "original_asset": {
+      "id": "65f6f1c4-8328-4f40-870f-a5fc490b2615",
+      "version_id": "fbe0c194-c48b-47ef-87fa-74eb3483bd7d",
+      "kind": "original",
+      "filename": "effect-evidence-case.json",
+      "content_type": "application/json",
+      "size_bytes": 585,
+      "sha256": "c88f8836e89f35ba9cffcaed06f4f02c3c3b1bf906687564febd0e630e9b3c6b",
+      "storage_uri": "rustfs://qa-agent/api-docs/217f637b-b2dc-5f4e-98a3-87ed245da1d6/fbe0c194-c48b-47ef-87fa-74eb3483bd7d/original/effect-evidence-case.json",
+      "bucket": "qa-agent",
+      "object_name": "api-docs/217f637b-b2dc-5f4e-98a3-87ed245da1d6/fbe0c194-c48b-47ef-87fa-74eb3483bd7d/original/effect-evidence-case.json",
+      "created_at": "2026-10-07T04:45:11.785046Z",
+      "reason": "upload",
+      "security_report": {}
+    },
+    "derived_assets": [],
+    "bucket": "qa-agent",
+    "object_name": "api-docs/217f637b-b2dc-5f4e-98a3-87ed245da1d6/fbe0c194-c48b-47ef-87fa-74eb3483bd7d/original/effect-evidence-case.json",
+    "endpoint_count": null,
+    "preview_available": true,
+    "preview_truncated": false,
+    "preview_text": "{\"objective\": \"完整对象证据用例\", \"期望\": {\"code\": 200}, \"steps\": [{\"method\": \"GET\", \"url\": \"http://127.0.0.1:51337/orders/{id}\"}, {\"action\": \"read complete shared-data basis\", \"order\": 2}, {\"action\": \"read complete shared-data basis\", \"order\": 3}, {\"action\": \"read complete shared-data basis\", \"order\": 4}, {\"action\": \"read complete shared-data basis\", \"order\": 5}, {\"action\": \"read complete shared-data basis\", \"order\": 6}, {\"action\": \"read complete shared-data basis\", \"order\": 7}, {\"action\": \"LAST-SHARED-STEP\", \"business\": {\"flag\": false, \"zero\": 0, \"nullable\": null}}]}",
+    "preview_error": null,
+    "uploaded_at": "2026-10-07T04:45:11.785046Z",
+    "updated_at": "2026-10-07T04:45:11.785046Z",
+    "metadata": {
+      "security": null,
+      "conversion": null,
+      "project_id": "c06d70f5-b156-47ad-a758-bd98bed4659d",
+      "size_bytes": 585,
+      "project_url": null,
+      "project_name": null,
+      "storage_backend": "rustfs",
+      "stored_filename": "effect-evidence-case.json",
+      "original_filename": "effect-evidence-case.json",
+      "original_size_bytes": 585,
+      "stored_content_type": "application/json",
+      "converted_to_markdown": false,
+      "original_content_type": "application/json"
+    }
+  },
+  "original_bytes_verified_in_RustFS": true,
+  "default_external_Agent_verified": false,
+  "effect_coverage_result_connected": false,
+  "consumption_completion_implemented": false,
+  "full_P0_P5_complete": false,
+  "automatic_result_not_yet_changed": true
+}

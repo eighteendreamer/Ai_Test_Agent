@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 
 from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
 from src.schemas.case_effects import EffectEvidenceDeclaration, EffectRelationDeclaration
+from src.schemas.case_effect_sources import SourceEffectRelationDeclaration
 
 
 class PlanningModel(BaseModel):
@@ -28,9 +29,12 @@ class CasePlanningPolicy(PlanningModel):
     effect_coverage_protocol: Literal["case-effect-coverage-v1", "case-effect-coverage-v2"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
+    effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.effect_expected_source_protocol and self.planning_stage_protocol != "case-planning-staged-evidence-v2":
+            raise ValueError("文档预期引用需要固定多效果分阶段协议")
         protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol,
             self.effect_coverage_protocol, self.planning_stage_protocol)
         if any(value and value.endswith("-v2") for value in protocols) and protocols != (
@@ -61,6 +65,8 @@ class CasePlanningPolicy(PlanningModel):
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
+        if self.effect_expected_source_protocol is None:
+            data.pop("effect_expected_source_protocol", None)
         if self.action_binding_protocol is None:
             data.pop("action_binding_protocol", None)
         if self.action_admission_protocol is None:
@@ -245,6 +251,23 @@ class PlanningDecisionV2(PlanningDecision):
     items: list[CasePlanItemV2] = Field(default_factory=list, max_length=200)
 
 
+class FormalCasePlanItemV3(FormalCasePlanItemV2):
+    effect_schema: Literal[3] = 3
+    effect_declarations: list[SourceEffectRelationDeclaration] | None = Field(default=None, min_length=1, max_length=200)
+
+
+class PreparationPlanItemV3(PreparationPlanItemV2):
+    effect_schema: Literal[3] = 3
+    effect_declarations: list[SourceEffectRelationDeclaration] | None = Field(default=None, min_length=1, max_length=200)
+
+
+CasePlanItemV3 = Annotated[FormalCasePlanItemV3 | PreparationPlanItemV3, Field(discriminator="kind")]
+
+
+class PlanningDecisionV3(PlanningDecisionV2):
+    items: list[CasePlanItemV3] = Field(default_factory=list, max_length=200)
+
+
 class CasePlanningConfig(PlanningModel):
     scope_key: str
     revision: int
@@ -280,7 +303,7 @@ class CasePlanRecord(PlanningModel):
     request: CasePlanningRequest
     status: Literal["planned", "no_match", "blocked", "retrieval_failed", "planning_failed"]
     summary: str
-    decision: PlanningDecision | PlanningDecisionV2 | None = None
+    decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | None = None
     evidence: list[PlanningEvidence] = Field(default_factory=list)
     config_snapshot: CasePlanningConfig
     model_key: str | None = None

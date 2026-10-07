@@ -29,7 +29,7 @@ def normalize_preparation_scopes(decision, protocol):
     """Only explicit declarations change dependencies; never infer from methods."""
     if protocol == "preparation-scope-v2":
         return normalize_relation_scopes(decision)
-    if any(getattr(item, "effect_schema", None) == 2 for item in decision.items):
+    if any(getattr(item, "effect_schema", None) in {2, 3} for item in decision.items):
         raise ValueError("多效果执行项需要固定v2范围协议")
     cleanups = [item for item in decision.items if item.kind == "prepare" and item.cleanup_sources is not None]
     if protocol is None:
@@ -100,7 +100,7 @@ def frozen_preparation_scopes(plan, owners):
 
 def normalize_relation_scopes(decision):
     items = {item.key: item for item in decision.items}
-    if len(items) != len(decision.items) or any(getattr(item, "effect_schema", None) != 2 for item in items.values()):
+    if len(items) != len(decision.items) or any(getattr(item, "effect_schema", None) not in {2, 3} for item in items.values()):
         raise ValueError("多效果范围缺少唯一的v2固定执行项")
     ancestors = _ancestors(items)
     candidate = {key: item.model_copy(deep=True) for key, item in items.items()}

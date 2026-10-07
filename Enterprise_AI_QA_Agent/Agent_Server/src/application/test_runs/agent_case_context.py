@@ -108,6 +108,7 @@ def build_agent_case_context(
         preparation_scope_protocol=plan.config_snapshot.policy.preparation_scope_protocol,
         preparation_scopes=deepcopy(snapshot.preparation_scopes),
         effect_evidence_protocol=plan.config_snapshot.policy.effect_evidence_protocol,
+        effect_expected_source_protocol=plan.config_snapshot.policy.effect_expected_source_protocol,
         effect_evidence_max_bytes=plan.config_snapshot.policy.effect_evidence_max_bytes,
         effect_coverage_protocol=plan.config_snapshot.policy.effect_coverage_protocol,
         effect_coverage_max_bytes=plan.config_snapshot.policy.effect_coverage_max_bytes,

@@ -1,0 +1,34 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/features/projects/CasePlanDialog.test.ts (38 tests | 1 failed) 394ms
+     × renders the actual fixed document reference with the original full case 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/projects/CasePlanDialog.test.ts > case planning > renders the actual fixed document reference with the original full case
+AssertionError: expected '用例执行规划关闭AI 根据测试目标选择项目内用例，并补足必要前置。生成计划…' to contain 'DELETE同一路径返回200及刚删除的订单JSON。'
+
+Expected: "DELETE同一路径返回200及刚删除的订单JSON。"
+Received: "用例执行规划关闭AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。以已选的 1 条用例为初始候选，必要前置仍在当前项目内查询。测试目标已有运行信息（JSON）规划设置最多查询回合每次候选数量最多执行项上下文字符上限超时秒数记录工具所属执行项执行前核对当前失效确认按逻辑操作恢复结果按准备消费范围安排清理保存实际对象证据支持正式用例内的产生与清理允许引用固定项目文档中的预期核对原对象清理覆盖分阶段生成执行计划只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。保存项目规划设置任务结果计划身份不一致规划请求编号：f715ffe9-0994-4dcb-86d5-d474aebfd663规划任务已完成 · 完成 · 已调用 1 回合另建规划任务查询规划任务项目规划任务已保存的计划编号查看已保存计划"
+
+ ❯ src/features/projects/CasePlanDialog.test.ts:361:28
+    359|     api.getCasePlan.mockResolvedValue(documentExpected.plan);
+    360|     const wrapper = setup(documentExpected.plan.project_id); await gen…
+    361|     expect(wrapper.text()).toContain("DELETE同一路径返回200及刚删除的订单JSON。");
+       |                            ^
+    362|     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
+    363|     expect(wrapper.text()).toContain("产生与清理证据声明");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 41 passed (42)
+   Start at  12:47:38
+   Duration  2.29s (transform 538ms, setup 0ms, import 1.16s, tests 521ms, environment 2.26s)
+

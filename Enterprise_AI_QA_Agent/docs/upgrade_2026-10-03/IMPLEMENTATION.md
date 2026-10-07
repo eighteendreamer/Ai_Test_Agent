@@ -3918,3 +3918,37 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 工作目录agent_web，实际npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：38通过2.13秒；npm.cmd run build包含vue-tsc/Vite：退出0，Vite9.79秒。实际v2结果摘录到tests/fixtures/case-effect-relations.actual.json并保存来源SHA，不伪造coverage版本。首次前端37通过2.47秒是新增实际覆盖测试前的批次，不累计覆盖。
 
 未执行完整浏览器App、生产历史迁移、共享消费完成、其他模式、未知只读查证、计划修订、DeepSeek人工录制或Docker性能/安全。完整P0—P5仍active。交付核对三份方案相同字节、原物理消息/固定逻辑/原件/对象SHA、原失败工件及上批原证据；.gitignore、两份已被上批覆盖的Worker汇总及其他无关文件排除提交，旧汇总原字节未恢复。
+
+
+## 2026-10-07 固定文档预期引用与原用例真实执行/恢复
+
+基线786b5b88。先重读完整目标、实际默认full-case/requirements/PG/四物理请求及Schema/阶段/引用/范围/上下文/原返回/覆盖/前端；本地Agent轨迹与协议鲁棒性、评测工程化课程作为轨迹/版本/原失败/恢复依据，设计先存P4_EXPECTED_SOURCE_RESEARCH.md。新来源协议MySQL、新Prompt v6及effect_schema=3、固定引用和证明PG、原件RustFS，无依赖/表列变化。
+
+Agent_Server实际命令由Python subprocess传参执行、stdout/stderr保存原字节，非0停止：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_expected_sources.py tests/test_case_planning_stages.py::test_saved_v3_seed_and_checkpoint_roundtrip_without_new_fields -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-expected-source-replay-fixed.xml
+# 退出0：12通过3.53秒。前轮2失败10通过5.70秒，两个测试摘录输入错误，失败原字节保留。
+$env:RUN_LIVE_CASE_EFFECT_RELATIONS='1'
+$env:QA_EFFECT_RELATIONS_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-expected-source-live-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_relations.py tests/test_case_effect_expected_sources.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-expected-source-live-final.xml
+# 退出0：26通过26.83秒，0跳过；前批25通过28.47秒尚未加入v6持久恢复。
+$env:QA_EFFECT_RELATIONS_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-expected-source-logged-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[document-internal-all]' 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[document-internal-partial]' 'tests/test_case_effect_relations.py::test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_original_seed[True]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-expected-source-logged-final.xml
+# 退出0：3通过9.85秒；仅补结构化日志后重验最新来源路径。
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:QA_EFFECT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-expected-source-regression-first\effects'
+$env:QA_STAGED_PLANNING_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-expected-source-regression-first\stages'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_effect_evidence.py tests/test_case_cleanup_coverage.py tests/test_preparation_scopes.py tests/test_case_planning_stages.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-expected-source-regression-first.xml
+# 退出0：61通过55.12秒，0跳过；日志补充不影响旧无来源协议路径。
+```
+
+声明预期XOR：自身路径或已读文档source；精确excerpt/literal和text/JSON标量解码，存身份/version/hash/位置及typed hash。原NULL/false/0保留；来源缺失/改hash/payload/歧义明确报错。原八步默认用例无新增字段，仅测试URL换为本次受控服务；全清passed且无遗留，部分blocked覆盖1/2且剩1。上传V2与关闭当前策略后旧Run仍V1；v6阶段丢回执后原deadline/seed恢复，原四回合及终态不重发。原ToolJob和PG证明存同一可靠返回，Result含原清单及覆盖。
+
+agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：首41通过2.86秒；加入真实固定计划展示后1失败41通过2.29秒，mock任务计划ID不匹配实际ID，按原事实修正夹具后42通过1.86秒。原失败保留。npm.cmd run build含vue-tsc/Vite退出0，Vite8.92秒；新增真实夹具后npm.cmd run typecheck再次退出0。源夹具从logged-final原计划摘录，保存SHA，未伪造版本或补字段。
+
+未重跑外部默认模型（阶段耗时机制未改）、独立生产API/CLI、本次完整浏览器App、共享生命周期、其他模式、未知只读查证、计划修订、生产迁移、人工录制或Docker。上次默认超时仍保留，下一步研究固定操作契约的声明后读取及恢复；整个P0—P5继续active。三份方案及原工件/SHA/固定引用/前端原计划/无关文件保护见p4-expected-source-validation.json，旧两份Worker汇总原字节未恢复。
+
+
+提交前字节核对首先停止于真实计划前端夹具：Git仅将暂存CRLF转LF，原来源未变。为该夹具增加-text后，diff检查又报告原CR；按原工件属性加入cr-at-eol识别。核对发现Git仍复用此前暂存的LF字节，随后只对该夹具执行git add --renormalize，重新核对暂存原字节、范围和diff。两项失败保留于p4-expected-source-stage-first-failure.json和stage-diff-first.log，检查失败期间未提交。

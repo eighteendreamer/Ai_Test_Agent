@@ -6,14 +6,18 @@ import logging
 from src.application.runtime.case_action_binding import _digest
 from src.application.test_runs.literal_evidence import literal_value
 from src.application.testing.verification_service import VerificationService
+from src.application.runtime.case_effect_expected_sources import document_expected_value
+from src.schemas.case_effect_sources import SOURCE_PROTOCOL
 
 PROTOCOL = "case-effect-evidence-v2"
 logger = logging.getLogger(__name__)
 
 
-def compile_relations(item, expected_source):
-    if getattr(item, "effect_schema", None) != 2:
+def compile_relations(item, expected_source, evidence=(), expected_source_protocol=None):
+    if getattr(item, "effect_schema", None) not in {2, 3}:
         raise ValueError("多效果证据需要固定v2执行项")
+    if item.effect_schema == 3 and expected_source_protocol != SOURCE_PROTOCOL:
+        raise ValueError("文档预期执行项缺少固定来源协议")
     source = item.instructions if item.kind == "prepare" else expected_source
     definitions = []
     for declaration in item.effect_declarations or []:
@@ -22,6 +26,9 @@ def compile_relations(item, expected_source):
         definition = declaration.model_dump(mode="json")
         for field in ("checks", "select_when"):
             for entry in definition[field]:
+                if entry.get("expected_source") is not None:
+                    entry["expected"], entry["expected_source_proof"] = document_expected_value(entry["expected_source"], item, evidence)
+                    continue
                 try:
                     entry["expected"] = literal_value(source, entry["expected_path_tokens"])
                 except ValueError:
@@ -30,7 +37,7 @@ def compile_relations(item, expected_source):
     return definitions
 
 
-def validate_relations(decision, evidence, coverage_protocol):
+def validate_relations(decision, evidence, coverage_protocol, expected_source_protocol=None):
     if coverage_protocol != "case-effect-coverage-v2":
         raise ValueError("多效果声明需要固定v2覆盖协议")
     items = {item.key: item for item in decision.items}
@@ -38,7 +45,7 @@ def validate_relations(decision, evidence, coverage_protocol):
     for item in items.values():
         source = next((ref.payload["content"] for ref in evidence if ref.kind == "case"
             and ref.source_id == item.case_id and ref.version == item.case_version_id), None) if item.kind != "prepare" else None
-        for definition in compile_relations(item, source):
+        for definition in compile_relations(item, source, evidence, expected_source_protocol):
             identity = (item.key, definition["declaration_id"])
             if identity in declarations:
                 raise ValueError("同一执行项的多效果声明身份重复")
@@ -59,11 +66,13 @@ def validate_relations(decision, evidence, coverage_protocol):
 
 def relation_intent(context, binding):
     step = next(step for step in context.steps if step.item.key == binding.item_key)
-    definitions = compile_relations(step.item, step.content_json)
+    definitions = compile_relations(step.item, step.content_json, context.evidence, context.effect_expected_source_protocol)
     if not definitions:
         return None
     value = {"version": PROTOCOL, "binding": binding.model_dump(mode="json"),
         "definitions": definitions, "max_evidence_bytes": context.effect_evidence_max_bytes}
+    if context.effect_expected_source_protocol:
+        value["expected_source_protocol"] = context.effect_expected_source_protocol
     return {**value, "sha256": _digest(value)}
 
 
@@ -98,11 +107,15 @@ def _observe_definition(definition, job, output):
                     for index, obj in enumerate(values)]
         except ValueError:
             resolution = "object_path_missing"
-    return {"declaration_id": definition["declaration_id"], "role": definition["role"],
+    result = {"declaration_id": definition["declaration_id"], "role": definition["role"],
         "sources": deepcopy(definition["sources"]), "resolution": resolution,
         "objects": objects, "observed_object_count": len(objects), "checks": checks,
         "checks_passed": bool(checks) and all(check["status"] == "passed" for check in checks),
         "operation_selection": {"version": "case-effect-operation-selection-v1", "status": selection}}
+    proofs = [entry["expected_source_proof"] for entry in definition["select_when"] if "expected_source_proof" in entry]
+    if proofs:
+        result["operation_selection"]["expected_source_proofs"] = deepcopy(proofs)
+    return result
 
 
 def capture_relation_return(job, output, observation):

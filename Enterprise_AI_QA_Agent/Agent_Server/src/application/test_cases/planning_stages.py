@@ -1,14 +1,18 @@
 """Small stage adapter around the existing durable planning loop."""
 from src.application.test_cases.planning_sources import json_text
-from src.schemas.case_planning import PlanningDecision, PlanningDecisionV2
+from src.schemas.case_planning import PlanningDecision, PlanningDecisionV2, PlanningDecisionV3
 from src.schemas.case_planning_stages import (
     EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint,
     PlanningStagePrompts, logical_decision_hash,
     RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
+    LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
 )
+from src.schemas.case_effect_sources import SOURCE_PROTOCOL
 
 
-def build_stage_prompts(protocol=None):
+def build_stage_prompts(protocol=None, expected_source_protocol=None):
+    if expected_source_protocol == SOURCE_PROTOCOL:
+        return build_document_source_prompts()
     if protocol == RELATION_STAGE_PROTOCOL:
         return build_relation_stage_prompts()
     common = (
@@ -46,7 +50,7 @@ def build_stage_prompts(protocol=None):
 
 
 def seal_logical_decision(decision):
-    model = PlanningDecisionV2 if isinstance(decision, PlanningDecisionV2) else PlanningDecision
+    model = PlanningDecisionV3 if isinstance(decision, PlanningDecisionV3) else PlanningDecisionV2 if isinstance(decision, PlanningDecisionV2) else PlanningDecision
     fixed = model.model_validate(decision.model_dump(mode="json"))
     return PlanningStageCheckpoint(stage="effects", logical_decision=fixed,
         logical_hash=logical_decision_hash(fixed))
@@ -81,7 +85,7 @@ def merge_evidence_decision(stages, decision, evidence):
         saved = gap.model_dump(mode="json")
         gaps.setdefault(json_text(saved), saved)
     value["unresolved"] = list(gaps.values())
-    model = PlanningDecisionV2 if isinstance(stages.logical_decision, PlanningDecisionV2) else PlanningDecision
+    model = PlanningDecisionV3 if isinstance(stages.logical_decision, PlanningDecisionV3) else PlanningDecisionV2 if isinstance(stages.logical_decision, PlanningDecisionV2) else PlanningDecision
     return model.model_validate(value)
 
 
@@ -118,4 +122,18 @@ def build_relation_stage_prompts():
         "重复真实调用分别保存对象，不以最后输出代替所有对象；声明不证明实际成功，未知写unresolved。"
         "不能删逻辑缺口或清理关系。完成finish，否则query固定技术依据。\nJSON Schema: "
     ) + json_text(EvidencePlanningDecisionV2.model_json_schema())
+    return PlanningStagePrompts(protocol=RELATION_STAGE_PROTOCOL, logic=logic, effects=effects)
+
+
+def build_document_source_prompts():
+    original = build_relation_stage_prompts()
+    logic = original.logic.replace(json_text(LogicalPlanningDecisionV2.model_json_schema()),
+        json_text(LogicalPlanningDecisionV3.model_json_schema()))
+    effects = original.effects.replace(
+        "select_when.expected_path_tokens和checks.expected_path_tokens均来自该项完整固定content或prepare.instructions，不能写猜测常量。",
+        "预期可用自身expected_path_tokens，或expected_source引用该项已读document的evidence_id/content_hash/payload_path_tokens，二者选一。"
+        "文档结构值直接取路径；文本引用需excerpt精确原文、excerpt内唯一literal和text/json编码，不改写原文。"
+        "JSON只解码数字、布尔、null或字符串标量；text保留原字符。原文来源必须加入本项evidence_ids；不存在/歧义写缺口，不能补造用例字段。")
+    effects = effects.replace(json_text(EvidencePlanningDecisionV2.model_json_schema()),
+        json_text(EvidencePlanningDecisionV3.model_json_schema()))
     return PlanningStagePrompts(protocol=RELATION_STAGE_PROTOCOL, logic=logic, effects=effects)

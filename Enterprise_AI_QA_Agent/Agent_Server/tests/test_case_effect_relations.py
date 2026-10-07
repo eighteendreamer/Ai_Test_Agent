@@ -24,6 +24,7 @@ from src.schemas.run_management import RunClaimRequest, RunItemLeaseRequest
 from src.schemas.tool_runtime import ModelToolCall
 from src.schemas.tool_job import ToolJobRecord
 from src.application.runtime.case_effect_evidence import capture_returned_evidence
+from src.schemas.api_docs import ApiDocVersionUploadRequest
 
 ROOT = Path(__file__).resolve().parents[2]
 LIVE = pytest.mark.skipif(os.getenv("RUN_LIVE_CASE_EFFECT_RELATIONS") != "1", reason="actual isolated MySQL/PG/RustFS/native HTTP")
@@ -44,6 +45,18 @@ def declaration(role, source_key, formal):
             "expected_path_tokens": prefix + ["created_status" if role == "produced" else "deleted_status"], "operator": "equals"}],
         "select_when": [{"input_path_tokens": ["task", "method"],
             "expected_path_tokens": prefix + ["created_method" if role == "produced" else "deleted_method"]}]}
+
+
+def document_declaration(role, source_key, source):
+    entry = declaration(role, source_key, True)
+    created = role == "produced"
+    excerpt = next(line for line in source["payload"]["content"].splitlines() if line.startswith("POST")) if created else "DELETE同一路径返回200及刚删除的订单JSON。"
+    ref = {"evidence_id": source["id"], "content_hash": source["content_hash"], "payload_path_tokens": ["content"], "excerpt": excerpt}
+    entry["checks"][0].pop("expected_path_tokens")
+    entry["checks"][0]["expected_source"] = {**ref, "literal": "201" if created else "200", "encoding": "json"}
+    entry["select_when"][0].pop("expected_path_tokens")
+    entry["select_when"][0]["expected_source"] = {**ref, "literal": "POST" if created else "DELETE", "encoding": "text"}
+    return entry
 
 
 def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_formal_cleanup():
@@ -68,22 +81,34 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
+    scenario_key = scenario
+    document_expected = scenario.startswith("document-")
+    scenario = scenario.removeprefix("document-")
     business = regression_business_http
     async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
         env, _, _, _, runs, _, adapter, _, _, services = values
         base = services["environment"]
         project = await base.projects.get(env[0].project_id)
         selected_policy = policy(effect_coverage_max_bytes=1) if scenario == "coverage-budget" else policy()
+        if document_expected:
+            selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1")
         config = await base.service.save_policy(project.id, selected_policy)
         old = ROOT/"docs/upgrade_2026-10-03/p4-shared-effect-wire/first-consumer-only-left-passed-finished/shared-left.json"
         content = json.loads(old.read_bytes())
         content["objective"] = "完整正式用例的创建查询清理"
         content["steps"][0]["url"] = business[0][0] + "/orders/{id}"
         content["证据契约"] = {"created_method": "POST", "deleted_method": "DELETE", "created_status": 201, "deleted_status": 200}
+        if document_expected:
+            content = json.loads((ROOT/"docs/upgrade_2026-10-03/p4-formal-effects-default-first/full-case.json").read_bytes())
+            content["operations"]["query"] = business[0][0]+"/orders/{id}"
         source_file = tmp_path/"formal-mixed-case.json"
         source_file.write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
+        if document_expected:
+            source_file = tmp_path/"requirements.md"
+            original_doc = (ROOT/"docs/upgrade_2026-10-03/p4-formal-effects-default-first/requirements.md").read_text(encoding="utf-8")
+            source_file.write_text(original_doc.replace("http://127.0.0.1:51735", business[0][0]), encoding="utf-8")
         document = await base.docs.upload_document(project_id=project.id, filename=source_file.name,
             content_base64=base64.b64encode(source_file.read_bytes()).decode())
         assert (await base.objects.read_object_uri(document.storage_uri))["content"] == source_file.read_bytes()
@@ -96,7 +121,7 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
                 if not any(e["kind"] == "document" for e in context["evidence"]):
                     return {"action": "query", "summary": "读取实际上传原件",
                         "queries": [{"kind": "document", "source_id": document.id}]}
-                target = item(context, "formal-mixed", key="target", effect_schema=2, cleanup_sources=[producer_key],
+                target = item(context, "formal-mixed", key="target", effect_schema=3 if document_expected else 2, cleanup_sources=[producer_key],
                     depends_on=["seed"] if external else [])
                 if not external:
                     return finish(target)
@@ -110,6 +135,11 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             bindings = [{"item_key": "target", "evidence_ids": [contract["id"]],
                 "effect_declarations": ([declaration("produced", producer_key, True)] if not external else [])
                     + [declaration("cleanup", producer_key, True)]}]
+            if document_expected:
+                source = next(e for e in context["evidence"] if e["kind"] == "document")
+                bindings[0]["evidence_ids"].append(source["id"])
+                bindings[0]["effect_declarations"] = [document_declaration(entry["role"], producer_key, source)
+                    for entry in bindings[0]["effect_declarations"]]
             if external:
                 bindings.append({"item_key": "seed", "evidence_ids": [contract["id"]],
                     "effect_declarations": [declaration("produced", producer_key, False)]})
@@ -119,8 +149,14 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == "case-planning-staged-evidence-v5"
+        assert plan.prompt_version == ("case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
         assert len(plan.rounds) == 4
+        later_document = None
+        if document_expected:
+            # A new upload/config must not replace already-frozen expectations.
+            later_document = await base.docs.upload_version(document.id, ApiDocVersionUploadRequest(
+                filename="changed.md", content_base64=base64.b64encode(b"# changed\nDELETE now returns 409").decode(),
+                project_id=project.id, expected_parent_version_id=document.current_version_id, request_id="change-after-plan"))
         detail = await services["creator"].create(project.id, plan.id,
             CasePlanRunRequest(creation_key="mixed-effects", mode_key="api_testing"))
         claim = (await runs.claim(detail.run.id, RunClaimRequest(worker_id="mixed-effects", limit=1))).claims[0]
@@ -131,6 +167,9 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         await adapter()._save(running, attempt, checkpoint.model_copy(update={"phase": "running"}))
         assert AgentCaseExecutionContext.model_validate(context.execution_json()).execution_json() == context.execution_json()
         assert len(next(step for step in context.steps if step.item.kind == "target").content_json["steps"]) == 8
+        if document_expected:
+            assert "证据契约" not in next(step for step in context.steps if step.item.kind == "target").content_json
+            assert next(e for e in context.evidence if e.kind == "document").version == document.current_version_id
         execution = ToolExecutionContext(session_id=checkpoint.session_id, turn_id=checkpoint.turn_id,
             trace_id="mixed-effects", user_message=context.objective, normalized_input=context.objective,
             context_bundle={**context.runtime_context(), "case_execution_managed": True, "attempt_id": checkpoint.execution_attempt_id})
@@ -195,6 +234,9 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         assert len([event for event in events if any(entry["role"] == "produced" and entry["resolution"] == "captured"
             for entry in event["declarations"])]) == 2
         assert all(event["sha256"] == _digest({k:v for k,v in event.items() if k != "sha256"}) for event in events)
+        if document_expected:
+            proofs = [check["expected_source_proof"] for event in events for entry in event["declarations"] for check in entry["checks"]]
+            assert proofs and all(proof["version"] == document.current_version_id for proof in proofs)
         # Current editable policy changes cannot alter the frozen v2 execution.
         await base.service.save_policy(project.id, POLICY)
         assessment = AgentCaseAssessmentService(env[1])
@@ -221,16 +263,17 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             assert coverage["unknown"]
             assert any(row["returned_evidence"] is None for row in inventory)
         assert not (await runs.claim(detail.run.id, RunClaimRequest(worker_id="terminal", limit=1))).claims
-        artifact_dir = Path(os.environ["QA_EFFECT_RELATIONS_DIR"])/scenario
+        artifact_dir = Path(os.environ["QA_EFFECT_RELATIONS_DIR"])/scenario_key
         artifact_dir.mkdir(parents=True, exist_ok=False)
         artifact_dir.joinpath(source_file.name).write_bytes(source_file.read_bytes())
-        artifact_dir.joinpath("verification.json").write_text(json.dumps({"baseline": "d81b25e8", "scenario": scenario,
+        artifact_dir.joinpath("verification.json").write_text(json.dumps({"baseline": "786b5b88" if document_expected else "d81b25e8", "scenario": scenario_key,
             "actual_config": config.model_dump(mode="json"), "frozen_plan": plan.model_dump(mode="json"),
             "fixed_context": context.execution_json(), "actual_inventory": inventory,
             "actual_origin_evidence": await env[1]._store.effect_evidence.list_run_evidence(context.project_id, context.run_id, context.plan_id),
             "actual_formal_result": result.model_dump(mode="json"), "actual_HTTP": business[0][1],
             "actual_denied_retries": denied_retries, "actual_created_ids": business[2], "actual_remaining_orders": business[1], "original": document.model_dump(mode="json"),
             "RustFS_original_verified": True, "default_autonomous_model_verified": False,
+            "later_document": later_document.model_dump(mode="json") if later_document else None,
             "consumption_completion_verified": False, "full_P0_P5_complete": False}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -265,7 +308,8 @@ def test_actual_original_return_retains_typed_selection_conflicts_and_limits(fau
 
 @pytest.mark.asyncio
 @LIVE
-async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_original_seed(tmp_path, monkeypatch):
+@pytest.mark.parametrize("document_expected", [False, True])
+async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_original_seed(tmp_path, monkeypatch, document_expected):
     from test_case_planning_tasks import tasks_environment, delivery, expire
     from src.application.test_cases.planning_workflow import PlanningCheckpointUnavailable
     from src.schemas.case_planning_task import CasePlanningTaskRequest
@@ -279,11 +323,14 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
         project = await env.projects.create(ProjectCreateRequest(project_key="formal-v2-recovery", name="正式关系恢复"))
         original_file = ROOT/"docs/upgrade_2026-10-03/p4-formal-effects-live-final/internal-all/formal-mixed-case.json"
         content = json.loads(original_file.read_bytes())
+        if document_expected:
+            content = json.loads((ROOT/"docs/upgrade_2026-10-03/p4-formal-effects-default-first/full-case.json").read_bytes())
+            original_file = ROOT/"docs/upgrade_2026-10-03/p4-formal-effects-default-first/requirements.md"
         case = await active_case(env, project, "durable-formal", content)
         document = await env.docs.upload_document(project_id=project.id, filename=original_file.name,
             content_base64=base64.b64encode(original_file.read_bytes()).decode())
         assert (await env.objects.read_object_uri(document.storage_uri))["content"] == original_file.read_bytes()
-        await env.service.save_policy(project.id, policy())
+        await env.service.save_policy(project.id, policy(effect_expected_source_protocol="case-effect-document-expected-v1") if document_expected else policy())
         task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key="formal-v2",
             objective=content["objective"], candidate_case_ids=[case.case.id]))
 
@@ -291,13 +338,19 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
             if context["planning_stage"] == "logic":
                 if not any(e["kind"] == "document" for e in context["evidence"]):
                     return {"action": "query", "summary": "读取原件", "queries": [{"kind": "document", "source_id": document.id}]}
-                return finish(item(context, "durable-formal", key="target", effect_schema=2, cleanup_sources=["target"]))
+                return finish(item(context, "durable-formal", key="target", effect_schema=3 if document_expected else 2, cleanup_sources=["target"]))
             if not any(e["kind"] == "tool" for e in context["evidence"]):
                 return {"action": "query", "summary": "原接口依据",
                     "queries": [{"kind": "tool", "source_id": "api-test-runner", "operation": "execute_task"}]}
             tool = next(e for e in context["evidence"] if e["kind"] == "tool")
-            return {"action": "finish", "summary": "固定关系的声明", "bindings": [{"item_key": "target", "evidence_ids": [tool["id"]],
-                "effect_declarations": [declaration("produced", "target", True), declaration("cleanup", "target", True)]}]}
+            definitions = [declaration("produced", "target", True), declaration("cleanup", "target", True)]
+            refs = [tool["id"]]
+            if document_expected:
+                source = next(e for e in context["evidence"] if e["kind"] == "document")
+                refs.append(source["id"])
+                definitions = [document_declaration(role, "target", source) for role in ("produced", "cleanup")]
+            return {"action": "finish", "summary": "固定关系的声明", "bindings": [{"item_key": "target", "evidence_ids": refs,
+                "effect_declarations": definitions}]}
 
         env.model.replies = [respond]*4
         original = env.jobs.save_checkpoint
@@ -318,6 +371,10 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
             await PlanningTaskHandler(env.service, env.jobs, worker_id="before-loss")(delivery(task))
         before = await env.jobs.get(project.id, task.id)
         assert before.plan_id is None and len(env.model.requests) == 2
+        if document_expected:
+            await env.docs.upload_version(document.id, ApiDocVersionUploadRequest(filename="changed.md",
+                content_base64=base64.b64encode(b"DELETE now returns 409").decode(), project_id=project.id,
+                expected_parent_version_id=document.current_version_id, request_id="change-before-recovery"))
         await env.service.save_policy(project.id, POLICY)
         monkeypatch.setattr(env.jobs, "save_checkpoint", original)
 
@@ -333,7 +390,7 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
         assert terminal.status == "completed" and terminal.attempt_no == 2 and terminal.deadline_at == before.deadline_at
         assert len(env.model.requests) == 4
         plan = await env.service.get(project.id, terminal.plan_id)
-        assert plan.prompt_version == "case-planning-staged-evidence-v5" and plan.status == "planned"
+        assert plan.prompt_version == ("case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5") and plan.status == "planned"
         assert plan.decision.items[0].cleanup_sources == ["target"] and plan.decision.items[0].depends_on == []
         await PlanningTaskHandler(env.service, restored, worker_id="terminal")(delivery(task))
         assert len(env.model.requests) == 4
@@ -341,9 +398,9 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
             cur.execute(f"SELECT seed,checkpoint,status,attempt_no,deadline_at FROM {restored._table} WHERE id=%s", (task.id,))
             actual = dict(cur.fetchone())
         actual["deadline_at"] = actual["deadline_at"].isoformat()
-        artifact = Path(os.environ["QA_EFFECT_RELATIONS_DIR"])/"v2-durable-recovery"
+        artifact = Path(os.environ["QA_EFFECT_RELATIONS_DIR"])/("document-durable-recovery" if document_expected else "v2-durable-recovery")
         artifact.mkdir(parents=True, exist_ok=False)
-        artifact.joinpath("formal-mixed-case.json").write_bytes(original_file.read_bytes())
+        artifact.joinpath(original_file.name).write_bytes(original_file.read_bytes())
         artifact.joinpath("verification.json").write_text(json.dumps({"actual_PG": actual,
             "actual_current_MySQL": (await env.service.get_policy(project.id)).model_dump(mode="json"),
             "actual_model_requests": [r.model_dump(mode="json") for r in env.model.requests],

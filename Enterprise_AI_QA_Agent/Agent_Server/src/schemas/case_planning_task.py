@@ -7,10 +7,10 @@ from typing import Any, Literal
 from pydantic import Field, model_serializer
 
 from src.schemas.case_planning import (
-    CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningDecisionV2, PlanningModel,
+    CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningDecisionV2, PlanningDecisionV3, PlanningModel,
 )
 from src.schemas.model_config import model_invocation_parameters as planning_model_parameters
-from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, PlanningStageCheckpoint, PlanningStagePrompts
+from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, EvidencePlanningDecisionV3, PlanningStageCheckpoint, PlanningStagePrompts
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
@@ -56,7 +56,7 @@ class PlanningTaskCheckpoint(PlanningModel):
     validation_feedback: dict[str, Any] | None = None
     next_round: int = Field(default=0, ge=0)
     query_index: int = Field(default=0, ge=0)
-    pending_decision: PlanningDecision | PlanningDecisionV2 | EvidencePlanningDecision | EvidencePlanningDecisionV2 | None = None
+    pending_decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | EvidencePlanningDecision | EvidencePlanningDecisionV2 | EvidencePlanningDecisionV3 | None = None
     response_text: str | None = None
     response_metadata: dict[str, Any] = Field(default_factory=dict)
     response_has_tools: bool = False

@@ -1989,6 +1989,7 @@ export interface CasePlanningPolicy {
   effect_coverage_protocol?: "case-effect-coverage-v1" | "case-effect-coverage-v2" | null;
   effect_coverage_max_bytes?: number | null;
   planning_stage_protocol?: "case-planning-staged-evidence-v1" | "case-planning-staged-evidence-v2" | null;
+  effect_expected_source_protocol?: "case-effect-document-expected-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;
@@ -2046,12 +2047,20 @@ export interface CasePlanInputBinding {
   required: boolean;
 }
 
+export interface CaseEffectExpectedSource {
+  evidence_id: string; content_hash: string; payload_path_tokens: string[];
+  excerpt?: string | null; literal?: string | null; encoding?: "text" | "json" | null;
+}
+
 export interface CasePlanItemBase {
-  effect_schema?: 2;
+  effect_schema?: 2 | 3;
   cleanup_sources?: string[] | null;
-  effect_declarations?: (NonNullable<CasePlanItemBase["effect_evidence"]> & {
-    declaration_id: string; select_when: { input_path_tokens: string[]; expected_path_tokens: string[] }[];
-    sources: { item_key: string; declaration_id: string }[] })[] | null;
+  effect_declarations?: {
+    declaration_id: string; role: "produced" | "cleanup"; object_path_tokens: string[]; collection: boolean;
+    checks: { output_path_tokens: string[]; expected_path_tokens?: string[] | null; expected_source?: CaseEffectExpectedSource | null;
+      operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte" }[];
+    select_when: { input_path_tokens: string[]; expected_path_tokens?: string[] | null; expected_source?: CaseEffectExpectedSource | null }[];
+    sources: { item_key: string; declaration_id: string }[] }[] | null;
   effect_evidence?: { role: "produced" | "cleanup"; object_path_tokens: string[]; collection: boolean;
     checks: { output_path_tokens: string[]; expected_path_tokens: string[];
       operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte" }[];
