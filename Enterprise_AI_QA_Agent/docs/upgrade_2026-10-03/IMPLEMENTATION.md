@@ -3952,3 +3952,31 @@ agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/featu
 
 
 提交前字节核对首先停止于真实计划前端夹具：Git仅将暂存CRLF转LF，原来源未变。为该夹具增加-text后，diff检查又报告原CR；按原工件属性加入cr-at-eol识别。核对发现Git仍复用此前暂存的LF字节，随后只对该夹具执行git add --renormalize，重新核对暂存原字节、范围和diff。两项失败保留于p4-expected-source-stage-first-failure.json和stage-diff-first.log，检查失败期间未提交。
+
+## 2026-10-07 明确操作固定契约读取与实际默认引用失败
+
+基线e4d268e8，深度研究及实际依据见P4_DECLARED_OPERATION_PREFETCH_RESEARCH.md，完整结果/失败和限制见PLAN6.61。新operation_prefetch_protocol存MySQL；Prompt v7与原query队列/逻辑/hash/依据存PG，原件RustFS；保持完整JSON及原恢复，系统查询不计模型轮次，八条分批保留全部明确声明。
+
+命令由本地Python subprocess数组运行，cwd=Agent_Server，stdout/stderr原字节保存；新探针还在打印前保存.command.json与实际退出码：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_CASE_EFFECT_RELATIONS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_OPERATION_PREFETCH_DIR='<独立本批目录>'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_operation_prefetch.py -q --tb=short --junitxml=<本批.xml>
+# first10通过11.15秒；分批边界最终11通过10.10秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning_stages.py tests/test_planning_tool_operations.py tests/test_case_effect_expected_sources.py tests/test_case_effect_relations.py -q --tb=short --junitxml=<本批.xml>
+# 48通过34.84秒；分批后旧stage/operations22通过9.61秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[prefetch-document-external-all]' -q --tb=short --junitxml=<本批.xml>
+# 原失败1项6.73秒，prepare.expected夹具遗漏；补齐原文说明后1通过6.27秒
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_OPERATION_PREFETCH='1'
+$env:QA_DEFAULT_COVERAGE_DIR='<独立默认实测目录>'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q --tb=short --junitxml=<本批.xml>
+# 1失败213.76秒；原180秒规划时限，5逻辑/物理调用，3次文档ID引用错误；0运行/业务HTTP
+```
+
+此前回归/业务模块需独立设置QA_STAGED_PLANNING_DIR、QA_EFFECT_RELATIONS_DIR及QA_EFFECT_EVIDENCE_DIR，均本批目录；不能让未设置导出位置的夹具覆盖历史汇总。agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：45通过2.43秒。npm.cmd run build首次日志完整但父打印GBK异常，修正UTF8/先保存退出后再次执行，实际退出0，Vite7.51秒；源码未因该探针错误更改。首轮原日志保留。
+
+受控实际业务三轮规划后创建两条、查询、清理全部，原完整JSON无新增字段，Result覆盖passed/0剩余，V2上传及政策变更仍按V1执行；队列和读取提交丢回执两种实际PG恢复保持原截止与三模型轮次。默认新试验没有进入该阶段，引用ID16位尾摘要与64位content_hash混用连续失败，下一步研究一致的版本化引用表达，禁止模糊匹配或追加提示绕过。完整范围未缩减，未验事项见PLAN6.61。未推送/建PR，无新增表列或依赖；旧汇总未恢复限制继续保留。

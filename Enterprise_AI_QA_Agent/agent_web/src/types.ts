@@ -1990,6 +1990,7 @@ export interface CasePlanningPolicy {
   effect_coverage_max_bytes?: number | null;
   planning_stage_protocol?: "case-planning-staged-evidence-v1" | "case-planning-staged-evidence-v2" | null;
   effect_expected_source_protocol?: "case-effect-document-expected-v1" | null;
+  operation_prefetch_protocol?: "case-planning-declared-operation-prefetch-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;

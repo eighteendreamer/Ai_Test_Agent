@@ -81,9 +81,11 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
     scenario_key = scenario
+    prefetch = scenario.startswith("prefetch-")
+    scenario = scenario.removeprefix("prefetch-")
     document_expected = scenario.startswith("document-")
     scenario = scenario.removeprefix("document-")
     business = regression_business_http
@@ -94,6 +96,9 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         selected_policy = policy(effect_coverage_max_bytes=1) if scenario == "coverage-budget" else policy()
         if document_expected:
             selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1")
+        if prefetch:
+            selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
+                operation_prefetch_protocol="case-planning-declared-operation-prefetch-v1")
         config = await base.service.save_policy(project.id, selected_policy)
         old = ROOT/"docs/upgrade_2026-10-03/p4-shared-effect-wire/first-consumer-only-left-passed-finished/shared-left.json"
         content = json.loads(old.read_bytes())
@@ -125,9 +130,13 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
                     depends_on=["seed"] if external else [])
                 if not external:
                     return finish(target)
-                return finish({"key": "seed", "kind": "prepare", "effect_schema": 2,
+                if prefetch:
+                    assert "返回201" in next(e["payload"]["content"] for e in context["evidence"] if e["kind"] == "document")
+                instructions = {"tool": "api-test-runner", "operation": "execute_task", "url": business[0][0]+"/orders", "expected": 201} if prefetch else {
+                    **content["证据契约"], "url": business[0][0]+"/orders", "expected": 201}
+                return finish({"key": "seed", "kind": "prepare", "effect_schema": 3 if document_expected else 2,
                     "reason": "原文提供创建依据", "evidence_ids": target["evidence_ids"],
-                    "instructions": {**content["证据契约"], "url": business[0][0]+"/orders", "expected": 201}}, target)
+                    "instructions": instructions}, target)
             if not any(e["kind"] == "tool" for e in context["evidence"]):
                 return {"action": "query", "summary": "读取实际原生工具契约",
                     "queries": [{"kind": "tool", "source_id": "api-test-runner", "operation": "execute_task"}]}
@@ -143,14 +152,17 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             if external:
                 bindings.append({"item_key": "seed", "evidence_ids": [contract["id"]],
                     "effect_declarations": [declaration("produced", producer_key, False)]})
+                if document_expected:
+                    bindings[-1]["evidence_ids"].append(source["id"])
+                    bindings[-1]["effect_declarations"] = [document_declaration("produced", producer_key, source)]
             return {"action": "finish", "summary": "固定逻辑的多效果证据", "bindings": bindings}
 
         base.service._models = SharedPlanningModel(respond, respond, respond, respond)
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == ("case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
-        assert len(plan.rounds) == 4
+        assert plan.prompt_version == ("case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        assert len(plan.rounds) == (3 if prefetch else 4)
         later_document = None
         if document_expected:
             # A new upload/config must not replace already-frozen expectations.

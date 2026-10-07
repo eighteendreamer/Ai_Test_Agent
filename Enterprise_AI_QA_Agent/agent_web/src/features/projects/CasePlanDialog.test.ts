@@ -366,6 +366,19 @@ describe("case planning", () => {
     expect(wrapper.text()).not.toContain("证据契约");
     wrapper.unmount();
   });
+  it.each(["document-expected", "formal-effects", "operation-recovery"])("saves declared operation reading and clears it with %s", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="operation-prefetch"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      operation_prefetch_protocol: "case-planning-declared-operation-prefetch-v1",
+      effect_expected_source_protocol: "case-effect-document-expected-v1", timeout_seconds: 180,
+    });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
   it.each(["action-binding", "action-admission", "operation-recovery", "preparation-scopes", "effect-evidence", "effect-coverage", "planning-stages"])("removes mixed-effect policy consistently when %s is disabled", async (name) => {
     const wrapper = setup(); await flushPromises();
     await wrapper.get('[data-testid="formal-effects"]').setValue(true);

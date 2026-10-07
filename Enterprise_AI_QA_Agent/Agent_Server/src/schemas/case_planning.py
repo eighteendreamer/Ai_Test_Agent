@@ -30,9 +30,12 @@ class CasePlanningPolicy(PlanningModel):
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
+    operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.operation_prefetch_protocol and not self.effect_expected_source_protocol:
+            raise ValueError("明确操作预读需要固定文档预期及分阶段协议")
         if self.effect_expected_source_protocol and self.planning_stage_protocol != "case-planning-staged-evidence-v2":
             raise ValueError("文档预期引用需要固定多效果分阶段协议")
         protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol,
@@ -67,6 +70,8 @@ class CasePlanningPolicy(PlanningModel):
         data = handler(self)
         if self.effect_expected_source_protocol is None:
             data.pop("effect_expected_source_protocol", None)
+        if self.operation_prefetch_protocol is None:
+            data.pop("operation_prefetch_protocol", None)
         if self.action_binding_protocol is None:
             data.pop("action_binding_protocol", None)
         if self.action_admission_protocol is None:

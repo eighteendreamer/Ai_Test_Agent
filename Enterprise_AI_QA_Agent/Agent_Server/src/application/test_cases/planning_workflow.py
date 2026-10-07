@@ -15,6 +15,8 @@ from src.schemas.case_planning_stages import (
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
 )
 from src.schemas.case_effect_sources import SOURCE_PROMPT_VERSION
+from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROMPT_VERSION, PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries
+from src.schemas.case_planning import PlanningQuery
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
@@ -61,7 +63,7 @@ class CasePlanningWorkflow:
 
         try:
             if seed.stage_prompts is not None:
-                expected_version = SOURCE_PROMPT_VERSION if policy.effect_expected_source_protocol else RELATION_PROMPT_VERSION if seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
+                expected_version = PREFETCH_PROMPT_VERSION if policy.operation_prefetch_protocol else SOURCE_PROMPT_VERSION if policy.effect_expected_source_protocol else RELATION_PROMPT_VERSION if seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
                 if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
@@ -112,14 +114,15 @@ class CasePlanningWorkflow:
                             prompt = getattr(seed.stage_prompts, stage)
                             if stage == "logic":
                                 context["available_tools"] = [{"key": key, "name": value["name"]}
+                                    | ({"operations": list((seed.tool_operations or {}).get(key, {}))} if policy.operation_prefetch_protocol else {})
                                     for key, value in (seed.tool_contracts or {}).items()]
                             else:
                                 context["logical_plan"] = checkpoint.stages.logical_decision.model_dump(mode="json")
                                 context["logical_hash"] = checkpoint.stages.logical_hash
                         if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
-                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION},
-                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION} else None)
+                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION},
+                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION} else None)
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
@@ -248,6 +251,17 @@ class CasePlanningWorkflow:
                                 if any(item.kind == "target" for item in decision.items):
                                     checkpoint.query_results = []
                                     checkpoint.phase = "ready"
+                                    if policy.operation_prefetch_protocol:
+                                        queries, origins = declared_operation_queries(checkpoint.stages.logical_decision)
+                                        if queries:
+                                            checkpoint.pending_decision = EvidencePlanningDecisionV3(action="query", summary="读取固定逻辑明确选择的操作契约", queries=queries[:PREFETCH_QUERY_BATCH_SIZE])
+                                            checkpoint.query_index = 0
+                                            checkpoint.phase = "query"
+                                            round_record["operation_prefetch"] = {"protocol": policy.operation_prefetch_protocol,
+                                                "logical_hash": checkpoint.stages.logical_hash, "declarations": origins,
+                                                "next_offset": min(len(queries), PREFETCH_QUERY_BATCH_SIZE)}
+                                            logger.info("case_planning_operation_prefetch_queued", extra={"project_id": record.project_id,
+                                                "plan_id": record.id, "logical_hash": checkpoint.stages.logical_hash, "query_count": len(queries)})
                                     await save("逻辑计划已固定，等待执行证据声明")
                                     logger.info("case_planning_logic_frozen", extra={"project_id": record.project_id,
                                         "plan_id": record.id, "logical_hash": checkpoint.stages.logical_hash})
@@ -273,11 +287,14 @@ class CasePlanningWorkflow:
                         while checkpoint.query_index < len(queries):
                             query = queries[checkpoint.query_index]
                             result = {"query": query.model_dump(mode="json")}
+                            if (policy.operation_prefetch_protocol and checkpoint.stages.stage == "effects"
+                                and record.rounds[-1].get("planning_stage") == "logic"):
+                                result.update(origin=policy.operation_prefetch_protocol, logical_hash=checkpoint.stages.logical_hash)
                             try:
                                 if query.kind in {"tool", "tools"}:
                                     evidence, metadata = query_tool_contracts(seed.tool_contracts, query, policy.max_candidates,
-                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION},
-                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION} else None)
+                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION},
+                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION} else None)
                                     logger.info("case_planning_tool_query_resolved", extra={"plan_id": record.id,
                                         "round": checkpoint.next_round, "kind": query.kind,
                                         "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version,
@@ -304,6 +321,19 @@ class CasePlanningWorkflow:
                             checkpoint.query_index += 1
                             record.rounds[-1]["query_results"] = list(checkpoint.query_results)
                             await save("项目资料查询结果已保存")
+                        prefetch = record.rounds[-1].get("operation_prefetch") if (
+                            policy.operation_prefetch_protocol and checkpoint.stages.stage == "effects"
+                            and record.rounds[-1].get("planning_stage") == "logic") else None
+                        if prefetch is not None:
+                            offset = prefetch.get("next_offset", len(prefetch["declarations"]))
+                            batch = prefetch["declarations"][offset:offset + PREFETCH_QUERY_BATCH_SIZE]
+                            if batch:
+                                checkpoint.pending_decision = EvidencePlanningDecisionV3(action="query", summary="继续读取固定逻辑明确选择的操作契约",
+                                    queries=[PlanningQuery.model_validate(entry["query"]) for entry in batch])
+                                prefetch["next_offset"] = offset + len(batch)
+                                checkpoint.query_index = 0
+                                await save("下一批明确操作查询已保存")
+                                continue
                         checkpoint.pending_decision = None
                         checkpoint.phase = "ready"
                         await save("本轮依据查询完成")

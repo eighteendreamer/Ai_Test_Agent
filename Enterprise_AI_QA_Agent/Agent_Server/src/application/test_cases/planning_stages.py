@@ -8,9 +8,15 @@ from src.schemas.case_planning_stages import (
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
 )
 from src.schemas.case_effect_sources import SOURCE_PROTOCOL
+from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROTOCOL
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None):
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None):
+    if operation_prefetch_protocol == PREFETCH_PROTOCOL:
+        original = build_document_source_prompts()
+        original.logic = original.logic.replace("逻辑阶段：", "若prepare已明确选择固定导航中的工具及操作，在instructions顶层保留tool/operation原名；未明确不猜测，后续仍可query。逻辑阶段：")
+        original.effects = original.effects.replace("证据阶段：", "系统已按固定逻辑的明确tool/operation只读取得契约时，证据和query_results已提供来源，不必为了重复读取再query；其他所需资料仍按需query。证据阶段：")
+        return original
     if expected_source_protocol == SOURCE_PROTOCOL:
         return build_document_source_prompts()
     if protocol == RELATION_STAGE_PROTOCOL:
