@@ -1,0 +1,144 @@
+FsFsFsFs                                                                 [100%]
+================================== FAILURES ===================================
+_________ test_runtime_paths_reach_actual_model_request[False-False] __________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1032/test_runtime_paths_reach_actua0')
+live = False, langchain_enabled = False
+model_http_server = ('http://127.0.0.1:53249/v1', [])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC80B9BB50>
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('langchain_enabled', [False, True])
+    async def test_runtime_paths_reach_actual_model_request(tmp_path, live, langchain_enabled, model_http_server, monkeypatch):
+        async with planned(tmp_path, live) as (env, store, suites, creator, previous, now, table):
+            project = await env.projects.get(previous.project_id)
+            settings = {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}],
+                        'legacy': {'id': 'legacy-file-id'}, 'nullable': None}
+            payload = {'objective': '�˶��������ֶ�', 'steps': [{'order': n, 'action': '��ȡʵ������'} for n in range(1, 9)],
+                       'settings': settings, 'tail': '\u5b8c\u6574\u7b2c\u516b\u6b65\u4e0d\u80fd\u622a\u65ad\U0001f600'}
+            file = tmp_path / 'runtime-input.json'
+            file.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+            doc = await env.docs.upload_document(project_id=project.id, filename=file.name,
+                content_base64=base64.b64encode(file.read_bytes()).decode())
+            original = (await env.objects.read_object_uri(doc.original_asset.storage_uri))['content']
+            assert original == file.read_bytes()
+            content = json.loads(original)
+            bundle = await active_case(env, project, 'runtime-path', content)
+            paths = {'disabled': ['', 'enabled'], 'zero': ['flags', 'order.id'], 'array_id': ['items', '0', 'id'],
+                     'whole': [], 'missing': ['flags', 'absent'], 'nullable': ['nullable']}
+            bindings = {key: {'input_key': 'settings', 'output_path_tokens': path,
+                             'required': key not in {'missing', 'nullable'}} for key, path in paths.items()}
+            bindings['legacy'] = {'input_key': 'settings', 'output_path': 'legacy.id'}
+            env.service._models = SequenceModel(lambda c: finish(item(c, 'runtime-path', input_bindings=bindings)))
+            plan = await env.service.create(project.id, CasePlanningRequest(objective=content['objective'],
+                candidate_case_ids=[bundle.case.id], runtime_context={'settings': content['settings']}))
+            assert plan.status == 'planned', plan.summary
+            detail = await creator.create(project.id, plan.id, CasePlanRunRequest(creation_key='runtime-input', mode_key='api_testing'))
+            claims = await store.claim_items(run_id=detail.run.id, worker_id='input-consumer', limit=10, lease_seconds=60, now=now)
+            assert len(claims) == 1
+            claimed, attempt = claims[0]
+            detail = await store.get_run(detail.run.id)
+            basis = build_agent_case_context(detail, claimed, await env.cases.get_version(claimed.case_version_id))
+            inputs = basis.steps[0].inputs
+>           assert inputs['disabled'].resolved and inputs['disabled'].value is False
+E           AssertionError: assert (True and {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}], 'legacy': {'id': 'legacy-file-id'}, ...} is False)
+E            +  where True = BoundCaseInput(binding=PlanInputBinding(source_item=None, input_key='settings', output_path='', output_path_tokens=[''...-file-id'}], 'legacy': {'id': 'legacy-file-id'}, 'nullable': None}, run_item_id=None, result_id=None, actual_path=None).resolved
+E            +  and   {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}], 'legacy': {'id': 'legacy-file-id'}, ...} = BoundCaseInput(binding=PlanInputBinding(source_item=None, input_key='settings', output_path='', output_path_tokens=[''...-file-id'}], 'legacy': {'id': 'legacy-file-id'}, 'nullable': None}, run_item_id=None, result_id=None, actual_path=None).value
+
+tests\test_runtime_input_paths.py:70: AssertionError
+__________ test_runtime_paths_reach_actual_model_request[True-False] __________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1032/test_runtime_paths_reach_actua1')
+live = False, langchain_enabled = True
+model_http_server = ('http://127.0.0.1:53261/v1', [])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC80BD0FD0>
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('langchain_enabled', [False, True])
+    async def test_runtime_paths_reach_actual_model_request(tmp_path, live, langchain_enabled, model_http_server, monkeypatch):
+        async with planned(tmp_path, live) as (env, store, suites, creator, previous, now, table):
+            project = await env.projects.get(previous.project_id)
+            settings = {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}],
+                        'legacy': {'id': 'legacy-file-id'}, 'nullable': None}
+            payload = {'objective': '�˶��������ֶ�', 'steps': [{'order': n, 'action': '��ȡʵ������'} for n in range(1, 9)],
+                       'settings': settings, 'tail': '\u5b8c\u6574\u7b2c\u516b\u6b65\u4e0d\u80fd\u622a\u65ad\U0001f600'}
+            file = tmp_path / 'runtime-input.json'
+            file.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+            doc = await env.docs.upload_document(project_id=project.id, filename=file.name,
+                content_base64=base64.b64encode(file.read_bytes()).decode())
+            original = (await env.objects.read_object_uri(doc.original_asset.storage_uri))['content']
+            assert original == file.read_bytes()
+            content = json.loads(original)
+            bundle = await active_case(env, project, 'runtime-path', content)
+            paths = {'disabled': ['', 'enabled'], 'zero': ['flags', 'order.id'], 'array_id': ['items', '0', 'id'],
+                     'whole': [], 'missing': ['flags', 'absent'], 'nullable': ['nullable']}
+            bindings = {key: {'input_key': 'settings', 'output_path_tokens': path,
+                             'required': key not in {'missing', 'nullable'}} for key, path in paths.items()}
+            bindings['legacy'] = {'input_key': 'settings', 'output_path': 'legacy.id'}
+            env.service._models = SequenceModel(lambda c: finish(item(c, 'runtime-path', input_bindings=bindings)))
+            plan = await env.service.create(project.id, CasePlanningRequest(objective=content['objective'],
+                candidate_case_ids=[bundle.case.id], runtime_context={'settings': content['settings']}))
+            assert plan.status == 'planned', plan.summary
+            detail = await creator.create(project.id, plan.id, CasePlanRunRequest(creation_key='runtime-input', mode_key='api_testing'))
+            claims = await store.claim_items(run_id=detail.run.id, worker_id='input-consumer', limit=10, lease_seconds=60, now=now)
+            assert len(claims) == 1
+            claimed, attempt = claims[0]
+            detail = await store.get_run(detail.run.id)
+            basis = build_agent_case_context(detail, claimed, await env.cases.get_version(claimed.case_version_id))
+            inputs = basis.steps[0].inputs
+>           assert inputs['disabled'].resolved and inputs['disabled'].value is False
+E           AssertionError: assert (True and {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}], 'legacy': {'id': 'legacy-file-id'}, ...} is False)
+E            +  where True = BoundCaseInput(binding=PlanInputBinding(source_item=None, input_key='settings', output_path='', output_path_tokens=[''...-file-id'}], 'legacy': {'id': 'legacy-file-id'}, 'nullable': None}, run_item_id=None, result_id=None, actual_path=None).resolved
+E            +  and   {'': {'enabled': False}, 'flags': {'order.id': 0}, 'items': [{'id': 'actual-file-id'}], 'legacy': {'id': 'legacy-file-id'}, ...} = BoundCaseInput(binding=PlanInputBinding(source_item=None, input_key='settings', output_path='', output_path_tokens=[''...-file-id'}], 'legacy': {'id': 'legacy-file-id'}, 'nullable': None}, run_item_id=None, result_id=None, actual_path=None).value
+
+tests\test_runtime_input_paths.py:70: AssertionError
+_ test_required_runtime_subfield_is_not_satisfied_by_parent_object[path0-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1032/test_required_runtime_subfield0')
+live = False, path = ['absent']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('path', [['absent'], ['nullable']])
+    async def test_required_runtime_subfield_is_not_satisfied_by_parent_object(tmp_path, live, path):
+        async with planned(tmp_path, live) as (env, store, suites, creator, previous, now, table):
+            env.service._models = SequenceModel(lambda c: finish(item(c, 'item-0', input_bindings={
+                'required_value': {'input_key': 'settings', 'output_path_tokens': path}})))
+            plan = await env.service.create(previous.project_id, CasePlanningRequest(objective='��Ҫ�ֶ�δ�ṩ',
+                runtime_context={'settings': {'nullable': None, 'unrelated': 'cannot satisfy the selected path'}}))
+            assert plan.status == 'planned', plan.summary
+            detail = await creator.create(plan.project_id, plan.id, CasePlanRunRequest(creation_key='required-runtime', mode_key='api_testing'))
+            claim = (await store.claim_items(run_id=detail.run.id, worker_id='missing-input', limit=1, lease_seconds=60, now=now))[0][0]
+>           with pytest.raises(ValueError, match='��Ҫ���� required_value û��ʵ����Դ'):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_runtime_input_paths.py:117: Failed
+_ test_required_runtime_subfield_is_not_satisfied_by_parent_object[path1-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1032/test_required_runtime_subfield1')
+live = False, path = ['nullable']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('live', [False, LIVE])
+    @pytest.mark.parametrize('path', [['absent'], ['nullable']])
+    async def test_required_runtime_subfield_is_not_satisfied_by_parent_object(tmp_path, live, path):
+        async with planned(tmp_path, live) as (env, store, suites, creator, previous, now, table):
+            env.service._models = SequenceModel(lambda c: finish(item(c, 'item-0', input_bindings={
+                'required_value': {'input_key': 'settings', 'output_path_tokens': path}})))
+            plan = await env.service.create(previous.project_id, CasePlanningRequest(objective='��Ҫ�ֶ�δ�ṩ',
+                runtime_context={'settings': {'nullable': None, 'unrelated': 'cannot satisfy the selected path'}}))
+            assert plan.status == 'planned', plan.summary
+            detail = await creator.create(plan.project_id, plan.id, CasePlanRunRequest(creation_key='required-runtime', mode_key='api_testing'))
+            claim = (await store.claim_items(run_id=detail.run.id, worker_id='missing-input', limit=1, lease_seconds=60, now=now))[0][0]
+>           with pytest.raises(ValueError, match='��Ҫ���� required_value û��ʵ����Դ'):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_runtime_input_paths.py:117: Failed
+=========================== short test summary info ===========================
+FAILED tests/test_runtime_input_paths.py::test_runtime_paths_reach_actual_model_request[False-False]
+FAILED tests/test_runtime_input_paths.py::test_runtime_paths_reach_actual_model_request[True-False]
+FAILED tests/test_runtime_input_paths.py::test_required_runtime_subfield_is_not_satisfied_by_parent_object[path0-False]
+FAILED tests/test_runtime_input_paths.py::test_required_runtime_subfield_is_not_satisfied_by_parent_object[path1-False]
+4 failed, 4 skipped in 6.92s

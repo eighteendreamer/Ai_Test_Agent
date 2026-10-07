@@ -62,7 +62,7 @@ def build_agent_case_context(
         for name, binding in node.input_bindings.items():
             resolved, value, source_item_id, result_id, path = False, None, None, None, None
             if binding.input_key:
-                value = plan.request.runtime_context.get(binding.input_key)
+                value = output_at_path(plan.request.runtime_context.get(binding.input_key), binding.path_tokens)
                 resolved = binding.input_key in plan.request.runtime_context and value is not None
             elif binding.source_item not in owned:
                 source_item_id = snapshot.run_item_ids[snapshot.owners[binding.source_item]]

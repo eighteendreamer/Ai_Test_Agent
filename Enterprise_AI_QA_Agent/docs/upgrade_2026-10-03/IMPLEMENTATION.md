@@ -4067,3 +4067,14 @@ agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/featu
 回归首路径猜错exit4/0测试，改读已有命令后7模块105通过3跳过134.91秒；遗漏首模块另验20通过23.79秒，三格式走旧v10兼容。不累计为新的当前通过数。前端两文件66通过4.62秒，build含vue-tsc退出0/Vite9.19秒，完整App未重跑。
 
 独立默认1失败239.24秒。逻辑82.859秒/证据96.53秒，2实际模型/SDK/物理请求，原180截止，最后0正文/Run/业务HTTP。原文、完整八步/False/0/null、32字段接口及本次目录已送达；未保存私有推理内容，不将200头当完整回执。最终raw正文保存补充在默认之后，由raw-final实际验证，不新跑相同默认任务。完整P0—P5未完成，下一步深查准备输出与真实依赖传值，不猜测内部超时原因。
+
+
+## 2026-10-07 运行输入路径的消费端根因修复
+
+先研究并保存P2_RUNTIME_INPUT_PATH_RESEARCH.md；实际文件规划契约原本支持input_key下的字面量子路径，执行上下文只取父对象。改原分支一行，复用output_at_path；空路径/旧点分、False/0、可选未解析、必要缺失/null及历史依赖语义保留。没有新增依赖、配置或表。
+
+工作目录Agent_Server，命令及XML/log见p2-runtime-input-*。先运行新test_runtime_input_paths.py，4失败4实时组跳过6.92秒；生产修改后开启RUN_LIVE_PLAN_RUN_CREATION=1，8通过11.95秒。再加现有API工具/真实GET/持久回执/终态不重领，8通过14.33秒，四场景各一条GET。QA_RUNTIME_INPUT_PATH_DIR仅导出当时原件与实际记录，测试自己的实时资源已清理。受控规划/模型返回，不表示默认自主Agent。
+
+回归实际运行test_agent_case_context.py test_run_item_dependencies.py test_plan_binding_paths.py test_agent_case_assessment.py，开启RUN_LIVE_PLAN_RUN_CREATION/RUN_LIVE_RUN_DEPENDENCIES/RUN_LIVE_PLAN_BINDING_PATHS=1，72通过3外部模型开关跳过34.35秒；实际跳过节点保存在XML/审计。前端契约没有改，本批未跑前端或完整App，默认超时没有未改重试。准备步骤多对象输出/共享消费等仍待验，完整P0—P5未完成。
+
+历史保护补验：p2-runtime-input-recovery新2节点6.61秒通过。实际保存旧父对象上下文hash的检查点，调用原Adapter._load拒绝与新取值不同的上下文，原检查点保持且HTTP0。未实现该类旧错误上下文自动恢复，上线历史协调仍待完成。
