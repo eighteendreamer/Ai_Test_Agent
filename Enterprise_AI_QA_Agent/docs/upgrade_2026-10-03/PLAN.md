@@ -1,5 +1,9 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
+本轮方案更新（2026-10-07）：上传文件通过系统对象存储和数据库保存历史；更新同一文档时明确选择“上传新版本”，随后分别解析并比较指定快照。Git保留为用户主动选择的独立来源。用例模板只用于生成；执行继续按项目选取完整用例、排序、由AI检查必要条件来源并补全。具体流程和依据见2.3及3.1—3.2。
+
+本轮仅修订方案并验证上传依据。两项无Git上传/原件回归通过；生产存储、独立解析/比较进程和完整App未在本轮重新验收。P0—P5全部工程范围继续保留，已验证专项与待完成内容仍分别标注。
+
 修订日期：2026-10-07；本次代码核对基线：`07275986`及执行项操作选择工作区。新增2.3.6/6.63：正式项和准备项的明确操作共用只读契约队列，选择与逻辑共同冻结；真实存储/恢复、完整原件及两种原生业务专项已验。默认新任务实际触发去重读取，3逻辑/3物理，仍在原180秒预算内技术绑定超时，0Run/业务HTTP。三份全文同步，完整P0—P5未完成。
 
 本方案按用户纠正后的流程执行：
@@ -354,12 +358,23 @@ OpenAPI/Postman/HAR转Markdown及项目URL派生修改均不覆盖原件。旧�
 | 已核对的代码位置 | 实际行为及方案采用方式 |
 |---|---|
 | [普通上传路由](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/api/routes/api_docs.py:54) | 调用上传服务，不传Git来源或读取仓库；普通入口负责创建新文档 |
-| [新版本上传](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:423) | 依据明确document_id和预期父版本追加；与当前原件相同则返回当前版本；父版本变化返回冲突 |
-| [原件保存](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:550) | 原件按文档/版本路径保存对象存储；派生内容独立保存，不覆盖原件 |
+| [新版本上传](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:431) | 依据明确document_id和预期父版本追加；与当前原件相同则返回当前版本；父版本变化返回冲突 |
+| [原件保存](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/api_docs_service.py:558) | 原件按文档/版本路径保存对象存储；派生内容独立保存，不覆盖原件 |
 | [固定快照比较](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/difference_service.py:48) | 提交比较任务时固定双方依据，后续比较依赖系统已保存的版本及解析快照 |
 | [可选Git导入](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/documents/git_service.py:101) | 这个独立入口才只读取得指定commit/blob的文件字节，然后调用上传/新版本服务 |
 
-此前[文档解析与比较验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-document-difference-final-delivery.xml)为57通过、0失败、0跳过，其中包含MD/DOCX/PDF真实上传版本及存储快照比较；[可选Git产品验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-git-full-product-final.xml)为2通过、0失败、0跳过。它们分别证明对应链路，不能把Git验证当成普通上传的前提。上传/Git本轮核对既有源码与原记录，未重跑这些专项；历史运行限制验证见6.37—6.38；本次方案修订核对已有复现记录，新增缺口和待实施边界见6.39，未重跑功能测试。生产历史迁移及未完成项仍按第六节跟踪。
+本轮依据核对与验证（2026-10-07）：重新阅读普通上传、新版本上传、原件保存、固定快照比较和Git导入实现，确认调用方向为“Git导入取得字节后调用保存服务”；普通上传没有反向调用Git。新版本必须指定文档及预期父版本，不能根据同名文件自动建立历史关联。
+
+实际执行以下既有节点：
+
+```powershell
+# 工作目录：G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server
+..\.venv\Scripts\python.exe -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --junitxml='../docs/upgrade_2026-10-03/plan-current-request-upload.xml'
+```
+
+结果为**2通过、0失败、0跳过，3.61秒**，见[本轮日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-current-request-upload.log)和[本轮XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-current-request-upload.xml)。测试使用实际临时文件、应用上传路由及本地测试存储，覆盖V1/V2保留、同请求恢复、同名独立文档、恢复旧内容创建V3、父版本冲突，以及派生内容/项目URL修改不覆盖原件。它们没有配置Git；不据此宣称本轮验证了生产MySQL/PG/RustFS、独立解析/比较进程、完整App或默认Agent。三份方案同步与变更范围见[本轮核对记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-current-request-validation.json)。
+
+此前[文档解析与比较验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-document-difference-final-delivery.xml)为57通过、0失败、0跳过，其中包含MD/DOCX/PDF真实上传版本及存储快照比较；[可选Git产品验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p3-git-full-product-final.xml)为2通过、0失败、0跳过。它们分别证明对应链路，不能把Git验证当成普通上传的前提。上述为历史验收结果；本轮只重新执行前述两项上传/原件回归，没有重跑这些生产专项。历史运行限制及其当时的方案修订见6.37—6.39。生产历史迁移及未完成项仍按第六节跟踪。
 
 ### 3.1.2 页面操作与各阶段结果
 
