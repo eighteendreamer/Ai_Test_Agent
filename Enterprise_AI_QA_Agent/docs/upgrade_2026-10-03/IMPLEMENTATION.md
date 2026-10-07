@@ -4092,3 +4092,19 @@ fixed2通过9.89秒，final新15项通过14.50秒；两份原件真实RustFS读�
 现有actual通用JSON跨层读取不需新DTO/页面，前端未改且未重跑构建/完整App。外部自主模型、共享消费者实际完成状态、准备完整生命周期、unknown只读查证、计划修订/其他模式及其余P0—P5继续待验。未改预算/global模型、未重跑未改变的默认超时。三个方案正文同步、上批35原始HEAD字节、原件/最终结果/实际工具与无关当前字节见p2-output-structure-validation.json；不推送/PR。
 
 本批审计首次KeyError: value/exit1，脚本误猜已保存策略DTO；读实际policy字段后修正并退出0，原audit-first.log保留。46当前工件和35上一批原始HEAD字节核对通过。测试临时数据库/对象/本地服务器按归属清理，保存证据为当时快照。
+
+## 2026-10-07 清理待审批期间的只读逐项核验
+
+基线a4d6c7e4，目标附件重新读取；生产修改前保存P2_CONSUMER_RECEIPT_RESEARCH.md。原证据请求已有requested_item_keys，但完整证据加载不接受pending兄弟调用，完整assess只接受全项，无法作为当前消费核验基础。仅抽取原核验内核并增加assess_steps；保留完整context_hash及原Job绑定、全项终态原限制、旧完整Prompt字节。它不生成RunItem完成请求、不写消费结束检查点；没有新增配置/表/依赖或前端契约。
+
+精确cmd/cwd/exit_code在p2-consumer-receipt-*.command.json，完整stdout/stderr合并log及XML同前缀。工作目录Agent_Server，..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_step_assessment.py -q --tb=short --junitxml=<对应XML>，RUN_LIVE_PLAN_RUN_CREATION=1、PYTHONUTF8=1、QA_CONSUMER_RECEIPT_DIR每批独立。
+
+- before/reproduction各8失败19.58/19.53秒，新夹具先误用running专用_load，再误判原快照工具条目数；另四项方法不存在。不能算功能通过。
+- pending-reproduction8失败21.43秒：修正原快照/完整上下文后四真实场景在证据manifest被未结束清理阻断，0模型HTTP；四方法缺失。保存实际原件/pending.json后才修改生产。
+- fixed8通过22.67秒；新增边界/旧完整路径配对后final4失败11通过24.72秒。四live失败来自新断言按JSON键顺序比较，真实完整内容一致。读取实际before.json，解析送达expected_source作结构比较，核对物理SDK messages与请求；没有因此改生产代码。
+- verified最终15通过26.90秒、零跳过。四个实际MySQL/PG/RustFS原Agent图/API/审批场景，原生/LangChain各正确与错误期望；每场景一物理模型HTTP和三次业务POST/GET/DELETE。五检查及完整8步/False/0/null保留，原PG上下文hash保持，逐项期间待审批清理与现场对象不变；之后批准原清理，完整终态passed/failed，现场0剩余，不可重领。11其他边界含旧完整请求byte exact、结果仅归一核验随机ID/时间后相同。
+- regression实际运行test_agent_case_assessment.py test_agent_case_execution.py test_agent_case_context.py test_runtime_input_paths.py test_case_output_structure.py和test_case_effect_relations的internal-all/external-all两个正式混合效果节点。开启RUN_LIVE_PLAN_RUN_CREATION/RUN_LIVE_CASE_EFFECT_RELATIONS=1，工件分别QA_RUNTIME_INPUT_PATH_DIR/QA_CASE_OUTPUT_STRUCTURE_DIR/QA_EFFECT_RELATIONS_DIR隔离。103通过3跳过182.74秒；两个外部模型和一个独立Redis Worker开关未启用，XML保留确切节点。
+
+两文件py_compile/原件SHA/实际PG检查点及原Job绑定/物理模型消息/terminal核对另由p2-consumer-receipt-audit.py输出validation.json。前端和完整App未跑，未重复未改变的默认超时。三份方案同步2.3.11/6.68/当前表，保留所有历史失败；本批逐项核验内核未接共享消费结束状态与清理领取事务，旧早删反例尚未阻止。正式混合效果、unknown查证、关闭后动作、多Worker及其余P0—P5保持未完成。上批46原始工件HEAD字节和无关当前文件核对，原两份Worker汇总未恢复限制保持；不推送/PR。
+
+本批审计首次误要求待审批清理已有case_action_admission而KeyError退出1；实际原Job只有绑定、没有执行准入，已完成seed/target才有准入。核对保存metadata后修正审计分支，生产代码未变；audit-first.log保留，不计功能失败或通过。

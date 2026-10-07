@@ -1,0 +1,52 @@
+FFFFFFFF                                                                 [100%]
+================================== FAILURES ===================================
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-False] _
+tests\test_case_step_assessment.py:143: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    assert len(records) == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = len([ToolExecutionRecord(call_id='seed', job_id='1c8e5683-09bd-49ce-9742-72fbe4120b1e', tool_key='api-test-runner', tool_n...': 'execute_task'}, output={}, approval_id='2b734a79-933e-4655-ba2e-9adb95a570c9', started_at=None, completed_at=None)])
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-False] _
+tests\test_case_step_assessment.py:143: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    assert len(records) == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = len([ToolExecutionRecord(call_id='seed', job_id='3c5d0acd-bd70-4e12-8483-94683cae3279', tool_key='api-test-runner', tool_n...': 'execute_task'}, output={}, approval_id='a188f22e-e43a-42b1-a87a-2674d9394563', started_at=None, completed_at=None)])
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-True] _
+tests\test_case_step_assessment.py:143: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    assert len(records) == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = len([ToolExecutionRecord(call_id='seed', job_id='89bf1041-823f-4bb2-89a8-6c6f17e6ce74', tool_key='api-test-runner', tool_n...': 'execute_task'}, output={}, approval_id='3488aae5-f301-4979-82ec-1df7d1ec4c1f', started_at=None, completed_at=None)])
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-True] _
+tests\test_case_step_assessment.py:143: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    assert len(records) == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = len([ToolExecutionRecord(call_id='seed', job_id='0ed62cc9-86c1-42d9-9bed-22a00926dcfc', tool_key='api-test-runner', tool_n...': 'execute_task'}, output={}, approval_id='b8e3cace-108c-4bd7-9938-45dc004d6dba', started_at=None, completed_at=None)])
+________ test_partial_requested_set_is_explicit_and_exact[requested0] _________
+tests\test_case_step_assessment.py:210: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested1] _________
+tests\test_case_step_assessment.py:210: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested2] _________
+tests\test_case_step_assessment.py:210: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested3] _________
+tests\test_case_step_assessment.py:210: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+=========================== short test summary info ===========================
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-False]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-False]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-True]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-True]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested0]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested1]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested2]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested3]
+8 failed in 19.53s

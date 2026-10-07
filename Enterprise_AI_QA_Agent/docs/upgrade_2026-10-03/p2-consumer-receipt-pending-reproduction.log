@@ -1,0 +1,76 @@
+FFFFFFFF                                                                 [100%]
+================================== FAILURES ===================================
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-False] _
+tests\test_case_step_assessment.py:150: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    request = await service.build_assessment_request(context=context, tool_records=records,
+src\application\test_runs\agent_case_assessment.py:69: in build_assessment_request
+    manifest = await self.evidence_manifest(context=context, tool_records=tool_records,
+src\application\test_runs\agent_case_assessment.py:50: in evidence_manifest
+    jobs = await self._load_evidence(context, tool_records, session_id, turn_id, attempt_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:143: in _load_evidence
+    raise ValueError("工具证据尚未结束，不能形成终态回执")
+E   ValueError: 工具证据尚未结束，不能形成终态回执
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-False] _
+tests\test_case_step_assessment.py:150: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    request = await service.build_assessment_request(context=context, tool_records=records,
+src\application\test_runs\agent_case_assessment.py:69: in build_assessment_request
+    manifest = await self.evidence_manifest(context=context, tool_records=tool_records,
+src\application\test_runs\agent_case_assessment.py:50: in evidence_manifest
+    jobs = await self._load_evidence(context, tool_records, session_id, turn_id, attempt_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:143: in _load_evidence
+    raise ValueError("工具证据尚未结束，不能形成终态回执")
+E   ValueError: 工具证据尚未结束，不能形成终态回执
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-True] _
+tests\test_case_step_assessment.py:150: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    request = await service.build_assessment_request(context=context, tool_records=records,
+src\application\test_runs\agent_case_assessment.py:69: in build_assessment_request
+    manifest = await self.evidence_manifest(context=context, tool_records=tool_records,
+src\application\test_runs\agent_case_assessment.py:50: in evidence_manifest
+    jobs = await self._load_evidence(context, tool_records, session_id, turn_id, attempt_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:143: in _load_evidence
+    raise ValueError("工具证据尚未结束，不能形成终态回执")
+E   ValueError: 工具证据尚未结束，不能形成终态回执
+_ test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-True] _
+tests\test_case_step_assessment.py:150: in test_original_graph_partial_receipt_before_cleanup_preserves_running_identity
+    request = await service.build_assessment_request(context=context, tool_records=records,
+src\application\test_runs\agent_case_assessment.py:69: in build_assessment_request
+    manifest = await self.evidence_manifest(context=context, tool_records=tool_records,
+src\application\test_runs\agent_case_assessment.py:50: in evidence_manifest
+    jobs = await self._load_evidence(context, tool_records, session_id, turn_id, attempt_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:143: in _load_evidence
+    raise ValueError("工具证据尚未结束，不能形成终态回执")
+E   ValueError: 工具证据尚未结束，不能形成终态回执
+________ test_partial_requested_set_is_explicit_and_exact[requested0] _________
+tests\test_case_step_assessment.py:215: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested1] _________
+tests\test_case_step_assessment.py:215: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested2] _________
+tests\test_case_step_assessment.py:215: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+________ test_partial_requested_set_is_explicit_and_exact[requested3] _________
+tests\test_case_step_assessment.py:215: in test_partial_requested_set_is_explicit_and_exact
+    await service.assess_steps(context=env[0], receipt=data, tool_records=env[2], session_id=env[3],
+          ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'AgentCaseAssessmentService' object has no attribute 'assess_steps'
+=========================== short test summary info ===========================
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-False]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-False]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[False-True]
+FAILED tests/test_case_step_assessment.py::test_original_graph_partial_receipt_before_cleanup_preserves_running_identity[True-True]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested0]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested1]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested2]
+FAILED tests/test_case_step_assessment.py::test_partial_requested_set_is_explicit_and_exact[requested3]
+8 failed in 21.43s
