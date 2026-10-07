@@ -1,0 +1,34 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-passed] _
+tests\test_case_consumption_phase.py:179: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    await original_graph_phase(values,detail,plan,document,original,business,scenario,agent)
+tests\test_case_consumption_phase.py:94: in original_graph_phase
+    assert response.status_code == 200 and response.json()['status'] == 'waiting_approval',response.text
+E   AssertionError: {"id":"8ce74ce1-1c2f-413a-af7c-2b53a6019039","run_id":"3b876858-0b70-5f87-be7d-181b89cb1f83","run_item_id":"64ef11f6-9267-50d1-abb3-c094d546cc69","case_id":"8be4bbdc-881d-4d9b-a174-6769ef0beb5f","case_version_id":"e5bd9984-3d76-4094-aa39-4556048ee884","regression_source_result_id":null,"attempt_id":"29e993d7-2c00-4faa-be16-48e979968076","attempt_no":1,"status":"error","summary":"Agent 图处于 interrupted，需恢复原快照而非重新执行","actual":{"execution_recovery_required":true,"execution_checkpoint":{"phase":"snapshot","run_id":"3b876858-0b70-5f87-be7d-181b89cb1f83","plan_id":"377b42b3-a4e3-4213-946f-dc89723b97ac","turn_id":"963ad0d9-89e6-5087-9c6c-40cd82e6a22a","project_id":"ad602fee-fba0-4456-86b0-72c85a1fd3ad","session_id":"f8c2a1f1-626a-4e86-888c-3d62e8d40283","run_item_id":"64ef11f6-9267-50d1-abb3-c094d546cc69","snapshot_id":"ac1f0c62-d0cc-47cd-8e70-9bf282cb2c05","context_hash":"db6722571d3bd255359f814a03fb95f76990d1ede8a303265aa79353b363ca8a","schema_version":1,"snapshot_version":4,"execution_attempt_id":"29e993d7-2c00-4faa-be16-48e979968076"}},"evidence_refs":[],"artifact_ids":[],"verification_ids":[],"tool_job_id":null,"metrics":{},"error_message":"Agent 图处于 interrupted，需恢复原快照而非重新执行","payload_hash":"f12c0778636362f967a733ea3a0b020e89616c6014882d74089fe8eee77b184a","created_at":"2026-10-07T15:16:13.314946Z"}
+E   assert (200 == 200 and 'error' == 'waiting_approval'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     - waiting_approval
+E     + error)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session f8c2a1f1-626a-4e86-888c-3d62e8d40283: 'call_id'
+WARNING  src.application.test_runs.execution_service:execution_service.py:363 test_run_agent_execution_requires_reconciliation
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-failed] _
+tests\test_case_consumption_phase.py:179: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    await original_graph_phase(values,detail,plan,document,original,business,scenario,agent)
+tests\test_case_consumption_phase.py:94: in original_graph_phase
+    assert response.status_code == 200 and response.json()['status'] == 'waiting_approval',response.text
+E   AssertionError: {"id":"1c169124-b723-404a-8697-8df93c07881a","run_id":"b3f76794-3d3b-585b-8eb2-53f74fb71ea2","run_item_id":"b66d0a6b-3f33-582c-83dd-48f5bcde63be","case_id":"07d90dbd-7276-46e4-82b2-f9b33af815ab","case_version_id":"89c845be-eb03-474b-82c0-1bb2d748a99a","regression_source_result_id":null,"attempt_id":"fb3e88ad-9d7a-40f6-a4a4-eb84446dcab8","attempt_no":1,"status":"error","summary":"Agent 图处于 interrupted，需恢复原快照而非重新执行","actual":{"execution_recovery_required":true,"execution_checkpoint":{"phase":"snapshot","run_id":"b3f76794-3d3b-585b-8eb2-53f74fb71ea2","plan_id":"c63451fe-1bd8-4f09-a407-c3bbffc77ce9","turn_id":"aa849d9a-1db2-562e-bf7b-80ae22be8167","project_id":"d7caf2c9-376c-4405-9aa1-2ad835bcd314","session_id":"111eecad-59c1-47f3-96f3-ece18a80adb9","run_item_id":"b66d0a6b-3f33-582c-83dd-48f5bcde63be","snapshot_id":"bc82aa7e-bc86-4666-9d6d-6f3ca5a7f810","context_hash":"35b2e3dba2996509e07e3d452043c579613f078b6a1f2eb11186eec0ebdb1009","schema_version":1,"snapshot_version":4,"execution_attempt_id":"fb3e88ad-9d7a-40f6-a4a4-eb84446dcab8"}},"evidence_refs":[],"artifact_ids":[],"verification_ids":[],"tool_job_id":null,"metrics":{},"error_message":"Agent 图处于 interrupted，需恢复原快照而非重新执行","payload_hash":"64b75ab1af9b495534ffb040111160ea6a41889f66a40bf043a2470dbdc7700a","created_at":"2026-10-07T15:16:17.274686Z"}
+E   assert (200 == 200 and 'error' == 'waiting_approval'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     - waiting_approval
+E     + error)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.error_recovery:error_recovery.py:122 L5 terminate for session 111eecad-59c1-47f3-96f3-ece18a80adb9: 'call_id'
+WARNING  src.application.test_runs.execution_service:execution_service.py:363 test_run_agent_execution_requires_reconciliation
+=========================== short test summary info ===========================
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-passed]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-failed]
+2 failed, 11 deselected in 10.73s

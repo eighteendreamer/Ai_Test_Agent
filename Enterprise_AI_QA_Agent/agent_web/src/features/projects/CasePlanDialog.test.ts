@@ -473,4 +473,18 @@ describe("case planning", () => {
     wrapper.unmount();
   });
 
+  it.each(["consumption-phase-policy", "formal-effects", "operation-recovery"])("saves consumption closure and clears it with %s", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="consumption-phase-policy"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      consumption_protocol: "case-consumption-phase-v1", effect_coverage_protocol: "case-effect-coverage-v2",
+      action_admission_protocol: "case-action-admission-v1", timeout_seconds: 180,
+    });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].consumption_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
+
 });

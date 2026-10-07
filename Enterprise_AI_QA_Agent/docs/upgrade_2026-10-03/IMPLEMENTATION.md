@@ -4108,3 +4108,18 @@ fixed2通过9.89秒，final新15项通过14.50秒；两份原件真实RustFS读�
 两文件py_compile/原件SHA/实际PG检查点及原Job绑定/物理模型消息/terminal核对另由p2-consumer-receipt-audit.py输出validation.json。前端和完整App未跑，未重复未改变的默认超时。三份方案同步2.3.11/6.68/当前表，保留所有历史失败；本批逐项核验内核未接共享消费结束状态与清理领取事务，旧早删反例尚未阻止。正式混合效果、unknown查证、关闭后动作、多Worker及其余P0—P5保持未完成。上批46原始工件HEAD字节和无关当前文件核对，原两份Worker汇总未恢复限制保持；不推送/PR。
 
 本批审计首次误要求待审批清理已有case_action_admission而KeyError退出1；实际原Job只有绑定、没有执行准入，已完成seed/target才有准入。核对保存metadata后修正审计分支，生产代码未变；audit-first.log保留，不计功能失败或通过。
+
+## 2026-10-07 消费结束回执与原清理领取事务
+
+研究基线e356905d，先复现旧真实早删failed/404并保存P2_CONSUMPTION_PHASE_DESIGN.md。现有MySQL规划配置新增consumption_protocol可选值，PG新增原ToolJob关联的不可变消费结束记录；原件仍RustFS。复用固定v2声明选择器和原证据核验内核；原逻辑操作/领取/关闭在同事务，关闭不完成RunItem或判定整个用例通过。同步Schema、完整上下文、工具字段、逻辑索引、Prompt和前端原配置消费方；没有新执行器、依赖或预算更改。
+
+后端cwd Agent_Server，..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_consumption_phase.py -q --tb=short --junitxml='../docs/upgrade_2026-10-03/p2-consumption-phase-final.xml'，RUN_LIVE_PLAN_RUN_CREATION/PYTHONUTF8=1，QA_CONSUMPTION_PHASE_DIR为对应独立目录，stdout/stderr合并Tee保存。当前精确已保存cmd/cwd参数在command.json，早期仅XML/log可查，不声称已保存全部早期命令。
+
+- 原反例采集1通过8.05秒，业务第二目标failed/404。
+- 最初live6失败1通过10.96秒为旧fixture新阶段不支持；次6失败1通过13.05秒实际DDL外键TEXT不匹配原UUID，按原表修正。定向1失败5.72秒为fixture候选与阶段回执不足；再1失败6.17秒为跨层逻辑操作消费者未识别新增闭合字段，修正原解析类型。
+- operation-fixed1失败6通过18.86秒，测试误把新unknown别名当同原Job异常；查证实际存储/索引后分别验证，7通过17.79秒。扩边界11通过26.27秒。graph首2失败10.73秒和次2失败15.64秒来自受控fixture消息字段/响应mode遗漏，核对原契约后2通过17.08秒。
+- 最终14通过0跳过41.02秒，十一直接工具、两原Agent/API/审批场景与一旧策略约束。每个业务实际上传完整八步JSON/RustFS读回、MySQL固定策略/PG原计划运行与原Job；两对象创建/查询/逐个清理、错误预期保留failed、关闭不是RunItem终态。并发四领取/回滚/提交丢回执、queued/running无返回、错误回执、历史替换、关闭后普通动作及已知别名均验。两原图场景各七次受控模型决定/六审批/五HTTP，终态不重领。
+- 11模块受影响回归137通过8跳过234.38秒：两个外部模型、独立Redis Worker及五原动作关联live开关未启用。五节点随后独立补验该模块7通过0跳过42.18秒（含两重复节点，不累计为144项覆盖），见binding-live XML/log。QA_RUNTIME_INPUT_PATH_DIR/CASE_OUTPUT_STRUCTURE_DIR/EFFECT_RELATIONS_DIR/CONSUMER_RECEIPT_DIR/STATEFUL_RESEARCH_EVIDENCE_DIR各自独立，未覆盖历史。
+- 前端cwd agent_web，npm.cmd test -- src/features/projects/CasePlanDialog.test.ts，早65通过2.76秒，最终65通过2.42秒；npm.cmd run build早退出0/Vite6.96秒，最终含vue-tsc退出0/Vite6.90秒。完整浏览器App未跑，默认自主模型旧超时没有原样重试。
+
+原记录/hash、并发与实际HTTP、三份方案全文、117前批原件HEAD字节以及无关文件校验见p2-consumption-phase-validation.json。外部多个消费者、租约恢复/多Worker、专门消费报告、完整准备生命周期、unknown只读查证、计划修订/其他模式、P1模板/Excel正式App、DeepSeek人工录制、Docker真实性能/安全、生产历史迁移及其余完整P0—P5继续。保护用户.gitignore和两份Worker汇总当前字节；历史原字节未恢复限制保持。不推送/PR。

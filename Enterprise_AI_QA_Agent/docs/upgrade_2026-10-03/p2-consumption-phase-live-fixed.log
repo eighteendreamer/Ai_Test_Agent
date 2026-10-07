@@ -1,0 +1,394 @@
+.FFFFFF                                                                  [100%]
+================================== FAILURES ===================================
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_d6353d44d3ee_case_end_60ef66a70c705_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_d6353d44d3ee_case_end_60ef66a70c705_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_d6353d44d3ee_case_end_60ef66a70c7053d3 (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_e354e1348d2c(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_d6353d44d3ee(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[failed] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_3d626b8b7952_case_end_f728063f829c7_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_3d626b8b7952_case_end_f728063f829c7_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_3d626b8b7952_case_end_f728063f829c7d77 (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_1757cc905973(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_3d626b8b7952(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[rollback] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_111c0e05dd94_case_end_a5bf14603e261_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_111c0e05dd94_case_end_a5bf14603e261_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_111c0e05dd94_case_end_a5bf14603e261b3e (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_0ce6641a3e93(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_111c0e05dd94(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[parallel] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_9d8d6d820d91_case_end_832d60d284f57_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_9d8d6d820d91_case_end_832d60d284f57_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_9d8d6d820d91_case_end_832d60d284f57ad3 (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_4952be3fe04e(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_9d8d6d820d91(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[lost-claim] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_b53034789cb4_case_end_1b39af95ffb26_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_b53034789cb4_case_end_1b39af95ffb26_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_b53034789cb4_case_end_1b39af95ffb26977 (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_f377ee432d61(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_b53034789cb4(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[pending-ordinary] _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DatatypeMismatch: foreign key constraint "up_ass_job_8bfd411cc98d_case_end_1eeda0115320e_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:49: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    async with adapter_environment(tmp_path, business[0], live=True, start_item=False, planning_policy=POLICY) as values:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:257: in adapter_environment
+    env = await resources.enter_async_context(execution(tmp_path, business_http, live,
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:650: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_assessment.py:135: in execution
+    await jobs.initialize()
+src\application\runtime\tool_job_service.py:45: in initialize
+    await self._case_action_admission.initialize()
+src\runtime\postgres_case_action_admission.py:42: in initialize
+    await self.consumption.initialize()
+src\runtime\postgres_case_consumption.py:40: in initialize
+    await asyncio.to_thread(create)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_consumption.py:36: in create
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.table} (
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.DatatypeMismatch) foreign key constraint "up_ass_job_8bfd411cc98d_case_end_1eeda0115320e_run_item_id_fkey" cannot be implemented
+E   DETAIL:  Key columns "run_item_id" of the referencing table and "id" of the referenced table are of incompatible types: text and uuid.
+E   [SQL: CREATE TABLE IF NOT EXISTS up_ass_job_8bfd411cc98d_case_end_1eeda0115320efa6 (
+E                       run_item_id TEXT PRIMARY KEY REFERENCES up_rd_2_1863771b6a0a(id),
+E                       closure_job_id TEXT UNIQUE NOT NULL REFERENCES up_ass_job_8bfd411cc98d(id),
+E                       record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+=========================== short test summary info ===========================
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[failed]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[rollback]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[parallel]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[lost-claim]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[pending-ordinary]
+6 failed, 1 passed in 13.05s

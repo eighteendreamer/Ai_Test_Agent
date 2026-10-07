@@ -8,13 +8,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.schemas.case_execution import AgentCaseExecutionContext
+from src.schemas.case_execution import AgentCaseExecutionContext, CaseConsumptionClosure
 
 
 PROTOCOL = "case-action-binding-v1"
 ARGUMENT = "_case_action"
 ADMISSION_PROTOCOL = "case-action-admission-v1"
 OPERATION_PROTOCOL = "case-operation-v1"
+CONSUMPTION_PROTOCOL = "case-consumption-phase-v1"
 
 
 class CaseActionClaimUnavailable(RuntimeError):
@@ -33,6 +34,10 @@ class CaseActionSelection(BaseModel):
 
 class CaseOperationSelection(CaseActionSelection):
     operation_key: str = Field(min_length=1, max_length=160)
+
+
+class CaseConsumptionSelection(CaseOperationSelection):
+    consumption_closure: CaseConsumptionClosure | None = None
 
 
 class CaseActionBinding(BaseModel):
@@ -107,6 +112,19 @@ def action_input_schema(schema: dict[str, Any], bundle: dict[str, Any]) -> dict[
                 "when recovering an operation, including a new provider call ID. Use a different key for a "
                 "deliberate new operation or read refresh. This is not a business endpoint idempotency key."}
         properties[ARGUMENT]["required"].append("operation_key")
+    if context.consumption_protocol is not None:
+        closure_schema = CaseConsumptionClosure.model_json_schema()
+        definitions = closure_schema.pop("$defs", {})
+        if set(definitions) & set(result.get("$defs", {})):
+            raise ValueError("消费回执Schema与原工具定义冲突")
+        result.setdefault("$defs", {}).update(definitions)
+        properties[ARGUMENT]["properties"]["consumption_closure"] = closure_schema
+        properties[ARGUMENT]["description"] += (
+            " Before cleanup, attach consumption_closure with a reason and an evidence-only receipt for "
+            "the current formal target's completed consumption phase. Failure is allowed if observed; "
+            "unfinished or unknown actions cannot close. Closure forbids new ordinary actions in this owned "
+            "phase but allows declared cleanup. It does not complete the case or run. Subsequent cleanup "
+            "calls reuse the saved closure and need not repeat it.")
     result["required"] = list(dict.fromkeys([*result.get("required", []), ARGUMENT]))
     return result
 
@@ -116,7 +134,8 @@ def bind_case_action(*, bundle: dict[str, Any], arguments: dict[str, Any],
     context = fixed_action_context(bundle)
     if context is None:
         return None
-    selection_type = CaseOperationSelection if context.operation_protocol is not None else CaseActionSelection
+    selection_type = (CaseConsumptionSelection if context.consumption_protocol is not None else
+        CaseOperationSelection if context.operation_protocol is not None else CaseActionSelection)
     selection = selection_type.model_validate(arguments.get(ARGUMENT))
     step = next((step for step in context.steps if step.item.key == selection.item_key), None)
     if step is None:

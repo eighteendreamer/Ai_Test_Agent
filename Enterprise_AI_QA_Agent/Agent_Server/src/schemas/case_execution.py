@@ -55,9 +55,12 @@ class AgentCaseExecutionContext(PlanningModel):
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_owner_item_ids: dict[str, str] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
+    consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
+        if self.consumption_protocol and self.effect_coverage_protocol != "case-effect-coverage-v2":
+            raise ValueError("消费阶段结束上下文需要固定多效果关系")
         if self.effect_expected_source_protocol and self.effect_evidence_protocol != "case-effect-evidence-v2":
             raise ValueError("固定文档预期需要多效果上下文")
         if any(getattr(step.item, "effect_schema", None) == 3 for step in self.steps) and not self.effect_expected_source_protocol:
@@ -92,6 +95,8 @@ class AgentCaseExecutionContext(PlanningModel):
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
+        if self.consumption_protocol is None:
+            omitted.add("consumption_protocol")
         if self.effect_expected_source_protocol is None:
             omitted.add("effect_expected_source_protocol")
         if self.business_environment is None:
@@ -217,3 +222,8 @@ class CaseStepReceipt(PlanningModel):
 class AgentCaseExecutionReceipt(PlanningModel):
     schema_version: Literal[1] = 1
     steps: list[CaseStepReceipt] = Field(min_length=1, max_length=200)
+
+
+class CaseConsumptionClosure(PlanningModel):
+    reason: str = Field(min_length=1, max_length=4000)
+    receipt: AgentCaseExecutionReceipt

@@ -1,0 +1,16 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed] _
+tests\test_case_consumption_phase.py:77: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    detail = await services['creator'].create(project.id,plan.id,CasePlanRunRequest(creation_key='phase',mode_key='api_testing'))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\plan_run_service.py:32: in create
+    bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by,
+src\application\test_runs\plan_mapping.py:72: in build_plan_run
+    raise ValueError("只有已冻结且包含正式目标的计划可以创建运行")
+E   ValueError: 只有已冻结且包含正式目标的计划可以创建运行
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:426 case_planning_failed
+=========================== short test summary info ===========================
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed]
+1 failed in 5.72s

@@ -34,9 +34,12 @@ class CasePlanningPolicy(PlanningModel):
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
     linked_source_protocol: Literal["case-planning-linked-documents-v1"] | None = None
     evidence_reference_protocol: Literal["case-planning-evidence-references-v1"] | None = None
+    consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.consumption_protocol and self.effect_coverage_protocol != "case-effect-coverage-v2":
+            raise ValueError("消费阶段结束需要固定多效果关系和原动作领取")
         if self.evidence_reference_protocol and not self.source_identity_protocol:
             raise ValueError("证据短引用需要固定完整来源身份及文档预期协议")
         if self.linked_source_protocol and not self.source_identity_protocol:
@@ -79,6 +82,8 @@ class CasePlanningPolicy(PlanningModel):
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
+        if self.consumption_protocol is None:
+            data.pop("consumption_protocol", None)
         if self.evidence_reference_protocol is None:
             data.pop("evidence_reference_protocol", None)
         if self.linked_source_protocol is None:

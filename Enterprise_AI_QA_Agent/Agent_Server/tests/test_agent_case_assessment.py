@@ -131,6 +131,7 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
             from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
             jobs._case_action_admission = PostgresCaseActionAdmission(runs=store, jobs=jobs._store)
             tables.append(jobs._case_action_admission.operations.table)
+            tables.append(jobs._case_action_admission.consumption.table)
         await jobs.initialize()
         if live and jobs._case_action_admission is not None:
             tables.append(jobs._store.effect_evidence.table)

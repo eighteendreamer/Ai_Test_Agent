@@ -1994,6 +1994,7 @@ export interface CasePlanningPolicy {
   source_identity_protocol?: "case-planning-source-full-hash-v1" | null;
   linked_source_protocol?: "case-planning-linked-documents-v1" | null;
   evidence_reference_protocol?: "case-planning-evidence-references-v1" | null;
+  consumption_protocol?: "case-consumption-phase-v1" | null;
   max_rounds: number;
   max_candidates: number;
   max_items: number;

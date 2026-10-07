@@ -76,15 +76,19 @@ def relation_intent(context, binding):
     return {**value, "sha256": _digest(value)}
 
 
-def _observe_definition(definition, job, output):
+def definition_selection(definition, inputs):
     statuses = []
     for selector in definition["select_when"]:
         try:
-            actual = literal_value(job.input_payload, selector["input_path_tokens"])
+            actual = literal_value(inputs, selector["input_path_tokens"])
             statuses.append("matched" if _digest(actual) == _digest(selector["expected"]) else "different")
         except ValueError:
             statuses.append("missing")
-    selection = "not_applicable" if "different" in statuses else "selection_unknown" if "missing" in statuses else "matched"
+    return "not_applicable" if "different" in statuses else "selection_unknown" if "missing" in statuses else "matched"
+
+
+def _observe_definition(definition, job, output):
+    selection = definition_selection(definition, job.input_payload)
     objects, checks, resolution = [], [], selection
     if selection == "matched":
         resolution = "captured"

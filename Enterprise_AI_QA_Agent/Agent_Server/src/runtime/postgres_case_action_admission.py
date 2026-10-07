@@ -15,6 +15,7 @@ from src.application.runtime.case_operation import (
     RECEIPT_KEY as OPERATION_RECEIPT_KEY,
 )
 from src.runtime.postgres_case_operations import PostgresCaseOperations
+from src.runtime.postgres_case_consumption import PostgresCaseConsumption
 from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
 from src.application.test_runs.environment_restrictions import restriction_reviews
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -33,10 +34,12 @@ class PostgresCaseActionAdmission:
         self._runs, self._jobs, self._settings = runs, jobs, runs._settings
         self._table = self._settings.database.postgres_tool_job_table
         self.operations = PostgresCaseOperations(self._settings)
+        self.consumption = PostgresCaseConsumption(self)
 
     async def initialize(self):
         await self.operations.initialize()
         await self._jobs.effect_evidence.initialize()
+        await self.consumption.initialize()
 
     async def claim(self, job_id, bundle):
         try:
@@ -93,6 +96,8 @@ class PostgresCaseActionAdmission:
                 run.plan_snapshot is None or run.plan_snapshot.plan.id != binding.plan_id or
                 run.plan_snapshot.plan.config_snapshot.policy.action_admission_protocol != ADMISSION_PROTOCOL):
                 raise ValueError("动作确认与PG原固定计划不一致")
+            if context.consumption_protocol != run.plan_snapshot.plan.config_snapshot.policy.consumption_protocol:
+                raise ValueError("消费阶段策略与PG原固定计划不一致")
             # Same order as append confirmation and RunItem start: project, then item/attempt, then Job.
             cur.execute(f"SELECT status FROM {self._settings.database.postgres_project_table} WHERE id=%s FOR UPDATE",
                 (run.project_id,))
@@ -159,9 +164,17 @@ class PostgresCaseActionAdmission:
                     if origin.status.value not in {"completed","partial","failed","denied","cancelled"}:
                         return self._operation_alias(cur,job,receipt,identity,origin,"outcome_unknown")
                     return self._operation_alias(cur,job,receipt,identity,origin,"replayed")
-            if decision == "explicit_invalid":
-                output = {"status":"denied", "error":"case_action_explicit_invalid", RECEIPT_KEY:receipt,
-                    "summary":"固定目标已明确确认此精确用例版本失效；本次待执行动作未发送", "action_sent":False}
+            consumption, consumption_error = (None, None) if decision == "explicit_invalid" else self.consumption.prepare(
+                cur, context=context, job=job, binding=binding, detail=detail, now=now)
+            if consumption_error or consumption is not None:
+                receipt = {**receipt, "decision":consumption_error or decision,
+                    "consumption":consumption['proof'] if consumption else {"error":consumption_error, "run_item_completed":False}}
+                receipt["sha256"] = environment_digest({k:v for k,v in receipt.items() if k != "sha256"})
+                decision = receipt['decision']
+            if decision == "explicit_invalid" or consumption_error:
+                output = {"status":"denied", "error":consumption_error or "case_action_explicit_invalid", RECEIPT_KEY:receipt,
+                    "summary":("消费阶段证据未满足；本次动作未发送："+consumption_error if consumption_error else
+                        "固定目标已明确确认此精确用例版本失效；本次待执行动作未发送"), "action_sent":False}
                 cur.execute(f"""UPDATE {self._table} SET status='denied', completed_at=%s, updated_at=%s,
                     summary=%s, output_payload=%s::jsonb, metadata=metadata || %s::jsonb
                     WHERE id=%s AND started_at IS NULL AND status IN ('queued','waiting_approval') RETURNING *""",
@@ -175,6 +188,10 @@ class PostgresCaseActionAdmission:
                     metadata[OPERATION_RECEIPT_KEY] = operation_receipt(identity,origin_job_id=job.id,
                         decision="dispatched",action_sent=None)
                 saved = self._jobs.claim_job_execution_in_transaction(cur, job.id, metadata=metadata)
+                if consumption is not None:
+                    if saved is None:
+                        raise ValueError("消费结束与原清理领取未同时确认")
+                    self.consumption.save(cur, consumption)
             logger.info("case_action_admission_prepared", extra={"tool_job_id":job.id, "project_id":run.project_id,
                 "run_item_id":item.id, "item_key":binding.item_key, "item_phase":binding.phase,
                 "decision":decision, "review_ids":[r.id for r in reviews or []], "receipt_sha256":receipt["sha256"]})

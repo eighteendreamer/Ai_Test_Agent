@@ -479,6 +479,16 @@ class PromptAssemblyService:
                        "retain earlier evidence. An after phase alone does not prove cleanup ownership. "
                        "A started action without a reliable result requires reconciliation, not another send."
                        if frozen.action_admission_protocol is not None else "")
+                    + (" Before the first declared cleanup operation, attach _case_action.consumption_closure "
+                       "with reason and receipt={schema_version:1,steps:[the current formal target's consumption "
+                       "phase receipt]}. Reference complete frozen expected values and actual settled ordinary "
+                       "call outputs. A verified failure can close consumption; empty, blocked or unknown evidence "
+                       "cannot. This explicitly ends ordinary work in the owned phase and does not complete the "
+                       "whole case. Afterwards execute only declared cleanup; later cleanup calls reuse the stored "
+                       "closure. Keep final full-case checks and cleanup evidence in the final receipt. A denied "
+                       "case_consumption_receipt_required means no cleanup was sent: finish the actual consumption "
+                       "first, then use a new call ID with its evidence, without repeating known operations."
+                       if frozen.consumption_protocol is not None else "")
                     + (" Every _case_action must also contain operation_key: a stable logical operation "
                        "key within its owned item, independent of provider call IDs. Keep the same key "
                        "and every business input when recovering that operation. For a deliberate new "

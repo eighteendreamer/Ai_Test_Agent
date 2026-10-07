@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="6.157" timestamp="2026-10-07T23:07:09.178831+08:00" hostname="EIghteen"><testcase classname="tests.test_case_consumption_phase" name="test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed]" time="2.471"><failure message="src.application.runtime.case_action_binding.CaseActionClaimUnavailable: 工具任务 347dc98e-1f49-4299-bcc3-6feceba3d1df 动作领取未获可靠确认；保留原记录并先查证，不能重复发送">src\runtime\postgres_case_action_admission.py:46: in claim
+    result = await asyncio.to_thread(self._claim, job_id, bundle)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_action_admission.py:151: in _claim
+    identity = operation_identity(job,binding) if context.operation_protocol == OPERATION_PROTOCOL else None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\case_operation.py:21: in operation_identity
+    selection = CaseOperationSelection.model_validate(job.input_payload.get(ARGUMENT))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for CaseOperationSelection
+E   consumption_closure
+E     Extra inputs are not permitted [type=extra_forbidden, input_value={'reason': '完整查询...], 'schema_version': 1}}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+The above exception was the direct cause of the following exception:
+tests\test_case_consumption_phase.py:172: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    records.append(await runtime.execute(tool,cleanup,execution))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:497: in execute
+    record = await self._dispatch(tool, call, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:589: in _dispatch
+    claimed = await self._tool_job_service.claim_execution(job.id, context_bundle=context.context_bundle)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_job_service.py:294: in claim_execution
+    claimed = await self._case_action_admission.claim(job_id, context_bundle)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_action_admission.py:54: in claim
+    raise CaseActionClaimUnavailable(
+E   src.application.runtime.case_action_binding.CaseActionClaimUnavailable: 工具任务 347dc98e-1f49-4299-bcc3-6feceba3d1df 动作领取未获可靠确认；保留原记录并先查证，不能重复发送</failure></testcase></testsuite></testsuites>

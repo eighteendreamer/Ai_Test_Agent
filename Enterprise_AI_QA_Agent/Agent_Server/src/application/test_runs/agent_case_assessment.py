@@ -251,12 +251,21 @@ class AgentCaseAssessmentService:
             raise ValueError("逐项回执必须恰好对应唯一的已请求固定执行项，不得遗漏、重复或越界")
         steps = {key: step for key, step in fixed.items() if key in keys}
         jobs = await self._load_evidence(context, tool_records, session_id, turn_id, attempt_id, allow_pending=allow_pending)
-        used = {}
         inventory, coverage = [], None
         if context.effect_coverage_protocol is not None:
             inventory = await self._jobs.list_case_effect_evidence(project_id=context.project_id,
                 run_id=context.run_id, plan_id=context.plan_id)
             coverage = cleanup_coverage(context, inventory)
+
+        return self._assess_loaded_steps(context=context, receipt=receipt, jobs=jobs, steps=steps,
+            session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
+            requested_item_keys=keys, inventory=inventory, coverage=coverage)
+
+    def _assess_loaded_steps(self, *, context, receipt, jobs, steps, session_id, turn_id,
+        attempt_id, model_key, requested_item_keys, inventory, coverage):
+        """Evaluate previously identity-checked Jobs, also usable under the original PG claim lock."""
+        keys = list(requested_item_keys)
+        used = {}
 
         def observe(ref):
             job = jobs.get(ref.call_id)

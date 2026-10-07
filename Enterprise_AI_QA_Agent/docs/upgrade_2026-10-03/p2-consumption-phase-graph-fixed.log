@@ -1,0 +1,70 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-passed] _
+tests\test_case_consumption_phase.py:180: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    await original_graph_phase(values,detail,plan,document,original,business,scenario,agent)
+tests\test_case_consumption_phase.py:111: in original_graph_phase
+    assert response.status_code == 200 and response.json()['status'] == ('failed' if scenario == 'graph-failed' else 'passed'),response.text
+E   AssertionError: {"id":"0f793012-a949-4f9b-8e6f-f50fe23f0737","run_id":"4e96fce5-88d8-5fec-b609-64f3b2a03f07","run_item_id":"0afbc5c6-9a38-54cf-9fc8-3390006c7694","case_id":"5cc6e3e2-6951-427d-a479-7fd96fc20d64","case_version_id":"671e2e38-792a-4e1e-abd7-64963242ee79","regression_source_result_id":null,"attempt_id":"330ec6b2-e4d9-4286-9810-5feb51d21614","attempt_no":1,"status":"error","summary":"Test case runner failed: 执行回执模型调用未成功: None","actual":{"runner_error":"执行回执模型调用未成功: None","execution_checkpoint":{"phase":"snapshot","run_id":"4e96fce5-88d8-5fec-b609-64f3b2a03f07","plan_id":"d39de4b6-9c1e-4aec-9faf-85f6db1d5fe7","turn_id":"0d2e9f68-f579-5bd9-8b10-d07227179caa","project_id":"de3f8df6-8cd6-4593-a9cd-3e8c6ec8345a","session_id":"db766cb2-a2e0-4039-9f69-bee8ab07c663","run_item_id":"0afbc5c6-9a38-54cf-9fc8-3390006c7694","snapshot_id":"7437ac65-4590-4da9-a2c7-d66b6028dcbd","context_hash":"59738de4e46f814a54f88127e69c13660639b26dd0e80ddc376127c9cf6aff99","schema_version":1,"snapshot_version":7,"execution_attempt_id":"330ec6b2-e4d9-4286-9810-5feb51d21614"}},"evidence_refs":[],"artifact_ids":[],"verification_ids":[],"tool_job_id":null,"metrics":{},"error_message":"执行回执模型调用未成功: None","payload_hash":"bbd497245d061715b62a902039ade650334e864d50b2cd20d798c866909b5896","created_at":"2026-10-07T15:17:18.582024Z"}
+E   assert (200 == 200 and 'error' == 'passed'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     - passed
+E     + error)
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_runs.execution_service:execution_service.py:388 test_run_case_execution_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 314, in execute_item
+    outcome = await self._execute_with_lease_watch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 497, in _execute_with_lease_watch
+    return await execution
+           ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 140, in execute
+    return await self.resume_approval(case=case, version=version, run=run, item=item,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 172, in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 233, in _finish
+    receipt=self._assessment.parse_response(response), tool_records=records,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 130, in parse_response
+    raise ValueError("执行回执模型调用未成功: " + str(summary.get("mode")))
+ValueError: 执行回执模型调用未成功: None
+_ test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-failed] _
+tests\test_case_consumption_phase.py:180: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    await original_graph_phase(values,detail,plan,document,original,business,scenario,agent)
+tests\test_case_consumption_phase.py:111: in original_graph_phase
+    assert response.status_code == 200 and response.json()['status'] == ('failed' if scenario == 'graph-failed' else 'passed'),response.text
+E   AssertionError: {"id":"99f21456-89c1-4e85-8eb0-49be3feda6ac","run_id":"5568b640-9223-5378-88ce-9ee39ae4fb37","run_item_id":"c8a2a5d8-2dc4-5b00-90b0-123f905ae0c1","case_id":"fc074f72-e578-4f32-8770-7df39187c050","case_version_id":"1779a73f-6b77-4dd7-9ec3-5a3995fdd419","regression_source_result_id":null,"attempt_id":"8160675a-91d0-4281-832f-d9d5e454e726","attempt_no":1,"status":"error","summary":"Test case runner failed: 执行回执模型调用未成功: None","actual":{"runner_error":"执行回执模型调用未成功: None","execution_checkpoint":{"phase":"snapshot","run_id":"5568b640-9223-5378-88ce-9ee39ae4fb37","plan_id":"3779db33-393a-499a-a8a7-53cb74be1125","turn_id":"a27c7c84-efdc-5c0d-a300-b58294f6ae69","project_id":"fade4919-51d8-41a2-aca1-5b906bc1215f","session_id":"11f45e67-5330-426b-b7f2-cefc0dc34c8a","run_item_id":"c8a2a5d8-2dc4-5b00-90b0-123f905ae0c1","snapshot_id":"5c7a0d55-fd4e-4895-8bb5-381ce2d3c471","context_hash":"76b6cfd2ad8fe29b68558c8bb32e566d1452c3e8cf610632d1c5e10cb2a2f3b3","schema_version":1,"snapshot_version":7,"execution_attempt_id":"8160675a-91d0-4281-832f-d9d5e454e726"}},"evidence_refs":[],"artifact_ids":[],"verification_ids":[],"tool_job_id":null,"metrics":{},"error_message":"执行回执模型调用未成功: None","payload_hash":"3d8b2cdf2b22875a26e3bafba78ab9dfd79a50faf668107e3ec786403a079d02","created_at":"2026-10-07T15:17:24.967911Z"}
+E   assert (200 == 200 and 'error' == 'failed'
+E    +  where 200 = <Response [200 OK]>.status_code
+E     
+E     - failed
+E     + error)
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_runs.execution_service:execution_service.py:388 test_run_case_execution_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 314, in execute_item
+    outcome = await self._execute_with_lease_watch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 497, in _execute_with_lease_watch
+    return await execution
+           ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 140, in execute
+    return await self.resume_approval(case=case, version=version, run=run, item=item,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 172, in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 233, in _finish
+    receipt=self._assessment.parse_response(response), tool_records=records,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 130, in parse_response
+    raise ValueError("执行回执模型调用未成功: " + str(summary.get("mode")))
+ValueError: 执行回执模型调用未成功: None
+=========================== short test summary info ===========================
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-passed]
+FAILED tests/test_case_consumption_phase.py::test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[graph-failed]
+2 failed, 11 deselected in 15.64s

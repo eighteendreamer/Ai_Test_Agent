@@ -56,6 +56,17 @@ class PostgresCaseOperations:
         return identity
 
     async def validate_job(self, job):
+        if job.metadata.get(RECEIPT_KEY) is None:
+            if job.started_at is not None:
+                raise ValueError("已发送的新逻辑操作缺少原回执")
+            return None
+        def check():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                return self.validate_job_in_transaction(cur, job)
+        return await asyncio.to_thread(check)
+
+    def validate_job_in_transaction(self, cur, job):
+        from src.runtime.postgres_tool_job_store import _job_from_row
         receipt = job.metadata.get(RECEIPT_KEY)
         if receipt is None:
             if job.started_at is not None:
@@ -68,32 +79,28 @@ class PostgresCaseOperations:
         identity = operation_identity(job,binding)
         if any(receipt.get(k) != v for k,v in identity.items()):
             raise ValueError("逻辑操作回执与当前调用的固定身份或完整输入不同")
-        def check():
-            from src.runtime.postgres_tool_job_store import _job_from_row
-            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                record = self.read(cur,identity["operation_id"])
-                if not record or record["origin_job_id"] != receipt["origin_job_id"]:
-                    raise ValueError("逻辑操作来源缺少不可变原索引")
-                cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id=%s",
-                    (record["origin_job_id"],))
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("逻辑操作原Job不存在")
-                origin = _job_from_row(row)
-                original = self.validate_origin(record,origin)
-                if receipt["decision"] != "input_conflict" and original != identity:
-                    raise ValueError("逻辑操作来源与当前输入不同")
-                if receipt["decision"] == "dispatched":
-                    if origin.id != job.id or receipt["action_sent"] is not None or not receipt.get("execution_claimed"):
-                        raise ValueError("别名逻辑操作不能宣称新发送")
-                elif receipt["action_sent"] is not False or receipt.get("execution_claimed") or job.started_at is not None:
-                    raise ValueError("未发送逻辑操作不能带工具领取或开始时间")
-                if receipt["decision"] == "replayed":
-                    if receipt.get("replayed_output_sha256") != _digest(job.output_payload):
-                        raise ValueError("复用的固定逻辑操作输出SHA不同")
-                    source = job.output_payload.get("case_operation_replay")
-                    if source != {"origin_job_id":origin.id,
-                        "origin_output_sha256":receipt["origin_output_sha256"],"action_sent":False}:
-                        raise ValueError("复用逻辑操作输出与原来源不同")
-                return receipt
-        return await asyncio.to_thread(check)
+        record = self.read(cur,identity["operation_id"])
+        if not record or record["origin_job_id"] != receipt["origin_job_id"]:
+            raise ValueError("逻辑操作来源缺少不可变原索引")
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id=%s",
+            (record["origin_job_id"],))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("逻辑操作原Job不存在")
+        origin = _job_from_row(row)
+        original = self.validate_origin(record,origin)
+        if receipt["decision"] != "input_conflict" and original != identity:
+            raise ValueError("逻辑操作来源与当前输入不同")
+        if receipt["decision"] == "dispatched":
+            if origin.id != job.id or receipt["action_sent"] is not None or not receipt.get("execution_claimed"):
+                raise ValueError("别名逻辑操作不能宣称新发送")
+        elif receipt["action_sent"] is not False or receipt.get("execution_claimed") or job.started_at is not None:
+            raise ValueError("未发送逻辑操作不能带工具领取或开始时间")
+        if receipt["decision"] == "replayed":
+            if receipt.get("replayed_output_sha256") != _digest(job.output_payload):
+                raise ValueError("复用的固定逻辑操作输出SHA不同")
+            source = job.output_payload.get("case_operation_replay")
+            if source != {"origin_job_id":origin.id,
+                "origin_output_sha256":receipt["origin_output_sha256"],"action_sent":False}:
+                raise ValueError("复用逻辑操作输出与原来源不同")
+        return receipt

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="5.716" timestamp="2026-10-07T23:06:19.407608+08:00" hostname="EIghteen"><testcase classname="tests.test_case_consumption_phase" name="test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction[passed]" time="2.158"><failure message="ValueError: 只有已冻结且包含正式目标的计划可以创建运行">tests\test_case_consumption_phase.py:77: in test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction
+    detail = await services['creator'].create(project.id,plan.id,CasePlanRunRequest(creation_key='phase',mode_key='api_testing'))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\plan_run_service.py:32: in create
+    bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by,
+src\application\test_runs\plan_mapping.py:72: in build_plan_run
+    raise ValueError("只有已冻结且包含正式目标的计划可以创建运行")
+E   ValueError: 只有已冻结且包含正式目标的计划可以创建运行</failure></testcase></testsuite></testsuites>

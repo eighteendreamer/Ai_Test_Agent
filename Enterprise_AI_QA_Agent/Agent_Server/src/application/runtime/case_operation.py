@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import logging
 
 from src.application.runtime.case_action_binding import (
-    ARGUMENT, OPERATION_PROTOCOL, CaseOperationSelection, _digest, business_arguments,
+    ARGUMENT, OPERATION_PROTOCOL, CaseOperationSelection, CaseConsumptionSelection, _digest, business_arguments,
 )
 from src.schemas.http_observation import HttpResponseObservation
 
@@ -18,7 +18,9 @@ class CaseOperationRecoveryRequired:
 
 
 def operation_identity(job, binding):
-    selection = CaseOperationSelection.model_validate(job.input_payload.get(ARGUMENT))
+    raw = job.input_payload.get(ARGUMENT)
+    selection_type = CaseConsumptionSelection if isinstance(raw, dict) and "consumption_closure" in raw else CaseOperationSelection
+    selection = selection_type.model_validate(raw)
     scope = {"protocol":OPERATION_PROTOCOL, "operation_key":selection.operation_key,
         **{key:getattr(binding,key) for key in (
             "project_id", "run_id", "run_item_id", "plan_id", "attempt_id", "item_key", "context_sha256")}}

@@ -254,7 +254,7 @@ function choosePlanningStages(event: Event) {
 }
 function downgradeFormalEffects() {
   const policy = config.value?.policy;
-  if (policy) { delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; delete policy.evidence_reference_protocol; }
+  if (policy) { delete policy.consumption_protocol; delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; delete policy.evidence_reference_protocol; }
   if (policy?.planning_stage_protocol !== "case-planning-staged-evidence-v2") return;
   policy.preparation_scope_protocol = "preparation-scope-v1";
   policy.effect_evidence_protocol = "case-effect-evidence-v1";
@@ -280,6 +280,12 @@ function chooseDocumentExpected(event: Event) {
   }
   chooseFormalEffects(event);
   config.value.policy.effect_expected_source_protocol = "case-effect-document-expected-v1";
+}
+function chooseConsumptionPhase(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.consumption_protocol; return; }
+  chooseFormalEffects(event);
+  config.value.policy.consumption_protocol = "case-consumption-phase-v1";
 }
 function chooseOperationPrefetch(event: Event) {
   if (!config.value) return;
@@ -395,6 +401,9 @@ onMounted(loadPolicy);
         <label v-if="config.policy.effect_coverage_protocol">覆盖证据预算（字节）<input data-testid="effect-coverage-budget" v-model.number="config.policy.effect_coverage_max_bytes"
           type="number" min="1" max="10000000" placeholder="1024000" :disabled="busy"></label>
         <p v-if="config.policy.effect_coverage_protocol">核对固定声明范围内的所有原对象及清理证据。未覆盖或来源未知时保留缺口，不代表共享消费已完成。</p>
+        <label><input data-testid="consumption-phase-policy" type="checkbox" :disabled="busy"
+          :checked="!!config.policy.consumption_protocol" @change="chooseConsumptionPhase">清理前核验消费阶段结束</label>
+        <p v-if="config.policy.consumption_protocol">消费结束后继续清理；失败结果保留。证据未知时不发送清理，旧运行保持原策略。</p>
         <label><input type="checkbox" data-testid="planning-stages" :disabled="busy"
           :checked="!!config.policy.planning_stage_protocol" @change="choosePlanningStages">分阶段生成执行计划</label>
         <p v-if="config.policy.planning_stage_protocol">先确定用例、必要前置和顺序，再补充执行证据；两阶段共用本次回合数和超时，全部校验后才可启动。</p>
