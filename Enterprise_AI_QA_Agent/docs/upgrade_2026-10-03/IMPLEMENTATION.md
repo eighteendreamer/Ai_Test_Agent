@@ -3700,3 +3700,36 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 ```
 
 这两项通过实际临时文件、上传路由和本地测试存储验证版本追加、原件读回、同名独立文档、原请求恢复及转换/项目URL修改不覆盖原件；没有Git配置或调用。此次没有重跑生产存储、独立解析/比较进程、完整App或默认模型。项目PLAN、用户所贴附件及选中计划文件同步为相同字节；核对记录为`plan-upload-boundary-2026-10-07-validation.json`。不将此文档修订标为完整升级完成。
+
+## 2026-10-07：规划响应完整性与真实模型新试验
+
+源码基线4a77cf98。研究依据和具体范围见`P4_PLANNING_RESPONSE_COMPLETION_RESEARCH.md`及PLAN 6.53。新seed冻结响应完整性协议，旧seed缺字段维持旧行为和序列化结构；只在新协议下将确定的length/max_tokens或空白正文与普通JSON错误分开。拒绝轮及持久checkpoint保存元数据/正文，结果明确planning_failed，不修正重发或创建运行。没有新增可编辑配置、依赖、PG列或公开API；原MySQL策略、PG事实及原件对象职责保持。
+
+实际命令（Agent_Server；原失败不覆盖）：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_response_completion.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-replay-first.xml
+# 退出0：6通过、2真实存储开关跳过，4.65秒。
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:QA_PLANNING_COMPLETION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-planning-completion-regression'
+$env:QA_TOOL_NAVIGATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-planning-completion-navigation'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_response_completion.py tests/test_planning_tool_navigation.py tests/test_case_planning.py tests/test_case_planning_tasks.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-regression.xml
+# 退出0：50通过、1旧外部模型测试跳过，55.08秒。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-planning-completion-production'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-production.xml
+# 退出0：受控独立生产2通过108.14秒；RunItem部分清理blocked/全部清理passed，运行均completed。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-planning-completion-default'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-default.xml
+# 退出1：1失败203.43秒；两轮合法query，第三轮总180秒截止，没有运行或业务HTTP。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_response_completion.py::test_synchronous_rejected_response_is_saved_with_its_actual_text -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-sync-first.xml
+# 退出1：1失败3.76秒，KeyError: response_text；同步最终结果未保存拒绝正文。
+$env:QA_PLANNING_COMPLETION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-planning-completion-final'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_response_completion.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-planning-completion-final.xml
+# 修复同步保存后退出0：9通过10.20秒，含两种真实HTTP/SDK及实际PG恢复。
+..\.venv\Scripts\python.exe -Xutf8 -m py_compile src/application/test_cases/planning_workflow.py src/application/test_cases/planning_service.py src/schemas/case_planning_task.py tests/test_planning_response_completion.py tests/test_default_coverage_production.py
+```
+
+新默认模型试验实际协议入PG，前两轮27.332/55.453秒均stop；第三轮96.745秒后interrupted，没有完整响应。三个物理请求为不同合法逻辑回合，未进入JSON修正；响应头200不等于流完成。默认试验没有触发新拒绝分支，在最终同步正文保存字段补齐前运行；相关最终保存专项另外验收。模型全局配置与预算没有变化。旧失败/未知发送保留，完整App、正式项混合创建/清理、共享消费、未知只读核对、运行修订及其余P0—P5仍待实施。

@@ -13,6 +13,7 @@ from src.schemas.model_config import model_invocation_parameters as planning_mod
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
+PLANNING_RESPONSE_PROTOCOL = "case-planning-response-completion-v1"
 
 
 class CasePlanningTaskRequest(CasePlanningRequest):
@@ -28,12 +29,15 @@ class PlanningTaskSeed(PlanningModel):
     system_prompt: str
     model_parameters: dict[str, Any] = Field(default_factory=dict)
     tool_contracts: dict[str, dict[str, Any]] | None = None
+    response_protocol: Literal["case-planning-response-completion-v1"] | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_seed(self, handler):
         data = handler(self)
         if self.tool_contracts is None:
             data.pop("tool_contracts", None)
+        if self.response_protocol is None:
+            data.pop("response_protocol", None)
         return data
 
 

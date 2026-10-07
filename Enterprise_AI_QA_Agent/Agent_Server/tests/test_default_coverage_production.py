@@ -26,6 +26,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
@@ -67,7 +68,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
-    report = {"baseline": "b134f063 plus frozen tool navigation v2", "configured_model_parameters": parameters, "controlled_model": False,
+    report = {"baseline": "4a77cf98 plus frozen planning response completion v1", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     def save(name, value):
         (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -137,6 +138,11 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
                 task = await post(root + "/case-planning-tasks", request, 202)
                 save("submission.json", task)
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed FROM {settings.database.postgres_case_planning_task_table} WHERE id=%s", (task["id"],))
+                    frozen = cur.fetchone()["seed"]
+                assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
+                report["frozen_response_protocol"] = frozen["response_protocol"]
                 planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,
                     group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
                 await planning_queue.connect()

@@ -23,7 +23,7 @@ from src.schemas.case_planning import (
     PlanningDecision, PlanningEvidence,
 )
 from src.schemas.model_config import ModelConfigRecord
-from src.schemas.case_planning_task import PlanningTaskCheckpoint, PlanningTaskSeed, planning_model_parameters
+from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, PlanningTaskCheckpoint, PlanningTaskSeed, planning_model_parameters
 
 logger = logging.getLogger(__name__)
 PLANNING_CONFIG_KEY = "test_case.planning_policy"
@@ -106,7 +106,8 @@ class CasePlanningService:
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
                 effect_coverage=config.policy.effect_coverage_protocol is not None), model_parameters=planning_model_parameters(model),
-            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None)
+            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None,
+            response_protocol=PLANNING_RESPONSE_PROTOCOL)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
                      fixed_case_versions: dict[str, str] | None = None,
@@ -137,7 +138,8 @@ class CasePlanningService:
                 preparation_scopes=config.policy.preparation_scope_protocol is not None,
                 effect_evidence=config.policy.effect_evidence_protocol is not None,
                 effect_coverage=config.policy.effect_coverage_protocol is not None),
-            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None)
+            tool_contracts=capture_tool_contracts() if config.policy.effect_coverage_protocol else None,
+            response_protocol=PLANNING_RESPONSE_PROTOCOL)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,
             deadline_at=datetime.now(timezone.utc) + timedelta(seconds=config.policy.timeout_seconds),

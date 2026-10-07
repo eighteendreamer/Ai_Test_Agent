@@ -10,7 +10,7 @@ from uuid import uuid4
 from src.application.test_cases.planning_sources import json_text
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
-from src.schemas.case_planning_task import planning_model_parameters
+from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest
 
 logger = logging.getLogger(__name__)
@@ -150,6 +150,21 @@ class CasePlanningWorkflow:
                             raise ValueError(f"模型调用失败（{mode}）；未创建测试运行")
                         if checkpoint.response_has_tools:
                             raise ValueError("规划模型返回了不可执行的工具调用；此阶段只能查询项目依据")
+                        if seed.response_protocol == PLANNING_RESPONSE_PROTOCOL:
+                            metadata = checkpoint.response_metadata
+                            disposition = ("truncated" if metadata.get("finish_reason") in {"length", "max_tokens"}
+                                or metadata.get("stop_reason") == "max_tokens"
+                                else "empty" if not (checkpoint.response_text or "").strip() else "received")
+                            if disposition != "received":
+                                reason = "模型规划输出达到生成上限，响应不完整" if disposition == "truncated" else "模型规划响应正文为空"
+                                round_record.update({"status": "response_rejected", "response_disposition": disposition,
+                                    "response_protocol": seed.response_protocol, "validation_error": reason,
+                                    "response_text": checkpoint.response_text})
+                                logger.warning("case_planning_response_incomplete", extra={"project_id": record.project_id,
+                                    "plan_id": record.id, "round": checkpoint.next_round,
+                                    "response_protocol": seed.response_protocol, "response_disposition": disposition,
+                                    "finish_reason": metadata.get("finish_reason"), "stop_reason": metadata.get("stop_reason")})
+                                raise ValueError(f"{reason}；已保留响应，不自动重发；未创建测试运行")
                         try:
                             decision = self._planner._parse(checkpoint.response_text or "")
                             if decision.action == "finish":
