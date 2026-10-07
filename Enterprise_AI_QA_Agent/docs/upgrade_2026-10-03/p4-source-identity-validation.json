@@ -1,0 +1,990 @@
+{
+  "date": "2026-10-07",
+  "baseline": "5b5490ac",
+  "plans": [
+    "G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\PLAN.md",
+    "C:\\Users\\32734\\.codex\\attachments\\ec189608-bb79-41e6-925a-3d70ba54a017\\已粘贴的文本.txt",
+    "C:\\Users\\32734\\.codex\\plans\\01a1006b-4507-7e32-b83d-af8d1598e810\\01a1009d-d8b2-7dc1-af17-13a77fada84d\\PLAN.md"
+  ],
+  "plans_byte_identical": true,
+  "plan_sha256": "5e45d2fcca8cb111465c4b7c50fcd5a18bc38ccc8111a5d9560ae99f66c6e825",
+  "previous_plan_sha256": "936c8fbde43e6dd2157745fb0934f550b43fac1b5f3f1801e618a9fade78bcd7",
+  "sources": [
+    {
+      "path": "Agent_Server/src/application/test_cases/planning_sources.py",
+      "sha256": "bc036cdd1f8a44d466159dc6d35d7da1b73230004ab69e04f473c5fa8a586379",
+      "size_bytes": 7773
+    },
+    {
+      "path": "Agent_Server/src/application/test_cases/planning_service.py",
+      "sha256": "ae7c261f4609789193578458f0bc026e82607b53eed245f427bd8f521f18162a",
+      "size_bytes": 29649
+    },
+    {
+      "path": "Agent_Server/src/application/test_cases/planning_stages.py",
+      "sha256": "1d949f7adf0fd377e62556b45618e9f39a0f0f0212e1dd5f02645a43f0abc599",
+      "size_bytes": 14180
+    },
+    {
+      "path": "Agent_Server/src/application/test_cases/planning_workflow.py",
+      "sha256": "2922a4cec98832d49332024182cbe352349cf324509abe833c93a1cf6645e612",
+      "size_bytes": 28429
+    },
+    {
+      "path": "Agent_Server/src/schemas/case_planning.py",
+      "sha256": "97c3a848f452eac9431756f99753152915db712417a8b8d450e55e162033c9b7",
+      "size_bytes": 17116
+    },
+    {
+      "path": "Agent_Server/tests/test_planning_source_identity.py",
+      "sha256": "6b35e78a306ce0b5ee2b743f394e023c7dce649eff81bda088039e056fb2ce33",
+      "size_bytes": 9146
+    },
+    {
+      "path": "Agent_Server/tests/test_planning_operation_prefetch.py",
+      "sha256": "487e96605ddd7dc8a258f1346355313beb293d9c52ac8661573aaabc290cc87e",
+      "size_bytes": 12540
+    },
+    {
+      "path": "Agent_Server/tests/test_case_effect_relations.py",
+      "sha256": "597f297602c908a2fc1cc2b277f97d69ca75e43f480c1b595bf665b7f83cc110",
+      "size_bytes": 31193
+    },
+    {
+      "path": "Agent_Server/tests/test_default_coverage_production.py",
+      "sha256": "52222180d7a509d412cdac8c0f5ba8ebaf61a8017ff0a8b22938a0c8852e1c80",
+      "size_bytes": 20651
+    },
+    {
+      "path": "agent_web/src/types.ts",
+      "sha256": "23ea55d47664789cea5ca6f64f346265670eae39924d8e441cd023fec48634a7",
+      "size_bytes": 74545
+    },
+    {
+      "path": "agent_web/src/features/projects/CasePlanDialog.vue",
+      "sha256": "9e6e02775a936bd2921586254ab5a5c3cf8c300bbeb5a56e787d96651fc23a51",
+      "size_bytes": 27841
+    },
+    {
+      "path": "agent_web/src/features/projects/CasePlanDialog.test.ts",
+      "sha256": "26dbcb1ecec9b6ec43a308fe2cf4fb0c3174d00eef0fae5c3bf380c06c2b2f01",
+      "size_bytes": 28331
+    }
+  ],
+  "raw_files": [
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-build-first.command.json",
+      "sha256": "f461b6731050cc8fb49f5c8e35c971bcc4d547700857769fa5dcdf3aa529bd2b",
+      "size_bytes": 167
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-build-first.log",
+      "sha256": "de7e58c199cea42bb729f41d5a192daeb98b5e10537f21a4692a91f609fbbe41",
+      "size_bytes": 9964
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-business-first/relations/identity-prefetch-document-external-all/requirements.md",
+      "sha256": "d86231a2b5b3f4cc65d85ffbe4e57d4a8eb130668f8ad3df1bdd2da777a395f2",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-business-first/relations/identity-prefetch-document-external-all/verification.json",
+      "sha256": "a836e2c8a4fd34af61256f36fddfd1dce2eb262b09c2c920c31a8d7164522997",
+      "size_bytes": 269737
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-business-first.command.json",
+      "sha256": "c5213201a17a61795f0444ac0dfb414382ec23c865c49ad648f0eb98c08199c0",
+      "size_bytes": 579
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-business-first.log",
+      "sha256": "0092863fed018cfefad37282906b5286c808c6cd6b8ee6931f93fb315fcfbd11",
+      "size_bytes": 101
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-business-first.xml",
+      "sha256": "02a109caa9c61823196e2c97431040c12bb934fcd2822c9b2ae71efac4dcb24d",
+      "size_bytes": 421
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/case.json",
+      "sha256": "8fcf05e461f4fb880c7dc77c8faaecf483460c8b9f43086a2b4f260d68473266",
+      "size_bytes": 3304
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/default-api.stderr",
+      "sha256": "5869016d96d1c94e7a63a7d3dc204bff20d9981586a2fbf719976598060b6155",
+      "size_bytes": 9097
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/default-api.stdout",
+      "sha256": "1ef15ee88b09fc12d9f3b967fe4c1802870ba4f006733a3bee52a8008156d1f2",
+      "size_bytes": 1008
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/default-planning-worker.stderr",
+      "sha256": "cdaa722bde91163c284160010a43905bda1df76af78449b26d556229930ab3f0",
+      "size_bytes": 17385
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/default-planning-worker.stdout",
+      "sha256": "43258858826da0cbefa78e3892427464d4324dc5cf4b554678b08118a1ec6f42",
+      "size_bytes": 27
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/document.json",
+      "sha256": "251871368c9ea3b4b146fe6e609b98924f688e27bd35b77814575ebc96a3da0a",
+      "size_bytes": 3670
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/full-case.json",
+      "sha256": "3cc561b8a316a650f447b26cb3769e9c62edc861042fa4941712322c67f272b0",
+      "size_bytes": 1234
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/PG-planning.json",
+      "sha256": "41db5bd68b2edf7036f9c17808cc2e958e58897d76e86f760f098220603fc35f",
+      "size_bytes": 191058
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/1421e32b3b304b8980a20a691dbda032.request.json",
+      "sha256": "0a08279ac98eca1e47eef32de692272e0a5050ed930c3da5335fdc6504132988",
+      "size_bytes": 14984
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/1421e32b3b304b8980a20a691dbda032.response.json",
+      "sha256": "5a82c8c00ca1198b45c1d1136d6c9bd94a915ff02725f48a5f08ecdcd77cb9ef",
+      "size_bytes": 122
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/1421e32b3b304b8980a20a691dbda032.sdk-stream.json",
+      "sha256": "2954b9a336b0d3c2c61f1813457086a9c238db24f14b0c545d94e5fddc7e8a69",
+      "size_bytes": 1142
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/1421e32b3b304b8980a20a691dbda032.send.json",
+      "sha256": "f6b675eeea623a7e0aa3b2d2d36e56b1a748549e5d3a72b429890a0408524b22",
+      "size_bytes": 309
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/3edd10815fce4884842602f344274811.sdk-create.json",
+      "sha256": "45967e18497765406a80b90e0300ab45fa475c0fd8ea9aaa38818b7da9818494",
+      "size_bytes": 219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/461dbce78ceb43ad9bbe052c58c2374a.sdk-create.json",
+      "sha256": "48129c4788c7a8239da1e73971c727fb4178b2319b555972f5bb26fa2d5f7847",
+      "size_bytes": 219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/4c84b5bea1d747409cfa7ed750b3a77e.request.json",
+      "sha256": "937e9b442db785b556d42513b989e2edaf94c56ffd8e23da6ccf02fe7ae0e41f",
+      "size_bytes": 18480
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/4c84b5bea1d747409cfa7ed750b3a77e.response.json",
+      "sha256": "5a82c8c00ca1198b45c1d1136d6c9bd94a915ff02725f48a5f08ecdcd77cb9ef",
+      "size_bytes": 122
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/4c84b5bea1d747409cfa7ed750b3a77e.sdk-stream.json",
+      "sha256": "d98eff706baa410aeba562c2e752af96792523fc6aabb78e43e5088eaf314d21",
+      "size_bytes": 1144
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/4c84b5bea1d747409cfa7ed750b3a77e.send.json",
+      "sha256": "b8067fe33cdee0790223abd7bf86fa4438d99f4dd0d76972c94188371aaeecb9",
+      "size_bytes": 309
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/8cf52659fcf74336a1646da6fb205c42.sdk-create.json",
+      "sha256": "3e4a4eb0158bb1c2a4ae50f5b73b07da563eba04428aac74e6213c395655ae50",
+      "size_bytes": 219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/a8874f60c3bd441ca99aa05ee1183fe8.sdk-create.json",
+      "sha256": "36d496c5ecd8f158eee2c675aec330c05e59aae2d2cefb06bbc91b7187ae2026",
+      "size_bytes": 219
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/c72b8f7c66c64b3292b23b5222578030.request.json",
+      "sha256": "cc629335ee304eda6b46559b59b45685fb38805512e5db353fc9df01004dc2cb",
+      "size_bytes": 24873
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/c72b8f7c66c64b3292b23b5222578030.response.json",
+      "sha256": "5a82c8c00ca1198b45c1d1136d6c9bd94a915ff02725f48a5f08ecdcd77cb9ef",
+      "size_bytes": 122
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/c72b8f7c66c64b3292b23b5222578030.sdk-stream.json",
+      "sha256": "329ed724b01af4b8467c7657f2fbd946f98507fc8b9bbf7da1d057cfa3b6e36d",
+      "size_bytes": 1182
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/c72b8f7c66c64b3292b23b5222578030.send.json",
+      "sha256": "4cb49a963af70afdd2812d616c2075d8be953281964b47936d509275020f43b3",
+      "size_bytes": 309
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/ce494d87d9bc4f598e11e8eccbef87fd.request.json",
+      "sha256": "5b8fed9d4ac43e5518d738695768b20e38e084c4362db260449b5258d23674e3",
+      "size_bytes": 16750
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/ce494d87d9bc4f598e11e8eccbef87fd.response.json",
+      "sha256": "5a82c8c00ca1198b45c1d1136d6c9bd94a915ff02725f48a5f08ecdcd77cb9ef",
+      "size_bytes": 122
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/ce494d87d9bc4f598e11e8eccbef87fd.sdk-stream.json",
+      "sha256": "97c18c986ea6785940aadc1feb759ff4118557520692af4bc220d8bebf35a134",
+      "size_bytes": 1153
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/ce494d87d9bc4f598e11e8eccbef87fd.send.json",
+      "sha256": "c3045047ebf849b3a6990329cd0edbaac3dc20f5c6421a27420ad55a11d6b2fb",
+      "size_bytes": 309
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/planning-task.json",
+      "sha256": "43c48ff1066305af4e2c67c137e34533ca337069a21cbd7c23ce2195777de75b",
+      "size_bytes": 598
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/requirements.md",
+      "sha256": "37b3294b66e4f3a953b8efcf9d4d328ae1e6cd4ae1848b822354cc3df9facb56",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/submission.json",
+      "sha256": "a1cfcc31f5f40e92fa1e098c5846678e2e951f59a2faefdcd92a8f0d86ec64f5",
+      "size_bytes": 485
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/verification.json",
+      "sha256": "f01b144210c4a81d0ca286c1cba2c7d66a961904e30db5cf74fb86286d29519e",
+      "size_bytes": 8513
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first.command.json",
+      "sha256": "d2134e82f1ea826f6e2fb0aee6b9328958cc3be4ae5fcda5a9ca89fadd48f21a",
+      "size_bytes": 544
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first.log",
+      "sha256": "d1db5ff7bb59146b82a0eb6bbca8ff25102e55374ae5b09c3651870f59f80047",
+      "size_bytes": 1064
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first.xml",
+      "sha256": "68bea60eb3a8c006668dd388f9a4716aef1758eaf9d30dba1cac66a1920078c2",
+      "size_bytes": 1149
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-frontend-first.command.json",
+      "sha256": "51d82de048ee1a11a68fc21b871ff0b3c801e786eecb5e5a1c474d072a407995",
+      "size_bytes": 280
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-frontend-first.log",
+      "sha256": "c0d70d29d8a0ce85739a918bbd8d703c29bada39b40bbc596abd0c26d87c6b1f",
+      "size_bytes": 407
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/batches/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/batches/verification.json",
+      "sha256": "48e07149f89df5ec2840693fd1eb0097b00aab5d6ad391301c8d13e84e255239",
+      "size_bytes": 344767
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-batches/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-batches/verification.json",
+      "sha256": "04b98b8503de438a9dc1cc04352f538e4f67fd13ef73e36ef75a0faae2edd867",
+      "size_bytes": 348967
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-none/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-none/verification.json",
+      "sha256": "7221dc60e40dc6a971df96121e5da574570ce2efa98cdd634c6036d212cdd436",
+      "size_bytes": 301541
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-queue-ack/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-queue-ack/verification.json",
+      "sha256": "d37575ebb058e12ff1f6eeb16e981b1e8e8c59e53a9a6f83ffca5b53dc96ab29",
+      "size_bytes": 300787
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-read-ack/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-read-ack/verification.json",
+      "sha256": "5b689dc73c6942fcff2d712681140e641e3024b52a2eb87fabcdfbbb635a5e5b",
+      "size_bytes": 300789
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-unknown-operation/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/identity-unknown-operation/verification.json",
+      "sha256": "f458d83ac0af27edc06f0caed7bde3daec1695b2b6084bf38fb522b801ea07ec",
+      "size_bytes": 330537
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/none/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/none/verification.json",
+      "sha256": "a99de8dc1d20d81b4b623a1437fb16ee072a2a26d39654c1b04fa5b926f271c4",
+      "size_bytes": 299261
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/queue-ack/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/queue-ack/verification.json",
+      "sha256": "9cb16862e4b617775a99bffbd20c6f319347cfd80e8c4a2eb9ae0f8e05c3fad2",
+      "size_bytes": 298579
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/read-ack/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/read-ack/verification.json",
+      "sha256": "e1581862cdc1b37a6ce11b12142c0fad91a39bcf200f1a57587a04c60023c05b",
+      "size_bytes": 298579
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/unknown-operation/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/queries/unknown-operation/verification.json",
+      "sha256": "30e9ad57e4968bad181c2a7d5dc5b1c4068554036f388073dccb616c192239d9",
+      "size_bytes": 327913
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/docx/original.docx",
+      "sha256": "5e2a7040ee8aca8195b903ebb703f6e4e61b20e1588567f9ea190f8e88aa8c94",
+      "size_bytes": 36897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/docx/verification.json",
+      "sha256": "2abfde6b802a9dc8ef4695f4f372ca36f4106a0e28b91c58a64342e63a16f01e",
+      "size_bytes": 33392
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/md/original.md",
+      "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/md/verification.json",
+      "sha256": "57f42e25108b09150ab3ca553ef550d4b4759db7aaed8376e554c1c72790e9aa",
+      "size_bytes": 27484
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/pdf/original.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first/sources/pdf/verification.json",
+      "sha256": "5b03098341dd1000aad1c4e008b6f276c4c5873931510c9b799029f8f8c3c193",
+      "size_bytes": 20804
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first.command.json",
+      "sha256": "3b93f24a1458047daf6e7b250b688ccc72fe16922fcaea7b647c1891d1c3b4db",
+      "size_bytes": 528
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first.log",
+      "sha256": "ace2b02b073c02120a054ad33b6c49c43b45919257245e4bd31bce71277ef6d9",
+      "size_bytes": 102
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-live-first.xml",
+      "sha256": "bb0e2cece69a7bc06a0b4b984e500c2337754686652f747d0ffed7a1a88c6712",
+      "size_bytes": 4278
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/coverage-budget/formal-mixed-case.json",
+      "sha256": "96b90e9bf62c389194ee9581a8c65bf4f67cbc16150de52522119a6c07119ce7",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/coverage-budget/verification.json",
+      "sha256": "d9d8772135f537f71929d64c91d16e7bfc3a15902bed3cfa407a1f8069d58cc5",
+      "size_bytes": 172002
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-durable-recovery/requirements.md",
+      "sha256": "881b357822b678a1a99be65b729d3e9be9ed1a1c839a1a8bed6756086ee9e679",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-durable-recovery/verification.json",
+      "sha256": "d894e71cf18c8c144a89843710073a71fa179167f872eb2c88b43b51d0245f04",
+      "size_bytes": 314940
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-internal-all/requirements.md",
+      "sha256": "97e75aee8f42b2b8d8c6a5afad0c9d86ec2fdd421a86be85afb965d95a7625b3",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-internal-all/verification.json",
+      "sha256": "e3063fb87ce9d0c16da1a26881cd67eafd63f617bf77f97cee5b54dd3004f3cf",
+      "size_bytes": 311813
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-internal-partial/requirements.md",
+      "sha256": "cfea09e027cef6de115cf888595e01d3571a27d237291a76cba53d8674a915f4",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/document-internal-partial/verification.json",
+      "sha256": "43653ec7659421e16c1443ca890528b4e6fcecfb7b932b2cbb0ec11424604e14",
+      "size_bytes": 263663
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/external-all/formal-mixed-case.json",
+      "sha256": "70163a722fe260f4d0e5058e62fe084cd7bff45dc116ee2a620a3f9051fdf950",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/external-all/verification.json",
+      "sha256": "6d0026f4919add27483093dae4558b9a169db9c9b274a48eff8f3fb101fb0042",
+      "size_bytes": 194782
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/identity-prefetch-document-external-all/requirements.md",
+      "sha256": "45c4bd9d7395e76e4b004c39d05f063d263b9a798a7fc11f6e3549e798058cfe",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/identity-prefetch-document-external-all/verification.json",
+      "sha256": "b665b3c467c091986e78592f1daa384c4974b9971fd563edef834b49dec4c4e3",
+      "size_bytes": 269738
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/internal-all/formal-mixed-case.json",
+      "sha256": "f322114d9b5f1086e13f15cc087271832c471419bf8347f9f52e793fe7c39635",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/internal-all/verification.json",
+      "sha256": "29d35bbc8ad176dc24eb213da9f4bbdc3b8eeea92248c103ac5e8ccd55aeeda4",
+      "size_bytes": 204556
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/internal-partial/formal-mixed-case.json",
+      "sha256": "01bd2e470b51c41306dd30fb5a277e50f160389975439b90ebf7c070fdbce19d",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/internal-partial/verification.json",
+      "sha256": "40972d4afa8611284a78d827e678b4a4893c90d40c4a99db7eac2e6f2a54ae41",
+      "size_bytes": 175878
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/prefetch-document-external-all/requirements.md",
+      "sha256": "08aee06a4ce6ddb16f76e4c4c890d9dba9d0a4d83f937f9f7a77ac21846446eb",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/prefetch-document-external-all/verification.json",
+      "sha256": "cb5ce6a6a2c021465204ee0ae169c5c2efce029051377f52b1882637f871f085",
+      "size_bytes": 265754
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/unknown-create/formal-mixed-case.json",
+      "sha256": "3060975da5b4b663eef64a85db41ade641496b78dcf1e8ee96cce821f31e7963",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/unknown-create/verification.json",
+      "sha256": "c10f69adee95d6f17680e4202c2a760d8af688d78d4b35d349407d699d424a66",
+      "size_bytes": 236881
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/unknown-delete/formal-mixed-case.json",
+      "sha256": "676986eb56d358f0837231adbd556230369c5d9f59b418603fa85623cb49a7db",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/unknown-delete/verification.json",
+      "sha256": "6559ff674c575db7949b7541bbc2c99b0c4b023acb1a4311a57cf91b1adcaff6",
+      "size_bytes": 207705
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/v2-durable-recovery/formal-mixed-case.json",
+      "sha256": "77d8f2d92574e53b77f0d1184de81460f97bb80af69e5538e62fc07f1f7c7963",
+      "size_bytes": 718
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/relations/v2-durable-recovery/verification.json",
+      "sha256": "99d0fe42b3525af35ca2703463baad8b6ef814c6b710f254f994a3a8b489825e",
+      "size_bytes": 304630
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/ack-recovery/staged-requirements.md",
+      "sha256": "a8e226db7b6e6c8912a7da5f7f04d0a8a272fe870060bec52d002a1548e572cb",
+      "size_bytes": 133
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/ack-recovery/verification.json",
+      "sha256": "24477a3bb4e27fe1f640c347dcfdafbc23c7f3a557d0e72920508ac3d76b5a9f",
+      "size_bytes": 299743
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/hash-fence/staged-requirements.md",
+      "sha256": "a8e226db7b6e6c8912a7da5f7f04d0a8a272fe870060bec52d002a1548e572cb",
+      "size_bytes": 133
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/hash-fence/verification.json",
+      "sha256": "86e4849efb789a7996244506bcfcc8eca9c814f9fb7f69f4b16ae1c6372bd8ee",
+      "size_bytes": 217152
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/missing_cleanup/staged-requirements.md",
+      "sha256": "a8e226db7b6e6c8912a7da5f7f04d0a8a272fe870060bec52d002a1548e572cb",
+      "size_bytes": 133
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/missing_cleanup/verification.json",
+      "sha256": "4d98c8f487c390712fef922336b57ae7ba1d2ffa4e61166d4f43c27d1c686e6c",
+      "size_bytes": 294126
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/no_target/staged-requirements.md",
+      "sha256": "a8e226db7b6e6c8912a7da5f7f04d0a8a272fe870060bec52d002a1548e572cb",
+      "size_bytes": 133
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/no_target/verification.json",
+      "sha256": "78c4caa1cd1b040bd4c4b93f9085ec39c2bdbe6a5e5a698b768fd3508de82e70",
+      "size_bytes": 189189
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/shared_budget/staged-requirements.md",
+      "sha256": "a8e226db7b6e6c8912a7da5f7f04d0a8a272fe870060bec52d002a1548e572cb",
+      "size_bytes": 133
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first/stages/shared_budget/verification.json",
+      "sha256": "48363e175b35d8de5b2ecc7566074b5db6145f4c1023c60e13d973f44c2747da",
+      "size_bytes": 217211
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first.command.json",
+      "sha256": "65745f9c523680969dd5db04a3f819b4af64d1f1901e3c3b32370bdabc394a0c",
+      "size_bytes": 700
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first.log",
+      "sha256": "4c792d2cca68977f95ab636e2113e4a2ba9295f51881847a77d9435e15d9b3d3",
+      "size_bytes": 204
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-regression-first.xml",
+      "sha256": "dadc72dc09212d5183682188c3d6056acef1d76981d3bde3e8bb4b2117deda15",
+      "size_bytes": 13884
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-final.command.json",
+      "sha256": "36bf4478aa8baad753277dac874aee62af0c6ebc347e1283c4c947af8d171684",
+      "size_bytes": 574
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-final.log",
+      "sha256": "29ada524929cf18ccdee7229a857e4cbbdf364ee4bd60ed947d717543c8b8b40",
+      "size_bytes": 2471
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-final.xml",
+      "sha256": "dc1023cf78961ff30e61b2d445ab4d5b225ca6bebe45dcc0584d1652621f46bf",
+      "size_bytes": 2129
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/docx/original.docx",
+      "sha256": "27fb33db38e7d15ad0430ffc2db1458e8f6e625e3f4e0a13d76754e3636256d4",
+      "size_bytes": 36897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/docx/verification.json",
+      "sha256": "c35b41a50bda186338c576418e6cbc77cb392df6bb86f251fded61d22365b9ea",
+      "size_bytes": 60947
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/md/original.md",
+      "sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "size_bytes": 683
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/md/verification.json",
+      "sha256": "c3417079c350fa70eb743849b6771d9a5351998af7222e5273edd661419934b0",
+      "size_bytes": 49767
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/pdf/original.pdf",
+      "sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed/sources/pdf/verification.json",
+      "sha256": "ed58d8244cdae72b94b629fcd37be9fb6c79b1ba3f1feec0dd42c1353126074e",
+      "size_bytes": 38993
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed.command.json",
+      "sha256": "8ebc316c0df6917ec6473a6bb15101df3f205edeb32b3755fbb876d825497ec9",
+      "size_bytes": 574
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed.log",
+      "sha256": "7df7134f4259ec22f9f58d6c003c064eaf9d0bfe0660913aca72dedc9b1fb810",
+      "size_bytes": 101
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p4-source-identity-sources-pg-fixed.xml",
+      "sha256": "6201956828039041de5453117fe08a2685fee57f33a6b60d878a49fa58efda57",
+      "size_bytes": 767
+    }
+  ],
+  "previous_raw_rechecked": {
+    "count": 119,
+    "sha_and_size_match": true
+  },
+  "unrelated_current_bytes_unchanged": {
+    ".gitignore": "d604cb2eb1e5da2b92ec113f2e14d05889963ae0fe9492760670f3a1c5c8b241",
+    "docs/upgrade_2026-10-03/p2-planning-worker-cli.json": "e7b5158ba537b6036f4500218ca88135e355612d7d3037ecfdbd7d01137e1fe8",
+    "docs/upgrade_2026-10-03/p2-planning-worker-probe.json": "a555eb443ba5943d63433b959e61cc0286edf69798c415e471da057beec4ab10"
+  },
+  "earlier_worker_summaries_restored": false,
+  "tests": [
+    {
+      "batch": "live-first",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "24",
+      "time": "23.323",
+      "timestamp": "2026-10-07T13:23:43.337030+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": []
+    },
+    {
+      "batch": "regression-first",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "3",
+      "tests": "85",
+      "time": "87.733",
+      "timestamp": "2026-10-07T13:24:57.865757+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": [
+        {
+          "name": "test_full_versions_cross_mode_query_dependency_and_immutable_http_plan[True]",
+          "reason": "requires isolated real MySQL/PostgreSQL/RustFS"
+        },
+        {
+          "name": "test_actual_document_runtime_preparation_preserves_negative_case[True]",
+          "reason": "requires isolated real MySQL/PostgreSQL/RustFS"
+        },
+        {
+          "name": "test_actual_model_selects_dependencies_preserves_negative_and_uses_existing_data",
+          "reason": "requires current configured model and real isolated MySQL/PostgreSQL/RustFS"
+        }
+      ]
+    },
+    {
+      "batch": "business-first",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "1",
+      "time": "12.362",
+      "timestamp": "2026-10-07T13:24:57.474531+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": []
+    },
+    {
+      "batch": "default-first",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "1",
+      "skipped": "0",
+      "tests": "1",
+      "time": "206.926",
+      "timestamp": "2026-10-07T13:27:48.256643+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": []
+    },
+    {
+      "batch": "sources-pg-final",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "3",
+      "skipped": "0",
+      "tests": "3",
+      "time": "17.044",
+      "timestamp": "2026-10-07T16:44:02.991170+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": []
+    },
+    {
+      "batch": "sources-pg-fixed",
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "3",
+      "time": "11.875",
+      "timestamp": "2026-10-07T16:45:09.182310+08:00",
+      "hostname": "EIghteen",
+      "skipped_nodes": []
+    }
+  ],
+  "real_formats": [
+    {
+      "format": "docx",
+      "original_sha256": "27fb33db38e7d15ad0430ffc2db1458e8f6e625e3f4e0a13d76754e3636256d4",
+      "size_bytes": 36897,
+      "document_version": "79cd7923-fa9d-442e-b716-d87bfdff7ae8",
+      "snapshot_id": "937528d3-2836-4083-9016-06096f89d4c6",
+      "old_evidence_id": "document:e5f3fd55-8f4a-5799-8dc0-dc5820198831:0379cc9fdbdbb85c",
+      "new_evidence_id": "document:e5f3fd55-8f4a-5799-8dc0-dc5820198831:0379cc9fdbdbb85cc1b48b1d139bc9aeed0c1ea51e55fd6a7da71bd204eba57c",
+      "same_payload_hash": true,
+      "actual_PG_plan_id": "508783d9-51b0-4a94-8aac-b23699d66b50",
+      "model_calls": 2
+    },
+    {
+      "format": "md",
+      "original_sha256": "79518cddcbee125636457555f28cf67cda236ae45f1222bae8a14ad8abb611f4",
+      "size_bytes": 683,
+      "document_version": "600f5529-8ca1-4b80-813c-8af3d388353b",
+      "snapshot_id": "64674ae3-ed95-4251-92b4-5e2fbb1a9f84",
+      "old_evidence_id": "document:b4b0c7f9-4f6a-5d0b-9c79-83b6e1b4aece:3f4f8aa95dd57281",
+      "new_evidence_id": "document:b4b0c7f9-4f6a-5d0b-9c79-83b6e1b4aece:3f4f8aa95dd572811fb1c00e02ebfcf05c7764134bef1228df74d306a67618bf",
+      "same_payload_hash": true,
+      "actual_PG_plan_id": "7c3d987c-145e-44fc-b1f5-413abc4b33b6",
+      "model_calls": 2
+    },
+    {
+      "format": "pdf",
+      "original_sha256": "011e45f9f1d036a87d6c767e044e39af67530a5102a9ee9c7a1019df1b7991a3",
+      "size_bytes": 897,
+      "document_version": "e1e2ccda-2075-484c-87a4-1dcfee2bce5a",
+      "snapshot_id": "781e5bd3-5e2a-42b8-b2ef-4f50584110ac",
+      "old_evidence_id": "document:fb4bb08f-3bb5-52e5-bc28-a1b7161b98ce:1e6bc44d4e5e548d",
+      "new_evidence_id": "document:fb4bb08f-3bb5-52e5-bc28-a1b7161b98ce:1e6bc44d4e5e548dac9dfc0e0cc75f79b1673ef663ceecb08ed2a18552284367",
+      "same_payload_hash": true,
+      "actual_PG_plan_id": "48f804fa-004f-4fcc-889e-4b7291a478bb",
+      "model_calls": 2
+    }
+  ],
+  "functional_scenarios": [
+    {
+      "name": "batches",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-declared-operation-prefetch-v7",
+      "model_calls": 3,
+      "system_reads": 9,
+      "read_errors": 8
+    },
+    {
+      "name": "identity-batches",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-source-identity-v8",
+      "model_calls": 3,
+      "system_reads": 9,
+      "read_errors": 8
+    },
+    {
+      "name": "identity-none",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-source-identity-v8",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "identity-queue-ack",
+      "actual_PG_status": "completed",
+      "attempt_no": 2,
+      "frozen_prompt_version": "case-planning-source-identity-v8",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "identity-read-ack",
+      "actual_PG_status": "completed",
+      "attempt_no": 2,
+      "frozen_prompt_version": "case-planning-source-identity-v8",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "identity-unknown-operation",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-source-identity-v8",
+      "model_calls": 4,
+      "system_reads": 1,
+      "read_errors": 1
+    },
+    {
+      "name": "none",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-declared-operation-prefetch-v7",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "queue-ack",
+      "actual_PG_status": "completed",
+      "attempt_no": 2,
+      "frozen_prompt_version": "case-planning-declared-operation-prefetch-v7",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "read-ack",
+      "actual_PG_status": "completed",
+      "attempt_no": 2,
+      "frozen_prompt_version": "case-planning-declared-operation-prefetch-v7",
+      "model_calls": 3,
+      "system_reads": 1,
+      "read_errors": 0
+    },
+    {
+      "name": "unknown-operation",
+      "actual_PG_status": "completed",
+      "attempt_no": 1,
+      "frozen_prompt_version": "case-planning-declared-operation-prefetch-v7",
+      "model_calls": 4,
+      "system_reads": 1,
+      "read_errors": 1
+    }
+  ],
+  "business": {
+    "model_calls": 3,
+    "HTTP": [
+      "POST",
+      "POST",
+      "GET",
+      "DELETE",
+      "DELETE"
+    ],
+    "known": 2,
+    "covered": 2,
+    "remaining": 0,
+    "status": "passed",
+    "controlled_model": true,
+    "inherited_fixture_baseline": "786b5b88",
+    "frozen_prompt_version": "case-planning-source-identity-v8"
+  },
+  "default": {
+    "test_status": "failed",
+    "task_status": "failed",
+    "logical_calls": 4,
+    "physical_requests": [
+      {
+        "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/1421e32b3b304b8980a20a691dbda032.request.json",
+        "round": 1,
+        "stage": "logic",
+        "sha256": "0a08279ac98eca1e47eef32de692272e0a5050ed930c3da5335fdc6504132988"
+      },
+      {
+        "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/ce494d87d9bc4f598e11e8eccbef87fd.request.json",
+        "round": 2,
+        "stage": "logic",
+        "sha256": "5b8fed9d4ac43e5518d738695768b20e38e084c4362db260449b5258d23674e3"
+      },
+      {
+        "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/4c84b5bea1d747409cfa7ed750b3a77e.request.json",
+        "round": 3,
+        "stage": "effects",
+        "sha256": "937e9b442db785b556d42513b989e2edaf94c56ffd8e23da6ccf02fe7ae0e41f"
+      },
+      {
+        "path": "docs/upgrade_2026-10-03/p4-source-identity-default-first/physical/c72b8f7c66c64b3292b23b5222578030.request.json",
+        "round": 4,
+        "stage": "effects",
+        "sha256": "cc629335ee304eda6b46559b59b45685fb38805512e5db353fc9df01004dc2cb"
+      }
+    ],
+    "source_reference_rejections": 0,
+    "logic_frozen": true,
+    "effects_contract_read": true,
+    "system_prefetch_triggered": false,
+    "model_elapsed_seconds": [
+      18.666,
+      61.435,
+      25.208,
+      74.048
+    ],
+    "last_stream_finished": false,
+    "last_stream_content_chars": 0,
+    "business_HTTP": 0,
+    "run_created": false
+  },
+  "local_links_checked": 206,
+  "source_compile_passed": true,
+  "credentials_scan_matches": 0,
+  "full_upgrade_complete": false,
+  "not_run": [
+    "complete browser App",
+    "actual recording database/UI pipeline",
+    "shared consumption lifecycle",
+    "unknown readonly reconciliation",
+    "plan revisions/other modes",
+    "formal template/Excel product flow",
+    "DeepSeek human recording",
+    "Docker performance/security",
+    "historical migration"
+  ]
+}

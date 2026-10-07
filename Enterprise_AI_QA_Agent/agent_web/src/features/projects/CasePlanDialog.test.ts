@@ -366,6 +366,20 @@ describe("case planning", () => {
     expect(wrapper.text()).not.toContain("证据契约");
     wrapper.unmount();
   });
+  it.each(["document-expected", "formal-effects", "operation-recovery"])("saves unified references independently and clears them with %s", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="source-identity"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      source_identity_protocol: "case-planning-source-full-hash-v1",
+      effect_expected_source_protocol: "case-effect-document-expected-v1", timeout_seconds: 180,
+    });
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1].operation_prefetch_protocol).toBeUndefined();
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].source_identity_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves declared operation reading and clears it with %s", async (name) => {
     const wrapper = setup(); await flushPromises();
     await wrapper.get('[data-testid="operation-prefetch"]').setValue(true);

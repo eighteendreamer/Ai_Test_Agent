@@ -151,6 +151,14 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "effect_expected_source_protocol": "case-effect-document-expected-v1",
                         "operation_prefetch_protocol": "case-planning-declared-operation-prefetch-v1"})
                     report["baseline"] = "e4d268e8 plus declared operation prefetch v7"
+                if os.getenv("QA_SOURCE_IDENTITY") == "1":
+                    from src.schemas.case_planning import CasePlanningPolicy
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                        "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                        "source_identity_protocol": "case-planning-source-full-hash-v1"})
+                    report["baseline"] = "5b5490ac plus source identity v8"
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -161,7 +169,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     frozen = cur.fetchone()["seed"]
                 assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
                 report["frozen_response_protocol"] = frozen["response_protocol"]
-                if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1" or os.getenv("QA_OPERATION_PREFETCH") == "1":
+                if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1" or os.getenv("QA_OPERATION_PREFETCH") == "1" or os.getenv("QA_SOURCE_IDENTITY") == "1":
                     assert frozen["stage_prompts"]["protocol"] == policy.planning_stage_protocol
                     report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
                 planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,

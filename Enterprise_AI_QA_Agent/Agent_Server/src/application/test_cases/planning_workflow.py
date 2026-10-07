@@ -8,14 +8,13 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.application.test_cases.planning_sources import json_text
-from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision
+from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision, stage_prompt_version
 from src.schemas.case_planning_stages import (
-    EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint, STAGED_PROMPT_VERSION,
-    RELATION_STAGE_PROTOCOL, RELATION_PROMPT_VERSION, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
+    EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint,
+    RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
 )
-from src.schemas.case_effect_sources import SOURCE_PROMPT_VERSION
-from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROMPT_VERSION, PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries
+from src.application.test_cases.planning_operation_prefetch import PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries
 from src.schemas.case_planning import PlanningQuery
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
@@ -42,6 +41,8 @@ class CasePlanningWorkflow:
         transport outcome and may use only the remaining original rounds.
         """
         record, request, policy = checkpoint.plan, checkpoint.plan.request, checkpoint.plan.config_snapshot.policy
+        native_navigation = seed.stage_prompts is not None or seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION}
+        native_operations = seed.tool_operations if seed.stage_prompts is not None or seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None
         fixed_case_versions = dict(fixed_case_versions or {})
         if seed.plan.regression is not None:
             source = seed.plan.regression
@@ -63,7 +64,7 @@ class CasePlanningWorkflow:
 
         try:
             if seed.stage_prompts is not None:
-                expected_version = PREFETCH_PROMPT_VERSION if policy.operation_prefetch_protocol else SOURCE_PROMPT_VERSION if policy.effect_expected_source_protocol else RELATION_PROMPT_VERSION if seed.stage_prompts.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
+                expected_version = stage_prompt_version(policy, seed.stage_prompts)
                 if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
@@ -121,8 +122,7 @@ class CasePlanningWorkflow:
                                 context["logical_hash"] = checkpoint.stages.logical_hash
                         if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
-                                navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION},
-                                operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION} else None)
+                                navigation=native_navigation, operations=native_operations)
                         if fixed_case_versions:
                             context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
                         if record.environment is not None:
@@ -293,15 +293,15 @@ class CasePlanningWorkflow:
                             try:
                                 if query.kind in {"tool", "tools"}:
                                     evidence, metadata = query_tool_contracts(seed.tool_contracts, query, policy.max_candidates,
-                                        navigation=seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION},
-                                        operations=seed.tool_operations if seed.plan.prompt_version in {OPERATION_PROMPT_VERSION, STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION, SOURCE_PROMPT_VERSION, PREFETCH_PROMPT_VERSION} else None)
+                                        navigation=native_navigation, operations=native_operations)
                                     logger.info("case_planning_tool_query_resolved", extra={"plan_id": record.id,
                                         "round": checkpoint.next_round, "kind": query.kind,
                                         "tool_contract_count": len(evidence), "prompt_version": seed.plan.prompt_version,
                                         "operation": query.operation,
                                         "evidence_scope": metadata.get("scope", "full-tool" if evidence else "catalog")})
                                 else:
-                                    evidence, metadata = await self._planner._sources.query(record.project_id, query, policy.max_candidates)
+                                    identity_options = {"identity_protocol": policy.source_identity_protocol} if policy.source_identity_protocol else {}
+                                    evidence, metadata = await self._planner._sources.query(record.project_id, query, policy.max_candidates, **identity_options)
                                 versions = dict(fixed_case_versions)
                                 if pin_read_versions:
                                     versions.update({item.source_id: item.version for item in record.evidence if item.kind == "case"})

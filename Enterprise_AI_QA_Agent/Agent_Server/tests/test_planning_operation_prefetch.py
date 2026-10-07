@@ -74,7 +74,8 @@ def test_old_v6_seed_checkpoint_and_prompts_preserve_original_bytes_and_new_poli
 @pytest.mark.asyncio
 @live
 @pytest.mark.parametrize('fault', ['none', 'queue-ack', 'read-ack', 'unknown-operation', 'batches'])
-async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, monkeypatch, fault):
+@pytest.mark.parametrize('full_identity', [False, True])
+async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, monkeypatch, fault, full_identity):
     async with tasks_environment(tmp_path) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key='prefetch', name='固定操作阶段交接'))
         content = json.loads((ROOT/'docs/upgrade_2026-10-03/p4-formal-effects-default-first/full-case.json').read_bytes())
@@ -84,6 +85,9 @@ async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, m
             content_base64=base64.b64encode(source.read_bytes()).decode())
         assert (await env.objects.read_object_uri(doc.storage_uri))['content'] == source.read_bytes()
         chosen = policy(effect_expected_source_protocol='case-effect-document-expected-v1', operation_prefetch_protocol=PREFETCH_PROTOCOL)
+        if full_identity:
+            chosen = policy(effect_expected_source_protocol='case-effect-document-expected-v1', operation_prefetch_protocol=PREFETCH_PROTOCOL,
+                source_identity_protocol='case-planning-source-full-hash-v1')
         await env.service.save_policy(project.id, chosen)
         request = CasePlanningTaskRequest(creation_key='original', objective=content['objective'], candidate_case_ids=[case.case.id])
         task = await env.tasks.submit(project.id, request)
@@ -117,6 +121,7 @@ async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, m
         def effects(context):
             tool=next(e for e in context['evidence'] if e['kind']=='tool')
             document=next(e for e in context['evidence'] if e['kind']=='document')
+            assert document['id']=='document:'+document['source_id']+':'+(document['content_hash'] if full_identity else document['content_hash'][:16])
             return {'action':'finish','summary':'按固定原文绑定','bindings':[
                 {'item_key':'seed','evidence_ids':[tool['id'],document['id']], 'effect_declarations':[document_declaration('produced','seed',document)]},
                 {'item_key':'target','evidence_ids':[tool['id'],document['id']], 'effect_declarations':[document_declaration('cleanup','seed',document)]}]}
@@ -148,7 +153,8 @@ async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, m
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='planned'
         assert len(env.model.requests)==(4 if fault=='unknown-operation' else 3)
-        assert plan.prompt_version==PREFETCH_PROMPT_VERSION and plan.config_snapshot.policy.operation_prefetch_protocol==PREFETCH_PROTOCOL
+        assert plan.prompt_version==('case-planning-source-identity-v8' if full_identity else PREFETCH_PROMPT_VERSION)
+        assert plan.config_snapshot.policy.operation_prefetch_protocol==PREFETCH_PROTOCOL
         if before: assert terminal.deadline_at==before.deadline_at and terminal.attempt_no==2
         origin=next(r['operation_prefetch'] for r in plan.rounds if 'operation_prefetch' in r)
         assert origin['declarations'][0]['item_keys']==['seed']
@@ -160,7 +166,7 @@ async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, m
             saved=dict(cur.fetchone())
         saved['deadline_at']=saved['deadline_at'].isoformat()
         if os.getenv('QA_OPERATION_PREFETCH_DIR'):
-            path=Path(os.environ['QA_OPERATION_PREFETCH_DIR'])/fault;path.mkdir(parents=True,exist_ok=False)
+            path=Path(os.environ['QA_OPERATION_PREFETCH_DIR'])/(('identity-' if full_identity else '')+fault);path.mkdir(parents=True,exist_ok=False)
             (path/source.name).write_bytes(source.read_bytes())
             (path/'verification.json').write_text(json.dumps({'actual_PG':saved,
                 'actual_requests':[r.model_dump(mode='json') for r in env.model.requests],

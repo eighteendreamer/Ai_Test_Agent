@@ -81,9 +81,11 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
     scenario_key = scenario
+    full_identity = scenario.startswith("identity-")
+    scenario = scenario.removeprefix("identity-")
     prefetch = scenario.startswith("prefetch-")
     scenario = scenario.removeprefix("prefetch-")
     document_expected = scenario.startswith("document-")
@@ -99,6 +101,10 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         if prefetch:
             selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
                 operation_prefetch_protocol="case-planning-declared-operation-prefetch-v1")
+        if full_identity:
+            selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
+                operation_prefetch_protocol="case-planning-declared-operation-prefetch-v1",
+                source_identity_protocol="case-planning-source-full-hash-v1")
         config = await base.service.save_policy(project.id, selected_policy)
         old = ROOT/"docs/upgrade_2026-10-03/p4-shared-effect-wire/first-consumer-only-left-passed-finished/shared-left.json"
         content = json.loads(old.read_bytes())
@@ -161,7 +167,7 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == ("case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        assert plan.prompt_version == ("case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
         assert len(plan.rounds) == (3 if prefetch else 4)
         later_document = None
         if document_expected:

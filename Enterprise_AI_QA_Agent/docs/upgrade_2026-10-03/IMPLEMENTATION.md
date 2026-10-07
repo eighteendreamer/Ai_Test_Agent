@@ -3980,3 +3980,32 @@ $env:QA_DEFAULT_COVERAGE_DIR='<独立默认实测目录>'
 此前回归/业务模块需独立设置QA_STAGED_PLANNING_DIR、QA_EFFECT_RELATIONS_DIR及QA_EFFECT_EVIDENCE_DIR，均本批目录；不能让未设置导出位置的夹具覆盖历史汇总。agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：45通过2.43秒。npm.cmd run build首次日志完整但父打印GBK异常，修正UTF8/先保存退出后再次执行，实际退出0，Vite7.51秒；源码未因该探针错误更改。首轮原日志保留。
 
 受控实际业务三轮规划后创建两条、查询、清理全部，原完整JSON无新增字段，Result覆盖passed/0剩余，V2上传及政策变更仍按V1执行；队列和读取提交丢回执两种实际PG恢复保持原截止与三模型轮次。默认新试验没有进入该阶段，引用ID16位尾摘要与64位content_hash混用连续失败，下一步研究一致的版本化引用表达，禁止模糊匹配或追加提示绕过。完整范围未缩减，未验事项见PLAN6.61。未推送/建PR，无新增表列或依赖；旧汇总未恢复限制继续保留。
+
+## 2026-10-07 一致来源身份与真实原件/规划持久化
+
+本阶段代码基线5b5490ac，研究先于实现，见P4_SOURCE_IDENTITY_RESEARCH.md；三份全文更新2.3.5/6.62及P2进度，模板只生成、上传不经Git保持。新source_identity_protocol在MySQL原项目规划配置，Prompt v8与原seed/引用/查询PG，原件RustFS。旧缺省序列化/阶段Prompt和恢复不变，无新依赖、表列或公开路由。
+
+实际命令通过Python subprocess数组、cwd=Agent_Server，stdout/stderr原字节及退出码.command.json独立保存；环境RUN_LIVE_CASE_PLANNING_TASKS、RUN_LIVE_CASE_EFFECT_RELATIONS、RUN_LIVE_PLAN_RUN_CREATION、RUN_LIVE_DOCUMENT_PARSERS均为1；QA_SOURCE_IDENTITY_DIR、QA_OPERATION_PREFETCH_DIR、QA_STAGED_PLANNING_DIR、QA_EFFECT_RELATIONS_DIR及QA_EFFECT_EVIDENCE_DIR每批独立：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_source_identity.py tests/test_planning_operation_prefetch.py -q --tb=short --junitxml=<本批.xml>
+# 24通过23.35秒：实际三格式、十个新旧协议查询模式、旧失败/seed/Prompt回放
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_planning_source_identity.py::test_actual_parsed_originals_share_payload_and_version_but_keep_explicit_old_and_new_ids -q --tb=short --junitxml=<本批.xml>
+# PG补验首3失败17.06秒，误用了持久调用参数夹具；查原同步调用后改用原SequenceModel，3通过12.02秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_planning_stages.py tests/test_planning_tool_operations.py tests/test_case_effect_expected_sources.py tests/test_case_effect_relations.py -q --tb=short --junitxml=<本批.xml>
+# 82通过3跳过87.75秒；缺少旧实时规划和旧默认模型专项开关，具体节点见XML/PLAN6.62
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_case_effect_relations.py::test_actual_formal_mixed_effects_and_all_original_objects[identity-prefetch-document-external-all]' -q --tb=short --junitxml=<本批.xml>
+# 三轮受控规划/实际业务1通过12.39秒，原八步/False/0/null完整，5业务HTTP、两个可靠对象、现场0剩余
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_OPERATION_PREFETCH='1'
+$env:QA_SOURCE_IDENTITY='1'
+$env:QA_DEFAULT_COVERAGE_DIR='<独立默认实测目录>'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q --tb=short --junitxml=<本批.xml>
+# 严格1失败206.94秒；API/Worker实际退出0，任务failed；4逻辑/4物理，来源/逻辑通过、技术绑定超时，0Run/业务HTTP
+```
+
+agent_web执行npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：48通过3.03秒；npm.cmd run build包含vue-tsc，退出0，Vite10.96秒。前端策略可独立于操作预读启用，前置关闭删除新字段，原timeout_seconds=180保持。没有完整浏览器App验收。
+
+三种实际原件先保存/进程解析/存储，再比较同payload/版本新旧身份、跨项目与未知协议拒绝；补充同步受控规划每格式2模型调用，PG存完整文档ID、实际MySQL政策与送达上下文完全相等，no_match不建立Run。十个新旧任务模式真实PG丢回执恢复及完整契约，原截止/版本保持。录制来源同分支但实际录制数据库/人工链路未验。
+
+默认第二轮正确冻结正式目标内部产生/清理；第三轮模型才请求execute_task，第四轮只收到推理统计、0正文，原总截止取消，流未结束。没有来源校验失败；prepare专用预读因无prepare声明未触发。下一步研究正式项的明确操作选择/固定来源及完整技术绑定工作量，不重复同配置失败、不编译任意JSON为测试模式参数、不暗增预算。计划/目标范围保持全部P0—P5；旧Worker汇总原字节未恢复限制继续保留。本批物理消息/原件/PG/失败XML及三份字节审计见p4-source-identity-validation.json。

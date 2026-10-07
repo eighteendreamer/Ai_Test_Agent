@@ -1,17 +1,36 @@
 """Small stage adapter around the existing durable planning loop."""
-from src.application.test_cases.planning_sources import json_text
+from src.application.test_cases.planning_sources import json_text, FULL_SOURCE_IDENTITY_PROTOCOL
 from src.schemas.case_planning import PlanningDecision, PlanningDecisionV2, PlanningDecisionV3
 from src.schemas.case_planning_stages import (
     EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint,
     PlanningStagePrompts, logical_decision_hash,
     RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
     LogicalPlanningDecisionV3, EvidencePlanningDecisionV3,
+    STAGED_PROMPT_VERSION, RELATION_PROMPT_VERSION,
 )
-from src.schemas.case_effect_sources import SOURCE_PROTOCOL
-from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROTOCOL
+from src.schemas.case_effect_sources import SOURCE_PROTOCOL, SOURCE_PROMPT_VERSION
+from src.application.test_cases.planning_operation_prefetch import PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION
+
+SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None):
+def stage_prompt_version(policy, stages):
+    if policy.source_identity_protocol:
+        return SOURCE_IDENTITY_PROMPT_VERSION
+    if policy.operation_prefetch_protocol:
+        return PREFETCH_PROMPT_VERSION
+    if policy.effect_expected_source_protocol:
+        return SOURCE_PROMPT_VERSION
+    return RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
+
+
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None):
+    if source_identity_protocol == FULL_SOURCE_IDENTITY_PROTOCOL:
+        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol)
+        identity = "本计划文档/录制依据id使用完整content_hash摘要，查询结果与evidence.id为同一身份；引用该完整id，不截断或补写摘要。"
+        original.logic = identity + original.logic
+        original.effects = identity + original.effects
+        return original
     if operation_prefetch_protocol == PREFETCH_PROTOCOL:
         original = build_document_source_prompts()
         original.logic = original.logic.replace("逻辑阶段：", "若prepare已明确选择固定导航中的工具及操作，在instructions顶层保留tool/operation原名；未明确不猜测，后续仍可query。逻辑阶段：")

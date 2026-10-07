@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from src.schemas.case_planning import PlanningEvidence, PlanningQuery
 from src.schemas.api_docs import ApiDocRecord
+
+FULL_SOURCE_IDENTITY_PROTOCOL = "case-planning-source-full-hash-v1"
+logger = logging.getLogger(__name__)
 
 
 def json_text(value):
@@ -55,7 +59,9 @@ class ProjectPlanningSources:
                 "recordings_has_more": len(recordings) > limit, "offset": offset,
                 "recording_knowledge_available": self._recordings is not None and self._graphs is not None}
 
-    async def query(self, project_id, request: PlanningQuery, limit):
+    async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None):
+        if identity_protocol not in {None, FULL_SOURCE_IDENTITY_PROTOCOL}:
+            raise ValueError("项目来源查询不支持该固定身份协议")
         if request.kind == "cases":
             if request.source_id:
                 return [await self.case(project_id, request.source_id)], {"has_more": False}
@@ -103,6 +109,11 @@ class ProjectPlanningSources:
             payload = {"name": recording.name, "graph": graph, "finalize_metrics": recording.finalize_metrics}
             version = recording.updated_at.isoformat()
         digest = hashlib.sha256(json_text(payload).encode()).hexdigest()
-        evidence = PlanningEvidence(id=f"{request.kind}:{request.source_id}:{digest[:16]}", kind=request.kind,
+        identity_hash = digest if identity_protocol == FULL_SOURCE_IDENTITY_PROTOCOL else digest[:16]
+        if identity_protocol is not None:
+            logger.info("case_planning_source_identity_created", extra={"project_id": project_id,
+                "source_kind": request.kind, "source_id": request.source_id, "source_version": version,
+                "content_hash": digest, "identity_protocol": identity_protocol})
+        evidence = PlanningEvidence(id=f"{request.kind}:{request.source_id}:{identity_hash}", kind=request.kind,
             source_id=request.source_id, version=version, content_hash=digest, payload=payload)
         return [evidence], {"has_more": payload.get("has_more", False)}

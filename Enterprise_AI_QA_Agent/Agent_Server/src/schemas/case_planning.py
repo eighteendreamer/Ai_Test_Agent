@@ -31,9 +31,12 @@ class CasePlanningPolicy(PlanningModel):
     planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
     operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1"] | None = None
+    source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.source_identity_protocol and not self.effect_expected_source_protocol:
+            raise ValueError("完整摘要来源身份需要固定文档预期及分阶段协议")
         if self.operation_prefetch_protocol and not self.effect_expected_source_protocol:
             raise ValueError("明确操作预读需要固定文档预期及分阶段协议")
         if self.effect_expected_source_protocol and self.planning_stage_protocol != "case-planning-staged-evidence-v2":
@@ -72,6 +75,8 @@ class CasePlanningPolicy(PlanningModel):
             data.pop("effect_expected_source_protocol", None)
         if self.operation_prefetch_protocol is None:
             data.pop("operation_prefetch_protocol", None)
+        if self.source_identity_protocol is None:
+            data.pop("source_identity_protocol", None)
         if self.action_binding_protocol is None:
             data.pop("action_binding_protocol", None)
         if self.action_admission_protocol is None:

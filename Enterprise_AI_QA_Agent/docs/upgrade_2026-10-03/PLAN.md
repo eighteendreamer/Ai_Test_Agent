@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次代码核对基线：`e4d268e8`及明确操作读取工作区。新增2.3.4/6.61：逻辑明确选择的操作沿原只读查询队列读取固定契约，真实恢复和业务清理专项已验。新默认模型仍失败，三次引用校验显示16位证据ID与完整hash表达不一致；未进入契约读取或业务执行，不能宣称自主能力通过。三份全文同步，完整P0—P5仍未完成。
+修订日期：2026-10-07；本次代码核对基线：`5b5490ac`及一致来源身份工作区。新增2.3.5/6.62：新计划以完整摘要统一文档引用，旧任务保持原身份；真实MD/DOCX/PDF、PG恢复与原生业务专项已验。新默认模型引用和逻辑冻结通过，进入effects读取契约后原180秒预算耗尽，仍无Run/业务发送，不能宣称自主执行完成。三份全文同步，完整P0—P5仍未完成。
 
 本方案按用户纠正后的流程执行：
 
@@ -236,13 +236,23 @@ AI 只围绕一个问题检查初排后的用例：
 
 真实测试使用原默认用例、原需求内容，仅替换受控服务器地址，没有添加字段；创建两条、查询、部分/全部清理已验。规划后上传新文档版本、执行中关闭当前策略，旧Run仍引用原版本；PG阶段提交丢回执后换attempt恢复原v6seed/逻辑/hash/deadline、终态不再调用。具体结果见6.60及[P4_EXPECTED_SOURCE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_EXPECTED_SOURCE_RESEARCH.md)。本步不能证明默认模型能在原预算内自主完成绑定，也不完成共享消费生命周期。
 
-### 2.3.4 明确操作后的固定契约读取〔专项已验，默认未到此阶段〕
+### 2.3.4 明确操作后的固定契约读取〔专项已验，默认尚未触发系统预读〕
 
 原真实逻辑已写明prepare.instructions的tool/operation，原证据阶段仍用一轮模型仅请求读取相同契约，耗时56.697秒。新MySQL可选operation_prefetch_protocol=case-planning-declared-operation-prefetch-v1要求固定文档预期及v2阶段栈，Prompt v7和完整seed仍PG；旧v6及更早任务保持原Prompt/省略字段。
 
 逻辑先验证、排序并冻结，系统只取prepare.instructions顶层明确的字符串tool/operation，复用原query_tool_contracts/阶段查询队列。保存模型原finish，系统读取另标origin、logical_hash及声明项键；同操作只查一次，超过原queries八条限制则分批保存并读取全部，不消耗next_round或延长deadline。未知操作沿原查询反馈呈现；没有明确选择时仍由模型查询，不从HTTP方法猜工具。完整用例、文档和操作模型保留；当前注册及配置不能替换固定seed。
 
-真实原件上传、MySQL/PG/RustFS、查询队列/读取提交丢回执、新Worker恢复原截止与终态不重发已验；正式用例不加字段，受控模型三轮规划后原生HTTP创建两条、查询、逐条清理且无剩余。默认新试验因文档引用连续错误后超时，尚未进入本阶段。具体命令/原失败及下一步见6.61与[P4_DECLARED_OPERATION_PREFETCH_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DECLARED_OPERATION_PREFETCH_RESEARCH.md)。
+真实原件上传、MySQL/PG/RustFS、查询队列/读取提交丢回执、新Worker恢复原截止与终态不重发已验；正式用例不加字段，受控模型三轮规划后原生HTTP创建两条、查询、逐条清理且无剩余。6.61默认试验因文档引用连续错误未进入本阶段；6.62统一身份后的默认逻辑只选正式项，没有prepare操作声明，因此未触发本协议的系统预读，仍由effects模型请求并读取操作契约。具体命令/原失败及下一步见6.61—6.62与[P4_DECLARED_OPERATION_PREFETCH_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DECLARED_OPERATION_PREFETCH_RESEARCH.md)。
+
+### 2.3.5 文档来源身份与完整摘要一致〔真实存储/恢复已验，自主执行未完成〕
+
+原真实三次错误将document证据ID中的16位摘要写为payload暴露的64位content_hash；工具契约本身却一直使用完整摘要。严格拒绝错误引用保留，根因在来源身份表示不一致。新可选MySQL策略`source_identity_protocol=case-planning-source-full-hash-v1`使用Prompt v8：来源创建时即以完整内容摘要生成文档/录制ID，查询结果、模型上下文、引用、声明和PG恢复共用该身份，不对模型输出做模糊修正。
+
+新策略要求已有固定文档预期/v2阶段契约，可独立于明确操作预读开启。源件业务ID、版本、payload及content_hash不变，case版本与工具ID不变；未启用及旧seed继续16位文档身份、旧Prompt/哈希/序列化，当前策略变更不改写原任务。阶段Prompt版本选择抽为原服务共用函数，避免三处继续扩展不同的版本判断。前端开关与前置清理同步，没有新依赖/表列/公开路由。
+
+实际MD/DOCX/PDF原件经独立解析进程、RustFS字节读回、MySQL策略和PG规划保存/恢复，证明新旧ID对应相同内容/版本；真实任务丢回执换Worker仍使用固定身份/逻辑/hash/deadline，终态不新发；原生创建两条、查询、清理全部及V1固定执行另验。录制身份使用同一来源分支，但本次未验人工录制和实际录制数据库链路。
+
+默认新任务四轮为logic、logic、effects、effects：文档完整ID被正确引用，正式目标的自身清理关系冻结；第三轮读取execute_task，第四轮尚无正文时原deadline取消。系统预读仅接受prepare.instructions明确操作，而本次计划只有正式项，不能用旧预读专项宣称已省掉此轮。下一步研究正式项内明确操作如何在固定逻辑阶段表达并复用原查询/恢复，结合实际阶段成本再验自主能力；不把任意JSON编译成模式参数，不增加虚构前置，不暗增预算。具体失败/证据见6.62及[P4_SOURCE_IDENTITY_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_SOURCE_IDENTITY_RESEARCH.md)。
 
 ### 2.4 冻结、执行与证据
 
@@ -999,7 +1009,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 |---|---|---|
 | P0 | 重复请求根因与API身份修正，实测录制/Docker | 完整HTTP阶段追踪、人工录制闭环、Docker真实证据 |
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程；普通文档全量生成的模块进度与独立恢复仍待验，P4确认需求增量模块及重试的已验能力见3.6.5—3.6.8 |
-| P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归；固定范围、对象证据、清理覆盖及两阶段规划专项已验，见6.45—6.57 | 正式项清理及项内多效果v2专项已验，见2.3.2/6.59；默认新任务完成逻辑、证据阶段超时，固定文档预期已接入并专项验证，见2.3.3/6.60；明确操作读取及三轮真实业务专项已验，见2.3.4/6.61；新默认失败在逻辑引用，先研究引用身份表达，再验自主执行；共享消费完成、完整准备状态、未知只读查证、计划修订、其他模式及完整产品流程继续 |
+| P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归；固定范围、对象证据、清理覆盖及两阶段规划专项已验，见6.45—6.57 | 正式项清理及项内多效果v2专项已验，见2.3.2/6.59；默认新任务完成逻辑、证据阶段超时，固定文档预期已接入并专项验证，见2.3.3/6.60；明确操作读取及三轮真实业务专项已验，见2.3.4/6.61；来源身份一致及三格式/真实恢复专项已验，见2.3.5/6.62；新默认引用/逻辑冻结通过、effects超时，先研究正式项操作读取和实际阶段成本，再验自主执行；共享消费完成、完整准备状态、未知只读查证、计划修订、其他模式及完整产品流程继续 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
 | P4 | 三方影响判断、稳定需求/评审、追踪矩阵、增量草稿、环境适用性/回归 | 影响生产API/Worker/正式页面及固定版本治理已接；默认模型固定场景九判断见6.12；需求身份/版本/验证点、明确评审及设计矩阵API和页面已验，见6.13/6.14；确认范围/冻结生成基础已验，见3.6.3/6.15；持久增量模块/原响应/草稿事务内部已验，见3.6.4/6.17；正式API/独立生成Worker/CLI及前端客户端已接并实测，见3.6.5/6.18；正式增量App及真实DOCX/独立Worker流程已验，见3.6.6/6.19；失败显式新任务API/独立Worker已验，见3.6.7/6.20；重试正式页面已验，见3.6.8/6.22；覆盖确认API、固定历史与矩阵已验，见3.6.9/6.24；正式覆盖管理页面、完整版本/评审/原请求/历史及真实DOCX App已验，见3.6.10/6.26；增量/重试任务池与固定详情已验，见3.6.11/6.28；正文执行关联API/矩阵及正式编辑/完整App已验，见3.6.12—3.6.13/6.30—6.31；默认Agent自主执行、部署适用和更广业务仍待验 |
 | P5 | 录制场景、步骤/别名、知识查询、失败定位、结果报告 | 先证明录制链可用，再按实际缺口实施 |
@@ -2157,3 +2167,24 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 默认五次逻辑调用分别20.068/50.487/61.009/27.478/20.437秒；第2—4轮均计划引用了未读取的来源依据。三个原候选把document证据ID的16位摘要换成了该payload的完整64位hash；原可用ID与原候选分别保留。第5轮截止中断，未创建Run；5逻辑/物理请求和SDK完整观察保留，不重置该任务。原默认模型参数不变。该连续错误是引用契约表达的架构问题，下一步先核对来源ID生成及所有消费者，研究明确一致的引用表示和版本兼容；不能按模糊前缀接受错误引用、再追加一句提示或只加预算重复原任务。
 
 全部功能源码/原失败工件、物理请求和固定正文、三份同步及前批原证据的核对见[p4-operation-prefetch-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-operation-prefetch-validation.json)。本次没有验完整App、共享消费完成、未知只读查证、计划修订/其他模式、P1模板及Excel正式流程、DeepSeek人工录制、Docker性能/安全或生产历史迁移。旧Worker汇总原字节仍未恢复，本次保护当前字节，完整P0—P5继续active。
+
+### 6.62 一致来源身份、三格式实际持久化及新默认阶段证据〔源码基线5b5490ac〕
+
+先读完整目标、原五条物理消息及三次引用失败、来源/阶段/工具契约、PG检查点、声明/Agent上下文和前端，再采用版本化一致身份。依据→做法见[P4_SOURCE_IDENTITY_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_SOURCE_IDENTITY_RESEARCH.md)。可编辑策略MySQL；新Prompt/固定版本/来源/查询/阶段PG；原件RustFS。未迁移历史、未引入依赖或第二执行器。
+
+| 实际批次 | 结果与边界 |
+|---|---|
+| p4-source-identity-live-first | 24通过、0跳过23.35秒：5个离线来源/旧seed回放、3个真实MD/DOCX/PDF来源对照及原预读模块16项；新旧协议均测试队列/读取丢回执/批量/未知操作；批次重叠不累计 |
+| p4-source-identity-sources-pg-final / sources-pg-fixed | 首3失败17.06秒：同步服务误用要求expected_parameters的持久模型夹具，实际返回planning_failed；查原调用后改用已有同步SequenceModel，3通过12.02秒。三种实际解析结果经模型上下文、MySQL固定策略和PG计划保存读回一致，no_match不建立Run；受控模型每格式2次，0业务HTTP，失败XML/log保留 |
+| p4-source-identity-regression-first | 82通过、3跳过87.75秒：规划/任务/阶段/操作/文档预期/正式关系六模块。两项旧实时规划未开RUN_LIVE_CASE_PLANNING_TESTS、一项旧默认模型未开RUN_LIVE_CASE_PLANNING_MODEL；本批独立新默认实测另记，不用跳过代替通过 |
+| p4-source-identity-business-first | 1通过12.39秒：新v8加操作预读，三轮受控规划，POST两次/GET一次/DELETE两次，两个可靠对象覆盖passed、现场0剩余；完整原JSON无证据字段补造，V2及当前策略变更后仍按V1执行 |
+| p4-source-identity-frontend-first / build-first | 两组件48通过3.03秒；vue-tsc/Vite退出0，Vite10.96秒。开启来源策略不会自动开启操作预读，原180秒不变；关闭前置清除引用策略。未验完整浏览器App |
+| p4-source-identity-default-first | 严格实际验收1失败、0跳过206.94秒；独立API/Worker退出0但规划failed，原180秒总预算。4逻辑/4SDK/4物理POST，无重复相同请求，0Run/业务HTTP |
+
+新旧来源专项保持同payload/content_hash/source_id/version，文档16位和64位ID按固定策略明确区分；完整原件SHA/字节及解析快照不变，跨项目和未知协议拒绝。十个真实任务模式分别保存v7/v8seed、MySQL当前策略变更、attempt2恢复及原deadline；固定逻辑/hash与完整32字段操作契约保留，终态没有新增模型调用。业务工件的baseline字段沿用了原文档场景基线786b5b88；本次实际v8工作区由记录的源码摘要和prompt_version核对，不将该旧字段当本次代码基线。
+
+默认四轮耗时18.666/61.435/25.208/74.048秒；前两轮已正确读取完整文档ID并冻结一个正式目标，cleanup_sources引用自身表示项内清理，不生成依赖自环。无validation_feedback及来源拒绝；第三轮仅请求工具execute_task操作契约，读取了完整固定模型；第四轮在original deadline取消，SDK迭代未结束、正文0字符，不能写成完整响应或length结束。四条物理POST均收到HTTP200头，最后一条流未完成；PG原seed/轮次、SDK及物理轨迹保留。全局模型step-5-preview、8192输出、原SDK/单调用策略不变。
+
+本次逻辑没有prepare.instructions，因此旧prepare明确操作预读没有触发；手工受控业务成功不能代替默认自主成功。下一步先研究正式项内明确操作选择及固定查询队列，而不是按HTTP方法猜工具或为赶预算截断用例/接口；技术绑定阶段耗时另查证。不重复原失败任务、不重置unknown/终态、不直接加时限。共享消费完成、未知只读查证、计划修订/其他模式、P1模板/Excel正式产品、DeepSeek人工录制、Docker性能/安全、报告及生产历史迁移继续实施，完整P0—P5未完成。
+
+三份完整方案、原件/PG/固定引用/物理消息、前批119份原始证据及无关当前字节核对见[p4-source-identity-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-source-identity-validation.json)。旧两份Worker汇总原字节仍未恢复，本次保护当前字节；没有推送或PR。
