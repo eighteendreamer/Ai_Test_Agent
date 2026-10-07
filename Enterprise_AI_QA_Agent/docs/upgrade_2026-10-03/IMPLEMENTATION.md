@@ -3796,3 +3796,16 @@ $env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 新默认轮1/2分别17.304/54.609秒正常query；轮2同时读操作和完整工具，轮3请求39801字节，107.380秒后interrupted。SDK流有3206块但正文0、无finish_reason，消费被取消；不是完整length返回。三个不同逻辑/SDK/物理调用，没有JSON修正/同回合重发证据。业务HTTP0，模型全局配置及原预算不变，旧终态与未知不重发。操作功能已验，默认执行未通过；下一步重审逻辑规划与技术证据的分阶段职责，继续完整P0—P5范围。
 
 交付核对另有两项真实失败：初始验证器误将默认夹具末尾business.false按受控夹具business.flag核对，读取实际文件后修正验证器，未修改原件；记录为p4-operation-contract-validation-first-failure.json。初次暂存原96份字节均匹配，但两个stream/physical-*.response.bin的协议末尾空行触发git diff --cached --check退出2；脚本未在Python检查失败后终止，仍产生144f7bcb。没有将该检查标成通过。补齐.bin binary属性，保留响应全部原字节，重新核对原提交及暂存数据后追加纠正提交；完整失败信息与最后结果保存在本批validation记录。
+
+## 2026-10-07：用户所贴完整方案直接更新
+
+核对已提交基线ebe3f7cf及既有未提交分阶段源码，本次只更新方案与交付记录，不修改业务代码。PLAN新增2.3.1，明确逻辑选取/排序/必要补全、执行证据绑定及最终完整校验；3.1明确上传不调用Git和显式文档/父版本关联。三份完整正文同步，既有未提交源码及用户.gitignore保持，分阶段前端/专项/恢复/生产和默认模型均未验收。
+
+在Agent_Server实际执行：
+
+```powershell
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/plan-user-latest-update.xml
+# 退出0：2通过、0失败、0跳过，5.57秒；stdout/stderr保留于同名.log。
+```
+
+使用真实文件、应用路由与本地测试存储，没有Git来源。验证原件/版本/恢复和派生修改边界，不证明生产数据库/对象存储、独立解析比较或完整App通过。本次没有重跑默认模型，也不将既有代码存在称为分阶段验收成功；默认原失败继续保留。三份同步及原工作区字节核对见plan-user-latest-update-validation.json；完整P0—P5目标未完成。
