@@ -3613,3 +3613,43 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 在Agent_Server执行 `..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short`，退出0，2通过，4.30秒。使用临时实际文件、上传路由及本地测试存储，未重跑生产数据库/RustFS、独立解析/比较进程、完整App或默认自主模型。
 
 Python核对三份正文逐字节一致、168个本地链接有效、纠正事项存在且用户.gitignore未变；`git diff --check`通过。详细范围见plan-user-update-validation.json。完整P0—P5仍未完成；无关工作区改动及原始验证文件保持原状。
+
+
+### 6.51 默认模型实测、原生任务契约及发送前错误〔源码基线cd06743d〕
+
+先读用户目标附件、原生产测试、MySQL模型捕获、SDK/HTTPX、注册工具、ApiTestTask、运行时及Job可靠返回边界，研究见[P4_DEFAULT_COVERAGE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DEFAULT_COVERAGE_RESEARCH.md)。本地Agent轨迹及协议课程确认应分别核对Schema、实际工具轨迹、错误恢复和副作用，不以模型自述验收。
+
+测试复制当前默认step-5-preview到临时隔离MySQL表，并比对完整非敏感调用参数；全局配置不改。原API及两个独立CLI使用原SDK发送与流式读取，测试进程仅挂HTTPX官方请求/响应钩子，响应钩子不提前读正文。SDK透明性实测1通过5.00秒，原缺system_prompt的夹具失败保留；响应头200不能证明流式正文完成。
+
+首次默认试验1失败156.48秒：规划已完成，模型合法选择由完整八步正式用例内部准备和清理；执行任务缺task_id/path，在ApiTestTask校验处失败，业务HTTP为0，原5次物理请求及错误/PG输入保留。注册task此前仅是object，未向模型提供真实必填字段。现在注册输入使用已有ApiTestTask生成Schema并提升$defs到参数根；原campaign接口仍保留。运行时仅捕获执行器创建前的ValidationError，返回可靠failed、字段位置/类型及http_request_sent=false，沿原Job观察/终态保存；不把网络丢返回转为可重试失败，不补写原终态。
+
+真实失败任务回放、原生创建两条/查询第一条/逐条清理、规划契约与字面量引用及真实PG失败保存/原请求恢复：24通过9.86秒。原模式/请求体回归16通过7.16秒；真实未知创建/丢PG领取回执3通过10.36秒；受控模型的独立生产部分/全部清理2通过105.61秒。首次24项批次1失败22通过1跳过为测试未排除模型description；第二批1失败23通过为复用fixture没有启用operation策略；修正测试后24通过，原日志保留。未知专项最初选错节点、0收集，修正为已查到的节点后3通过。没有新增依赖、配置键或数据库结构；配置仍MySQL，业务事实仍PG，大对象仍RustFS。
+
+修正契约后的默认模型新试验仍失败：1失败207.57秒，原180秒规划预算耗尽，未创建测试运行、未发业务HTTP。PG保留前两轮完整响应和第三轮interrupted；3次物理发送均收到响应头，第三轮无可靠完整响应，不记作成功。第一轮读文档并查目录；第二轮已有api-test-runner身份，却再次用tools搜索名称，未取得tool完整契约；第三轮在截止前中断。冻结seed实际含新task必填Schema。不能以受控生产通过或增大预算代替默认自主验证，不重复原配置试验。
+
+完整正式用例内部准备/清理也是合法执行方式，测试不强求拆成prepare；若有cleanup_sources声明仍要求覆盖通过，同时对所有实际创建/删除ID逐一核对PG可靠返回与现场剩余数据。后一默认试验未进入执行，此路径尚未验收；当前覆盖仍依赖计划声明，同一正式项内部混合创建/清理的服务端全对象判定仍需研究，不能声称已实现。
+
+原始证据为p4-default-coverage-*与p4-default-task-*，SHA/大小、历史保留和三份方案同步见[p4-default-task-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-default-task-validation.json)。本轮后端实际运行命令在IMPLEMENTATION.md；前端没有改动，未重跑。完整App、默认自主执行、共享实际消费完成、未知只读核对、运行修订和其余P0—P5继续推进，目标未完成。
+
+
+实际命令（Agent_Server，每次日志/证据前缀独立）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-default-task-contract-policy-fixed'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_dispatched_task_contract.py tests/test_api_task_executor_recovery.py tests/test_api_mode_session_isolation.py tests/test_tool_registry_lazy_catalog.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-task-contract-policy-fixed.xml
+# 退出0，24通过9.86秒。
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_api_mode_skills.py tests/test_api_request_body_contract.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-task-mode-regression.xml
+# 退出0，16通过7.16秒。
+# 未知回执证据前缀p4-default-task-unknown-fixed：
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations.py::test_actual_unknown_creation_is_not_resent_across_provider_calls tests/test_case_operations.py::test_actual_lost_PG_claim_reply_preserves_index_and_does_not_send_new_call -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-task-unknown-fixed.xml
+# 退出0，3通过10.36秒。
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-default-task-production'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_cleanup_coverage_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-task-production.xml
+# 退出0，2通过105.61秒；受控模型。
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-default-coverage-task-contract'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-default-coverage-task-contract.xml
+# 退出1，1失败207.57秒；规划超时，未创建运行。
+```

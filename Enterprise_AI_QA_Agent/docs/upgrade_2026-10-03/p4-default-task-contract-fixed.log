@@ -1,0 +1,21 @@
+...F....................                                                 [100%]
+================================== FAILURES ===================================
+_ test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation _
+tests\test_api_dispatched_task_contract.py:99: in test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation
+    result = await runtime.execute(tool, call, execution)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:463: in execute
+    context = context.bind_call(call)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\tool_runtime_service.py:169: in bind_call
+    return replace(self, case_action_binding=bind_case_action(bundle=self.context_bundle,
+src\application\runtime\case_action_binding.py:120: in bind_case_action
+    selection = selection_type.model_validate(arguments.get(ARGUMENT))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for CaseActionSelection
+E   operation_key
+E     Extra inputs are not permitted [type=extra_forbidden, input_value='seed.request', input_type=str]
+E       For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+=========================== short test summary info ===========================
+FAILED tests/test_api_dispatched_task_contract.py::test_actual_PG_invalid_task_checkpoint_recovery_then_corrected_new_operation
+1 failed, 23 passed in 13.11s

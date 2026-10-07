@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-07；本次源码核对基线：`6c345dcb`。本次按用户要求直接更新完整方案、所贴附件及选中的计划文件，重新核对上传、版本保存、Git来源和固定快照比较的调用边界，并实际重跑两项无Git上传回归：**2通过，4.30秒**。未修改业务源码；完整 P0—P5 范围与既有实施历史、原始失败记录继续保留。
+修订日期：2026-10-07；本次源码核对基线：`cd06743d`。本次按用户要求直接更新完整方案、所贴附件及选中的计划文件，重新核对上传、版本保存、Git来源和固定快照比较的调用边界，并实际重跑两项无Git上传回归：**2通过，4.30秒**。未修改业务源码；完整 P0—P5 范围与既有实施历史、原始失败记录继续保留。
 
 本方案按用户纠正后的流程执行：
 
@@ -36,6 +36,9 @@
 历史默认模型失败、原文位置警告、pending_review和部署unknown保留；6.12的固定场景九项判断不代替用户业务评审或实际执行成功。源码、真实存储、独立API/Worker、正式App和默认模型分别验收，历史测试数量不累计成当前覆盖数。
 
 历史方案见[PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)；命令、失败和局限见[IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。历史“本轮”“未实现”表示当时状态，最新进度以第六节及对应证据为准。
+
+
+本轮继续实施的默认模型实测及原生API任务契约修复见6.51：24项契约/实际HTTP/PG回归、16项模式回归、3项未知回执回归和2项受控生产场景通过；默认模型新试验因180秒规划预算耗尽失败，尚未进入业务执行。完整升级仍未完成。
 
 ## 一、升级原则与实际代码依据
 
@@ -1864,3 +1867,20 @@ $env:QA_COVERAGE_PRODUCTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 原first为1失败19.01秒：夹具未登记规划派发流，提交503，尚无模型/业务HTTP；按main显式注册要求修正。stream-fixed2通过95.02秒；补鉴权及SQL对账后authenticated2通过91.59秒。这两个历史批次seed回执曾指第二条而目标用第一条，不作为正确数据传递证据；最终修正引用并新增核对后2通过，原记录全部保留，不累计成6项覆盖。
 
 本轮使用受控模型验证实际main/API/独立CLI/SDK和原生业务工具，未执行默认自主Agent、完整App或生产历史迁移。build_assessment_request当前没有生产调用方；生产最终图回执进入assess确定性核验，不能宣称已追加只读模型调用。共享消费完成、未知只读查证、运行修订与P0—P5其余项仍未完成。下一步沿完整新协议研究并实测默认Agent与正式页面，保留既有默认length失败。
+
+
+### 6.51 默认模型实测、原生任务契约及发送前错误〔源码基线cd06743d〕
+
+先读用户目标附件、原生产测试、MySQL模型捕获、SDK/HTTPX、注册工具、ApiTestTask、运行时及Job可靠返回边界，研究见[P4_DEFAULT_COVERAGE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_DEFAULT_COVERAGE_RESEARCH.md)。本地Agent轨迹及协议课程确认应分别核对Schema、实际工具轨迹、错误恢复和副作用，不以模型自述验收。
+
+测试复制当前默认step-5-preview到临时隔离MySQL表，并比对完整非敏感调用参数；全局配置不改。原API及两个独立CLI使用原SDK发送与流式读取，测试进程仅挂HTTPX官方请求/响应钩子，响应钩子不提前读正文。SDK透明性实测1通过5.00秒，原缺system_prompt的夹具失败保留；响应头200不能证明流式正文完成。
+
+首次默认试验1失败156.48秒：规划已完成，模型合法选择由完整八步正式用例内部准备和清理；执行任务缺task_id/path，在ApiTestTask校验处失败，业务HTTP为0，原5次物理请求及错误/PG输入保留。注册task此前仅是object，未向模型提供真实必填字段。现在注册输入使用已有ApiTestTask生成Schema并提升$defs到参数根；原campaign接口仍保留。运行时仅捕获执行器创建前的ValidationError，返回可靠failed、字段位置/类型及http_request_sent=false，沿原Job观察/终态保存；不把网络丢返回转为可重试失败，不补写原终态。
+
+真实失败任务回放、原生创建两条/查询第一条/逐条清理、规划契约与字面量引用及真实PG失败保存/原请求恢复：24通过9.86秒。原模式/请求体回归16通过7.16秒；真实未知创建/丢PG领取回执3通过10.36秒；受控模型的独立生产部分/全部清理2通过105.61秒。首次24项批次1失败22通过1跳过为测试未排除模型description；第二批1失败23通过为复用fixture没有启用operation策略；修正测试后24通过，原日志保留。未知专项最初选错节点、0收集，修正为已查到的节点后3通过。没有新增依赖、配置键或数据库结构；配置仍MySQL，业务事实仍PG，大对象仍RustFS。
+
+修正契约后的默认模型新试验仍失败：1失败207.57秒，原180秒规划预算耗尽，未创建测试运行、未发业务HTTP。PG保留前两轮完整响应和第三轮interrupted；3次物理发送均收到响应头，第三轮无可靠完整响应，不记作成功。第一轮读文档并查目录；第二轮已有api-test-runner身份，却再次用tools搜索名称，未取得tool完整契约；第三轮在截止前中断。冻结seed实际含新task必填Schema。不能以受控生产通过或增大预算代替默认自主验证，不重复原配置试验。
+
+完整正式用例内部准备/清理也是合法执行方式，测试不强求拆成prepare；若有cleanup_sources声明仍要求覆盖通过，同时对所有实际创建/删除ID逐一核对PG可靠返回与现场剩余数据。后一默认试验未进入执行，此路径尚未验收；当前覆盖仍依赖计划声明，同一正式项内部混合创建/清理的服务端全对象判定仍需研究，不能声称已实现。
+
+原始证据为p4-default-coverage-*与p4-default-task-*，SHA/大小、历史保留和三份方案同步见[p4-default-task-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p4-default-task-validation.json)。本轮后端实际运行命令在IMPLEMENTATION.md；前端没有改动，未重跑。完整App、默认自主执行、共享实际消费完成、未知只读核对、运行修订和其余P0—P5继续推进，目标未完成。

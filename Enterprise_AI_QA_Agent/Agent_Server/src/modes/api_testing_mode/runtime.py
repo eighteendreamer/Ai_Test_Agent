@@ -5,10 +5,13 @@ clarification, campaign building, parallel execution, and report generation.
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+
+from pydantic import ValidationError
 
 from src.application.documents.api_docs_service import ApiDocsService
 from src.modes.api_testing_mode.campaign_state import (
@@ -67,6 +70,8 @@ from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.tools import API_TESTING_TOOL_KEYS
 from src.modes.api_testing_mode.verification import ApiTestingVerificationPolicy
 from src.modes.api_testing_mode.evaluation import ApiTestingEvaluationPolicy
+
+logger = logging.getLogger("uvicorn.error.api_testing_mode.runtime")
 
 
 class ApiTestingModeRuntime:
@@ -957,7 +962,19 @@ class ApiTestingModeRuntime:
                 "error": "missing_task_payload",
             }
 
-        task = ApiTestTask.model_validate(raw_task)
+        try:
+            task = ApiTestTask.model_validate(raw_task)
+        except ValidationError as exc:
+            # This validation precedes executor creation and every business request.
+            # Return a reliable failure so the original Job can checkpoint it.
+            errors = [{"location": list(error["loc"]), "type": error["type"]}
+                for error in exc.errors(include_input=False, include_url=False)]
+            logger.warning("api_task_payload_rejected", extra={"validation_errors": errors,
+                "worker_action": "execute_task", "http_request_sent": False})
+            return {"status": "failed", "ok": False,
+                "summary": "API task payload validation failed before any HTTP request.",
+                "error": "invalid_task_payload", "validation_errors": errors,
+                "http_request_sent": False}
         checkpoint = arguments.get("execution_checkpoint")
         if isinstance(checkpoint, dict):
             task.execution_checkpoint = dict(checkpoint)

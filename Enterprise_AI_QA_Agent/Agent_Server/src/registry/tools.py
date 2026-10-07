@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.schemas.agent import ToolDescriptor
 
 
@@ -110,6 +111,8 @@ COMPATIBILITY_RUNNER_OUTPUT_SCHEMA = {
 
 class ToolRegistry:
     def __init__(self) -> None:
+        api_task_schema = ApiTestTask.model_json_schema()
+        api_task_definitions = api_task_schema.pop("$defs", {})
         self._tools: dict[str, ToolModule] = {
             "skill": ToolModule(
                 descriptor=ToolDescriptor(
@@ -1161,14 +1164,15 @@ class ToolRegistry:
                     permission_level="ask",
                     input_schema={
                         "type": "object",
+                        "$defs": api_task_definitions,
                         "properties": {
                             "worker_action": {
                                 "type": "string",
                                 "description": "Optional worker action such as execute_task for dispatched subagent work.",
                             },
                             "task": {
-                                "type": "object",
-                                "description": "Serialized ApiTestTask payload when worker_action=execute_task.",
+                                **api_task_schema,
+                                "description": "Serialized ApiTestTask when worker_action=execute_task. Required: task_id, method, path; full_url optionally overrides path. Top-level endpoint does not supply task.path.",
                             },
                             "credential_session": {
                                 "type": "object",
