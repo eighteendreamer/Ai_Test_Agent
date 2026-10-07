@@ -6,7 +6,7 @@ import json
 from src.schemas.case_execution import AgentCaseExecutionReceipt
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v2"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v3"
 
 
 def case_result_contract() -> str:
@@ -25,7 +25,13 @@ def case_result_contract() -> str:
         "For example an output {\"body\": {\"literal.key\": false}} is referenced by "
         "[\"body\", \"literal.key\"]. A present null can be checked; a missing field cannot. "
         "[] means the entire value. outputs maps field names to references; output_source "
-        "optionally copies a complete object instead, and cannot be combined with outputs. "
+        "optionally copies a complete object instead. For nested objects or arrays composed "
+        "from multiple calls, use output_structure: a reference node has kind=reference and "
+        "source={call_id,output_path_tokens}; an object node has kind=object and fields mapping "
+        "literal keys to nodes; an array node has kind=array and items listing nodes in order. "
+        "Every leaf must reference an actual persisted tool value, never contain a literal actual "
+        "value. The server resolves the leaves; declare structure that matches the fixed plan's "
+        "consumer paths. Choose only one of outputs, output_source or output_structure. "
         "Use deterministic operators when the fixed expected value is directly comparable. "
         "For natural-language business expectations, use semantic with verdict and a reason "
         "grounded in all necessary observations; identify incomplete evidence as not_run. "

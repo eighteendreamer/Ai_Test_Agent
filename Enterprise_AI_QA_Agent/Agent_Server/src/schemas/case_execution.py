@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from src.schemas.case_planning import (
     CasePlanItem, PlanningEvidence, PlanningGap, PlanningModel, PlanInputBinding,
@@ -168,6 +168,29 @@ class CaseExecutionCheck(PlanningModel):
         return self
 
 
+class CaseOutputReference(PlanningModel):
+    kind: Literal["reference"]
+    source: CaseToolEvidenceReference
+
+
+class CaseOutputObject(PlanningModel):
+    kind: Literal["object"]
+    fields: dict[str, CaseOutputNode]
+
+
+class CaseOutputArray(PlanningModel):
+    kind: Literal["array"]
+    items: list[CaseOutputNode]
+
+
+# No upstream counterpart (checked: CaseStepReceipt, literal_evidence and
+# persisted ToolJob output): compose multiple real outputs without literal values.
+CaseOutputNode = Annotated[
+    CaseOutputReference | CaseOutputObject | CaseOutputArray, Field(discriminator="kind")]
+CaseOutputObject.model_rebuild()
+CaseOutputArray.model_rebuild()
+
+
 class CaseStepReceipt(PlanningModel):
     item_key: str = Field(min_length=1, max_length=80)
     status: Literal["passed", "failed", "error", "blocked", "skipped"]
@@ -175,11 +198,19 @@ class CaseStepReceipt(PlanningModel):
     checks: list[CaseExecutionCheck] = Field(default_factory=list, max_length=200)
     outputs: dict[str, CaseToolEvidenceReference] = Field(default_factory=dict)
     output_source: CaseToolEvidenceReference | None = None
+    output_structure: CaseOutputNode | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_receipt(self, handler):
+        data = handler(self)
+        if self.output_structure is None:
+            data.pop("output_structure", None)
+        return data
 
     @model_validator(mode="after")
     def one_output_shape(self):
-        if self.output_source is not None and self.outputs:
-            raise ValueError("输出不能同时声明完整对象来源和字段映射")
+        if sum((bool(self.outputs), self.output_source is not None, self.output_structure is not None)) > 1:
+            raise ValueError("输出不能同时声明完整对象来源、字段映射或组合结构")
         return self
 
 

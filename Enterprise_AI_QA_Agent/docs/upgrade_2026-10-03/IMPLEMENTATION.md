@@ -4078,3 +4078,17 @@ agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/featu
 回归实际运行test_agent_case_context.py test_run_item_dependencies.py test_plan_binding_paths.py test_agent_case_assessment.py，开启RUN_LIVE_PLAN_RUN_CREATION/RUN_LIVE_RUN_DEPENDENCIES/RUN_LIVE_PLAN_BINDING_PATHS=1，72通过3外部模型开关跳过34.35秒；实际跳过节点保存在XML/审计。前端契约没有改，本批未跑前端或完整App，默认超时没有未改重试。准备步骤多对象输出/共享消费等仍待验，完整P0—P5未完成。
 
 历史保护补验：p2-runtime-input-recovery新2节点6.61秒通过。实际保存旧父对象上下文hash的检查点，调用原Adapter._load拒绝与新取值不同的上下文，原检查点保持且HTTP0。未实现该类旧错误上下文自动恢复，上线历史协调仍待完成。
+
+## 2026-10-07 原工具值组合与固定消费者真实传值
+
+基线55475b8e，完整目标附件已重新读取；修改前研究P2_OUTPUT_STRUCTURE_RESEARCH.md。先真实复现旧回执无法组合多个工具返回：2失败12.19秒，2POST/1GET已发生、回执extra_forbidden、两个对象保留。原失败目录不覆盖。
+
+新增receipt-only output_structure判别树，叶子继续call_id/字面路径、原持久ToolJob/身份/终态核验；旧字段互斥且新None省略，old canonical保持。Prompt结果契约改v3，保存的历史请求/回执不重写；context_hash、模式、依赖、配置、表不变。结构化日志使用既有logger，来源数量与身份可追踪，不打印实际值。
+
+后端工作目录Agent_Server，..\.venv\Scripts\python.exe -Xutf8 -m pytest指定实际模块 -q --tb=short --junitxml=<本批XML>。开启RUN_LIVE_PLAN_RUN_CREATION=1，新QA_CASE_OUTPUT_STRUCTURE_DIR与QA_RUNTIME_INPUT_PATH_DIR分别使用p2-output-structure-fixed/final/regression-inputs独立目录；精确命令/cwd/exit_code在相应command.json，stdout与stderr合并完整log保存。
+
+fixed2通过9.89秒，final新15项通过14.50秒；两份原件真实RustFS读回，MySQL策略/PG固定计划运行/Job审批与原Agent图，2POST+2GET+2DELETE、现场0剩余、两个消费者passed/终态不重领。ids数组、嵌套False/0/null、空键/含点键、空容器与错误来源/伪造简报、失败来源不冒充通过已验。回归assessment/execution/context/runtime-input四模块86通过3跳过170.49秒；两个外部模型和独立Redis Worker开关未启用。实际源三文件/新test py_compile退出0。
+
+现有actual通用JSON跨层读取不需新DTO/页面，前端未改且未重跑构建/完整App。外部自主模型、共享消费者实际完成状态、准备完整生命周期、unknown只读查证、计划修订/其他模式及其余P0—P5继续待验。未改预算/global模型、未重跑未改变的默认超时。三个方案正文同步、上批35原始HEAD字节、原件/最终结果/实际工具与无关当前字节见p2-output-structure-validation.json；不推送/PR。
+
+本批审计首次KeyError: value/exit1，脚本误猜已保存策略DTO；读实际policy字段后修正并退出0，原audit-first.log保留。46当前工件和35上一批原始HEAD字节核对通过。测试临时数据库/对象/本地服务器按归属清理，保存证据为当时快照。

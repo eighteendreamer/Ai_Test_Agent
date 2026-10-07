@@ -16,7 +16,10 @@ from src.application.testing.verification_service import VerificationService
 from src.application.test_runs.agent_case_contract import RECEIPT_PROMPT_VERSION, case_result_contract
 from src.application.test_runs.literal_evidence import literal_value
 from src.application.test_runs.case_cleanup_coverage import cleanup_coverage
-from src.schemas.case_execution import AgentCaseExecutionContext, AgentCaseExecutionReceipt
+from src.schemas.case_execution import (
+    AgentCaseExecutionContext, AgentCaseExecutionReceipt, CaseOutputArray, CaseOutputObject,
+    CaseOutputReference,
+)
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult
 from src.schemas.run_management import RunEvidenceRef, RunItemCompleteRequest
 from src.schemas.session import VerificationEvidence, VerificationResult, VerificationStatus
@@ -227,13 +230,32 @@ class AgentCaseAssessmentService:
                 status = "failed" if failed else "blocked"
             elif failed and status not in {"error", "failed"}:
                 status = "failed"
-            if entry.output_source is not None:
+            output_refs = []
+
+            def compose_output(node):
+                if isinstance(node, CaseOutputReference):
+                    output_refs.append(node.source)
+                    return observe(node.source)[1]
+                if isinstance(node, CaseOutputObject):
+                    return {name: compose_output(child) for name, child in node.fields.items()}
+                if isinstance(node, CaseOutputArray):
+                    return [compose_output(child) for child in node.items]
+                raise ValueError("输出组合包含未知节点")
+
+            if entry.output_structure is not None:
+                output = compose_output(entry.output_structure)
+                logger.info("agent_case_output_composed", extra={"project_id": context.project_id,
+                    "run_id": context.run_id, "run_item_id": context.run_item_id,
+                    "plan_item_key": key, "output_kind": entry.output_structure.kind,
+                    "source_reference_count": len(output_refs)})
+            elif entry.output_source is not None:
                 output = observe(entry.output_source)[1]
+                output_refs.append(entry.output_source)
                 if not isinstance(output, dict):
                     raise ValueError("完整输出来源必须是 JSON 对象；单值应使用字段映射")
             else:
                 output = {name: observe(ref)[1] for name, ref in entry.outputs.items()}
-            output_refs = [entry.output_source] if entry.output_source is not None else list(entry.outputs.values())
+                output_refs.extend(entry.outputs.values())
             if status == "passed" and any(jobs[ref.call_id].status not in {ToolJobStatus.completed, ToolJobStatus.partial}
                                            for ref in output_refs):
                 status = "blocked"

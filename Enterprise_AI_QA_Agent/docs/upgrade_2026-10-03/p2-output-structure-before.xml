@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="12.091" timestamp="2026-10-07T22:00:33.731541+08:00" hostname="EIghteen"><testcase classname="tests.test_case_output_structure" name="test_recursive_output_schema_preserves_old_receipt_and_rejects_mixed_styles" time="0.001"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for CaseStepReceipt&#10;output_structure&#10;  Extra inputs are not permitted [type=extra_forbidden, input_value={'kind': 'object', 'field... 'array', 'items': []}}}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden">def test_recursive_output_schema_preserves_old_receipt_and_rejects_mixed_styles():
+        old = CaseStepReceipt(item_key='seed', status='passed', summary='原字段',
+            outputs={'body': {'call_id': 'create-first', 'output_path_tokens': ['task_result', 'response_body']}})
+        original = old.model_dump(mode='json')
+        assert 'output_structure' not in original
+        assert CaseStepReceipt.model_validate(original).model_dump(mode='json') == original
+&gt;       tree = CaseStepReceipt(item_key='seed', status='passed', summary='组合', output_structure=composed())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CaseStepReceipt
+E       output_structure
+E         Extra inputs are not permitted [type=extra_forbidden, input_value={'kind': 'object', 'field... 'array', 'items': []}}}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+tests\test_case_output_structure.py:48: ValidationError</failure></testcase><testcase classname="tests.test_case_output_structure" name="test_two_actual_operations_form_array_and_shared_consumer_uses_fixed_output" time="5.906"><failure message="AssertionError: {'id': 'fbfb68d3-d024-4652-917f-bc3add05237a', 'run_id': '4593819e-27a3-5a57-84dc-61c1d62b88e3', 'run_item_id': '9f2bb5f3-af6e-5618-8644-8a9754ab3734', 'case_id': 'e0bb57a9-0090-4353-9f95-f82849a8b49d', ...}&#10;assert 'error' == 'passed'&#10;  &#10;  - passed&#10;  + error">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1037/test_two_actual_operations_for0')
+regression_business_http = (('http://127.0.0.1:65146', [('POST', '/orders'), ('POST', '/orders'), ('GET', '/orders/regression-5e998f88294449a2902...nullable': None, ...}}, ['regression-5e998f88294449a290232ced41b2a9d9', 'regression-59a520f80d594a7fbfe909241f6310a1'])
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv('RUN_LIVE_PLAN_RUN_CREATION') != '1', reason='actual isolated MySQL/PG/RustFS and original Agent graph')
+    async def test_two_actual_operations_form_array_and_shared_consumer_uses_fixed_output(tmp_path, regression_business_http):
+        business = regression_business_http
+        agent = MultipleOutputAgent()
+        policy = POLICY.model_copy(update={'preparation_scope_protocol': 'preparation-scope-v1'})
+        async with adapter_environment(tmp_path, business[0], live=True, agent=agent, start_item=False, planning_policy=policy) as values:
+            env, _, reader, _, runs, _, adapter, _, _, services = values
+            base = services['environment']
+            project = await base.projects.get(env[0].project_id)
+            files, documents, cases = [], [], []
+            for key in ['multi-left', 'multi-right']:
+                content = {'objective': key, '期望': {'code': 200},
+                    'steps': [{'method': 'GET', 'url': business[0][0]+'/orders/{id}'}] +
+                        [{'order': n, 'action': '完整业务步骤'} for n in range(2, 8)] +
+                        [{'order': 8, 'action': 'LAST-MULTI-OUTPUT-STEP', 'fields': [False, 0, None, {'': 'literal.key'}]}],
+                    'data_lifecycle': {'prepare': {'method': 'POST', 'url': business[0][0]+'/orders', 'expected': 201,
+                        'count': 2, 'output_notes': '两次实际返回ID按创建顺序保存为ids数组'},
+                        'cleanup': {'method': 'DELETE', 'url': business[0][0]+'/orders/{id}', 'expected': 200,
+                        'when': '两个消费者读取完成后分别删除两个真实ID'}}}
+                path = tmp_path/(key+'.json')
+                path.write_text(json.dumps(content, ensure_ascii=False), encoding='utf-8')
+                document = await base.docs.upload_document(project_id=project.id, filename=path.name,
+                    content_base64=base64.b64encode(path.read_bytes()).decode())
+                assert (await base.objects.read_object_uri(document.original_asset.storage_uri))['content'] == path.read_bytes()
+                cases.append(await active_case(base, project, key, content))
+                files.append(path)
+                documents.append(document.model_dump(mode='json'))
+    
+            def decision(context):
+                left = item(context, 'multi-left', key='left', depends_on=['seed'],
+                    input_bindings={'id': {'source_item': 'seed', 'output_path_tokens': ['ids', '0']}})
+                right = item(context, 'multi-right', key='right', depends_on=['seed'], input_bindings={
+                    'id': {'source_item': 'seed', 'output_path_tokens': ['ids', '1']},
+                    'disabled': {'source_item': 'seed', 'output_path_tokens': ['flags', 'literal.key']},
+                    'zero': {'source_item': 'seed', 'output_path_tokens': ['flags', 'zero']}})
+                refs = left['evidence_ids']+right['evidence_ids']
+                return finish({'key': 'seed', 'kind': 'prepare', 'reason': '当前项目两个目标需要两份实际数据',
+                    'evidence_ids': refs, 'instructions': {'method': 'POST', 'url': business[0][0]+'/orders', 'expected': 201,
+                        'output_notes': '保存两次实际返回ID为ids数组，不凭空填写'}}, left, right,
+                    {'key': 'cleanup', 'kind': 'prepare', 'reason': '两个消费者之后清理两份实际数据',
+                    'evidence_ids': refs, 'cleanup_sources': ['seed'], 'depends_on': ['left'],
+                    'input_bindings': {'first': {'source_item': 'seed', 'output_path_tokens': ['ids', '0']},
+                        'second': {'source_item': 'seed', 'output_path_tokens': ['ids', '1']}},
+                    'instructions': {'method': 'DELETE', 'url': business[0][0]+'/orders/{id}', 'expected': 200}})
+    
+            base.service._models = SharedPlanningModel(decision)
+            frozen = await base.service.create(project.id, CasePlanningRequest(objective='实际多对象组合与固定消费',
+                candidate_case_ids=[bundle.case.id for bundle in cases]))
+            assert frozen.status == 'planned', frozen.summary
+            detail = await services['creator'].create(project.id, frozen.id, CasePlanRunRequest(creation_key='multi-output', mode_key='api_testing'))
+            executor = ExecutionService(run_service=runs, test_case_service=base.cases, adapter=None,
+                session_store=reader, tool_job_service=env[1])
+            executor.set_agent_execution_adapter(adapter())
+            app = FastAPI()
+            app.state.test_run_execution_service, app.state.test_run_service = executor, runs
+            app.include_router(router, prefix='/api/v1')
+            responses = []
+    
+            async def save(name):
+                folder = Path(os.environ['QA_CASE_OUTPUT_STRUCTURE_DIR'])/name
+                folder.mkdir(parents=True, exist_ok=False)
+                for path in files:(folder/path.name).write_bytes(path.read_bytes())
+                jobs = [j for j in await env[1].list_jobs() if j.metadata.get('run_id') == detail.run.id]
+                payload = {'controlled_model': True, 'autonomous_external_model': False,
+                    'original_graph_and_API': True, 'actual_MySQL_policy': (await base.service.get_policy(project.id)).model_dump(mode='json'),
+                    'documents': documents, 'frozen_plan': frozen.model_dump(mode='json'),
+                    'run': (await runs.get(detail.run.id)).model_dump(mode='json'), 'API_responses': responses,
+                    'jobs': [j.model_dump(mode='json') for j in jobs],
+                    'actual_model_requests': [r.model_dump(mode='json') for r in agent.requests],
+                    'actual_HTTP': business[0][1], 'created_ids': business[2], 'remaining_orders': business[1]}
+                (folder/'verification.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://graph') as client:
+                async def execute(claim):
+                    path = '/api/v1/run-items/'+claim.item.id
+                    response = await client.post(path+'/execute', json={'lease_token': claim.lease_token})
+                    for _ in range(8):
+                        responses.append({'status_code': response.status_code, 'body': response.json()})
+                        data = response.json()
+                        if response.status_code != 200 or data.get('status') != 'waiting_approval':return data
+                        response = await client.post(path+'/approval', json={'approval_id': data['approval_id'], 'decision': 'approved'})
+                    raise AssertionError('Unexpected approval loop')
+    
+                claims = await runs.claim(detail.run.id, RunClaimRequest(worker_id='left', limit=10, lease_seconds=60))
+                assert [c.item.plan_item_key for c in claims.claims] == ['left']
+                first = await execute(claims.claims[0])
+                await save('left-result')
+&gt;               assert first.get('status') == 'passed', first
+E               AssertionError: {'id': 'fbfb68d3-d024-4652-917f-bc3add05237a', 'run_id': '4593819e-27a3-5a57-84dc-61c1d62b88e3', 'run_item_id': '9f2bb5f3-af6e-5618-8644-8a9754ab3734', 'case_id': 'e0bb57a9-0090-4353-9f95-f82849a8b49d', ...}
+E               assert 'error' == 'passed'
+E                 
+E                 - passed
+E                 + error
+
+tests\test_case_output_structure.py:194: AssertionError</failure></testcase></testsuite></testsuites>
