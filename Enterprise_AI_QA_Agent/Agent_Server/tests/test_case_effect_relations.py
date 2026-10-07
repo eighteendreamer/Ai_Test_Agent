@@ -81,9 +81,11 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all", "selection-identity-prefetch-document-internal-all", "selection-identity-prefetch-document-external-all"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all", "selection-identity-prefetch-document-internal-all", "selection-identity-prefetch-document-external-all", "linked-selection-identity-prefetch-document-internal-all", "linked-selection-identity-prefetch-document-external-all"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
     scenario_key = scenario
+    linked = scenario.startswith("linked-")
+    scenario = scenario.removeprefix("linked-")
     item_selection = scenario.startswith("selection-")
     scenario = scenario.removeprefix("selection-")
     full_identity = scenario.startswith("identity-")
@@ -111,6 +113,8 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             selected_policy = policy(effect_expected_source_protocol="case-effect-document-expected-v1",
                 source_identity_protocol="case-planning-source-full-hash-v1",
                 operation_prefetch_protocol="case-planning-item-operation-prefetch-v2")
+        if linked:
+            selected_policy.linked_source_protocol = "case-planning-linked-documents-v1"
         config = await base.service.save_policy(project.id, selected_policy)
         old = ROOT/"docs/upgrade_2026-10-03/p4-shared-effect-wire/first-consumer-only-left-passed-finished/shared-left.json"
         content = json.loads(old.read_bytes())
@@ -129,7 +133,9 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         document = await base.docs.upload_document(project_id=project.id, filename=source_file.name,
             content_base64=base64.b64encode(source_file.read_bytes()).decode())
         assert (await base.objects.read_object_uri(document.storage_uri))["content"] == source_file.read_bytes()
-        case = await active_case(base, project, "formal-mixed", content)
+        case = await active_case(base, project, "formal-mixed", content, source_refs=[{"source_type": "api_doc", "source_id": document.id,
+            "version": document.current_version_id, "metadata": {"content_asset_id": document.original_asset.id,
+                "content_sha256": document.original_asset.sha256}}] if linked else None)
         external = scenario == "external-all"
         producer_key = "seed" if external else "target"
 
@@ -175,8 +181,8 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == ("case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
-        assert len(plan.rounds) == (3 if prefetch else 4)
+        assert plan.prompt_version == ("case-planning-linked-documents-v10" if linked else "case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        assert len(plan.rounds) == (2 if linked else 3 if prefetch else 4)
         later_document = None
         if document_expected:
             # A new upload/config must not replace already-frozen expectations.

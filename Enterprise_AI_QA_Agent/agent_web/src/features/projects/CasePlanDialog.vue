@@ -49,6 +49,7 @@ const operationSelections = computed(() => plan.value?.rounds.flatMap(round => {
   const selections = (decision as Record<string, unknown>).operation_selections;
   return Array.isArray(selections) ? selections : [];
 }) || []);
+const linkedSourceReads = computed(() => plan.value?.rounds.find(round => round.linked_source_reads)?.linked_source_reads);
 function launchStorageKey() { return `case-plan-launch:${props.projectId}:${plan.value?.id}`; }
 function persistLaunch() {
   try {
@@ -253,7 +254,7 @@ function choosePlanningStages(event: Event) {
 }
 function downgradeFormalEffects() {
   const policy = config.value?.policy;
-  if (policy) { delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; }
+  if (policy) { delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; }
   if (policy?.planning_stage_protocol !== "case-planning-staged-evidence-v2") return;
   policy.preparation_scope_protocol = "preparation-scope-v1";
   policy.effect_evidence_protocol = "case-effect-evidence-v1";
@@ -275,7 +276,7 @@ function chooseDocumentExpected(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) {
     delete config.value.policy.effect_expected_source_protocol; delete config.value.policy.operation_prefetch_protocol;
-    delete config.value.policy.source_identity_protocol; return;
+    delete config.value.policy.source_identity_protocol; delete config.value.policy.linked_source_protocol; return;
   }
   chooseFormalEffects(event);
   config.value.policy.effect_expected_source_protocol = "case-effect-document-expected-v1";
@@ -289,6 +290,7 @@ function chooseOperationPrefetch(event: Event) {
 function chooseSourceIdentity(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) {
+    delete config.value.policy.linked_source_protocol;
     delete config.value.policy.source_identity_protocol;
     if (config.value.policy.operation_prefetch_protocol === "case-planning-item-operation-prefetch-v2") {
       config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
@@ -308,6 +310,12 @@ function chooseItemOperations(event: Event) {
   }
   chooseSourceIdentity(event);
   config.value.policy.operation_prefetch_protocol = "case-planning-item-operation-prefetch-v2";
+}
+function chooseLinkedSources(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.linked_source_protocol; return; }
+  chooseSourceIdentity(event);
+  config.value.policy.linked_source_protocol = "case-planning-linked-documents-v1";
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -367,6 +375,9 @@ onMounted(loadPolicy);
         <label><input data-testid="item-operation-selections" type="checkbox" :disabled="busy"
           :checked="config.policy.operation_prefetch_protocol === 'case-planning-item-operation-prefetch-v2'"
           @change="chooseItemOperations">读取正式用例及准备项已选操作的接口</label>
+        <label><input data-testid="linked-sources" type="checkbox" :disabled="busy"
+          :checked="!!config.policy.linked_source_protocol" @change="chooseLinkedSources">规划前读取用例明确关联的文档</label>
+        <p v-if="config.policy.linked_source_protocol">保留来源版本和读取范围。仅有文档编号的引用标为当前关联资料；历史解析缺失时显示缺口。</p>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
         <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
           type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>
@@ -403,6 +414,7 @@ onMounted(loadPolicy);
         </section>
         <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
         <details v-if="operationSelections.length"><summary>逻辑阶段选定的工具接口</summary><JsonContentTree :value="operationSelections" /></details>
+        <details v-if="linkedSourceReads"><summary>用例关联文档的固定读取记录</summary><JsonContentTree :value="linkedSourceReads" /></details>
         <ul v-if="plan.decision?.unresolved.length" class="gaps"><li v-for="(gap, index) in plan.decision.unresolved" :key="index">{{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}</li></ul>
         <ol class="plan-items"><li v-for="item in plan.decision?.items" :key="item.key">
           <h4>{{ kindLabels[item.kind] }} · {{ title(item) }}</h4><p>{{ item.reason }}</p>

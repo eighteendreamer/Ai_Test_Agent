@@ -19,6 +19,7 @@ from src.application.test_cases.planning_operation_prefetch import (
     PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries, validate_operation_selections, ITEM_PREFETCH_PROTOCOL,
 )
 from src.schemas.case_planning import PlanningQuery
+from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
@@ -80,6 +81,10 @@ class CasePlanningWorkflow:
                     (checkpoint.stages.operation_selections is not None) != (policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL)):
                     raise ValueError("固定阶段操作选择与原规划协议不一致")
             remaining = remaining_seconds if remaining_seconds is not None else (deadline_at - datetime.now(timezone.utc)).total_seconds()
+            if checkpoint.linked_sources is not None and not policy.linked_source_protocol:
+                raise ValueError("旧规划任务不能新增关联来源状态")
+            if policy.linked_source_protocol and checkpoint.phase not in {"retrieval", "finished"} and checkpoint.linked_sources is None:
+                raise ValueError("固定关联来源预读缺少原检查点")
             if remaining <= 0:
                 raise TimeoutError("planning deadline expired")
             async with asyncio.timeout(remaining):
@@ -88,8 +93,44 @@ class CasePlanningWorkflow:
                     if checkpoint.phase == "retrieval":
                         await self._planner._recall(record, fixed_case_versions)
                         checkpoint.catalog = await self._planner._sources.catalog(record.project_id, policy.max_candidates)
-                        checkpoint.phase = "ready"
+                        if policy.linked_source_protocol:
+                            checkpoint.linked_sources = linked_source_queue(record.evidence)
+                        checkpoint.phase = "sources" if policy.linked_source_protocol else "ready"
                         await save("候选完整版本与项目目录已保存")
+                        continue
+                    if checkpoint.phase == "sources":
+                        progress = checkpoint.linked_sources
+                        if progress is None or progress.next_index > len(progress.entries):
+                            raise ValueError("关联来源查询检查点无效")
+                        while progress.next_index < len(progress.entries):
+                            entry = progress.entries[progress.next_index]
+                            if entry.basis is None and entry.error is None:
+                                try:
+                                    entry.basis = await self._planner._sources.capture_document_basis(record.project_id, entry.source)
+                                except (KeyError, ValueError, RuntimeError, OSError) as exc:
+                                    entry.error = str(exc)
+                                await save("关联来源固定身份已保存")
+                            if entry.error is None and not entry.read:
+                                try:
+                                    evidence, metadata = await self._planner._sources.query(record.project_id,
+                                        PlanningQuery(kind="document", source_id=entry.source.source_id, max_lines=500), policy.max_candidates,
+                                        identity_protocol=policy.source_identity_protocol,
+                                        fixed_documents={entry.source.source_id: [entry.basis]})
+                                    self._planner._merge_evidence(record, evidence)
+                                    entry.evidence_ids = [item.id for item in evidence]
+                                    entry.read = True
+                                    if metadata.get("has_more"):
+                                        record.warnings.append(f"关联文档{entry.source.source_id}尚有后续行；可继续读取同一固定来源")
+                                except (KeyError, ValueError, RuntimeError, OSError) as exc:
+                                    entry.error = str(exc)
+                            if entry.error:
+                                record.warnings.append(f"关联来源{entry.source.source_id}未自动读取：{entry.error}")
+                                logger.warning("case_planning_linked_source_unread", extra={"project_id": record.project_id,
+                                    "plan_id": record.id, "source_id": entry.source.source_id})
+                            progress.next_index += 1
+                            await save("关联来源只读结果已保存")
+                        checkpoint.phase = "ready"
+                        await save("首次推理的关联来源读取完成")
                         continue
                     if checkpoint.phase == "invoking":
                         round_record = record.rounds[-1]
@@ -114,6 +155,8 @@ class CasePlanningWorkflow:
                             "catalog": checkpoint.catalog, "query_results": checkpoint.query_results,
                             "warnings": record.warnings, "validation_feedback": checkpoint.validation_feedback,
                             "round": checkpoint.next_round + 1, "remaining_rounds": policy.max_rounds - checkpoint.next_round}
+                        if checkpoint.linked_sources is not None:
+                            context["linked_source_reads"] = checkpoint.linked_sources.model_dump(mode="json")
                         stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
                         prompt = seed.system_prompt
                         if stage is not None:
@@ -144,6 +187,8 @@ class CasePlanningWorkflow:
                         if stage is not None:
                             round_record["planning_stage"] = stage
                         record.rounds.append(round_record)
+                        if checkpoint.linked_sources is not None:
+                            round_record["linked_source_reads"] = checkpoint.linked_sources.model_dump(mode="json")
                         checkpoint.phase = "invoking"
                         await save("模型调用意图已保存")
                         logger.info("case_planning_model_invoking", extra={"project_id": record.project_id,
@@ -315,6 +360,8 @@ class CasePlanningWorkflow:
                                         "evidence_scope": metadata.get("scope", "full-tool" if evidence else "catalog")})
                                 else:
                                     identity_options = {"identity_protocol": policy.source_identity_protocol} if policy.source_identity_protocol else {}
+                                    if checkpoint.linked_sources is not None:
+                                        identity_options["fixed_documents"] = linked_document_bases(checkpoint.linked_sources)
                                     evidence, metadata = await self._planner._sources.query(record.project_id, query, policy.max_candidates, **identity_options)
                                 versions = dict(fixed_case_versions)
                                 if pin_read_versions:

@@ -218,6 +218,31 @@ class PostgresPlanningTaskStore:
         if any(getattr(checkpoint.plan, key) != getattr(original, key) for key in fixed):
             raise ValueError("规划检查点不能替换固定输入或身份")
         prior = PlanningTaskCheckpoint.model_validate(row["checkpoint"])
+        if original.config_snapshot.policy.linked_source_protocol:
+            progress = checkpoint.linked_sources
+            if checkpoint.phase not in {"retrieval", "finished"} and progress is None:
+                raise ValueError("关联来源检查点不能丢弃")
+            if progress is not None:
+                if progress.next_index > len(progress.entries):
+                    raise ValueError("关联来源进度超过固定范围")
+                if prior.linked_sources is None:
+                    from src.application.test_cases.planning_linked_sources import linked_source_queue
+                    expected = linked_source_queue(checkpoint.plan.evidence)
+                    if progress != expected or prior.phase != "retrieval":
+                        raise ValueError("首次关联来源必须来自已读完整用例引用")
+                else:
+                    previous = prior.linked_sources
+                    if len(progress.entries) != len(previous.entries) or progress.next_index < previous.next_index:
+                        raise ValueError("关联来源不能变更固定范围或回退进度")
+                    for entry, old in zip(progress.entries, previous.entries):
+                        if entry.source != old.source or entry.case_evidence_ids != old.case_evidence_ids:
+                            raise ValueError("关联来源不能替换固定引用")
+                        if old.basis is not None and entry.basis != old.basis:
+                            raise ValueError("关联来源不能替换固定版本或解析快照")
+                        if (old.read or old.error is not None) and entry != old:
+                            raise ValueError("关联来源不能改写已保存的读取结果")
+        elif checkpoint.linked_sources is not None or checkpoint.phase == "sources":
+            raise ValueError("旧规划任务不能新增关联来源阶段")
         if PlanningTaskSeed.model_validate(row["seed"]).stage_prompts is not None:
             if checkpoint.stages is None:
                 raise ValueError("阶段检查点不能丢弃")

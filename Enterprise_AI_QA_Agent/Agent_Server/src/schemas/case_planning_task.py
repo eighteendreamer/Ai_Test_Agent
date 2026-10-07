@@ -10,6 +10,7 @@ from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningRequest, PlanningDecision, PlanningDecisionV2, PlanningDecisionV3, PlanningModel,
 )
 from src.schemas.model_config import model_invocation_parameters as planning_model_parameters
+from src.schemas.case_planning_sources import PlanningLinkedSources
 from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, EvidencePlanningDecisionV3, PlanningStageCheckpoint, PlanningStagePrompts
 
 
@@ -50,7 +51,7 @@ class PlanningTaskSeed(PlanningModel):
 
 class PlanningTaskCheckpoint(PlanningModel):
     plan: CasePlanRecord
-    phase: Literal["retrieval", "ready", "invoking", "response", "query", "finished"] = "retrieval"
+    phase: Literal["retrieval", "sources", "ready", "invoking", "response", "query", "finished"] = "retrieval"
     catalog: dict[str, Any] = Field(default_factory=dict)
     query_results: list[dict[str, Any]] = Field(default_factory=list)
     validation_feedback: dict[str, Any] | None = None
@@ -61,10 +62,13 @@ class PlanningTaskCheckpoint(PlanningModel):
     response_metadata: dict[str, Any] = Field(default_factory=dict)
     response_has_tools: bool = False
     stages: PlanningStageCheckpoint | None = None
+    linked_sources: PlanningLinkedSources | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_checkpoint(self, handler):
         data = handler(self)
+        if self.linked_sources is None:
+            data.pop("linked_sources", None)
         if self.stages is None:
             data.pop("stages", None)
         return data

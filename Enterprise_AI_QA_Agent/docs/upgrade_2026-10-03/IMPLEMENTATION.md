@@ -4037,3 +4037,21 @@ $env:QA_DEFAULT_COVERAGE_DIR='<本批默认独立目录>'
 agent_web npm.cmd test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CaseEffectCoveragePanel.test.ts：首2失败52通过3.07秒，保存夹具未回显新策略；修正夹具后54通过2.52秒，实际计划JSON展示另55通过3.66秒。npm.cmd run build包含vue-tsc，退出0/Vite8.23秒；新增实际夹具后npm.cmd run typecheck退出0。typecheck-final探针误用了test --help，仅帮助成功，不能记作校验，日志保留。
 
 原件/MySQL/PG/RustFS，queue/read丢回执/attempt2恢复及固定选择重hash后修改/删除实际SQL事务拒绝均验。完整tool原模型及原native变体未截断；原八步JSON/false/0/null不补字段，V2/当前策略后仍固定V1；两个真实业务各三受控模型通过。默认43.022/97.453/38.808秒，第二轮选择prepare及正式target的同一操作、原队列实际去重，第三轮取消未完整响应。不能称整体加速或自主完成；下一步研究明确用例文档来源的首轮固定读取及阶段成本，完整P0—P5保持。原始文件/消息/PG/hash和无关当前字节核对见p4-item-operation-validation.json；旧Worker汇总未恢复限制保留。
+
+## 2026-10-07 固定关联文档、首次只读恢复与实际默认两轮失败
+
+基线af790e15，完整目标及实现前研究见P4_LINKED_SOURCE_RESEARCH.md。新MySQL可选linked_source_protocol/v10；PG sources阶段保存固定引用/版本/资产/解析/结果，原件大对象RustFS。旧字段None省略、旧Prompt/哈希保持，原截止和权限不变。
+
+实际命令全部保存于p4-linked-source-*.command.json，stdout/stderr合并完整log及XML。后端cwd Agent_Server、..\.venv\Scripts\python.exe -Xutf8 -m pytest指定节点 -q --tb=short --junitxml=<本批.xml>。RUN_LIVE_CASE_PLANNING_TASKS、RUN_LIVE_CASE_EFFECT_RELATIONS、RUN_LIVE_PLAN_RUN_CREATION、RUN_LIVE_DOCUMENT_PARSERS=1；每批QA_LINKED_SOURCE_DIR/FORMAT_DIR及其他旧模块工件独立。独立默认另启RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION/QA_ITEM_OPERATION_SELECTION/QA_LINKED_SOURCES=1；模型/预算不改。
+
+- 新模块首10失败6通过19.78秒：夹具Skill版本空；修正后16通过21.43秒。核心真实三格式固定读取、原来源身份及旧字节已验。
+- 真实原生业务与实际PG改写/删除拒绝3通过13.25秒；内部与外部两场景各2受控模型/5HTTP，两个对象全覆盖且0剩余。历史夹具baseline786b5b88表示原场景谱系，当前实现由v10及固定hash证明。
+- 回归首拼错文件名，exit4/0测试；从既有命令核对后119通过3跳过122.81秒。起跑时尚未修分页对象；该修改另验3格式9.79秒、新模块16项19.89秒。最后新增queue丢回执V1、双用例归属和错误资产3项8.58秒；强化三格式首次原文/完整用例及实际PG计划3项15.84秒。
+- 默认生产首1失败28.22秒，解析快照返回page被当list，0物理请求；查存储签名改page.items，实际parser服务补验后另建新任务。新默认1失败217.52秒，2实际模型45.752/133.732秒，最后0正文且流CancelledError；0Run/业务HTTP。完整证据/unknown原样保留，不反复跑同配置。
+- 前端设置56通过2.72秒，实际计划展示57通过4.61秒；该次CaseRender错误筛选没有实际测试该文件。最后核对CasePlanDialog/CaseEffectCoveragePanel真实两个文件61通过2.53秒。build含vue-tsc退出0/Vite9.04秒；实际夹具后typecheck退出0，未重跑完整App。
+
+另有两次最初工具调用错误：在仓库根启动后端pytest缺src模块；创建临时runner的Shell引用错误。它们仅为启动失败，不计入功能测试。探索时曾引用不存在路径，随后按实际文件清单/既有命令修正；不是项目可用性证据。
+
+固定来源三种角色严格区分，当时snapshot缺失不从latest补历史；500行预读仍保留分页，后续固定basis而非当前catalog。旧任务/终态不升级、当前配置关闭及attempt2原deadline实验通过。下一步研究证据阶段的实际工作量，完整P0—P5未完成；原始文件/物理消息与三份审计见p4-linked-source-validation.json。
+
+最后补验generation_pipeline历史来源的updated_at时间戳：实际来源元数据先复现PG DataError/1失败10.70秒，不能把它当正式UUID版本。复用impact_sources已有身份核对，保留明确来源错误、不fallback当前版本；最终test_planning_linked_sources完整20节点和两种实际业务共22通过29.66秒、零跳过，详见legacy-version-first/identity-final原命令、日志和XML。这个新身份核对只处理确定性文档身份，不判断业务依赖；没有改写旧source_refs或历史结果。

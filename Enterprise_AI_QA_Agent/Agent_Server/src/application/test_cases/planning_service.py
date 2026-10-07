@@ -103,7 +103,7 @@ class CasePlanningService:
             record.prompt_version = OPERATION_PROMPT_VERSION
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
-            config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol) if config.policy.planning_stage_protocol else None
+            config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
@@ -142,7 +142,7 @@ class CasePlanningService:
                                   "context": planning_context or {}})
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
-            config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol) if config.policy.planning_stage_protocol else None
+            config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,

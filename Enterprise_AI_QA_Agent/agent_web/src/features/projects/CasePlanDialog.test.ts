@@ -6,6 +6,7 @@ import { HttpError } from "../../services/http";
 import type { ModeDescriptor } from "../../types";
 import documentExpected from "../../../tests/fixtures/case-document-expected.actual.json";
 import itemOperationActual from "../../../tests/fixtures/case-item-operation.actual.json";
+import linkedSourceActual from "../../../tests/fixtures/case-linked-source.actual.json";
 
 const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
@@ -384,6 +385,18 @@ describe("case planning", () => {
     }
     wrapper.unmount();
   });
+  it.each(["linked-sources", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves explicit linked sources and clears them with %s", async (name) => {
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="linked-sources"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ linked_source_protocol: "case-planning-linked-documents-v1",
+      source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180 });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].linked_source_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
   it("renders actual formal-only operation selection without changing fixed content", async () => {
     const actual = itemOperationActual.plan;
     api.getCasePlan.mockResolvedValue(actual);
@@ -396,6 +409,19 @@ describe("case planning", () => {
     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
     expect(wrapper.text()).not.toContain("证据契约");
     expect(actual.decision.items.every(item => item.kind === "target")).toBe(true);
+    wrapper.unmount();
+  });
+  it("renders actual authored source read before the first model with complete fixed content", async () => {
+    const actual = linkedSourceActual.plan;
+    api.getCasePlan.mockResolvedValue(actual);
+    api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "linked-task", project_id: projectId,
+      creation_key: payload.creation_key, status: "completed", plan_id: actual.id, round_count: 2, message: "完成" }));
+    const wrapper = setup(actual.project_id); await generate(wrapper);
+    expect(wrapper.text()).toContain("用例关联文档的固定读取记录");
+    expect(wrapper.text()).toContain("authored_snapshot");
+    expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
+    expect(wrapper.text()).not.toContain("证据契约");
+    expect(actual.rounds).toHaveLength(2);
     wrapper.unmount();
   });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves unified references independently and clears them with %s", async (name) => {

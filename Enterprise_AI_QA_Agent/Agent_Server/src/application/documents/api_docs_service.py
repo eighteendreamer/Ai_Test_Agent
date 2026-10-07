@@ -96,6 +96,14 @@ class ApiDocsService:
         version = await self.get_version(doc_id, version_id)
         return await self._read_record_content(version.snapshot, max_chars=max_chars)
 
+    async def capture_content_basis(self, project_id, source):
+        from src.application.documents.fixed_content_service import FixedDocumentContentService
+        return await FixedDocumentContentService(self, self._parsing_service).capture(project_id, source)
+
+    async def read_content_basis(self, basis):
+        from src.application.documents.fixed_content_service import FixedDocumentContentService
+        return await FixedDocumentContentService(self, self._parsing_service).read(basis)
+
     async def _read_record_content(self, record: ApiDocRecord, *, max_chars: int | None = None) -> dict[str, Any]:
         content = record.preview_text or ""
         read_error: str | None = None

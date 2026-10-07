@@ -94,14 +94,14 @@ async def environment(tmp_path, live=False, model=None, embeddings=None):
                         cursor.execute(f'DROP TABLE "{settings.database.postgres_case_plan_table}"')
 
 
-async def active_case(env, project, key, content, mode="api_testing"):
+async def active_case(env, project, key, content, mode="api_testing", source_refs=None):
     file = env.settings.data_dir + "/" + key + ".json"
     from pathlib import Path
     Path(file).write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
     bundle = await env.cases.create_draft(project_id=project.id, payload=DraftRequest(
         case_key=key, title=content["objective"], case_type="json", mode_key=mode,
         content_json=json.loads(Path(file).read_text(encoding="utf-8")), execution_notes="读取全部步骤；保持负向条件。",
-        source_refs=[{"source_type": "manual", "source_id": key}], model_key="manual",
+        source_refs=source_refs or [{"source_type": "manual", "source_id": key}], model_key="manual",
         prompt_version="manual-v1", skill_versions={"manual": "v1"},
         generation_metadata={"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}))
     await env.cases.submit_review(bundle.case.id)

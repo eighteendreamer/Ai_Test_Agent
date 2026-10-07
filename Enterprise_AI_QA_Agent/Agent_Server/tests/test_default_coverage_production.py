@@ -168,6 +168,9 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "source_identity_protocol": "case-planning-source-full-hash-v1",
                         "operation_prefetch_protocol": "case-planning-item-operation-prefetch-v2"})
                     report["baseline"] = "07275986 plus item operation selection v9"
+                if os.getenv("QA_LINKED_SOURCES") == "1":
+                    policy.linked_source_protocol = "case-planning-linked-documents-v1"
+                    report["baseline"] = "af790e15 plus fixed linked sources v10"
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}

@@ -32,9 +32,12 @@ class CasePlanningPolicy(PlanningModel):
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
     operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1", "case-planning-item-operation-prefetch-v2"] | None = None
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
+    linked_source_protocol: Literal["case-planning-linked-documents-v1"] | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.linked_source_protocol and not self.source_identity_protocol:
+            raise ValueError("关联来源预读需要固定完整来源身份")
         if self.operation_prefetch_protocol == "case-planning-item-operation-prefetch-v2" and not self.source_identity_protocol:
             raise ValueError("执行项操作选择需要固定完整来源身份")
         if self.source_identity_protocol and not self.effect_expected_source_protocol:
@@ -73,6 +76,8 @@ class CasePlanningPolicy(PlanningModel):
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
+        if self.linked_source_protocol is None:
+            data.pop("linked_source_protocol", None)
         if self.effect_expected_source_protocol is None:
             data.pop("effect_expected_source_protocol", None)
         if self.operation_prefetch_protocol is None:

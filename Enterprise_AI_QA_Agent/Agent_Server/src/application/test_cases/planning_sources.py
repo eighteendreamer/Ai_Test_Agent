@@ -59,7 +59,10 @@ class ProjectPlanningSources:
                 "recordings_has_more": len(recordings) > limit, "offset": offset,
                 "recording_knowledge_available": self._recordings is not None and self._graphs is not None}
 
-    async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None):
+    async def capture_document_basis(self, project_id, source):
+        return await self._docs.capture_content_basis(project_id, source)
+
+    async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None, fixed_documents=None):
         if identity_protocol not in {None, FULL_SOURCE_IDENTITY_PROTOCOL}:
             raise ValueError("项目来源查询不支持该固定身份协议")
         if request.kind == "cases":
@@ -78,7 +81,15 @@ class ProjectPlanningSources:
                 raise ValueError("文档不属于当前项目")
             # Existing search_documents accepts legacy names, not project_id;
             # use the project catalog and guarded direct read instead.
-            result = await self._docs.read_document_content(doc.id)
+            if fixed_documents is not None and doc.id in fixed_documents:
+                bases = fixed_documents[doc.id]
+                if not bases:
+                    raise ValueError("关联文档的固定来源不可用，不能改读当前版本替代")
+                if len(bases) != 1:
+                    raise ValueError("关联文档有多个固定来源版本，请依据已经读取的明确证据，不自动选择版本")
+                result = await self._docs.read_content_basis(bases[0])
+            else:
+                result = await self._docs.read_document_content(doc.id)
             if result.get("read_error") or result.get("truncated"):
                 raise ValueError("文档原件无法完整读取，不能使用旧预览作为规划依据")
             doc = ApiDocRecord.model_validate(result.get("document"))
@@ -96,6 +107,9 @@ class ProjectPlanningSources:
             if result.get("parse_snapshot"):
                 payload["parse_snapshot"] = result["parse_snapshot"]
                 payload["parse_structure"] = result.get("parse_structure")
+            if "basis_role" in result:
+                payload["basis_role"] = result["basis_role"]
+                payload["warnings"] = result["warnings"]
             version = doc.current_version_id or doc.updated_at.isoformat()
         else:
             if self._recordings is None or self._graphs is None:

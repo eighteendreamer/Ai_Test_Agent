@@ -14,10 +14,14 @@ from src.application.test_cases.planning_operation_prefetch import (
     PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION, ITEM_PREFETCH_PROTOCOL, ITEM_PREFETCH_PROMPT_VERSION,
 )
 
+from src.schemas.case_planning_sources import LINKED_SOURCE_PROMPT_VERSION
+
 SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if policy.linked_source_protocol:
+        return LINKED_SOURCE_PROMPT_VERSION
     if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
         return ITEM_PREFETCH_PROMPT_VERSION
     if policy.source_identity_protocol:
@@ -29,7 +33,13 @@ def stage_prompt_version(policy, stages):
     return RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None):
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None):
+    if linked_source_protocol:
+        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol)
+        original.logic = ("linked_source_reads是首次推理前对完整用例明确关联文档的只读记录。已读正文在evidence；"
+            "current_linked_source表示仅有ID时捕获的当前资料，不是当时编写依据；来源错误和has_more保留，不假装已读完整。"
+            "后续document分页继续同一固定版本/解析；多基准歧义不自动选。不要为了请求已读原文重复query，必要的新资料仍可查询。") + original.logic
+        return original
     if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
         original = build_stage_prompts(protocol, expected_source_protocol, None, source_identity_protocol)
         original.logic = original.logic.replace(json_text(LogicalPlanningDecisionV3.model_json_schema()),
