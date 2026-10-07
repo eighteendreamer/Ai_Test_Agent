@@ -384,10 +384,13 @@ class CasePlanExecutionSnapshot(PlanningModel):
     preparation_phases: dict[str, Literal["before", "after"]]
     regression: RegressionPlanSource | None = None
     preparation_scopes: dict[str, PreparationScopeRecord] | None = None
+    dependency_mapping_version: Literal["case-cleanup-waits-v1"] | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_snapshot(self, handler):
         data = handler(self)
         if self.preparation_scopes is None:
             data.pop("preparation_scopes", None)
+        if self.dependency_mapping_version is None:
+            data.pop("dependency_mapping_version", None)
         return data

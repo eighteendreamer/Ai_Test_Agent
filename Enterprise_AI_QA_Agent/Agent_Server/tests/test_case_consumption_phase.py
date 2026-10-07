@@ -140,7 +140,8 @@ def test_phase_requires_original_multi_effect_policy_and_old_bytes_remain():
 @pytest.mark.asyncio
 @LIVE
 @pytest.mark.parametrize('scenario', ['passed', 'failed', 'rollback', 'parallel', 'lost-claim', 'pending-ordinary',
-    'empty-checks', 'missing-call', 'foreign-target', 'changed-closure', 'graph-passed', 'graph-failed', 'unknown-ordinary'])
+    'empty-checks', 'missing-call', 'foreign-target', 'changed-closure', 'graph-passed', 'graph-failed', 'unknown-ordinary',
+    'cancelled-unknown-ordinary'])
 async def test_actual_mixed_formal_consumption_and_cleanup_share_original_transaction(
     tmp_path, regression_business_http, monkeypatch, scenario,
 ):
@@ -236,7 +237,7 @@ async def test_actual_mixed_formal_consumption_and_cleanup_share_original_transa
             assert denied.status == 'denied' and denied.output['error'] == 'case_consumption_receipt_invalid'
             assert len(business[1]) == 2 and len(business[0][1]) == 3
             extra['invalid_closure'] = invalid
-        elif scenario in {'pending-ordinary','unknown-ordinary'}:
+        elif scenario in {'pending-ordinary','unknown-ordinary','cancelled-unknown-ordinary'}:
             pending_call = call('pending-read','GET',business[0][0]+'/orders/'+second)
             pending = await env[1].create_job(tool=tool,call_id=pending_call.id,
                 session_id=execution.session_id,turn_id=execution.turn_id,trace_id=execution.trace_id,
@@ -244,9 +245,33 @@ async def test_actual_mixed_formal_consumption_and_cleanup_share_original_transa
             if scenario == 'unknown-ordinary':
                 claimed = await env[1].claim_execution(pending.id,context_bundle=execution.context_bundle)
                 assert claimed.status.value == 'running' and not claimed.output_payload
+            if scenario == 'cancelled-unknown-ordinary':
+                handler = runtime._handlers[tool.key]
+                async def lost_return(arguments, tool_context):
+                    await handler(arguments,tool_context)
+                    raise ConnectionError('actual GET returned but reliable tool delivery was lost')
+                monkeypatch.setitem(runtime._handlers,tool.key,lost_return)
+                with pytest.raises(CaseActionClaimUnavailable):
+                    await runtime.execute(tool,pending_call,replace(execution,tool_job_id=pending.id))
+                monkeypatch.setitem(runtime._handlers,tool.key,handler)
+                pending = await env[1].cancel_job(pending.id,reason='实际返回丢失后取消，不能声称消费已确认结束')
+                assert pending.status.value == 'cancelled' and pending.started_at and not pending.output_payload
+                assert 'tool_output_observation' not in pending.metadata
             denied = await runtime.execute(tool,cleanup,execution)
+            if scenario == 'cancelled-unknown-ordinary':
+                folder = Path(os.environ['QA_CONSUMPTION_PHASE_DIR'])/(scenario+'-cleanup-attempt')
+                folder.mkdir(parents=True,exist_ok=False)
+                folder.joinpath(original.name).write_bytes(original.read_bytes())
+                with postgres_connect(base.settings) as conn,conn.cursor() as cur:
+                    current_closure = admission.consumption.read(cur,running.id)
+                folder.joinpath('verification.json').write_text(json.dumps({'baseline':'67d134ae','scenario':scenario,
+                    'original':document.model_dump(mode='json'),'full_context':context.execution_json(),
+                    'cancelled_original':pending.model_dump(mode='json'),'cleanup':denied.model_dump(mode='json'),
+                    'closure':current_closure,'actual_HTTP':business[0][1],'remaining':business[1],
+                    'jobs':[j.model_dump(mode='json') for j in await env[1].list_jobs()
+                        if j.metadata.get('run_id') == detail.run.id]},ensure_ascii=False,indent=2),encoding='utf-8')
             assert denied.status == 'denied' and denied.output['error'] == 'case_consumption_receipt_invalid'
-            assert len(business[1]) == 2 and len(business[0][1]) == 3
+            assert len(business[1]) == 2 and len(business[0][1]) == (4 if scenario == 'cancelled-unknown-ordinary' else 3)
             extra['pending_original'] = (await env[1].get_job(pending.id)).model_dump(mode='json')
             records.append(denied)
         elif scenario == 'lost-claim':
@@ -319,7 +344,7 @@ async def test_actual_mixed_formal_consumption_and_cleanup_share_original_transa
         with postgres_connect(base.settings) as conn,conn.cursor() as cur:
             record = admission.consumption.read(cur,running.id)
             cur.execute(f'SELECT count(*) AS n FROM {admission.consumption.table} WHERE run_item_id=%s',(running.id,))
-            assert cur.fetchone()['n'] == (0 if scenario in {'pending-ordinary','unknown-ordinary'} or invalid_receipt else 1)
+            assert cur.fetchone()['n'] == (0 if scenario in {'pending-ordinary','unknown-ordinary','cancelled-unknown-ordinary'} or invalid_receipt else 1)
         if record:
             assert record['sha256'] == _digest({k:v for k,v in record.items() if k != 'sha256'})
             assert not record['run_item_completed']

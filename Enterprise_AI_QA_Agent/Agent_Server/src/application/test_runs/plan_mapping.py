@@ -8,7 +8,7 @@ from graphlib import CycleError, TopologicalSorter
 from uuid import NAMESPACE_URL, uuid5
 
 from src.application.test_runs.dependencies import validate_run_dependencies
-from src.application.test_runs.preparation_scopes import frozen_preparation_scopes
+from src.application.test_runs.preparation_scopes import automatic_cleanup_waits, frozen_preparation_scopes
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 from src.schemas.case_planning import CasePlanExecutionSnapshot, CasePlanRecord, CasePlanRunRequest, RegressionPlanSource, case_plan_json
 from src.schemas.run_management import RunItemDependency, TestRunItemRecord, TestRunRecord, TestCaseResultRecord
@@ -65,12 +65,23 @@ def regression_source_for_plan(plan, request, regression=None):
     return expected
 
 
+def plan_run_identity(plan, request, kind, key=""):
+    return str(uuid5(NAMESPACE_URL, json.dumps(["case-plan-run", plan.project_id,
+        request.creation_key, kind, key], ensure_ascii=False)))
+
+
 def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: datetime,
-                   created_by: str | None = None, regression: RegressionPlanSource | None = None
+                   created_by: str | None = None, regression: RegressionPlanSource | None = None,
+                   dependency_mapping_version: str | None = "auto"
                    ) -> tuple[TestSuiteBundle, TestRunRecord, list[TestRunItemRecord]]:
     if plan.status not in {"planned", "blocked"} or plan.decision is None or plan.decision.action != "finish":
         raise ValueError("只有已冻结且包含正式目标的计划可以创建运行")
     regression = regression_source_for_plan(plan, request, regression)
+    if dependency_mapping_version == "auto":
+        dependency_mapping_version = "case-cleanup-waits-v1" if plan.config_snapshot.policy.consumption_protocol else None
+    if dependency_mapping_version not in {None, "case-cleanup-waits-v1"}:
+        raise ValueError("不支持的固定计划依赖映射版本")
+    waits = automatic_cleanup_waits(plan) if dependency_mapping_version else {}
     nodes = {node.key: node for node in plan.decision.items}
     if len(nodes) != len(plan.decision.items) or not any(n.kind == "target" for n in nodes.values()):
         raise ValueError("计划节点身份重复或没有正式目标")
@@ -114,14 +125,13 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
             raise ValueError("准备项没有关联任何正式用例")
 
     def identity(kind: str, key: str = "") -> str:
-        return str(uuid5(NAMESPACE_URL, json.dumps(["case-plan-run", plan.project_id,
-            request.creation_key, kind, key], ensure_ascii=False)))
+        return plan_run_identity(plan, request, kind, key)
 
     suite_id, run_id = identity("suite"), identity("run")
     item_ids = {key: identity("item", key) for key in formal}
     snapshot = CasePlanExecutionSnapshot(plan=plan.model_copy(deep=True), run_item_ids=item_ids,
         owners=owners, preparation_phases=phases, regression=regression.model_copy(deep=True) if regression else None,
-        preparation_scopes=frozen_preparation_scopes(plan, owners))
+        preparation_scopes=frozen_preparation_scopes(plan, owners), dependency_mapping_version=dependency_mapping_version)
     dependencies: dict[str, dict[str, RunItemDependency]] = {key: {} for key in formal}
 
     def edge(owner: str, parent: str, condition: str, preparation: str | None = None) -> RunItemDependency:
@@ -138,7 +148,7 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
         for parent in nodes[key].depends_on:
             if owners[parent] != owner:
                 prepare = parent if nodes[parent].kind == "prepare" else None
-                condition = "terminal" if prepare or phases.get(key) == "after" else "passed"
+                condition = "terminal" if prepare or phases.get(key) == "after" or parent in waits.get(key, []) else "passed"
                 edge(owner, owners[parent], condition, prepare)
         for binding in nodes[key].input_bindings.values():
             if binding.source_item and owners[binding.source_item] != owner:
@@ -160,6 +170,8 @@ def build_plan_run(plan: CasePlanRecord, request: CasePlanRunRequest, *, now: da
         # Keep their creation hash stable so acknowledgement retries still work.
         plan_data.pop("regression", None)
     hash_input = {"plan": plan_data, "request": request.model_dump(mode="json")}
+    if dependency_mapping_version:
+        hash_input["dependency_mapping_version"] = dependency_mapping_version
     if regression:
         hash_input["regression"] = regression.model_dump(mode="json")
     request_hash = json_digest(hash_input)
@@ -185,7 +197,7 @@ def validate_plan_bundle(suite: TestSuiteBundle, run: TestRunRecord, items: list
         raise ValueError("计划运行没有固定快照或创建请求身份")
     expected = build_plan_run(run.plan_snapshot.plan, CasePlanRunRequest(creation_key=run.creation_key,
         mode_key=run.mode_key, session_id=run.session_id), now=run.created_at, created_by=run.created_by,
-        regression=run.plan_snapshot.regression)
+        regression=run.plan_snapshot.regression, dependency_mapping_version=run.plan_snapshot.dependency_mapping_version)
     if (suite != expected[0] or run != expected[1] or items != expected[2]):
         raise ValueError("计划映射、套件、运行或条目与固定依据不一致")
 

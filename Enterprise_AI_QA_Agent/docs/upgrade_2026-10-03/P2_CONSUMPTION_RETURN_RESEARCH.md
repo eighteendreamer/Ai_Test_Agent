@@ -1,0 +1,56 @@
+# 消费结束不能以取消状态替代原可靠返回
+
+研究基线67d134ae；完整P0—P5目标与原附件重新读取，以下研究先于生产修改。
+
+## 原代码与实际复现
+
+- 已读postgres_case_consumption的内部_candidate和外部消费者查询、原动作领取/逻辑索引、ToolRuntime._dispatch及ToolJobService取消和输出观察、原PG输出保存/settlement、原对象证据、计划映射与依赖条件、Agent图/API/审批测试。
+- SETTLED_EVIDENCE_STATUSES包含cancelled；当前内部核验只看该集合，外部SQL又排除cancelled/failed等终态。原cancel_job只更新Job状态；它不证明服务器没执行，也不产生tool_output_observation。原_dispatch在可靠返回保存前异常保留running/unknown，因此之后取消不能把这个未知变为已结束消费。
+- 原ToolOutputObservation是当前代码已有的可靠返回契约，包含schema_version/status/output_hash/observed_at。它在真实handler返回、规范化和脱敏后由PG原事务保存；工件交付及恢复可以改变最后output_payload，故不能把最终输出hash必须等于原观察hash作为通用新门禁。
+- 项目本地Agent轨迹与协议鲁棒性课程强调轨迹、重复执行、半成功链路、幂等与补偿；采用这些原则，不引用课程指标作为产品实测事实。
+
+实际新测试输入沿67d134ae已实测完整八步用例及原件/MySQL/PG/RustFS：两POST和一已确认GET后，再让原GET真正返回但在handler交付前抛异常；原Job保持running、没有可靠输出观察。用原cancel_job取消，再携带此前正确查询回执申请DELETE。
+
+新增测试1失败/14未选中，6.57秒，日志/XML和原件/当时原Job/HTTP/关闭记录存p2-consumption-return-before。实际错误行为：取消Job已有started_at但无output/观察，系统仍创建消费关闭记录并实际DELETE一个对象，返回completed；没有通过改变断言掩盖它。
+
+## 根因与采用做法
+
+这是消费结束语义缺失，不是针对cancelled状态再加特判。复用原返回契约，将“动作已结束”统一为：状态已终结，且若原领取已开始，则必须有结构有效的原可靠输出观察；未开始的拒绝/取消没有已发效果。queued/running等仍不视为消费结束。
+
+同一判定用于内部普通动作、外部消费者已开始的原动作，以及已有关闭记录恢复。原取消/失败状态和unknown不重写，不重新执行或补造返回。可靠返回后工件交付中断的partial仍可结束消费；对象产生/清理覆盖继续由原独立证据判定，不把返回观察当通过结论。
+
+新关闭记录在已有normal_job_refs中额外保存观察SHA，恢复核对原值；旧记录没有该键按原字段读取，但恢复时仍核验当前动作确已结束，不能再次依赖旧错误终态假设。不重hash旧记录。外部消费者的准入证据记录原终态结果与已开始Job/输出/观察SHA、原绑定与逻辑索引；只读核验发生在原PG清理领取事务，没有锁内模型调用。
+
+不新增配置键、表、工具、模式或依赖；可编辑策略仍MySQL，业务状态/原Job/关闭记录PG，原件RustFS。旧未启用消费协议的运行不接入这项判定；已知逻辑操作重放仍先于消费准入，unknown不重发。外部多消费者将以原图/API/审批及真实业务验证，而不能由此内部反例推断通过。
+
+## 后续必须实际验证
+
+内部：真实返回丢失后取消仍拒绝清理；已有可靠返回后取消与交付partial不误拒；旧14场景保持。外部：共享来源、两个正式消费者，先完成一个而后者仍工作时不能删除；失败消费者也可在证据明确结束后清理；外部已开始未知/取消无返回仍保留现场；错误观察/跨身份不误记结束。完整8步/False/0/null、原审批和终态历史保持。
+
+另查到计划映射风险：v2正式清理项为等待其他消费者而新增depends_on，映射可能将其变为要求对方passed；prepare after边则已有terminal语义。必须通过正式项内部清理/另一消费者失败的真实场景确认。不能通过强制拆成prepare绕开该范围，也不能将所有原业务前置降为terminal。该问题需要先保存具体输入，再研究原声明与自动等待边的区分。
+
+## 外部六场景首次实测与映射设计
+
+p2-consumption-external-first：4通过、2失败，34.03秒。五类after场景和正式项内清理均沿原图/API/审批、真实共享POST/GET/DELETE、MySQL策略、PG运行与RustFS完整八步原件。已返回后取消和工件交付partial正常结束；取消但没有返回的外部动作实际阻止了DELETE，保留对象。此场景的受控Agent却仍引用被拒清理不存在的response_status，造成最终error；修正测试Agent按实际拒绝输出提交blocked回执，不改生产核验以迁就错误回执。
+
+formal-failed为真实生产映射缺陷：left实际GET返回200，与其固定201预期不符，原结果failed；共享seed成功。right的原逻辑depends_on只有seed，系统normalize_relation_scopes为共享清理自动加入left；build_plan_run把正式父项统一映射passed，导致right无法领取。原输入、逻辑声明/哈希、自动边、运行依赖及实际HTTP均保留于first/formal-failed/left-result.json。
+
+采用原解析完成logic轮的wire decision和preparation_scope_declaration作为声明依据，按现有normalize_preparation_scopes及拓扑排序重建，并核对原logical_hash与最终固定逻辑。只把自动增加的清理等待边映射现有terminal；模型明确声明的业务依赖以及required输出绑定保持passed/原数据要求。没有可靠原声明不臆测降级。
+
+新运行快照保存可选dependency_mapping_version=case-cleanup-waits-v1；只有消费协议启用的新运行自动采用。None字段不序列化，历史运行/创建哈希维持原算法。validate_plan_bundle按快照版本重建；相同创建请求查询旧运行时按它原版本比较，不能以新默认覆盖或拒绝旧重放。新版本写入creation_hash，前端类型同步。新增实际明确passed前置失败场景，以及原67d快照的逐字读取/旧运行重放，核对兼容和边界。不新增配置、数据库表、执行引擎或工具。
+
+## 当前验证结果
+
+取消无返回反例：before 1失败/14未选中6.57秒；fixed 1通过5.90秒；当前完整内部模块15通过0跳过44.15秒。外部fixed六场景6通过34.47秒；扩大后的boundary 12通过1失败48.76秒，旧运行夹具遗漏原store的outbox_table/event_key/stream/payload关键字；按已读原签名补齐，最终13通过0跳过48.14秒。九场景实际PG/MySQL/RustFS、完整八步原件和原Agent图/API/审批/业务HTTP；四项从原67d/真实失败文件读取，检查历史SHA及篡改原来源。前端只同步可选快照类型，实际npm.cmd run typecheck退出0。受影响完整回归仍运行，结果随后写入IMPLEMENTATION及方案6.70。
+
+原已返回再取消与partial均清理成功；partial的原观察status=completed，而最终Job=partial且工件交付增加output_delivery，实际最终输出SHA不同，证明不能强制两者相等。取消无返回保留原cancelled/started_at/无观察、现场对象及零DELETE。明确depends_on和required数据绑定都维持passed，原None映射实际PG保存后同请求重放保持原SHA；首次查询存在运行时先读原映射，避免新算法预先校验旧历史。
+
+没有声称工具返回一定意味着所有远端副作用已结束；失败/超时返回的业务含义和unknown只读查证仍需后续独立证据。当前受控Agent没有默认模型HTTP，原图功能验证不能冒充默认自主Agent验收。
+
+
+2026-10-08跨日完成受影响回归：197通过、4跳过，286.59秒。实际live开关启用RUN_LIVE_PLAN_RUN_CREATION/RUN_LIVE_RUN_DEPENDENCIES/RUN_LIVE_PLAN_BINDING_PATHS/RUN_LIVE_DOCUMENT_IMPACT_TASKS/RUN_LIVE_CASE_EFFECT_RELATIONS，QA各原输出目录使用独立p2-consumption-return-regression-*。精确命令含十五模块/节点、stdout/stderr和exit0见regression.command.json/log/XML。四跳过为：
+- tests.test_agent_case_assessment::test_actual_model_returns_receipt_using_full_case_and_persisted_real_http_evidence：requires current actual MySQL model config and isolated live PostgreSQL/RustFS
+- tests.test_agent_case_execution::test_public_plan_launch_outbox_redis_worker_agent_approvals_and_terminal_replay：requires actual isolated Redis/MySQL/PG/RustFS
+- tests.test_agent_case_context::test_actual_model_reads_complete_frozen_case_without_authoring_template：requires current configured actual model and real isolated storage
+- tests.test_plan_binding_paths::test_actual_model_uses_literal_path_from_full_case：requires current actual model and real storage
+编译和历史/原件审计另保存validation.json，不能把未启用外部模型或独立Worker计算为功能通过。

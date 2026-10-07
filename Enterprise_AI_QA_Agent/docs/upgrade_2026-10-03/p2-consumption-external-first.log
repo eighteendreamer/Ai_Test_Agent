@@ -1,0 +1,54 @@
+..F..F                                                                   [100%]
+================================== FAILURES ===================================
+_ test_actual_external_consumers_share_original_source_and_cleanup[after-cancelled-unknown] _
+tests\test_case_consumption_external.py:226: in test_actual_external_consumers_share_original_source_and_cleanup
+    assert right_result['status'] == 'blocked' and len(business[1]) == 1 and not saved['closures']
+E   AssertionError: assert ('error' == 'blocked'
+E     
+E     - blocked
+E     + error)
+------------------------------ Captured log call ------------------------------
+WARNING  src.runtime.postgres_case_consumption:postgres_case_consumption.py:55 case_consumption_return_unconfirmed
+ERROR    src.application.test_runs.execution_service:execution_service.py:388 test_run_case_execution_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 314, in execute_item
+    outcome = await self._execute_with_lease_watch(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\execution_service.py", line 497, in _execute_with_lease_watch
+    return await execution
+           ^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 140, in execute
+    return await self.resume_approval(case=case, version=version, run=run, item=item,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 172, in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_execution.py", line 232, in _finish
+    outcome = await self._assessment.assess(context=context,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 185, in assess
+    assessed = await self._assess_steps(context=context, receipt=receipt, tool_records=tool_records,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 260, in _assess_steps
+    return self._assess_loaded_steps(context=context, receipt=receipt, jobs=jobs, steps=steps,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 296, in _assess_loaded_steps
+    observed = [observe(ref) for ref in check.observations]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 296, in <listcomp>
+    observed = [observe(ref) for ref in check.observations]
+                ^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\test_runs\agent_case_assessment.py", line 279, in observe
+    raise ValueError(f"工具调用 {ref.call_id} 的 output_path_tokens 不存在: "
+ValueError: 工具调用 right.cleanup 的 output_path_tokens 不存在: ["task_result", "response_status"]
+_ test_actual_external_consumers_share_original_source_and_cleanup[formal-failed] _
+tests\test_case_consumption_external.py:222: in test_actual_external_consumers_share_original_source_and_cleanup
+    assert [c.item.plan_item_key for c in second] == ['right']
+E   AssertionError: assert [] == ['right']
+E     
+E     Right contains one more item: 'right'
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_case_consumption_external.py::test_actual_external_consumers_share_original_source_and_cleanup[after-cancelled-unknown]
+FAILED tests/test_case_consumption_external.py::test_actual_external_consumers_share_original_source_and_cleanup[formal-failed]
+2 failed, 4 passed in 34.03s

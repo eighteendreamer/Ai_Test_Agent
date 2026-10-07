@@ -4123,3 +4123,23 @@ fixed2通过9.89秒，final新15项通过14.50秒；两份原件真实RustFS读�
 - 前端cwd agent_web，npm.cmd test -- src/features/projects/CasePlanDialog.test.ts，早65通过2.76秒，最终65通过2.42秒；npm.cmd run build早退出0/Vite6.96秒，最终含vue-tsc退出0/Vite6.90秒。完整浏览器App未跑，默认自主模型旧超时没有原样重试。
 
 原记录/hash、并发与实际HTTP、三份方案全文、117前批原件HEAD字节以及无关文件校验见p2-consumption-phase-validation.json。外部多个消费者、租约恢复/多Worker、专门消费报告、完整准备生命周期、unknown只读查证、计划修订/其他模式、P1模板/Excel正式App、DeepSeek人工录制、Docker真实性能/安全、生产历史迁移及其余完整P0—P5继续。保护用户.gitignore和两份Worker汇总当前字节；历史原字节未恢复限制保持。不推送/PR。
+
+## 2026-10-07 取消无返回与共享清理自动等待根因修复
+
+基线67d134ae，完整目标附件重读；研究先于生产修改，见P2_CONSUMPTION_RETURN_RESEARCH.md。实际原GET返回后持久观察前异常，再取消；旧内部逻辑仍关闭并DELETE，before1失败6.57秒。统一核验终态及已开始动作的原可靠返回观察，内部/外部/历史关闭读取共用；不以cancelled/failed枚举替代返回证据。新原normal_job_refs追加观察SHA，外部保存原终态结果及所有started Job身份/原准入/逻辑索引/输出和观察SHA。没有新的配置键、表、工具或依赖；原PG事务和MySQL/RustFS职责保持。
+
+外部first4通过2失败34.03秒：取消未知已拒绝实际DELETE，但受控Agent引用拒绝输出不存在的response_status导致error；按实际结果构造blocked回执修正夹具。另formal-failed是生产根因：模型只声明依赖seed，系统共享清理自动增加left，再误映射passed，left真实failed使right不能领取。原logic声明/范围/哈希重建核对后，新运行固定case-cleanup-waits-v1，将仅自动清理等待映射既有terminal；明确业务依赖/required输出仍passed。快照字段None省略，旧hash/依赖不重写；创建请求先读原已存在运行映射，validate_plan_bundle也用固定版本。前端快照类型同步。
+
+后端cwd Agent_Server，..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_consumption_phase.py或test_case_consumption_external.py -q --tb=short --junitxml='../docs/upgrade_2026-10-03/<本批XML>'；RUN_LIVE_PLAN_RUN_CREATION=1/PYTHONUTF8=1，QA_CONSUMPTION_PHASE_DIR或QA_CONSUMPTION_EXTERNAL_DIR使用对应新目录。精确参数/cwd/exit_code与完整stdout/stderr分别保存command.json/log/XML。定向fixed1通过5.90秒；当前内部15通过0跳过44.15秒。外部fixed6通过34.47秒；扩大boundary12通过1失败48.76秒为新夹具遗漏原store必需关键字，按原签名修正；最终13通过0跳过48.14秒（九实际图/API/审批场景、四历史/篡改输入边界）。前端cwd agent_web，npm.cmd run typecheck退出0；仅DTO变更，没有跑完整App或新增页面测试。
+
+原共享source由left的before准备POST，left/right两个正式消费者使用，清理由after准备或right正式项自身执行；成功与left failed均保存原结果后清理。可靠返回再取消和交付partial不误拒；取消无返回blocked且零DELETE/现场1对象。提前清理不发送。明确passed业务前置、required输出与旧映射均仍阻止失败前置后的right领取；同请求重放/终态不重领验证。保存完整八步/False/0/null原件/RustFS SHA、MySQL修改前后、PG原计划/运行/Job/关闭及真实HTTP。受控Agent不表示默认自主外部模型；历史默认超时没有原样重跑。
+
+受影响回归结果与实际命令由本批最终审计记录；上一批227原证据HEAD字节、三份方案、用户.gitignore及其他无关当前字节检查。原两份Worker原字节未恢复限制继续保留。更多消费者/来源组合、跨租约/多Worker、消费报告、完整生命周期、unknown只读查证、计划修订/其他模式、默认自主Agent、完整App和其余P0—P5未完成；不推送/PR。
+
+
+2026-10-08跨日完成受影响回归：197通过、4跳过，286.59秒。实际live开关启用RUN_LIVE_PLAN_RUN_CREATION/RUN_LIVE_RUN_DEPENDENCIES/RUN_LIVE_PLAN_BINDING_PATHS/RUN_LIVE_DOCUMENT_IMPACT_TASKS/RUN_LIVE_CASE_EFFECT_RELATIONS，QA各原输出目录使用独立p2-consumption-return-regression-*。精确命令含十五模块/节点、stdout/stderr和exit0见regression.command.json/log/XML。四跳过为：
+- tests.test_agent_case_assessment::test_actual_model_returns_receipt_using_full_case_and_persisted_real_http_evidence：requires current actual MySQL model config and isolated live PostgreSQL/RustFS
+- tests.test_agent_case_execution::test_public_plan_launch_outbox_redis_worker_agent_approvals_and_terminal_replay：requires actual isolated Redis/MySQL/PG/RustFS
+- tests.test_agent_case_context::test_actual_model_reads_complete_frozen_case_without_authoring_template：requires current configured actual model and real isolated storage
+- tests.test_plan_binding_paths::test_actual_model_uses_literal_path_from_full_case：requires current actual model and real storage
+编译和历史/原件审计另保存validation.json，不能把未启用外部模型或独立Worker计算为功能通过。

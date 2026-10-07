@@ -5,12 +5,13 @@ import hashlib
 import json
 import logging
 
-from src.application.runtime.case_action_binding import CONSUMPTION_PROTOCOL, _digest
+from src.application.runtime.case_action_binding import CONSUMPTION_PROTOCOL, CaseActionBinding, _digest
 from src.application.runtime.case_effect_relations import compile_relations, definition_selection
 from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService, SETTLED_EVIDENCE_STATUSES
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_tool_job_store import _job_from_row
 from src.schemas.case_execution import CaseConsumptionClosure
+from src.schemas.tool_job import ToolOutputObservation
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,23 @@ class PostgresCaseConsumption:
                     record JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
         await asyncio.to_thread(create)
 
+    @staticmethod
+    def action_finished(job):
+        if job.status not in SETTLED_EVIDENCE_STATUSES:
+            return False
+        if job.started_at is None:
+            return True
+        # Original cancellation/failed status cannot resolve an unknown send.
+        # A delivery interruption may change final output; the observation is
+        # the original handler-return checkpoint, not a passing assertion.
+        try:
+            ToolOutputObservation.model_validate(job.metadata.get('tool_output_observation'))
+        except ValueError:
+            logger.warning('case_consumption_return_unconfirmed',extra={'tool_job_id':job.id,
+                'run_item_id':job.metadata.get('run_item_id'),'status':job.status.value})
+            return False
+        return True
+
     def read(self, cur, item_id):
         cur.execute(f'SELECT record FROM {self.table} WHERE run_item_id=%s', (item_id,))
         row = cur.fetchone()
@@ -57,6 +75,11 @@ class PostgresCaseConsumption:
                 _digest(job.output_payload) != ref['output_sha256'] or
                 _digest(job.metadata.get('case_action_binding')) != ref['binding_sha256']):
                 raise ValueError('消费结束的原普通动作证据已变化')
+            if not self.action_finished(job):
+                raise ValueError('原消费关闭记录含有未确认结束的动作')
+            if ('return_observation_sha256' in ref and
+                ref['return_observation_sha256'] != _digest(job.metadata.get('tool_output_observation'))):
+                raise ValueError('消费结束的原可靠返回观察已变化')
         return record
 
     def prepare(self, cur, *, context, job, binding, detail, now):
@@ -103,12 +126,25 @@ class PostgresCaseConsumption:
                 result.run_id != context.run_id or result.run_item_id != item.id or result.status != item.status or
                 result.case_id != item.case_id or result.case_version_id != item.case_version_id):
                 return None, 'case_consumption_consumer_pending'
-            cur.execute(f"""SELECT id FROM {self._admission._table} WHERE metadata->>'run_item_id'=%s
-                AND started_at IS NOT NULL AND status NOT IN ('completed','partial','failed','denied','cancelled')""", (item.id,))
-            if cur.fetchone() is not None:
-                return None, 'case_consumption_consumer_unknown'
+            cur.execute(f"""SELECT * FROM {self._admission._table} WHERE metadata->>'run_item_id'=%s
+                AND started_at IS NOT NULL ORDER BY created_at,id""", (item.id,))
+            actions = []
+            for row in cur.fetchall():
+                original = _job_from_row(row)
+                original_binding = CaseActionBinding.model_validate(original.metadata.get('case_action_binding'))
+                if any(getattr(original_binding,key) != value for key,value in {
+                    'project_id':context.project_id,'run_id':context.run_id,'plan_id':context.plan_id,
+                    'run_item_id':item.id}.items()):
+                    raise ValueError('外部消费者原动作不属于固定项目、运行或条目')
+                self._admission._check_prior_receipt(original,original_binding)
+                self._admission.operations.validate_job_in_transaction(cur,original)
+                if not self.action_finished(original):
+                    return None, 'case_consumption_consumer_unknown'
+                actions.append({'job_id':original.id,'status':original.status.value,
+                    'output_sha256':_digest(original.output_payload),
+                    'return_observation_sha256':_digest(original.metadata.get('tool_output_observation'))})
             consumers.append({'item_key':key, 'run_item_id':item.id, 'result_id':result.id,
-                'result_sha256':_digest(result.model_dump(mode='json')), 'status':item.status})
+                'result_sha256':_digest(result.model_dump(mode='json')), 'status':item.status,'started_actions':actions})
         proof = {'version':CONSUMPTION_PROTOCOL, 'closure_sha256':candidate['sha256'],
             'source_keys':[scope.source_key for scope in sources], 'consumers':consumers,
             'scope':'explicit_completed_consumption_phase', 'run_item_completed':False}
@@ -131,7 +167,7 @@ class PostgresCaseConsumption:
             self._admission.operations.validate_job_in_transaction(cur, original)
             if action_role(context, original) != 'ordinary':
                 continue
-            if original.status not in SETTLED_EVIDENCE_STATUSES:
+            if not self.action_finished(original):
                 raise ValueError('普通动作仍未结束或结果未知: '+original.id)
             if original.call_id in jobs:
                 raise ValueError('消费回执原调用身份重复')
@@ -151,7 +187,8 @@ class PostgresCaseConsumption:
             'receipt':receipt.model_dump(mode='json'), 'assessment':deepcopy(assessment.results),
             'verification':verification.model_dump(mode='json'), 'normal_job_refs':[{'job_id':j.id,
                 'call_id':j.call_id, 'status':j.status.value, 'output_sha256':_digest(j.output_payload),
-                'binding_sha256':_digest(j.metadata['case_action_binding'])} for j in jobs.values()],
+                'binding_sha256':_digest(j.metadata['case_action_binding']),
+                'return_observation_sha256':_digest(j.metadata.get('tool_output_observation'))} for j in jobs.values()],
             'closed_at':now.isoformat(), 'run_item_completed':False}
         raw = json.dumps(record,ensure_ascii=False,sort_keys=True,allow_nan=False,separators=(',',':')).encode()
         if len(raw) > context.effect_coverage_max_bytes:

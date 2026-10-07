@@ -128,3 +128,49 @@ def normalize_relation_scopes(decision):
                 "source_keys": item.cleanup_sources,
                 "added_dependency_keys": [parent for parent in parents if parent not in item.depends_on]})
             item.depends_on = parents
+
+
+def automatic_cleanup_waits(plan):
+    """Recover only waits added to the original, hash-checked logical declaration."""
+    from src.schemas.case_planning_stages import PlanningOperationSelection, logical_decision_hash
+
+    rounds = [round for round in plan.rounds if round.get("status") == "parsed"
+        and round.get("planning_stage") == "logic" and round.get("decision", {}).get("action") == "finish"]
+    if not rounds:
+        logger.warning("case_cleanup_wait_origin_missing", extra={"plan_id": plan.id})
+        return {}
+    if len(rounds) != 1:
+        raise ValueError("固定清理等待缺少唯一的原逻辑声明")
+    origin = rounds[0]
+    wire = dict(origin["decision"])
+    selections = wire.pop("operation_selections", None)
+    if selections is not None:
+        selections = [PlanningOperationSelection.model_validate(entry) for entry in selections]
+    declared = type(plan.decision).model_validate(wire)
+    declaration = {item.key: {"cleanup_sources": list(item.cleanup_sources),
+        "depends_on": list(item.depends_on)} for item in declared.items if item.cleanup_sources is not None}
+    if declaration != origin.get("preparation_scope_declaration"):
+        raise ValueError("原清理声明与原逻辑响应不同")
+    normalized = declared.model_copy(deep=True)
+    normalize_preparation_scopes(normalized, plan.config_snapshot.policy.preparation_scope_protocol)
+    nodes = {item.key: item for item in normalized.items}
+    order = TopologicalSorter({key: item.depends_on for key, item in nodes.items()}).static_order()
+    normalized.items = [nodes[key] for key in order]
+    if logical_decision_hash(normalized, selections) != origin.get("logical_hash"):
+        raise ValueError("重建的清理等待与原固定逻辑SHA不同")
+    final = {item.key: item for item in plan.decision.items}
+    if set(nodes) != set(final):
+        raise ValueError("固定清理等待的执行项已变化")
+    for key, node in nodes.items():
+        # The existing effects stage appends these three technical fields only.
+        mutable = {"evidence_ids", "input_bindings", "effect_declarations"}
+        if node.model_dump(mode="json", exclude=mutable) != final[key].model_dump(mode="json", exclude=mutable):
+            raise ValueError("最终计划改变了原固定清理逻辑")
+    # No upstream counterpart (checked: original scope normalizer, immutable
+    # logical rounds and actual formal-failed): automatic waits require end,
+    # while declared business prerequisites still require passing evidence.
+    waits = {item.key: [parent for parent in nodes[item.key].depends_on if parent not in item.depends_on]
+        for item in declared.items if item.cleanup_sources is not None}
+    logger.info("case_cleanup_waits_reconstructed", extra={"plan_id": plan.id, "waits": waits,
+        "logical_hash": origin["logical_hash"]})
+    return waits

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from src.application.test_runs.plan_mapping import build_plan_run, validate_frozen_cases, regression_source_for_plan
+from src.application.test_runs.plan_mapping import build_plan_run, plan_run_identity, validate_frozen_cases, regression_source_for_plan
 from src.core.request_context import get_request_context, new_id
 from src.schemas.case_planning import CasePlanRunRequest, RegressionPlanSource
 from src.schemas.run_dispatch import RunDispatchTask
@@ -29,9 +29,10 @@ class CasePlanRunService:
         if plan is None:
             raise KeyError("当前项目的固定计划不存在")
         regression = regression_source_for_plan(plan, request, regression)
+        existing = await self._runs.get_run(plan_run_identity(plan, request, "run"))
+        mapping = existing.run.plan_snapshot.dependency_mapping_version if existing and existing.run.plan_snapshot else "auto"
         bundle, run, items = build_plan_run(plan, request, now=datetime.now(timezone.utc), created_by=created_by,
-            regression=regression)
-        existing = await self._runs.get_run(run.id)
+            regression=regression, dependency_mapping_version=mapping)
         if existing:
             if existing.run.creation_hash != run.creation_hash:
                 raise ValueError("相同创建请求已经关联其他计划或执行参数")

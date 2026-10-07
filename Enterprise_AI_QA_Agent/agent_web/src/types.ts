@@ -2216,6 +2216,7 @@ export interface TestRunRecord {
   mode_key: string;
   execution_strategy?: "legacy" | "agent";
   plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after">;
+    dependency_mapping_version?: "case-cleanup-waits-v1" | null;
     preparation_scopes?: Record<string, { source_key: string; source_owner_key: string; consumer_keys: string[]; cleanup_keys: string[] }> | null;
     regression?: { parent_run_id: string; source_plan_id: string; source_results: Record<string, string>; version_overrides: Record<string, string> } | null } | null;
   creation_key?: string | null;
