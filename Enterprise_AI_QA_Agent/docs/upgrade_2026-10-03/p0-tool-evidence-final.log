@@ -1,0 +1,23 @@
+..................................................................s..... [ 36%]
+................................................F....................... [ 72%]
+......................................................                   [100%]
+================================== FAILURES ===================================
+________ test_registered_but_unexposed_tool_name_cannot_bypass_router _________
+tests\test_intent_safety_routing.py:680: in test_registered_but_unexposed_tool_name_cannot_bypass_router
+    resolved = asyncio.run(
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+src\graph\nodes\tool_executor.py:238: in _resolve_tool_call
+    tool_context = tool_context.bind_call(tool_call)
+                   ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'bind_call'
+=========================== short test summary info ===========================
+FAILED tests/test_intent_safety_routing.py::test_registered_but_unexposed_tool_name_cannot_bypass_router
+1 failed, 196 passed, 1 skipped in 39.77s

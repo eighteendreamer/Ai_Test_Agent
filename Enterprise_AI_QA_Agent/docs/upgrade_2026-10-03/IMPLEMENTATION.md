@@ -4481,3 +4481,42 @@ npm.cmd run build *> '../docs/upgrade_2026-10-03/p0-recording-agent-web-build-ve
 ```
 
 退出码0，vue-tsc/Vite通过7.19秒。旧web-build10.20秒日志已保留，但原96356句柄消失，未臆补退出码。前端只加DTO，无App来源选择/完整产品验收。原源/证据hash、三份方案字节一致与无关文件保持见p0-recording-agent-validation.json。完整P0—P5仍进行中。
+
+
+## 2026-10-08 工具证据正文、命令目标及正式UI结果〔基线f2ba964e〕
+
+研究/采用依据/全部失败边界见P0_RECORDING_AGENT_EXECUTION_DESIGN.md，三份方案同步6.82。graph/审批共用tool_messages，call/job/output_reference可见；未执行/未结束不提供引用。预算压缩保留身份和无指令权，宽输出仍是JSON；v4回执指导保持原严格核验。browser_commands抽取现有args和全局选项语义，MCP/native/policy共用，修复明确命令导航绕过原私有目标检查。无新配置/表/依赖/前端契约；不关闭审批，不改变旧error结果。
+
+实际命令（目录Agent_Server，均stdout/stderr保存原.log）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+..\.venv\Scripts\python.exe -m pytest tests/test_tool_message_evidence.py tests/test_tool_message_budget.py tests/test_agent_case_assessment.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-tool-evidence-first.xml *> ../docs/upgrade_2026-10-03/p0-tool-evidence-first.log
+
+..\.venv\Scripts\python.exe -m pytest tests/test_browser_command_target_policy.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-browser-command-target-before.xml *> ../docs/upgrade_2026-10-03/p0-browser-command-target-before.log
+
+$env:RUN_LIVE_BROWSER_TESTS='1'
+$env:QA_BROWSER_COMMAND_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-browser-command-target-verified'
+..\.venv\Scripts\python.exe -m pytest tests/test_browser_command_target_policy.py tests/test_tool_message_evidence.py tests/test_tool_message_budget.py tests/test_agent_case_assessment.py tests/test_agent_case_session.py tests/test_tool_executor_safety_gate.py tests/test_session_project_binding.py tests/test_intent_safety_routing.py tests/test_python_playwright_lifecycle.py tests/test_live_browser_lifecycle.py tests/test_prompt_history_http.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-tool-evidence-verified.xml *> ../docs/upgrade_2026-10-03/p0-tool-evidence-verified.log
+
+..\.venv\Scripts\python.exe -m pytest tests/test_browser_command_target_policy.py -k malformed -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-browser-command-malformed.xml *> ../docs/upgrade_2026-10-03/p0-browser-command-malformed.log
+
+$env:RUN_LIVE_RECORDING_AGENT_PRODUCTION='1'
+$env:QA_RECORDING_AGENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-tool-evidence-production-final'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_agent_production.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-tool-evidence-production-final.xml *> ../docs/upgrade_2026-10-03/p0-tool-evidence-production-final.log
+
+..\.venv\Scripts\python.exe -m compileall -q src/application/runtime/browser_commands.py src/application/runtime/tool_messages.py src/application/runtime/runtime_service.py src/application/runtime/python_playwright_cli.py src/application/context/mcp_runtime_service.py src/application/security/execution_safety_policy.py src/application/test_runs/agent_case_contract.py src/graph/nodes/tool_executor.py
+```
+
+最终扩大215通过1跳过55.38秒、退出0；skip为旧read-only默认模型专项。末增畸形命令1通过0.95秒、12排除、退出0。真实文件/HTTP POST-GET-DELETE/PG证据、源失败回执、审批/graph一致、摘要预算、原严格所有权、历史消息及原生浏览器生命周期覆盖。graph未授权导航零HTTP、有可信scope后实际Chromium导航和snapshot读唯一标记，完整Job/原页面/原浏览器工件已保存p0-browser-command-target-verified；不冒充生产PG正式运行。compileall退出0，无前端改动，本轮未运行前端build或迁移。
+
+首轮52通过1失败1跳过26.83秒：新增断言误把not_run验证记录当工具证据；修后六模块72通过1跳过27.72秒。命令准入真实输入修复前7失败4通过0.98秒。扩大首轮196通过1失败1跳过39.77秒：旧测试传None上下文而HEAD已有bind_call，补真实context且原拒绝断言保持。初次真实浏览器21通过1失败19.00秒：实际操作断言通过、保存诊断datetime没转换；用现有make_json_safe修正，不改产品行为。查询诊断意外import不存在的src_placeholder退出1、无修改，不计测试。
+
+默认生产初次2失败201.12秒：并列两个合法工具待审批，夹具要求len(pending)==1错误；其中未授权私有页面命令参数绕过策略、产生1次执行点击，原PG/模型/页面原件保留。按原native命令语义修目标提取，共用解析，保留授权和审批。再测可信父1失败205.03秒、1排除：旧range(8)审批数限制提前结束；11次真实HTTP、录制1次执行2次POST，正式仍waiting_approval。原件production-fixed保持；夹具按条目指定approval继续，原650秒期限不变。
+
+最终默认生产1失败1通过396.42秒、退出1。untrusted实际4次HTTP200、录制1次POST、执行零点击，正式blocked，终态重放原任务没有新增模型发送/页面副作用，独立重放Worker stdout/stderr及verification保存。trusted父scope由本次隔离PG服务端创建、已有链路继承，不能视为完整产品授权配置；22次HTTP200、4次POST（录制1执行3），实际DOM与唯一确认串已取得。最终模型返回中文报告夹JSON，严格parse_response拒绝（line1,column1）、正式error；没有passed重投验证。工具正文和最终报告中的引用已用实际call ID，但格式未闭环。旧失败/原结果不改，不按报告自述计通过，不从正文抽块更新结果，不提高产品预算或以更多业务点击修回执。
+
+原件含真实SDK请求/响应body、HTTP/API、录制/图、RustFS截图读回、PG snapshots/jobs/approvals/events、浏览器/独立进程输出和所有失败XML/log。审计p0-tool-evidence-audit.py检查三份计划字节、原254证据hash保持、无关文件、实际输入/原响应hash、模型可见身份和工件；只读检查默认配置credential不出现在证据。完整P0—P5仍未完成，下一步继续正式回执/报告、命令参数/页面保持、审批预算及无父会话授权源调研，随后其余全范围验收。
+
+
+提交准备首次把423个明确路径放入单个进程参数，Windows WinError206，未发生暂存。分批暂存后diff --check发现原pytest失败空白和SSE结尾空行，同时283件证据索引受自动换行转换而与原件不一致。沿本目录既有.gitattributes为本轮两个证据前缀增加-text及.bin/.png binary规则，日志保留原空白；只对本轮路径重新暂存并逐字节核对索引。未改原证据字节、未改git配置、未关闭代码差异检查；该保存机制由既有同类实现确定。

@@ -11,6 +11,7 @@ from src.application.security.prompt_injection_policy import PromptInjectionPoli
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_input_validation import validate_tool_input as _validate_tool_input
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
+from src.application.runtime.tool_messages import build_tool_message
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
 from src.graph.state import AgentGraphState
@@ -683,22 +684,6 @@ async def _resolve_tool_call(
     }
 
 
-def build_tool_message(record: ToolExecutionRecord) -> dict[str, Any]:
-    payload = {
-        "status": record.status,
-        "summary": record.summary,
-        "output": record.output,
-        "content_provenance": "tool_output",
-        "instruction_authority": "none",
-    }
-    return {
-        "role": "tool",
-        "tool_call_id": record.call_id,
-        "name": record.tool_key,
-        "content": json.dumps(make_json_safe(payload), ensure_ascii=False),
-    }
-
-
 TOOL_MESSAGE_MIN_BUDGET_CHARS = 4000
 
 
@@ -737,15 +722,27 @@ def apply_tool_message_budget(message: dict[str, Any], max_chars: int) -> dict[s
         payload = None
     if isinstance(payload, dict):
         digest_payload = {
+            **{key: payload[key] for key in (
+                "call_id", "job_id", "output_reference", "content_provenance", "instruction_authority",
+            ) if key in payload},
             "status": payload.get("status"),
-            "summary": payload.get("summary"),
+            "summary": _digest_value(payload.get("summary"), max_string_chars=max(200, max_chars // 20)),
             "output_digest": _digest_value(payload.get("output"), max_string_chars=max(200, max_chars // 20)),
             "truncated": True,
             "detail_hint": (
                 "Full tool output exceeded the context budget and was replaced by this digest. "
-                "The complete result is persisted in the session tool results."
+                "The complete result is persisted in the tool job when job_id is present. "
+                "Digest truncation markers are not actual values. Evidence paths address the "
+                "persisted output, without output or output_digest prefixes."
             ),
         }
+        content = json.dumps(make_json_safe(digest_payload), ensure_ascii=False)
+        if len(content) <= max_chars:
+            return {**message, "content": content}
+        # Broad nested outputs can exceed the budget even after per-value
+        # reduction. Preserve valid JSON and evidence identity instead of
+        # cutting the serialized contract in the middle of a reference.
+        digest_payload["output_digest"] = "...(output omitted: context budget)"
         content = json.dumps(make_json_safe(digest_payload), ensure_ascii=False)
         if len(content) <= max_chars:
             return {**message, "content": content}

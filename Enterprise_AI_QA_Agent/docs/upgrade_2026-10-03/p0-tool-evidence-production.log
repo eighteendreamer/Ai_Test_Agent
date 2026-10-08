@@ -1,0 +1,16 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_default_model_uses_actual_recording_in_formal_ui_execution[trusted-parent] _
+tests\test_recording_agent_production.py:325: in test_default_model_uses_actual_recording_in_formal_ui_execution
+    assert len(pending) == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len([{'id': 'fd77b5a9-efb6-412e-98f8-50513c4c7e7c', 'tool_key': 'browser-control', 'metadata': {'run_id': '1615b513-a607-5...': 'permission_level.ask', 'permission_visibility': 'visible', 'permission_reason_code': 'approval_required_default'}}])
+_ test_default_model_uses_actual_recording_in_formal_ui_execution[untrusted-target] _
+tests\test_recording_agent_production.py:325: in test_default_model_uses_actual_recording_in_formal_ui_execution
+    ???
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len([{'id': 'c150e587-9e6e-4015-af6f-f3b6c270aa6f', 'tool_key': 'browser-control', 'metadata': {'run_id': 'a579527d-cacc-5...': 'permission_level.ask', 'permission_visibility': 'visible', 'permission_reason_code': 'approval_required_default'}}])
+=========================== short test summary info ===========================
+FAILED tests/test_recording_agent_production.py::test_default_model_uses_actual_recording_in_formal_ui_execution[trusted-parent]
+FAILED tests/test_recording_agent_production.py::test_default_model_uses_actual_recording_in_formal_ui_execution[untrusted-target]
+2 failed in 201.12s (0:03:21)

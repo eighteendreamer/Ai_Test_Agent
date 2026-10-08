@@ -1,0 +1,60 @@
+FFFFFF....F                                                              [100%]
+================================== FAILURES ===================================
+__ test_actual_command_navigation_cannot_skip_existing_private_target_policy __
+tests\test_browser_command_target_policy.py:22: in test_actual_command_navigation_cannot_skip_existing_private_target_policy
+    assert decision.behavior == "deny" and decision.reason_code == "untrusted_private_target"
+E   AssertionError: assert ('allow' == 'deny'
+E     
+E     - deny
+E     + allow)
+_ test_all_existing_command_representations_preserve_trusted_scope[payload0] __
+tests\test_browser_command_target_policy.py:36: in test_all_existing_command_representations_preserve_trusted_scope
+    assert policy.evaluate_tool_call(tool=tool, arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'untrusted_private_target'
+E     
+E     - untrusted_private_target
+E     + execution_policy_allow
+_ test_all_existing_command_representations_preserve_trusted_scope[payload1] __
+tests\test_browser_command_target_policy.py:36: in test_all_existing_command_representations_preserve_trusted_scope
+    assert policy.evaluate_tool_call(tool=tool, arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'untrusted_private_target'
+E     
+E     - untrusted_private_target
+E     + execution_policy_allow
+_ test_all_existing_command_representations_preserve_trusted_scope[payload2] __
+tests\test_browser_command_target_policy.py:36: in test_all_existing_command_representations_preserve_trusted_scope
+    assert policy.evaluate_tool_call(tool=tool, arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'untrusted_private_target'
+E     
+E     - untrusted_private_target
+E     + execution_policy_allow
+_ test_all_existing_command_representations_preserve_trusted_scope[payload3] __
+tests\test_browser_command_target_policy.py:36: in test_all_existing_command_representations_preserve_trusted_scope
+    assert policy.evaluate_tool_call(tool=tool, arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'untrusted_private_target'
+E     
+E     - untrusted_private_target
+E     + execution_policy_allow
+_ test_all_existing_command_representations_preserve_trusted_scope[payload4] __
+tests\test_browser_command_target_policy.py:36: in test_all_existing_command_representations_preserve_trusted_scope
+    assert policy.evaluate_tool_call(tool=tool, arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'untrusted_private_target'
+E     
+E     - untrusted_private_target
+E     + execution_policy_allow
+_ test_metadata_target_stays_blocked_even_with_scope_and_other_tools_unchanged _
+tests\test_browser_command_target_policy.py:54: in test_metadata_target_stays_blocked_even_with_scope_and_other_tools_unchanged
+    assert policy.evaluate_tool_call(tool=ToolRegistry().get("browser-control"), arguments=arguments,
+E   AssertionError: assert 'execution_policy_allow' == 'blocked_network_target'
+E     
+E     - blocked_network_target
+E     + execution_policy_allow
+=========================== short test summary info ===========================
+FAILED tests/test_browser_command_target_policy.py::test_actual_command_navigation_cannot_skip_existing_private_target_policy
+FAILED tests/test_browser_command_target_policy.py::test_all_existing_command_representations_preserve_trusted_scope[payload0]
+FAILED tests/test_browser_command_target_policy.py::test_all_existing_command_representations_preserve_trusted_scope[payload1]
+FAILED tests/test_browser_command_target_policy.py::test_all_existing_command_representations_preserve_trusted_scope[payload2]
+FAILED tests/test_browser_command_target_policy.py::test_all_existing_command_representations_preserve_trusted_scope[payload3]
+FAILED tests/test_browser_command_target_policy.py::test_all_existing_command_representations_preserve_trusted_scope[payload4]
+FAILED tests/test_browser_command_target_policy.py::test_metadata_target_stays_blocked_even_with_scope_and_other_tools_unchanged
+7 failed, 4 passed in 0.98s

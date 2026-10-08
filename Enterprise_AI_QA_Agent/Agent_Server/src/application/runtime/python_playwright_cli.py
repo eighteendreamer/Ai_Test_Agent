@@ -16,6 +16,7 @@ from urllib.parse import quote, urljoin, urlparse
 
 from src.core.config import Settings
 from src.runtime.resource_lease_manager import ResourceUnavailable
+from src.application.runtime.browser_commands import strip_browser_global_options
 
 LOGGER = logging.getLogger(__name__)
 
@@ -2081,16 +2082,7 @@ class PythonPlaywrightCliRuntime:
         )
 
     def _strip_global_options(self, args: list[str]) -> tuple[list[str], bool]:
-        stripped: list[str] = []
-        raw = False
-        for arg in args:
-            if arg == "--raw":
-                raw = True
-            elif arg.startswith("-s="):
-                continue
-            else:
-                stripped.append(arg)
-        return stripped, raw
+        return strip_browser_global_options(args)
 
     def _parse_snapshot_args(self, args: list[str]) -> tuple[str, str | None, int | None]:
         target = ""

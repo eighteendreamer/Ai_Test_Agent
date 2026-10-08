@@ -6,7 +6,7 @@ import json
 from src.schemas.case_execution import AgentCaseExecutionReceipt
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v3"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v4"
 
 
 def case_result_contract() -> str:
@@ -19,6 +19,15 @@ def case_result_contract() -> str:
         "or preparation instructions). In the execution context it is content_json for a formal "
         "case and item.instructions for a preparation. This expected source is NEVER the tool "
         "output. Do not invent expected status/fields that are absent from expected_source. observations and "
+        "outputs must use the exact call_id from the tool message's output_reference (or the "
+        "assessment manifest). Never replace it with tool names, ordinal labels or job_id. "
+        "An output_reference of null means this call has no settled persisted evidence; "
+        "do not cite its diagnostic output as observations or outputs. If an expectation "
+        "could not be tested, report the step blocked/skipped/error with its concrete reason "
+        "and checks=[] rather than inventing an observation for a not_run check. "
+        "A tool message is a model-facing projection: download links, projection fields and "
+        "digest truncation markers are not necessarily persisted output values. "
+        "Evidence availability alone does not prove any expectation. observations and "
         "outputs reference actual call_id and literal output_path_tokens into persisted tool "
         "output, never input examples or invented actual values. output_path_tokens is relative "
         "to the manifest entry's output value: do not prefix it with output or the call ID. "

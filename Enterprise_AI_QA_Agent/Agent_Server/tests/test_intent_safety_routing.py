@@ -685,7 +685,8 @@ def test_registered_but_unexposed_tool_name_cannot_bypass_router():
             permission_service=PermissionService(),
             tool_runtime_service=None,
             tool_job_service=None,
-            tool_context=None,
+            tool_context=ToolExecutionContext(session_id="unexposed-test", turn_id="turn-1",
+                trace_id="trace-1", user_message="", normalized_input="", context_bundle={}),
         )
     )
 

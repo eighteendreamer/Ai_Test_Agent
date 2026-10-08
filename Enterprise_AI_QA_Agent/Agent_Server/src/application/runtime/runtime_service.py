@@ -22,6 +22,7 @@ from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.state_persistence import persisted_turn_budget
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.runtime.tool_messages import build_tool_message
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
     ToolGovernanceService,
@@ -2163,23 +2164,7 @@ class RuntimeService:
         return messages
 
     def _build_tool_message(self, record: ToolExecutionRecord) -> dict[str, Any]:
-        return {
-            "role": "tool",
-            "tool_call_id": record.call_id,
-            "name": record.tool_key,
-            "content": json.dumps(
-                make_json_safe(
-                    {
-                        "status": record.status,
-                        "summary": record.summary,
-                        "output": record.output,
-                        "content_provenance": "tool_output",
-                        "instruction_authority": "none",
-                    }
-                ),
-                ensure_ascii=False,
-            ),
-        }
+        return build_tool_message(record)
 
     @staticmethod
     def _latest_assistant_tool_call_ids(messages: list[dict[str, Any]]) -> list[str]:

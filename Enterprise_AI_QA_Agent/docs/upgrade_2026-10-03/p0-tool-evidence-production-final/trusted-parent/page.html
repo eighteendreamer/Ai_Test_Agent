@@ -1,0 +1,6 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>录制知识实际执行</title>
+<main><h1>详情展示验证</h1><button id="open-details">展开详情</button><section id="details" hidden></section></main>
+<script>document.getElementById('open-details').onclick=async()=>{
+ const response=await fetch('/activate',{method:'POST'});const data=await response.json();
+ const node=document.getElementById('details');node.hidden=false;node.textContent='已展开 '+data.confirmation;
+};</script></html>

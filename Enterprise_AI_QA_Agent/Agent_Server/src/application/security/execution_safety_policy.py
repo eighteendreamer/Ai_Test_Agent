@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from src.application.security.command_profiles import get_profile_registry
 from src.application.security.risk_policy import SecurityRiskPolicy
 from src.application.security.worker_assignment import matches_security_worker_assignment
+from src.application.runtime.browser_commands import browser_command_navigation_target
 from src.schemas.agent import ToolDescriptor
 from src.schemas.intent import ToolSafetyDecision
 
@@ -55,7 +56,7 @@ class ExecutionSafetyPolicy:
                 reason=f"Internal tool '{tool.key}' is not available outside mode '{tool.owner_mode_key}'.",
                 reason_code="cross_mode_internal_tool_denied",
             )
-        blocked_target, target_reason_code = self._blocked_target(arguments, context)
+        blocked_target, target_reason_code = self._blocked_target(arguments, context, tool_key=tool.key)
         if blocked_target:
             return ToolSafetyDecision(
                 behavior="deny",
@@ -150,10 +151,14 @@ class ExecutionSafetyPolicy:
         self,
         arguments: dict[str, Any],
         context: dict[str, Any],
+        *,
+        tool_key: str = "",
     ) -> tuple[str, str]:
         trusted_hosts = self._trusted_target_hosts(context)
         task = arguments.get("task")
         candidates = list(arguments.items())
+        if tool_key == "browser-control":
+            candidates.append(("target_url", browser_command_navigation_target(arguments)))
         if isinstance(task, dict):
             candidates.append(("target", task.get("target")))
         for key, raw_value in candidates:

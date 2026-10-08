@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -28,6 +29,9 @@ from src.schemas.model_config import model_invocation_parameters
 from src.schemas.settings import ModelConfigUpdateRequest
 from src.schemas.case_planning import CasePlanRecord
 from src.registry.agents import AgentRegistry
+from src.domain.models import SessionRecord
+from src.runtime.postgres_session_store import PostgresSessionStore
+from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_AGENT_PRODUCTION") != "1",
     reason="requires default provider, real Chromium, MySQL/PG/RustFS/Memgraph/Redis")
@@ -168,8 +172,10 @@ async def observed_servers(directory, model):
 
 
 @pytest.mark.asyncio
-async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_path):
-    output = Path(os.environ["QA_RECORDING_AGENT_EVIDENCE_DIR"])
+@pytest.mark.parametrize("trusted_parent", [True, False], ids=["trusted-parent", "untrusted-target"])
+async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_path, trusted_parent):
+    output = Path(os.environ["QA_RECORDING_AGENT_EVIDENCE_DIR"]) / (
+        "trusted-parent" if trusted_parent else "untrusted-target")
     output.mkdir(parents=True, exist_ok=False)
     source_model = MySQLModelConfigStore(get_settings()).get_default_active()
     assert source_model.auth_type == "api_key" and source_model.transport == "openai_chat_completions"
@@ -280,8 +286,28 @@ async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_pa
                     frozen_plan = CasePlanRecord.model_validate(plan)
                     assert any(knowledge[0]["id"] in item.evidence_ids for item in frozen_plan.decision.items)
                     assert knowledge[0]["payload"]["graph"] == graph
-                    detail = await post(f"/projects/{project['id']}/case-plans/{plan['id']}/runs", {
-                        "creation_key": "recording-agent-launch", "mode_key": "ui_automation"}, 201)
+                    run_request = {"creation_key": "recording-agent-launch", "mode_key": "ui_automation"}
+                    if trusted_parent:
+                        # Server-owned fixture authority for this explicitly
+                        # authorized controlled page. This tests existing parent
+                        # scope inheritance, not a public authorization workflow.
+                        now = datetime.now(timezone.utc)
+                        parent = SessionRecord(id=str(uuid4()), title="受控页面授权来源",
+                            status=SessionStatus.idle, session_mode=SessionMode.normal,
+                            runtime_mode=RuntimeMode.interactive, mode_key="ui_automation",
+                            project_id=project_id, created_at=now, updated_at=now,
+                            preferred_model=copied.key,
+                            metadata={"source": "owned_test_authority",
+                                "resource_scope": {"project_id": project_id, "project_url": origin}})
+                        sessions = PostgresSessionStore(settings)
+                        await sessions.save_session(parent)
+                        saved_parent = await sessions.get_session(parent.id)
+                        assert saved_parent.project_id == project_id and saved_parent.metadata == parent.metadata
+                        save(output, "trusted-parent.json", {"session_id": parent.id,
+                            "project_id": project_id, "metadata": saved_parent.metadata,
+                            "authority_source": "server-owned controlled-page fixture; not public product configuration"})
+                        run_request["session_id"] = parent.id
+                    detail = await post(f"/projects/{project['id']}/case-plans/{plan['id']}/runs", run_request, 201)
                     save(output, "run-created.json", detail)
                     run_id, item_id = detail["run"]["id"], detail["items"][0]["id"]
                     assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
@@ -290,24 +316,30 @@ async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_pa
                     assert await processes.wait(worker, timeout=650) == 0
                     current = (await client.get("/runs/" + run_id)).json()
                     save(output, "run-after-worker.json", current)
-                    for index in range(8):
-                        if current["items"][0]["status"] != "waiting_approval":
-                            break
+                    index = 0
+                    approval_started = monotonic()
+                    while current["items"][0]["status"] == "waiting_approval":
+                        assert monotonic() - approval_started < 650, "真实审批执行未在测试期限内进入终态"
                         with postgres_connect(settings) as conn, conn.cursor() as cursor:
                             cursor.execute(f"SELECT id,tool_key,metadata FROM {settings.database.postgres_approval_table} WHERE status='pending'")
                             pending = cursor.fetchall()
-                        assert len(pending) == 1
-                        approval = pending[0]
+                        # One model response may request several tools. The
+                        # run item exposes the approval to resume next; do not
+                        # assume the whole session has exactly one pending job.
+                        approval = next(row for row in pending
+                            if str(row["id"]) == current["items"][0]["approval_id"])
                         verify_owned_approval(approval, project_id=project_id, run_id=run_id, item_id=item_id, origin=origin)
-                        await post(f"/run-items/{item_id}/approval", {"approval_id": str(pending[0]["id"]), "decision": "approved"})
+                        await post(f"/run-items/{item_id}/approval", {"approval_id": str(approval["id"]), "decision": "approved"})
                         current = (await client.get("/runs/" + run_id)).json()
                         save(output, f"run-after-approval-{index}.json", current)
+                        index += 1
                     save(output, "run-final.json", current)
-                    assert current["items"][0]["status"] == "passed", current
-                    assert len(effects) >= 2, effects
+                    assert current["items"][0]["status"] == ("passed" if trusted_parent else "blocked"), current
+                    assert len(effects) >= 2 if trusted_parent else len(effects) == 1, effects
                     # Native command/snapshot and run_actions are both valid;
                     # do not demand one particular tool's HTML filename.
-                    assert effects[-1]["confirmation"] in json.dumps(current, ensure_ascii=False)
+                    if trusted_parent:
+                        assert effects[-1]["confirmation"] in json.dumps(current, ensure_ascii=False)
                     requests = [json.loads(p.read_text(encoding="utf-8")) for p in output.glob("model-*-request.json")]
                     execution_requests = [r for r in requests if "Complete Frozen Case and Preparation Data" in json.dumps(r)]
                     assert execution_requests and any(recording_id in json.dumps(r) and "page_response" in json.dumps(r) for r in execution_requests)
@@ -323,7 +355,8 @@ async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_pa
                     assert await processes.wait(worker) == 0
                     assert (await client.get("/runs/" + run_id)).json() == current
                     assert len(sends) == before_sends and len(effects) == effect_count
-                    save(output, "verification.json", {"full_default_model_recording_execution": True,
+                    save(output, "verification.json", {"full_default_model_recording_execution": trusted_parent,
+                        "expected_policy_block": not trusted_parent,
                         "recording_id": recording_id, "project_id": project["id"], "run_id": run_id,
                         "physical_sends": len(sends), "actual_effects": effects,
                         "terminal_replay_sends": 0, "terminal_replay_effects": 0})

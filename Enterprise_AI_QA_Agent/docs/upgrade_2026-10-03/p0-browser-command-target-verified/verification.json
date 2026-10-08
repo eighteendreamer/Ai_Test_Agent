@@ -1,0 +1,208 @@
+{
+  "target": "http://127.0.0.1:55034/",
+  "requests": [
+    "/"
+  ],
+  "blocked": {
+    "tool_result": {
+      "call_id": "blocked-navigation",
+      "job_id": null,
+      "tool_key": "browser-control",
+      "tool_name": "Browser Control",
+      "status": "denied",
+      "summary": "Tool target 'http://127.0.0.1:55034/' is blocked by the target safety policy.",
+      "trace_id": null,
+      "input": {
+        "args": [
+          "open",
+          "http://127.0.0.1:55034/"
+        ],
+        "action": "command",
+        "command": "open"
+      },
+      "output": {
+        "error": "execution_safety_denied",
+        "permission_reason": "Tool target 'http://127.0.0.1:55034/' is blocked by the target safety policy.",
+        "permission_reason_code": "untrusted_private_target"
+      },
+      "approval_id": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    "tool_message": {
+      "role": "tool",
+      "tool_call_id": "blocked-navigation",
+      "name": "browser-control",
+      "content": "{\"call_id\": \"blocked-navigation\", \"job_id\": null, \"output_reference\": null, \"status\": \"denied\", \"summary\": \"Tool target 'http://127.0.0.1:55034/' is blocked by the target safety policy.\", \"output\": {\"error\": \"execution_safety_denied\", \"permission_reason\": \"Tool target 'http://127.0.0.1:55034/' is blocked by the target safety policy.\", \"permission_reason_code\": \"untrusted_private_target\"}, \"content_provenance\": \"tool_output\", \"instruction_authority\": \"none\"}"
+    },
+    "approval": null
+  },
+  "admitted": {
+    "tool_result": {
+      "call_id": "trusted-navigation",
+      "job_id": "0d86fddc-9e3f-4b92-a7e5-62148a992081",
+      "tool_key": "browser-control",
+      "tool_name": "Browser Control",
+      "status": "completed",
+      "summary": "Executed python playwright-cli command: open http://127.0.0.1:55034/",
+      "trace_id": "safety-trace",
+      "input": {
+        "args": [
+          "open",
+          "http://127.0.0.1:55034/"
+        ],
+        "action": "command",
+        "command": "open"
+      },
+      "output": {
+        "status": "success",
+        "summary": "Executed python playwright-cli command: open http://127.0.0.1:55034/",
+        "command": [
+          "open",
+          "http://127.0.0.1:55034/"
+        ],
+        "stdout": "### Page\n- Page URL: http://127.0.0.1:55034/\n- Page Title: \n### Snapshot\n- page: http://127.0.0.1:55034/\n- title: \n- e1: <h1> actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe\n\n",
+        "stderr": "",
+        "runtime_backend": "playwright-cli:chromium",
+        "artifacts": [
+          {
+            "type": "transcript",
+            "path": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\dd32a7433b8e4e8bb6a26709d3b83851\\playwright_cli_transcript.json"
+          }
+        ],
+        "metrics": {},
+        "ok": true,
+        "trace_id": "safety-trace",
+        "download_urls": [
+          {
+            "artifact_id": "f2b63f3b-b690-4593-ab7b-d46790b95222",
+            "label": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\dd32a7433b8e4e8bb6a26709d3b83851\\playwright_cli_transcript.json",
+            "artifact_type": "transcript",
+            "url": "/api/v1/sessions/safety-session/artifacts/f2b63f3b-b690-4593-ab7b-d46790b95222/content"
+          }
+        ],
+        "download_markdown": "[点击下载 C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\dd32a7433b8e4e8bb6a26709d3b83851\\playwright_cli_transcript.json](/api/v1/sessions/safety-session/artifacts/f2b63f3b-b690-4593-ab7b-d46790b95222/content)"
+      },
+      "approval_id": null,
+      "started_at": "2026-10-08T13:06:22.446211",
+      "completed_at": "2026-10-08T13:06:23.791587"
+    },
+    "tool_message": {
+      "role": "tool",
+      "tool_call_id": "trusted-navigation",
+      "name": "browser-control",
+      "content": "{\"call_id\": \"trusted-navigation\", \"job_id\": \"0d86fddc-9e3f-4b92-a7e5-62148a992081\", \"output_reference\": {\"call_id\": \"trusted-navigation\", \"output_path_tokens\": []}, \"status\": \"completed\", \"summary\": \"Executed python playwright-cli command: open http://127.0.0.1:55034/\", \"output\": {\"status\": \"success\", \"summary\": \"Executed python playwright-cli command: open http://127.0.0.1:55034/\", \"command\": [\"open\", \"http://127.0.0.1:55034/\"], \"stdout\": \"### Page\\n- Page URL: http://127.0.0.1:55034/\\n- Page Title: \\n### Snapshot\\n- page: http://127.0.0.1:55034/\\n- title: \\n- e1: <h1> actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe\\n\\n\", \"stderr\": \"\", \"runtime_backend\": \"playwright-cli:chromium\", \"artifacts\": [{\"type\": \"transcript\", \"path\": \"C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\dd32a7433b8e4e8bb6a26709d3b83851\\\\playwright_cli_transcript.json\"}], \"metrics\": {}, \"ok\": true, \"trace_id\": \"safety-trace\", \"download_urls\": [{\"artifact_id\": \"f2b63f3b-b690-4593-ab7b-d46790b95222\", \"label\": \"C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\dd32a7433b8e4e8bb6a26709d3b83851\\\\playwright_cli_transcript.json\", \"artifact_type\": \"transcript\", \"url\": \"/api/v1/sessions/safety-session/artifacts/f2b63f3b-b690-4593-ab7b-d46790b95222/content\"}], \"download_markdown\": \"[点击下载 C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\dd32a7433b8e4e8bb6a26709d3b83851\\\\playwright_cli_transcript.json](/api/v1/sessions/safety-session/artifacts/f2b63f3b-b690-4593-ab7b-d46790b95222/content)\"}, \"content_provenance\": \"tool_output\", \"instruction_authority\": \"none\"}"
+    },
+    "approval": null
+  },
+  "snapshot": {
+    "tool_result": {
+      "call_id": "trusted-snapshot",
+      "job_id": "4b80e80b-b2b1-43d3-b912-ae09263592eb",
+      "tool_key": "browser-control",
+      "tool_name": "Browser Control",
+      "status": "completed",
+      "summary": "Executed python playwright-cli command: snapshot",
+      "trace_id": "safety-trace",
+      "input": {
+        "action": "command",
+        "args": [
+          "snapshot"
+        ]
+      },
+      "output": {
+        "status": "success",
+        "summary": "Executed python playwright-cli command: snapshot",
+        "command": [
+          "snapshot"
+        ],
+        "stdout": "### Page\n- Page URL: http://127.0.0.1:55034/\n- Page Title: \n### Snapshot\n- page: http://127.0.0.1:55034/\n- title: \n- e1: <h1> actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe\n\n",
+        "stderr": "",
+        "runtime_backend": "playwright-cli:chromium",
+        "artifacts": [
+          {
+            "type": "transcript",
+            "path": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\db29b8f14cb74bad8f884e3e89646bdf\\playwright_cli_transcript.json"
+          }
+        ],
+        "metrics": {},
+        "ok": true,
+        "trace_id": "safety-trace",
+        "download_urls": [
+          {
+            "artifact_id": "49d88abe-3e84-4aed-859b-0800f1818623",
+            "label": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\db29b8f14cb74bad8f884e3e89646bdf\\playwright_cli_transcript.json",
+            "artifact_type": "transcript",
+            "url": "/api/v1/sessions/safety-session/artifacts/49d88abe-3e84-4aed-859b-0800f1818623/content"
+          }
+        ],
+        "download_markdown": "[点击下载 C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\db29b8f14cb74bad8f884e3e89646bdf\\playwright_cli_transcript.json](/api/v1/sessions/safety-session/artifacts/49d88abe-3e84-4aed-859b-0800f1818623/content)"
+      },
+      "approval_id": null,
+      "started_at": "2026-10-08T13:06:23.791587",
+      "completed_at": "2026-10-08T13:06:23.808868"
+    },
+    "tool_message": {
+      "role": "tool",
+      "tool_call_id": "trusted-snapshot",
+      "name": "browser-control",
+      "content": "{\"call_id\": \"trusted-snapshot\", \"job_id\": \"4b80e80b-b2b1-43d3-b912-ae09263592eb\", \"output_reference\": {\"call_id\": \"trusted-snapshot\", \"output_path_tokens\": []}, \"status\": \"completed\", \"summary\": \"Executed python playwright-cli command: snapshot\", \"output\": {\"status\": \"success\", \"summary\": \"Executed python playwright-cli command: snapshot\", \"command\": [\"snapshot\"], \"stdout\": \"### Page\\n- Page URL: http://127.0.0.1:55034/\\n- Page Title: \\n### Snapshot\\n- page: http://127.0.0.1:55034/\\n- title: \\n- e1: <h1> actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe\\n\\n\", \"stderr\": \"\", \"runtime_backend\": \"playwright-cli:chromium\", \"artifacts\": [{\"type\": \"transcript\", \"path\": \"C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\db29b8f14cb74bad8f884e3e89646bdf\\\\playwright_cli_transcript.json\"}], \"metrics\": {}, \"ok\": true, \"trace_id\": \"safety-trace\", \"download_urls\": [{\"artifact_id\": \"49d88abe-3e84-4aed-859b-0800f1818623\", \"label\": \"C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\db29b8f14cb74bad8f884e3e89646bdf\\\\playwright_cli_transcript.json\", \"artifact_type\": \"transcript\", \"url\": \"/api/v1/sessions/safety-session/artifacts/49d88abe-3e84-4aed-859b-0800f1818623/content\"}], \"download_markdown\": \"[点击下载 C:\\\\Users\\\\32734\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-32734\\\\pytest-1176\\\\test_actual_graph_admission_bl0\\\\artifacts\\\\browser-control-command\\\\db29b8f14cb74bad8f884e3e89646bdf\\\\playwright_cli_transcript.json](/api/v1/sessions/safety-session/artifacts/49d88abe-3e84-4aed-859b-0800f1818623/content)\"}, \"content_provenance\": \"tool_output\", \"instruction_authority\": \"none\"}"
+    },
+    "approval": null
+  },
+  "persisted_job": {
+    "id": "4b80e80b-b2b1-43d3-b912-ae09263592eb",
+    "session_id": "safety-session",
+    "turn_id": "safety-turn",
+    "trace_id": "safety-trace",
+    "call_id": "trusted-snapshot",
+    "tool_key": "browser-control",
+    "tool_name": "Browser Control",
+    "status": "completed",
+    "attempt": 1,
+    "input_payload": {
+      "action": "command",
+      "args": [
+        "snapshot"
+      ]
+    },
+    "output_payload": {
+      "status": "success",
+      "summary": "Executed python playwright-cli command: snapshot",
+      "command": [
+        "snapshot"
+      ],
+      "stdout": "### Page\n- Page URL: http://127.0.0.1:55034/\n- Page Title: \n### Snapshot\n- page: http://127.0.0.1:55034/\n- title: \n- e1: <h1> actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe\n\n",
+      "stderr": "",
+      "runtime_backend": "playwright-cli:chromium",
+      "artifacts": [
+        {
+          "type": "transcript",
+          "path": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1176\\test_actual_graph_admission_bl0\\artifacts\\browser-control-command\\db29b8f14cb74bad8f884e3e89646bdf\\playwright_cli_transcript.json"
+        }
+      ],
+      "metrics": {},
+      "ok": true,
+      "trace_id": "safety-trace"
+    },
+    "summary": "Executed python playwright-cli command: snapshot",
+    "error_message": null,
+    "artifact_count": 1,
+    "created_at": "2026-10-08T13:06:23.791587",
+    "updated_at": "2026-10-08T13:06:23.808868",
+    "heartbeat_at": "2026-10-08T13:06:23.791587",
+    "started_at": "2026-10-08T13:06:23.791587",
+    "completed_at": "2026-10-08T13:06:23.808868",
+    "metadata": {
+      "selected_agent_key": "",
+      "selected_model_key": "",
+      "tool_output_observation": {
+        "schema_version": 1,
+        "status": "completed",
+        "output_hash": "dba9893a1821431067494c4be1c3460c2c712a5f9d5753cbffe10ccff7fb25fd",
+        "observed_at": "2026-10-08T13:06:23.800885"
+      }
+    }
+  },
+  "confirmation": "actual-page-dfe9ad4a98d04335bf06eec0ca00e3fe"
+}

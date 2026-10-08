@@ -1,14 +1,14 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次实施核对基线 `d9702edd`。完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留；第 6.79 节的生产冷启动批次基线仍为 `7497b469`。
+修订日期：2026-10-08；本次实施核对基线 `f2ba964e`。完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留；第 6.79 节的生产冷启动批次基线仍为 `7497b469`。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
-**本次继续按完整方案实施。** 录制来源实际读取及引用已增加明确请求契约，沿现有规划、持久恢复和回归链路验证；默认模型正式 UI 实测揭示目标授权与回执身份问题，执行未通过，见6.81。对应八项诉求的交付与验收要求汇总在1.4，完整系统仍未验收完成。
+**本次继续按完整方案实施。** 录制来源实际读取及引用已增加明确请求契约，沿现有规划、持久恢复和回归链路验证；已统一工具证据身份并修复命令导航遗漏目标检查；默认模型已实际操作，未授权场景blocked/终态重投通过，可信场景因返回说明报告而非纯JSON回执仍为error，见6.82。对应八项诉求的交付与验收要求汇总在1.4，完整系统仍未验收完成。
 
 **上传变更可以沿现有实现完成，无需 Git 缓存。** 上一方案批次在`4e35de24`核对上传路由、原件/版本保存和独立 Git 导入，并实际运行两项上传回归：2通过、0失败、0跳过，pytest输出7.99秒。范围为真实临时文件、应用路由和本地测试存储，见3.1.1。本次生产启动/DOCX及执行Worker范围单独记在6.79，不把两个批次的验证混为完整验收。
 
-已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；本批已重跑真实受控页面录制、规划和默认模型正式运行，结果见6.81。该批生产API冷启动的外键初始化顺序失败已按真实依赖修复：空数据库生产API/重启/实际DOCX与独立解析Worker1通过，原执行Worker/审批及副作用恢复1通过，生命周期/消费等65通过、审批存储15通过，见6.79。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
+已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；本批已重跑真实受控页面录制、规划和默认模型正式运行，历史失败见6.81、本次结果见6.82。该批生产API冷启动的外键初始化顺序失败已按真实依赖修复：空数据库生产API/重启/实际DOCX与独立解析Worker1通过，原执行Worker/审批及副作用恢复1通过，生命周期/消费等65通过、审批存储15通过，见6.79。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -359,7 +359,7 @@ MySQL可选evidence_reference_protocol=case-planning-evidence-references-v1冻�
 
 共享准备的计划范围已有实际研究与实现，见6.45及[P4_PREPARATION_SCOPE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_PREPARATION_SCOPE_DESIGN.md)。新可选`preparation-scope-v1`在MySQL配置，AI在清理prepare声明`cleanup_sources`；服务端按原计划正式消费者补齐依赖并冻结排序、拥有者和范围到PG，Agent读取同一范围。清理只等左侧时的真实删除/右侧404已复现；新声明修正归属为右侧后，实际两个消费者均能读取，再清理。原审批等待实验还确认：左侧未结束时右侧不可领取，因此不能简单在左侧清理前再加“等右侧结束”门卫。范围不等于实际消费状态；模型在右侧内部先删后查仍可导致真实失败，多对象与消费完成证据继续按[P4_EFFECT_LIFECYCLE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P4_EFFECT_LIFECYCLE_RESEARCH.md)推进。
 
-Agent 策略不解释旧 `runner_arguments` 预占业务资源；浏览器、容器等由实际工具创建、续租和清理，沿用现有权限。结果引用本次已落库 ToolJob 证据，核对完整身份及输出路径。确定性比较沿用已有算子，语义判断保留模型理由与证据；工具结束、准备成功或 Agent 自述不能单独证明目标通过。
+Agent 策略不解释旧 `runner_arguments` 预占业务资源；浏览器、容器等由实际工具创建、续租和清理，沿用现有权限。结果引用本次已落库 ToolJob 证据，核对完整身份及输出路径。 graph及审批恢复现共用工具消息正文，展示实际call_id/job_id及output_reference；未落库或未结束的调用不可作为回执观察。压缩保留身份和来源声明，完整值继续从原Job核验；未执行步骤保存具体blocked/skipped/error及空checks，不能编造not_run观察。模型可读到身份仍不保证最终返回正确格式，正式回执契约仍要求纯JSON，实际未通过点见6.82。确定性比较沿用已有算子，语义判断保留模型理由与证据；工具结束、准备成功或 Agent 自述不能单独证明目标通过。
 
 ### 2.5 恢复、计划修订与失败回归
 
@@ -2691,3 +2691,22 @@ required-production两轮默认规划确实读取并引用完整录制，正式�
 三份方案逐字节同步，相关源码/原请求响应/实际图/截图/PG/最终测试及无关文件保持核对见[p0-recording-agent-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-agent-validation.json)，命令见IMPLEMENTATION.md。用户.gitignore/Worker与环境诊断保持；本轮硬编码路径覆盖的旧回归Worker汇总已先另存新结果、再恢复HEAD原字节；两份更早未恢复的Worker汇总限制仍保留。
 
 完整升级未完成：UI默认实际操作/合规授权/回执、清洗/遗漏/网络跨文档ShadowDOM、人工DeepSeek/完整App/场景/别名/报告；Electron实际缓存/并行attach/更多故障、Docker性能安全原始结果、全阶段HTTP、P1生成导入产品、P2默认补全/准备状态/未知副作用/其他模式、需求业务评审/环境适用、历史迁移及两份旧Worker汇总恢复继续实施和验收。本步不将来源读取通过替代执行闭环。
+
+
+### 6.82 工具证据身份、命令目标准入与默认执行终态〔基线f2ba964e〕
+
+完整P0—P5目标保持，上一目标轮的调研提供了具体失败依据，本次已修改代码、实际测试并保存新原件。沿6.81真实PG轨迹确认：工具消息body缺少可引用身份，graph和审批恢复重复组装；消息预算压缩又丢来源声明，宽输出可能被截成无效JSON。采用原manifest引用结构，共用runtime/tool_messages，正文有call_id/job_id/output_reference；无job及待处理job为null，不冒充已执行证据。压缩保留身份和来源，过宽时明确省略并保留JSON。case_result_contract v4说明真实ID、输出根及未执行checks=[]；服务器仍严格核验所有权/实际路径，不新增执行器/表/依赖，不改变历史冻结依据。详见[P0_RECORDING_AGENT_EXECUTION_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_AGENT_EXECUTION_DESIGN.md)。
+
+真实默认模型新增可信父会话与未授权两个独立场景。可信父scope是本次隔离PG测试服务端显式创建，run.session_id通过现有链路继承，只证明已有继承能力，不是完整产品授权入口。第一次2失败201.12秒：模型并列请求两项审批，夹具len(pending)==1错误；改按条目approval_id继续。保留的未授权轨迹还有真实产品缺口：target_url会拒，command args中的同一私有地址未检查，实际产生点击。读取MCP命令解析及原native导航语义后，抽browser_commands共享解析；只对browser-control的open/goto/tab-new/explore明确URL位置应用原目标策略，原可信scope及元数据限制保持，不扫描任意JS/填充文本。修复前7失败4通过0.98秒，原件保留；这不代表所有重定向/脚本网络目标均已受控。
+
+可信场景第二次1失败205.03秒、1排除：range(8)审批夹具中止在下一项snapshot，11个真实模型HTTP、3次页面POST，仍无终态。该轨迹也保留了不完整命令args、独立evaluate_js打开新页和资源等待等问题，不宣称已修复。夹具重审为依正式状态继续，按原650秒期限收尾，不提高产品预算。真正执行始终要求passed和实际确认串，blocked场景另验，不替代执行通过。
+
+最终十一模块 **215通过、0失败、1跳过，55.38秒**：[XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-tool-evidence-verified.xml)、[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-tool-evidence-verified.log)。包含实际文件/HTTP POST-GET-DELETE/PG jobs、原失败回执重放、graph/审批正文一致、空job/待处理证据、宽输出/长摘要、原所有权拒绝、消息历史与真实Chromium生命周期。真实图准入未授权零HTTP；同一实际命令授予可信scope后打开唯一标记页面，snapshot及已保存Job均有标记，原件见p0-browser-command-target-verified。末增畸形命令日志/原解析拒绝专项1通过0.95秒，12排除。唯一跳过是原read-only默认模型专项，另有以下生产默认UI专项。语法编译退出0仅为附加检查。本轮没有前端契约/配置/迁移变化，未重跑前端build。
+
+原测试失败均保存：首轮52通过1失败1跳过26.83秒（把not_run验证记录误作工具证据）；六模块72通过1跳过27.72秒；扩大首轮196通过1失败1跳过39.77秒（HEAD已有bind_call，旧测试却传None上下文）；真实浏览器21通过1失败19.00秒（证据保存漏datetime转换）。按实际既有契约修测试，保留拒绝断言；不改产品判定/外键。查询诊断曾误执行一个不存在的占位模块import，退出1、无文件修改/功能测试，不计验证。
+
+最终真实默认模型专项 **1通过、1失败，396.42秒**：[XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-tool-evidence-production-final.xml)、[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-tool-evidence-production-final.log)。两项均走当前MySQL默认模型的隔离配置、透明SSE、生产API、真实CDP录制/响应/PG/Memgraph/RustFS读回、完整来源query与冻结、独立Worker及原审批。未授权场景4次真实HTTP200，只有录制1次POST，执行0次；正式结果blocked，原终态任务重投没有新增模型发送/页面操作，verification与独立Worker输出已保存。
+
+可信父scope场景22次真实模型HTTP200，页面POST共4次（录制1、执行3），最后原DOM结果含服务端唯一确认串。模型正文工具观察和报告中已使用真实call_id与相对stdout路径；但最终响应为说明报告、其中夹带JSON回执，原parse_response按纯JSON契约拒绝（line=1,column=1），正式结果error。没有passed终态重投证据，不能把实际点击或报告自述通过计为用例passed。原error保持，不从报告抽块偷偷改成成功，不重置旧条目；下一步沿最终Prompt/模型/图终态研究报告呈现与正式回执职责、命令完整args与浏览器页面保持、审批后的预算及只读修正。不能以更多业务点击重试回执错误。
+
+三份方案字节同步，原失败/原SDK请求响应/PG/截图/原进程输出以及用户无关文件保持见[p0-tool-evidence-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-tool-evidence-validation.json)，实际命令见IMPLEMENTATION.md。配置仍MySQL、业务/授权实例/结果仍PG、大工件RustFS。产品无父会话的目标授权配置/界面、完整UI回执与操作、录制清洗/遗漏/人工DeepSeek/App/场景别名/报告、Docker、全阶段HTTP、P1—P5其余验收及生产历史迁移/两份旧Worker原汇总恢复仍未完成。

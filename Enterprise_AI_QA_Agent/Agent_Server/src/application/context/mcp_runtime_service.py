@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import json
 import re
-import shlex
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +13,7 @@ from uuid import uuid4
 from src.core.config import Settings
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.python_playwright_cli import PythonPlaywrightCliRuntime
+from src.application.runtime.browser_commands import browser_command_args
 from src.registry.mcp import MCPRegistry
 from src.schemas.session_resource import SessionResourceKind
 from src.core.request_context import bind_request_context, get_request_context
@@ -434,13 +434,7 @@ class MCPRuntimeService:
             await self._close_playwright_session(session_name, artifact_dir)
 
     async def _run_browser_cli_command(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-        raw_args = payload.get("args") or payload.get("command_args") or payload.get("command") or []
-        if isinstance(raw_args, str):
-            args = shlex.split(raw_args, posix=False)
-        elif isinstance(raw_args, list):
-            args = [str(item) for item in raw_args]
-        else:
-            args = []
+        args = browser_command_args(payload)
         if not args:
             return {"status": "failed", "error": "browser-control action=command requires args or command."}
 
