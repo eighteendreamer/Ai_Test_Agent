@@ -1,0 +1,27 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___ test_default_provider_readonly_correction_uses_owned_real_api_evidence ____
+tests\test_agent_case_receipt_correction.py:216: in test_default_provider_readonly_correction_uses_owned_real_api_evidence
+    _, _, reader, _, runs, _, adapter, args, _, _ = values
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:271: in _finish
+    outcome = await assess(response)
+              ^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:242: in assess
+    receipt=self._assessment.parse_response(candidate), tool_records=records,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:130: in parse_response
+    raise ValueError("ִ�л�ִģ�͵���δ�ɹ�: " + str(summary.get("mode")))
+E   ValueError: ִ�л�ִģ�͵���δ�ɹ�: http_error
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:253 agent_case_receipt_correction_requested
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:493 model_invocation_failed
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:273 agent_case_corrected_receipt_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_agent_case_receipt_correction.py::test_default_provider_readonly_correction_uses_owned_real_api_evidence
+1 failed, 21 deselected in 190.81s (0:03:10)

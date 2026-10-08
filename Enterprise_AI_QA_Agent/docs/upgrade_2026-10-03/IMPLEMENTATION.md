@@ -4584,3 +4584,25 @@ npm.cmd run build *> ../docs/upgrade_2026-10-03/p0-approval-budget-web-build-ver
 审计检查三份方案字节相同、上一批408原工件与用户无关文件哈希保持、当前源码与本批原件哈希、真实失败/修后审批状态、生产累计数/原上限/物理请求/终态重投及密钥不进入证据。明细在p0-approval-budget-validation.json；raw前缀沿现有.gitattributes保存字节和原日志空白，不改git配置。旧p2-regression-planning-worker-cli.json工作区字节仍等于HEAD。历史默认UI error保留，只读正式回执未接入、任意发送后断电未知未完成、完整P0—P5仍未完成。
 
 首次分批暂存被Git index.lock拒绝，无文件已暂存。两次检查无git进程，锁为2026-10-08 22:01:42留下的零字节文件；将空锁在原.git目录内改名为唯一stale备份后重试，保留原文件，没有删除索引或改变Git配置。提交仍只包含审计列出的本轮明确路径。
+
+## 2026-10-08 方案状态同步（核对基线 be660b34）
+
+用户要求更新所贴方案。本次更新PLAN头部、2.4/2.4.1/2.5和新增6.85，同步附件及原选中PLAN。记录当前未提交的可选只读回执实现、实际验证范围和默认提供商超时失败；保留上传独立保存、Git独立入口、模板只生成及AI按项目选取/排序/补全约定。本次不提交已有生产代码改动，不更改项目配置或历史业务记录。
+
+本次实际命令，在Agent_Server目录执行：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_RECEIPT_CORRECTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-receipt-correction-plan-review'
+..\.venv\Scripts\python.exe -m pytest tests/test_agent_case_receipt_correction.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-receipt-correction-plan-review.xml
+# 退出0；21通过，1跳过，51.40秒。日志和完整导出在同前缀目录。
+
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_CONSUMER_RECEIPT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-receipt-correction-plan-consumer'
+..\.venv\Scripts\python.exe -m pytest tests/test_case_step_assessment.py 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-receipt-correction-plan-contract.xml
+# 退出0；17通过，0跳过，29.72秒。包含两项无需Git的真实文件上传回归。
+```
+
+两条实际命令将stdout/stderr重定向保存为同前缀.log。此次未重复真实默认模型、完整浏览器App、生产Worker或前端构建；6.85分别引用前序原始日志，不能算成本次重跑。前序扩大回归4失败因缺少消费证据目录，本次配置后受影响模块通过。真实默认模型原失败是ProviderClientError/Request timed out.，只读调用原响应已持久；尚无默认UI passed，不重做业务或暗增预算。
+
+项目根目录运行 `python docs/upgrade_2026-10-03/plan-receipt-current-audit.py --sync` 同步三份已读取方案并输出审计；再不带参数重跑只读校验。它核对200个预算工件、408个工具工件、受保护文件、当前源码哈希及测试XML，保存本次证据的SHA-256，不重写历史审计或原失败文件。此文档批次不表示全部P0—P5实施完成。
