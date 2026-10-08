@@ -27,6 +27,7 @@ from src.schemas.recording import (
     RecordingDetail,
     RecordingEventAck,
     RecordingEventBatchRequest,
+    RecordingFinishReceipt,
     RecordingPublic,
 )
 
@@ -161,6 +162,17 @@ async def attach_registry(
     if not ok:
         raise HTTPException(status_code=404, detail="recording session unknown or closed")
     return {"status": "registered", "recording_id": recording_id}
+
+
+@router.post("/{recording_id}/capture-finished")
+async def acknowledge_capture_finished(recording_id: str, payload: RecordingFinishReceipt, request: Request):
+    try:
+        _bridge(request).acknowledge_finish(recording_id, payload)
+    except ValueError as exc:
+        logger.warning("recording_finish_receipt_rejected", extra={
+            "recording_id": recording_id, "request_id": payload.request_id, "reason": str(exc)})
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"status": "acknowledged", "request_id": payload.request_id}
 
 
 @router.post("/{recording_id}/events:batch")

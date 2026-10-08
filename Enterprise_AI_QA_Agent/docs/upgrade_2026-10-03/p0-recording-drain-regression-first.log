@@ -1,0 +1,37 @@
+..............................................F......................... [ 50%]
+.......................................................................  [100%]
+================================== FAILURES ===================================
+__________ test_full_control_flow_active_pause_resume_stop_finalizes __________
+tests\test_recorder_session_service.py:353: in test_full_control_flow_active_pause_resume_stop_finalizes
+    asyncio.run(_scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_recorder_session_service.py:343: in _scenario
+    assert session.status == RecordingStatus.completed
+E   AssertionError: assert <RecordingSta...led: 'failed'> == <RecordingSta...: 'completed'>
+E     
+E     - completed
+E     + failed
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.recorder.recorder_session_service:recorder_session_service.py:464 recorder event dropped (not active): recording_id=20826f70-4cb1-4e05-a2ec-cc38a3bec292 status=paused seq=2
+ERROR    src.application.recorder.recorder_session_service:recorder_session_service.py:397 recording finalize failed: recording_id=20826f70-4cb1-4e05-a2ec-cc38a3bec292
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\recorder\recorder_session_service.py", line 387, in _do_stop
+    raise RuntimeError("Recording finish delivery/integrity could not be confirmed")
+RuntimeError: Recording finish delivery/integrity could not be confirmed
+============================== warnings summary ===============================
+..\.venv\Lib\site-packages\starlette\testclient.py:53
+  G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_recorder_session_service.py::test_full_control_flow_active_pause_resume_stop_finalizes
+1 failed, 142 passed, 1 warning in 17.88s

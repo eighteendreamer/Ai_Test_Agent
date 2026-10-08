@@ -76,6 +76,14 @@ class FakeDriver(BrowserDriver):
     async def set_capture_enabled(self, enabled: bool) -> None:
         self.capture_calls.append(enabled)
 
+    async def finish_capture(self):
+        self.capture_calls.append(False)
+        await self._channel.finish()
+        seqs = sorted(self._channel.published_seqs)
+        return {"protocol": "recording-finish-v1", "next_seq": max(seqs, default=-1) + 1,
+            "emitted_count": len(seqs), "pending": 0, "frames_unconfirmed": 0,
+            "transport_dropped": 0, "channel_dropped": 0, "published_seqs": seqs}
+
     async def close(self) -> None:
         self.closed = True
 
@@ -299,7 +307,7 @@ def test_launch_rejects_unregistered_driver_kind() -> None:
 # ---------------------------------------------------------------- 正向全流程
 
 
-def test_full_control_flow_active_pause_resume_stop_finalizes() -> None:
+def test_control_flow_reports_known_paused_delivery_gap_at_stop() -> None:
     async def _scenario() -> None:
         service, store, graph, bridge, drivers = _service()
         recording_id = await _launch_until_ready(service, bridge, drivers)
@@ -330,16 +338,12 @@ def test_full_control_flow_active_pause_resume_stop_finalizes() -> None:
         await service.control(recording_id, RecordingControlAction.resume)
         assert driver.capture_calls == [True, False, True]
 
-        # stop → finalizing → completed：固化调用 + 指标写入 + 驱动关闭
+        # seq=2 was explicitly delivered then dropped. A known gap cannot complete.
         session = await service.control(recording_id, RecordingControlAction.stop)
-        assert session.status == RecordingStatus.completed
+        assert session.status == RecordingStatus.failed
         assert session.ended_at is not None
-        assert session.finalize_metrics["finalize"]["action_vertices"] == 3
-        assert session.finalize_metrics["integrity"]["reconciled"] is True
-        assert len(graph.finalize_calls) == 1
-        finalized_session, finalized_events = graph.finalize_calls[0]
-        assert finalized_session.id == recording_id
-        assert [e.seq for e in finalized_events] == [0, 1]  # 固化读 PG 全量
+        assert session.finalize_metrics["finish_receipt"]["missing_seqs"] == [2]
+        assert graph.finalize_calls == []
         assert driver.closed is True
 
     asyncio.run(_scenario())
@@ -460,7 +464,7 @@ def test_stop_flushes_pending_buffer_before_finalize() -> None:
         recording_id = await _launch_until_ready(service, bridge, drivers)
         await service.control(recording_id, RecordingControlAction.start)
 
-        # 事件刚进 buffer（不足一批），stop 取消消费循环时应冲刷
+        # Stop must naturally drain the stream and flush this partial buffer.
         drivers[recording_id].publish_event(_payload(0))
         await asyncio.sleep(0.05)
         await service.control(recording_id, RecordingControlAction.stop)

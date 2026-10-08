@@ -883,11 +883,16 @@ async def _initialize_lifespan_resources(
     recording_graph_store = RecordingGraphStore(settings)
     final_cleanup.push_async_callback(_close_lifespan_resource, "recording_graph_store", recording_graph_store.close)
     embedded_bridge = EmbeddedBridge()
+    from src.application.recorder.finish_config_service import RecordingFinishConfigService
+    recording_finish_configs = RecordingFinishConfigService(
+        config_store=container.application_config_store(), project_service=project_service)
+    await recording_finish_configs.initialize()
     recorder_service = RecorderSessionService(
         settings=settings,
         store=recording_store,
         graph_store=recording_graph_store,
         bridge=embedded_bridge,
+        finish_config_service=recording_finish_configs,
         registry=build_default_registry(embedded_bridge, settings=settings,
             resource_manager=mcp_runtime_service.browser_resources),
     )

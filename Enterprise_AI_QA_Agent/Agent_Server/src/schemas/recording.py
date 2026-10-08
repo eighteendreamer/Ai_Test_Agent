@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -169,6 +169,20 @@ class RecordingEventBatchRequest(BaseModel):
 
     events: list[RecorderEvent] = Field(default_factory=list)
     client_batch_id: str | None = Field(default=None, description="客户端批次号（日志追踪）")
+
+
+class RecordingFinishSettings(BaseModel):
+    timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+
+
+class RecordingFinishReceipt(BaseModel):
+    protocol: Literal["recording-finish-v1"] = "recording-finish-v1"
+    request_id: str = Field(min_length=1, max_length=64)
+    next_seq: int = Field(ge=0)
+    emitted_count: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    frames_unconfirmed: int = Field(ge=0)
+    transport_dropped: int = Field(default=0, ge=0)
 
 
 class RecordingControlRequest(BaseModel):

@@ -502,3 +502,43 @@ describe("MutationObserver 计数", () => {
     expect(events[1].page_effect.dom_mutation_count).toBe(0); // 计数已重置
   });
 });
+
+describe("结束回执", () => {
+  it("立即结束冲刷多个输入的最终值并保留密码脱敏，不重复定时发送", async () => {
+    const { win, doc } = enabledWindow();
+    doc.body.innerHTML = '<input id="first"><input id="second"><input id="secret" type="password">';
+    input(win, doc.querySelector('#first'), '真实失败最后输入');
+    input(win, doc.querySelector('#first'), '最终值');
+    input(win, doc.querySelector('#second'), '另一个字段');
+    input(win, doc.querySelector('#secret'), 'private-fixture');
+    const receipt = await win.__qaRecorderFinish();
+    expect(events.map(event => event.value)).toEqual(['最终值', '另一个字段', { length: 15 }]);
+    expect(receipt.pending).toBe(0);
+    expect(win.__qaRecorderGetState().enabled).toBe(false);
+    vi.advanceTimersByTime(600);
+    expect(events.length).toBe(3);
+  });
+
+  it("等待异步binding完成，拒绝后保持未确认内容", async () => {
+    const { win, doc } = enabledWindow();
+    let resolve;
+    win.__qaRecordEmit = () => new Promise(done => { resolve = done; });
+    click(win, doc.body);
+    let finished = false;
+    const finishing = win.__qaRecorderFinish().then(result => { finished = true; return result; });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    resolve();
+    expect((await finishing).pending).toBe(0);
+    win.__qaRecorderSetEnabled(true);
+    win.__qaRecordEmit = () => Promise.reject(new Error('actual transport rejection'));
+    click(win, doc.body);
+    expect((await win.__qaRecorderFinish()).pending).toBe(1);
+  });
+
+  it("未确认iframe范围显式保留，不声称top回执证明子frame完成", async () => {
+    const { win, doc } = enabledWindow();
+    doc.body.appendChild(doc.createElement('iframe'));
+    expect((await win.__qaRecorderFinish()).frames_unconfirmed).toBe(1);
+  });
+});

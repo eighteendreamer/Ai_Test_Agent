@@ -49,6 +49,10 @@ class BrowserDriver(ABC):
         """
         return True
 
+    async def finish_capture(self) -> dict[str, Any]:
+        """Confirm browser delivery and close the event stream after queued events."""
+        raise RuntimeError(f"Recording finish protocol unsupported by driver: {self.kind}")
+
     @abstractmethod
     async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
         """返回录制事件异步迭代器（驱动侧 → 消费方，如 RecorderSessionService）。"""
@@ -135,9 +139,10 @@ class EventChannel:
     """
 
     def __init__(self, maxsize: int = 10000) -> None:
-        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=maxsize)
+        self._queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=maxsize)
         self._dropped = 0
         self._closed = False
+        self.published_seqs: set[int] = set()
 
     @property
     def dropped(self) -> int:
@@ -150,6 +155,8 @@ class EventChannel:
             return False
         try:
             self._queue.put_nowait(event)
+            if isinstance(event.get("seq"), int):
+                self.published_seqs.add(event["seq"])
             return True
         except asyncio.QueueFull:
             self._dropped += 1
@@ -163,7 +170,14 @@ class EventChannel:
     async def iterate(self) -> AsyncIterator[dict[str, Any]]:
         while True:
             event = await self._queue.get()
+            if event is None:
+                return
             yield event
+
+    async def finish(self) -> None:
+        """FIFO barrier; the consumer flushes before its normal stream exit."""
+        self._closed = True
+        await self._queue.put(None)
 
     def close(self) -> None:
         self._closed = True

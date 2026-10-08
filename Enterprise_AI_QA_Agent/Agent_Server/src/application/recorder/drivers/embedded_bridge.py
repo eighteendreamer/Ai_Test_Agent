@@ -25,10 +25,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
+from uuid import uuid4
 
 from src.schemas.recording import (
     RecorderEvent,
     RecordingDriverKind,
+    RecordingFinishReceipt,
     dedupe_event_batch,
 )
 
@@ -202,6 +204,22 @@ class EmbeddedBridge:
 
     # ------------------------------------------------------------ 生命周期
 
+    def acknowledge_finish(self, recording_id: str, receipt: RecordingFinishReceipt) -> bool:
+        state = self._sessions.get(recording_id)
+        if state is None or state.closed or not state.registered:
+            raise ValueError("Recording finish session unavailable")
+        driver = state.driver
+        if receipt.request_id != getattr(driver, "_finish_id", None):
+            raise ValueError("Recording finish request mismatch")
+        if getattr(driver, "_finish_receipt", None) is not None and driver._finish_receipt != receipt:
+            raise ValueError("Recording finish receipt cannot change")
+        driver._finish_receipt = receipt
+        driver._finish_event.set()
+        logger.info("recording_finish_receipt_received", extra={
+            "recording_id": recording_id, "request_id": receipt.request_id,
+            "next_seq": receipt.next_seq, "pending": receipt.pending})
+        return True
+
     def close_session(self, recording_id: str) -> bool:
         """标记会话关闭：事件/指令入口立即拒绝，state 保留供 Electron 拉取
         close 指令；终态清理由 detach 完成。"""
@@ -332,6 +350,17 @@ class EmbeddedDriver(BrowserDriver):
 
     async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
         return self._channel.iterate()
+
+    async def finish_capture(self) -> dict[str, Any]:
+        self._finish_id = uuid4().hex
+        self._finish_event = asyncio.Event()
+        self._finish_receipt = None
+        self._enqueue_command("finish_capture", {"request_id": self._finish_id})
+        await self._finish_event.wait()
+        receipt = self._finish_receipt.model_dump(mode="json")
+        await self._channel.finish()
+        return {**receipt, "published_seqs": sorted(self._channel.published_seqs),
+            "channel_dropped": self._channel.dropped}
 
     async def capture_screenshot(self) -> bytes:
         """返回 Electron 最近上报帧；尚无帧时报错（调用方决定重试/降级）。"""

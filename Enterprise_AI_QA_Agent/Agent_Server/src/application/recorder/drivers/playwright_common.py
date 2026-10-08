@@ -13,6 +13,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
+from uuid import uuid4
 
 from .base import BrowserDriver, EventChannel
 
@@ -122,6 +123,19 @@ class PlaywrightBindingDriverBase(BrowserDriver):
 
     async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
         return self._channel.iterate()
+
+    async def finish_capture(self) -> dict[str, Any]:
+        if self._page is None or self._closed:
+            raise RuntimeError("Recording browser unavailable during finish")
+        pages = list(self._context.pages)
+        if len(pages) != 1:
+            raise RuntimeError("Recording multi-page finish requires per-page identities")
+        receipt = await self._page.evaluate("() => window.__qaRecorderFinish()")
+        if not isinstance(receipt, dict) or receipt.get("protocol") != "recording-finish-v1":
+            raise RuntimeError("Recording browser finish protocol unavailable")
+        await self._channel.finish()
+        return {**receipt, "request_id": uuid4().hex, "transport_dropped": 0,
+            "published_seqs": sorted(self._channel.published_seqs), "channel_dropped": self._channel.dropped}
 
     async def capture_screenshot(self) -> bytes:
         if self._page is None:

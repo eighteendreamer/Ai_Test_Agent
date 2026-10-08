@@ -1,8 +1,8 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本批实施研究基线 `05f7403d`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
+修订日期：2026-10-08；本批实施研究基线 `33f15e99`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
 
-**本批实施原Electron录制入口核验。** 已实际复现并修复指令字段错位和不足二十条的事件不按时发送；原窗口/HTTP/真实存储正常场景通过。但“输入后立即停止”实际漏录并仍显示completed，结束排空协议尚未实现，见4.1.1/6.71。研究和失败工件保留，不把入口通过当作人工录制或AI使用已验收。
+**本批修复停止漏录并接入结束回执。** 浏览器冲刷已接受输入，Electron确认批次交付，原消费循环排空后核对PG事件和浏览器水位；正常及立即停止通过，真实HTTP结束回执503时明确failed。最终155项后端及26项JS通过，见4.1.1/6.72。iframe、多窗口、暂停边界及完整录制/AI验收仍未完成，历史失败保留。
 
 执行流程继续采用“理解用户需求 → 当前项目选取完整用例 → 初排 → AI判断步骤所需条件是否有来源 → 按项目依据补全 → 最终排序与冻结 → 现有Agent执行”。模板只参与生成；缺口检测不增加注册、登录等固定清单，具体检测方式见2.3。上传独立保存原件/版本并比较指定快照，Git仍为可选来源，见3.1。各模块未完成的产品验收按第六节保留。
 
@@ -1067,9 +1067,9 @@ API、Schema、前端DTO/客户端和旧矩阵消费者已同步。真实MD/DOCX
 
 原后端指令使用`action`，Electron却读取`kind/command`，原HTTP状态active与页面enabled=false已实际复现；原消费处现已对齐。二秒定时器也被二十条门槛挡住，实际两个click/一个page_scan六秒未入库，现已修正原定时flush。正常窗口/API/PG/知识投影、暂停/继续、重复投递与真实重复操作、关闭及RustFS截图读回通过。
 
-随后实际输入后立即stop：页面输入存在、停止前seq=6，PG只有5条且没有对应fill，却显示completed和正常对账。**录制整条链路尚不可判为已完成验收。** 下一步先研究并实现三驱动一致的结束确认，覆盖debounce、binding、客户端批次、后端队列及PG提交水位；失败/未知/丢弃可见后才固化。不能只延时等待或把已有行数一致当作完整采集。
+此前实际输入后立即stop：页面输入存在、停止前seq=6，PG只有5条且没有对应fill，却显示completed和正常对账，原失败保留在6.71。现在接入共享finish_capture契约：先冲刷已接受输入/异步binding，再由Electron确认完整批次，原队列FIFO结束标记排空，PG核对全部发布seq及浏览器本页生成范围。真正尾部输入、部分批次和受控503结束超时已验，见6.72。
 
-研究、真实失败和范围见[P0_RECORDING_EMBEDDED_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_EMBEDDED_RESEARCH.md)及6.71。本批没有接入新结束协议、动态响应关联或完整知识正文，没有模型使用和人工DeepSeek验收。配置、权限、既有模式和历史不改。
+新配置recording.finish_settings沿用MySQL并在创建时冻结到PG metadata。失败/丢弃/未确认水位不能固化成功；取消HTTP等待不取消后台stop。研究见[P0_RECORDING_DRAIN_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_DRAIN_DESIGN.md)。iframe/多top仍缺分范围确认，当前明确失败；暂停前已接受输入与延迟网络边界还需完整验收，不能把top回执当作全录制完成。动态响应、完整知识、AI实际使用和人工DeepSeek仍未完成。
 
 ### 4.2 Agent API测试
 
@@ -1246,7 +1246,7 @@ C2c3依据[真实状态研究](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_
 | P4覆盖确认 | `b908fe29` API/三格式生产进程见3.6.9/6.24；本阶段正式页面、完整JSON/固定版本评审、原请求恢复、历史/撤销/冲突及归档读取已验，84项组件和真实DOCX完整App见3.6.10/6.26 | 正文关联正式App已验；环境适用、更广业务及生产迁移 |
 | P4正文执行关联 | 固定核验/PG追加历史/候选恢复API和矩阵见6.30；正式编辑、原请求恢复、历史/撤销/409/归档完整读取已验；120项组件、真实DOCX完整App与独立进程见3.6.13/6.31 | 默认Agent自主执行、点级完整性及环境适用/生产历史迁移 |
 | P4环境/来源 | A登记/MySQL配置/PG捕获见6.33；B真实来源/确认见6.34—6.35；C1规划/Agent固定依据见6.36；C2a精确失效的创建/领取/开始限制、依赖/独立项、锁竞争和检查点恢复见6.37；C2b首次开始回执/原Agent恢复/真实生产执行见6.38；C2c1归属及C2c2未领取动作限制/原响应恢复见6.40—6.41 | 运行中动作修订、换目标回归、正式环境页面、AI候选及默认Agent；来源匹配不自动生成部署确认，未选择点不推断 |
-| P0/P5录制与Docker/报告 | 原Electron控制及少量批次实测修复；正常原窗口/API/存储/项目知识读取通过，143后端及23脚本回归通过，见6.71 | 立即stop实际漏最后输入且仍显示完成；结束确认、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
+| P0/P5录制与Docker/报告 | 原入口修复后接入停止回执/队列排空/PG水位；真实立即停止与HTTP503超时已验，155后端及26JS通过，见6.72 | iframe/多窗口和暂停交付边界、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
 
 此前内部输入专项：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
@@ -2462,3 +2462,17 @@ sources预读不耗模型回合；ID-only来源在capture前V2发生时读V2且�
 受影响十三模块回归**143通过、0跳过13.32秒**，包括真实Chromium CDP、PG和Memgraph开关；既有Starlette弃用警告1条。原脚本**23通过1.74秒**。探针自身的启动时序、argv、未生效输入、隐藏view和清理glob失败均保存并逐一纠正，详见[P0_RECORDING_EMBEDDED_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_EMBEDDED_RESEARCH.md)。这些失败不能当作更多生产缺陷或虚增通过数。
 
 下一步先实现有实际确认的跨端停止/排空契约，再补动作响应信息、清洗/遗漏与完整知识原文、人工DeepSeek及AI实际使用。单纯sleep、统计已有行数或把指令入队当执行完成都不满足本次反例。旧completed/failed/unknown历史保留，不原地重写。场景管理/编辑/别名/查询/失败定位、Docker性能安全及报告、P1正式模板/Excel、P2完整自主/生命周期和其他模式/App、需求业务评审/环境适用、P0完整发送与产品及生产历史迁移继续，完整P0—P5目标保持未完成。方案与用户附件/选中PLAN同步和原字节审计见[p0-recording-embedded-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-validation.json)。
+
+### 6.72 停止回执、真实尾部输入与PG水位〔基线33f15e99〕
+
+针对6.71实际失败，先研究原JS输入定时器/binding、三驱动、Electron部分批次和原消费/PG路径，再接入recording-finish-v1。JS枚举未结束输入并保存已接受的脱敏最终值，等待异步binding并保留拒绝缓冲；Electron确认accepted+duplicates等于本批数量，冲刷全部部分批次后才提交带请求身份的capture-finished回执。原后端在finalizing接受已采尾部，FIFO结束标记后消费循环自然退出并提交buffer，核对实际PG发布seq以及浏览器本页生成范围。缺口/解析失败/丢弃/DB失败/超时不能固化成功，不靠sleep或取消消费伪造排空。
+
+结束超时配置使用既有MySQL key `recording.finish_settings`，项目优先/全局回退；生产lifespan初始化及注入。创建时冻结scope/revision/参数到原PG metadata，用户metadata不能覆盖。真实测试在创建后修改MySQL配置，原会话保持原策略；配置编辑页面/运维产品入口仍待接。没有新增表、依赖、测试模式或业务执行器。取消HTTP等待保留原后台stop；终态控制拒绝复活。原旧历史与事件不改写。
+
+首轮两个原Electron场景**2失败22.87秒**，最后fill和PG水位已正确，但原窗口捕获额外真实点击，固定四次断言失败。工件不改写、不丢额外操作；改为至少四次自动操作且全部binding点击及type/page/target/pixel/value/page_effect与PG一致，并分别记录额外数量。来源未证实，不称作人工DeepSeek。首轮原后端**142通过、1失败17.88秒**：旧测试主动发布暂停期间seq=2后丢弃，新结束核验明确缺口，更新测试验证failed/missing=[2]且不固化图，保留原失败。
+
+两个原Electron场景修正后**2通过21.30秒**；新增协议/真实CDP与原十三模块**152通过14.27秒**。最终再加入真实HTTP503结束回执场景，统一合跑**155通过、0跳过31.59秒**，见[最终XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-final.xml)及[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-final.log)。真实Electron/API/MySQL/PG/RustFS/Memgraph三场景：正常停止、立即输入后停止成功；结束回执实际503时failed/finish_timeout，没有成功图固化。真实CDP实际HTML立即输入后结束，原fill及流结束已核验。协议专项另覆盖中间/尾部水位缺口、DB失败、未确认frame、错/改写/重复回执、取消等待和终态。原JS及新增多个输入/敏感值/异步binding/iframe边界**26通过1.50秒**，见[JS结果](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-web-fixed.xml)。一条既有Starlette弃用警告保留；编译只是附加检查。
+
+追加独立三个原Electron场景**3通过、0跳过26.39秒**，保存创建后MySQL实际读取的当前一秒策略、原冻结三十秒/一秒策略及最终PG快照，确认修改配置不会影响已有录制。追加原ASGI路由的错请求拒绝/正确回执及原路由回归**27通过、0跳过1.06秒**，记录拒绝日志，见[路由XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-routes-final.xml)。这些是额外核验，不能与此前合跑重复累计成新功能数。
+
+本批不证明完整录制：iframe/多窗口缺分范围身份/结束确认，当前明确失败；暂停已接受输入与迟到批次仍需完整修复/验收。完整Vue App、真实managed结束、人工DeepSeek、响应关联、清洗/完整原文与AI实际使用均未验收。另需核验bridge丢失后的迟到写入和历史保护，不把活动bridge的终态拒绝当生产恢复已验。其余P0—P5、默认自主Agent、准备生命周期、其他模式/App、正式模板/Excel、Docker真实结果/报告、业务评审/环境适用及历史迁移保持未完成。研究与下一步见[P0_RECORDING_DRAIN_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_DRAIN_DESIGN.md)，三份方案和原字节核对见[p0-recording-drain-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-validation.json)。

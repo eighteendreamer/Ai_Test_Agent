@@ -15,23 +15,25 @@ import pytest
 import uvicorn
 from playwright.async_api import async_playwright
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from test_case_planning import environment
 from src.api.routes.recordings import router
 from src.application.exploration.recording_graph_store import RecordingGraphStore
 from src.application.recorder.drivers import EmbeddedBridge
 from src.application.recorder.recorder_session_service import RecorderSessionService
+from src.application.recorder.finish_config_service import RecordingFinishConfigService, CONFIG_KEY
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.recording_store import PostgresRecordingStore
 from src.schemas.case_planning import PlanningQuery
 from src.schemas.project import ProjectCreateRequest
+from src.schemas.recording import RecordingControlAction
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_PRODUCT") != "1", reason="requires actual Electron/MySQL/PG/RustFS/Memgraph")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["settled", "tail-input"])
+@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout"])
 async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
     root = Path(__file__).resolve().parents[2]
     evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
@@ -60,13 +62,23 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
         await store.initialize()
         graph = RecordingGraphStore(env.settings)
         bridge = EmbeddedBridge()
-        service = RecorderSessionService(env.settings, store, graph, bridge=bridge)
+        finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+        await finish_configs.initialize()
+        if scenario == "finish-timeout":
+            await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+        service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
         env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
         app = FastAPI()
         app.state.recorder_service, app.state.recording_store = service, store
         app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
         app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
         app.include_router(router, prefix="/api/v1")
+
+        @app.middleware("http")
+        async def actual_receipt_outage(request, call_next):
+            if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+            return await call_next(request)
 
         @app.get("/fixture")
         async def actual_fixture():
@@ -123,6 +135,13 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                 created.raise_for_status()
                 session_id = created.json()["id"]
                 save("created.json", created.json())
+                frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                assert created.json()["metadata"]["finish_settings"]["revision"] >= 1
+                # Actual MySQL change after creation must not change this session's policy.
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                current_finish_settings = await finish_configs.capture(project.id)
+                save("finish-settings-current.json", current_finish_settings)
+                assert current_finish_settings["payload"]["timeout_seconds"] == 1
                 config = tmp_path / "electron.json"
                 config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
                     "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
@@ -193,14 +212,31 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         save("tail-input-before-stop.json", {"value": await page.locator("#tail").input_value(),
                             "recorder": await page.evaluate("window.__qaRecorderGetState()")})
                     final = await control("stop")
+                    assert final["metadata"]["finish_settings"] == frozen_finish_settings
+                    if scenario == "finish-timeout":
+                        assert final["status"] == "failed"
+                        assert final["finalize_metrics"]["failure_reason"] == "finish_timeout"
+                        assert final["finalize_metrics"]["finish_receipt"] is None
+                        assert final["metadata"]["finish_settings"]["payload"]["timeout_seconds"] == 1
+                        with pytest.raises(ValueError, match="illegal transition"):
+                            await service.control(session_id, RecordingControlAction.start)
+                        return
                     assert final["status"] == "completed"
+                    assert final["finalize_metrics"]["finish_receipt"]["pg_verified"]
                     saved = await store.get_events(session_id)
+                    bindings = [json.loads(line) for line in (evidence / "binding.jsonl").read_text(encoding="utf-8").splitlines()]
+                    for item in saved:
+                        original = next(event for event in bindings if event["seq"] == item.seq)
+                        for field in ("type", "page", "target", "pixel", "value", "page_effect"):
+                            assert item.model_dump(mode="json")[field] == original.get(field)
                     if scenario == "tail-input":
                         tail = [item for item in saved if item.type == "fill" and (item.target or {}).get("locators", {}).get("id") == "tail"]
                         save("tail-input-result.json", {"status": final["status"], "finalize_metrics": final["finalize_metrics"],
                             "tail_events": [item.model_dump(mode="json") for item in tail], "expected_value": "最后一步实际输入"})
                         assert len(tail) == 1 and tail[0].value == "最后一步实际输入", "stop lost the actual final input while reporting completed"
-                    assert len([item for item in saved if item.type == "click"]) == 4
+                    observed_clicks = [item for item in saved if item.type == "click"]
+                    assert len(observed_clicks) >= 4
+                    assert {item.seq for item in observed_clicks} == {item["seq"] for item in bindings if item["type"] == "click"}
                     projection = await graph.get_recording_subgraph(session_id, project_id=project.id)
                     save("projection.json", projection)
                     knowledge, _ = await env.sources.query(project.id, PlanningQuery(kind="recording", source_id=session_id), 50)
@@ -213,8 +249,11 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         while bridge.session_stats(session_id).get("closed") and not any("close command from backend" in line for line in (evidence / "electron.stdout").read_text(errors="replace").splitlines()):
                             await asyncio.sleep(.1)
                     save("verification.json", {"real_electron": True, "real_http": True, "pg_events": len(saved), "legitimate_clicks": 4,
+                        "observed_clicks": len(observed_clicks), "additional_observed_clicks": len(observed_clicks) - 4,
+                        "all_binding_clicks_preserved": True,
                         "duplicate_delivery_deduplicated": True, "paused_clicks_not_recorded": True, "project_scoped_knowledge_read": True,
-                        "rustfs_screenshot_readback": True, "manual_deepseek": False, "ai_model_use": False, "end_drain_verified": False})
+                        "rustfs_screenshot_readback": True, "manual_deepseek": False, "ai_model_use": False,
+                        "end_drain_verified": True, "full_recording_acceptance": False})
         finally:
             if session_id:
                 current = await store.get_session(session_id)

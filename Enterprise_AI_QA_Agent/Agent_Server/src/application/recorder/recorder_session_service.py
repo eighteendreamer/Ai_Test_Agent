@@ -38,6 +38,7 @@ from src.schemas.recording import (
     RecordingCreateRequest,
     RecordingSession,
     RecordingStatus,
+    RecordingFinishSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,8 @@ class _SessionRuntime:
     consume_task: asyncio.Task[None] | None = None
     ready_task: asyncio.Task[None] | None = None
     closed_task: asyncio.Task[None] | None = None
+    stop_task: asyncio.Task | None = None
+    parse_failures: int = 0
     dropped_while_paused: int = 0
     dropped_on_db_error: int = 0
     buffered_events: int = 0  # 消费循环内未落库数（诊断用）
@@ -94,6 +97,7 @@ class RecorderSessionService:
         *,
         registry: DriverRegistry | None = None,
         bridge: EmbeddedBridge | None = None,
+        finish_config_service=None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -104,6 +108,7 @@ class RecorderSessionService:
         self._launches: set[asyncio.Task] = set()
         self._closed = False
         self._shutdown_task: asyncio.Task | None = None
+        self._finish_configs = finish_config_service
 
     # ------------------------------------------------------------ 查询
 
@@ -164,6 +169,9 @@ class RecorderSessionService:
                 f"(registered: {', '.join(self._registry.kinds())})"
             )
 
+        finish_settings = (await self._finish_configs.capture(request.project_id)
+            if self._finish_configs is not None else {"scope_key": "internal_default", "revision": 0,
+                "payload": RecordingFinishSettings().model_dump(mode="json")})
         session = RecordingSession(
             project_id=request.project_id,
             name=request.name,
@@ -175,6 +183,7 @@ class RecorderSessionService:
             metadata={key: value for key, value in request.metadata.items() if key not in (
                 "browser_allocation_id", "browser_lease_namespace", "browser_host_id")},
         )
+        session.metadata["finish_settings"] = finish_settings
         driver = self._registry.create(request.driver, recording_id=session.id)
         try:
             session.metadata.update(driver.launch_metadata())
@@ -253,6 +262,8 @@ class RecorderSessionService:
         await asyncio.gather(*launches, return_exceptions=True)
 
         async def close_runtime(runtime):
+            if runtime.stop_task is not None and not runtime.stop_task.done():
+                await asyncio.shield(runtime.stop_task)
             await self._cancel_task(runtime.closed_task)
             await self._cancel_task(runtime.ready_task)
             await self._cancel_task(runtime.consume_task)
@@ -316,7 +327,9 @@ class RecorderSessionService:
             if action is RecordingControlAction.resume:
                 return await self._do_resume(runtime)
             if action is RecordingControlAction.stop:
-                return await self._do_stop(runtime)
+                runtime.stop_task = asyncio.create_task(self._do_stop(runtime),
+                    name=f"recording-stop-{recording_id}")
+                return await asyncio.shield(runtime.stop_task)
             return await self._do_destroy(runtime)
         except Exception:
             runtime.status = runtime.session.status  # 保留数据库返回的恢复终态，禁止迟到操作复活。
@@ -349,30 +362,52 @@ class RecorderSessionService:
     async def _do_stop(self, runtime: _SessionRuntime) -> RecordingSession:
         """停止并固化：finalizing → (事件 flush + Memgraph finalize) → completed。"""
         recording_id = runtime.session.id
-        await runtime.driver.set_capture_enabled(False)
         await self._update(runtime, RecordingStatus.finalizing)
-
-        await self._cancel_task(runtime.consume_task)
-        await self._cancel_task(runtime.ready_task)
-        runtime.consume_task = None
-        runtime.ready_task = None
-
+        finish = None
         try:
+            policy = RecordingFinishSettings.model_validate(runtime.session.metadata["finish_settings"]["payload"])
+            if runtime.consume_task is None:
+                runtime.consume_task = asyncio.create_task(self._consume_loop(runtime))
+            async with asyncio.timeout(policy.timeout_seconds):
+                finish = await runtime.driver.finish_capture()
+                await asyncio.shield(runtime.consume_task)
+            await self._cancel_task(runtime.ready_task)
             events = await self._store.get_events(recording_id)
+            expected = set(finish["published_seqs"])
+            saved = {event.seq for event in events}
+            missing = sorted(expected - saved)
+            finish["missing_seqs"] = missing
+            browser_start = finish["next_seq"] - finish["emitted_count"]
+            browser_saved_count = sum(browser_start <= seq < finish["next_seq"] for seq in saved)
+            finish["browser_saved_count"] = browser_saved_count
+            watermark_missing = browser_start < 0 or browser_saved_count != finish["emitted_count"]
+            finish["pg_verified"] = not missing and not watermark_missing
+            if (finish["protocol"] != "recording-finish-v1" or finish["pending"] or
+                finish["frames_unconfirmed"] or finish["transport_dropped"] or
+                finish["channel_dropped"] or missing or watermark_missing or
+                runtime.parse_failures or runtime.dropped_on_db_error):
+                raise RuntimeError("Recording finish delivery/integrity could not be confirmed")
             result = await self._graph_store.finalize(runtime.session, events)
             metrics = {
                 "finalize": result.get("metrics", {}),
                 "integrity": result.get("integrity", {}),
+                "finish_receipt": finish,
             }
             if result.get("status") != "success":
                 raise RuntimeError(f"graph finalize failed: {result.get('reason') or result.get('status')}")
         except Exception as exc:
             logger.exception("recording finalize failed: recording_id=%s", recording_id)
-            runtime.metadata["finalize_error"] = str(exc)
+            error = f"{type(exc).__name__}: {exc}"
+            runtime.metadata["finalize_error"] = error
+            await self._cancel_task(runtime.consume_task)
+            await self._cancel_task(runtime.ready_task)
             failed = await self._update(
                 runtime,
                 RecordingStatus.failed,
-                finalize_metrics={"finalize_error": str(exc)},
+                finalize_metrics={"finalize_error": error,
+                    "failure_reason": "finish_timeout" if isinstance(exc, TimeoutError) else "finish_unconfirmed",
+                    "finish_receipt": finish, "parse_failures": runtime.parse_failures,
+                    "dropped_on_db_error": runtime.dropped_on_db_error},
             )
             await self._shutdown_driver(runtime)
             return failed
@@ -428,7 +463,7 @@ class RecorderSessionService:
                     break
 
                 if event is not None:
-                    if runtime.status is not RecordingStatus.active:
+                    if runtime.status not in (RecordingStatus.active, RecordingStatus.finalizing):
                         runtime.dropped_while_paused += 1
                         logger.warning(
                             "recorder event dropped (not active): recording_id=%s status=%s seq=%s",
@@ -438,6 +473,7 @@ class RecorderSessionService:
                     try:
                         buffer.append(RecorderEvent.model_validate(event))
                     except Exception:
+                        runtime.parse_failures += 1
                         logger.exception(
                             "recorder event parse failed: recording_id=%s payload=%s",
                             recording_id, str(event)[:200],
@@ -446,6 +482,8 @@ class RecorderSessionService:
 
                 if buffer and (len(buffer) >= _CONSUME_BATCH_SIZE or event is None):
                     await self._flush_buffer(runtime, buffer)
+            if buffer:
+                await self._flush_buffer(runtime, buffer)
         except asyncio.CancelledError:
             # 停止（finalizing/completed）前冲刷已收事件；destroy 已占位
             # discarded，丢弃 buffer 不落库（保留审计语义：销毁不产生数据）。

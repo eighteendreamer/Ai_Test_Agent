@@ -134,6 +134,14 @@ class _FakeDriver(BrowserDriver):
     async def set_capture_enabled(self, enabled: bool) -> None:
         self.capture_calls.append(enabled)
 
+    async def finish_capture(self):
+        self.capture_calls.append(False)
+        await self._channel.finish()
+        seqs = sorted(self._channel.published_seqs)
+        return {"protocol": "recording-finish-v1", "next_seq": max(seqs, default=-1) + 1,
+            "emitted_count": len(seqs), "pending": 0, "frames_unconfirmed": 0,
+            "transport_dropped": 0, "channel_dropped": 0, "published_seqs": seqs}
+
     async def close(self) -> None:
         self.closed = True
 

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="26" failures="0" errors="0" time="0.2699884">
+    <testsuite name="tests/recorder/recorder.test.mjs" timestamp="2026-10-08T01:15:46.285Z" hostname="EIghteen" tests="26" failures="0" errors="0" skipped="0" time="0.2699884">
+        <testcase classname="tests/recorder/recorder.test.mjs" name="recorder.js 安装与控制 &gt; 幂等守卫：同窗口重复注入不重复初始化" time="0.0259002">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="recorder.js 安装与控制 &gt; 采集开关：关闭期间不采集，重新开启恢复" time="0.012258">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="recorder.js 安装与控制 &gt; 事件缓冲：binding 缺失时入队，binding 就绪后 flush 补投" time="0.008332">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="点击与双重定位 &gt; locator 链完整（id/testid/role+name/css/xpath/text）与像素三件套" time="0.0110804">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="点击与双重定位 &gt; 无 id 元素生成 nth-of-type css 与带序号 xpath" time="0.0086405">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="点击与双重定位 &gt; dblclick 与 submit 全量采集" time="0.0084355">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="输入采集 &gt; input 500ms debounce 合并为一次 fill，保留最终值" time="0.0092396">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="输入采集 &gt; 密码字段只记长度不记明文（安全红线）" time="0.013023">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="输入采集 &gt; 命名暗示敏感的普通字段同样脱敏" time="0.0086632">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="输入采集 &gt; change 事件立即结算最终值（不等待 debounce）" time="0.0077292">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="按键采集 &gt; 普通字符键不采集，功能键与组合键采集" time="0.0069315">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="滚动采集 &gt; 300ms 节流：窗口期内的滚动合并，跨窗口记录最新位置" time="0.0065858">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="导航采集 &gt; history.pushState 产生 navigate 事件（from/to）并触发 page_scan" time="0.0153172">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="导航采集 &gt; popstate 产生 navigate 事件" time="0.0059468">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="seq 连续性 &gt; seq 从 0 单调递增，挂起的 page_scan 按发出顺序续号" time="0.0057194">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="seq 连续性 &gt; 整页导航重注入后从 sessionStorage 续号" time="0.010865">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="iframe 事件桥（P1-3：同源/跨域统一经 postMessage 汇聚 top） &gt; 跨域子 frame 事件经桥送达 top：targetOrigin=&apos;*&apos;（修复前传自身 origin 会被静默丢弃）" time="0.0117057">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="iframe 事件桥（P1-3：同源/跨域统一经 postMessage 汇聚 top） &gt; 子 frame 与 top 自身事件由 top 统一分配连续 seq" time="0.0145273">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="iframe 事件桥（P1-3：同源/跨域统一经 postMessage 汇聚 top） &gt; 非协议消息（无 __qaRecorderBridge 标记）被 top 忽略" time="0.0057362">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="DOM 指纹与页面扫描 &gt; sha1 实现与 Node crypto 一致（含中文/emoji UTF-8）" time="0.0057562">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="DOM 指纹与页面扫描 &gt; 同 DOM 两次扫描 dom_hash 相同；DOM 变化 hash 变化" time="0.007701">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="DOM 指纹与页面扫描 &gt; page_scan 事件携带 dom_hash 与可交互元素清单" time="0.0057817">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="MutationObserver 计数 &gt; 事件携带自上一事件以来的 DOM 变更计数，且发出后重置" time="0.0256845">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="结束回执 &gt; 立即结束冲刷多个输入的最终值并保留密码脱敏，不重复定时发送" time="0.0096654">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="结束回执 &gt; 等待异步binding完成，拒绝后保持未确认内容" time="0.0059817">
+        </testcase>
+        <testcase classname="tests/recorder/recorder.test.mjs" name="结束回执 &gt; 未确认iframe范围显式保留，不声称top回执证明子frame完成" time="0.0104528">
+        </testcase>
+    </testsuite>
+</testsuites>

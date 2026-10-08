@@ -72,7 +72,9 @@
     lastUrl: safeStorage('get', LAST_URL_KEY) || null,
     mutationCount: 0,
     pending: [],
-    fillTimers: new WeakMap(),   // element → {timer, snapshot}
+    fillTimers: new Map(),       // only pending inputs; enumerable for finish
+    inFlight: new Set(),
+    emittedCount: 0,
     scrollLastAt: new WeakMap(), // element → lastEmitTs
     scanTimer: null,
   };
@@ -108,21 +110,32 @@
       return;
     }
     rawEvent.seq = nextSeq();
+    state.emittedCount += 1;
     rawEvent.timestamp = new Date().toISOString();
     rawEvent.page_effect = rawEvent.page_effect || {};
     rawEvent.page_effect.dom_mutation_count = state.mutationCount;
     state.mutationCount = 0;
     var payload = JSON.stringify(rawEvent);
+    deliver(payload);
+  }
+
+  function deliver(payload) {
     var binding = window[EMIT_BINDING];
-    if (typeof binding === 'function') {
-      try {
-        binding(payload);
-        return;
-      } catch (e) {
-        /* binding 异常落入缓冲，稍后重试 */
-      }
+    if (typeof binding !== 'function') {
+      state.pending.push(payload);
+      return;
     }
-    state.pending.push(payload);
+    try {
+      var result = binding(payload);
+      if (result && typeof result.then === 'function') {
+        var settled = Promise.resolve(result).catch(function () {
+          state.pending.push(payload);
+        }).finally(function () { state.inFlight.delete(settled); });
+        state.inFlight.add(settled);
+      }
+    } catch (e) {
+      state.pending.push(payload);
+    }
   }
 
   function flushPending() {
@@ -131,11 +144,7 @@
     if (typeof binding !== 'function') return;
     var queued = state.pending.splice(0, state.pending.length);
     for (var i = 0; i < queued.length; i++) {
-      try {
-        binding(queued[i]);
-      } catch (e) {
-        state.pending.push(queued[i]);
-      }
+      deliver(queued[i]);
     }
   }
 
@@ -443,14 +452,16 @@
     }
     record = record || { snapshot: buildTarget(el) };
     record.snapshot = buildTarget(el); // 定位信息取最近一次（DOM 可能动态变）
+    record.value = maskedValue(el);
     record.timer = setTimeout(function () {
       record.timer = null;
-      emitFill(el, record.snapshot);
+      state.fillTimers.delete(el);
+      emitFill(el, record.snapshot, record.value);
     }, INPUT_DEBOUNCE_MS);
     state.fillTimers.set(el, record);
   }
 
-  function emitFill(el, snapshot) {
+  function emitFill(el, snapshot, acceptedValue) {
     if (!state.enabled) return;
     var target = snapshot || buildTarget(el);
     emit({
@@ -458,7 +469,7 @@
       page: pageInfo(),
       target: target,
       pixel: null,
-      value: maskedValue(el),
+      value: arguments.length > 2 ? acceptedValue : maskedValue(el),
       page_effect: {},
     });
   }
@@ -770,8 +781,17 @@
 
   // ------------------------------------------------------------ 控制协议
 
+  function flushAcceptedInputs() {
+    state.fillTimers.forEach(function (record, el) {
+      clearTimeout(record.timer);
+      emitFill(el, record.snapshot, record.value);
+    });
+    state.fillTimers.clear();
+  }
+
   window.__qaRecorderSetEnabled = function (enabled) {
     var prev = state.enabled;
+    if (prev && !enabled) flushAcceptedInputs();
     state.enabled = !!enabled;
     if (state.enabled && !prev) {
       flushPending();
@@ -796,6 +816,24 @@
   };
 
   window.__qaRecorderFlush = flushPending;
+
+  window.__qaRecorderFinish = async function () {
+    flushAcceptedInputs();
+    state.enabled = false;
+    if (state.scanTimer) {
+      clearTimeout(state.scanTimer);
+      state.scanTimer = null;
+    }
+    await Promise.all(Array.from(state.inFlight));
+    flushPending();
+    await Promise.all(Array.from(state.inFlight));
+    return {
+      protocol: 'recording-finish-v1', next_seq: state.seq,
+      emitted_count: state.emittedCount, pending: state.pending.length,
+      // Frame delivery needs its own barrier; never claim top watermarks prove it.
+      frames_unconfirmed: document.querySelectorAll('iframe, frame').length,
+    };
+  };
 
   window.__qaRecorderSha1 = sha1hex; // 测试/诊断用（与宿主对账 dom_hash）
 })();

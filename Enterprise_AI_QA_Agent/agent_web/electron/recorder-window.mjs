@@ -49,6 +49,8 @@ class RecorderSessionState {
     this.pollAborted = false;
     this.closedByCommand = false; // 收到后端 close 指令的关窗不再补发 stop
     this.flushing = false;
+    this.flushPromise = null;
+    this.droppedTransport = 0;
   }
 }
 
@@ -115,14 +117,23 @@ async function postAttachRegistry(state) {
 }
 
 async function flushEventBuffer(state, { force = false } = {}) {
-  if (state.flushing || state.eventBuffer.length === 0) {
-    return;
-  }
+  if (state.flushPromise) return state.flushPromise;
+  if (state.eventBuffer.length === 0) return true;
   if (!force && state.eventBuffer.length < EVENT_BATCH_MAX) {
-    return;
+    return true;
   }
+  state.flushPromise = sendEventBatch(state);
+  try {
+    return await state.flushPromise;
+  } finally {
+    state.flushPromise = null;
+  }
+}
+
+async function sendEventBatch(state) {
   state.flushing = true;
   const batch = state.eventBuffer.splice(0, EVENT_BATCH_MAX);
+  let delivered = false;
   try {
     const response = await backendFetch(
       `/api/v1/recordings/${state.recordingId}/events:batch`,
@@ -140,7 +151,13 @@ async function flushEventBuffer(state, { force = false } = {}) {
       state.eventBuffer.unshift(...batch);
       log(state, `events:batch failed: ${response.status}, buffered=${state.eventBuffer.length}`);
     } else {
-      state.forwardedCount += batch.length;
+      const ack = await response.json();
+      delivered = Number(ack.accepted) + Number(ack.duplicates) === batch.length;
+      if (delivered) state.forwardedCount += batch.length;
+      else {
+        state.eventBuffer.unshift(...batch);
+        log(state, `events:batch partial receipt, buffered=${state.eventBuffer.length}`);
+      }
     }
   } catch (error) {
     state.eventBuffer.unshift(...batch);
@@ -149,10 +166,12 @@ async function flushEventBuffer(state, { force = false } = {}) {
     state.flushing = false;
     if (state.eventBuffer.length > EVENT_BUFFER_HARD_LIMIT) {
       const dropped = state.eventBuffer.length - EVENT_BUFFER_HARD_LIMIT;
+      state.droppedTransport += dropped;
       state.eventBuffer.splice(EVENT_BUFFER_HARD_LIMIT);
       log(state, `event buffer hard limit exceeded, dropped oldest ${dropped}`);
     }
   }
+  return delivered;
 }
 
 function startEventFlushTimer(state) {
@@ -182,14 +201,14 @@ function handleRecorderEvent(state, payloadJson) {
 
 // ---------------------------------------------------------------- 指令轮询
 
-async function evaluateInView(state, expression) {
+async function evaluateInView(state, expression, awaitPromise = false) {
   if (!state.view || !state.debuggerAttached) {
     return null;
   }
   try {
     const result = await state.view.webContents.debugger.sendCommand(
       "Runtime.evaluate",
-      { expression, returnByValue: true },
+      { expression, returnByValue: true, awaitPromise },
     );
     return result?.result?.value ?? null;
   } catch (error) {
@@ -253,6 +272,27 @@ async function applyCommand(state, command) {
     log(state, "close command from backend");
     state.closedByCommand = true;
     closeRecorderSession(state.recordingId, { notifyBackend: false });
+    return;
+  }
+  if (kind === "finish_capture") {
+    const receipt = await evaluateInView(state,
+      "window.__qaRecorderFinish && window.__qaRecorderFinish()", true);
+    if (!receipt || receipt.protocol !== "recording-finish-v1") {
+      log(state, "finish_capture: browser receipt unavailable");
+      return;
+    }
+    do {
+      if (!await flushEventBuffer(state, { force: true })) {
+        log(state, "finish_capture: event delivery unconfirmed");
+        return;
+      }
+    } while (state.eventBuffer.length || state.flushPromise);
+    const response = await backendFetch(`/api/v1/recordings/${state.recordingId}/capture-finished`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...receipt, request_id: payload.request_id,
+        transport_dropped: state.droppedMalformed + state.droppedTransport }),
+    });
+    log(state, `finish_capture receipt: ${response.status}, next_seq=${receipt.next_seq}`);
     return;
   }
   log(state, "unknown command ignored:", kind);

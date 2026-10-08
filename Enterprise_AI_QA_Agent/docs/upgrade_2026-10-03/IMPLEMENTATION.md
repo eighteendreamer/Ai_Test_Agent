@@ -4174,3 +4174,28 @@ npm.cmd run test -- tests/recorder/recorder.test.mjs --reporter=default --report
 专用真实测试开关默认关闭；需要完整基础设施和已安装Electron。测试创建UUID隔离表、正式项目和实际HTML文件，实际网络及存储读回。原结束状态/事件均保存后仅清理测试拥有的表/对象/图；清理glob失败造成的一组自有表/图和截图已按原录制ID/项目ID、唯一归属回查并清理，见 `p0-recording-embedded-cleanup.json`。清理查询最初LIKE未参数化，既有适配器拒绝；纠正后实际命令通过，不能把清理工具当生产迁移。
 
 本批不重复旧默认模型超时，不宣称停止排空、动作响应关联、完整知识原文、人工DeepSeek、模型使用、场景管理、Docker/报告或整个P0—P5完成。下一步有真实漏录反例支撑结束契约设计；历史失败和无关工作区保持。
+
+## 2026-10-08 停止回执与事件排空〔基线33f15e99〕
+
+先研究后实施，见P0_RECORDING_DRAIN_DESIGN.md/PLAN 6.72。生产跨层变更：JS已接受输入/异步binding冲刷，Electron完整批次回执及capture-finished，三驱动finish_capture/FIFO队列结束，原服务PG水位验证及失败，生产main初始化MySQL recording.finish_settings并冻结到PG metadata。无新表/依赖/模式；既有事件历史保持。
+
+原Electron首次2失败22.87秒（额外真实点击，不删除事件）；原后端142通过1失败17.88秒（暂停注入已知缺口不能completed），原日志保留。修正测试后两个真实场景2通过21.30秒；协议/实际CDP/原模块152通过14.27秒；JS26通过1.50秒。
+
+最终实际合跑命令如下（工作目录Agent_Server）。真实Electron三场景、CDP及原模块155通过0跳过31.59秒，有一条既有Starlette弃用警告。源文件/真实HTTP/MySQL/PG/RustFS/Memgraph实际核验，不是语法测试。
+
+```powershell
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RECORDING_PRODUCT_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-drain-final'
+$env:RECORDING_FINISH_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-drain-cdp-final'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py tests/test_recording_finish_protocol.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-drain-final.xml' --tb=short
+```
+
+agent_web工作目录实际执行：`npm.cmd run test -- tests/recorder/recorder.test.mjs --reporter=default --reporter=junit --outputFile.junit=../docs/upgrade_2026-10-03/p0-recording-drain-web-fixed.xml`，26通过。源码py_compile及node --check均退出0；没有改Vue DTO，因此未重跑完整Vue build，不把静态控制条当完整App。
+
+真实HTTP503结束回执场景使用MySQL项目配置一秒，结果failed/finish_timeout，没有成功图固化；两个成功场景读取原binding全字段/PG、RustFS截图与项目知识投影。测试自有资源按原UUID归属清理，原工件保留。iframe/多top未确认、暂停边界、bridge丢失后迟到写入、真实managed结束、完整App/人工DeepSeek/模型使用、其他P0—P5及生产历史迁移仍未完成。策略当前由MySQL服务配置，产品编辑/运维入口尚未接。没有重复旧默认自主模型超时。
+
+追加实际Electron三场景（同上product开关，RECORDING_PRODUCT_EVIDENCE改为p0-recording-drain-product-final）：`..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-drain-product-final.xml' --tb=short`，3通过26.39秒，保存MySQL当前策略实际读回。原ASGI回执及路由：`..\.venv\Scripts\python.exe -m pytest tests/test_recording_finish_protocol.py::test_actual_route_rejects_receipt_for_wrong_request tests/test_recording_routes.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-drain-routes-final.xml' --tb=short`，27通过1.06秒。0跳过；拒绝日志有据。与前面重复的节点不累计。
