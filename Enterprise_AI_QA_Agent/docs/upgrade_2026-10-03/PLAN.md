@@ -1,12 +1,12 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次方案核对基线 `4e35de24`。本次只更新方案和两份副本；完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
+修订日期：2026-10-08；本次生产冷启动实施基线 `7497b469`。完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
-**本次查证结果：上传变更可以沿现有实现完成，无需 Git 缓存。** 已重新核对上传路由、原件/版本保存和独立 Git 导入的调用方向，并实际运行两项上传回归：2通过、0失败、0跳过，pytest输出7.99秒。验证使用真实临时文件、应用路由和本地测试存储；生产存储、完整页面及 AI 影响判断未在本次重跑。当前结果见3.1.1，历史验证保留原批次标记。
+**上传变更可以沿现有实现完成，无需 Git 缓存。** 上一方案批次在`4e35de24`核对上传路由、原件/版本保存和独立 Git 导入，并实际运行两项上传回归：2通过、0失败、0跳过，pytest输出7.99秒。范围为真实临时文件、应用路由和本地测试存储，见3.1.1。本次生产启动/DOCX及执行Worker范围单独记在6.79，不把两个批次的验证混为完整验收。
 
-最新已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；这些是历史实施证据，本次没有重跑录制专项。该批生产API冷启动仍有外键初始化顺序失败，不能据此宣称生产链路通过。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
+已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；本次没有重跑录制专项。该批生产API冷启动的外键初始化顺序失败已按真实依赖修复：空数据库生产API/重启/实际DOCX与独立解析Worker1通过，原执行Worker/审批及副作用恢复1通过，生命周期/消费等65通过、审批存储15通过，见6.79。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -2621,3 +2621,20 @@ JS首轮32通过2.07秒，补原消息晚到/暂停及native来源约束后最�
 实际命令见[IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)；[最终XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-verified.xml)、[最终日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-verified.log)、[审计记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-validation.json)包含实际项目、PG原事件/知识/API、截图、策略隔离和原件hash。15源/测试文件hash覆盖最终运行，三份计划字节一致，既有原证据与无关工作区文件保持。
 
 该观察仅限document_light_dom及窗口结束状态；时间关联不是业务因果或完整响应。默认AI实际引用并操作、网络/跨文档/Shadow DOM、清洗/遗漏检查、人工DeepSeek、完整App/场景/别名/报告、Electron实际缓存与更多故障、Docker、其余P0—P5、生产历史迁移和两份旧Worker汇总原字节恢复继续未完成。
+
+
+### 6.79 生产冷启动依赖顺序与实际恢复〔基线7497b469〕
+
+完整P0—P5目标保持。本节处理6.78保留的生产API退出码3：消费表外键先引用未创建的agent_test_run_items。先读取真实原stderr、工具初始化/消费DDL和运行DDL/恢复，确认运行表还依赖项目、用例和套件，不能直接移至最初工具构造位置。研究见[P0_STARTUP_ORDER_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_STARTUP_ORDER_DESIGN.md)。
+
+main.py保留原服务构造，项目/用例/套件初始化后先调用原run store幂等DDL，再初始化工具/动作/消费表及工具恢复，随后继续原run service恢复。新增两条原日志设施事件表明顺序；不忽略外键、不创建占位表、不增加依赖或接口，不重写历史。配置仍MySQL，业务仍PG，原件仍RustFS。
+
+独立生产API/DOCX专项首轮1失败23.17秒：生产API已启动并通过外键和MySQL检查，新增测试保存RowMapping不能JSON序列化。沿项目已有dict(row)转换修正后，在另一个空库重跑：**1通过60.07秒**。启动前只读核对run item/消费表不存在；API建成两个validated外键，MySQL recording.capture_settings合法；API重启后不改配置修订。实际DOCX原件RustFS读回、上传/任务/配置冻结、独立Worker解析、终态重投和历史快照均通过，零模型调用。
+
+独立生产执行Worker专项**1通过75.67秒**，真实POST→GET→DELETE，五次受控模型阶段调用，审批和创建后的API重启保持原attempt/Job/数据，终态重投无额外业务操作、零残留。受控模型不能证明默认自主Agent通过。
+
+扩大回归首轮24失败54通过2跳过80.62秒：23项是本次命令遗漏两个证据目录变量，1项旧审批恢复测试替身缺少当前条目/运行读取能力；失败原件保留。配置目录和真实SQL池开关后，生命周期/原子依赖/消费与清理**65通过、零失败/跳过157.97秒**；旧测试补查询替身后其模块**15通过2.59秒**，不改运行生产算法、原attempt/首次时间断言仍在。语法检查仅为附加验证，没有前端契约变化，本次未重跑前端构建。
+
+命令见[IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。[生产DOCX XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-startup-order-production-fixed.xml)、[执行Worker XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-startup-order-execution-first.xml)、[配置后回归XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-startup-order-regression-configured.xml)、[审批模块XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-startup-order-claim-fixed.xml)及[本次审计](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-startup-order-validation.json)关联真实原件、FK/MySQL快照、进程输出、原HTTP和PG状态。6.78冷启动失败原件保持，不能删除旧失败或改称其当时已通过。
+
+本步修复生产启动基础缺陷，不代替完整录制AI使用/清洗/人工DeepSeek、正式App/场景/别名/报告、网络/跨文档/Shadow DOM、Docker、其余P0—P5、生产历史迁移及两份旧Worker原汇总恢复。完整升级继续未完成。

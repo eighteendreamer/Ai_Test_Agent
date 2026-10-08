@@ -415,7 +415,6 @@ async def _initialize_lifespan_resources(
     knowledge_graph_service.set_project_service(project_service)
 
     tool_job_service = container.tool_job_service()
-    await tool_job_service.initialize()
 
     report_service = container.report_service()
     permission_service = container.permission_service()
@@ -545,6 +544,12 @@ async def _initialize_lifespan_resources(
     await test_suite_service.initialize()
 
     test_run_store = container.test_run_store()
+    # Tool consumption references run items; create their schema after cases
+    # and suites, before tool admission and the run service's recovery work.
+    await test_run_store.initialize()
+    logger.info("lifespan_run_schema_initialized")
+    await tool_job_service.initialize()
+    logger.info("lifespan_tool_jobs_initialized")
     test_run_service = container.test_run_service()
     cleanup.push_async_callback(_close_lifespan_resource, "test_run_lease_reaper", test_run_service.stop_lease_reaper)
     if task_queue is not None:

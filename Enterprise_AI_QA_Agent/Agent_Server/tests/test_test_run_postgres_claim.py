@@ -1240,8 +1240,19 @@ def test_postgres_waiting_approval_resume_reuses_attempt_and_first_start(monkeyp
         heartbeat_at=started_at,
     )
     state = {"item": item, "attempt": attempt}
+    run = schemas.TestRunRecord(id=item.run_id,
+        project_id="00000000-0000-0000-0000-000000000036",
+        suite_id="00000000-0000-0000-0000-000000000037", mode_key="api_testing",
+        created_at=started_at, updated_at=started_at)
 
     class Cursor:
+        def execute(self, statement, parameters=None):
+            assert "SELECT record FROM agent_test_run_items WHERE id=%s" in statement
+            assert parameters == (item.id,)
+
+        def fetchone(self):
+            return {"record": state["item"].model_dump(mode="json")}
+
         def __enter__(self):
             return self
 
@@ -1262,6 +1273,7 @@ def test_postgres_waiting_approval_resume_reuses_attempt_and_first_start(monkeyp
     monkeypatch.setattr(store_module, "postgres_connect", lambda settings: Context())
     store = store_module.PostgresTestRunStore(Settings())
     monkeypatch.setattr(store, "_lock_item", lambda cur, item_id: state["item"])
+    monkeypatch.setattr(store, "_read_run", lambda cur, run_id: run)
     monkeypatch.setattr(
         store,
         "_lock_attempt",

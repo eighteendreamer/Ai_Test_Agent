@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="23.157" timestamp="2026-10-08T17:02:26.706266+08:00" hostname="EIghteen"><testcase classname="tests.test_document_parse_production" name="test_actual_production_lifespan_docx_parse_survives_api_restart_and_terminal_replay" time="15.751"><failure message="TypeError: Object of type RowMapping is not JSON serializable">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1148/test_actual_production_lifespa0')
+
+    async def test_actual_production_lifespan_docx_parse_survives_api_restart_and_terminal_replay(tmp_path):
+        evidence = Path(os.getenv("QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR", str(tmp_path)))
+        evidence.mkdir(parents=True, exist_ok=True)
+        try:
+            async with controlled_http(tmp_path) as (business, calls, _, _, _, errors):
+                async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
+                    settings.orchestration.redis_task_outbox_streams = DOCUMENT_PARSE_STREAM
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    models.upsert(ModelConfigUpdateRequest(model_name="controlled-parse-lifespan", provider="openai",
+                        transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex, is_active=True,
+                        use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False)))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    # The API must create these in an empty database, not recover
+                    # from tables pre-created by the fixture or this assertion.
+                    runs = PostgresTestRunStore(settings)
+                    admission = PostgresCaseActionAdmission(runs=runs, jobs=PostgresToolJobStore(settings))
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        for table in (runs._item_table, admission.consumption.table):
+                            cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                            assert cur.fetchone()["existing"] is None
+                    def startup_prerequisites():
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute("SELECT confrelid::regclass::text AS referenced_table, convalidated "
+                                "FROM pg_constraint WHERE conrelid=to_regclass(%s) AND contype='f' "
+                                "ORDER BY confrelid::regclass::text", (admission.consumption.table,))
+                            foreign_keys = cur.fetchall()
+                        assert {row["referenced_table"] for row in foreign_keys} == {
+                            runs._item_table, settings.database.postgres_tool_job_table}
+                        assert all(row["convalidated"] for row in foreign_keys)
+                        config = MySQLApplicationConfigStore(settings).get(RECORDING_CAPTURE_KEY)
+                        assert config is not None and config.scope_key == "global"
+                        policy = RecordingCaptureSettings.model_validate(config.payload)
+                        return {"consumption_table": admission.consumption.table, "foreign_keys": foreign_keys,
+                            "capture_config": {"scope_key": config.scope_key, "revision": config.revision,
+                                "payload": policy.model_dump(mode="json")}}
+                    api = processes.start("document-api-first", *args)
+                    queue = RedisTaskQueue(settings.database.redis_url, stream=DOCUMENT_PARSE_STREAM,
+                        group=settings.orchestration.redis_task_consumer_group + ":document_parsing")
+                    await queue.connect()
+                    try:
+                        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=50) as client:
+                            await wait_api(client, api)
+                            first_startup = startup_prerequisites()
+&gt;                           (evidence / "startup-prerequisites.json").write_text(json.dumps({
+                                "tables_absent_before_api": True, "first": first_startup},
+                                ensure_ascii=False, indent=2), encoding="utf-8")
+
+tests\test_document_parse_production.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:202: in encode
+    chunks = list(chunks)
+             ^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:432: in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:406: in _iterencode_dict
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:406: in _iterencode_dict
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:326: in _iterencode_list
+    yield from chunks
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:439: in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;json.encoder.JSONEncoder object at 0x000002024EF690D0&gt;
+o = {'referenced_table': 'agent_test_run_items', 'convalidated': True}
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+&gt;       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RowMapping is not JSON serializable
+
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\encoder.py:180: TypeError</failure></testcase></testsuite></testsuites>

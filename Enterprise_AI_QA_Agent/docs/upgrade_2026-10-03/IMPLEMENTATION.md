@@ -4397,3 +4397,33 @@ $env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=Join-Path $evidenceRoot 'p0-recor
 该项1失败22.79秒：API冷启动消费表FK先引用不存在的agent_test_run_items，发生在录制初始化之前。需要单独修复依赖初始化顺序，保留原stderr；未将此项计作生产通过。首次Electron连接ReadError也尚未定位，重测与扩大回归通过不能证明其根因已修复。
 
 MySQL新增recording.capture_settings默认键；项目策略及修订冻结于PG会话，无新PG表/依赖/历史改写，前端仍读原泛型JSON契约。有限DOM响应只作同文档时间关联，明确截断/无变化/不可用；旧计数不再导出响应断言，新响应低置信度建议需评审且不回放。默认AI、完整清洗/人工DeepSeek/App/报告、网络/跨文档/Shadow DOM、Docker及其余P0—P5和生产迁移继续未完成。
+
+
+## 生产冷启动依赖顺序〔2026-10-08，基线7497b469〕
+
+研究/依据/真实范围见P0_STARTUP_ORDER_DESIGN.md和PLAN.md 6.79。原6.78冷启动失败保留。本次main按项目/用例/套件→运行DDL→工具及动作/消费DDL和恢复→运行恢复排列，无新Schema/依赖/接口。两个原日志设施事件记录初始化顺序。
+
+实际命令，工作目录Agent_Server（stdout/stderr均Tee保存对应.log）：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_PARSE_PRODUCTION='1'
+$evidenceRoot='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03'
+$env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=Join-Path $evidenceRoot 'p0-startup-order-production-fixed'
+..\.venv\Scripts\python.exe -m pytest tests/test_document_parse_production.py -q --junitxml=../docs/upgrade_2026-10-03/p0-startup-order-production-fixed.xml
+
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+..\.venv\Scripts\python.exe -m pytest tests/test_execution_worker_cli.py -q --junitxml=../docs/upgrade_2026-10-03/p0-startup-order-execution-first.xml
+
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+$env:QA_CONSUMPTION_PHASE_DIR=Join-Path $evidenceRoot 'p0-startup-order-consumption-phase'
+$env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $evidenceRoot 'p0-startup-order-consumption-external'
+..\.venv\Scripts\python.exe -m pytest tests/test_lifespan_resource_cleanup.py tests/test_test_run_lifecycle.py tests/test_run_item_dependencies.py tests/test_case_consumption_phase.py tests/test_case_consumption_external.py -q --junitxml=../docs/upgrade_2026-10-03/p0-startup-order-regression-configured.xml
+..\.venv\Scripts\python.exe -m pytest tests/test_test_run_postgres_claim.py -q --junitxml=../docs/upgrade_2026-10-03/p0-startup-order-claim-fixed.xml
+```
+
+生产DOCX1通过60.07秒；实际执行Worker1通过75.67秒；配置后扩大回归65通过157.97秒；审批存储15通过2.59秒，均零失败/跳过。首轮DOCX在API/FK检查已过后因测试RowMapping序列化1失败23.17秒，修正dict转换；首轮扩大回归24失败54通过2跳过80.62秒，其中23缺证据目录变量，1旧测试替身欠当前读取能力。原日志/XML保留，不修改生产逻辑适配替身。原件/Docker/HTTP/进程输出从实际tmp复制；独立执行测试未设置QA_TEST_GATE_OUTPUT_DIR，使用默认tmp，随后逐字节保存至p0-startup-order-execution-first。
+
+语法附加检查在项目根目录：.\.venv\Scripts\python.exe -m py_compile Agent_Server/src/main.py Agent_Server/tests/test_document_parse_production.py Agent_Server/tests/test_test_run_postgres_claim.py，通过；没有前端修改，本次未重跑JS/typecheck/build。MySQL原配置和PG运行/消费表检查经过真实进程，受控模型执行不等于默认模型或人工录制验收。全范围未完成，见PLAN。

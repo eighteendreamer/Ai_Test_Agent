@@ -11,10 +11,16 @@ import httpx
 import pytest
 
 from src.application.documents.parsing_service import DOCUMENT_PARSE_STREAM
+from src.application.recorder.capture_config_service import CONFIG_KEY as RECORDING_CAPTURE_KEY
+from src.application.test_runs.run_store import PostgresTestRunStore
+from src.infrastructure.application_config_store import MySQLApplicationConfigStore
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
+from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.schemas.recording import RecordingCaptureSettings
 from src.schemas.model_config import ModelCapabilitiesOverride
 from src.schemas.settings import ModelConfigUpdateRequest
 from test_document_parsers import actual_docx
@@ -39,6 +45,29 @@ async def test_actual_production_lifespan_docx_parse_survives_api_restart_and_te
                 processes.env = child_environment(settings)
                 port = free_port()
                 args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                # The API must create these in an empty database, not recover
+                # from tables pre-created by the fixture or this assertion.
+                runs = PostgresTestRunStore(settings)
+                admission = PostgresCaseActionAdmission(runs=runs, jobs=PostgresToolJobStore(settings))
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    for table in (runs._item_table, admission.consumption.table):
+                        cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                        assert cur.fetchone()["existing"] is None
+                def startup_prerequisites():
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute("SELECT confrelid::regclass::text AS referenced_table, convalidated "
+                            "FROM pg_constraint WHERE conrelid=to_regclass(%s) AND contype='f' "
+                            "ORDER BY confrelid::regclass::text", (admission.consumption.table,))
+                        foreign_keys = [dict(row) for row in cur.fetchall()]
+                    assert {row["referenced_table"] for row in foreign_keys} == {
+                        runs._item_table, settings.database.postgres_tool_job_table}
+                    assert all(row["convalidated"] for row in foreign_keys)
+                    config = MySQLApplicationConfigStore(settings).get(RECORDING_CAPTURE_KEY)
+                    assert config is not None and config.scope_key == "global"
+                    policy = RecordingCaptureSettings.model_validate(config.payload)
+                    return {"consumption_table": admission.consumption.table, "foreign_keys": foreign_keys,
+                        "capture_config": {"scope_key": config.scope_key, "revision": config.revision,
+                            "payload": policy.model_dump(mode="json")}}
                 api = processes.start("document-api-first", *args)
                 queue = RedisTaskQueue(settings.database.redis_url, stream=DOCUMENT_PARSE_STREAM,
                     group=settings.orchestration.redis_task_consumer_group + ":document_parsing")
@@ -46,6 +75,10 @@ async def test_actual_production_lifespan_docx_parse_survives_api_restart_and_te
                 try:
                     async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=50) as client:
                         await wait_api(client, api)
+                        first_startup = startup_prerequisites()
+                        (evidence / "startup-prerequisites.json").write_text(json.dumps({
+                            "tables_absent_before_api": True, "first": first_startup},
+                            ensure_ascii=False, indent=2), encoding="utf-8")
                         async def post(path, payload, status=200):
                             response = await client.post(path, json=payload)
                             assert response.status_code == status, (response.status_code, response.text)
@@ -73,6 +106,12 @@ async def test_actual_production_lifespan_docx_parse_survives_api_restart_and_te
                         await processes.stop(api)
                         api = processes.start("document-api-restarted", *args)
                         await wait_api(client, api)
+                        restarted_startup = startup_prerequisites()
+                        assert restarted_startup == first_startup
+                        (evidence / "startup-prerequisites.json").write_text(json.dumps({
+                            "tables_absent_before_api": True, "first": first_startup,
+                            "restarted": restarted_startup, "restart_preserved_prerequisites": True},
+                            ensure_ascii=False, indent=2), encoding="utf-8")
                         replay = await post(base + "/parse-tasks", request, 202)
                         assert replay["id"] == submitted["id"] and replay["status"] == "queued"
                         with postgres_connect(settings) as conn, conn.cursor() as cur:
