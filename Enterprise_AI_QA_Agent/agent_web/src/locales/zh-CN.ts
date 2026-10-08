@@ -696,6 +696,7 @@ export default {
   "snapshot.version": "版本",
   "snapshot.control_state": "控制态",
   "snapshot.loop": "循环",
+  "snapshot.model_calls": "模型调用",
   "snapshot.tool_count": "工具数",
   "snapshot.approval_count": "审批数",
   "snapshot.termination": "结束态",

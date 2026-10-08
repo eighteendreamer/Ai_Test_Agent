@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="10.789" timestamp="2026-10-08T22:01:58.834263+08:00" hostname="EIghteen"><testcase classname="tests.test_approval_model_budget" name="test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit[False]" time="0.849"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行">tests\test_approval_model_budget.py:128: in test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:307: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:172: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:227: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行</failure></testcase><testcase classname="tests.test_approval_model_budget" name="test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit[True]" time="3.244"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行">tests\test_approval_model_budget.py:128: in test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit
+    pending = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:307: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:172: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:227: in _finish
+    raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E   src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行</failure></testcase></testsuite></testsuites>

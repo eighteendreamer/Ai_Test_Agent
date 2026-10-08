@@ -55,6 +55,8 @@ async def test_turn_budget_survives_checkpoint_and_blocks_loop_reentry(
         runtime_control=RuntimeControlRegistry(),
     )
     state = runtime._build_initial_state(session, request)
+    state["model_call_count"] = 3
+    state["max_iterations"] = 5
     state["turn_token_usage"] = {
         "prompt_tokens": 950,
         "completion_tokens": 20,
@@ -74,9 +76,26 @@ async def test_turn_budget_survives_checkpoint_and_blocks_loop_reentry(
 
     assert restored["turn_token_usage"] == state["turn_token_usage"]
     assert restored["model_context_window"] == 1000
+    assert restored["model_call_count"] == 3
+    assert restored["max_iterations"] == 5
 
     restored["model_tool_calls"] = [{"id": "tool-1", "name": "demo", "arguments": {}}]
     restored["continue_loop"] = True
     await build_finalizer_node(_ModelRuntime())(restored)
     assert restored["termination_reason"] == "context_budget_exhausted"
     assert restored["continue_loop"] is False
+
+
+def test_historical_budget_serialization_does_not_add_new_counter():
+    from src.application.runtime.state_persistence import persisted_turn_budget
+    from src.application.runtime.state_types import SessionContext, TurnState, LoopConfig
+    from src.application.runtime.agent_loop import AgentLoop
+    old = {"turn_token_usage": {"total_tokens": 10}, "model_context_window": 1000}
+    assert persisted_turn_budget(old) == old
+    loop = AgentLoop(None, RuntimeControlRegistry())
+    composed = loop._compose_graph_state(SessionContext("old", "normal", "interactive", "default"),
+        TurnState("turn", "trace", "request", "request"), LoopConfig())
+    assert "model_call_count" not in composed
+    composed["model_call_count"] = 4
+    session, turn, config = loop._decompose_graph_state(composed)
+    assert loop._compose_graph_state(session, turn, config)["model_call_count"] == 4

@@ -244,6 +244,7 @@ class RuntimeService:
                 initial_state,
                 lambda: self._execute_security_mode_turn(session, request, initial_state),
             )
+        initial_state["model_call_count"] = 0
         return await self._execute_observed(
             session,
             request,
@@ -696,6 +697,7 @@ class RuntimeService:
             pending_turn["pending_approval_ids"] = pending_ids
             pending_turn["pending_approvals"] = remaining_approvals
             state["pending_turn"] = pending_turn
+            state["control_state"] = "waiting_approval"
             state["termination_reason"] = "waiting_approval"
             snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
             events = self._events_from_log(session.id, state["event_log"])
@@ -1867,6 +1869,7 @@ class RuntimeService:
             "model_request_payload": dict(graph_state.get("model_request_payload") or {}),
             "model_response_summary": dict(graph_state.get("model_response_summary") or {}),
             "model_response_text": str(graph_state.get("model_response_text") or ""),
+            **persisted_turn_budget({**fallback_pending_turn, **graph_state}),
             "turn_token_usage": dict(graph_state.get("turn_token_usage") or fallback_pending_turn.get("turn_token_usage") or {}),
             "model_context_window": int(graph_state.get("model_context_window") or fallback_pending_turn.get("model_context_window") or 128000),
             "assistant_tool_call_message": dict(graph_state.get("assistant_tool_call_message") or {}),

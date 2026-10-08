@@ -12,6 +12,7 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_input_validation import validate_tool_input as _validate_tool_input
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_messages import build_tool_message
+from src.application.runtime.state_persistence import persisted_turn_budget
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
 from src.graph.state import AgentGraphState
@@ -102,6 +103,7 @@ def build_tool_executor_node(
 
         if pending_approvals:
             state["pending_turn"] = {
+                **persisted_turn_budget(state),
                 "turn_id": state["turn_id"],
                 "trace_id": state["trace_id"],
                 "user_message": state["user_message"],
@@ -140,6 +142,7 @@ def build_tool_executor_node(
                 "tool_results": tool_results,
                 "worker_dispatches": state["worker_dispatches"],
                 "pending_approval_ids": [item["id"] for item in pending_approvals],
+                "pending_approvals": pending_approvals,
             }
             append_graph_event(
                 state,

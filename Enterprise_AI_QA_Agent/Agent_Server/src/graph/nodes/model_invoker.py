@@ -15,6 +15,32 @@ def build_model_invoker_node(
     tool_registry: ToolRegistry,
 ):
     async def model_invoker(state: AgentGraphState) -> AgentGraphState:
+        # The graph re-enters after approval without incrementing loop_iteration.
+        # Count logical model admissions at the send boundary; SDK attempts remain
+        # a distinct transport metric. Old checkpoints have no cumulative counter.
+        count = state.get("model_call_count")
+        usage = state.get("turn_token_usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        context_window = int(state.get("model_context_window") or 0)
+        context_exhausted = prompt_tokens > 0 and context_window > 0 and prompt_tokens >= context_window * 0.9
+        if count is not None and (count >= state["max_iterations"] or context_exhausted):
+            reason = "context_budget_exhausted" if context_exhausted else "max_iterations"
+            state["model_tool_calls"] = []
+            state["assistant_tool_call_message"] = {}
+            state["model_response_summary"] = {"mode": "budget_exhausted"}
+            state["model_response_text"] = (
+                "The turn reached its model or context limit across tool loops and approvals. "
+                "Existing tool evidence is preserved; no additional model request was sent."
+            )
+            state["final_response"] = state["model_response_text"]
+            state["pending_turn"] = {}
+            state["continue_loop"] = False
+            state["termination_reason"] = reason
+            append_graph_event(state, "graph." + ("context_budget_exhausted" if context_exhausted else "max_iterations_reached"), "model_invoker",
+                "Runtime stopped before another model admission exceeded the original turn limit.",
+                model_call_count=count, max_iterations=state["max_iterations"],
+                prompt_tokens=prompt_tokens, context_window=context_window)
+            return state
         model_visible_tool_keys = list(state.get("model_visible_tool_keys", state["available_tool_keys"]))
         append_graph_event(
             state,
@@ -124,8 +150,12 @@ def build_model_invoker_node(
             messages=summarize_messages(request_payload.messages),
             tool_candidates=",".join(model_visible_tool_keys) or "none",
             loop_iteration=state["loop_iteration"],
+            model_call_count=count + 1 if count is not None else None,
+            max_iterations=state["max_iterations"],
         )
 
+        if count is not None:
+            state["model_call_count"] = count + 1
         invocation_result = await model_runtime_service.invoke(
             state["selected_model_key"],
             request_payload,
@@ -175,6 +205,7 @@ def build_model_invoker_node(
             prompt_tokens=latest_usage.prompt_tokens,
             completion_tokens=latest_usage.completion_tokens,
             turn_total_tokens=accumulated_usage.total_tokens,
+            model_call_count=state.get("model_call_count"),
         )
 
         return state

@@ -17,6 +17,7 @@ const rows = computed(() => {
     : 0;
   const loopIteration = Number(graphState.value.loop_iteration ?? 0);
   const maxIterations = Number(graphState.value.max_iterations ?? 0);
+  const modelCalls = graphState.value.model_call_count;
   const controlState =
     typeof graphState.value.control_state === "string" ? graphState.value.control_state : "--";
   const terminationReason =
@@ -31,6 +32,9 @@ const rows = computed(() => {
     { label: t("snapshot.version"), value: snapshot.value ? `v${snapshot.value.version}` : "--" },
     { label: t("snapshot.control_state"), value: controlState },
     { label: t("snapshot.loop"), value: `${loopIteration}/${maxIterations}` },
+    ...(typeof modelCalls === "number"
+      ? [{ label: t("snapshot.model_calls"), value: `${modelCalls}/${maxIterations}` }]
+      : []),
     { label: t("snapshot.tool_count"), value: String(toolCount) },
     { label: t("snapshot.approval_count"), value: String(pendingApprovals) },
     { label: t("snapshot.termination"), value: terminationReason },

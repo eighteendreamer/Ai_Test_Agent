@@ -207,7 +207,9 @@ async def isolated_runtime(tmp_path):
             evidence = Path(output) / "p2-execution-worker-cli-probe"
             evidence.mkdir(exist_ok=True)
             for path in tmp_path.iterdir():
-                if path.suffix in {".stdout", ".stderr"} or path.name in {"docker.json", "waiting.json", "requirements.md"}:
+                if (path.suffix in {".stdout", ".stderr"} or path.name in
+                    {"docker.json", "waiting.json", "requirements.md", "postgres-execution.json", "completed.json"}
+                    or path.name.startswith("model-")):
                     shutil.copyfile(path, evidence / path.name)
 
 
@@ -277,6 +279,8 @@ async def controlled_http(tmp_path):
                             "instructions": {"method": "DELETE", "url": base_url + "/orders/{id}", "expected": 200}})
                     result, reason, phase = {"role": "assistant", "content": json.dumps(data, ensure_ascii=False)}, "stop", "planning"
                 calls.append({"path": self.path, "phase": phase, "tool_message_count": len([m for m in messages if m["role"] == "tool"])})
+                (tmp_path / f"model-{len(calls):03d}-request.json").write_text(
+                    json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
                 identity = "response-" + uuid4().hex
                 if request.get("stream"):
                     delta = dict(result)
@@ -343,9 +347,15 @@ async def wait_api(client, process):
 
 
 @pytest.mark.asyncio
-async def test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay(tmp_path):
+@pytest.mark.parametrize("model_limit", [8, 3], ids=["complete", "budget-exhausted"])
+async def test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay(tmp_path, model_limit, monkeypatch):
+    if os.getenv("QA_APPROVAL_MODEL_BUDGET_CLI_DIR"):
+        target = Path(os.environ["QA_APPROVAL_MODEL_BUDGET_CLI_DIR"]) / str(model_limit)
+        target.mkdir(parents=True, exist_ok=False)
+        monkeypatch.setenv("QA_TEST_GATE_OUTPUT_DIR", str(target))
     async with controlled_http(tmp_path) as (business, calls, effects, orders, actual_id, errors):
         async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+            settings.orchestration.runtime_max_iterations = model_limit
             models = MySQLModelConfigStore(settings)
             models.initialize()
             model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai", transport="openai_chat_completions",
@@ -402,6 +412,8 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                 assert not effects
                 assert len(calls) == 2, calls
                 await processes.stop(api)
+                settings.orchestration.runtime_max_iterations = model_limit + 10
+                processes.env = child_environment(settings)
                 api = processes.start("api-restarted", *args)
                 await wait_api(client, api)
                 assert (await client.get("/runs/" + run_id)).json() == waiting
@@ -431,23 +443,43 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                             cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
                             saved_approval = cur.fetchall()
                         assert [str(row["id"]) for row in saved_approval] == [result["approval_id"]]
-                assert result["status"] == "passed", result
-                assert result["actual"]["case_output"]["body"]["order.id"] == actual_id
+                assert result["status"] == ("passed" if model_limit == 8 else "error"), result
+                if model_limit == 8:
+                    assert result["actual"]["case_output"]["body"]["order.id"] == actual_id
+                else:
+                    assert "budget_exhausted" in result["error_message"]
                 assert not orders
                 completed = (await client.get("/runs/" + run_id)).json()
+                (tmp_path / "completed.json").write_text(json.dumps(completed, ensure_ascii=False, indent=2), encoding="utf-8")
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    tables = {}
+                    for field in ("postgres_snapshot_table", "postgres_tool_job_table", "postgres_approval_table"):
+                        cur.execute(f"SELECT * FROM {getattr(settings.database, field)}")
+                        tables[field] = [dict(row) for row in cur.fetchall()]
+                (tmp_path / "postgres-execution.json").write_text(json.dumps(tables,
+                    ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+                final_states = [row["graph_state"] for row in tables["postgres_snapshot_table"]
+                    if row["stage"] == "completed"]
+                assert len(final_states) == 1
+                assert final_states[0]["model_call_count"] == min(model_limit, 4)
+                assert final_states[0]["max_iterations"] == model_limit
                 assert completed["run"]["status"] == "completed" and completed["results"][0]["id"] == result["id"]
                 assert [verb for verb, _ in effects] == ["POST", "GET", "DELETE"]
-                assert len(calls) == 5 and not errors, (calls, errors)
+                expected_calls = 1 + min(model_limit, 4)  # one planning call, then this turn
+                assert len(calls) == expected_calls and not errors, (calls, errors)
                 await queue.enqueue(delivery[0]["payload"])
                 child = processes.start("worker-terminal", "-m", "src.cli.run_redis_worker", "--once", "--worker-id", "cli-terminal")
                 assert await processes.wait(child) == 0
                 assert not await queue.pending()
                 assert (await client.get("/runs/" + run_id)).json() == completed
-                assert len(calls) == 5 and len(effects) == 3
+                assert len(calls) == expected_calls and len(effects) == 3
                 evidence = {"scope": "production API lifespan and execution Worker CLI; local controlled model, real MySQL/PostgreSQL/RustFS/Redis",
                     "case_version_id": bundle["version"]["id"], "plan_id": plan["id"], "run_id": run_id, "result_id": result["id"],
                     "approval_survived_api_and_worker_restart": True, "confirmed_create_survived_api_restart": True,
                     "actual_effects": effects,
+                    "original_turn_limit": model_limit, "restarted_process_default": model_limit + 10,
+                    "execution_model_calls": min(model_limit, 4), "formal_status": result["status"],
+                    "terminal_replay_model_calls": 0,
                     "model_calls": calls, "terminal_replay_effects": 0, "business_records_remaining": len(orders)}
                 target = Path(os.getenv("QA_TEST_GATE_OUTPUT_DIR", str(tmp_path))) / "p2-execution-worker-cli.json"
                 target.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")

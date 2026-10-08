@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class AgentGraphState(TypedDict):
@@ -49,6 +49,7 @@ class AgentGraphState(TypedDict):
     model_response_text: str
     turn_token_usage: dict[str, Any]
     model_context_window: int
+    model_call_count: NotRequired[int]
     assistant_tool_call_message: dict[str, Any]
     model_tool_calls: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]

@@ -13,6 +13,9 @@ def build_finalizer_node(
             state["continue_loop"] = False
             return state
 
+        if state.get("termination_reason") in {"max_iterations", "context_budget_exhausted"} and not state["model_tool_calls"]:
+            return state
+
         if is_model_failure_summary(state.get("model_response_summary")):
             state["final_response"] = state["model_response_text"]
             state["continue_loop"] = False
@@ -57,7 +60,9 @@ def build_finalizer_node(
                     context_window=context_window,
                     loop_iteration=state["loop_iteration"],
                 )
-            elif state["loop_iteration"] + 1 >= state["max_iterations"]:
+            elif (state["model_call_count"] >= state["max_iterations"]
+                  if state.get("model_call_count") is not None
+                  else state["loop_iteration"] + 1 >= state["max_iterations"]):
                 state["continue_loop"] = False
                 state["termination_reason"] = "max_iterations"
                 state["final_response"] = (
@@ -70,6 +75,7 @@ def build_finalizer_node(
                     "finalizer",
                     "Runtime stopped because the recursive loop reached its safety limit.",
                     loop_iteration=state["loop_iteration"],
+                    model_call_count=state.get("model_call_count"),
                     max_iterations=state["max_iterations"],
                 )
             else:

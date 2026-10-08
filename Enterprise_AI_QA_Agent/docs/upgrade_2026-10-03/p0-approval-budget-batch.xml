@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="13.714" timestamp="2026-10-08T21:56:29.944886+08:00" hostname="EIghteen"><testcase classname="tests.test_approval_model_budget" name="test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit[False]" time="0.886"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1186/test_multiple_approvals_share_0')
+business_http = ('http://127.0.0.1:63751', [('POST', '/orders')], 'actual-60c5f08de8b847b0a68ece42543e31ba')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live, agent=BatchedApprovalAgent(business_http)) as values:
+            _, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            approvals = await reader.list_approvals(pending.session_id)
+            assert len(approvals) == 2 and len(agent.requests) == 1
+&gt;           pending = await approval_continuation(runs, reader, adapter, args, pending)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_approval_model_budget.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_agent_case_execution.py:307: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:172: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;src.application.test_runs.agent_case_execution.AgentCaseExecutionAdapter object at 0x0000028FF23CFF50&gt;
+context = AgentCaseExecutionContext(schema_version=1, project_id='2a227666-a499-4779-ac7a-91cb33b5c6dd', run_id='f024875a-da81-5...t_coverage_max_bytes=None, effect_owner_item_ids=None, effect_expected_source_protocol=None, consumption_protocol=None)
+checkpoint = AgentCaseExecutionCheckpoint(schema_version=1, project_id='2a227666-a499-4779-ac7a-91cb33b5c6dd', run_id='f024875a-da8...bb2e-50b8-9832-67811537a85e', phase='snapshot', snapshot_id='5c18a2d0-19f2-4628-abdf-be8387d10b76', snapshot_version=2)
+attempt = TestRunAttemptRecord(id='311451a7-9ef5-489e-837d-673f5164870e', run_id='f024875a-da81-5efe-9a9e-70645cc6edb3', run_ite..., 10, 8, 13, 56, 38, 384955, tzinfo=datetime.timezone.utc), recovered_from_attempt_id=None, environment_admission=None)
+item = TestRunItemRecord(id='d91bcd1b-10be-5ed7-960c-b722a513afaa', run_id='f024875a-da81-5efe-9a9e-70645cc6edb3', case_id='5..., waiting_started_at=None, active_duration_ms=0, waiting_duration_ms=0, paused_duration_ms=0, wall_clock_duration_ms=0)
+snapshot = SessionSnapshot(id='5c18a2d0-19f2-4628-abdf-be8387d10b76', session_id='9fc0e976-08bd-4b91-9f95-5141b7be2952', version=...esuming', 'loop_iteration': 0, 'continue_loop': False, 'termination_reason': 'waiting_approval', 'final_response': ''})
+mode_key = 'api_testing'
+
+    async def _finish(self, context, checkpoint, attempt, item, snapshot: SessionSnapshot, *, mode_key):
+        resumed_decisions = set()
+        while True:
+            checkpoint = checkpoint.model_copy(update={"phase": "snapshot", "snapshot_id": snapshot.id,
+                "snapshot_version": snapshot.version})
+            attempt = await self._save(item, attempt, checkpoint)
+            if snapshot.stage != "waiting_approval":
+                break
+            session = await self._store.get_session(checkpoint.session_id)
+            pending = session.metadata.get("pending_turn", {}).get("pending_approval_ids", [])
+            stored = {entry.id: entry for entry in await self._store.list_approvals(checkpoint.session_id)
+                if entry.metadata.get("turn_id") == checkpoint.turn_id}
+            approvals = [stored[key] for key in pending if key in stored]
+            if not approvals or not approvals[0].metadata.get("tool_job_id"):
+                raise AgentCaseRecoveryRequired("待审批图缺少当前审批及工具任务，需要核对原执行")
+            approval = approvals[0]
+            if approval.status == ToolApprovalStatus.pending:
+                return AgentCaseApprovalWait(checkpoint.session_id, approval.id,
+                    str(approval.metadata["tool_job_id"]), approval.reason)
+            if approval.id in resumed_decisions:
+                raise AgentCaseRecoveryRequired("已保存审批决议未推进原图，需要核对原执行")
+            resumed_decisions.add(approval.id)
+            logger.info("agent_case_saved_approval_decision_resumed", extra={"run_id": context.run_id,
+                "run_item_id": item.id, "execution_attempt_id": checkpoint.execution_attempt_id,
+                "result_attempt_id": attempt.id, "approval_id": approval.id, "decision": approval.status.value})
+            snapshot, checkpoint, attempt = await self._continue_approval(context, checkpoint, attempt,
+                item, approval, ApprovalDecisionRequest(decision=approval.status, reason=approval.decision_note),
+                mode_key=mode_key)
+        if snapshot.stage != "completed":
+&gt;           raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E           src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行
+
+src\application\test_runs\agent_case_execution.py:227: AgentCaseRecoveryRequired</failure></testcase><testcase classname="tests.test_approval_model_budget" name="test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit[True]" time="3.699"><failure message="src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1186/test_multiple_approvals_share_1')
+business_http = ('http://127.0.0.1:63764', [('POST', '/orders')], 'actual-c19328e05afb45faa1b444448aa518bf')
+live = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_multiple_approvals_share_one_model_call_and_can_finish_at_the_limit(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live, agent=BatchedApprovalAgent(business_http)) as values:
+            _, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            approvals = await reader.list_approvals(pending.session_id)
+            assert len(approvals) == 2 and len(agent.requests) == 1
+&gt;           pending = await approval_continuation(runs, reader, adapter, args, pending)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_approval_model_budget.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_agent_case_execution.py:307: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:172: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;src.application.test_runs.agent_case_execution.AgentCaseExecutionAdapter object at 0x0000028FF1FC2390&gt;
+context = AgentCaseExecutionContext(schema_version=1, project_id='a6d67200-108d-4b17-aea6-d7da55f63d5a', run_id='c5efccd2-7a97-5...t_coverage_max_bytes=None, effect_owner_item_ids=None, effect_expected_source_protocol=None, consumption_protocol=None)
+checkpoint = AgentCaseExecutionCheckpoint(schema_version=1, project_id='a6d67200-108d-4b17-aea6-d7da55f63d5a', run_id='c5efccd2-7a9...5dd9-5fa2-8716-394bf8314df1', phase='snapshot', snapshot_id='90172bd2-2e89-4e13-8216-4b8056d8bcec', snapshot_version=2)
+attempt = TestRunAttemptRecord(id='0aa94e9b-3b49-4de7-94ef-76715988eb20', run_id='c5efccd2-7a97-568e-927a-de95185ef829', run_ite..., 10, 8, 13, 56, 40, 754688, tzinfo=datetime.timezone.utc), recovered_from_attempt_id=None, environment_admission=None)
+item = TestRunItemRecord(id='e70a12ac-e339-5233-ad6e-dd95b7dd00a4', run_id='c5efccd2-7a97-568e-927a-de95185ef829', case_id='3..., waiting_started_at=None, active_duration_ms=0, waiting_duration_ms=0, paused_duration_ms=0, wall_clock_duration_ms=0)
+snapshot = SessionSnapshot(id='90172bd2-2e89-4e13-8216-4b8056d8bcec', session_id='45f095d3-6238-4c41-bf9d-fc391ebefc22', version=...esuming', 'loop_iteration': 0, 'continue_loop': False, 'termination_reason': 'waiting_approval', 'final_response': ''})
+mode_key = 'api_testing'
+
+    async def _finish(self, context, checkpoint, attempt, item, snapshot: SessionSnapshot, *, mode_key):
+        resumed_decisions = set()
+        while True:
+            checkpoint = checkpoint.model_copy(update={"phase": "snapshot", "snapshot_id": snapshot.id,
+                "snapshot_version": snapshot.version})
+            attempt = await self._save(item, attempt, checkpoint)
+            if snapshot.stage != "waiting_approval":
+                break
+            session = await self._store.get_session(checkpoint.session_id)
+            pending = session.metadata.get("pending_turn", {}).get("pending_approval_ids", [])
+            stored = {entry.id: entry for entry in await self._store.list_approvals(checkpoint.session_id)
+                if entry.metadata.get("turn_id") == checkpoint.turn_id}
+            approvals = [stored[key] for key in pending if key in stored]
+            if not approvals or not approvals[0].metadata.get("tool_job_id"):
+                raise AgentCaseRecoveryRequired("待审批图缺少当前审批及工具任务，需要核对原执行")
+            approval = approvals[0]
+            if approval.status == ToolApprovalStatus.pending:
+                return AgentCaseApprovalWait(checkpoint.session_id, approval.id,
+                    str(approval.metadata["tool_job_id"]), approval.reason)
+            if approval.id in resumed_decisions:
+                raise AgentCaseRecoveryRequired("已保存审批决议未推进原图，需要核对原执行")
+            resumed_decisions.add(approval.id)
+            logger.info("agent_case_saved_approval_decision_resumed", extra={"run_id": context.run_id,
+                "run_item_id": item.id, "execution_attempt_id": checkpoint.execution_attempt_id,
+                "result_attempt_id": attempt.id, "approval_id": approval.id, "decision": approval.status.value})
+            snapshot, checkpoint, attempt = await self._continue_approval(context, checkpoint, attempt,
+                item, approval, ApprovalDecisionRequest(decision=approval.status, reason=approval.decision_note),
+                mode_key=mode_key)
+        if snapshot.stage != "completed":
+&gt;           raise AgentCaseRecoveryRequired(f"Agent 图处于 {snapshot.stage}，需恢复原快照而非重新执行")
+E           src.application.test_runs.agent_case_execution.AgentCaseRecoveryRequired: Agent 图处于 resumable，需恢复原快照而非重新执行
+
+src\application\test_runs\agent_case_execution.py:227: AgentCaseRecoveryRequired</failure></testcase></testsuite></testsuites>

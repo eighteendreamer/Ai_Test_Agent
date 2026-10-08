@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="12.170" timestamp="2026-10-08T21:32:42.225864+08:00" hostname="EIghteen"><testcase classname="tests.test_approval_model_budget" name="test_approval_calls_stop_at_original_limit_without_repeating_effects[False]" time="1.055"><failure message="Failed: DID NOT RAISE ValueError">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1177/test_approval_calls_stop_at_or0')
+business_http = ('http://127.0.0.1:62033', [('POST', '/orders'), ('GET', '/orders/actual-1caccf626d7042ae86628d9f4c0fafb1'), ('DELETE', '/orders/actual-1caccf626d7042ae86628d9f4c0fafb1')], 'actual-1caccf626d7042ae86628d9f4c0fafb1')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_approval_calls_stop_at_original_limit_without_repeating_effects(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            assert isinstance(pending, AgentCaseApprovalWait)
+            for count in range(2):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+                assert isinstance(pending, AgentCaseApprovalWait)
+                assert len(agent.requests) == count + 2
+                assert len(business_http[1]) == count + 1
+&gt;           with pytest.raises(ValueError, match="budget_exhausted"):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_approval_model_budget.py:26: Failed</failure></testcase><testcase classname="tests.test_approval_model_budget" name="test_approval_calls_stop_at_original_limit_without_repeating_effects[True]" time="5.507"><failure message="Failed: DID NOT RAISE ValueError">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1177/test_approval_calls_stop_at_or1')
+business_http = ('http://127.0.0.1:62048', [('POST', '/orders'), ('GET', '/orders/actual-35d9cc2b817c44cda208bca832b73adb'), ('DELETE', '/orders/actual-35d9cc2b817c44cda208bca832b73adb')], 'actual-35d9cc2b817c44cda208bca832b73adb')
+live = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_approval_calls_stop_at_original_limit_without_repeating_effects(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            assert isinstance(pending, AgentCaseApprovalWait)
+            for count in range(2):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+                assert isinstance(pending, AgentCaseApprovalWait)
+                assert len(agent.requests) == count + 2
+                assert len(business_http[1]) == count + 1
+&gt;           with pytest.raises(ValueError, match="budget_exhausted"):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_approval_model_budget.py:26: Failed</failure></testcase></testsuite></testsuites>

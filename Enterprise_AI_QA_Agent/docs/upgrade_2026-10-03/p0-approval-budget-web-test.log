@@ -1,0 +1,43 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/components/chat/SnapshotTracePanel.test.ts tests/i18nKeys.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/components/chat/SnapshotTracePanel.test.ts (2 tests | 2 failed) 9ms
+   × renders the actual production PG cumulative budget after approval and restart 6ms
+   × keeps an actual historical PG snapshot readable without inventing model counts 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/chat/SnapshotTracePanel.test.ts > renders the actual production PG cumulative budget after approval and restart
+TypeError: The URL must be of scheme file
+ ❯ src/components/chat/SnapshotTracePanel.test.ts:25:30
+     23|
+     24| it("renders the actual production PG cumulative budget after approval …
+     25|   const records = JSON.parse(readFileSync(new URL(
+       |                              ^
+     26|     "../../../../docs/upgrade_2026-10-03/p0-approval-budget-production…
+     27|     import.meta.url), "utf8")).postgres_snapshot_table as SessionSnaps…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/chat/SnapshotTracePanel.test.ts > keeps an actual historical PG snapshot readable without inventing model counts
+TypeError: The URL must be of scheme file
+ ❯ src/components/chat/SnapshotTracePanel.test.ts:34:19
+     32|   expect(wrapper.text()).toContain("max_iterations");
+     33|   expect(snapshot.graph_state.loop_iteration).toBe(0);
+     34|   wrapper.unmount();
+       |                   ^
+     35| });
+     36|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 2 passed (4)
+   Start at  21:53:25
+   Duration  2.71s (transform 479ms, setup 0ms, import 1.13s, tests 73ms, environment 1.55s)
+

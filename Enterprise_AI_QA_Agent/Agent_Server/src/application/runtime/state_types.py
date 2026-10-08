@@ -87,6 +87,7 @@ class TurnState:
     model_response_text: str = ""
     turn_token_usage: dict[str, Any] = field(default_factory=dict)
     model_context_window: int = 0
+    model_call_count: int | None = None
     assistant_tool_call_message: dict[str, Any] = field(default_factory=dict)
     model_tool_calls: list[dict[str, Any]] = field(default_factory=list)
 

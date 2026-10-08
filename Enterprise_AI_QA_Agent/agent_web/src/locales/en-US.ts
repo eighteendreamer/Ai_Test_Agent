@@ -877,6 +877,7 @@ export default {
   "snapshot.version": "Version",
   "snapshot.control_state": "Control State",
   "snapshot.loop": "Loop",
+  "snapshot.model_calls": "Model Calls",
   "snapshot.tool_count": "Tool Count",
   "snapshot.approval_count": "Approval Count",
   "snapshot.termination": "Termination",

@@ -4535,3 +4535,52 @@ $env:QA_RECORDING_AGENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise
 退出码 0。三份方案逐字节一致，SHA-256 为 bf3edb9edc4df2de6e0a60ee105ed1de7d18ee240af743e40f66cec7e2f36363；上一批 408 个原工件及受保护文件哈希不变。复用原 HTTP/PG/页面工件，在当前严格回执解析器复现可信场景 line=1、column=1 拒绝，验证独立 blocked 回执可解析、原终态重投零新增发送/页面效果；核对原截图字面量路径存在。完整明细保存到 plan-receipt-handoff-validation.json。
 
 可信原快照 loop_iteration=0、max_iterations=8，而保存的 20 个执行请求均含完整固定用例上下文。方案要求另查跨审批累计预算，不把该字段或审批数当作全程模型发送计数。本批只做原证据再复现及方案一致性核对，没有新默认模型/Chromium/生产 Worker 执行，没有重跑功能测试或前端构建；文档修订不改变功能行为。有限只读纠正、默认可信 passed、产品无父授权及完整 P0—P5 仍待实施验收。
+
+## 2026-10-08 跨审批模型预算与多项审批恢复（基线 fc7f94bd）
+
+源码/真实HTTP与PG失败调研见P0_APPROVAL_MODEL_BUDGET_RESEARCH.md。正常新LangGraph turn累计模型准入数，原预算跨图暂停/快照/状态拆装/审批恢复保存；模型入口阻止超额调用，原finalizer保持预算终态。图节点漏存pending_approvals导致多个审批批准第一项后误成resumable，补齐实际暂停契约并保持waiting_approval，不放宽正式适配器。前端显示可选累计调用数，旧快照不编造数值。无依赖/配置键/数据库迁移/全局默认配置变化，配置仍MySQL、业务PG、大工件RustFS。
+
+最终命令（Agent_Server目录）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_APPROVAL_MODEL_BUDGET_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-approval-budget-batch-fixed'
+..\.venv\Scripts\python.exe -m pytest tests/test_approval_model_budget.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-approval-budget-batch-fixed.xml *> ../docs/upgrade_2026-10-03/p0-approval-budget-batch-fixed.log
+
+$env:QA_APPROVAL_MODEL_BUDGET_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-approval-budget-regression-verified'
+..\.venv\Scripts\python.exe -m pytest tests/test_approval_model_budget.py tests/test_turn_budget_persistence.py tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_tool_message_evidence.py tests/test_tool_message_budget.py tests/test_token_usage.py tests/test_security_approval_boundary.py tests/test_deep_agent_runtime_adapter.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-approval-budget-regression-verified.xml *> ../docs/upgrade_2026-10-03/p0-approval-budget-regression-verified.log
+
+$env:QA_APPROVAL_MODEL_BUDGET_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-approval-budget-batch-final'
+..\.venv\Scripts\python.exe -m pytest tests/test_approval_model_budget.py -k multiple -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-approval-budget-batch-final.xml *> ../docs/upgrade_2026-10-03/p0-approval-budget-batch-final.log
+
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_APPROVAL_MODEL_BUDGET_CLI_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-approval-budget-production-final'
+..\.venv\Scripts\python.exe -m pytest tests/test_execution_worker_cli.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-approval-budget-production-final.xml *> ../docs/upgrade_2026-10-03/p0-approval-budget-production-final.log
+
+..\.venv\Scripts\python.exe -m compileall -q src/application/runtime/agent_loop.py src/application/runtime/runtime_service.py src/application/runtime/state_persistence.py src/application/runtime/state_types.py src/graph/nodes/finalizer.py src/graph/nodes/model_invoker.py src/graph/nodes/tool_executor.py src/graph/state.py *> ../docs/upgrade_2026-10-03/p0-approval-budget-compile.log
+```
+
+上述均退出0；六项15.57秒，九模块102通过/21跳过170.02秒，多审批新增重放2通过8.61秒，最终生产2通过95.35秒。21跳过：旧实际Redis/MySQL/PG/RustFS flag1项未启用；20项deepagents未安装，未补安装依赖或算通过。
+
+生产两项都运行全新PG/隔离MySQL/RustFS/临时RedisDocker及真实API/独立Worker，受控HTTP模型，原上限3/8重启默认13/18仍保留原预算，执行调用3/4；另有各1次规划请求，总HTTP发送4/5。真实POST/GET/DELETE后零业务残留，正式分别error budget_exhausted/passed，原终态任务重投模型/业务新增均零。该结果不代替默认提供商UI验收。请求工件是解析JSON，不声称原始wire字节。所有进程完整stdout/stderr和PG记录保留。
+
+前端命令（agent_web目录）：
+
+```powershell
+npm.cmd run test -- tests/SnapshotTracePanel.test.ts tests/i18nKeys.test.ts *> ../docs/upgrade_2026-10-03/p0-approval-budget-web-verified.log
+npm.cmd run build *> ../docs/upgrade_2026-10-03/p0-approval-budget-web-build-verified.log
+```
+
+均退出0，4测试通过，vue-tsc及Vite build通过7.39秒。实际挂载组件/Pinia读取生产PG新旧快照；非完整App手工验收。Node读取证据最初静态URL被Vite变成HTTP URL，改用实际文件路径；测试置src导致build缺Node类型，按已有tests目录移动，不加依赖/不改tsconfig，原失败输出保留。
+
+保留所有早期失败：before2失败；first39通过2失败1跳过；diagnostic2失败并保存PG计数丢失原件；fixed6通过；扩大62通过1跳过；final29通过；context2通过；production2通过但初版PG导出为字符串，改dict(row)后production-verified2通过114.67秒，再按最终源码production-final2通过95.35秒。batch首轮及batch-before各2失败；原PG显示两审批批准一项后剩余ID1、审批集合0、stage=resumable；修复后batch-fixed6通过，batch-final2通过且重放无新增。regression-final误用不存在test_runtime_token_usage.py退出4、零测试；核对文件名test_token_usage.py后regression-verified102通过21跳过。只读证据查询一次漏encoding触发GBK解码错误，改UTF-8读取，未修改证据；一次打印紧凑完整PG JSON造成输出超长，后续只输出计数摘要。编译通过只作为附加检查。
+
+仓库目录执行三份方案同步及审计：
+
+```powershell
+.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p0-approval-budget-audit.py
+```
+
+审计检查三份方案字节相同、上一批408原工件与用户无关文件哈希保持、当前源码与本批原件哈希、真实失败/修后审批状态、生产累计数/原上限/物理请求/终态重投及密钥不进入证据。明细在p0-approval-budget-validation.json；raw前缀沿现有.gitattributes保存字节和原日志空白，不改git配置。旧p2-regression-planning-worker-cli.json工作区字节仍等于HEAD。历史默认UI error保留，只读正式回执未接入、任意发送后断电未知未完成、完整P0—P5仍未完成。
+
+首次分批暂存被Git index.lock拒绝，无文件已暂存。两次检查无git进程，锁为2026-10-08 22:01:42留下的零字节文件；将空锁在原.git目录内改名为唯一stale备份后重试，保留原文件，没有删除索引或改变Git配置。提交仍只包含审计列出的本轮明确路径。

@@ -1,0 +1,52 @@
+FF....s...................................                               [100%]
+================================== FAILURES ===================================
+_ test_approval_calls_stop_at_original_limit_without_repeating_effects[False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1178/test_approval_calls_stop_at_or0')
+business_http = ('http://127.0.0.1:63927', [('POST', '/orders'), ('GET', '/orders/actual-cf44b7e6e4d74d3e97efbc12d9efa014'), ('DELETE', '/orders/actual-cf44b7e6e4d74d3e97efbc12d9efa014')], 'actual-cf44b7e6e4d74d3e97efbc12d9efa014')
+live = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_approval_calls_stop_at_original_limit_without_repeating_effects(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            assert isinstance(pending, AgentCaseApprovalWait)
+            for count in range(2):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+                assert isinstance(pending, AgentCaseApprovalWait)
+                assert len(agent.requests) == count + 2
+                assert len(business_http[1]) == count + 1
+>           with pytest.raises(ValueError, match="budget_exhausted"):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_approval_model_budget.py:27: Failed
+_ test_approval_calls_stop_at_original_limit_without_repeating_effects[True] __
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1178/test_approval_calls_stop_at_or1')
+business_http = ('http://127.0.0.1:63933', [('POST', '/orders'), ('GET', '/orders/actual-9883f4c535e149d0a8f72d232426c994'), ('DELETE', '/orders/actual-9883f4c535e149d0a8f72d232426c994')], 'actual-9883f4c535e149d0a8f72d232426c994')
+live = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("live", [False, LIVE])
+    async def test_approval_calls_stop_at_original_limit_without_repeating_effects(tmp_path, business_http, live):
+        async with adapter_environment(tmp_path, business_http, live) as values:
+            env, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+            sessions._runtime_service._max_iterations = 3
+            pending = await adapter().execute(**await args())
+            assert isinstance(pending, AgentCaseApprovalWait)
+            for count in range(2):
+                pending = await approval_continuation(runs, reader, adapter, args, pending)
+                assert isinstance(pending, AgentCaseApprovalWait)
+                assert len(agent.requests) == count + 2
+                assert len(business_http[1]) == count + 1
+>           with pytest.raises(ValueError, match="budget_exhausted"):
+E           Failed: DID NOT RAISE ValueError
+
+tests\test_approval_model_budget.py:27: Failed
+=========================== short test summary info ===========================
+FAILED tests/test_approval_model_budget.py::test_approval_calls_stop_at_original_limit_without_repeating_effects[False]
+FAILED tests/test_approval_model_budget.py::test_approval_calls_stop_at_original_limit_without_repeating_effects[True]
+2 failed, 39 passed, 1 skipped in 165.23s (0:02:45)
