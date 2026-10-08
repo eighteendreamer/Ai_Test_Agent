@@ -4520,3 +4520,18 @@ $env:QA_RECORDING_AGENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise
 
 
 提交准备首次把423个明确路径放入单个进程参数，Windows WinError206，未发生暂存。分批暂存后diff --check发现原pytest失败空白和SSE结尾空行，同时283件证据索引受自动换行转换而与原件不一致。沿本目录既有.gitattributes为本轮两个证据前缀增加-text及.bin/.png binary规则，日志保留原空白；只对本轮路径重新暂存并逐字节核对索引。未改原证据字节、未改git配置、未关闭代码差异检查；该保存机制由既有同类实现确定。
+
+
+## 2026-10-08 方案更新与正式回执衔接复核（e7610fc4）
+
+按用户要求直接更新 docs/upgrade_2026-10-03/PLAN.md，并同步原所贴附件及所选 Codex PLAN.md。更新实际核对基线、2.4.1 的待实施只读回执阶段、2.5 的恢复边界和 6.83 的验证结论；新增 P0_RECEIPT_HANDOFF_RESEARCH.md 记录代码依据及原生产反例。没有生产代码、配置或数据库迁移变更。
+
+实际命令（仓库工作目录）：
+
+```powershell
+.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/plan-receipt-handoff-audit.py
+```
+
+退出码 0。三份方案逐字节一致，SHA-256 为 bf3edb9edc4df2de6e0a60ee105ed1de7d18ee240af743e40f66cec7e2f36363；上一批 408 个原工件及受保护文件哈希不变。复用原 HTTP/PG/页面工件，在当前严格回执解析器复现可信场景 line=1、column=1 拒绝，验证独立 blocked 回执可解析、原终态重投零新增发送/页面效果；核对原截图字面量路径存在。完整明细保存到 plan-receipt-handoff-validation.json。
+
+可信原快照 loop_iteration=0、max_iterations=8，而保存的 20 个执行请求均含完整固定用例上下文。方案要求另查跨审批累计预算，不把该字段或审批数当作全程模型发送计数。本批只做原证据再复现及方案一致性核对，没有新默认模型/Chromium/生产 Worker 执行，没有重跑功能测试或前端构建；文档修订不改变功能行为。有限只读纠正、默认可信 passed、产品无父授权及完整 P0—P5 仍待实施验收。
