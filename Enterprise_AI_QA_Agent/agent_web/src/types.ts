@@ -2014,6 +2014,7 @@ export interface CasePlanningRequest {
   candidate_case_ids?: string[];
   runtime_context?: Record<string, unknown>;
   environment?: BusinessEnvironmentSelection | null;
+  required_sources?: Array<{ kind: "document" | "recording"; source_id: string }> | null;
 }
 
 export interface CasePlanningTaskRequest extends CasePlanningRequest {

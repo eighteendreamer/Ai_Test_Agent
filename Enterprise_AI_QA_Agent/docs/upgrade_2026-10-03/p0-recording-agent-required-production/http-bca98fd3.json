@@ -1,0 +1,668 @@
+{
+  "path": "/projects/44262305-fb90-4857-9ef0-d2f3da7bacd8/case-plans/aacf4c49-5b2f-42cf-ab81-299f3b0e44e8/runs",
+  "status": 201,
+  "body": {
+    "run": {
+      "id": "5fc910e5-f079-5a18-8667-7cc316a82db2",
+      "project_id": "44262305-fb90-4857-9ef0-d2f3da7bacd8",
+      "suite_id": "85974657-db02-516d-94d8-6b07b5c450f8",
+      "run_kind": "normal",
+      "origin": "native",
+      "mode_key": "ui_automation",
+      "execution_strategy": "agent",
+      "plan_snapshot": {
+        "plan": {
+          "id": "aacf4c49-5b2f-42cf-ab81-299f3b0e44e8",
+          "project_id": "44262305-fb90-4857-9ef0-d2f3da7bacd8",
+          "request": {
+            "objective": "验证展开详情，先查询并引用本项目已完成的展开详情完整录制，再按完整正式用例执行。",
+            "model_key": "step-5-preview",
+            "candidate_case_ids": [
+              "3bd0e5b8-c854-4322-9314-2d98bcd3a213"
+            ],
+            "runtime_context": {},
+            "environment": null,
+            "required_sources": [
+              {
+                "kind": "recording",
+                "source_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d"
+              }
+            ]
+          },
+          "status": "planned",
+          "summary": "选取正式用例‘验证展开详情’（details）作为唯一目标项。该项目仅有一个启用用例，无其他正式前置用例可作为依赖；已读取并引用 required_source 中的完整录制知识，其中提供了页面 URL、目标按钮 #open-details 及点击后 #details 区域出现的服务端 DOM 确认串，足以支撑正式用例执行。不存在未解决缺口。",
+          "decision": {
+            "action": "finish",
+            "summary": "选取正式用例‘验证展开详情’（details）作为唯一目标项。该项目仅有一个启用用例，无其他正式前置用例可作为依赖；已读取并引用 required_source 中的完整录制知识，其中提供了页面 URL、目标按钮 #open-details 及点击后 #details 区域出现的服务端 DOM 确认串，足以支撑正式用例执行。不存在未解决缺口。",
+            "queries": [],
+            "items": [
+              {
+                "key": "details_target",
+                "reason": "目标正式用例为‘验证展开详情’，其执行依据已由本项目完整录制知识提供：录制中包含页面地址 http://127.0.0.1:62319、按钮 #open-details 及点击后 #details 元素显示的服务端 DOM 确认串。按正式用例执行时，将调用浏览器工具真实点击并读取最终状态，不使用 JavaScript 伪造成功。",
+                "evidence_ids": [
+                  "case:d4f7deb8-5b42-4984-b366-92c74a3195e5",
+                  "recording:271e5608-40ae-4817-92e9-45fcf6b7ee3d:b9d63161d241e4c5"
+                ],
+                "depends_on": [],
+                "input_bindings": {},
+                "kind": "target",
+                "case_id": "3bd0e5b8-c854-4322-9314-2d98bcd3a213",
+                "case_version_id": "d4f7deb8-5b42-4984-b366-92c74a3195e5"
+              }
+            ],
+            "unresolved": []
+          },
+          "evidence": [
+            {
+              "id": "case:d4f7deb8-5b42-4984-b366-92c74a3195e5",
+              "kind": "case",
+              "source_id": "3bd0e5b8-c854-4322-9314-2d98bcd3a213",
+              "version": "d4f7deb8-5b42-4984-b366-92c74a3195e5",
+              "content_hash": "b345c5a883a4448485f61f20c5dca78bbda0d41a2b001d27b8a4fd2e720a645c",
+              "payload": {
+                "title": "验证展开详情",
+                "case_id": "3bd0e5b8-c854-4322-9314-2d98bcd3a213",
+                "content": {
+                  "steps": [
+                    {
+                      "action": "打开项目页面，点击展开详情",
+                      "expected": "详情显示已展开及本次服务端DOM确认串"
+                    }
+                  ],
+                  "metadata": {
+                    "flag": false,
+                    "count": 0,
+                    "nullable": null
+                  },
+                  "objective": "验证展开详情"
+                },
+                "case_key": "details",
+                "source_refs": [
+                  {
+                    "uri": null,
+                    "label": "",
+                    "version": null,
+                    "metadata": {},
+                    "source_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                    "source_type": "recording"
+                  }
+                ],
+                "case_version_id": "d4f7deb8-5b42-4984-b366-92c74a3195e5",
+                "execution_notes": "使用本项目完整录制知识了解操作，调用现有浏览器工具真实点击并读取最终状态；不能用JavaScript伪造成功。",
+                "historical_mode_key": "ui_automation"
+              }
+            },
+            {
+              "id": "recording:271e5608-40ae-4817-92e9-45fcf6b7ee3d:b9d63161d241e4c5",
+              "kind": "recording",
+              "source_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+              "version": "2026-10-08T11:40:19.915566",
+              "content_hash": "b9d63161d241e4c501c326573d357936d10529d0b4a40aadaa7d245d6b38befc",
+              "payload": {
+                "name": "展开详情完整录制",
+                "graph": {
+                  "edges": [
+                    {
+                      "type": "HAS_STEP",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                      "target": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:0"
+                    },
+                    {
+                      "type": "TARGETS",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:0",
+                      "target": "ui_70056c2f0eab87e41f86"
+                    },
+                    {
+                      "type": "ON_PAGE",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:0",
+                      "target": "ui_f853d6f3b806a9b95919"
+                    },
+                    {
+                      "type": "HAS_STEP",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                      "target": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:1"
+                    },
+                    {
+                      "type": "ON_PAGE",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:1",
+                      "target": "ui_f853d6f3b806a9b95919"
+                    },
+                    {
+                      "type": "HAS_STEP",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                      "target": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:2"
+                    },
+                    {
+                      "type": "ON_PAGE",
+                      "source": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:2",
+                      "target": "ui_f853d6f3b806a9b95919"
+                    }
+                  ],
+                  "nodes": [
+                    {
+                      "id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                      "kind": "recording",
+                      "name": "展开详情完整录制",
+                      "label": "recording"
+                    },
+                    {
+                      "id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:0",
+                      "seq": 0,
+                      "kind": "action",
+                      "event": {
+                        "seq": 0,
+                        "page": {
+                          "dpr": 1,
+                          "url": "http://127.0.0.1:62319/",
+                          "title": "录制知识实际执行",
+                          "viewport": {
+                            "h": 600,
+                            "w": 800
+                          },
+                          "recording_scope": {
+                            "page_id": "9d2b1a8cc00145eda95444c2bfa81c93",
+                            "frame_id": "e8057a2881b64a0f8b5cc8c5a399b7a0",
+                            "local_seq": 0,
+                            "frame_path": [],
+                            "document_id": "2269d4045ea84b4d825360fc8cd6bb1d",
+                            "document_url": "http://127.0.0.1:62319/",
+                            "parent_frame_id": null
+                          }
+                        },
+                        "type": "click",
+                        "pixel": {
+                          "bbox": {
+                            "h": 23,
+                            "w": 69,
+                            "x": 8,
+                            "y": 85
+                          },
+                          "rel_offset": {
+                            "rx": 0.49,
+                            "ry": 0.484
+                          },
+                          "viewport_point": {
+                            "x": 42,
+                            "y": 96
+                          }
+                        },
+                        "value": null,
+                        "target": {
+                          "tag": "BUTTON",
+                          "role": "button",
+                          "locators": {
+                            "id": "open-details",
+                            "css": "#open-details",
+                            "text": "展开详情",
+                            "xpath": "/html/body[1]/main[1]/button[1]",
+                            "testid": null,
+                            "role_name": {
+                              "name": "展开详情",
+                              "role": "button"
+                            }
+                          },
+                          "in_iframe": false,
+                          "attributes": {
+                            "id": "open-details"
+                          },
+                          "shadow_path": null
+                        },
+                        "timestamp": "2026-10-08T11:40:18.297000",
+                        "page_effect": {
+                          "dom_mutation_count": 0
+                        },
+                        "screenshot_ref": null
+                      },
+                      "label": "click #0",
+                      "action_type": "click",
+                      "occurred_at": "2026-10-08T11:40:18.297000",
+                      "resolution_status": "resolved"
+                    },
+                    {
+                      "id": "ui_70056c2f0eab87e41f86",
+                      "kind": "element",
+                      "label": "展开详情"
+                    },
+                    {
+                      "id": "ui_f853d6f3b806a9b95919",
+                      "url": "http://127.0.0.1:62319/",
+                      "kind": "page",
+                      "label": "录制知识实际执行"
+                    },
+                    {
+                      "id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:1",
+                      "seq": 1,
+                      "kind": "action",
+                      "event": {
+                        "seq": 1,
+                        "page": {
+                          "dpr": 1,
+                          "url": "http://127.0.0.1:62319/",
+                          "title": "录制知识实际执行",
+                          "viewport": {
+                            "h": 600,
+                            "w": 800
+                          },
+                          "recording_scope": {
+                            "page_id": "9d2b1a8cc00145eda95444c2bfa81c93",
+                            "frame_id": "e8057a2881b64a0f8b5cc8c5a399b7a0",
+                            "local_seq": 1,
+                            "frame_path": [],
+                            "document_id": "2269d4045ea84b4d825360fc8cd6bb1d",
+                            "document_url": "http://127.0.0.1:62319/",
+                            "parent_frame_id": null
+                          }
+                        },
+                        "type": "page_response",
+                        "pixel": null,
+                        "value": null,
+                        "target": null,
+                        "timestamp": "2026-10-08T11:40:18.564000",
+                        "page_effect": {
+                          "response": {
+                            "scope": "document_light_dom",
+                            "reason": "settled",
+                            "elements": [
+                              {
+                                "text": "已展开 DOM-d8ae0e834d5f44f0a61f8944e29751c5",
+                                "target": {
+                                  "tag": "SECTION",
+                                  "role": null,
+                                  "locators": {
+                                    "id": "details",
+                                    "css": "#details",
+                                    "text": "已展开 DOM-d8ae0e834d5f44f0a61f8944e29751c5",
+                                    "xpath": "/html/body[1]/main[1]/section[1]",
+                                    "testid": null,
+                                    "role_name": {
+                                      "name": "已展开 DOM-d8ae0e834d5f44f0a61f8944e29751c5",
+                                      "role": null
+                                    }
+                                  },
+                                  "in_iframe": false,
+                                  "attributes": {
+                                    "id": "details"
+                                  },
+                                  "shadow_path": null
+                                },
+                                "connected": true
+                              }
+                            ],
+                            "protocol": "recording-dom-response-v1",
+                            "max_nodes": 100,
+                            "truncated": false,
+                            "association": "temporal_after_actions",
+                            "max_actions": 100,
+                            "snapshot_at": "observation_end",
+                            "max_text_chars": 200,
+                            "mutation_count": 2,
+                            "action_local_seqs": [
+                              0
+                            ],
+                            "observation_status": "observed_changes",
+                            "truncation_reasons": []
+                          },
+                          "dom_mutation_count": 2
+                        },
+                        "screenshot_ref": null
+                      },
+                      "label": "page_response #1",
+                      "action_type": "page_response",
+                      "occurred_at": "2026-10-08T11:40:18.564000",
+                      "resolution_status": "no_target"
+                    },
+                    {
+                      "id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d:2",
+                      "seq": 2,
+                      "kind": "action",
+                      "event": {
+                        "seq": 2,
+                        "page": {
+                          "dpr": 1,
+                          "url": "http://127.0.0.1:62319/",
+                          "title": "录制知识实际执行",
+                          "viewport": {
+                            "h": 600,
+                            "w": 800
+                          },
+                          "recording_scope": {
+                            "page_id": "9d2b1a8cc00145eda95444c2bfa81c93",
+                            "frame_id": "e8057a2881b64a0f8b5cc8c5a399b7a0",
+                            "local_seq": 2,
+                            "frame_path": [],
+                            "document_id": "2269d4045ea84b4d825360fc8cd6bb1d",
+                            "document_url": "http://127.0.0.1:62319/",
+                            "parent_frame_id": null
+                          }
+                        },
+                        "type": "page_scan",
+                        "pixel": null,
+                        "value": null,
+                        "target": null,
+                        "timestamp": "2026-10-08T11:40:18.667000",
+                        "page_effect": {
+                          "dom_hash": "2e9e35fe340c0019c6a4724ebb389738fd058392",
+                          "interactive_count": 1,
+                          "dom_mutation_count": 0,
+                          "interactive_elements": [
+                            {
+                              "tag": "button",
+                              "href": "",
+                              "name": "展开详情",
+                              "role": "button"
+                            }
+                          ]
+                        },
+                        "screenshot_ref": null
+                      },
+                      "label": "page_scan #2",
+                      "action_type": "page_scan",
+                      "occurred_at": "2026-10-08T11:40:18.667000",
+                      "resolution_status": "no_target"
+                    }
+                  ],
+                  "status": "success",
+                  "recording_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                  "event_payloads": {
+                    "status": "complete",
+                    "protocol": "recording-event-payloads-v1",
+                    "warnings": [],
+                    "expected_count": 3,
+                    "available_count": 3
+                  }
+                },
+                "finalize_metrics": {
+                  "finalize": {
+                    "raw_events": 3,
+                    "on_page_edges": 3,
+                    "page_vertices": 1,
+                    "raw_page_urls": 3,
+                    "targets_edges": 1,
+                    "contains_edges": 1,
+                    "has_step_edges": 3,
+                    "action_vertices": 3,
+                    "element_vertices": 1,
+                    "raw_element_refs": 1,
+                    "navigated_to_edges": 0,
+                    "recording_vertices": 1,
+                    "deduplicated_page_urls": 1,
+                    "deduplicated_element_refs": 0,
+                    "degraded_resolution_actions": 0
+                  },
+                  "integrity": {
+                    "degraded": false,
+                    "seq_gaps": [],
+                    "reconciled": true,
+                    "pg_step_count": 3,
+                    "pg_event_count": 3,
+                    "action_vertices": 3,
+                    "step_count_mismatch": false,
+                    "degraded_resolution_actions": 0
+                  },
+                  "finish_receipt": {
+                    "scopes": [
+                      {
+                        "ended": false,
+                        "page_id": "9d2b1a8cc00145eda95444c2bfa81c93",
+                        "pending": 0,
+                        "frame_id": "e8057a2881b64a0f8b5cc8c5a399b7a0",
+                        "next_seq": 3,
+                        "confirmed": true,
+                        "frame_path": [],
+                        "document_id": "2269d4045ea84b4d825360fc8cd6bb1d",
+                        "pg_verified": true,
+                        "document_url": "http://127.0.0.1:62319/",
+                        "emitted_count": 3,
+                        "received_count": 3,
+                        "parent_frame_id": null
+                      }
+                    ],
+                    "pending": 0,
+                    "next_seq": 3,
+                    "protocol": "recording-scopes-v2",
+                    "operation": "stop",
+                    "request_id": "5a46d40825de41b7ac4757c9549e1724",
+                    "pg_verified": true,
+                    "missing_seqs": [],
+                    "emitted_count": 3,
+                    "published_seqs": [
+                      0,
+                      1,
+                      2
+                    ],
+                    "channel_dropped": 0,
+                    "transport_dropped": 0,
+                    "frames_unconfirmed": 0,
+                    "browser_saved_count": 3
+                  },
+                  "pause_receipts": []
+                }
+              }
+            }
+          ],
+          "config_snapshot": {
+            "scope_key": "global",
+            "revision": 1,
+            "policy": {
+              "max_rounds": 5,
+              "max_candidates": 20,
+              "max_items": 50,
+              "max_context_chars": 180000,
+              "timeout_seconds": 180.0
+            }
+          },
+          "model_key": "step-5-preview",
+          "prompt_version": "case-planning-v5+required-sources-v1",
+          "rounds": [
+            {
+              "round": 1,
+              "status": "parsed",
+              "decision": {
+                "items": [],
+                "action": "query",
+                "queries": [
+                  {
+                    "kind": "recording",
+                    "query": "",
+                    "offset": 0,
+                    "max_lines": 200,
+                    "source_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                    "start_line": 1
+                  }
+                ],
+                "summary": "已定位唯一正式用例：details / 3bd0e5b8-c854-4322-9314-2d98bcd3a213 / d4f7deb8-5b42-4984-b366-92c74a3195e5。用户明确要求先查询并引用“展开详情完整录制”，需要读取 recording 来源后才能生成带完整证据的执行计划。",
+                "unresolved": []
+              },
+              "streaming": true,
+              "attempt_id": null,
+              "query_results": [
+                {
+                  "query": {
+                    "kind": "recording",
+                    "query": "",
+                    "offset": 0,
+                    "max_lines": 200,
+                    "source_id": "271e5608-40ae-4817-92e9-45fcf6b7ee3d",
+                    "start_line": 1
+                  },
+                  "has_more": false,
+                  "evidence_ids": [
+                    "recording:271e5608-40ae-4817-92e9-45fcf6b7ee3d:b9d63161d241e4c5"
+                  ]
+                }
+              ],
+              "response_mode": "ok",
+              "logical_call_id": "39205696-1f47-46f7-8c8a-838fd03119bf",
+              "response_metadata": {
+                "mode": "ok",
+                "usage": {
+                  "total_tokens": 3407,
+                  "prompt_tokens": 2811,
+                  "completion_tokens": 596,
+                  "prompt_tokens_details": {
+                    "text_tokens": null,
+                    "audio_tokens": null,
+                    "image_tokens": null,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": null
+                  },
+                  "completion_tokens_details": {
+                    "text_tokens": null,
+                    "audio_tokens": null,
+                    "reasoning_tokens": 0,
+                    "accepted_prediction_tokens": null,
+                    "rejected_prediction_tokens": null
+                  }
+                },
+                "error_type": null,
+                "response_id": "1e8e91ef9845362107fe7e27d578e312.bf0c899d63a453127dfbff08bec43167",
+                "status_code": null,
+                "stop_reason": null,
+                "finish_reason": "stop"
+              },
+              "first_text_seconds": 11.943,
+              "received_text_chars": 387,
+              "model_elapsed_seconds": 14.216
+            },
+            {
+              "round": 2,
+              "status": "parsed",
+              "decision": {
+                "items": [
+                  {
+                    "key": "details_target",
+                    "kind": "target",
+                    "reason": "目标正式用例为‘验证展开详情’，其执行依据已由本项目完整录制知识提供：录制中包含页面地址 http://127.0.0.1:62319、按钮 #open-details 及点击后 #details 元素显示的服务端 DOM 确认串。按正式用例执行时，将调用浏览器工具真实点击并读取最终状态，不使用 JavaScript 伪造成功。",
+                    "case_id": "3bd0e5b8-c854-4322-9314-2d98bcd3a213",
+                    "depends_on": [],
+                    "evidence_ids": [
+                      "case:d4f7deb8-5b42-4984-b366-92c74a3195e5",
+                      "recording:271e5608-40ae-4817-92e9-45fcf6b7ee3d:b9d63161d241e4c5"
+                    ],
+                    "input_bindings": {},
+                    "case_version_id": "d4f7deb8-5b42-4984-b366-92c74a3195e5"
+                  }
+                ],
+                "action": "finish",
+                "queries": [],
+                "summary": "选取正式用例‘验证展开详情’（details）作为唯一目标项。该项目仅有一个启用用例，无其他正式前置用例可作为依赖；已读取并引用 required_source 中的完整录制知识，其中提供了页面 URL、目标按钮 #open-details 及点击后 #details 区域出现的服务端 DOM 确认串，足以支撑正式用例执行。不存在未解决缺口。",
+                "unresolved": []
+              },
+              "streaming": true,
+              "attempt_id": null,
+              "response_mode": "ok",
+              "logical_call_id": "e8a01fce-a127-4ff7-ace4-26b8df8c578f",
+              "response_metadata": {
+                "mode": "ok",
+                "usage": {
+                  "total_tokens": 8476,
+                  "cached_tokens": 2560,
+                  "prompt_tokens": 5416,
+                  "completion_tokens": 3060,
+                  "prompt_tokens_details": {
+                    "text_tokens": null,
+                    "audio_tokens": null,
+                    "image_tokens": null,
+                    "cached_tokens": 2560,
+                    "cache_write_tokens": null
+                  },
+                  "completion_tokens_details": {
+                    "text_tokens": null,
+                    "audio_tokens": null,
+                    "reasoning_tokens": 0,
+                    "accepted_prediction_tokens": null,
+                    "rejected_prediction_tokens": null
+                  }
+                },
+                "error_type": null,
+                "response_id": "b5c7aac4f2a673470a177b2b23176730.c2194893132e15d625cc914bc2812f5d",
+                "status_code": null,
+                "stop_reason": null,
+                "finish_reason": "stop"
+              },
+              "first_text_seconds": 43.094,
+              "received_text_chars": 853,
+              "model_elapsed_seconds": 47.691
+            }
+          ],
+          "warnings": [],
+          "created_at": "2026-10-08T11:40:20.147024Z",
+          "regression": null,
+          "environment": null
+        },
+        "run_item_ids": {
+          "details_target": "54150219-7c04-518e-9fc6-77e667edc697"
+        },
+        "owners": {
+          "details_target": "details_target"
+        },
+        "preparation_phases": {},
+        "regression": null
+      },
+      "creation_key": "recording-agent-launch",
+      "creation_hash": "ed29a8ed7a5aaec5b266af71138c2bb8ddc2e95eaa4bd8f7be2c6cb7aabb86b7",
+      "session_id": null,
+      "parent_run_id": null,
+      "status": "queued",
+      "stats": {
+        "total": 1,
+        "queued": 1,
+        "claimed": 0,
+        "running": 0,
+        "waiting_resource": 0,
+        "waiting_approval": 0,
+        "passed": 0,
+        "failed": 0,
+        "error": 0,
+        "blocked": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "created_by": null,
+      "created_at": "2026-10-08T11:41:22.143863Z",
+      "updated_at": "2026-10-08T11:41:22.143863Z",
+      "started_at": null,
+      "completed_at": null,
+      "cancel_reason": null,
+      "active_duration_ms": 0,
+      "waiting_duration_ms": 0,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0
+    },
+    "items": [
+      {
+        "id": "54150219-7c04-518e-9fc6-77e667edc697",
+        "run_id": "5fc910e5-f079-5a18-8667-7cc316a82db2",
+        "case_id": "3bd0e5b8-c854-4322-9314-2d98bcd3a213",
+        "case_version_id": "d4f7deb8-5b42-4984-b366-92c74a3195e5",
+        "position": 1,
+        "plan_item_key": "details_target",
+        "dependencies": [],
+        "status": "queued",
+        "waiting_reason": null,
+        "attempt_no": 0,
+        "lease_owner": null,
+        "lease_token": null,
+        "lease_expires_at": null,
+        "heartbeat_at": null,
+        "approval_id": null,
+        "tool_job_id": null,
+        "result_id": null,
+        "regression_source_result_id": null,
+        "created_at": "2026-10-08T11:41:22.143863Z",
+        "updated_at": "2026-10-08T11:41:22.143863Z",
+        "started_at": null,
+        "completed_at": null,
+        "resource_cleanup_completed_at": null,
+        "active_started_at": null,
+        "waiting_started_at": null,
+        "active_duration_ms": 0,
+        "waiting_duration_ms": 0,
+        "paused_duration_ms": 0,
+        "wall_clock_duration_ms": 0
+      }
+    ],
+    "attempts": [],
+    "results": []
+  }
+}

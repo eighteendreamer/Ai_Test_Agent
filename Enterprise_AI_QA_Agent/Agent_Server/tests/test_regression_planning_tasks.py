@@ -154,6 +154,8 @@ async def test_regression_submission_returns_queryable_task_without_model_or_run
             await env.jobs.save_checkpoint(claim, changed, message="attempt to replace frozen provenance")
         legacy_plan = env.parent.run.plan_snapshot.plan.model_dump(mode="json")
         legacy_plan.pop("regression")
+        legacy_plan.pop("environment")
+        legacy_plan["request"].pop("environment")
         legacy_request = CasePlanRunRequest(creation_key="regression-parent", mode_key="api_testing").model_dump(mode="json")
         assert env.parent.run.creation_hash == json_digest({"plan": legacy_plan, "request": legacy_request})
         assert await env.run_store.get_run(env.parent.run.id) == env.original

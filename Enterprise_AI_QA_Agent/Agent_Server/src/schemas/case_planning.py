@@ -115,12 +115,31 @@ class CasePlanningPolicy(PlanningModel):
         return data
 
 
+class RequiredPlanningSource(PlanningModel):
+    kind: Literal["document", "recording"]
+    source_id: str = Field(min_length=1, max_length=160)
+
+
 class CasePlanningRequest(PlanningModel):
     objective: str = Field(min_length=1, max_length=20000)
     model_key: str | None = Field(default=None, max_length=160)
     candidate_case_ids: list[str] = Field(default_factory=list, max_length=50)
     runtime_context: dict[str, Any] = Field(default_factory=dict)
     environment: BusinessEnvironmentSelection | None = None
+    required_sources: list[RequiredPlanningSource] | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def unique_required_sources(self):
+        if self.required_sources and len({(source.kind, source.source_id) for source in self.required_sources}) != len(self.required_sources):
+            raise ValueError("明确要求的规划来源不能重复")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_original_request(self, handler):
+        data = handler(self)
+        if self.required_sources is None:
+            data.pop("required_sources", None)
+        return data
 
 
 class PlanningQuery(PlanningModel):

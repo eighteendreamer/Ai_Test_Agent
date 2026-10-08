@@ -4439,3 +4439,45 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $evidenceRoot 'p0-startup-order-consu
 ```
 
 退出码0，2通过、0失败/跳过，pytest输出7.28秒；实际文件/应用路由/本地测试存储验证，不是生产MySQL/PG/RustFS或完整App验收。此轮未运行Worker、默认模型、人工DeepSeek和前端构建。命令研究过程中有一次PowerShell不支持花括号路径列表而解析失败，改为明确三个文件路径；另一次搜索误用了复数测试文件名，按rg文件列表修正；均未修改产品或运行功能测试，未计为通过。三份计划原SHA为a63871c8a9188bee2235481f0034ed6538e1a7b3237afc5fef6a7c8f74f80df7，同步后的SHA及原始测试输出核对见plan-refresh-09286a68-validation.json。用户.gitignore和未提交Worker/环境诊断文件保持，不纳入提交。
+
+
+## 2026-10-08 明确规划来源、真实录制与默认Agent执行〔基线d9702edd〕
+
+完整调研、采用依据与失败边界见P0_RECORDING_AGENT_EXECUTION_DESIGN.md，进度见PLAN 6.81。新增可选required_sources；旧请求/hash/seed兼容，显式来源由原query读取并被目标引用，原循环反馈、冻结Prompt和恢复/回归同步。配置仍MySQL、业务仍PG，没有新表/依赖。TS类型同步，App选择来源表单仍待实施。
+
+后端实际最终命令（工作目录Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$env:RUN_LIVE_CASE_PLANNING_TASKS='1'
+$env:RUN_LIVE_DOCUMENT_PARSERS='1'
+$env:RUN_LIVE_REGRESSION_PLANNING='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_PLANNING_TASK_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-agent-regression-final-worker'
+$env:QA_TOOL_NAVIGATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-agent-regression-final-navigation'
+..\.venv\Scripts\python.exe -m pytest tests/test_planning_required_sources.py tests/test_recording_agent_observer.py tests/test_case_planning.py tests/test_case_planning_tasks.py tests/test_case_planning_stages.py tests/test_planning_tool_navigation.py tests/test_planning_tool_operations.py tests/test_planning_source_identity.py tests/test_planning_linked_sources.py tests/test_planning_item_operation_selection.py tests/test_planning_evidence_references.py tests/test_recording_knowledge_payloads.py tests/test_regression_planning_tasks.py tests/test_regression_planning_worker.py tests/test_case_plan_run_creation.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-agent-regression-final.xml' --tb=short *> '../docs/upgrade_2026-10-03/p0-recording-agent-regression-final.log'
+```
+
+退出码0，172通过、1跳过107.50秒；跳过为旧默认规划专项未开启，不计通过。实际MySQL/PG/RustFS、MD/DOCX/PDF独立解析进程、原规划CLI kill/restart、真实失败回归/终态保持及来源契约包含。新增11项专项7.20秒另存required-regression；部分固定回归低层测试使用合成parent/result身份，完整失败选择由原模块实际验收。
+
+真实默认模型专项（同目录）：
+
+```powershell
+$env:RUN_LIVE_RECORDING_AGENT_PRODUCTION='1'
+$env:QA_RECORDING_AGENT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-agent-owned-production'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_agent_production.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-agent-owned-production.xml' --tb=short *> '../docs/upgrade_2026-10-03/p0-recording-agent-owned-production.log'
+```
+
+退出码1，1失败154.81秒。生产API、真实CDP录制/DOM响应、PG/Memgraph、RustFS截图逐字节读回、默认模型两轮query/finish规划、独立Worker和审批已经运行。模型7个真实HTTP200；安全策略拒绝本地页面，执行零页面副作用，模型输出blocked报告。最终receipt误用不存在的call_id及路径，严格核验失败后正式结果error。没有默认实际点击通过，也没有passed终态重投证据。本轮不重复未改变的失败路径，不提升资料为授权，不关闭安全策略。
+
+first/connected/streamed/registered/required-production及全部原SSE/body、HTTP、PG快照/工具/审批、页面/确认串、进程stdout/stderr、XML/log都保留。早期夹具错误与真正产品缺口分别描述。required-production已有完整录制引用但夹具误取注册表descriptor；用该真实审批回归后才进行owned-production。观察器原始SSE到达即转发的真实TCP测试通过，不合成默认模型回复；旧缓冲观察器connected证据保持局限。provider内部重试和全阶段HTTP仍待验收。
+
+扩大首轮零测试（误文件名）；configured124通过2失败7跳过75.40秒（漏导航目录变量）；contract-regression63通过2失败55.48秒（旧hash断言environment空字段、Worker夹具未释放parse子表）。修正测试旧序列化比较及进程所建子表所有权/释放，不改业务hash或FK。新Worker证据走显式目录/tmp；被硬编码旧路径覆盖的本轮汇总先保存到regression-worker-first，再恢复旧HEAD原字节。精确UUID清理第一次漏assets/submissions而整事务回滚，补齐原history_tables并查无外部FK后10项所属表清理核验，owned-cleanup.json保留；无CASCADE。
+
+前端实际命令（工作目录agent_web）：
+
+```powershell
+npm.cmd run build *> '../docs/upgrade_2026-10-03/p0-recording-agent-web-build-verified.log'
+```
+
+退出码0，vue-tsc/Vite通过7.19秒。旧web-build10.20秒日志已保留，但原96356句柄消失，未臆补退出码。前端只加DTO，无App来源选择/完整产品验收。原源/证据hash、三份方案字节一致与无关文件保持见p0-recording-agent-validation.json。完整P0—P5仍进行中。

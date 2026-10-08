@@ -23,6 +23,7 @@ from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
 from src.registry.models import ModelRegistry
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
 from src.schemas.case_planning_task import CasePlanningTaskRecord
 from src.schemas.model_config import ModelCapabilitiesOverride
 from src.schemas.settings import ModelConfigUpdateRequest
@@ -80,6 +81,13 @@ async def test_production_regression_planning_cli_restart_retains_required_versi
         env.settings.orchestration.redis_task_reclaim_idle_ms = 1000
         env.settings.orchestration.redis_task_block_ms = 100
         extra_tables = []
+        # The production read runtime initializes parser metadata too; release
+        # these owned children before the fixture's document version tables.
+        for table in PostgresDocumentParseStore(env.settings).tables:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                assert cur.fetchone()["existing"] is None
+            extra_tables.append(table)
         for field in ("postgres_test_case_embedding_table", "postgres_recording_table", "postgres_recording_event_table"):
             table = "up_gr_cli_" + uuid4().hex[:12]
             setattr(env.settings.database, field, table); extra_tables.append(table)
@@ -138,7 +146,9 @@ async def test_production_regression_planning_cli_restart_retains_required_versi
             out, err = await asyncio.wait_for(collecting, timeout=20); collecting = None
             assert process.returncode == 0 and b"processed=1" in out, (out + err).decode(errors="replace")
             assert len(calls) == 3 and await env.run_store.get_run(env.parent.run.id) == env.original
-            evidence = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p2-regression-planning-worker-cli.json"
+            directory = Path(os.getenv("QA_PLANNING_TASK_EVIDENCE_DIR") or str(tmp_path / "evidence"))
+            directory.mkdir(parents=True, exist_ok=True)
+            evidence = directory / "p2-regression-planning-worker-cli.json"
             evidence.write_text(json.dumps({"scope": "production planning Worker CLI, real MySQL/PG/RustFS/Redis/local model HTTP; not full API lifespan or target Agent execution",
                 "task_id": task.id, "plan_id": plan.id, "attempt_count": completed.attempt_no, "calls": calls,
                 "original_failure_preserved": True, "terminal_redelivery_no_call": True}, ensure_ascii=False, indent=2), encoding="utf-8")

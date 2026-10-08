@@ -1,0 +1,71 @@
+.....................................F...F.......................        [100%]
+================================== FAILURES ===================================
+___ test_regression_submission_returns_queryable_task_without_model_or_run ____
+tests\test_regression_planning_tasks.py:158: in test_regression_submission_returns_queryable_task_without_model_or_run
+    assert env.parent.run.creation_hash == json_digest({"plan": legacy_plan, "request": legacy_request})
+E   AssertionError: assert '3733cd940e73...caf00f7bbee0a' == '4fd37de6625e...373dfd6c1ca5f'
+E     
+E     - 4fd37de6625e5077fe63c2936d5bbf874cb3153e9194094715e373dfd6c1ca5f
+E     + 3733cd940e73a5298c7b98e84db6a672c985193d2d9ba4b6b53caf00f7bbee0a
+_ test_production_regression_planning_cli_restart_retains_required_versions_and_failure _
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.DependentObjectsStillExist: cannot drop table up_jd_6a3ab775cd7e_versions because other objects depend on it
+E   DETAIL:  constraint up_jd_6a3ab775cd7e_parse_tasks_version_id_fkey on table up_jd_6a3ab775cd7e_parse_tasks depends on table up_jd_6a3ab775cd7e_versions
+E   constraint up_jd_6a3ab775cd7e_parse_snapshots_version_id_fkey on table up_jd_6a3ab775cd7e_parse_snapshots depends on table up_jd_6a3ab775cd7e_versions
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+
+The above exception was the direct cause of the following exception:
+tests\test_regression_planning_worker.py:34: in test_production_regression_planning_cli_restart_retains_required_versions_and_failure
+    async with regression_environment(tmp_path) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_regression_planning_tasks.py:79: in regression_environment
+    async with planned(tmp_path, True) as (env, store, suites, creator, plan, now, outbox):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_plan_run_creation.py:216: in planned
+    async with setup(tmp_path, live) as (env, store, fixture_run, _, now):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_run_item_dependencies.py:29: in setup
+    async with environment(tmp_path, live=live) as env:
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_planning.py:54: in environment
+    async with _stores(tmp_path, live) as (settings, project_store, case_store, configs, doc_store, objects):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:217: in __aexit__
+    await anext(self.gen)
+tests\test_case_json_templates.py:104: in _stores
+    cursor.execute(f'DROP TABLE IF EXISTS "{table}"')
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.InternalError: (psycopg.errors.DependentObjectsStillExist) cannot drop table up_jd_6a3ab775cd7e_versions because other objects depend on it
+E   DETAIL:  constraint up_jd_6a3ab775cd7e_parse_tasks_version_id_fkey on table up_jd_6a3ab775cd7e_parse_tasks depends on table up_jd_6a3ab775cd7e_versions
+E   constraint up_jd_6a3ab775cd7e_parse_snapshots_version_id_fkey on table up_jd_6a3ab775cd7e_parse_snapshots depends on table up_jd_6a3ab775cd7e_versions
+E   HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+E   [SQL: DROP TABLE IF EXISTS "up_jd_6a3ab775cd7e_versions"]
+E   (Background on this error at: https://sqlalche.me/e/20/2j85)
+=========================== short test summary info ===========================
+FAILED tests/test_regression_planning_tasks.py::test_regression_submission_returns_queryable_task_without_model_or_run
+FAILED tests/test_regression_planning_worker.py::test_production_regression_planning_cli_restart_retains_required_versions_and_failure
+2 failed, 63 passed in 55.48s

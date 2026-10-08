@@ -1,14 +1,14 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次方案核对基线 `09286a68`。完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留；第 6.79 节的生产冷启动批次基线仍为 `7497b469`。
+修订日期：2026-10-08；本次实施核对基线 `d9702edd`。完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留；第 6.79 节的生产冷启动批次基线仍为 `7497b469`。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
-**本次修改方案正文，不实施新的业务功能。** 核对范围包括上传/版本路由、原件保存、Git 导入及 UI 模式实际执行边界；对应用户八项诉求的交付与验收要求汇总在 1.4。历史测试只在各自批次内计数，本次上传回归与三份同步结果单列，完整系统仍未验收完成。
+**本次继续按完整方案实施。** 录制来源实际读取及引用已增加明确请求契约，沿现有规划、持久恢复和回归链路验证；默认模型正式 UI 实测揭示目标授权与回执身份问题，执行未通过，见6.81。对应八项诉求的交付与验收要求汇总在1.4，完整系统仍未验收完成。
 
 **上传变更可以沿现有实现完成，无需 Git 缓存。** 上一方案批次在`4e35de24`核对上传路由、原件/版本保存和独立 Git 导入，并实际运行两项上传回归：2通过、0失败、0跳过，pytest输出7.99秒。范围为真实临时文件、应用路由和本地测试存储，见3.1.1。本次生产启动/DOCX及执行Worker范围单独记在6.79，不把两个批次的验证混为完整验收。
 
-已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；本次没有重跑录制专项。该批生产API冷启动的外键初始化顺序失败已按真实依赖修复：空数据库生产API/重启/实际DOCX与独立解析Worker1通过，原执行Worker/审批及副作用恢复1通过，生命周期/消费等65通过、审批存储15通过，见6.79。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
+已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；本批已重跑真实受控页面录制、规划和默认模型正式运行，结果见6.81。该批生产API冷启动的外键初始化顺序失败已按真实依赖修复：空数据库生产API/重启/实际DOCX与独立解析Worker1通过，原执行Worker/审批及副作用恢复1通过，生命周期/消费等65通过、审批存储15通过，见6.79。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -2671,3 +2671,23 @@ main.py保留原服务构造，项目/用例/套件初始化后先调用原run s
 实际运行已有两个`[False]`上传节点：**2通过、0失败、0跳过，pytest输出7.28秒**，见[XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-09286a68-upload.xml)及[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-09286a68-upload.log)。实际临时文件经应用路由和本地测试存储，覆盖原件保留、版本追加/当前内容去重、请求恢复、父版本冲突、同名独立上传，以及OpenAPI转换/项目URL修改保留原件。此轮未启用真实MySQL/PG/RustFS，未运行生产Worker、完整App、默认模型或人工DeepSeek；这些历史结果与未完成验收继续按原章节保留。
 
 三份字节同步、章节引用、源码依据、原始日志/XML及无关工作区文件保持核对见[本次验证](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-09286a68-validation.json)，实际命令见IMPLEMENTATION.md。没有更改API、配置、依赖、数据库或Git工作区策略；完整系统验收仍未完成。
+
+### 6.81 录制知识进入默认规划、明确来源契约与正式执行边界〔基线d9702edd〕
+
+完整P0—P5目标保持。上一目标轮为progress（d9702edd更新三份完整方案并实测上传）；本轮继续真实录制/默认模型/独立Worker，以及已确认产品缺口修复。依据与失败原件见[P0_RECORDING_AGENT_EXECUTION_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_AGENT_EXECUTION_DESIGN.md)。配置沿MySQL，业务/任务/seed/checkpoint/计划沿PG，截图原件RustFS、知识沿原Memgraph投影；没有新表、依赖、第二执行器或历史改写。
+
+实际受控页面点击“展开详情”产生服务端唯一DOM确认串。生产API/真实CDP录制→响应采集→完成/PG/图→RustFS截图读回已运行；默认模型使用当前MySQL模型的隔离配置，并通过真实SSE观察器透明转发原provider，保存物理请求/响应原字节。模板哨兵不进入执行，正式Agent收到完整固定JSON和完整录制图。人工DeepSeek及完整App未作为本轮验收。
+
+前期first/connected/streamed三次夹具失败分别为跨客户端页面查找、误读decision.items和自设白名单遗漏合法runner；重审夹具后使用原AgentRegistry和正式审批身份，不删除模式Prompt或绕过审批。registered真实失败1项77.80秒：模型把source_refs的身份当成已读内容，实际未读录制而规划服务接受。据此增加可选required_sources=[{kind:document|recording,source_id}]，只表达本次明确选定的来源；目录/身份不算已读，各target须引用现有query取得的真实证据。未读/遗漏引用返回原规划循环的具体反馈，仍受冻结预算和超时约束；no_match保持无执行，不能变自由测试。旧请求序列化/hash不变，不要求所有历史来源必读、不用关键词判断。
+
+来源要求在请求和PG seed冻结；专用指导全文与required-sources-v1版本追加保存，恢复不换当前指导。直接/持久/阶段规划、前端TS和原API JSON透传同步；回归重新规划继承原要求，固定子集保留来源证据，依赖提升为目标但缺引用时走既有重新规划。尚无App来源选择表单。新增真实文件/API、跨项目、旧请求/seed、检查点丢回执恢复、固定回归任务及终态重投11通过7.20秒；固定回归低层测试使用契约parent/result身份，真实失败项选择另由原集成模块验收。
+
+扩大最终15模块 **172通过、0失败、1跳过，107.50秒**：[XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-agent-regression-final.xml)、[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-agent-regression-final.log)。唯一跳过为未开RUN_LIVE_CASE_PLANNING_MODEL_TESTS的旧默认规划专项，不能计通过；本轮另有真实默认模型专项失败，见下。真实MySQL/PG/RustFS、原解析进程/原任务Worker、旧seed与阶段协议、实际回归失败/恢复均纳入。前端npm.cmd run build实际vue-tsc/Vite通过，退出码0、Vite7.19秒；原10.20秒日志保留，原句柄已消失，没有臆补其退出码。初始缺测试文件命令、漏证据目录、旧environment空字段hash断言和Worker夹具parse子表清理失败均保留；修的是测试的原契约/所有权登记，不改业务hash/FK，也不覆盖旧汇总。
+
+required-production两轮默认规划确实读取并引用完整录制，正式运行进入审批；夹具误读AgentRegistry返回类型而1失败106.90秒。用真实PG审批离线复核后，owned-production **1失败154.81秒**：7个真实模型HTTP200，只有录制阶段一次真实页面POST，执行阶段零页面副作用。现有目标策略以untrusted_private_target拒绝本地URL；模型明确生成blocked报告，未声称passed。最终回执使用browser-control#1等虚构call_id/错误路径，服务器拒绝后正式结果error。未放开安全策略或伪造证据；该终态保持，未重置/复用。没有通过运行，故不能声称“终态passed重投无模型/页面副作用”已验收。
+
+下一步沿实际失败研究正式运行的可信目标继承、无父session的授权来源以及denied/not_run回执的真实证据引用。项目base_url和录制地址不是授权，不能为通过测试将资料升级成授权；现有严格工具身份检查保持。观察器只证明本地观察到的物理发送，不证明provider内部发送，也不把7次不同阶段调用视为重复请求。发送超时/截断和所有阶段追踪还需继续。
+
+三份方案逐字节同步，相关源码/原请求响应/实际图/截图/PG/最终测试及无关文件保持核对见[p0-recording-agent-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-agent-validation.json)，命令见IMPLEMENTATION.md。用户.gitignore/Worker与环境诊断保持；本轮硬编码路径覆盖的旧回归Worker汇总已先另存新结果、再恢复HEAD原字节；两份更早未恢复的Worker汇总限制仍保留。
+
+完整升级未完成：UI默认实际操作/合规授权/回执、清洗/遗漏/网络跨文档ShadowDOM、人工DeepSeek/完整App/场景/别名/报告；Electron实际缓存/并行attach/更多故障、Docker性能安全原始结果、全阶段HTTP、P1生成导入产品、P2默认补全/准备状态/未知副作用/其他模式、需求业务评审/环境适用、历史迁移及两份旧Worker汇总恢复继续实施和验收。本步不将来源读取通过替代执行闭环。

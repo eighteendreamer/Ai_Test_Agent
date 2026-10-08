@@ -1,0 +1,153 @@
+{
+  "id": "4b8b47f8-5974-4baa-8a32-c39eeb56dc46",
+  "project_id": "a502ecae-20b7-4016-a383-b8cc4080c4f7",
+  "request": {
+    "objective": "验证展开详情，先查询并引用本项目已完成的展开详情完整录制，再按完整正式用例执行。",
+    "model_key": "step-5-preview",
+    "candidate_case_ids": [
+      "414ca106-a61c-4e21-b43b-9cd748aba5d5"
+    ],
+    "runtime_context": {},
+    "environment": null
+  },
+  "status": "planned",
+  "summary": "已根据目标选取 catalog 中唯一正式用例“验证展开详情”作为执行 target；该用例本身即包含从打开项目页面到展开详情的完整步骤，且已通过 source_refs 引用本项目已完成的“展开详情完整录制”，无需额外前置或准备项。",
+  "decision": {
+    "action": "finish",
+    "summary": "已根据目标选取 catalog 中唯一正式用例“验证展开详情”作为执行 target；该用例本身即包含从打开项目页面到展开详情的完整步骤，且已通过 source_refs 引用本项目已完成的“展开详情完整录制”，无需额外前置或准备项。",
+    "queries": [],
+    "items": [
+      {
+        "key": "target_details",
+        "reason": "用户目标为验证展开详情，catalog 中仅有的正式用例“验证展开详情”与目标完全匹配；该用例已包含“打开项目页面，点击展开详情”的操作步骤与预期，且 source_refs 明确引用本项目已完成的展开详情完整录制（source_id: c0ed2099-afc4-44a0-9cf5-8d5dc85a706a），可直接作为唯一 target 执行，无缺失前置条件。",
+        "evidence_ids": [
+          "case:9ebb4f72-3aae-4970-9760-e279d8e6c701"
+        ],
+        "depends_on": [],
+        "input_bindings": {},
+        "kind": "target",
+        "case_id": "414ca106-a61c-4e21-b43b-9cd748aba5d5",
+        "case_version_id": "9ebb4f72-3aae-4970-9760-e279d8e6c701"
+      }
+    ],
+    "unresolved": []
+  },
+  "evidence": [
+    {
+      "id": "case:9ebb4f72-3aae-4970-9760-e279d8e6c701",
+      "kind": "case",
+      "source_id": "414ca106-a61c-4e21-b43b-9cd748aba5d5",
+      "version": "9ebb4f72-3aae-4970-9760-e279d8e6c701",
+      "content_hash": "b10d1744f9b9747f36cde00d9193b5113725814ed7e39acc2128e51888b2c0c7",
+      "payload": {
+        "title": "验证展开详情",
+        "case_id": "414ca106-a61c-4e21-b43b-9cd748aba5d5",
+        "content": {
+          "steps": [
+            {
+              "action": "打开项目页面，点击展开详情",
+              "expected": "详情显示已展开及本次服务端DOM确认串"
+            }
+          ],
+          "metadata": {
+            "flag": false,
+            "count": 0,
+            "nullable": null
+          },
+          "objective": "验证展开详情"
+        },
+        "case_key": "details",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "c0ed2099-afc4-44a0-9cf5-8d5dc85a706a",
+            "source_type": "recording"
+          }
+        ],
+        "case_version_id": "9ebb4f72-3aae-4970-9760-e279d8e6c701",
+        "execution_notes": "使用本项目完整录制知识了解操作，调用现有浏览器工具真实点击并读取最终状态；不能用JavaScript伪造成功。",
+        "historical_mode_key": "ui_automation"
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "global",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0
+    }
+  },
+  "model_key": "step-5-preview",
+  "prompt_version": "case-planning-v5",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "target_details",
+            "kind": "target",
+            "reason": "用户目标为验证展开详情，catalog 中仅有的正式用例“验证展开详情”与目标完全匹配；该用例已包含“打开项目页面，点击展开详情”的操作步骤与预期，且 source_refs 明确引用本项目已完成的展开详情完整录制（source_id: c0ed2099-afc4-44a0-9cf5-8d5dc85a706a），可直接作为唯一 target 执行，无缺失前置条件。",
+            "case_id": "414ca106-a61c-4e21-b43b-9cd748aba5d5",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:9ebb4f72-3aae-4970-9760-e279d8e6c701"
+            ],
+            "input_bindings": {},
+            "case_version_id": "9ebb4f72-3aae-4970-9760-e279d8e6c701"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "已根据目标选取 catalog 中唯一正式用例“验证展开详情”作为执行 target；该用例本身即包含从打开项目页面到展开详情的完整步骤，且已通过 source_refs 引用本项目已完成的“展开详情完整录制”，无需额外前置或准备项。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "attempt_id": null,
+      "response_mode": "ok",
+      "logical_call_id": "35eb7a45-2abe-4a01-badb-cb3108a3efc0",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 5754,
+          "prompt_tokens": 2639,
+          "completion_tokens": 3115,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": null,
+            "cached_tokens": 0,
+            "cache_write_tokens": null
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "error_type": null,
+        "response_id": "b4a36c70bb9ddaca3a345a77478bd4a9.be8c1523ef425b8d9b6c5646340fb2d4",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop"
+      },
+      "first_text_seconds": 46.612,
+      "received_text_chars": 652,
+      "model_elapsed_seconds": 50.227
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-08T09:51:52.016170Z",
+  "regression": null,
+  "environment": null
+}

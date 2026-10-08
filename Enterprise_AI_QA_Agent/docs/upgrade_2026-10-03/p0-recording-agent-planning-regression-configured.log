@@ -1,0 +1,21 @@
+.....................s..................................FF............ss [ 54%]
+s.................sss........................................            [100%]
+================================== FAILURES ===================================
+_________ test_actual_frozen_navigation_and_old_seed_recovery[False] __________
+tests\test_planning_tool_navigation.py:121: in test_actual_frozen_navigation_and_old_seed_recovery
+    directory = Path(os.environ['QA_TOOL_NAVIGATION_DIR']) / ('legacy' if legacy else 'new')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen os>:679: in __getitem__
+    ???
+E   KeyError: 'QA_TOOL_NAVIGATION_DIR'
+__________ test_actual_frozen_navigation_and_old_seed_recovery[True] __________
+tests\test_planning_tool_navigation.py:121: in test_actual_frozen_navigation_and_old_seed_recovery
+    directory = Path(os.environ['QA_TOOL_NAVIGATION_DIR']) / ('legacy' if legacy else 'new')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen os>:679: in __getitem__
+    ???
+E   KeyError: 'QA_TOOL_NAVIGATION_DIR'
+=========================== short test summary info ===========================
+FAILED tests/test_planning_tool_navigation.py::test_actual_frozen_navigation_and_old_seed_recovery[False]
+FAILED tests/test_planning_tool_navigation.py::test_actual_frozen_navigation_and_old_seed_recovery[True]
+2 failed, 124 passed, 7 skipped in 75.40s (0:01:15)

@@ -18,6 +18,7 @@ from src.application.test_runs.preparation_scopes import normalize_preparation_s
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.application.test_cases.planning_tool_contracts import OPERATION_PROMPT_VERSION, capture_tool_contracts, capture_tool_operations
 from src.application.test_cases.planning_stages import build_stage_prompts, stage_prompt_version
+from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT, required_source_prompt_version, validate_required_sources
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
     CasePlanRecord, CasePlanningConfig, CasePlanningPolicy, CasePlanningRequest,
@@ -107,6 +108,7 @@ class CasePlanningService:
             config.policy.evidence_reference_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
+        record.prompt_version = required_source_prompt_version(record.prompt_version, request)
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,
@@ -116,7 +118,8 @@ class CasePlanningService:
                 tool_operations=contracts is not None), model_parameters=planning_model_parameters(model),
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
-            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages)
+            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages,
+            required_source_prompt=REQUIRED_SOURCE_PROMPT if request.required_sources else None)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
                      fixed_case_versions: dict[str, str] | None = None,
@@ -147,6 +150,7 @@ class CasePlanningService:
             config.policy.evidence_reference_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
+        record.prompt_version = required_source_prompt_version(record.prompt_version, request)
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
             system_prompt=stages.logic if stages is not None else self._system_prompt(environment=record.environment is not None,
@@ -156,7 +160,8 @@ class CasePlanningService:
                 tool_operations=contracts is not None),
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
-            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages)
+            response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages,
+            required_source_prompt=REQUIRED_SOURCE_PROMPT if request.required_sources else None)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,
             deadline_at=datetime.now(timezone.utc) + timedelta(seconds=config.policy.timeout_seconds),
@@ -217,6 +222,7 @@ class CasePlanningService:
     async def _validate(self, record: CasePlanRecord, decision: PlanningDecision, *,
                         fixed_case_versions: dict[str, str] | None = None, preserve_read_metadata: bool = False,
                         validate_effects: bool = True) -> None:
+        validate_required_sources(record, decision)
         if len(decision.items) > record.config_snapshot.policy.max_items:
             raise ValueError("计划执行项超过配置限制")
         items = {item.key: item for item in decision.items}

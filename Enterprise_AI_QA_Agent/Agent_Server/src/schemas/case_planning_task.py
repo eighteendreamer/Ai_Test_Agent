@@ -34,6 +34,7 @@ class PlanningTaskSeed(PlanningModel):
     tool_operations: dict[str, dict[str, Any]] | None = None
     response_protocol: Literal["case-planning-response-completion-v1"] | None = None
     stage_prompts: PlanningStagePrompts | None = None
+    required_source_prompt: str | None = Field(default=None, min_length=1, max_length=20000)
 
     @model_serializer(mode="wrap")
     def preserve_original_seed(self, handler):
@@ -46,6 +47,8 @@ class PlanningTaskSeed(PlanningModel):
             data.pop("response_protocol", None)
         if self.stage_prompts is None:
             data.pop("stage_prompts", None)
+        if self.required_source_prompt is None:
+            data.pop("required_source_prompt", None)
         return data
 
 

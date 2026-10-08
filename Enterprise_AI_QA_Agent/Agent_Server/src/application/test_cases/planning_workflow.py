@@ -20,6 +20,7 @@ from src.application.test_cases.planning_operation_prefetch import (
 )
 from src.schemas.case_planning import PlanningQuery
 from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
+from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
 from src.schemas.case_planning_references import ReferencedEvidenceDecision
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
@@ -47,8 +48,9 @@ class CasePlanningWorkflow:
         transport outcome and may use only the remaining original rounds.
         """
         record, request, policy = checkpoint.plan, checkpoint.plan.request, checkpoint.plan.config_snapshot.policy
-        native_navigation = seed.stage_prompts is not None or seed.plan.prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION}
-        native_operations = seed.tool_operations if seed.stage_prompts is not None or seed.plan.prompt_version == OPERATION_PROMPT_VERSION else None
+        base_prompt_version = seed.plan.prompt_version.removesuffix("+" + REQUIRED_SOURCE_PROMPT_VERSION) if seed.required_source_prompt else seed.plan.prompt_version
+        native_navigation = seed.stage_prompts is not None or base_prompt_version in {NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION}
+        native_operations = seed.tool_operations if seed.stage_prompts is not None or base_prompt_version == OPERATION_PROMPT_VERSION else None
         fixed_case_versions = dict(fixed_case_versions or {})
         if seed.plan.regression is not None:
             source = seed.plan.regression
@@ -69,8 +71,12 @@ class CasePlanningWorkflow:
                     raise PlanningCheckpointUnavailable("规划检查点提交尚不能确认") from exc
 
         try:
+            if checkpoint.phase == "finished" and record.decision is not None:
+                validate_required_sources(record, record.decision)
+            elif bool(seed.required_source_prompt) != bool(request.required_sources):
+                raise ValueError("明确来源要求与原固定Prompt不一致")
             if seed.stage_prompts is not None:
-                expected_version = stage_prompt_version(policy, seed.stage_prompts)
+                expected_version = required_source_prompt_version(stage_prompt_version(policy, seed.stage_prompts), request)
                 if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
@@ -173,6 +179,9 @@ class CasePlanningWorkflow:
                                 context["logical_hash"] = checkpoint.stages.logical_hash
                                 if checkpoint.stages.operation_selections is not None:
                                     context["operation_selections"] = [entry.model_dump(mode="json") for entry in checkpoint.stages.operation_selections]
+                        if seed.required_source_prompt is not None:
+                            context["required_sources"] = [source.model_dump(mode="json") for source in request.required_sources]
+                            prompt += "\n" + seed.required_source_prompt
                         if seed.tool_contracts is not None and stage != "logic":
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
                                 navigation=native_navigation, operations=native_operations)

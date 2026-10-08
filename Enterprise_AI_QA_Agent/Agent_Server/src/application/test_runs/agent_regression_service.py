@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from src.schemas.case_planning import CasePlanRunRequest, CasePlanningRequest, RegressionPlanSource, RegressionPlanningInput
+from src.application.test_cases.planning_required_sources import validate_required_sources
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,8 @@ class AgentRegressionService:
         fixed_plan = None if request.version_overrides else self._subset(snapshot, selected, context)
         planning_request = fixed_plan.request if fixed_plan is not None else CasePlanningRequest(objective=snapshot.plan.request.objective,
             candidate_case_ids=list(versions), model_key=snapshot.plan.model_key,
-            runtime_context=snapshot.plan.request.runtime_context, environment=snapshot.plan.request.environment)
+            runtime_context=snapshot.plan.request.runtime_context, environment=snapshot.plan.request.environment,
+            required_sources=snapshot.plan.request.required_sources)
         return await self._planning_tasks.submit_regression(parent.project_id, request, source,
             planning_request=planning_request, prepared_plan=fixed_plan)
 
@@ -99,7 +101,8 @@ class AgentRegressionService:
         original = parent.plan_snapshot.plan
         request = CasePlanningRequest(objective=original.request.objective,
             candidate_case_ids=list(versions), model_key=original.model_key,
-            runtime_context=original.request.runtime_context, environment=original.request.environment)
+            runtime_context=original.request.runtime_context, environment=original.request.environment,
+            required_sources=original.request.required_sources)
         plan = await self._planner.create(parent.project_id, request,
             fixed_case_versions=versions, planning_context=context)
         if plan.status not in {"planned", "blocked"} or plan.decision is None:
@@ -149,9 +152,16 @@ class AgentRegressionService:
         # Selected targets live in the frozen decision/provenance, rather than
         # expanding the original request's bounded candidate list or objective.
         request = original.request.model_copy(deep=True, update={"candidate_case_ids": []})
-        return original.model_copy(deep=True, update={"id": str(uuid4()), "request": request,
+        scoped = original.model_copy(deep=True, update={"id": str(uuid4()), "request": request,
             "created_at": datetime.now(timezone.utc), "decision": decision, "summary": decision.summary, "regression": None,
             "status": "blocked" if decision.unresolved else "planned",
             "evidence": [e.model_copy(deep=True) for e in original.evidence if e.id in refs],
             "rounds": [{"kind": "regression_scope", **context,
                         "retained_item_keys": [node.key for node in items]}]})
+        try:
+            validate_required_sources(scoped, decision)
+        except ValueError:
+            # A dependency promoted to a regression target may not yet cite
+            # the original target's required sources; use the existing replan.
+            return None
+        return scoped
