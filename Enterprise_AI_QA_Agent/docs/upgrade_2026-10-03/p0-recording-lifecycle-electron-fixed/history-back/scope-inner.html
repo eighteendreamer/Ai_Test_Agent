@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><script>window.__testLifecycle=[];
+            for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=>{
+              const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+              window.__testLifecycle.push(row);navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+            });</script><button id="inner-target">嵌套操作</button><input id="inner-tail">

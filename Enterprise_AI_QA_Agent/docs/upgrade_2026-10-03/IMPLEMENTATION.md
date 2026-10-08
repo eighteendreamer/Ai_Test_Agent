@@ -4284,3 +4284,35 @@ agent_web实际命令：`npm.cmd run test -- tests/recorder/recorder.test.mjs --
 十二Electron场景实际MySQL冻结/PG/图知识/RustFS截图：十completed，HTTP503结束超时和同身份内容变更两项预期failed。每项真实打开同partition无关窗口并点击，宿主不注入/不入库；已采原事件经原binding重投不增seq。完成项比对原绑定全部字段/PG、全局/局部seq、frame父链、十项目知识；十二截图上传读回字节。两Python驱动各五实存场景、四CDP反例及旧模块也在同次193项中通过。不是人工DeepSeek或模型消费知识原文。
 
 原事件/HTTP/原生context/HTML/截图、所有XML及失败保存并核验SHA，见p0-electron-scopes-validation.json及audit.py。三份方案同步，原录制/消费证据与无关用户文件保持。旧两份Worker汇总原字节未恢复限制仍在。关闭/移除/BFCache/并行attach/更多断网恢复、完整响应/清洗/知识/AI/App/人工DeepSeek/场景报告、Docker及P0—P5其余范围/迁移继续未完成。
+
+## 录制文档离开、缓存恢复与就绪迁移〔2026-10-08，基线77ab0e0〕
+
+原生回复命令与context生命周期错位、完整Chromium真实缓存回返漏录和PG ready/start竞态先复现，再按P0_RECORDING_LIFECYCLE_DESIGN.md研究修复。原生产路径接context命令等待/离开取消、activate及原消息身份重投、会话迁移锁；无新配置键/表/依赖或迁移。MySQL原策略、PG原会话/事件/回执及RustFS截图沿用。完整P0—P5范围保留。
+
+早期实际结果：Python三离开场景两驱动6通过27.25秒；Electron2通过1失败63.04秒，等待实际移除后仍失败43.23秒，诊断再现43.16/43.01秒；首修复2通过1失败29.24秒，接受/回复修复后4通过37.08秒。缓存headless shell1失败6.73秒及1失败5.06秒；完整Chromium真实persisted首次等待load失败37.58秒，夹具改等待commit/实际pageshow后漏录/finish超时失败13.24秒。修复后独立缓存1通过7.51秒、原API存储活动/暂停回返2通过13.19秒。所有log/XML/原件分别保存。
+
+首个18模块208通过1失败203.08秒；实际PGready/controllaunching返回409。固定PG提交后暂缓回复复现1失败8.45秒；迁移锁后两驱动2通过13.16秒。最终18模块211通过0跳过207.58秒，一条既有Starlette弃用警告。生产及测试11文件SHA冻结并核对于p0-recording-lifecycle-final-source-sha.json。
+
+最终实际命令（工作目录Agent_Server，stdout与stderr完整保存p0-recording-lifecycle-final.log）：
+
+```powershell
+$evidenceRoot='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03'
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_RECORDING_SCOPE_STORAGE='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RUN_LIVE_RECORDING_BFCACHE='1'
+$env:RECORDING_PRODUCT_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-lifecycle-final-electron'
+$env:RECORDING_SCOPE_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-lifecycle-final-python'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-lifecycle-final-boundary-pg'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-lifecycle-final-boundary-cdp'
+$env:RECORDING_FINISH_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-lifecycle-final-finish'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py tests/test_recording_scope_product.py tests/test_recording_finish_protocol.py tests/test_recording_boundary_protocol.py tests/test_recording_document_scopes.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-lifecycle-final.xml
+```
+
+agent_web实际：`npm.cmd run test -- tests/recorder/recorder.test.mjs tests/recorder/native-scopes.test.mjs --reporter=default --reporter=junit --outputFile.junit=../docs/upgrade_2026-10-03/p0-recording-lifecycle-web-verified.xml`，36通过2.21秒（首轮32项2.07秒另存）。`npm.cmd run build`退出0，vue-tsc+Vite通过12.71秒，原log保存。py_compile及node --check退出0，仅附加。
+
+最终15个实际Electron场景、20个Python原API/存储场景含2项真实缓存与两驱动就绪窗口；原绑定业务字段、原生frame身份、全局/局部seq、35份RustFS截图读回核对；模型调用0。Electron实际缓存恢复未覆盖，协议单测不替代真实浏览器。人工DeepSeek、完整知识原文/AI/响应清洗/App/场景报告、Docker及其他P0—P5/生产迁移仍未完成。旧两份Worker汇总原字节未恢复限制保持。
+
+方案4.1.4/6.76同步至三份原文，审计p0-recording-lifecycle-audit.py读取原XML/PG/binding/截图及2751个既有工件当前/HEAD字节，结果保存p0-recording-lifecycle-validation.json；不改用户.gitignore和无关Worker/环境工件。没有重跑原样默认自主Agent超时。

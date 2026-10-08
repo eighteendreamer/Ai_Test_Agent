@@ -55,9 +55,18 @@ export class ElectronRecordingScopes {
   }
 
   async evaluate(host, context, expression, awaitPromise = false) {
-    const response = await this.send(host, "Runtime.evaluate", {
-      expression, contextId: context.id, returnByValue: true, awaitPromise,
-    }, context.sessionId);
+    if (context.departed) throw new Error("Recording native context departed");
+    let cancel;
+    const pending = new Promise((resolve, reject) => {
+      cancel = reject;
+      context.commands.add(cancel);
+      this.send(host, "Runtime.evaluate", {
+        expression, contextId: context.id, returnByValue: true, awaitPromise,
+      }, context.sessionId).then(resolve, reject);
+    });
+    let response;
+    try { response = await pending; }
+    finally { context.commands.delete(cancel); }
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.text || "Recording context evaluation failed");
     return response.result?.value;
   }
@@ -77,7 +86,8 @@ export class ElectronRecordingScopes {
         host.frames.set(params.frame.id, { ...existing,
           parent: params.frame.parentId || existing?.parent || null, frame: params.frame });
       } else if (method === "Runtime.executionContextCreated" && params.context.auxData?.isDefault) {
-        host.contexts.set(key, { id: params.context.id, sessionId, frameId: params.context.auxData.frameId });
+        host.contexts.set(key, { id: params.context.id, sessionId, frameId: params.context.auxData.frameId,
+          uniqueId: params.context.uniqueId, commands: new Set(), departed: false });
       } else if (method === "Runtime.executionContextDestroyed") {
         this.depart(host, key);
       } else if (method === "Runtime.executionContextsCleared") {
@@ -109,6 +119,13 @@ export class ElectronRecordingScopes {
 
   depart(host, key) {
     const context = host.contexts.get(key);
+    if (context) {
+      context.departed = true;
+      // Native commands can outlive their target. Release only this realm's
+      // waits; accepted events and loss-visible document watermarks stay intact.
+      for (const cancel of context.commands) cancel(new Error("Recording native context departed"));
+      context.commands.clear();
+    }
     if (context?.documentId) this.documents.get(context.documentId).ended = true;
     host.contexts.delete(key);
   }
@@ -177,6 +194,18 @@ export class ElectronRecordingScopes {
       }
       reply = { document_id: context.documentId, enabled: this.enabled };
       this.log("document registered", context.documentId, context.frameId);
+    } else if (raw.__qaRecorderScope === "activate") {
+      const document = this.documents.get(raw.document_id);
+      if (!document || document.host !== host || document.context.frameId !== context.frameId
+          || !context.uniqueId || document.context.uniqueId !== context.uniqueId) {
+        throw new Error("Recording activation native realm mismatch");
+      }
+      context.documentId = raw.document_id;
+      document.context = context;
+      document.ended = false;
+      document.receipt = undefined;
+      reply = { document_id: raw.document_id, enabled: this.enabled };
+      this.log("document activated", raw.document_id, context.frameId);
     } else {
       const documentId = raw.recording_document_id || raw.document_id;
       const document = this.documents.get(documentId);
@@ -205,8 +234,9 @@ export class ElectronRecordingScopes {
     try {
       await this.evaluate(host, context, `window.__qaRecorderHostReply(${JSON.stringify(envelope.call_id)},${JSON.stringify(reply)})`);
     } catch (error) {
-      if (host.contexts.get(`${context.sessionId}:${context.id}`) === context) throw error;
-      this.log("departed document reply unavailable", context.documentId, error.message);
+      // Acceptance already happened above. A reply failure is not event loss;
+      // any live realm still missing that reply must pass its own finish barrier.
+      this.log("accepted document reply unavailable", context.documentId, error.message);
     }
   }
 
@@ -237,10 +267,14 @@ export class ElectronRecordingScopes {
 
   async finish() {
     this.enabled = false;
+    this.log("finish waiting for native deliveries", this.pending.size);
     await this.settle();
+    this.log("finish native deliveries settled", [...this.hosts.values()].reduce((count, host) => count + host.contexts.size, 0));
     for (const host of this.hosts.values()) {
       for (const context of host.contexts.values()) {
+        this.log("finish reading document watermark", context.documentId, context.frameId);
         const receipt = await this.evaluate(host, context, "window.__qaRecorderFinish()", true);
+        this.log("finish document watermark returned", context.documentId, receipt?.next_seq);
         if (!receipt || receipt.document_id !== context.documentId) throw new Error("Recording document finish identity mismatch");
         const document = this.documents.get(context.documentId);
         document.receipt = receipt;
@@ -263,6 +297,7 @@ export class ElectronRecordingScopes {
 
   detach() {
     for (const host of this.hosts.values()) {
+      for (const key of host.contexts.keys()) this.depart(host, key);
       if (host.contents.isDestroyed()) continue;
       host.contents.removeListener("did-create-window", host.popup);
       host.contents.debugger.removeListener("message", host.message);

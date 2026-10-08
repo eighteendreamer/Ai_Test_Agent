@@ -75,6 +75,15 @@ class RecordingDocumentScopes:
         return {**{name: value for name, value in raw.items() if name != "recording_document_id"},
             "seq": seq, "page": page_metadata, "target": target}
 
+    def activate(self, document_id, *, page, frame):
+        scope = self.owned(document_id, page, frame)
+        previous = self.current.get(frame)
+        if previous and previous != document_id:
+            self.documents[previous].ended = True
+        self.current[frame] = document_id
+        scope.ended = False
+        scope.receipt = None
+
     def confirm(self, receipt, *, page, frame, closed=False):
         scope = self.owned(receipt.get("document_id"), page, frame)
         if closed:

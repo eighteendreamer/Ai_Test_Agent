@@ -1,0 +1,69 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______ test_actual_scopes_through_api_and_pg[ready-start-gap-cdp-attach] ______
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1129/test_actual_scopes_through_api0')
+scenario = 'ready-start-gap', driver_kind = 'cdp-attach'
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_SCOPE_STORAGE") != "1", reason="actual MySQL/PG/RustFS/Memgraph required")
+    @pytest.mark.parametrize("driver_kind", ["cdp-attach", "playwright-managed"])
+    @pytest.mark.parametrize("scenario", ["navigation", "cross-origin", "nested-frame", "popup", "pause-new-frame", "popup-close", "frame-remove", "history-back", "ready-start-gap"])
+    async def test_actual_scopes_through_api_and_pg(tmp_path, scenario, driver_kind):
+>       await _live_scope_scenario(tmp_path, scenario, driver_kind)
+
+tests\test_recording_scope_product.py:357: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scope_product.py:384: in _live_scope_scenario
+    await _scope_scenario(tmp_path, scenario, services=(env, store, graph, bridge, service, project), driver_kind=driver_kind)
+tests\test_recording_scope_product.py:168: in _scope_scenario
+    response.raise_for_status()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Response [409 Conflict]>
+
+    def raise_for_status(self) -> Response:
+        """
+        Raise the `HTTPStatusError` if one occurred.
+        """
+        request = self._request
+        if request is None:
+            raise RuntimeError(
+                "Cannot call `raise_for_status` as the request "
+                "instance has not been set on this response."
+            )
+    
+        if self.is_success:
+            return self
+    
+        if self.has_redirect_location:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "Redirect location: '{0.headers[location]}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+        else:
+            message = (
+                "{error_type} '{0.status_code} {0.reason_phrase}' for url '{0.url}'\n"
+                "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{0.status_code}"
+            )
+    
+        status_class = self.status_code // 100
+        error_types = {
+            1: "Informational response",
+            3: "Redirect response",
+            4: "Client error",
+            5: "Server error",
+        }
+        error_type = error_types.get(status_class, "Invalid status code")
+        message = message.format(self, error_type=error_type)
+>       raise HTTPStatusError(message, request=request, response=self)
+E       httpx.HTTPStatusError: Client error '409 Conflict' for url 'http://127.0.0.1:64454/api/v1/recordings/72044159-522d-4c58-88c7-3d66b7e60617/control'
+E       For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409
+
+..\.venv\Lib\site-packages\httpx\_models.py:829: HTTPStatusError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.recorder.recorder_session_service:recorder_session_service.py:322 illegal recording control transition rejected: recording_id=72044159-522d-4c58-88c7-3d66b7e60617 action=start current=launching
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scope_product.py::test_actual_scopes_through_api_and_pg[ready-start-gap-cdp-attach]
+1 failed, 27 deselected in 8.45s

@@ -28,7 +28,7 @@ app.on("web-contents-created", (_event, observed) => {
       if (observed.__testObserved) return;
       observed.__testObserved = true;
       observed.debugger.on("message", (_event, method, params, sessionId) => {
-        if (method.startsWith("Target.") || method.startsWith("Runtime.executionContext")) {
+        if (method.startsWith("Target.") || method.startsWith("Runtime.executionContext") || method.startsWith("Page.frame")) {
           appendFileSync(join(config.evidence, "native-contexts.jsonl"), JSON.stringify({web_contents_id: observed.id, session_id: sessionId, method, params}) + "\n");
         }
         if (method === "Runtime.bindingCalled" && params.name === "__qaRecordEmit") {

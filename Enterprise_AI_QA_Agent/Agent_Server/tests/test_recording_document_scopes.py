@@ -51,6 +51,28 @@ def test_old_document_without_departure_receipt_and_local_gap_remain_unconfirmed
     assert not scopes.result()["scopes"][0]["confirmed"]
 
 
+def test_actual_cached_document_reactivation_preserves_sequence_and_rejects_foreign_source():
+    sample = ROOT / "docs/upgrade_2026-10-03/p0-recording-lifecycle-cache-storage/cdp-attach/cache-back"
+    rows = json.loads((sample / "scoped-deliveries.json").read_text(encoding="utf-8"))
+    raw = next(row for row in rows if (row.get("target") or {}).get("locators", {}).get("id") == "root")
+    scopes, page, frame = RecordingDocumentScopes(), object(), NativeFrame()
+    original_id = scopes.register(page, frame, [])
+    raw = {**raw, "recording_document_id": original_id}
+    first = scopes.event(raw, page=page, frame=frame)
+    scopes.confirm({"document_id": original_id, "next_seq": 1, "emitted_count": 1, "pending": 0}, page=page, frame=frame, closed=True)
+    intervening = scopes.register(page, frame, [])
+    with pytest.raises(ValueError, match="native source mismatch"):
+        scopes.activate(original_id, page=object(), frame=frame)
+    assert scopes.current[frame] == intervening
+    scopes.activate(original_id, page=page, frame=frame)
+    assert scopes.current[frame] == original_id
+    assert scopes.documents[intervening].ended
+    assert scopes.event(copy.deepcopy(raw), page=page, frame=frame) is None
+    assert scopes.next_seq == first["seq"] + 1
+    assert scopes.documents[original_id].receipt is None
+    assert not scopes.documents[original_id].ended
+
+
 @pytest.mark.parametrize("fault", ["omitted_document", "duplicate_document", "native_metadata", "local_sequence"])
 def test_actual_pg_receipt_rejects_scope_mismatch(fault):
     receipt = json.loads((SAMPLE / "receipt.json").read_text(encoding="utf-8"))

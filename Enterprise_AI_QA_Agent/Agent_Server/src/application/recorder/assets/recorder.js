@@ -76,7 +76,7 @@
     mutationCount: 0,
     pending: [],
     fillTimers: new Map(),       // only pending inputs; enumerable for finish
-    inFlight: new Set(),
+    inFlight: new Map(),
     emittedCount: 0,
     scrollLastAt: new WeakMap(), // element → lastEmitTs
     scanTimer: null,
@@ -134,9 +134,9 @@
       var result = binding(payload);
       if (result && typeof result.then === 'function') {
         var settled = Promise.resolve(result).catch(function () {
-          state.pending.push(payload);
+          if (state.inFlight.has(settled)) state.pending.push(payload);
         }).finally(function () { state.inFlight.delete(settled); });
-        state.inFlight.add(settled);
+        state.inFlight.set(settled, payload);
       }
     } catch (e) {
       state.pending.push(payload);
@@ -601,7 +601,24 @@
     safeStorage('set', LAST_URL_KEY, state.lastUrl);
   }
 
-  function onPageshow() {
+  function onPageshow(event) {
+    if (scopedHost && state.documentId && event && event.persisted === true) {
+      state.enabled = false;
+      window.__qaRecorderReady = Promise.resolve(window[EMIT_BINDING](JSON.stringify({
+        __qaRecorderScope: 'activate', document_id: state.documentId,
+      }))).then(function (registration) {
+        if (registration.document_id !== state.documentId) throw new Error('Recording activation document mismatch');
+        // Frozen bindings may never settle. Reuse original event identities;
+        // host deduplication decides whether these bytes were already accepted.
+        state.inFlight.forEach(function (payload) { state.pending.push(payload); });
+        state.inFlight.clear();
+        window.__qaRecorderSetEnabled(registration.enabled === true);
+        flushPending();
+        rememberUrl();
+        return registration;
+      });
+      return;
+    }
     if (!state.enabled) {
       rememberUrl();
       return;
@@ -812,6 +829,7 @@
       seq: state.seq,
       lastUrl: state.lastUrl,
       pending: state.pending.length,
+      in_flight: state.inFlight.size,
       top: isTop,
       document_id: state.documentId,
     };
@@ -831,9 +849,9 @@
       clearTimeout(state.scanTimer);
       state.scanTimer = null;
     }
-    await Promise.all(Array.from(state.inFlight));
+    await Promise.all(Array.from(state.inFlight.keys()));
     flushPending();
-    await Promise.all(Array.from(state.inFlight));
+    await Promise.all(Array.from(state.inFlight.keys()));
     return {
       protocol: scopedHost ? 'recording-scopes-v2' : 'recording-finish-v1', next_seq: state.seq,
       emitted_count: state.emittedCount, pending: state.pending.length,

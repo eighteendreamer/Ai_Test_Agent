@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="43.146" timestamp="2026-10-08T14:26:39.710958+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_embedded_product" name="test_original_electron_controls_and_small_batches_reach_project_knowledge[frame-remove]" time="38.501"><failure message="httpx.ReadTimeout">@contextlib.contextmanager
+    def map_httpcore_exceptions() -&gt; typing.Iterator[None]:
+        global HTTPCORE_EXC_MAP
+        if len(HTTPCORE_EXC_MAP) == 0:
+            HTTPCORE_EXC_MAP = _load_httpcore_exceptions()
+        try:
+&gt;           yield
+
+..\.venv\Lib\site-packages\httpx\_transports\default.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\.venv\Lib\site-packages\httpx\_transports\default.py:394: in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\connection_pool.py:256: in handle_async_request
+    raise exc from None
+..\.venv\Lib\site-packages\httpcore\_async\connection_pool.py:236: in handle_async_request
+    response = await connection.handle_async_request(
+..\.venv\Lib\site-packages\httpcore\_async\connection.py:103: in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:136: in handle_async_request
+    raise exc
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:106: in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:177: in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:217: in _receive_event
+    data = await self._network_stream.read(
+..\.venv\Lib\site-packages\httpcore\_backends\anyio.py:32: in read
+    with map_exceptions(exc_map):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:158: in __exit__
+    self.gen.throw(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+map = {&lt;class 'TimeoutError'&gt;: &lt;class 'httpcore.ReadTimeout'&gt;, &lt;class 'anyio.BrokenResourceError'&gt;: &lt;class 'httpcore.ReadErr... 'anyio.ClosedResourceError'&gt;: &lt;class 'httpcore.ReadError'&gt;, &lt;class 'anyio.EndOfStream'&gt;: &lt;class 'httpcore.ReadError'&gt;}
+
+    @contextlib.contextmanager
+    def map_exceptions(map: ExceptionMapping) -&gt; typing.Iterator[None]:
+        try:
+            yield
+        except Exception as exc:  # noqa: PIE786
+            for from_exc, to_exc in map.items():
+                if isinstance(exc, from_exc):
+&gt;                   raise to_exc(exc) from exc
+E                   httpcore.ReadTimeout
+
+..\.venv\Lib\site-packages\httpcore\_exceptions.py:14: ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1120/test_original_electron_control0')
+scenario = 'frame-remove'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict", "popup-close", "frame-remove", "history-back"])
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;实际录制夹具&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'&gt;创建订单&lt;/button&gt;
+    &lt;p&gt;此页面只用于本次系统录制验收。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;""", encoding="utf-8")
+        if scenario in ("tail-input", "pause-input"):
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", "&lt;input id='tail' placeholder='最后一步内容'&gt;&lt;/body&gt;"), encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            save("owned-recording-tables.json", {"tables": tables, "project_id": project.id})
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            await finish_configs.initialize()
+            if scenario == "finish-timeout":
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.middleware("http")
+            async def actual_receipt_outage(request, call_next):
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                return await call_next(request)
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("本次用原HTTP接口测试控制；此静态夹具不代表Vue页面验收。")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            other = origin.replace("127.0.0.1", "localhost")
+            scope_files = {
+                "unrelated": '&lt;button id="unrelated-target"&gt;无关窗口操作&lt;/button&gt;',
+                "next": '&lt;button id="next-target"&gt;导航后操作&lt;/button&gt;',
+                "outer": f'&lt;button id="outer-target"&gt;外层操作&lt;/button&gt;&lt;iframe id="inner" src="{origin}/scope/inner"&gt;&lt;/iframe&gt;',
+                "inner": '&lt;button id="inner-target"&gt;嵌套操作&lt;/button&gt;&lt;input id="inner-tail"&gt;',
+                "popup": '&lt;button id="popup-target"&gt;弹窗操作&lt;/button&gt;&lt;input id="popup-tail"&gt;',
+            }
+            if scenario in ("navigation", "cross-origin", "history-back"):
+                destination = other if scenario == "cross-origin" else origin
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;a id="scope-next" href="{destination}/scope/next"&gt;下一页&lt;/a&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario in ("nested-frame", "frame-remove"):
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;iframe id="outer" src="{other}/scope/outer"&gt;&lt;/iframe&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario in ("popup", "popup-close"):
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\"&gt;打开弹窗&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            elif scenario == "pause-frame":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='add-frame' onclick=\"var f=document.createElement('iframe');f.id='outer';f.src='{other}/scope/outer';document.body.appendChild(f)\"&gt;添加框架&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            if scenario in ("popup-close", "frame-remove", "history-back"):
+                diagnostic = """&lt;script&gt;window.__testLifecycle=[];
+                for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=&gt;{
+                  const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+                  window.__testLifecycle.push(row);navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+                });&lt;/script&gt;"""
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/head&gt;", diagnostic + "&lt;/head&gt;"), encoding="utf-8")
+                scope_files = {name: diagnostic + content for name, content in scope_files.items()}
+            for name, content in scope_files.items():
+                (evidence / f"scope-{name}.html").write_text('&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;' + content, encoding="utf-8")
+    
+            @app.get("/scope/{name}")
+            async def scope_fixture(name: str):
+                return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+    
+            @app.post("/lifecycle")
+            async def lifecycle(request: Request):
+                with (evidence / "lifecycle.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write((await request.body()).decode() + "\n")
+                return {"received": True}
+    
+            process = None
+            playwright = None
+            attached = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands.with_name(f"command-{command_id}.json"))
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                    assert created.json()["metadata"]["finish_settings"]["revision"] &gt;= 1
+                    # Actual MySQL change after creation must not change this session's policy.
+                    await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                    current_finish_settings = await finish_configs.capture(project.id)
+                    save("finish-settings-current.json", current_finish_settings)
+                    assert current_finish_settings["payload"]["timeout_seconds"] == 1
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commandsDirectory": str(commands.parent)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with socket.socket() as reserved:
+                        reserved.bind(("127.0.0.1", 0))
+                        cdp_port = reserved.getsockname()[1]
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), f"--remote-debugging-port={cdp_port}", str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                        await wait_json(evidence / "harness-ready.json", timeout=30)
+                        playwright = await async_playwright().start()
+                        attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                        page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+    
+                        async def clicks(count):
+                            initial = await page.evaluate("window.fixtureClicks || 0")
+                            for _ in range(count):
+                                await page.locator("#target").click()
+                            await page.wait_for_function("expected =&gt; window.fixtureClicks === expected", arg=initial + count)
+                            return await command()
+                        async with asyncio.timeout(10):
+                            while service.runtime_status(session_id).value != "ready":
+                                await asyncio.sleep(.05)
+    
+                        async def control(action):
+                            response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+                            save(f"control-{action}.json", {"status": response.status_code, "body": response.json()})
+                            response.raise_for_status()
+                            return response.json()
+    
+                        await control("start")
+                        await enabled(True)
+                        await clicks(2)
+                        await command("unrelated")
+                        unrelated = next(p for c in attached.contexts for p in c.pages if p.url == origin + "/scope/unrelated")
+                        await unrelated.locator("#unrelated-target").click()
+                        assert await unrelated.evaluate("window.__qaRecorderInstalled || false") is False
+                        async with asyncio.timeout(6):
+                            while len([item for item in await store.get_events(session_id) if item.type == "click"]) &lt; 2:
+                                await asyncio.sleep(.1)
+                        await command("snapshot")
+                        screenshot_refs = [json.loads(path.read_text())["ref"] for path in evidence.glob("screenshot-[0-9]*.json")]
+                        assert len(screenshot_refs) == 1 and screenshot_refs[0].startswith("rustfs://")
+                        stored_screenshot = await env.objects.read_object_uri(screenshot_refs[0])
+                        screenshot_bytes = stored_screenshot["content"]
+                        assert screenshot_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+                        (evidence / "screenshot-rustfs.png").write_bytes(screenshot_bytes)
+                        save("screenshot-storage.json", {"uri": screenshot_refs[0], "sha256": hashlib.sha256(screenshot_bytes).hexdigest(), "size_bytes": len(screenshot_bytes)})
+                        if scenario == "pause-input":
+                            await page.locator("#tail").fill("暂停前最后输入")
+                            save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
+                                "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                        initial_bindings = [json.loads(line) for line in (evidence / "binding.jsonl").read_text(encoding="utf-8").splitlines()]
+                        original_click = next(event for event in initial_bindings if event["type"] == "click")
+                        host_before = (await command())["host"]
+                        # Replay the actual captured event through the native binding,
+                        # including different JSON key order; no synthetic browser event.
+                        replay_raw = dict(reversed(list(original_click.items())))
+                        assert await page.evaluate("raw =&gt; window.__qaRecordEmit(JSON.stringify(raw))", replay_raw) is True
+                        host_after = (await command())["host"]
+                        save("native-replay.json", {"original": original_click, "host_before": host_before, "host_after": host_after})
+                        assert host_before["forwardedEvents"] == host_after["forwardedEvents"]
+                        assert host_before["bufferedEvents"] == host_after["bufferedEvents"]
+                        assert host_after["droppedMalformed"] == 0
+                        paused = await control("pause")
+                        await enabled(False)
+                        if scenario == "pause-input":
+                            for _ in range(60):
+                                paused_events = await store.get_events(session_id)
+                                if any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events):
+                                    break
+                                await asyncio.sleep(.1)
+                            save("pause-input-after.json", {"session": (await store.get_session(session_id)).model_dump(mode="json"),
+                                "events": [event.model_dump(mode="json") for event in paused_events]})
+                            assert any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events), "pause lost the actually accepted final input"
+                        before = len(await store.get_events(session_id))
+                        if scenario == "pause-frame":
+                            await page.locator("#add-frame").click()
+                            await page.frame_locator("#outer").locator("#outer-target").click()
+                            child = next(f for f in page.frames if f.url == other + "/scope/outer")
+                            assert (await child.evaluate("window.__qaRecorderGetState()")).get("enabled") is False
+                        await clicks(2)
+                        await asyncio.sleep(.7)
+                        assert len(await store.get_events(session_id)) == before
+                        await control("resume")
+                        await enabled(True)
+                        await clicks(2)
+                        async with asyncio.timeout(6):
+                            while len([item for item in await store.get_events(session_id) if item.type == "click"]) &lt; 4:
+                                await asyncio.sleep(.1)
+                        # Duplicate physical delivery is distinct from repeated legitimate clicks.
+                        events = await store.get_events(session_id)
+                        replay = await client.post(f"/api/v1/recordings/{session_id}/events:batch", json={"events": [item.model_dump(mode="json") for item in events]})
+                        save("duplicate-delivery.json", replay.json())
+                        assert replay.json()["accepted"] == 0 and replay.json()["duplicates"] == len(events)
+                        if scenario == "tail-input":
+                            await page.locator("#tail").fill("最后一步实际输入")
+                            save("tail-input-before-stop.json", {"value": await page.locator("#tail").input_value(),
+                                "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                        expected_scope_targets = []
+                        if scenario == "same-url-navigation":
+                            await page.goto(origin + "/fixture")
+                            await page.locator("#target").click()
+                            expected_scope_targets = ["target"]
+                        elif scenario in ("navigation", "cross-origin", "history-back"):
+                            await page.locator("#scope-next").click()
+                            await page.locator("#next-target").click()
+                            expected_scope_targets = ["next-target"]
+                            if scenario == "history-back":
+                                await page.go_back(wait_until="load")
+                                await page.evaluate("() =&gt; window.__qaRecorderReady")
+                                save("history-restored.json", {"state": await page.evaluate("window.__qaRecorderGetState()"),
+                                    "lifecycle": await page.evaluate("window.__testLifecycle"),
+                                    "navigation": await page.evaluate("performance.getEntriesByType('navigation').map(row=&gt;({type:row.type,notRestoredReasons:row.notRestoredReasons?.toJSON?.()??null}))")})
+                                await page.locator("#target").click()
+                                expected_scope_targets.append("target")
+                        elif scenario in ("nested-frame", "pause-frame", "frame-remove"):
+                            outer = page.frame_locator("#outer")
+                            await outer.locator("#outer-target").click()
+                            await outer.frame_locator("#inner").locator("#inner-target").click()
+                            await outer.frame_locator("#inner").locator("#inner-tail").fill("跨来源嵌套最后输入")
+                            expected_scope_targets = ["outer-target", "inner-target", "inner-tail"]
+                            if scenario == "frame-remove":
+                                await page.evaluate("document.querySelector('#outer').remove()")
+                                # Native OOPIF detach arrives asynchronously after DOM removal.
+                                async with asyncio.timeout(3):
+                                    while len(page.frames) != 1:
+                                        await asyncio.sleep(.01)
+                        elif scenario in ("popup", "popup-close"):
+                            async with page.expect_popup() as opened:
+                                await page.locator("#scope-popup").click()
+                            popup = await opened.value
+                            await popup.locator("#popup-target").click()
+                            await popup.locator("#popup-tail").fill("弹窗最后输入")
+                            expected_scope_targets = ["popup-target", "popup-tail"]
+                            if scenario == "popup-close":
+                                async with popup.expect_event("close"):
+                                    await popup.evaluate("window.close()")
+                                assert popup.is_closed()
+                        if scenario == "identity-conflict":
+                            current_raw = next(event for event in initial_bindings if event["type"] == "click")
+                            altered = {**current_raw, "value": "changed actual replay value"}
+                            rejected = await page.evaluate("async raw =&gt; {try {await window.__qaRecordEmit(JSON.stringify(raw)); return {accepted:true};} catch(error) {return {accepted:false,error:error.message};}}", altered)
+                            save("identity-conflict.json", {"original": current_raw, "altered": altered, "response": rejected})
+                            assert rejected["accepted"] is False and "identity cannot change" in rejected["error"]
+                        save("scope-targets.json", {"expected": expected_scope_targets, "pages": [p.url for c in attached.contexts for p in c.pages]})
+&gt;                       final = await control("stop")
+                                ^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_recording_embedded_product.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_embedded_product.py:214: in control
+    response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1859: in post
+    return await self.request(
+..\.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+..\.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+..\.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_transports\default.py:393: in handle_async_request
+    with map_httpcore_exceptions():
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:158: in __exit__
+    self.gen.throw(typ, value, traceback)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @contextlib.contextmanager
+    def map_httpcore_exceptions() -&gt; typing.Iterator[None]:
+        global HTTPCORE_EXC_MAP
+        if len(HTTPCORE_EXC_MAP) == 0:
+            HTTPCORE_EXC_MAP = _load_httpcore_exceptions()
+        try:
+            yield
+        except Exception as exc:
+            mapped_exc = None
+    
+            for from_exc, to_exc in HTTPCORE_EXC_MAP.items():
+                if not isinstance(exc, from_exc):
+                    continue
+                # We want to map to the most specific exception we can find.
+                # Eg if `exc` is an `httpcore.ReadTimeout`, we want to map to
+                # `httpx.ReadTimeout`, not just `httpx.TimeoutException`.
+                if mapped_exc is None or issubclass(to_exc, mapped_exc):
+                    mapped_exc = to_exc
+    
+            if mapped_exc is None:  # pragma: no cover
+                raise
+    
+            message = str(exc)
+&gt;           raise mapped_exc(message) from exc
+E           httpx.ReadTimeout
+
+..\.venv\Lib\site-packages\httpx\_transports\default.py:118: ReadTimeout</failure></testcase></testsuite></testsuites>

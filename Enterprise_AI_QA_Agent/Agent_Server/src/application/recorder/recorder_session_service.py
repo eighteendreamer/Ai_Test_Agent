@@ -71,11 +71,12 @@ _LAUNCH_READY_TIMEOUT = 60.0
 
 @dataclass
 class _SessionRuntime:
-    """单个录制会话的进程内运行时（内存态权威）。"""
+    """会话执行的进程内协调状态；持久会话与证据仍以 PG 为准。"""
 
     session: RecordingSession
     driver: BrowserDriver
     status: RecordingStatus
+    transition_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     consume_task: asyncio.Task[None] | None = None
     ready_task: asyncio.Task[None] | None = None
     closed_task: asyncio.Task[None] | None = None
@@ -311,23 +312,24 @@ class RecorderSessionService:
         """控制条指令统一入口：迁移校验 → 内存占位（防并发重复迁移）→ 驱动动作
         → PG 持久化；动作异常时回滚内存状态。"""
         runtime = self._require_runtime(recording_id)
-        if runtime.pause_task is not None and not runtime.pause_task.done():
-            logger.warning("recording_capture_control_in_progress", extra={
-                "recording_id": recording_id, "action": action.value})
-            raise ValueError("Recording capture control in progress")
-        current = runtime.status
-        allowed = _CONTROL_TRANSITIONS[action]
-        target = allowed.get(current)
-        if target is None:
-            logger.warning(
-                "illegal recording control transition rejected: recording_id=%s action=%s current=%s",
-                recording_id, action.value, current.value,
-            )
-            raise ValueError(
-                f"illegal transition: action={action.value} current={current.value}"
-            )
+        async with runtime.transition_lock:
+            if runtime.pause_task is not None and not runtime.pause_task.done():
+                logger.warning("recording_capture_control_in_progress", extra={
+                    "recording_id": recording_id, "action": action.value})
+                raise ValueError("Recording capture control in progress")
+            current = runtime.status
+            allowed = _CONTROL_TRANSITIONS[action]
+            target = allowed.get(current)
+            if target is None:
+                logger.warning(
+                    "illegal recording control transition rejected: recording_id=%s action=%s current=%s",
+                    recording_id, action.value, current.value,
+                )
+                raise ValueError(
+                    f"illegal transition: action={action.value} current={current.value}"
+                )
 
-        runtime.status = target  # 同步占位：并发重复指令立即被迁移表拒绝
+            runtime.status = target  # 占位与 PG 回填串行；驱动操作仍在锁外。
         try:
             if action is RecordingControlAction.start:
                 return await self._do_start(runtime)
@@ -588,25 +590,26 @@ class RecorderSessionService:
         finalize_metrics: dict[str, Any] | None = None,
     ) -> RecordingSession:
         """内存态 + PG 双写；PG 失败抛出（调用方决定后续）。"""
-        updated = await self._store.update_status(
-            runtime.session.id,
-            status,
-            started_at=datetime.now(timezone.utc) if started_at else None,
-            ended_at=datetime.now(timezone.utc)
-            if status in (RecordingStatus.completed, RecordingStatus.discarded, RecordingStatus.failed)
-            else None,
-            finalize_metrics=finalize_metrics,
-        )
-        runtime.status = updated.status if updated is not None else status
-        if updated is not None:
-            runtime.session = updated
-            if updated.status != status:
-                logger.warning("recording_state_update_rejected", extra={
-                    "recording_id": runtime.session.id, "requested_status": status.value,
-                    "actual_status": updated.status.value,
-                })
-                raise ValueError(f"Recording is already {updated.status.value}; cannot change to {status.value}")
-        return runtime.session
+        async with runtime.transition_lock:
+            updated = await self._store.update_status(
+                runtime.session.id,
+                status,
+                started_at=datetime.now(timezone.utc) if started_at else None,
+                ended_at=datetime.now(timezone.utc)
+                if status in (RecordingStatus.completed, RecordingStatus.discarded, RecordingStatus.failed)
+                else None,
+                finalize_metrics=finalize_metrics,
+            )
+            runtime.status = updated.status if updated is not None else status
+            if updated is not None:
+                runtime.session = updated
+                if updated.status != status:
+                    logger.warning("recording_state_update_rejected", extra={
+                        "recording_id": runtime.session.id, "requested_status": status.value,
+                        "actual_status": updated.status.value,
+                    })
+                    raise ValueError(f"Recording is already {updated.status.value}; cannot change to {status.value}")
+            return runtime.session
 
     async def _cancel_task(self, task: asyncio.Task[None] | None) -> None:
         if task is None or task.done():

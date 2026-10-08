@@ -46,6 +46,7 @@ function createWindow({ storage = {}, scopeRegistration = null } = {}) {
   win.__qaRecordEmit = (s) => {
     const payload = JSON.parse(s);
     if (payload.__qaRecorderScope === 'register') return Promise.resolve(scopeRegistration);
+    if (payload.__qaRecorderScope === 'activate') return Promise.resolve(scopeRegistration);
     if (payload.__qaRecorderScope === 'close') return Promise.resolve();
     events.push(payload);
     return scopeRegistration === null ? undefined : Promise.resolve();
@@ -84,6 +85,38 @@ afterEach(() => {
 });
 
 describe("recorder.js 安装与控制", () => {
+  it.each([true, false])("缓存恢复按当前宿主开关%s重投原身份，旧确认晚到不再入队", async enabled => {
+    const failedStates = JSON.parse(readFileSync(resolve(process.cwd(), '../docs/upgrade_2026-10-03/p0-recording-lifecycle-cache-state/cache-back/states.json'), 'utf8'));
+    const documentId = failedStates.at(-1).state.document_id;
+    const { win, doc } = createWindow({scopeRegistration: {document_id: documentId, enabled: true}});
+    await win.__qaRecorderReady;
+    let rejectOriginal;
+    const attempts = [];
+    win.__qaRecordEmit = text => {
+      const raw = JSON.parse(text);
+      if (raw.__qaRecorderScope === 'close') return Promise.resolve();
+      if (raw.__qaRecorderScope === 'activate') return Promise.resolve({document_id: documentId, enabled});
+      attempts.push(text);
+      if (attempts.length === 1) return new Promise((_resolve, reject) => {rejectOriginal = reject;});
+      return Promise.resolve();
+    };
+    click(win, doc.body);
+    expect(win.__qaRecorderGetState().in_flight).toBe(1);
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide', {persisted: true}));
+    win.dispatchEvent(new win.PageTransitionEvent('pageshow', {persisted: true}));
+    await win.__qaRecorderReady;
+    expect(win.__qaRecorderGetState().enabled).toBe(enabled);
+    const receipt = await win.__qaRecorderFinish();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toBe(attempts[1]);
+    expect(receipt.document_id).toBe(documentId);
+    expect(receipt.next_seq).toBe(1);
+    rejectOriginal(new Error('late frozen binding rejection'));
+    await Promise.resolve(); await Promise.resolve();
+    expect(win.__qaRecorderGetState().pending).toBe(0);
+    expect(win.__qaRecorderGetState().in_flight).toBe(0);
+  });
+
   it("宿主文档身份模式不用旧来源seq，结束水位对应完整局部事件", async () => {
     const { win, doc } = createWindow({storage: {__qaRecorderSeq: '900'},
       scopeRegistration: {document_id: 'native-document', enabled: true}});

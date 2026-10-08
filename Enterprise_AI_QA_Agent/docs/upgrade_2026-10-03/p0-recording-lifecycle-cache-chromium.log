@@ -1,0 +1,224 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___________ test_actual_browser_cache_return_retains_capture_state ____________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1124/test_actual_browser_cache_retu0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_BFCACHE") != "1", reason="dedicated cache restoration investigation; default headless delegate did not restore BFCache")
+    async def test_actual_browser_cache_return_retains_capture_state(tmp_path):
+>       await _scope_scenario(tmp_path, "cache-back")
+
+tests\test_recording_scope_product.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scope_product.py:168: in _scope_scenario
+    await page.go_back(wait_until="load")
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:10285: in go_back
+    await self._impl_obj.go_back(
+..\.venv\Lib\site-packages\playwright\_impl\_page.py:603: in go_back
+    await self._channel.send(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <playwright._impl._connection.Connection object at 0x00000297AF2F6750>
+cb = <function Channel.send.<locals>.<lambda> at 0x00000297AF2A5F80>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        parsed_st = _attach_api_call_information(
+            getattr(task, "__pw_stack__", None) or _capture_stack_trace(),
+            is_internal,
+            title,
+        )
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Page.go_back: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for navigation until "load"
+E               - navigated to "http://127.0.0.1:59282/root"
+
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: TimeoutError
+---------------------------- Captured stderr call -----------------------------
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_recording_scope_product.py", line 91, in fixture
+    return HTMLResponse((evidence / f"{name}.html").read_bytes())
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p0-recording-lifecycle-cache-chromium\\cache-back\\favicon.ico.html'
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_recording_scope_product.py", line 91, in fixture
+    return HTMLResponse((evidence / f"{name}.html").read_bytes())
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p0-recording-lifecycle-cache-chromium\\cache-back\\favicon.ico.html'
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_recording_scope_product.py", line 91, in fixture
+    return HTMLResponse((evidence / f"{name}.html").read_bytes())
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p0-recording-lifecycle-cache-chromium\\cache-back\\favicon.ico.html'
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scope_product.py::test_actual_browser_cache_return_retains_capture_state
+1 failed in 37.58s

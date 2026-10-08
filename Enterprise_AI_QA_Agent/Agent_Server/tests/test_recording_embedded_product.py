@@ -14,7 +14,7 @@ import httpx
 import pytest
 import uvicorn
 from playwright.async_api import async_playwright
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from test_case_planning import environment
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_PRODUCT") != "1", 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict"])
+@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict", "popup-close", "frame-remove", "history-back"])
 async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
     root = Path(__file__).resolve().parents[2]
     evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
@@ -103,21 +103,35 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
             "inner": '<button id="inner-target">嵌套操作</button><input id="inner-tail">',
             "popup": '<button id="popup-target">弹窗操作</button><input id="popup-tail">',
         }
-        if scenario in ("navigation", "cross-origin"):
+        if scenario in ("navigation", "cross-origin", "history-back"):
             destination = other if scenario == "cross-origin" else origin
             fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f'<a id="scope-next" href="{destination}/scope/next">下一页</a></body>'), encoding="utf-8")
-        elif scenario == "nested-frame":
+        elif scenario in ("nested-frame", "frame-remove"):
             fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f'<iframe id="outer" src="{other}/scope/outer"></iframe></body>'), encoding="utf-8")
-        elif scenario == "popup":
+        elif scenario in ("popup", "popup-close"):
             fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f"<button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\">打开弹窗</button></body>"), encoding="utf-8")
         elif scenario == "pause-frame":
             fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f"<button id='add-frame' onclick=\"var f=document.createElement('iframe');f.id='outer';f.src='{other}/scope/outer';document.body.appendChild(f)\">添加框架</button></body>"), encoding="utf-8")
+        if scenario in ("popup-close", "frame-remove", "history-back"):
+            diagnostic = """<script>window.__testLifecycle=[];
+            for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=>{
+              const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+              window.__testLifecycle.push(row);navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+            });</script>"""
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("</head>", diagnostic + "</head>"), encoding="utf-8")
+            scope_files = {name: diagnostic + content for name, content in scope_files.items()}
         for name, content in scope_files.items():
             (evidence / f"scope-{name}.html").write_text('<!doctype html><meta charset="utf-8">' + content, encoding="utf-8")
 
         @app.get("/scope/{name}")
         async def scope_fixture(name: str):
             return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+
+        @app.post("/lifecycle")
+        async def lifecycle(request: Request):
+            with (evidence / "lifecycle.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write((await request.body()).decode() + "\n")
+            return {"received": True}
 
         process = None
         playwright = None
@@ -276,23 +290,43 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         await page.goto(origin + "/fixture")
                         await page.locator("#target").click()
                         expected_scope_targets = ["target"]
-                    elif scenario in ("navigation", "cross-origin"):
+                    elif scenario in ("navigation", "cross-origin", "history-back"):
                         await page.locator("#scope-next").click()
                         await page.locator("#next-target").click()
                         expected_scope_targets = ["next-target"]
-                    elif scenario in ("nested-frame", "pause-frame"):
+                        if scenario == "history-back":
+                            await page.go_back(wait_until="load")
+                            await page.evaluate("() => window.__qaRecorderReady")
+                            save("history-restored.json", {"state": await page.evaluate("window.__qaRecorderGetState()"),
+                                "lifecycle": await page.evaluate("window.__testLifecycle"),
+                                "navigation": await page.evaluate("performance.getEntriesByType('navigation').map(row=>({type:row.type,notRestoredReasons:row.notRestoredReasons?.toJSON?.()??null}))")})
+                            await page.locator("#target").click()
+                            expected_scope_targets.append("target")
+                    elif scenario in ("nested-frame", "pause-frame", "frame-remove"):
                         outer = page.frame_locator("#outer")
                         await outer.locator("#outer-target").click()
                         await outer.frame_locator("#inner").locator("#inner-target").click()
                         await outer.frame_locator("#inner").locator("#inner-tail").fill("跨来源嵌套最后输入")
                         expected_scope_targets = ["outer-target", "inner-target", "inner-tail"]
-                    elif scenario == "popup":
+                        if scenario == "frame-remove":
+                            await page.evaluate("document.querySelector('#outer').remove()")
+                            # Native OOPIF detach arrives asynchronously after DOM removal.
+                            async with asyncio.timeout(3):
+                                while len(page.frames) != 1:
+                                    await asyncio.sleep(.01)
+                            save("after-frame-removal.json", {"state": await page.evaluate("window.__qaRecorderGetState()"),
+                                "body": await page.locator("body").inner_text()})
+                    elif scenario in ("popup", "popup-close"):
                         async with page.expect_popup() as opened:
                             await page.locator("#scope-popup").click()
                         popup = await opened.value
                         await popup.locator("#popup-target").click()
                         await popup.locator("#popup-tail").fill("弹窗最后输入")
                         expected_scope_targets = ["popup-target", "popup-tail"]
+                        if scenario == "popup-close":
+                            async with popup.expect_event("close"):
+                                await popup.evaluate("window.close()")
+                            assert popup.is_closed()
                     if scenario == "identity-conflict":
                         current_raw = next(event for event in initial_bindings if event["type"] == "click")
                         altered = {**current_raw, "value": "changed actual replay value"}
@@ -344,10 +378,10 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     for scope in final["finalize_metrics"]["finish_receipt"].get("scopes", []):
                         assert scope["pg_verified"]
                     scopes = final["finalize_metrics"]["finish_receipt"].get("scopes", [])
-                    if scenario in ("nested-frame", "pause-frame"):
+                    if scenario in ("nested-frame", "pause-frame", "frame-remove"):
                         assert {len(scope["frame_path"]) for scope in scopes} >= {0, 1, 2}
                         assert any(item.type == "fill" and item.value == "跨来源嵌套最后输入" for item in saved)
-                    if scenario == "popup":
+                    if scenario in ("popup", "popup-close"):
                         assert len({scope["page_id"] for scope in scopes}) == 2
                         assert any(item.type == "fill" and item.value == "弹窗最后输入" for item in saved)
                     projection = await graph.get_recording_subgraph(session_id, project_id=project.id)

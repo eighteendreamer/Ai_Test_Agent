@@ -96,6 +96,11 @@ class PlaywrightBindingDriverBase(BrowserDriver):
                 if operation == "close":
                     self._scopes.confirm(payload, page=source["page"], frame=source["frame"], closed=True)
                     return None
+                if operation == "activate":
+                    self._scopes.activate(payload.get("document_id"), page=source["page"], frame=source["frame"])
+                    logger.info("recording_document_activated", extra={"recording_id": self._recording_id,
+                        "document_id": payload["document_id"], "capture_enabled": self._capture_enabled})
+                    return {"document_id": payload["document_id"], "enabled": self._capture_enabled}
                 if payload.get("recording_document_id"):
                     event = self._scopes.event(payload, page=source["page"], frame=source["frame"])
                     if event is not None:

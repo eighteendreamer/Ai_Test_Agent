@@ -1,0 +1,270 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___________ test_actual_browser_cache_return_retains_capture_state ____________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1119/test_actual_browser_cache_retu0')
+
+    @pytest.mark.asyncio
+    async def test_actual_browser_cache_return_retains_capture_state(tmp_path):
+>       await _scope_scenario(tmp_path, "cache-back")
+
+tests\test_recording_scope_product.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1119/test_actual_browser_cache_retu0')
+scenario = 'cache-back', services = None, driver_kind = 'cdp-attach'
+
+    async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp-attach"):
+        evidence = Path(os.getenv("RECORDING_SCOPE_EVIDENCE", str(tmp_path / "evidence")))
+        if services: evidence = evidence / driver_kind
+        evidence = evidence / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        first, second = socket.socket(), socket.socket()
+        first.bind(("127.0.0.1", 0)); second.bind(("127.0.0.1", 0))
+        origin = f"http://127.0.0.1:{first.getsockname()[1]}"
+        other = f"http://127.0.0.1:{second.getsockname()[1]}"
+        files = {
+            "root": f'<!doctype html><meta charset="utf-8"><button id="root">��ҳ�����</button><a id="next" href="{other if scenario == "cross-origin" else origin}/next">������һҳ</a><button id="popup" onclick="window.open(\'{other}/popup\')">�򿪴���</button><iframe id="outer" src="{other}/outer"></iframe>',
+            "next": '<!doctype html><meta charset="utf-8"><button id="next-target">���������</button>',
+            "outer": f'<!doctype html><meta charset="utf-8"><button id="outer-target">������</button><iframe id="inner" src="{origin}/inner"></iframe>',
+            "inner": '<!doctype html><meta charset="utf-8"><button id="inner-target">Ƕ�ײ���</button><input id="tail">',
+            "popup": '<!doctype html><meta charset="utf-8"><button id="popup-target">��������</button><input id="popup-tail">',
+        }
+        if scenario not in ("nested-frame", "frame-remove"):
+            files["root"] = files["root"].split('<iframe')[0]
+        if scenario in ("popup-close", "frame-remove", "history-back", "cache-back"):
+            diagnostic = """<script>
+            window.__testLifecycle=[];
+            for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=>{
+              const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+              window.__testLifecycle.push(row);
+              navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+            });</script>"""
+            files = {name: html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + diagnostic) for name, html in files.items()}
+        for name, html in files.items():
+            (evidence / f"{name}.html").write_text(html, encoding="utf-8")
+        app = FastAPI()
+        if services:
+            env, store, graph, bridge, service, project = services
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+        @app.get("/{name}")
+        async def fixture(name: str):
+            return HTMLResponse((evidence / f"{name}.html").read_bytes())
+    
+        @app.post("/lifecycle")
+        async def lifecycle(request: Request):
+            with (evidence / "lifecycle.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write((await request.body()).decode() + "\n")
+            return {"received": True}
+    
+        servers = [uvicorn.Server(uvicorn.Config(app, log_level="warning")) for _ in range(2)]
+        serving = [asyncio.create_task(server.serve(sockets=[listener])) for server, listener in zip(servers, (first, second))]
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0)); port = reserved.getsockname()[1]
+        events, states, consumer, driver, screenshot_uri = [], [], None, None, None
+        async with async_playwright() as playwright:
+            launch_options = {"headless": True, "args": [f"--remote-debugging-port={port}"]}
+            if scenario == "cache-back":
+                # Installed Playwright disables BFCache by default; filter only that flag.
+                launch_options["ignore_default_args"] = ["--disable-back-forward-cache"]
+            save("launch-options.json", launch_options)
+            browser = await playwright.chromium.launch(**launch_options)
+            try:
+                async with asyncio.timeout(10):
+                    while not all(server.started for server in servers):
+                        assert not any(task.done() for task in serving)
+                        await asyncio.sleep(.05)
+                if services:
+                    async with httpx.AsyncClient(base_url=origin) as client:
+                        response = await client.post("/api/v1/recordings", json={"project_id": project.id,
+                            "entry_url": origin + "/root", "driver": {"kind": driver_kind, "endpoint": f"http://127.0.0.1:{port}"}})
+                        response.raise_for_status()
+                        created = response.json()
+                        save("created.json", created)
+                        recording_id = created["id"]
+                        async with asyncio.timeout(10):
+                            while (await store.get_session(recording_id)).status.value != "ready": await asyncio.sleep(.05)
+                        driver = service._runtimes[recording_id].driver
+                        original_publish = driver._channel.publish
+    
+                        def observe(event):
+                            events.append(event)
+                            return original_publish(event)
+    
+                        driver._channel.publish = observe
+                        response = await client.post(f"/api/v1/recordings/{recording_id}/control", json={"action": "start"})
+                        response.raise_for_status()
+                else:
+                    driver = CdpAttachDriver(config=RecordingDriverConfig(kind="cdp-attach", endpoint=f"http://127.0.0.1:{port}"), recording_id="scope-" + scenario)
+                    await driver.open(origin + "/root", viewport=(1440, 960))
+                    await driver.inject_recorder()
+    
+                async def consume():
+                    stream = await driver.on_recorder_event()
+                    async for event in stream:
+                        if isinstance(event, CaptureCheckpoint):
+                            if not event.completed.done(): event.completed.set_result(None)
+                        else:
+                            RecorderEvent.model_validate(event)
+                            events.append(event)
+    
+                if not services:
+                    consumer = asyncio.create_task(consume())
+                    await driver.set_capture_enabled(True)
+                page = driver._page
+                if scenario == "cache-back":
+                    cache_diagnostics = await driver._context.new_cdp_session(page)
+                    cache_diagnostics.on("Page.backForwardCacheNotUsed", lambda details: save("cache-not-used.json", details))
+                    await cache_diagnostics.send("Page.enable")
+                await page.click("#root")
+                expected, expected_values = ["root"], []
+                if scenario in ("navigation", "cross-origin", "history-back", "cache-back"):
+                    await page.click("#next")
+                    await page.wait_for_url("**/next")
+                    states.append({"url": page.url, "state": await page.evaluate("window.__qaRecorderGetState()")})
+                    await page.click("#next-target")
+                    expected.append("next-target")
+                    if scenario in ("history-back", "cache-back"):
+                        await page.go_back(wait_until="load")
+                        await page.evaluate("() => window.__qaRecorderReady")
+                        states.append({"url": page.url, "state": await page.evaluate("window.__qaRecorderGetState()"),
+                            "lifecycle": await page.evaluate("window.__testLifecycle"),
+                            "navigation": await page.evaluate("performance.getEntriesByType('navigation').map(row=>({type:row.type,notRestoredReasons:row.notRestoredReasons?.toJSON?.()??null}))")})
+                        await page.click("#root")
+                        expected.append("root")
+                elif scenario in ("nested-frame", "frame-remove"):
+                    frame = page.frame_locator("#outer")
+                    await frame.locator("#outer-target").click()
+                    await frame.frame_locator("#inner").locator("#inner-target").click()
+                    await frame.frame_locator("#inner").locator("#tail").fill("Ƕ���������")
+                    for native in page.frames:
+                        states.append({"url": native.url, "state": await native.evaluate("window.__qaRecorderGetState && window.__qaRecorderGetState()")})
+                    expected.extend(("outer-target", "inner-target"))
+                    if scenario == "frame-remove":
+                        expected_values.append("Ƕ���������")
+                        await page.evaluate("document.querySelector('#outer').remove()")
+                        assert len(page.frames) == 1
+                else:
+                    if scenario == "pause-new-frame":
+                        async with httpx.AsyncClient(base_url=origin) as client:
+                            response = await client.post(f"/api/v1/recordings/{recording_id}/control", json={"action": "pause"})
+                            response.raise_for_status()
+                            save("pause.json", response.json())
+                            # Controlled fixture attaches a genuine new document while paused.
+                            await page.evaluate("url => {const frame=document.createElement('iframe');frame.id='new-frame';frame.src=url;document.body.appendChild(frame)}", other + "/inner")
+                            await page.frame_locator("#new-frame").locator("#inner-target").click()
+                            native = next(frame for frame in page.frames if frame != page.main_frame)
+                            states.append({"url": native.url, "state": await native.evaluate("window.__qaRecorderGetState()")})
+                            assert states[-1]["state"]["enabled"] is False
+                            assert not any((event.get("target") or {}).get("locators", {}).get("id") == "inner-target" for event in events)
+                            response = await client.post(f"/api/v1/recordings/{recording_id}/control", json={"action": "resume"})
+                            response.raise_for_status()
+                            await page.frame_locator("#new-frame").locator("#inner-target").click()
+                            expected.append("inner-target")
+                    else:
+                        async with page.expect_popup() as opening:
+                            await page.click("#popup")
+                        popup = await opening.value
+                        await popup.wait_for_load_state("domcontentloaded")
+                        states.append({"url": popup.url, "state": await popup.evaluate("window.__qaRecorderGetState && window.__qaRecorderGetState()")})
+                        await popup.click("#popup-target")
+                        expected.append("popup-target")
+                        if scenario == "popup-close":
+                            await popup.fill("#popup-tail", "�ر�ǰ�������")
+                            expected_values.append("�ر�ǰ�������")
+                            async with popup.expect_event("close"):
+                                await popup.evaluate("window.close()")
+                            assert popup.is_closed()
+                if services:
+                    unrelated = await driver._context.new_page()
+                    await unrelated.goto(other + "/popup")
+                    await unrelated.click("#popup-target")
+                    unrelated_state = await unrelated.evaluate("window.__qaRecorderGetState()")
+                    save("unrelated-page.json", {"state": unrelated_state, "owned": unrelated in driver._owned_pages})
+                    assert unrelated_state["enabled"] is False and unrelated not in driver._owned_pages
+                    assert all(event["page"].get("recording_scope", {}).get("document_id") != unrelated_state["document_id"] for event in events)
+                    await unrelated.close()
+                receipt, completion_error = None, None
+                try:
+                    if services:
+                        async with httpx.AsyncClient(base_url=origin) as client:
+                            screenshot_bytes = await driver.capture_screenshot()
+                            response = await client.post(f"/api/v1/recordings/{recording_id}/screenshots",
+                                files={"file": ("scope.png", screenshot_bytes, "image/png")})
+                            response.raise_for_status()
+                            screenshot_uri = response.json()["ref"]
+                            assert screenshot_uri.startswith("rustfs://")
+                            saved_screenshot = (await env.objects.read_object_uri(screenshot_uri))["content"]
+                            assert saved_screenshot == screenshot_bytes
+                            (evidence / "screenshot-rustfs.png").write_bytes(saved_screenshot)
+                            save("screenshot-storage.json", {"uri": screenshot_uri, "sha256": hashlib.sha256(saved_screenshot).hexdigest(),
+                                "size_bytes": len(saved_screenshot)})
+                            response = await client.post(f"/api/v1/recordings/{recording_id}/control", json={"action": "stop"})
+                            response.raise_for_status()
+                            final = response.json()
+                        saved = await store.get_events(recording_id)
+                        save("pg-events.json", [event.model_dump(mode="json") for event in saved])
+                        save("pg-session.json", (await store.get_session(recording_id)).model_dump(mode="json"))
+                        assert final["status"] == "completed", final.get("finalize_metrics")
+                        receipt = final["finalize_metrics"]["finish_receipt"]
+                        assert receipt["pg_verified"] and all(scope["pg_verified"] for scope in receipt["scopes"])
+                        knowledge, _ = await env.sources.query(project.id, PlanningQuery(kind="recording", source_id=recording_id), 1)
+                        save("planning-knowledge.json", [item.model_dump(mode="json") for item in knowledge])
+                        assert knowledge[0].payload["graph"]["status"] == "success"
+                        assert len(saved) == len(events)
+                        for event, observed in zip(saved, events):
+                            for field in ("seq", "type", "page", "target", "pixel", "value", "page_effect"):
+                                assert event.model_dump(mode="json")[field] == observed.get(field)
+                    else:
+                        receipt = await asyncio.wait_for(driver.finish_capture(), timeout=5)
+                        await consumer
+                except Exception as exc:
+                    save("finish-error.json", {"type": type(exc).__name__, "message": str(exc)})
+                    completion_error = exc
+                save("events.json", events)
+                save("states.json", states)
+                save("receipt.json", receipt)
+                actual = [(event.get("target") or {}).get("locators", {}).get("id") for event in events if event["type"] == "click"]
+                save("verification.json", {"expected_target_ids": expected, "actual_target_ids": actual,
+                    "expected_values": expected_values, "actual_values": [event.get("value") for event in events if event["type"] == "fill"],
+                    "physical_browser_operations": True, "model_calls": 0, "full_recording_acceptance": False})
+                if completion_error is not None:
+                    raise completion_error
+                assert all(actual.count(target) >= expected.count(target) for target in expected), "real browser operations were lost across scopes"
+                assert all(value in [event.get("value") for event in events if event["type"] == "fill"] for value in expected_values), "last accepted input was lost on document departure"
+                assert receipt is not None and not receipt["frames_unconfirmed"], "capture completion did not confirm every scope"
+                if scenario == "cache-back":
+>                   assert any(row["type"] == "pageshow" and row["persisted"] is True for row in states[-1]["lifecycle"]), "real BFCache restoration was not exercised"
+E                   AssertionError: real BFCache restoration was not exercised
+E                   assert False
+E                    +  where False = any(<generator object _scope_scenario.<locals>.<genexpr> at 0x0000020FBD58DCB0>)
+
+tests\test_recording_scope_product.py:275: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    asyncio:base_events.py:1785 Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] Զ������ǿ�ȹر���һ�����е����ӡ�
+ERROR    asyncio:base_events.py:1785 Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] Զ������ǿ�ȹر���һ�����е����ӡ�
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scope_product.py::test_actual_browser_cache_return_retains_capture_state
+1 failed in 5.06s

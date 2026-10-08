@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><script>
+        window.__testLifecycle=[];
+        for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=>{
+          const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+          window.__testLifecycle.push(row);
+          navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+        });</script><button id="root">主页面操作</button><a id="next" href="http://127.0.0.1:51442/next">进入下一页</a><button id="popup" onclick="window.open('http://127.0.0.1:51443/popup')">打开窗口</button>

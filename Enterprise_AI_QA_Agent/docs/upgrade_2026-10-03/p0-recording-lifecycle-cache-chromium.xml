@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="37.544" timestamp="2026-10-08T14:34:08.011114+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_scope_product" name="test_actual_browser_cache_return_retains_capture_state" time="31.967"><failure message="playwright._impl._errors.TimeoutError: Page.go_back: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for navigation until &quot;load&quot;&#10;    - navigated to &quot;http://127.0.0.1:59282/root&quot;">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1124/test_actual_browser_cache_retu0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_BFCACHE") != "1", reason="dedicated cache restoration investigation; default headless delegate did not restore BFCache")
+    async def test_actual_browser_cache_return_retains_capture_state(tmp_path):
+&gt;       await _scope_scenario(tmp_path, "cache-back")
+
+tests\test_recording_scope_product.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scope_product.py:168: in _scope_scenario
+    await page.go_back(wait_until="load")
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:10285: in go_back
+    await self._impl_obj.go_back(
+..\.venv\Lib\site-packages\playwright\_impl\_page.py:603: in go_back
+    await self._channel.send(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;playwright._impl._connection.Connection object at 0x00000297AF2F6750&gt;
+cb = &lt;function Channel.send.&lt;locals&gt;.&lt;lambda&gt; at 0x00000297AF2A5F80&gt;
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -&gt; Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        parsed_st = _attach_api_call_information(
+            getattr(task, "__pw_stack__", None) or _capture_stack_trace(),
+            is_internal,
+            title,
+        )
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+&gt;           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Page.go_back: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for navigation until "load"
+E               - navigated to "http://127.0.0.1:59282/root"
+
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: TimeoutError</failure></testcase></testsuite></testsuites>
