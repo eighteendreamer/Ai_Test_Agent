@@ -24,6 +24,22 @@ globalThis.fetch = async (url, options) => {
   return response;
 };
 
+app.on("web-contents-created", (_event, observed) => {
+      if (observed.__testObserved) return;
+      observed.__testObserved = true;
+      observed.debugger.on("message", (_event, method, params, sessionId) => {
+        if (method.startsWith("Target.") || method.startsWith("Runtime.executionContext")) {
+          appendFileSync(join(config.evidence, "native-contexts.jsonl"), JSON.stringify({web_contents_id: observed.id, session_id: sessionId, method, params}) + "\n");
+        }
+        if (method === "Runtime.bindingCalled" && params.name === "__qaRecordEmit") {
+          const envelope = JSON.parse(params.payload);
+          const raw = envelope.payload ? JSON.parse(envelope.payload) : envelope;
+          appendFileSync(join(config.evidence, "native-binding.jsonl"), JSON.stringify({web_contents_id: observed.id, session_id: sessionId, execution_context_id: params.executionContextId, envelope}) + "\n");
+          if (raw.type) appendFileSync(join(config.evidence, "binding.jsonl"), JSON.stringify(raw) + "\n");
+        }
+      });
+});
+
 save("harness-start.json", { pid: process.pid, version: process.versions.electron, ready: app.isReady() });
 async function run() {
 let recorder;
@@ -36,24 +52,21 @@ try {
   save("harness-ready.json", { ready: true, version: process.versions.electron });
   for (;;) {
     let command;
-    try { command = JSON.parse(readFileSync(config.commands, "utf8")); } catch { await pause(50); continue; }
+    try { command = JSON.parse(readFileSync(join(config.commandsDirectory, `command-${last + 1}.json`), "utf8")); } catch { await pause(50); continue; }
     if (command.id <= last) { await pause(50); continue; }
     last = command.id;
     const contents = webContents.getAllWebContents().find(item => item.getURL() === config.entryUrl);
-    if (contents && !contents.__testObserved) {
-      contents.__testObserved = true;
-      contents.debugger.on("message", (_event, method, params) => {
-        if (method === "Runtime.bindingCalled" && params.name === "__qaRecordEmit") {
-          appendFileSync(join(config.evidence, "binding.jsonl"), params.payload + "\n");
-        }
-      });
-    }
+
     async function evaluate(expression) {
       const result = await contents.debugger.sendCommand("Runtime.evaluate", { expression, returnByValue: true });
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result.value;
     }
     if (command.action === "quit") break;
+    if (command.action === "unrelated") {
+      const window = new BrowserWindow({show: false, webPreferences: {partition: "persist:recorder", contextIsolation: true, nodeIntegration: false, sandbox: true}});
+      await window.loadURL(config.origin + "/scope/unrelated");
+    }
     if (command.action === "snapshot") {
       // Capture a normally rendered original recording view.
       for (const window of BrowserWindow.getAllWindows()) { window.show(); window.focus(); }

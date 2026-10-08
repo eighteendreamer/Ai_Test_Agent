@@ -16,7 +16,7 @@
  *   window.__qaRecorderScan()            立即触发一次页面轻量扫描（dom_hash）
  *   window.__qaRecorderFlush()           立即冲刷本地缓冲（调试用）
  *
- * Python驱动显式启用v2；Electron仍用v1且未确认frame不能完成。
+ * Python与Electron宿主显式启用v2；保留v1供旧注入与历史回执。
  * Canvas仍由像素三件套兜底。
  */
 (function () {

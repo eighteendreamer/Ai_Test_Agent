@@ -17,10 +17,10 @@
 
 import { applyApiAuthorization } from "./api-auth-proxy.mjs";
 import { BrowserWindow, WebContentsView } from "electron";
+import { ElectronRecordingScopes } from "./recording-scopes.mjs";
 
 export const CONTROL_BAR_HEIGHT = 56;
 
-const EMIT_BINDING = "__qaRecordEmit";
 const EVENT_BATCH_MAX = 20;
 const EVENT_FLUSH_INTERVAL_MS = 2000;
 const EVENT_BUFFER_HARD_LIMIT = 2000;
@@ -51,6 +51,8 @@ class RecorderSessionState {
     this.flushing = false;
     this.flushPromise = null;
     this.droppedTransport = 0;
+    this.scopes = null;
+    this.initialNavigationPending = true;
   }
 }
 
@@ -201,22 +203,6 @@ function handleRecorderEvent(state, payloadJson) {
 
 // ---------------------------------------------------------------- 指令轮询
 
-async function evaluateInView(state, expression, awaitPromise = false) {
-  if (!state.view || !state.debuggerAttached) {
-    return null;
-  }
-  try {
-    const result = await state.view.webContents.debugger.sendCommand(
-      "Runtime.evaluate",
-      { expression, returnByValue: true, awaitPromise },
-    );
-    return result?.result?.value ?? null;
-  } catch (error) {
-    log(state, "Runtime.evaluate failed:", error?.message || error);
-    return null;
-  }
-}
-
 async function captureScreenshotToBackend(state) {
   if (!state.view || !state.debuggerAttached) {
     return null;
@@ -255,17 +241,20 @@ async function applyCommand(state, command) {
   if (kind === "navigate") {
     log(state, "navigate ->", payload.url);
     if (state.view && payload.url) {
-      state.view.webContents.loadURL(String(payload.url)).catch(() => {});
+      // EmbeddedDriver.open queued this initial navigation before the client
+      // loaded that same entry URL and registered. A second load invalidates
+      // the newly installed frame sessions. Later same-URL commands still load.
+      const alreadyLoaded = state.initialNavigationPending && state.view.webContents.getURL() === String(payload.url);
+      state.initialNavigationPending = false;
+      if (alreadyLoaded) log(state, "initial navigation already loaded");
+      else await state.view.webContents.loadURL(String(payload.url));
     }
     return;
   }
   if (kind === "set_capture_enabled") {
     const enabled = payload.enabled === true || payload.enabled === "true";
     log(state, "set_capture_enabled ->", enabled);
-    await evaluateInView(
-      state,
-      `window.__qaRecorderSetEnabled && window.__qaRecorderSetEnabled(${enabled});`,
-    );
+    await state.scopes.setEnabled(enabled);
     return;
   }
   if (kind === "close") {
@@ -275,9 +264,8 @@ async function applyCommand(state, command) {
     return;
   }
   if (kind === "finish_capture") {
-    const receipt = await evaluateInView(state,
-      "window.__qaRecorderFinish && window.__qaRecorderFinish()", true);
-    if (!receipt || receipt.protocol !== "recording-finish-v1") {
+    const receipt = await state.scopes.finish();
+    if (!receipt || receipt.protocol !== "recording-scopes-v2") {
       log(state, "finish_capture: browser receipt unavailable");
       return;
     }
@@ -324,6 +312,7 @@ async function commandPollLoop(state) {
       if (state.pollAborted) {
         return;
       }
+      log(state, "commands poll/apply failed:", error?.message || error);
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
@@ -345,21 +334,15 @@ function syncBrowserViewBounds(state) {
 }
 
 async function attachDebuggerWithScript(state, scriptSource) {
-  const dbg = state.view.webContents.debugger;
-  if (!dbg.isAttached()) {
-    dbg.attach("1.3");
-    state.debuggerAttached = true;
-  }
-  dbg.on("message", (_event, method, params) => {
-    if (method === "Runtime.bindingCalled" && params?.name === EMIT_BINDING) {
-      handleRecorderEvent(state, String(params.payload || "{}"));
-    }
-  });
-  await dbg.sendCommand("Page.enable");
-  await dbg.sendCommand("Runtime.enable");
-  // 新文档（含导航）自动注入 recorder.js；binding 先注册，脚本发出的事件不丢。
-  await dbg.sendCommand("Runtime.addBinding", { name: EMIT_BINDING });
-  await dbg.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: scriptSource });
+  state.scopes = new ElectronRecordingScopes(scriptSource,
+    event => handleRecorderEvent(state, JSON.stringify(event)),
+    error => {
+      state.droppedMalformed += 1;
+      log(state, "recording native scope failed:", error.message);
+    },
+    (...details) => log(state, "recording scope:", ...details));
+  await state.scopes.attach(state.view.webContents);
+  state.debuggerAttached = true;
 }
 
 async function teardownSession(state, { notifyBackend }) {
@@ -387,6 +370,7 @@ async function teardownSession(state, { notifyBackend }) {
       // webContents 可能已销毁
     }
   }
+  state.scopes?.detach();
   state.debuggerAttached = false;
   sessions.delete(state.recordingId);
 }
@@ -491,10 +475,7 @@ export async function setRecorderCapture(recordingId, enabled) {
   if (!state) {
     return false;
   }
-  await evaluateInView(
-    state,
-    `window.__qaRecorderSetEnabled && window.__qaRecorderSetEnabled(${enabled === true});`,
-  );
+  await state.scopes.setEnabled(enabled === true);
   return true;
 }
 

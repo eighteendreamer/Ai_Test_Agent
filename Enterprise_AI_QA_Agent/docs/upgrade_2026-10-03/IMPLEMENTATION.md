@@ -4255,3 +4255,32 @@ agent_web实际：`npm.cmd run test -- tests/recorder/recorder.test.mjs --report
 scope生产使用原CDP/managed驱动和原API/消费/PG/图：每驱动五场景及无关标签隔离，managed实际headless=False；完整通道字段/PG、MySQL冻结策略和RustFS截图字节保存。测试只清理UUID自有表/图/截图；原输入/失败XML/log不重写。原Electron五场景载入新JS的v1兼容模式，不能当Electron多范围通过。三份计划同步/原件SHA见p0-recording-scopes-validation.json。
 
 当前录制知识查询的图摘要/回执不证明完整原文或模型实际引用；未调用模型，未人工DeepSeek。Electron v2、关闭/移除/回返/BFCache/重复attach与更多网络恢复、完整App/响应/清洗/AI、Docker和其余P0—P5/生产迁移未完成。目标继续保持完整，没有缩成Python范围专项。
+
+## Electron原生context/OOPIF/弹窗与逐文档水位〔2026-10-08，基线a6f43697〕
+
+研究及失败先保存于P0_ELECTRON_SCOPES_DESIGN.md、p0-electron-scopes-reproduction。修改原Electron窗口，新增独立recording-scopes.mjs复用JS v2、原HTTP/PG通道；公开RecordingFinishReceipt兼容v1并允许v2 scopes。未改MySQL参数、PG表或依赖。source hash保存p0-electron-scopes-verified-source-sha.json，原JS只更新宿主说明，窗口旧默认context控制函数移除。
+
+失败及范围：原四场景4失败31.12秒；首次collection语法错误，1error/没有功能测试；首修复4失败54.21秒；第二轮3通过1失败63.92秒；初始重复导航修复后4通过35.22秒。扩大十六模块168通过1失败8跳过95.07秒，动态frame缺父路径；原生frame事件补父关系后2通过20.41秒。绑定真实重投/内容改写2通过19.87秒。首次全十八模块192通过1失败173.60秒，Windows共享测试命令文件os.replace被读取句柄拒绝。测试改编号不可变文件后，最终193通过0跳过149.32秒。一条既有Starlette弃用警告。所有原log/XML/原件保留，不覆盖早期失败。
+
+最终实际命令（工作目录Agent_Server；以下环境路径均实际使用）：
+
+```powershell
+$evidenceRoot='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03'
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_RECORDING_SCOPE_STORAGE='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RECORDING_PRODUCT_EVIDENCE=Join-Path $evidenceRoot 'p0-electron-scopes-verified'
+$env:RECORDING_SCOPE_EVIDENCE=Join-Path $evidenceRoot 'p0-electron-scopes-python-verified'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE=Join-Path $evidenceRoot 'p0-electron-scopes-boundary-pg-verified'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE=Join-Path $evidenceRoot 'p0-electron-scopes-boundary-cdp-verified'
+$env:RECORDING_FINISH_EVIDENCE=Join-Path $evidenceRoot 'p0-electron-scopes-finish-cdp-verified'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py tests/test_recording_scope_product.py tests/test_recording_finish_protocol.py tests/test_recording_boundary_protocol.py tests/test_recording_document_scopes.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml=../docs/upgrade_2026-10-03/p0-electron-scopes-verified.xml
+```
+
+agent_web实际命令：`npm.cmd run test -- tests/recorder/recorder.test.mjs --reporter=default --reporter=junit --outputFile.junit=../docs/upgrade_2026-10-03/p0-electron-scopes-web-verified.xml`，28通过1.30秒。之前误用node --test，Vitest runner报错/未执行测试，p0-electron-scopes-web-final.log保留。无Vue发送方或组件变更，没有重跑完整Vue build。node --check与py_compile仅附加。
+
+十二Electron场景实际MySQL冻结/PG/图知识/RustFS截图：十completed，HTTP503结束超时和同身份内容变更两项预期failed。每项真实打开同partition无关窗口并点击，宿主不注入/不入库；已采原事件经原binding重投不增seq。完成项比对原绑定全部字段/PG、全局/局部seq、frame父链、十项目知识；十二截图上传读回字节。两Python驱动各五实存场景、四CDP反例及旧模块也在同次193项中通过。不是人工DeepSeek或模型消费知识原文。
+
+原事件/HTTP/原生context/HTML/截图、所有XML及失败保存并核验SHA，见p0-electron-scopes-validation.json及audit.py。三份方案同步，原录制/消费证据与无关用户文件保持。旧两份Worker汇总原字节未恢复限制仍在。关闭/移除/BFCache/并行attach/更多断网恢复、完整响应/清洗/知识/AI/App/人工DeepSeek/场景报告、Docker及P0—P5其余范围/迁移继续未完成。

@@ -1,0 +1,823 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="54.060" timestamp="2026-10-08T10:26:00.968158+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_embedded_product" name="test_original_electron_controls_and_small_batches_reach_project_knowledge[navigation]" time="4.480"><failure message="AssertionError: original Electron exited; see saved stdout/stderr/error">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1107/test_original_electron_control0')
+scenario = 'navigation'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup"])
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;实际录制夹具&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'&gt;创建订单&lt;/button&gt;
+    &lt;p&gt;此页面只用于本次系统录制验收。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;""", encoding="utf-8")
+        if scenario in ("tail-input", "pause-input"):
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", "&lt;input id='tail' placeholder='最后一步内容'&gt;&lt;/body&gt;"), encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            save("owned-recording-tables.json", {"tables": tables, "project_id": project.id})
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            await finish_configs.initialize()
+            if scenario == "finish-timeout":
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.middleware("http")
+            async def actual_receipt_outage(request, call_next):
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                return await call_next(request)
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("本次用原HTTP接口测试控制；此静态夹具不代表Vue页面验收。")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            other = origin.replace("127.0.0.1", "localhost")
+            scope_files = {
+                "next": '&lt;button id="next-target"&gt;导航后操作&lt;/button&gt;',
+                "outer": f'&lt;button id="outer-target"&gt;外层操作&lt;/button&gt;&lt;iframe id="inner" src="{origin}/scope/inner"&gt;&lt;/iframe&gt;',
+                "inner": '&lt;button id="inner-target"&gt;嵌套操作&lt;/button&gt;&lt;input id="inner-tail"&gt;',
+                "popup": '&lt;button id="popup-target"&gt;弹窗操作&lt;/button&gt;&lt;input id="popup-tail"&gt;',
+            }
+            if scenario in ("navigation", "cross-origin"):
+                destination = other if scenario == "cross-origin" else origin
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;a id="scope-next" href="{destination}/scope/next"&gt;下一页&lt;/a&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "nested-frame":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;iframe id="outer" src="{other}/scope/outer"&gt;&lt;/iframe&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "popup":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\"&gt;打开弹窗&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            for name, content in scope_files.items():
+                (evidence / f"scope-{name}.html").write_text('&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;' + content, encoding="utf-8")
+    
+            @app.get("/scope/{name}")
+            async def scope_fixture(name: str):
+                return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+    
+            process = None
+            playwright = None
+            attached = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands)
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                    assert created.json()["metadata"]["finish_settings"]["revision"] &gt;= 1
+                    # Actual MySQL change after creation must not change this session's policy.
+                    await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                    current_finish_settings = await finish_configs.capture(project.id)
+                    save("finish-settings-current.json", current_finish_settings)
+                    assert current_finish_settings["payload"]["timeout_seconds"] == 1
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with socket.socket() as reserved:
+                        reserved.bind(("127.0.0.1", 0))
+                        cdp_port = reserved.getsockname()[1]
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), f"--remote-debugging-port={cdp_port}", str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                        await wait_json(evidence / "harness-ready.json", timeout=30)
+                        playwright = await async_playwright().start()
+                        attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                        page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+    
+                        async def clicks(count):
+                            initial = await page.evaluate("window.fixtureClicks || 0")
+                            for _ in range(count):
+                                await page.locator("#target").click()
+                            await page.wait_for_function("expected =&gt; window.fixtureClicks === expected", arg=initial + count)
+                            return await command()
+                        async with asyncio.timeout(10):
+                            while service.runtime_status(session_id).value != "ready":
+                                await asyncio.sleep(.05)
+    
+                        async def control(action):
+                            response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+                            save(f"control-{action}.json", {"status": response.status_code, "body": response.json()})
+                            response.raise_for_status()
+                            return response.json()
+    
+                        await control("start")
+                        await enabled(True)
+                        await clicks(2)
+                        async with asyncio.timeout(6):
+                            while len([item for item in await store.get_events(session_id) if item.type == "click"]) &lt; 2:
+                                await asyncio.sleep(.1)
+                        await command("snapshot")
+                        screenshot_refs = [json.loads(path.read_text())["ref"] for path in evidence.glob("screenshot-[0-9]*.json")]
+                        assert len(screenshot_refs) == 1 and screenshot_refs[0].startswith("rustfs://")
+                        stored_screenshot = await env.objects.read_object_uri(screenshot_refs[0])
+                        screenshot_bytes = stored_screenshot["content"]
+                        assert screenshot_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+                        (evidence / "screenshot-rustfs.png").write_bytes(screenshot_bytes)
+                        save("screenshot-storage.json", {"uri": screenshot_refs[0], "sha256": hashlib.sha256(screenshot_bytes).hexdigest(), "size_bytes": len(screenshot_bytes)})
+                        if scenario == "pause-input":
+                            await page.locator("#tail").fill("暂停前最后输入")
+                            save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
+                                "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                        paused = await control("pause")
+&gt;                       await enabled(False)
+
+tests\test_recording_embedded_product.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_embedded_product.py:145: in enabled
+    result = await command()
+             ^^^^^^^^^^^^^^^
+tests\test_recording_embedded_product.py:140: in command
+    return await wait_json(evidence / f"reply-{command_id}.json")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-electron-scopes-fixed/navigation/reply-4.json')
+timeout = 15
+
+    async def wait_json(path, timeout=15):
+        async with asyncio.timeout(timeout):
+            while not path.exists():
+                if process and process.poll() is not None:
+&gt;                   raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+E                   AssertionError: original Electron exited; see saved stdout/stderr/error
+
+tests\test_recording_embedded_product.py:130: AssertionError</failure></testcase><testcase classname="tests.test_recording_embedded_product" name="test_original_electron_controls_and_small_batches_reach_project_knowledge[cross-origin]" time="4.150"><failure message="AssertionError: original Electron exited; see saved stdout/stderr/error">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1107/test_original_electron_control1')
+scenario = 'cross-origin'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup"])
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;实际录制夹具&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'&gt;创建订单&lt;/button&gt;
+    &lt;p&gt;此页面只用于本次系统录制验收。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;""", encoding="utf-8")
+        if scenario in ("tail-input", "pause-input"):
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", "&lt;input id='tail' placeholder='最后一步内容'&gt;&lt;/body&gt;"), encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            save("owned-recording-tables.json", {"tables": tables, "project_id": project.id})
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            await finish_configs.initialize()
+            if scenario == "finish-timeout":
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.middleware("http")
+            async def actual_receipt_outage(request, call_next):
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                return await call_next(request)
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("本次用原HTTP接口测试控制；此静态夹具不代表Vue页面验收。")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            other = origin.replace("127.0.0.1", "localhost")
+            scope_files = {
+                "next": '&lt;button id="next-target"&gt;导航后操作&lt;/button&gt;',
+                "outer": f'&lt;button id="outer-target"&gt;外层操作&lt;/button&gt;&lt;iframe id="inner" src="{origin}/scope/inner"&gt;&lt;/iframe&gt;',
+                "inner": '&lt;button id="inner-target"&gt;嵌套操作&lt;/button&gt;&lt;input id="inner-tail"&gt;',
+                "popup": '&lt;button id="popup-target"&gt;弹窗操作&lt;/button&gt;&lt;input id="popup-tail"&gt;',
+            }
+            if scenario in ("navigation", "cross-origin"):
+                destination = other if scenario == "cross-origin" else origin
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;a id="scope-next" href="{destination}/scope/next"&gt;下一页&lt;/a&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "nested-frame":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;iframe id="outer" src="{other}/scope/outer"&gt;&lt;/iframe&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "popup":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\"&gt;打开弹窗&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            for name, content in scope_files.items():
+                (evidence / f"scope-{name}.html").write_text('&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;' + content, encoding="utf-8")
+    
+            @app.get("/scope/{name}")
+            async def scope_fixture(name: str):
+                return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+    
+            process = None
+            playwright = None
+            attached = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands)
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                    assert created.json()["metadata"]["finish_settings"]["revision"] &gt;= 1
+                    # Actual MySQL change after creation must not change this session's policy.
+                    await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                    current_finish_settings = await finish_configs.capture(project.id)
+                    save("finish-settings-current.json", current_finish_settings)
+                    assert current_finish_settings["payload"]["timeout_seconds"] == 1
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with socket.socket() as reserved:
+                        reserved.bind(("127.0.0.1", 0))
+                        cdp_port = reserved.getsockname()[1]
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), f"--remote-debugging-port={cdp_port}", str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                        await wait_json(evidence / "harness-ready.json", timeout=30)
+                        playwright = await async_playwright().start()
+                        attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                        page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+    
+                        async def clicks(count):
+                            initial = await page.evaluate("window.fixtureClicks || 0")
+                            for _ in range(count):
+                                await page.locator("#target").click()
+                            await page.wait_for_function("expected =&gt; window.fixtureClicks === expected", arg=initial + count)
+                            return await command()
+                        async with asyncio.timeout(10):
+                            while service.runtime_status(session_id).value != "ready":
+                                await asyncio.sleep(.05)
+    
+                        async def control(action):
+                            response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+                            save(f"control-{action}.json", {"status": response.status_code, "body": response.json()})
+                            response.raise_for_status()
+                            return response.json()
+    
+                        await control("start")
+                        await enabled(True)
+                        await clicks(2)
+                        async with asyncio.timeout(6):
+                            while len([item for item in await store.get_events(session_id) if item.type == "click"]) &lt; 2:
+                                await asyncio.sleep(.1)
+                        await command("snapshot")
+                        screenshot_refs = [json.loads(path.read_text())["ref"] for path in evidence.glob("screenshot-[0-9]*.json")]
+                        assert len(screenshot_refs) == 1 and screenshot_refs[0].startswith("rustfs://")
+                        stored_screenshot = await env.objects.read_object_uri(screenshot_refs[0])
+                        screenshot_bytes = stored_screenshot["content"]
+                        assert screenshot_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+                        (evidence / "screenshot-rustfs.png").write_bytes(screenshot_bytes)
+                        save("screenshot-storage.json", {"uri": screenshot_refs[0], "sha256": hashlib.sha256(screenshot_bytes).hexdigest(), "size_bytes": len(screenshot_bytes)})
+                        if scenario == "pause-input":
+                            await page.locator("#tail").fill("暂停前最后输入")
+                            save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
+                                "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                        paused = await control("pause")
+&gt;                       await enabled(False)
+
+tests\test_recording_embedded_product.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_embedded_product.py:145: in enabled
+    result = await command()
+             ^^^^^^^^^^^^^^^
+tests\test_recording_embedded_product.py:140: in command
+    return await wait_json(evidence / f"reply-{command_id}.json")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-electron-scopes-fixed/cross-origin/reply-4.json')
+timeout = 15
+
+    async def wait_json(path, timeout=15):
+        async with asyncio.timeout(timeout):
+            while not path.exists():
+                if process and process.poll() is not None:
+&gt;                   raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+E                   AssertionError: original Electron exited; see saved stdout/stderr/error
+
+tests\test_recording_embedded_product.py:130: AssertionError</failure></testcase><testcase classname="tests.test_recording_embedded_product" name="test_original_electron_controls_and_small_batches_reach_project_knowledge[nested-frame]" time="37.492"><failure message="AssertionError: original command did not set capture=True; actual={'clicks': 0, 'recorder': {'document_id': '1e708588-300a-438d-810d-f4a4d59b442f', 'enabled': False, 'lastUrl': 'http://127.0.0.1:64435/fixture', 'pending': 0, 'seq': 0, 'top': True}, 'title': '实际录制夹具', 'host': {'recordingId': 'da43212d-302a-4784-b8c0-a305ea0081e7', 'attached': True, 'currentUrl': 'http://127.0.0.1:64435/fixture', 'bufferedEvents': 0, 'forwardedEvents': 0, 'droppedMalformed': 2}}">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1107/test_original_electron_control2')
+scenario = 'nested-frame'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup"])
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;实际录制夹具&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'&gt;创建订单&lt;/button&gt;
+    &lt;p&gt;此页面只用于本次系统录制验收。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;""", encoding="utf-8")
+        if scenario in ("tail-input", "pause-input"):
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", "&lt;input id='tail' placeholder='最后一步内容'&gt;&lt;/body&gt;"), encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            save("owned-recording-tables.json", {"tables": tables, "project_id": project.id})
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            await finish_configs.initialize()
+            if scenario == "finish-timeout":
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.middleware("http")
+            async def actual_receipt_outage(request, call_next):
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                return await call_next(request)
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("本次用原HTTP接口测试控制；此静态夹具不代表Vue页面验收。")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            other = origin.replace("127.0.0.1", "localhost")
+            scope_files = {
+                "next": '&lt;button id="next-target"&gt;导航后操作&lt;/button&gt;',
+                "outer": f'&lt;button id="outer-target"&gt;外层操作&lt;/button&gt;&lt;iframe id="inner" src="{origin}/scope/inner"&gt;&lt;/iframe&gt;',
+                "inner": '&lt;button id="inner-target"&gt;嵌套操作&lt;/button&gt;&lt;input id="inner-tail"&gt;',
+                "popup": '&lt;button id="popup-target"&gt;弹窗操作&lt;/button&gt;&lt;input id="popup-tail"&gt;',
+            }
+            if scenario in ("navigation", "cross-origin"):
+                destination = other if scenario == "cross-origin" else origin
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;a id="scope-next" href="{destination}/scope/next"&gt;下一页&lt;/a&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "nested-frame":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;iframe id="outer" src="{other}/scope/outer"&gt;&lt;/iframe&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "popup":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\"&gt;打开弹窗&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            for name, content in scope_files.items():
+                (evidence / f"scope-{name}.html").write_text('&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;' + content, encoding="utf-8")
+    
+            @app.get("/scope/{name}")
+            async def scope_fixture(name: str):
+                return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+    
+            process = None
+            playwright = None
+            attached = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands)
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                    assert created.json()["metadata"]["finish_settings"]["revision"] &gt;= 1
+                    # Actual MySQL change after creation must not change this session's policy.
+                    await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                    current_finish_settings = await finish_configs.capture(project.id)
+                    save("finish-settings-current.json", current_finish_settings)
+                    assert current_finish_settings["payload"]["timeout_seconds"] == 1
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with socket.socket() as reserved:
+                        reserved.bind(("127.0.0.1", 0))
+                        cdp_port = reserved.getsockname()[1]
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), f"--remote-debugging-port={cdp_port}", str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                        await wait_json(evidence / "harness-ready.json", timeout=30)
+                        playwright = await async_playwright().start()
+                        attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                        page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+    
+                        async def clicks(count):
+                            initial = await page.evaluate("window.fixtureClicks || 0")
+                            for _ in range(count):
+                                await page.locator("#target").click()
+                            await page.wait_for_function("expected =&gt; window.fixtureClicks === expected", arg=initial + count)
+                            return await command()
+                        async with asyncio.timeout(10):
+                            while service.runtime_status(session_id).value != "ready":
+                                await asyncio.sleep(.05)
+    
+                        async def control(action):
+                            response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+                            save(f"control-{action}.json", {"status": response.status_code, "body": response.json()})
+                            response.raise_for_status()
+                            return response.json()
+    
+                        await control("start")
+&gt;                       await enabled(True)
+
+tests\test_recording_embedded_product.py:203: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+expected = True
+
+    async def enabled(expected):
+        result = None
+        for _ in range(30):
+            result = await command()
+            if result.get("recorder", {}).get("enabled") is expected:
+                return result
+            await asyncio.sleep(.1)
+        save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+&gt;       raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+E       AssertionError: original command did not set capture=True; actual={'clicks': 0, 'recorder': {'document_id': '1e708588-300a-438d-810d-f4a4d59b442f', 'enabled': False, 'lastUrl': 'http://127.0.0.1:64435/fixture', 'pending': 0, 'seq': 0, 'top': True}, 'title': '实际录制夹具', 'host': {'recordingId': 'da43212d-302a-4784-b8c0-a305ea0081e7', 'attached': True, 'currentUrl': 'http://127.0.0.1:64435/fixture', 'bufferedEvents': 0, 'forwardedEvents': 0, 'droppedMalformed': 2}}
+
+tests\test_recording_embedded_product.py:150: AssertionError</failure></testcase><testcase classname="tests.test_recording_embedded_product" name="test_original_electron_controls_and_small_batches_reach_project_knowledge[popup]" time="4.093"><failure message="AssertionError: original Electron exited; see saved stdout/stderr/error">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1107/test_original_electron_control3')
+scenario = 'popup'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup"])
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;实际录制夹具&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;&lt;button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'&gt;创建订单&lt;/button&gt;
+    &lt;p&gt;此页面只用于本次系统录制验收。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;""", encoding="utf-8")
+        if scenario in ("tail-input", "pause-input"):
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", "&lt;input id='tail' placeholder='最后一步内容'&gt;&lt;/body&gt;"), encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            save("owned-recording-tables.json", {"tables": tables, "project_id": project.id})
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            finish_configs = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            await finish_configs.initialize()
+            if scenario == "finish-timeout":
+                await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.middleware("http")
+            async def actual_receipt_outage(request, call_next):
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                return await call_next(request)
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("本次用原HTTP接口测试控制；此静态夹具不代表Vue页面验收。")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            other = origin.replace("127.0.0.1", "localhost")
+            scope_files = {
+                "next": '&lt;button id="next-target"&gt;导航后操作&lt;/button&gt;',
+                "outer": f'&lt;button id="outer-target"&gt;外层操作&lt;/button&gt;&lt;iframe id="inner" src="{origin}/scope/inner"&gt;&lt;/iframe&gt;',
+                "inner": '&lt;button id="inner-target"&gt;嵌套操作&lt;/button&gt;&lt;input id="inner-tail"&gt;',
+                "popup": '&lt;button id="popup-target"&gt;弹窗操作&lt;/button&gt;&lt;input id="popup-tail"&gt;',
+            }
+            if scenario in ("navigation", "cross-origin"):
+                destination = other if scenario == "cross-origin" else origin
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;a id="scope-next" href="{destination}/scope/next"&gt;下一页&lt;/a&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "nested-frame":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f'&lt;iframe id="outer" src="{other}/scope/outer"&gt;&lt;/iframe&gt;&lt;/body&gt;'), encoding="utf-8")
+            elif scenario == "popup":
+                fixture.write_text(fixture.read_text(encoding="utf-8").replace("&lt;/body&gt;", f"&lt;button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\"&gt;打开弹窗&lt;/button&gt;&lt;/body&gt;"), encoding="utf-8")
+            for name, content in scope_files.items():
+                (evidence / f"scope-{name}.html").write_text('&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;' + content, encoding="utf-8")
+    
+            @app.get("/scope/{name}")
+            async def scope_fixture(name: str):
+                return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+    
+            process = None
+            playwright = None
+            attached = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands)
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    frozen_finish_settings = created.json()["metadata"]["finish_settings"]
+                    assert created.json()["metadata"]["finish_settings"]["revision"] &gt;= 1
+                    # Actual MySQL change after creation must not change this session's policy.
+                    await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
+                    current_finish_settings = await finish_configs.capture(project.id)
+                    save("finish-settings-current.json", current_finish_settings)
+                    assert current_finish_settings["payload"]["timeout_seconds"] == 1
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with socket.socket() as reserved:
+                        reserved.bind(("127.0.0.1", 0))
+                        cdp_port = reserved.getsockname()[1]
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), f"--remote-debugging-port={cdp_port}", str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                        await wait_json(evidence / "harness-ready.json", timeout=30)
+                        playwright = await async_playwright().start()
+                        attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                        page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+    
+                        async def clicks(count):
+                            initial = await page.evaluate("window.fixtureClicks || 0")
+                            for _ in range(count):
+                                await page.locator("#target").click()
+                            await page.wait_for_function("expected =&gt; window.fixtureClicks === expected", arg=initial + count)
+                            return await command()
+                        async with asyncio.timeout(10):
+                            while service.runtime_status(session_id).value != "ready":
+                                await asyncio.sleep(.05)
+    
+                        async def control(action):
+                            response = await client.post(f"/api/v1/recordings/{session_id}/control", json={"action": action})
+                            save(f"control-{action}.json", {"status": response.status_code, "body": response.json()})
+                            response.raise_for_status()
+                            return response.json()
+    
+                        await control("start")
+                        await enabled(True)
+                        await clicks(2)
+                        async with asyncio.timeout(6):
+                            while len([item for item in await store.get_events(session_id) if item.type == "click"]) &lt; 2:
+                                await asyncio.sleep(.1)
+                        await command("snapshot")
+                        screenshot_refs = [json.loads(path.read_text())["ref"] for path in evidence.glob("screenshot-[0-9]*.json")]
+                        assert len(screenshot_refs) == 1 and screenshot_refs[0].startswith("rustfs://")
+                        stored_screenshot = await env.objects.read_object_uri(screenshot_refs[0])
+                        screenshot_bytes = stored_screenshot["content"]
+                        assert screenshot_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+                        (evidence / "screenshot-rustfs.png").write_bytes(screenshot_bytes)
+                        save("screenshot-storage.json", {"uri": screenshot_refs[0], "sha256": hashlib.sha256(screenshot_bytes).hexdigest(), "size_bytes": len(screenshot_bytes)})
+                        if scenario == "pause-input":
+                            await page.locator("#tail").fill("暂停前最后输入")
+                            save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
+                                "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                        paused = await control("pause")
+&gt;                       await enabled(False)
+
+tests\test_recording_embedded_product.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_embedded_product.py:145: in enabled
+    result = await command()
+             ^^^^^^^^^^^^^^^
+tests\test_recording_embedded_product.py:140: in command
+    return await wait_json(evidence / f"reply-{command_id}.json")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-electron-scopes-fixed/popup/reply-4.json')
+timeout = 15
+
+    async def wait_json(path, timeout=15):
+        async with asyncio.timeout(timeout):
+            while not path.exists():
+                if process and process.poll() is not None:
+&gt;                   raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+E                   AssertionError: original Electron exited; see saved stdout/stderr/error
+
+tests\test_recording_embedded_product.py:130: AssertionError</failure></testcase></testsuite></testsuites>

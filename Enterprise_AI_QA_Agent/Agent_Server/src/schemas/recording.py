@@ -176,7 +176,7 @@ class RecordingFinishSettings(BaseModel):
 
 
 class RecordingFinishReceipt(BaseModel):
-    protocol: Literal["recording-finish-v1"] = "recording-finish-v1"
+    protocol: Literal["recording-finish-v1", "recording-scopes-v2"] = "recording-finish-v1"
     operation: Literal["stop", "pause"] = "stop"
     request_id: str = Field(min_length=1, max_length=64)
     next_seq: int = Field(ge=0)
@@ -184,6 +184,7 @@ class RecordingFinishReceipt(BaseModel):
     pending: int = Field(ge=0)
     frames_unconfirmed: int = Field(ge=0)
     transport_dropped: int = Field(default=0, ge=0)
+    scopes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RecordingControlRequest(BaseModel):

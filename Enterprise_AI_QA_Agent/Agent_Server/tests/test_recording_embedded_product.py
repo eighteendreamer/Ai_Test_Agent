@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_PRODUCT") != "1", 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss"])
+@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict"])
 async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
     root = Path(__file__).resolve().parents[2]
     evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
@@ -95,6 +95,30 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
         server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
         serving = asyncio.create_task(server.serve(sockets=[listener]))
         origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+        other = origin.replace("127.0.0.1", "localhost")
+        scope_files = {
+            "unrelated": '<button id="unrelated-target">无关窗口操作</button>',
+            "next": '<button id="next-target">导航后操作</button>',
+            "outer": f'<button id="outer-target">外层操作</button><iframe id="inner" src="{origin}/scope/inner"></iframe>',
+            "inner": '<button id="inner-target">嵌套操作</button><input id="inner-tail">',
+            "popup": '<button id="popup-target">弹窗操作</button><input id="popup-tail">',
+        }
+        if scenario in ("navigation", "cross-origin"):
+            destination = other if scenario == "cross-origin" else origin
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f'<a id="scope-next" href="{destination}/scope/next">下一页</a></body>'), encoding="utf-8")
+        elif scenario == "nested-frame":
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f'<iframe id="outer" src="{other}/scope/outer"></iframe></body>'), encoding="utf-8")
+        elif scenario == "popup":
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f"<button id='scope-popup' onclick=\"window.open('{other}/scope/popup')\">打开弹窗</button></body>"), encoding="utf-8")
+        elif scenario == "pause-frame":
+            fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f"<button id='add-frame' onclick=\"var f=document.createElement('iframe');f.id='outer';f.src='{other}/scope/outer';document.body.appendChild(f)\">添加框架</button></body>"), encoding="utf-8")
+        for name, content in scope_files.items():
+            (evidence / f"scope-{name}.html").write_text('<!doctype html><meta charset="utf-8">' + content, encoding="utf-8")
+
+        @app.get("/scope/{name}")
+        async def scope_fixture(name: str):
+            return HTMLResponse((evidence / f"scope-{name}.html").read_bytes())
+
         process = None
         playwright = None
         attached = None
@@ -115,7 +139,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
             command_id += 1
             staged = commands.with_suffix(".tmp")
             staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
-            staged.replace(commands)
+            staged.replace(commands.with_name(f"command-{command_id}.json"))
             return await wait_json(evidence / f"reply-{command_id}.json")
 
         async def enabled(expected):
@@ -147,7 +171,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                 config = tmp_path / "electron.json"
                 config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
                     "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
-                    "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    "evidence": str(evidence), "commandsDirectory": str(commands.parent)}), encoding="utf-8")
                 electron = root / "agent_web/node_modules/electron/dist/electron.exe"
                 assert electron.is_file()
                 with socket.socket() as reserved:
@@ -181,6 +205,10 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     await control("start")
                     await enabled(True)
                     await clicks(2)
+                    await command("unrelated")
+                    unrelated = next(p for c in attached.contexts for p in c.pages if p.url == origin + "/scope/unrelated")
+                    await unrelated.locator("#unrelated-target").click()
+                    assert await unrelated.evaluate("window.__qaRecorderInstalled || false") is False
                     async with asyncio.timeout(6):
                         while len([item for item in await store.get_events(session_id) if item.type == "click"]) < 2:
                             await asyncio.sleep(.1)
@@ -196,6 +224,18 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         await page.locator("#tail").fill("暂停前最后输入")
                         save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
                             "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                    initial_bindings = [json.loads(line) for line in (evidence / "binding.jsonl").read_text(encoding="utf-8").splitlines()]
+                    original_click = next(event for event in initial_bindings if event["type"] == "click")
+                    host_before = (await command())["host"]
+                    # Replay the actual captured event through the native binding,
+                    # including different JSON key order; no synthetic browser event.
+                    replay_raw = dict(reversed(list(original_click.items())))
+                    assert await page.evaluate("raw => window.__qaRecordEmit(JSON.stringify(raw))", replay_raw) is True
+                    host_after = (await command())["host"]
+                    save("native-replay.json", {"original": original_click, "host_before": host_before, "host_after": host_after})
+                    assert host_before["forwardedEvents"] == host_after["forwardedEvents"]
+                    assert host_before["bufferedEvents"] == host_after["bufferedEvents"]
+                    assert host_after["droppedMalformed"] == 0
                     paused = await control("pause")
                     await enabled(False)
                     if scenario == "pause-input":
@@ -208,6 +248,11 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                             "events": [event.model_dump(mode="json") for event in paused_events]})
                         assert any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events), "pause lost the actually accepted final input"
                     before = len(await store.get_events(session_id))
+                    if scenario == "pause-frame":
+                        await page.locator("#add-frame").click()
+                        await page.frame_locator("#outer").locator("#outer-target").click()
+                        child = next(f for f in page.frames if f.url == other + "/scope/outer")
+                        assert (await child.evaluate("window.__qaRecorderGetState()")).get("enabled") is False
                     await clicks(2)
                     await asyncio.sleep(.7)
                     assert len(await store.get_events(session_id)) == before
@@ -226,6 +271,35 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         await page.locator("#tail").fill("最后一步实际输入")
                         save("tail-input-before-stop.json", {"value": await page.locator("#tail").input_value(),
                             "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                    expected_scope_targets = []
+                    if scenario == "same-url-navigation":
+                        await page.goto(origin + "/fixture")
+                        await page.locator("#target").click()
+                        expected_scope_targets = ["target"]
+                    elif scenario in ("navigation", "cross-origin"):
+                        await page.locator("#scope-next").click()
+                        await page.locator("#next-target").click()
+                        expected_scope_targets = ["next-target"]
+                    elif scenario in ("nested-frame", "pause-frame"):
+                        outer = page.frame_locator("#outer")
+                        await outer.locator("#outer-target").click()
+                        await outer.frame_locator("#inner").locator("#inner-target").click()
+                        await outer.frame_locator("#inner").locator("#inner-tail").fill("跨来源嵌套最后输入")
+                        expected_scope_targets = ["outer-target", "inner-target", "inner-tail"]
+                    elif scenario == "popup":
+                        async with page.expect_popup() as opened:
+                            await page.locator("#scope-popup").click()
+                        popup = await opened.value
+                        await popup.locator("#popup-target").click()
+                        await popup.locator("#popup-tail").fill("弹窗最后输入")
+                        expected_scope_targets = ["popup-target", "popup-tail"]
+                    if scenario == "identity-conflict":
+                        current_raw = next(event for event in initial_bindings if event["type"] == "click")
+                        altered = {**current_raw, "value": "changed actual replay value"}
+                        rejected = await page.evaluate("async raw => {try {await window.__qaRecordEmit(JSON.stringify(raw)); return {accepted:true};} catch(error) {return {accepted:false,error:error.message};}}", altered)
+                        save("identity-conflict.json", {"original": current_raw, "altered": altered, "response": rejected})
+                        assert rejected["accepted"] is False and "identity cannot change" in rejected["error"]
+                    save("scope-targets.json", {"expected": expected_scope_targets, "pages": [p.url for c in attached.contexts for p in c.pages]})
                     final = await control("stop")
                     assert final["metadata"]["finish_settings"] == frozen_finish_settings
                     if scenario == "finish-timeout":
@@ -236,13 +310,26 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         with pytest.raises(ValueError, match="illegal transition"):
                             await service.control(session_id, RecordingControlAction.start)
                         return
+                    if scenario == "identity-conflict":
+                        assert final["status"] == "failed"
+                        assert final["finalize_metrics"]["failure_reason"] == "finish_unconfirmed"
+                        assert final["finalize_metrics"]["finish_receipt"]["transport_dropped"] == 1
+                        return
                     assert final["status"] == "completed"
                     assert final["finalize_metrics"]["finish_receipt"]["pg_verified"]
                     saved = await store.get_events(session_id)
                     bindings = [json.loads(line) for line in (evidence / "binding.jsonl").read_text(encoding="utf-8").splitlines()]
+                    assert not any((item.target or {}).get("locators", {}).get("id") == "unrelated-target" for item in saved)
+                    for target in expected_scope_targets:
+                        assert any((item.target or {}).get("locators", {}).get("id") == target for item in saved), f"actual scope operation missing: {target}"
+
                     for item in saved:
-                        original = next(event for event in bindings if event["seq"] == item.seq)
-                        for field in ("type", "page", "target", "pixel", "value", "page_effect"):
+                        scope = item.page.get("recording_scope")
+                        original = next(event for event in bindings if ((event.get("recording_document_id") == scope["document_id"] and event["seq"] == scope["local_seq"]) if scope else event["seq"] == item.seq))
+                        expected_page = {**original.get("page", {}), "recording_scope": scope} if scope else original.get("page")
+                        expected_target = {**original["target"], "in_iframe": True} if scope and scope["parent_frame_id"] and original.get("target") else original.get("target")
+                        assert item.page == expected_page and item.target == expected_target
+                        for field in ("type", "pixel", "value", "page_effect"):
                             assert item.model_dump(mode="json")[field] == original.get(field)
                     if scenario == "tail-input":
                         tail = [item for item in saved if item.type == "fill" and (item.target or {}).get("locators", {}).get("id") == "tail"]
@@ -251,7 +338,18 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                         assert len(tail) == 1 and tail[0].value == "最后一步实际输入", "stop lost the actual final input while reporting completed"
                     observed_clicks = [item for item in saved if item.type == "click"]
                     assert len(observed_clicks) >= 4
-                    assert {item.seq for item in observed_clicks} == {item["seq"] for item in bindings if item["type"] == "click"}
+                    unique_binding_clicks = {(item.get("recording_document_id"), item["seq"]) for item in bindings if item["type"] == "click"}
+                    assert len(observed_clicks) == len(unique_binding_clicks)
+                    assert [item.seq for item in saved] == list(range(len(saved)))
+                    for scope in final["finalize_metrics"]["finish_receipt"].get("scopes", []):
+                        assert scope["pg_verified"]
+                    scopes = final["finalize_metrics"]["finish_receipt"].get("scopes", [])
+                    if scenario in ("nested-frame", "pause-frame"):
+                        assert {len(scope["frame_path"]) for scope in scopes} >= {0, 1, 2}
+                        assert any(item.type == "fill" and item.value == "跨来源嵌套最后输入" for item in saved)
+                    if scenario == "popup":
+                        assert len({scope["page_id"] for scope in scopes}) == 2
+                        assert any(item.type == "fill" and item.value == "弹窗最后输入" for item in saved)
                     projection = await graph.get_recording_subgraph(session_id, project_id=project.id)
                     save("projection.json", projection)
                     knowledge, _ = await env.sources.query(project.id, PlanningQuery(kind="recording", source_id=session_id), 50)
@@ -293,7 +391,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
             if playwright:
                 await playwright.stop()
             if process and process.poll() is None:
-                commands.write_text(json.dumps({"id": command_id + 1, "action": "quit"}), encoding="utf-8")
+                commands.with_name(f"command-{command_id + 1}.json").write_text(json.dumps({"id": command_id + 1, "action": "quit"}), encoding="utf-8")
                 try:
                     await asyncio.to_thread(process.wait, timeout=12)
                 except subprocess.TimeoutExpired:
