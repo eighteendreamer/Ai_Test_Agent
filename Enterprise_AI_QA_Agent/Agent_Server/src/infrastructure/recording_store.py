@@ -31,6 +31,12 @@ from src.schemas.recording import (
 logger = logging.getLogger(__name__)
 
 
+class RecordingEventWriteRejected(ValueError):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
 class PostgresRecordingStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -262,6 +268,14 @@ class PostgresRecordingStore:
 
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                cur.execute(f"SELECT status FROM {self._session_table} WHERE id = %s FOR UPDATE", (recording_id,))
+                session = cur.fetchone()
+                reason = ("recording_missing" if session is None else "recording_terminal"
+                    if session["status"] in ("completed", "failed", "discarded") else None)
+                if reason is not None:
+                    logger.warning("recording_event_write_rejected", extra={
+                        "recording_id": recording_id, "reason": reason, "batch_size": len(events)})
+                    raise RecordingEventWriteRejected(reason)
                 cur.execute(
                     f"SELECT COUNT(*) AS cnt FROM {self._event_table} WHERE recording_id = %s",
                     (recording_id,),

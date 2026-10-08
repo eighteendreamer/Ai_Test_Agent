@@ -135,7 +135,7 @@ def test_append_events_counts_and_idempotent_conflict() -> None:
 
     # 第一次提交：库中 0 行，三条全部插入
     cursor = FakeCursor(
-        script=[("fetchone", {"cnt": 0}), ("rowcount", 1), ("rowcount", 1), ("rowcount", 1)]
+        script=[("fetchone", {"status": "active"}), ("fetchone", {"cnt": 0}), ("rowcount", 1), ("rowcount", 1), ("rowcount", 1)]
     )
     _patch_connect(cursor)
     try:
@@ -155,7 +155,7 @@ def test_append_events_counts_and_idempotent_conflict() -> None:
 
     # 批内重复 + 重试同批次：库中已有 3 行，全部冲突
     cursor2 = FakeCursor(
-        script=[("fetchone", {"cnt": 3}), ("rowcount", 0), ("rowcount", 0), ("rowcount", 0)]
+        script=[("fetchone", {"status": "active"}), ("fetchone", {"cnt": 3}), ("rowcount", 0), ("rowcount", 0), ("rowcount", 0)]
     )
     _patch_connect(cursor2)
     try:

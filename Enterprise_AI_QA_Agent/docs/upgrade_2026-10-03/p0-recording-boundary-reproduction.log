@@ -1,0 +1,39 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_original_electron_controls_and_small_batches_reach_project_knowledge[pause-input] _
+tests\test_recording_embedded_product.py:207: in test_original_electron_controls_and_small_batches_reach_project_knowledge
+    assert any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events), "pause lost the actually accepted final input"
+E   AssertionError: pause lost the actually accepted final input
+E   assert False
+E    +  where False = any(<generator object test_original_electron_controls_and_small_batches_reach_project_knowledge.<locals>.<genexpr> at 0x00000289F4F36330>)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.recorder.recorder_session_service:recorder_session_service.py:468 recorder event dropped (not active): recording_id=6eca3a1b-d1ab-48dd-8291-501a21fb89a3 status=paused seq=3
+ERROR    src.application.recorder.recorder_session_service:recorder_session_service.py:399 recording finalize failed: recording_id=6eca3a1b-d1ab-48dd-8291-501a21fb89a3
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\recorder\recorder_session_service.py", line 372, in _do_stop
+    finish = await runtime.driver.finish_capture()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\recorder\drivers\embedded_bridge.py", line 359, in finish_capture
+    await self._finish_event.wait()
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\locks.py", line 213, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\recorder\recorder_session_service.py", line 371, in _do_stop
+    async with asyncio.timeout(policy.timeout_seconds):
+  File "E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+_ test_original_electron_controls_and_small_batches_reach_project_knowledge[bridge-loss] _
+tests\test_recording_embedded_product.py:275: in test_original_electron_controls_and_small_batches_reach_project_knowledge
+    assert late.status_code == 409, "bridge loss allowed late writes to completed recording"
+E   AssertionError: bridge loss allowed late writes to completed recording
+E   assert 200 == 409
+E    +  where 200 = <Response [200 OK]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_recording_embedded_product.py::test_original_electron_controls_and_small_batches_reach_project_knowledge[pause-input]
+FAILED tests/test_recording_embedded_product.py::test_original_electron_controls_and_small_batches_reach_project_knowledge[bridge-loss]
+2 failed in 51.12s

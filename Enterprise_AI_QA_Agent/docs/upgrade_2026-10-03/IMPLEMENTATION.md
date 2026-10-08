@@ -4199,3 +4199,32 @@ agent_web工作目录实际执行：`npm.cmd run test -- tests/recorder/recorder
 真实HTTP503结束回执场景使用MySQL项目配置一秒，结果failed/finish_timeout，没有成功图固化；两个成功场景读取原binding全字段/PG、RustFS截图与项目知识投影。测试自有资源按原UUID归属清理，原工件保留。iframe/多top未确认、暂停边界、bridge丢失后迟到写入、真实managed结束、完整App/人工DeepSeek/模型使用、其他P0—P5及生产历史迁移仍未完成。策略当前由MySQL服务配置，产品编辑/运维入口尚未接。没有重复旧默认自主模型超时。
 
 追加实际Electron三场景（同上product开关，RECORDING_PRODUCT_EVIDENCE改为p0-recording-drain-product-final）：`..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-drain-product-final.xml' --tb=short`，3通过26.39秒，保存MySQL当前策略实际读回。原ASGI回执及路由：`..\.venv\Scripts\python.exe -m pytest tests/test_recording_finish_protocol.py::test_actual_route_rejects_receipt_for_wrong_request tests/test_recording_routes.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-drain-routes-final.xml' --tb=short`，27通过1.06秒。0跳过；拒绝日志有据。与前面重复的节点不累计。
+
+## 2026-10-08 暂停交付与终态写入〔基线bd972911〕
+
+先复现后研究，见P0_RECORDING_BOUNDARY_DESIGN.md/PLAN 6.73。原Electron两个反例2失败51.12秒，修复后2通过19.53秒；原模块153通过13.62秒；新增协议六项6通过6.73秒。最终追加错操作回执/暂停超时，合跑161通过0跳过18.90秒，一条既有Starlette弃用警告。各轮独立原件保留，不累计重复节点。
+
+最终实际命令（工作目录Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-boundary-pg-final'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-boundary-pause-cdp-final'
+$env:RECORDING_FINISH_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-boundary-cdp-final'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_boundary_protocol.py tests/test_recording_finish_protocol.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-boundary-final.xml'
+```
+
+真实PG三终态Lock等待/八路追加、原ASGI409/404、真实CDP两次fill、后台pause取消等待与并发控制、DB失败/超时均实际运行。另独立原Electron五场景：
+
+```powershell
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RECORDING_PRODUCT_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-boundary-product-final'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-boundary-product-final.xml'
+```
+
+原结果5通过0跳过38.36秒：正常、最后输入stop、实际HTTP503 failed、最后输入pause、移除bridge重投409。实际MySQL/PG/RustFS/Memgraph及原HTTP/binding/历史快照保存，控制条静态夹具不是完整App。仅清理测试UUID自有资源；不改历史结果。没有新配置/表/依赖，原MySQL策略创建时冻结，PG原metadata/finalize_metrics追加回执。
+
+附加源码编译与Electron node --check，退出0；无Vue契约修改，未重跑Vue完整构建。recorder.js未改，26项JS仍为上一批历史结果。三份PLAN逐字节同步、原工件审计见p0-recording-boundary-validation.json。iframe/多窗口、更多断网/恢复、managed真实结束、完整App/人工DeepSeek、响应/清洗/完整知识/AI、Docker和其他P0—P5及生产迁移仍未完成；没有重跑同配置默认自主Agent超时。

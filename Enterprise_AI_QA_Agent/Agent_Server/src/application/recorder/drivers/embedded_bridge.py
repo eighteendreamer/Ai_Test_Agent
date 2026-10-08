@@ -34,7 +34,7 @@ from src.schemas.recording import (
     dedupe_event_batch,
 )
 
-from .base import BrowserDriver, EventChannel
+from .base import BrowserDriver, CaptureCheckpoint, EventChannel
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,8 @@ class EmbeddedBridge:
         driver = state.driver
         if receipt.request_id != getattr(driver, "_finish_id", None):
             raise ValueError("Recording finish request mismatch")
+        if receipt.operation != driver._finish_operation:
+            raise ValueError("Recording capture operation mismatch")
         if getattr(driver, "_finish_receipt", None) is not None and driver._finish_receipt != receipt:
             raise ValueError("Recording finish receipt cannot change")
         driver._finish_receipt = receipt
@@ -348,17 +350,27 @@ class EmbeddedDriver(BrowserDriver):
             )
             return False
 
-    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
+    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any] | CaptureCheckpoint]:
         return self._channel.iterate()
 
     async def finish_capture(self) -> dict[str, Any]:
+        return await self._capture_checkpoint("stop")
+
+    async def pause_capture(self) -> dict[str, Any]:
+        return await self._capture_checkpoint("pause")
+
+    async def _capture_checkpoint(self, operation: str) -> dict[str, Any]:
         self._finish_id = uuid4().hex
+        self._finish_operation = operation
         self._finish_event = asyncio.Event()
         self._finish_receipt = None
-        self._enqueue_command("finish_capture", {"request_id": self._finish_id})
+        self._enqueue_command("finish_capture", {"request_id": self._finish_id, "operation": operation})
         await self._finish_event.wait()
         receipt = self._finish_receipt.model_dump(mode="json")
-        await self._channel.finish()
+        if operation == "stop":
+            await self._channel.finish()
+        else:
+            await self._channel.checkpoint()
         return {**receipt, "published_seqs": sorted(self._channel.published_seqs),
             "channel_dropped": self._channel.dropped}
 

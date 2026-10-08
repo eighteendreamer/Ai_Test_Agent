@@ -290,6 +290,7 @@ async function applyCommand(state, command) {
     const response = await backendFetch(`/api/v1/recordings/${state.recordingId}/capture-finished`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...receipt, request_id: payload.request_id,
+        operation: payload.operation || "stop",
         transport_dropped: state.droppedMalformed + state.droppedTransport }),
     });
     log(state, `finish_capture receipt: ${response.status}, next_seq=${receipt.next_seq}`);

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
-from .base import BrowserDriver, EventChannel
+from .base import BrowserDriver, CaptureCheckpoint, EventChannel
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +121,16 @@ class PlaywrightBindingDriverBase(BrowserDriver):
             len(list(getattr(self._context, "pages", None) or [])),
         )
 
-    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
+    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any] | CaptureCheckpoint]:
         return self._channel.iterate()
 
     async def finish_capture(self) -> dict[str, Any]:
+        return await self._capture_checkpoint("stop")
+
+    async def pause_capture(self) -> dict[str, Any]:
+        return await self._capture_checkpoint("pause")
+
+    async def _capture_checkpoint(self, operation: str) -> dict[str, Any]:
         if self._page is None or self._closed:
             raise RuntimeError("Recording browser unavailable during finish")
         pages = list(self._context.pages)
@@ -133,8 +139,11 @@ class PlaywrightBindingDriverBase(BrowserDriver):
         receipt = await self._page.evaluate("() => window.__qaRecorderFinish()")
         if not isinstance(receipt, dict) or receipt.get("protocol") != "recording-finish-v1":
             raise RuntimeError("Recording browser finish protocol unavailable")
-        await self._channel.finish()
-        return {**receipt, "request_id": uuid4().hex, "transport_dropped": 0,
+        if operation == "stop":
+            await self._channel.finish()
+        else:
+            await self._channel.checkpoint()
+        return {**receipt, "operation": operation, "request_id": uuid4().hex, "transport_dropped": 0,
             "published_seqs": sorted(self._channel.published_seqs), "channel_dropped": self._channel.dropped}
 
     async def capture_screenshot(self) -> bytes:

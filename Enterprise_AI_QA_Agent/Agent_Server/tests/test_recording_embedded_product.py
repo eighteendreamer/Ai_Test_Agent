@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_PRODUCT") != "1", 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout"])
+@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss"])
 async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
     root = Path(__file__).resolve().parents[2]
     evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
@@ -46,7 +46,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
     fixture.write_text("""<!doctype html><html><head><meta charset='utf-8'><title>实际录制夹具</title></head>
 <body><button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'>创建订单</button>
 <p>此页面只用于本次系统录制验收。</p></body></html>""", encoding="utf-8")
-    if scenario == "tail-input":
+    if scenario in ("tail-input", "pause-input"):
         fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", "<input id='tail' placeholder='最后一步内容'></body>"), encoding="utf-8")
     async with environment(tmp_path, live=True) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
@@ -77,7 +77,9 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
         @app.middleware("http")
         async def actual_receipt_outage(request, call_next):
             if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
-                return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                body = await request.json()
+                if body.get("operation", "stop") == "stop":
+                    return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
             return await call_next(request)
 
         @app.get("/fixture")
@@ -190,8 +192,21 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     assert screenshot_bytes.startswith(b"\x89PNG\r\n\x1a\n")
                     (evidence / "screenshot-rustfs.png").write_bytes(screenshot_bytes)
                     save("screenshot-storage.json", {"uri": screenshot_refs[0], "sha256": hashlib.sha256(screenshot_bytes).hexdigest(), "size_bytes": len(screenshot_bytes)})
-                    await control("pause")
+                    if scenario == "pause-input":
+                        await page.locator("#tail").fill("暂停前最后输入")
+                        save("pause-input-before.json", {"value": await page.locator("#tail").input_value(),
+                            "recorder": await page.evaluate("window.__qaRecorderGetState()")})
+                    paused = await control("pause")
                     await enabled(False)
+                    if scenario == "pause-input":
+                        for _ in range(60):
+                            paused_events = await store.get_events(session_id)
+                            if any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events):
+                                break
+                            await asyncio.sleep(.1)
+                        save("pause-input-after.json", {"session": (await store.get_session(session_id)).model_dump(mode="json"),
+                            "events": [event.model_dump(mode="json") for event in paused_events]})
+                        assert any(event.type == "fill" and event.value == "暂停前最后输入" for event in paused_events), "pause lost the actually accepted final input"
                     before = len(await store.get_events(session_id))
                     await clicks(2)
                     await asyncio.sleep(.7)
@@ -248,6 +263,19 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     async with asyncio.timeout(8):
                         while bridge.session_stats(session_id).get("closed") and not any("close command from backend" in line for line in (evidence / "electron.stdout").read_text(errors="replace").splitlines()):
                             await asyncio.sleep(.1)
+                    if scenario == "bridge-loss":
+                        assert bridge.detach(session_id)
+                        before_terminal = (await store.get_session(session_id)).model_dump(mode="json")
+                        before_events = [event.model_dump(mode="json") for event in await store.get_events(session_id)]
+                        late = await client.post(f"/api/v1/recordings/{session_id}/events:batch",
+                            json={"events": before_events})
+                        after_terminal = (await store.get_session(session_id)).model_dump(mode="json")
+                        after_events = [event.model_dump(mode="json") for event in await store.get_events(session_id)]
+                        save("late-terminal.json", {"http_status": late.status_code, "response": late.json(),
+                            "before_session": before_terminal, "after_session": after_terminal,
+                            "before_events": before_events, "after_events": after_events})
+                        assert late.status_code == 409, "bridge loss allowed late writes to completed recording"
+                        assert before_terminal == after_terminal and before_events == after_events
                     save("verification.json", {"real_electron": True, "real_http": True, "pg_events": len(saved), "legitimate_clicks": 4,
                         "observed_clicks": len(observed_clicks), "additional_observed_clicks": len(observed_clicks) - 4,
                         "all_binding_clicks_preserved": True,

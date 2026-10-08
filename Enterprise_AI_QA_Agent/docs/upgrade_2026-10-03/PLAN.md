@@ -1,8 +1,8 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本批实施研究基线 `33f15e99`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
+修订日期：2026-10-08；本批实施研究基线 `bd972911`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
 
-**本批修复停止漏录并接入结束回执。** 浏览器冲刷已接受输入，Electron确认批次交付，原消费循环排空后核对PG事件和浏览器水位；正常及立即停止通过，真实HTTP结束回执503时明确failed。最终155项后端及26项JS通过，见4.1.1/6.72。iframe、多窗口、暂停边界及完整录制/AI验收仍未完成，历史失败保留。
+**本批补齐暂停前最后输入与终态迟到写入。** 暂停先确认浏览器和批次交付，原消费循环冲刷PG后才返回paused，继续录制复用原队列；事件追加事务锁定会话行，bridge丢失后的终态重投返回409且历史不变。最终161项后端及五个真实Electron场景分别通过，见4.1.1/6.73。iframe、多窗口、更多网络故障和完整录制/AI验收仍未完成，历史失败保留。
 
 执行流程继续采用“理解用户需求 → 当前项目选取完整用例 → 初排 → AI判断步骤所需条件是否有来源 → 按项目依据补全 → 最终排序与冻结 → 现有Agent执行”。模板只参与生成；缺口检测不增加注册、登录等固定清单，具体检测方式见2.3。上传独立保存原件/版本并比较指定快照，Git仍为可选来源，见3.1。各模块未完成的产品验收按第六节保留。
 
@@ -1069,7 +1069,11 @@ API、Schema、前端DTO/客户端和旧矩阵消费者已同步。真实MD/DOCX
 
 此前实际输入后立即stop：页面输入存在、停止前seq=6，PG只有5条且没有对应fill，却显示completed和正常对账，原失败保留在6.71。现在接入共享finish_capture契约：先冲刷已接受输入/异步binding，再由Electron确认完整批次，原队列FIFO结束标记排空，PG核对全部发布seq及浏览器本页生成范围。真正尾部输入、部分批次和受控503结束超时已验，见6.72。
 
-新配置recording.finish_settings沿用MySQL并在创建时冻结到PG metadata。失败/丢弃/未确认水位不能固化成功；取消HTTP等待不取消后台stop。研究见[P0_RECORDING_DRAIN_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_DRAIN_DESIGN.md)。iframe/多top仍缺分范围确认，当前明确失败；暂停前已接受输入与延迟网络边界还需完整验收，不能把top回执当作全录制完成。动态响应、完整知识、AI实际使用和人工DeepSeek仍未完成。
+新配置recording.finish_settings沿用MySQL并在创建时冻结到PG metadata。失败/丢弃/未确认水位不能固化成功；取消HTTP等待不取消后台stop。研究见[P0_RECORDING_DRAIN_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_DRAIN_DESIGN.md)。
+
+本批实际复现立即pause丢fill和bridge移除后终态重投更新updated_at。暂停复用浏览器冲刷/完整批次回执，以operation=pause及FIFO检查点确认原消费循环已提交PG，再保存paused；队列保持开放供resume。并发控制拒绝，取消HTTP等待保留后台pause，DB失败/超时明确failed。stop保留追加的pause_receipts。事件追加在同一PG事务FOR UPDATE锁会话行，缺失404、completed/failed/discarded拒绝409，避免路由先查状态再写的竞态；原终态不更新。真实Electron、CDP、PG锁竞争及完整快照已验，见6.73及[P0_RECORDING_BOUNDARY_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_BOUNDARY_DESIGN.md)。
+
+iframe/多top仍缺分范围确认，当前明确失败；更多延迟/断网/进程恢复组合仍待验，不能把top回执当作全录制完成。动态响应、完整知识、AI实际使用、完整App和人工DeepSeek仍未完成。
 
 ### 4.2 Agent API测试
 
@@ -1246,7 +1250,7 @@ C2c3依据[真实状态研究](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_
 | P4覆盖确认 | `b908fe29` API/三格式生产进程见3.6.9/6.24；本阶段正式页面、完整JSON/固定版本评审、原请求恢复、历史/撤销/冲突及归档读取已验，84项组件和真实DOCX完整App见3.6.10/6.26 | 正文关联正式App已验；环境适用、更广业务及生产迁移 |
 | P4正文执行关联 | 固定核验/PG追加历史/候选恢复API和矩阵见6.30；正式编辑、原请求恢复、历史/撤销/409/归档完整读取已验；120项组件、真实DOCX完整App与独立进程见3.6.13/6.31 | 默认Agent自主执行、点级完整性及环境适用/生产历史迁移 |
 | P4环境/来源 | A登记/MySQL配置/PG捕获见6.33；B真实来源/确认见6.34—6.35；C1规划/Agent固定依据见6.36；C2a精确失效的创建/领取/开始限制、依赖/独立项、锁竞争和检查点恢复见6.37；C2b首次开始回执/原Agent恢复/真实生产执行见6.38；C2c1归属及C2c2未领取动作限制/原响应恢复见6.40—6.41 | 运行中动作修订、换目标回归、正式环境页面、AI候选及默认Agent；来源匹配不自动生成部署确认，未选择点不推断 |
-| P0/P5录制与Docker/报告 | 原入口修复后接入停止回执/队列排空/PG水位；真实立即停止与HTTP503超时已验，155后端及26JS通过，见6.72 | iframe/多窗口和暂停交付边界、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
+| P0/P5录制与Docker/报告 | 停止回执/PG水位见6.72；暂停检查点/尾输入、bridge丢失后终态保护及实际PG行锁见6.73，161后端和五个真实Electron场景分别通过 | iframe/多窗口、更多网络/进程恢复边界、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
 
 此前内部输入专项：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
@@ -2476,3 +2480,19 @@ sources预读不耗模型回合；ID-only来源在capture前V2发生时读V2且�
 追加独立三个原Electron场景**3通过、0跳过26.39秒**，保存创建后MySQL实际读取的当前一秒策略、原冻结三十秒/一秒策略及最终PG快照，确认修改配置不会影响已有录制。追加原ASGI路由的错请求拒绝/正确回执及原路由回归**27通过、0跳过1.06秒**，记录拒绝日志，见[路由XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-routes-final.xml)。这些是额外核验，不能与此前合跑重复累计成新功能数。
 
 本批不证明完整录制：iframe/多窗口缺分范围身份/结束确认，当前明确失败；暂停已接受输入与迟到批次仍需完整修复/验收。完整Vue App、真实managed结束、人工DeepSeek、响应关联、清洗/完整原文与AI实际使用均未验收。另需核验bridge丢失后的迟到写入和历史保护，不把活动bridge的终态拒绝当生产恢复已验。其余P0—P5、默认自主Agent、准备生命周期、其他模式/App、正式模板/Excel、Docker真实结果/报告、业务评审/环境适用及历史迁移保持未完成。研究与下一步见[P0_RECORDING_DRAIN_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_DRAIN_DESIGN.md)，三份方案和原字节核对见[p0-recording-drain-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-drain-validation.json)。
+
+### 6.73 暂停检查点与终态迟到写入〔基线bd972911〕
+
+本批先研究原control、输入冲刷、批次交付、消费循环及PG事务，见[P0_RECORDING_BOUNDARY_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_BOUNDARY_DESIGN.md)。两个真实原Electron反例 **2失败、51.12秒**：立即pause时原binding已有seq=3/fill，六秒PG无fill；正常completed后移除bridge，原批次重投HTTP200/duplicates=6且updated_at改变。失败原件与清理时finish_timeout均保留，不计为其他功能通过，见[复现XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-reproduction.xml)。
+
+根因分别为paused占位先于已采输入入库，以及未知bridge回落的追加事务没有终态条件。pause与stop共用浏览器冲刷/传输回执/PG水位核验和失败处理；pause用不关闭队列的FIFO检查点，原消费循环冲刷后才保存paused。回执增加operation，错操作拒绝；并发控制和取消HTTP等待已有专项。暂停证据追加到原finalize_metrics，stop保留。沿用创建时冻结的MySQL recording.finish_settings，业务记录在PG；没有新配置、表、依赖、模式或执行器。
+
+PostgresRecordingStore.append_events在同一事务FOR UPDATE锁定会话行，随后才计数、插入及更新。终态转换UPDATE与追加串行；不存在/终态有结构化拒绝日志，原未知bridge路由映射404/409。重复批次和新seq在completed/failed/discarded均拒绝，原会话全部字段及原事件保持；不只在路由GET一次状态。八路真实并发追加step_count=8，实际pg_stat_activity观察Lock后提交终态，已阻塞追加醒来仍拒绝。
+
+两个真实反例修复后 **2通过、19.53秒**；原十四模块回归 **153通过、0跳过、13.62秒**；新增取消等待/并发控制/DB失败、真实PG三终态锁竞争和CDP暂停继续 **6通过、0跳过、6.73秒**。补错operation与暂停一秒超时后最终合跑 **161通过、0跳过、18.90秒**，有一条既有Starlette弃用警告，见[最终XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-final.xml)和[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-final.log)。各轮重叠节点不累计成功能数。
+
+独立原Electron/API/实际MySQL、PG、RustFS、Memgraph五场景 **5通过、0跳过、38.36秒**：正常、立即stop、实际HTTP503结束超时、立即pause最后输入、移除bridge终态重投。四个成功场景保留全部binding字段/PG与RustFS截图核对；HTTP503为预期failed/finish_timeout，不固化成功图。移除bridge后的实际HTTP409及会话/事件完整前后相等已验，见[产品XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-product-final.xml)。CDP保存暂停前与继续后两次真实fill及两个operation回执；不是人工录制或完整Vue App。
+
+本批未改recorder.js，26项JS是6.72历史结果；当前Electron实际载入修改后的operation协议，node --check附加验证。没有Vue契约变更，未重跑Vue完整构建。三份方案全文同步和本批/此前原件SHA核对见[p0-recording-boundary-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-validation.json)，命令见IMPLEMENTATION.md。用户.gitignore及无关Worker/环境工件保持；历史两份Worker汇总原字节未恢复限制不变。
+
+暂停尾输入和终态写入专项通过，不代表断网/更多恢复、iframe/多窗口、真实managed结束、完整App/人工DeepSeek、响应关联、清洗/完整知识/AI已经验收。下一步继续分范围身份和响应/知识链路；P0全阶段HTTP、P1正式模板/Excel产品、P2默认自主Agent/生命周期/其他模式、需求业务评审/环境适用、Docker真实结果及报告、生产迁移与其余P0—P5仍未完成。没有重复未改变的默认自主Agent超时。

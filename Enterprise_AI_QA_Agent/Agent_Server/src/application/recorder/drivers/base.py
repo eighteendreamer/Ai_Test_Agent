@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable
 
 from src.schemas.recording import RecordingDriverConfig
@@ -53,8 +54,11 @@ class BrowserDriver(ABC):
         """Confirm browser delivery and close the event stream after queued events."""
         raise RuntimeError(f"Recording finish protocol unsupported by driver: {self.kind}")
 
+    async def pause_capture(self) -> dict[str, Any]:
+        raise RuntimeError(f"Recording pause protocol unsupported by driver: {self.kind}")
+
     @abstractmethod
-    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any]]:
+    async def on_recorder_event(self) -> AsyncIterator[dict[str, Any] | CaptureCheckpoint]:
         """返回录制事件异步迭代器（驱动侧 → 消费方，如 RecorderSessionService）。"""
         raise NotImplementedError
 
@@ -131,6 +135,11 @@ class DriverRegistry:
         return driver
 
 
+@dataclass
+class CaptureCheckpoint:
+    completed: asyncio.Future[None]
+
+
 class EventChannel:
     """驱动侧事件通道：publish → 消费方 iterate。
 
@@ -139,7 +148,7 @@ class EventChannel:
     """
 
     def __init__(self, maxsize: int = 10000) -> None:
-        self._queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=maxsize)
+        self._queue: asyncio.Queue[dict[str, Any] | CaptureCheckpoint | None] = asyncio.Queue(maxsize=maxsize)
         self._dropped = 0
         self._closed = False
         self.published_seqs: set[int] = set()
@@ -167,12 +176,17 @@ class EventChannel:
             )
             return False
 
-    async def iterate(self) -> AsyncIterator[dict[str, Any]]:
+    async def iterate(self) -> AsyncIterator[dict[str, Any] | CaptureCheckpoint]:
         while True:
             event = await self._queue.get()
             if event is None:
                 return
             yield event
+
+    async def checkpoint(self) -> None:
+        completed = asyncio.get_running_loop().create_future()
+        await self._queue.put(CaptureCheckpoint(completed))
+        await completed
 
     async def finish(self) -> None:
         """FIFO barrier; the consumer flushes before its normal stream exit."""

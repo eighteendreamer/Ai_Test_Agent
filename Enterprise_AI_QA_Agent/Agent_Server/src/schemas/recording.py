@@ -177,6 +177,7 @@ class RecordingFinishSettings(BaseModel):
 
 class RecordingFinishReceipt(BaseModel):
     protocol: Literal["recording-finish-v1"] = "recording-finish-v1"
+    operation: Literal["stop", "pause"] = "stop"
     request_id: str = Field(min_length=1, max_length=64)
     next_seq: int = Field(ge=0)
     emitted_count: int = Field(ge=0)

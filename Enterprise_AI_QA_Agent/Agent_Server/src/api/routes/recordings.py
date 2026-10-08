@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from src.runtime.resource_lease_manager import ResourceUnavailable
+from src.infrastructure.recording_store import RecordingEventWriteRejected
 
 from src.schemas.recording import (
     RecordingControlRequest,
@@ -191,7 +192,11 @@ async def append_events_batch(
 
     result = bridge.ingest_events(recording_id, payload.events)
     if result.rejected_reason == "unknown_recording":
-        ack: RecordingEventAck = await store.append_events(recording_id, payload.events)
+        try:
+            ack: RecordingEventAck = await store.append_events(recording_id, payload.events)
+        except RecordingEventWriteRejected as exc:
+            raise HTTPException(status_code=404 if exc.reason == "recording_missing" else 409,
+                detail=exc.reason) from None
         return {
             "accepted": ack.accepted,
             "duplicates": ack.duplicates,

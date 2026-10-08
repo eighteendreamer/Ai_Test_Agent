@@ -29,6 +29,7 @@ from src.application.recorder.drivers import (
     EmbeddedBridge,
     build_default_registry,
 )
+from src.application.recorder.drivers.base import CaptureCheckpoint
 from src.core.config import Settings
 from src.core.request_context import bind_request_context
 from src.infrastructure.recording_store import PostgresRecordingStore
@@ -79,6 +80,8 @@ class _SessionRuntime:
     ready_task: asyncio.Task[None] | None = None
     closed_task: asyncio.Task[None] | None = None
     stop_task: asyncio.Task | None = None
+    pause_task: asyncio.Task | None = None
+    capture_draining: bool = False
     parse_failures: int = 0
     dropped_while_paused: int = 0
     dropped_on_db_error: int = 0
@@ -262,6 +265,8 @@ class RecorderSessionService:
         await asyncio.gather(*launches, return_exceptions=True)
 
         async def close_runtime(runtime):
+            if runtime.pause_task is not None and not runtime.pause_task.done():
+                await asyncio.shield(runtime.pause_task)
             if runtime.stop_task is not None and not runtime.stop_task.done():
                 await asyncio.shield(runtime.stop_task)
             await self._cancel_task(runtime.closed_task)
@@ -306,6 +311,10 @@ class RecorderSessionService:
         """控制条指令统一入口：迁移校验 → 内存占位（防并发重复迁移）→ 驱动动作
         → PG 持久化；动作异常时回滚内存状态。"""
         runtime = self._require_runtime(recording_id)
+        if runtime.pause_task is not None and not runtime.pause_task.done():
+            logger.warning("recording_capture_control_in_progress", extra={
+                "recording_id": recording_id, "action": action.value})
+            raise ValueError("Recording capture control in progress")
         current = runtime.status
         allowed = _CONTROL_TRANSITIONS[action]
         target = allowed.get(current)
@@ -323,7 +332,10 @@ class RecorderSessionService:
             if action is RecordingControlAction.start:
                 return await self._do_start(runtime)
             if action is RecordingControlAction.pause:
-                return await self._do_pause(runtime)
+                runtime.capture_draining = True
+                runtime.pause_task = asyncio.create_task(self._do_pause(runtime),
+                    name=f"recording-pause-{recording_id}")
+                return await asyncio.shield(runtime.pause_task)
             if action is RecordingControlAction.resume:
                 return await self._do_resume(runtime)
             if action is RecordingControlAction.stop:
@@ -345,13 +357,24 @@ class RecorderSessionService:
         return result
 
     async def _do_pause(self, runtime: _SessionRuntime) -> RecordingSession:
-        await runtime.driver.set_capture_enabled(False)
-        result = await self._update(runtime, RecordingStatus.paused)
-        logger.info(
-            "recording paused: recording_id=%s dropped_while_paused=%s",
-            runtime.session.id, runtime.dropped_while_paused,
-        )
-        return result
+        receipt = None
+        try:
+            policy = RecordingFinishSettings.model_validate(runtime.session.metadata["finish_settings"]["payload"])
+            async with asyncio.timeout(policy.timeout_seconds):
+                receipt = await runtime.driver.pause_capture()
+            events = await self._store.get_events(runtime.session.id)
+            self._verify_capture_receipt(runtime, receipt, events, operation="pause")
+            metrics = dict(runtime.session.finalize_metrics)
+            metrics["pause_receipts"] = [*metrics.get("pause_receipts", []), receipt]
+            result = await self._update(runtime, RecordingStatus.paused, finalize_metrics=metrics)
+            logger.info("recording_capture_paused", extra={
+                "recording_id": runtime.session.id, "request_id": receipt.get("request_id"),
+                "next_seq": receipt["next_seq"]})
+            return result
+        except Exception as exc:
+            return await self._capture_failed(runtime, exc, receipt, operation="pause")
+        finally:
+            runtime.capture_draining = False
 
     async def _do_resume(self, runtime: _SessionRuntime) -> RecordingSession:
         await runtime.driver.set_capture_enabled(True)
@@ -373,44 +396,18 @@ class RecorderSessionService:
                 await asyncio.shield(runtime.consume_task)
             await self._cancel_task(runtime.ready_task)
             events = await self._store.get_events(recording_id)
-            expected = set(finish["published_seqs"])
-            saved = {event.seq for event in events}
-            missing = sorted(expected - saved)
-            finish["missing_seqs"] = missing
-            browser_start = finish["next_seq"] - finish["emitted_count"]
-            browser_saved_count = sum(browser_start <= seq < finish["next_seq"] for seq in saved)
-            finish["browser_saved_count"] = browser_saved_count
-            watermark_missing = browser_start < 0 or browser_saved_count != finish["emitted_count"]
-            finish["pg_verified"] = not missing and not watermark_missing
-            if (finish["protocol"] != "recording-finish-v1" or finish["pending"] or
-                finish["frames_unconfirmed"] or finish["transport_dropped"] or
-                finish["channel_dropped"] or missing or watermark_missing or
-                runtime.parse_failures or runtime.dropped_on_db_error):
-                raise RuntimeError("Recording finish delivery/integrity could not be confirmed")
+            self._verify_capture_receipt(runtime, finish, events, operation="stop")
             result = await self._graph_store.finalize(runtime.session, events)
             metrics = {
                 "finalize": result.get("metrics", {}),
                 "integrity": result.get("integrity", {}),
                 "finish_receipt": finish,
+                "pause_receipts": runtime.session.finalize_metrics.get("pause_receipts", []),
             }
             if result.get("status") != "success":
                 raise RuntimeError(f"graph finalize failed: {result.get('reason') or result.get('status')}")
         except Exception as exc:
-            logger.exception("recording finalize failed: recording_id=%s", recording_id)
-            error = f"{type(exc).__name__}: {exc}"
-            runtime.metadata["finalize_error"] = error
-            await self._cancel_task(runtime.consume_task)
-            await self._cancel_task(runtime.ready_task)
-            failed = await self._update(
-                runtime,
-                RecordingStatus.failed,
-                finalize_metrics={"finalize_error": error,
-                    "failure_reason": "finish_timeout" if isinstance(exc, TimeoutError) else "finish_unconfirmed",
-                    "finish_receipt": finish, "parse_failures": runtime.parse_failures,
-                    "dropped_on_db_error": runtime.dropped_on_db_error},
-            )
-            await self._shutdown_driver(runtime)
-            return failed
+            return await self._capture_failed(runtime, exc, finish, operation="stop")
 
         logger.info(
             "recording finalized: recording_id=%s actions=%s",
@@ -421,6 +418,38 @@ class RecorderSessionService:
         )
         await self._shutdown_driver(runtime)
         return completed
+
+    @staticmethod
+    def _verify_capture_receipt(runtime, receipt, events, *, operation):
+        expected, saved = set(receipt["published_seqs"]), {event.seq for event in events}
+        missing = sorted(expected - saved)
+        receipt["missing_seqs"] = missing
+        browser_start = receipt["next_seq"] - receipt["emitted_count"]
+        browser_saved_count = sum(browser_start <= seq < receipt["next_seq"] for seq in saved)
+        receipt["browser_saved_count"] = browser_saved_count
+        watermark_missing = browser_start < 0 or browser_saved_count != receipt["emitted_count"]
+        receipt["pg_verified"] = not missing and not watermark_missing
+        if (receipt["protocol"] != "recording-finish-v1" or receipt.get("operation", "stop") != operation or
+            receipt["pending"] or receipt["frames_unconfirmed"] or receipt["transport_dropped"] or
+            receipt["channel_dropped"] or missing or watermark_missing or runtime.parse_failures or
+            runtime.dropped_on_db_error):
+            raise RuntimeError("Recording capture delivery/integrity could not be confirmed")
+
+    async def _capture_failed(self, runtime, exc, receipt, *, operation):
+        logger.exception("recording_capture_checkpoint_failed", extra={
+            "recording_id": runtime.session.id, "operation": operation})
+        error = f"{type(exc).__name__}: {exc}"
+        runtime.metadata["finalize_error"] = error
+        await self._cancel_task(runtime.consume_task)
+        await self._cancel_task(runtime.ready_task)
+        prefix = "finish" if operation == "stop" else "pause"
+        failed = await self._update(runtime, RecordingStatus.failed, finalize_metrics={
+            **runtime.session.finalize_metrics, "finalize_error": error,
+            "failure_reason": f"{prefix}_timeout" if isinstance(exc, TimeoutError) else f"{prefix}_unconfirmed",
+            f"{prefix}_receipt": receipt, "parse_failures": runtime.parse_failures,
+            "dropped_on_db_error": runtime.dropped_on_db_error})
+        await self._shutdown_driver(runtime)
+        return failed
 
     async def _do_destroy(self, runtime: _SessionRuntime) -> RecordingSession:
         """销毁：丢弃未固化数据，关驱动，PG 标 discarded（审计保留）。"""
@@ -463,7 +492,12 @@ class RecorderSessionService:
                     break
 
                 if event is not None:
-                    if runtime.status not in (RecordingStatus.active, RecordingStatus.finalizing):
+                    if isinstance(event, CaptureCheckpoint):
+                        await self._flush_buffer(runtime, buffer)
+                        if not event.completed.done():
+                            event.completed.set_result(None)
+                        continue
+                    if runtime.status not in (RecordingStatus.active, RecordingStatus.finalizing) and not runtime.capture_draining:
                         runtime.dropped_while_paused += 1
                         logger.warning(
                             "recorder event dropped (not active): recording_id=%s status=%s seq=%s",
