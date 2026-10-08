@@ -4427,3 +4427,15 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $evidenceRoot 'p0-startup-order-consu
 生产DOCX1通过60.07秒；实际执行Worker1通过75.67秒；配置后扩大回归65通过157.97秒；审批存储15通过2.59秒，均零失败/跳过。首轮DOCX在API/FK检查已过后因测试RowMapping序列化1失败23.17秒，修正dict转换；首轮扩大回归24失败54通过2跳过80.62秒，其中23缺证据目录变量，1旧测试替身欠当前读取能力。原日志/XML保留，不修改生产逻辑适配替身。原件/Docker/HTTP/进程输出从实际tmp复制；独立执行测试未设置QA_TEST_GATE_OUTPUT_DIR，使用默认tmp，随后逐字节保存至p0-startup-order-execution-first。
 
 语法附加检查在项目根目录：.\.venv\Scripts\python.exe -m py_compile Agent_Server/src/main.py Agent_Server/tests/test_document_parse_production.py Agent_Server/tests/test_test_run_postgres_claim.py，通过；没有前端修改，本次未重跑JS/typecheck/build。MySQL原配置和PG运行/消费表检查经过真实进程，受控模型执行不等于默认模型或人工录制验收。全范围未完成，见PLAN。
+
+## 2026-10-08 所贴完整方案更新〔基线09286a68〕
+
+本轮只更新方案正文、同步用户附件与原PLAN.md，不实施新业务功能。先核对ApiDocsService.upload_document/upload_version、上传路由及GitDocumentService.import_document，再明确普通上传独立保存、显式文档版本关系和Git可选入口。补1.4八项交付/验收要求，更新当前基线与录制进度；根据UI模式contracts/runtime写明测试执行子方向未开放，知识充足的partial/task_generation_ready不能证明执行成功。完整P0—P5与历史失败保持。
+
+后端目录实际运行：
+
+```powershell
+..\.venv\Scripts\python.exe -m pytest 'tests/test_api_doc_versions.py::test_actual_files_version_chain_replays_and_current_content_dedup[False]' 'tests/test_api_doc_original_assets.py::test_actual_openapi_original_survives_conversion_and_project_url_updates[False]' -q --junitxml='../docs/upgrade_2026-10-03/plan-refresh-09286a68-upload.xml' *> '../docs/upgrade_2026-10-03/plan-refresh-09286a68-upload.log'
+```
+
+退出码0，2通过、0失败/跳过，pytest输出7.28秒；实际文件/应用路由/本地测试存储验证，不是生产MySQL/PG/RustFS或完整App验收。此轮未运行Worker、默认模型、人工DeepSeek和前端构建。命令研究过程中有一次PowerShell不支持花括号路径列表而解析失败，改为明确三个文件路径；另一次搜索误用了复数测试文件名，按rg文件列表修正；均未修改产品或运行功能测试，未计为通过。三份计划原SHA为a63871c8a9188bee2235481f0034ed6538e1a7b3237afc5fef6a7c8f74f80df7，同步后的SHA及原始测试输出核对见plan-refresh-09286a68-validation.json。用户.gitignore和未提交Worker/环境诊断文件保持，不纳入提交。
