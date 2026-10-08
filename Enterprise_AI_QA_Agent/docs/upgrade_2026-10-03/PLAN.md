@@ -1,12 +1,12 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次录制响应实施基线 `091e4200`。上传变更的独立保存约定保持；完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
+修订日期：2026-10-08；本次方案核对基线 `4e35de24`。本次只更新方案和两份副本；完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
-**本次查证结果：上传变更可以沿现有实现完成，无需 Git 缓存。** 已重新核对上传路由、原件/版本保存、固定快照比较和独立 Git 导入的调用方向，并实际运行两项上传回归：2通过、0失败、0跳过。验证使用真实临时文件、应用路由和本地测试存储；生产存储、完整页面及 AI 影响判断未在本次重跑。依据和结果见3.1.1。
+**本次查证结果：上传变更可以沿现有实现完成，无需 Git 缓存。** 已重新核对上传路由、原件/版本保存和独立 Git 导入的调用方向，并实际运行两项上传回归：2通过、0失败、0跳过，pytest输出7.99秒。验证使用真实临时文件、应用路由和本地测试存储；生产存储、完整页面及 AI 影响判断未在本次重跑。当前结果见3.1.1，历史验证保留原批次标记。
 
-上传及Git边界继续按3.1/3.2执行。生命周期修复见4.1.4/6.76；此前完整录制知识出口见4.1.5/6.77。本次在原采集链中增加有限DOM响应：记录同文档局部操作身份、观察截止、变化元素和截断原因，覆盖输入防抖前响应。MySQL配置在PG会话冻结，Python/Electron使用该快照。285项通过、1项默认模型专项跳过，46项JS通过；46个真实场景中的44个完成项核对公开API/规划知识/PG原件，见4.1.6/6.78。时间关联不证明业务因果；默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
+最新已提交的录制响应实现为 `4e35de24`，专项结果见4.1.6/6.78；这些是历史实施证据，本次没有重跑录制专项。该批生产API冷启动仍有外键初始化顺序失败，不能据此宣称生产链路通过。默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -18,7 +18,7 @@
 
 消费阶段与原领取事务已提交 `67d134ae`，见2.3.12/6.69。上一实施批次在 `4ed1507f` 修复“取消无可靠返回仍被当作消费结束”和“自动清理等待误要求其他消费者通过”，见2.3.13/6.70。内部十五项、外部九种原图/API/审批场景及四项历史/来源边界已验；明确业务前置仍要求通过，旧运行按原映射恢复。完整固定JSON、原证据和审批保持；默认自主Agent、完整生命周期与App及其余P0—P5继续未完成。
 
-当前完整进度、历史失败及验收边界见第六节；命令见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)，本次原件、返回观察、共享消费/依赖及三份同步核对见 [p2-consumption-return-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p2-consumption-return-validation.json)。历史方案保留在 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史章节中的“本轮”仅表示当时批次。
+当前完整进度、历史失败及验收边界见第六节；历史实施命令见 [IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)。本次方案修订、上传回归及三份同步核对见 [plan-revision-4e35de24-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-revision-4e35de24-validation.json)；历史共享消费证据见 [p2-consumption-return-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p2-consumption-return-validation.json)。历史方案保留在 [PLAN_HISTORY_918cdace.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/PLAN_HISTORY_918cdace.md)。历史章节中的“本轮”仅表示当时批次。
 
 ## 一、升级原则与实际代码依据
 
@@ -138,6 +138,8 @@ AI 只围绕一个问题检查初排后的用例：
 | 项目资料也没有创建方法 | 无法确认如何补全 | 保存订单ID缺口及受影响目标，不虚构创建操作 |
 
 检测由现有规划模型阅读正文完成，后端执行只读查询并核对它提交的版本、证据、依赖和数据绑定。无需另建关键词检测器或通用前置清单。AI可能误判业务条件，实际执行必须继续核对前置输出；计划中有一个绑定并不能证明该输出已经存在。复用[现有规划实现](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/test_cases/planning_service.py:141)的`query/finish`协议，阶段可视化仍按下文补齐。
+
+简单地说，检测就是**读完整用例 → 找必要条件的来源 → 缺来源就查询并补入 → 根据依赖排序**。AI在既有计划中用`reason`说明补入理由、用`depends_on`表达先后、用`input_bindings`表达传值、用`unresolved`保存无法补齐的缺口。这里复用已有字段，不新增一套检测表或注册/登录规则。后端只检查可确定的结构与引用问题；“是否确实需要这个前置”由AI依据项目内容判断，并由运行结果验证。
 
 现有规划每回合返回 `query` 或 `finish`：后端执行项目隔离的只读查询，AI提交目标、正式前置、准备、数据绑定和缺口。后端核对项目/版本/引用/依赖循环/顺序，不取代 AI 判断业务必要性。具体输出路径使用字面量 `output_path_tokens`，不能把包含点号的字段误当嵌套路径。引用前序输出必须同时声明依赖。
 
@@ -397,7 +399,9 @@ AI 引用具体差异 → 需求/用例影响候选 → 评审 → 增量草稿
 
 **可以做，依据是项目已有上传、原件保存、版本追加及固定快照比较服务。** 新文件上传保存原件；在指定文档下上传修改后的文件追加版本；比较固定双方解析快照。这里的应用版本记录无需Git缓存。上传与Git共用取得文件后的保存、解析和比较服务，分别提供来源入口；不是上传时再使用Git保存一遍。
 
-**当前核对〔2026-10-08，基线0d046514〕：** 普通上传路由只调用 `upload_document`；`upload_version` 核对项目、提交身份和预期父版本后保存新原件及版本；比较提交冻结 `old_snapshot_id` / `new_snapshot_id` 对应的快照，Worker读取系统保存的结果。只有 `GitDocumentService.import_document` 会读取仓库，再向保存服务传入字节与来源信息。普通上传、解析和比较不反向调用 Git 服务。
+**当前核对〔2026-10-08，基线4e35de24〕：** 普通上传路由只调用`upload_document`；新版本路由调用`upload_version`，按明确文档、项目、原请求及父版本保存。`GitDocumentService.import_document`先读取仓库字节，再调用上述保存服务；普通上传不会调用这个Git入口。同内容新版本请求返回当前版本，恢复旧内容则追加新版本，同名独立上传保持独立文档。实际重跑两个`[False]`节点：**2通过、0失败、0跳过，pytest输出7.99秒**，见[本次XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-revision-4e35de24-upload.xml)和[本次日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-revision-4e35de24-upload.log)。范围是实际临时文件、应用路由及本地测试存储；未重跑生产存储、解析/比较Worker、完整App或AI影响判断。
+
+**以下均为历史批次证据：** 在`0d046514`核对的比较提交冻结`old_snapshot_id` / `new_snapshot_id`，Worker读取系统保存的快照；普通上传、解析和比较不反向调用Git服务。下文原日期、时长和产物保留，不计入本次通过数量。
 
 本次实际执行下文两个 `[False]` 上传/原件回归节点，结果为**2通过、0失败、0跳过，5.53秒**。原始输出见[本次日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-0d046514-upload.log)及[本次XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-0d046514-upload.xml)。真实临时文件经应用路由验证：V1/V2和历史字节保留、同内容返回当前版本、恢复旧内容产生新版本、父版本冲突、请求恢复、同名独立上传，以及OpenAPI派生转换保留原件。测试没有配置Git，使用本地测试存储；本次未重跑生产MySQL/PG/RustFS、独立解析/比较Worker、完整App或AI影响判断。本次三份同步及范围核对见[验证记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/plan-refresh-0d046514-validation.json)。
 
@@ -508,6 +512,13 @@ V1/V2原件保存后，分别选择版本提交解析任务，再选择这两个
 ### 3.2 Git 仅作独立可选来源
 
 项目登记本地仓库，明确路径和commit，只读获取固定文件，保存完整commit/blob/路径来源，复用文档保存、解析和比较服务。默认创建独立文档，只有明确“导入为该文档的新版本”才追加已有文档。
+
+| 来源入口 | 文件字节从哪里来 | 是否需要Git | 何时关联已有文档 |
+|---|---|---|---|
+| 普通上传 / 上传新版本 | 用户所选文件，由系统保存原件 | 不需要 | 新版本入口明确指定`document_id`及预期父版本 |
+| 可选Git导入 | 已登记仓库的固定commit、路径和blob | 仅这个入口需要 | 用户明确选择“导入为该文档的新版本” |
+
+共用的是取得字节后的保存、解析和比较能力；是否属于同一文档由用户所选业务身份决定，不能由文件名、哈希或来源入口推断。
 
 用户只使用文件上传时，本功能无需启用。用户确实要将Git文件作为已有上传文档的新版本时，需明确提供该文档身份和预期父版本；这是一次主动追加操作，不是上传入口自动建立的Git映射或缓存。
 
