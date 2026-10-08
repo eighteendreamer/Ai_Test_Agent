@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="12" time="3.908" timestamp="2026-10-08T15:34:28.986532+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_failed_query_now_reads_every_original_field_in_order" time="0.003" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[missing-event_payload_missing]" time="0.012" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[json-event_payload_invalid]" time="0.003" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[schema-event_payload_invalid]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[identity-event_payload_identity_mismatch]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[fields-event_payload_fields_missing]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[count-recording_action_range_mismatch]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[range-recording_action_range_mismatch]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_projection_defects_report_partial_without_fake_events[old-count-recording_step_count_missing]" time="0.002" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_long_values_unknown_nesting_and_password_mask_preserve_original_projection" time="0.020" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_boolean_sequence_or_non_finite_payload_cannot_claim_complete" time="0.004" /><testcase classname="tests.test_recording_knowledge_payloads" name="test_actual_step_payload_reaches_planning_request_and_frozen_history" time="0.042"><failure message="AssertionError: assert ('retrieval_failed' == 'planned'&#10;  &#10;  - planned&#10;  + retrieval_failed)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1134/test_actual_step_payload_reach0')
+
+    @pytest.mark.asyncio
+    async def test_actual_step_payload_reaches_planning_request_and_frozen_history(tmp_path):
+        events = actual_events()
+        graph, provider = projection(events)
+        def inspect_request(context):
+            recording = next(entry for entry in context["evidence"] if entry["kind"] == "recording")
+            actions = [node for node in recording["payload"]["graph"]["nodes"] if node["kind"] == "action"]
+            assert [node["event"] for node in actions] == events
+            target = item(context, "recorded-target")
+            target["evidence_ids"].append(recording["id"])
+            return finish(target)
+        model = SequenceModel({"action": "query", "summary": "读取完整录制步骤",
+            "queries": [{"kind": "recording", "source_id": "actual-replay"}]}, inspect_request)
+        async with environment(tmp_path, model=model) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-evidence", name="录制依据"))
+            case = await active_case(env, project, "recorded-target", {"objective": "依据完整录制操作",
+                "steps": [{"action": "核对嵌套页面输入"}]}, mode="ui_automation")
+            class Recordings:
+                async def get_session(self, key):
+                    return SimpleNamespace(id="actual-replay", project_id=project.id,
+                        status=SimpleNamespace(value="completed"), name="录制依据", finalize_metrics={},
+                        updated_at=datetime(2026, 10, 8, tzinfo=timezone.utc))
+            env.sources.set_recording_sources(recording_store=Recordings(), recording_graph_store=graph)
+            response = await env.client.post(f"/projects/{project.id}/case-plans", json={
+                "objective": "根据已录制步骤进行测试", "candidate_case_ids": [case.case.id]})
+            response.raise_for_status()
+            plan = response.json()
+&gt;           assert plan["status"] == "planned" and plan["prompt_version"] == "case-planning-v5"
+E           AssertionError: assert ('retrieval_failed' == 'planned'
+E             
+E             - planned
+E             + retrieval_failed)
+
+tests\test_recording_knowledge_payloads.py:128: AssertionError</failure></testcase></testsuite></testsuites>

@@ -389,6 +389,14 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     knowledge, _ = await env.sources.query(project.id, PlanningQuery(kind="recording", source_id=session_id), 50)
                     save("planning-knowledge.json", [item.model_dump(mode="json") for item in knowledge])
                     assert knowledge and knowledge[0].payload["graph"]["status"] == "success"
+                    actions = [node for node in knowledge[0].payload["graph"]["nodes"] if node["kind"] == "action"]
+                    assert [node.get("event") for node in actions] == [graph._mask_sensitive_payload(event)["payload"] for event in saved], "knowledge query omitted the full recorded steps"
+                    assert knowledge[0].payload["graph"]["event_payloads"]["status"] == "complete"
+                    response = await client.get(f"/api/v1/recordings/{session_id}/graph")
+                    response.raise_for_status()
+                    save("projection-http.json", response.json())
+                    assert response.json() == knowledge[0].payload["graph"]
+                    assert (await graph.get_recording_subgraph(session_id, project_id=str(uuid4())))["status"] == "not_found"
                     alien = await env.projects.create(ProjectCreateRequest(project_key="alien-" + suffix, name="其他项目"))
                     with pytest.raises(ValueError, match="不属于当前项目"):
                         await env.sources.query(alien.id, PlanningQuery(kind="recording", source_id=session_id), 50)

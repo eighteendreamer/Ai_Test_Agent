@@ -1,0 +1,45 @@
+...........F                                                             [100%]
+================================== FAILURES ===================================
+____ test_actual_step_payload_reaches_planning_request_and_frozen_history _____
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1134/test_actual_step_payload_reach0')
+
+    @pytest.mark.asyncio
+    async def test_actual_step_payload_reaches_planning_request_and_frozen_history(tmp_path):
+        events = actual_events()
+        graph, provider = projection(events)
+        def inspect_request(context):
+            recording = next(entry for entry in context["evidence"] if entry["kind"] == "recording")
+            actions = [node for node in recording["payload"]["graph"]["nodes"] if node["kind"] == "action"]
+            assert [node["event"] for node in actions] == events
+            target = item(context, "recorded-target")
+            target["evidence_ids"].append(recording["id"])
+            return finish(target)
+        model = SequenceModel({"action": "query", "summary": "读取完整录制步骤",
+            "queries": [{"kind": "recording", "source_id": "actual-replay"}]}, inspect_request)
+        async with environment(tmp_path, model=model) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-evidence", name="录制依据"))
+            case = await active_case(env, project, "recorded-target", {"objective": "依据完整录制操作",
+                "steps": [{"action": "核对嵌套页面输入"}]}, mode="ui_automation")
+            class Recordings:
+                async def get_session(self, key):
+                    return SimpleNamespace(id="actual-replay", project_id=project.id,
+                        status=SimpleNamespace(value="completed"), name="录制依据", finalize_metrics={},
+                        updated_at=datetime(2026, 10, 8, tzinfo=timezone.utc))
+            env.sources.set_recording_sources(recording_store=Recordings(), recording_graph_store=graph)
+            response = await env.client.post(f"/projects/{project.id}/case-plans", json={
+                "objective": "根据已录制步骤进行测试", "candidate_case_ids": [case.case.id]})
+            response.raise_for_status()
+            plan = response.json()
+>           assert plan["status"] == "planned" and plan["prompt_version"] == "case-planning-v5"
+E           AssertionError: assert ('retrieval_failed' == 'planned'
+E             
+E             - planned
+E             + retrieval_failed)
+
+tests\test_recording_knowledge_payloads.py:128: AssertionError
+------------------------------ Captured log call ------------------------------
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:426 case_planning_failed
+=========================== short test summary info ===========================
+FAILED tests/test_recording_knowledge_payloads.py::test_actual_step_payload_reaches_planning_request_and_frozen_history
+1 failed, 11 passed in 4.50s

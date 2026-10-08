@@ -306,6 +306,15 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
                     knowledge, _ = await env.sources.query(project.id, PlanningQuery(kind="recording", source_id=recording_id), 1)
                     save("planning-knowledge.json", [item.model_dump(mode="json") for item in knowledge])
                     assert knowledge[0].payload["graph"]["status"] == "success"
+                    actions = [node for node in knowledge[0].payload["graph"]["nodes"] if node["kind"] == "action"]
+                    assert [node.get("event") for node in actions] == [graph._mask_sensitive_payload(event)["payload"] for event in saved], "knowledge query omitted the full recorded steps"
+                    assert knowledge[0].payload["graph"]["event_payloads"]["status"] == "complete"
+                    async with httpx.AsyncClient(base_url=origin) as client:
+                        response = await client.get(f"/api/v1/recordings/{recording_id}/graph")
+                        response.raise_for_status()
+                        save("projection-http.json", response.json())
+                        assert response.json() == knowledge[0].payload["graph"]
+                    assert (await graph.get_recording_subgraph(recording_id, project_id=str(uuid4())))["status"] == "not_found"
                     assert len(saved) == len(events)
                     for event, observed in zip(saved, events):
                         for field in ("seq", "type", "page", "target", "pixel", "value", "page_effect"):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -25,6 +26,8 @@ from urllib.parse import urlsplit, urlunsplit
 from src.core.config import Settings
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.schemas.recording import RecorderEvent, RecordingSession
+
+logger = logging.getLogger(__name__)
 
 
 class RecordingGraphStore:
@@ -70,8 +73,9 @@ class RecordingGraphStore:
             OPTIONAL MATCH (a)-[t:TARGETS]->(el:Element {project_id: $project_id})
             OPTIONAL MATCH (a)-[op:ON_PAGE]->(p:Page {project_id: $project_id})
             WITH r, a, el, p, hs ORDER BY a.seq
-            RETURN r.id AS recording_id, r.name AS recording_name,
+            RETURN r.id AS recording_id, r.name AS recording_name, r.step_count AS step_count,
                    a.id AS action_id, a.seq AS seq, a.action_type AS action_type,
+                   a.payload_json AS event_payload_json,
                    a.resolution_status AS resolution_status, a.occurred_at AS occurred_at,
                    el.id AS element_id, el.name AS element_name,
                    p.id AS page_id, p.url AS page_url, p.title AS page_title
@@ -92,6 +96,7 @@ class RecordingGraphStore:
         }
         edges: list[dict[str, Any]] = []
         seen_edges: set[tuple[str, str, str]] = set()
+        warnings: list[dict[str, Any]] = []
         for row in rows:
             action_id = row.get("action_id")
             if action_id:
@@ -105,6 +110,7 @@ class RecordingGraphStore:
                         "action_type": row.get("action_type"),
                         "resolution_status": row.get("resolution_status"),
                         "occurred_at": row.get("occurred_at"),
+                        "event": self._read_action_event(row, warnings),
                     }
                     edge = ("recording", recording_id, str(action_id))
                     if edge not in seen_edges:
@@ -145,12 +151,48 @@ class RecordingGraphStore:
                         edges.append(
                             {"source": str(action_id), "target": str(page_id), "type": "ON_PAGE"}
                         )
+        actions = [node for node in nodes.values() if node["kind"] == "action"]
+        expected = first.get("step_count")
+        if not isinstance(expected, int) or isinstance(expected, bool) or expected < 0:
+            warnings.append({"reason": "recording_step_count_missing"})
+            expected = None
+        elif len(actions) != expected or any(node["seq"] != index for index, node in enumerate(actions)):
+            warnings.append({"reason": "recording_action_range_mismatch", "expected_count": expected,
+                "actual_count": len(actions)})
+        if warnings:
+            logger.warning("recording_knowledge_payload_partial", extra={"project_id": project_id,
+                "recording_id": recording_id, "warning_count": len(warnings)})
         return {
             "status": "success",
             "recording_id": recording_id,
             "nodes": list(nodes.values()),
             "edges": edges,
+            "event_payloads": {"protocol": "recording-event-payloads-v1",
+                "status": "partial" if warnings else "complete", "expected_count": expected,
+                "available_count": sum(node["event"] is not None for node in actions), "warnings": warnings},
         }
+
+    def _read_action_event(self, row: dict[str, Any], warnings: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Read each original action, independently of merged Element locators."""
+        reason = "event_payload_missing"
+        if row.get("event_payload_json"):
+            try:
+                payload = json.loads(row["event_payload_json"])
+                event = RecorderEvent.model_validate(payload)
+                json.dumps(payload, allow_nan=False)
+                if (type(payload.get("seq")) is not int or event.seq != row.get("seq")
+                    or event.type != row.get("action_type")):
+                    reason = "event_payload_identity_mismatch"
+                elif not set(RecorderEvent.model_fields).issubset(payload):
+                    reason = "event_payload_fields_missing"
+                else:
+                    # Reuse the write-side password mask for historical projections.
+                    payload["value"] = self._mask_sensitive_payload(event)["payload"]["value"]
+                    return payload
+            except (ValueError, TypeError):
+                reason = "event_payload_invalid"
+        warnings.append({"action_id": row.get("action_id"), "seq": row.get("seq"), "reason": reason})
+        return None
 
     # ------------------------------------------------------------- finalize
 

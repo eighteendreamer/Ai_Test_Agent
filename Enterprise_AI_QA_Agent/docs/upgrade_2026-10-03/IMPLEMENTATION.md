@@ -4316,3 +4316,35 @@ agent_web实际：`npm.cmd run test -- tests/recorder/recorder.test.mjs tests/re
 最终15个实际Electron场景、20个Python原API/存储场景含2项真实缓存与两驱动就绪窗口；原绑定业务字段、原生frame身份、全局/局部seq、35份RustFS截图读回核对；模型调用0。Electron实际缓存恢复未覆盖，协议单测不替代真实浏览器。人工DeepSeek、完整知识原文/AI/响应清洗/App/场景报告、Docker及其他P0—P5/生产迁移仍未完成。旧两份Worker汇总原字节未恢复限制保持。
 
 方案4.1.4/6.76同步至三份原文，审计p0-recording-lifecycle-audit.py读取原XML/PG/binding/截图及2751个既有工件当前/HEAD字节，结果保存p0-recording-lifecycle-validation.json；不改用户.gitignore和无关Worker/环境工件。没有重跑原样默认自主Agent超时。
+
+## 完整录制知识查询〔2026-10-08，基线5711b37e〕
+
+研究P0_RECORDING_KNOWLEDGE_DESIGN.md：原PG事件/Action已保存全载荷但原图查询只返摘要。先在真实CDP/Electron跨来源嵌套录制复现2失败18.38秒；先前命令测试节点错误没有运行功能。原get_recording_subgraph返回action.event与event_payloads完整/部分及原件缺失/身份诊断；长值不截断、每步原定位链保留、密码清洗复用；原PG/冻结计划不改写。默认规划Prompt更新case-planning-v5，旧任务固定Prompt保持。
+
+离线原件/图/API/规划67通过4跳过6.24秒。增加受控模型请求/历史冻结测试后，先错误cwd收集失败；正确cwd首轮1失败11通过4.50秒，测试替身缺list_sessions；修正后12通过3.44秒。原件均保存，不计默认AI操作成功。
+
+最终实际命令，工作目录Agent_Server，stdout/stderr完整保存p0-recording-knowledge-final.log：
+
+```powershell
+$env:PYTHONIOENCODING='utf-8'
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_RECORDING_SCOPE_STORAGE='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RUN_LIVE_RECORDING_BFCACHE='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$evidenceRoot='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03'
+$env:RECORDING_PRODUCT_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-final-electron'
+$env:RECORDING_SCOPE_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-final-python'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-final-boundary-pg'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-final-boundary-cdp'
+$env:RECORDING_FINISH_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-final-finish'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py tests/test_recording_scope_product.py tests/test_recording_finish_protocol.py tests/test_recording_boundary_protocol.py tests/test_recording_document_scopes.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py tests/test_case_planning.py tests/test_recording_knowledge_payloads.py -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-knowledge-final.xml
+```
+
+最终244通过、0失败、1跳过、219.94秒，一条既有Starlette弃用警告。未开启RUN_LIVE_CASE_PLANNING_MODEL_TESTS的默认模型专项跳过；不计为通过。实际15Electron场景/20Python场景，33完成项公开HTTP/规划完整事件与原PG全字段一致、逐doc回执及35截图RustFS读回验证；2项预期失败不改。公开graph原dict及前端通用证据Record类型无需变更，原nodes/edges字段保留。
+
+5源文件hash保存p0-recording-knowledge-source-sha.json；三份原计划同步至4.1.5/6.77，审计脚本核对5893旧原件HEAD/当前字节、新完整载荷/HTTP/PG/截图/XML、保护.gitignore及无关工件，结果p0-recording-knowledge-validation.json。无新配置键/表/依赖/迁移；py_compile通过仅附加，前端JS/build本轮未重跑。
+
+默认AI引用知识并进行真实操作/断言、动作后DOM响应时序与关联、清洗、人工DeepSeek、完整App/场景报告、Electron实际缓存恢复/并行attach及更多故障、Docker与其他P0—P5、生产历史迁移和旧两Worker汇总原字节恢复仍未完成。完整升级目标保持，不缩成知识查询专项。

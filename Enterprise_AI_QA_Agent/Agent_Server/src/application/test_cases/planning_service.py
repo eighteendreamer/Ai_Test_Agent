@@ -28,7 +28,7 @@ from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, PlanningT
 
 logger = logging.getLogger(__name__)
 PLANNING_CONFIG_KEY = "test_case.planning_policy"
-PROMPT_VERSION = "case-planning-v4"
+PROMPT_VERSION = "case-planning-v5"
 
 
 class CasePlanningService:
@@ -345,7 +345,9 @@ class CasePlanningService:
             "或 input_key 引用 runtime_context 的顶层键，不能同时指定两种来源。规划不证明输入实际有效。"
             "需要更多依据时 action=query；cases 按编号/标题查询（空 query 列出目录），source_id 可读指定用例；"
             "documents/recordings 列出来源目录，支持 offset；document 按 source_id/start_line/max_lines 读原文；"
-            "recording 读已固化知识。目录 has_more 或原文 has_more 时可继续读，不能把有限召回当成全部项目用例。"
+            "recording 读已固化知识，graph.nodes中action.event为该步脱敏完整原文，按seq读取自身定位链、输入和已采page_effect；"
+            "event_payloads说明完整或部分可读及缺失原因，缺失载荷不能用摘要替代，已采page_effect不证明动作后响应已完整关联。"
+            "目录 has_more 或原文 has_more 时可继续读，不能把有限召回当成全部项目用例。"
             "每次查询后会返回已读取的完整依据或具体错误，下一回合再决定。"
             "validation_feedback 非空表示上一候选被拒绝；依据具体错误修正计划或补查询，"
             "必须原样使用 available_evidence_ids，不增删哈希字符，不猜测来源身份。"

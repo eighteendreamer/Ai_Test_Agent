@@ -1,10 +1,10 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次正文与录制生命周期核对基线 `77ab0e0`。完整 P0—P5 工程范围保留，历史实施记录与未完成验收仍见第六节。
+修订日期：2026-10-08；本次录制知识完整读取核对基线 `5711b37e`。完整 P0—P5 工程范围保留，历史实施记录与未完成验收仍见第六节。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
-上传及Git边界继续按3.1/3.2执行。本次同步录制生命周期的实际实施：修复Electron子文档离开后命令等待不结束、Python真实缓存回返后采集关闭，以及PG就绪提交与立即开始的竞态。最终211项后端、36项JS通过，前端构建通过，见4.1.4/6.76。Electron真实缓存回返、响应关联、完整知识消费、正式App与人工DeepSeek仍待验收。
+上传及Git边界继续按3.1/3.2执行。生命周期修复见4.1.4/6.76；本次扩展原录制知识查询，返回每步完整脱敏事件和缺失诊断，33个已完成实际场景对公开API/规划知识/PG原件全字段核对，244项通过、1项默认模型专项跳过，见4.1.5/6.77。完整知识进入受控规划请求已验；默认AI实际引用并操作、动作后响应关联、正式App与人工DeepSeek仍待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -1078,6 +1078,14 @@ PG已提交ready、内存尚为launching时立即start曾返回409。采用项�
 
 MySQL仍保存既有冻结策略，PG保存原会话/事件/水位，RustFS保存截图；新增命令等待和迁移锁属于运行时协调，无新配置键、表、依赖或数据迁移。最终18模块211通过、JS36通过、前端build通过。15个实际Electron场景和20个Python API/存储场景均检查原事件、逐文档水位和截图；保留早期失败，详见6.76及[P0_RECORDING_LIFECYCLE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_LIFECYCLE_DESIGN.md)。响应关联、清洗/完整知识原文供AI、人工DeepSeek、完整App、场景编辑和报告继续待验。
 
+### 4.1.5 完整录制事件供规划读取〔实际查询已验，默认AI操作待验〕
+
+真实CDP/Electron反例证明PG已完整保存步骤，Action.payload_json也已保存脱敏内容，但原子图/规划知识出口只返回类型、序号与页面摘要。现在原`get_recording_subgraph`返回每个action的`event`，保留输入值、定位链、pixel、page_effect、来源及未知嵌套，原nodes/edges/摘要继续可用。读取每步自身target，不从合并Element反推定位链；复用写入侧密码脱敏作历史读取兜底，PG原流水不改写。新查询内容沿原PlanningEvidence hash冻结，历史计划不重新查图。
+
+`event_payloads`明确协议`recording-event-payloads-v1`、完整/部分、期望/可读数量和警告。缺载荷、坏JSON/字段、seq/type身份冲突、Action范围与Recording.step_count不符均保留摘要和诊断，不能冒充完整。日志记录来源与警告数量，不打印坏载荷。没有新存储层、配置、表、依赖或迁移，MySQL/PG/RustFS职责保持，Memgraph仍为投影。
+
+默认规划Prompt更新为`case-planning-v5`，说明如何读取完整事件、缺失与响应边界；旧任务继续原固定Prompt。受控模型原件回归证明事件实际进入第二轮请求，图发生变化后原计划GET仍返回原冻结证据。这不证明默认AI已经正确操作。真实20个Python场景及13个已完成Electron场景均核对公开API和规划知识返回原步骤，另2个预期失败保留，详见6.77及[P0_RECORDING_KNOWLEDGE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_KNOWLEDGE_DESIGN.md)。现有mutation_count在动作emit时读取，完整page_effect不是动作后DOM响应已经关联；此项、清洗、人工DeepSeek、AI实际使用与完整App继续实施。
+
 ### 4.2 Agent API测试
 
 保持Agent操作方式和现有API工具。已有依赖身份/参数来源修正，继续实际验证响应提取、JSON路径/空值、依赖传值、鉴权/续期、超时/异常、幂等和结果展示。变量按项目/运行隔离，保存来源身份和实际输出，不能用计划示例值填充。
@@ -1253,7 +1261,7 @@ C2c3依据[真实状态研究](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_
 | P4覆盖确认 | `b908fe29` API/三格式生产进程见3.6.9/6.24；本阶段正式页面、完整JSON/固定版本评审、原请求恢复、历史/撤销/冲突及归档读取已验，84项组件和真实DOCX完整App见3.6.10/6.26 | 正文关联正式App已验；环境适用、更广业务及生产迁移 |
 | P4正文执行关联 | 固定核验/PG追加历史/候选恢复API和矩阵见6.30；正式编辑、原请求恢复、历史/撤销/409/归档完整读取已验；120项组件、真实DOCX完整App与独立进程见3.6.13/6.31 | 默认Agent自主执行、点级完整性及环境适用/生产历史迁移 |
 | P4环境/来源 | A登记/MySQL配置/PG捕获见6.33；B真实来源/确认见6.34—6.35；C1规划/Agent固定依据见6.36；C2a精确失效的创建/领取/开始限制、依赖/独立项、锁竞争和检查点恢复见6.37；C2b首次开始回执/原Agent恢复/真实生产执行见6.38；C2c1归属及C2c2未领取动作限制/原响应恢复见6.40—6.41 | 运行中动作修订、换目标回归、正式环境页面、AI候选及默认Agent；来源匹配不自动生成部署确认，未选择点不推断 |
-| P0/P5录制与Docker/报告 | 停止/暂停/终态保护见6.72—6.73；原生范围见6.74—6.75；关闭/移除/普通回返、Python真实缓存恢复及就绪迁移见6.76，211后端/36JS通过且build通过 | Electron真实缓存恢复、并行attach及更多网络/进程恢复、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
+| P0/P5录制与Docker/报告 | 生命周期见6.72—6.76；完整事件查询/API/规划入口与33个实际场景核对见6.77，244通过、1默认模型专项跳过；36JS/build为6.76既有结果 | 默认AI引用知识并操作、完整响应采集/清洗、Electron真实缓存恢复/并行attach与更多故障、人工DeepSeek/App、Docker真实结果及场景/报告尚未闭环 |
 
 此前内部输入专项：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
@@ -2549,3 +2557,17 @@ JS首轮32通过2.07秒，补原消息晚到/暂停及native来源约束后最�
 源文件hash固定，三份方案逐字节同步，原2751个历史工件HEAD/当前字节核对及本批审计见[p0-recording-lifecycle-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-lifecycle-validation.json)，命令见IMPLEMENTATION.md。无新配置键、表、依赖或迁移；用户.gitignore及无关Worker/环境工件保持，旧两份Worker汇总原字节未恢复限制保留。
 
 完整P0—P5目标未完成：Electron真实缓存恢复、并行attach/更多网络与进程故障；完整响应关联、清洗/知识原文供AI、人工DeepSeek、完整App、场景/报告；Docker真实性能/安全、P0全阶段HTTP、P1正式生成/导入产品、P2默认自主执行/准备生命周期/未知副作用/其他模式、需求业务评审/环境证据与生产历史迁移仍需实施和验收。未重复原样默认Agent超时。
+
+### 6.77 完整录制知识出口与历史证据〔基线5711b37e〕
+
+先读取原采集/固化/查询/规划/公开API及实际存储夹具，查本地Agent轨迹与数据治理课程。原Action已保存脱敏全载荷，但知识出口只返摘要；真实CDP与Electron跨来源嵌套录制两项**2失败18.38秒**，原事件均入PG且知识action.event缺失。最初命令节点名称错误没有运行测试；后续单测又从错误工作目录运行产生收集错误，两者原日志保留，均不算功能覆盖，见[P0_RECORDING_KNOWLEDGE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_KNOWLEDGE_DESIGN.md)。
+
+原查询返回每步脱敏完整event，添加明确完整/部分与数量/身份诊断，沿既有PG事件/Action投影和规划证据hash。长输入不使用200字符摘要；False/0/null及未知嵌套保留。缺失/坏JSON/字段、非有限值、seq/type不符和范围缺口不输出假事件；旧记录仍能看摘要/警告。密码读取沿原清洗函数兜底，不修改原投影。前端规划证据为Record<string,unknown>、公开图谱原为dict返回，旧nodes/edges契约保持，无新DTO消费方需要转换；实际公开HTTP返回逐字段检查。
+
+离线原件/规划/图/API回归67通过、4项未开live跳过，6.24秒。新增受控模型测试首次1失败11通过4.50秒，原因是测试录制store替身缺目录list_sessions，未进入知识查询；补完整夹具后**12通过3.44秒**。它证明完整事件进入第二轮规划请求并固定，后来投影缺失也不改原计划GET；受控模型不冒充默认AI，默认Prompt新版本为case-planning-v5，已有任务Prompt保持原件。
+
+最终20模块实际运行**244通过、0失败、1跳过、219.94秒**，一条既有Starlette弃用警告，见[最终XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-knowledge-final.xml)与[原日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-knowledge-final.log)。跳过为`RUN_LIVE_CASE_PLANNING_MODEL_TESTS`未开启的默认模型专项，没有算通过。真实20个Python原API/存储场景、15个Electron场景（13完成、2预期failed）；33个完成场景的公开HTTP/规划知识完整event与PG全字段一致，原项目隔离、末尾输入、逐文档回执及35份RustFS截图读回继续通过。原MySQL/PG/RustFS/Memgraph实际使用，未调用默认模型。
+
+本批仅Python读取/默认Prompt/测试变化，未重跑前端build或JS；6.76的36项JS/build仍为历史结果。py_compile附加通过。三份方案同步，5个源文件SHA、5893个既有原件当前/HEAD字节、所有新输入/错误/XML/HTTP/查询/截图核对见[p0-recording-knowledge-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-knowledge-validation.json)，实际命令见IMPLEMENTATION.md。用户.gitignore/无关Worker与环境工件保持；两份旧Worker汇总原字节未恢复限制保留。
+
+完整升级继续进行：默认AI实际引用知识与页面操作/断言；动作后响应关联、清洗/完整性和人工DeepSeek/完整App/场景报告；Electron实际缓存恢复、并行attach/更多网络进程故障；Docker真实性能/安全、P0全阶段HTTP、P1正式生成/导入产品、P2默认自主/准备生命周期/未知副作用/其他模式、需求业务评审/环境适用及生产历史迁移尚未完成。本批不把完整读取等同整个人工录制闭环。
